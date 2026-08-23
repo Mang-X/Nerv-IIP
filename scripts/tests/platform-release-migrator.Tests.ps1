@@ -78,6 +78,14 @@ if ($wrongDatabase.Output.Contains($secretMarker, [StringComparison]::Ordinal)) 
     throw 'Wrong-database diagnostics leaked the connection password.'
 }
 
+$missingVariable = Invoke-MigratorProbe `
+    -Environment @{ NERV_IIP_APPHUB_DB = $null } `
+    -Arguments @('-ValidateOnly', '-Service', 'apphub')
+if ($missingVariable.ExitCode -eq 0 -or
+    -not $missingVariable.Output.Contains('NERV_IIP_APPHUB_DB must be set in the current process', [StringComparison]::Ordinal)) {
+    throw "Expected missing connection variable validation to fail closed. Output: $($missingVariable.Output)"
+}
+
 $unknown = Invoke-MigratorProbe -Environment @{} -Arguments @('-ValidateOnly', '-Service', 'unknown-service')
 if ($unknown.ExitCode -eq 0 -or -not $unknown.Output.Contains('Unknown migration service', [StringComparison]::Ordinal)) {
     throw "Expected unknown service validation to fail closed. Output: $($unknown.Output)"

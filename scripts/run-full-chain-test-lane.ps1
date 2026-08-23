@@ -5,6 +5,7 @@
 #     - Creates and removes scenario-owned disposable PostgreSQL databases and Docker resources
 #   Writes:
 #     - FullChain TRX files and a machine-readable dependency summary under artifacts/**
+#     - One caller-selected sales-order-demand canonical result when provenance is supplied
 #     - Best-effort memory-dimension evidence inside that same dependency summary
 #     - Existing governed scenario diagnostics under artifacts/acceptance/** and artifacts/fullstack/**
 #   Cleanup:
@@ -20,7 +21,15 @@ param(
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'full-chain-test-lane.json'),
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
     [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../artifacts/test-evidence-raw/full-chain'),
-    [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json')
+    [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json'),
+    [string] $CanonicalResultPath,
+    [string] $TrackIdentifier,
+    [string] $Repository,
+    [string] $RunId,
+    [int] $RunAttempt,
+    [string] $TestedSha,
+    [string] $ManifestDigest,
+    [string] $ScenarioId
 )
 
 Set-StrictMode -Version Latest
@@ -29,6 +38,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/FullChainTestLane.ps1')
 . (Join-Path $PSScriptRoot 'lib/CiWorkflowBudgets.ps1')
 . (Join-Path $PSScriptRoot 'lib/RuntimeMemoryEvidence.ps1')
+. (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrixRuntime.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $repoRoot
@@ -46,6 +56,22 @@ $projectSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordin
 foreach ($member in $selectedMembers) { $projectSet.Add([string]$member.project) | Out-Null }
 if ($projectSet.Count -ne 1) { throw 'Selected FullChain members must share exactly one test project for governed discovery.' }
 $fullChainProject = @($projectSet)[0]
+
+$canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
+$canonicalResultFullPath = $null
+if ($canonicalResultEnabled) {
+    $salesMembers = @($selectedMembers | Where-Object { [string]::Equals([string]$_.id, 'sales-order-demand-planning', [StringComparison]::Ordinal) })
+    if ($salesMembers.Count -ne 1) { throw 'FullChain canonical output requires the sales-order-demand-planning member to be selected exactly once.' }
+    $canonicalResultFullPath = Resolve-NervAcceptanceCanonicalOutputPath -Path $CanonicalResultPath -RepositoryRoot $repoRoot -Context 'FullChain v1 canonical result'
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository $Repository)) { throw 'FullChain canonical repository must be a canonical owner/name identifier.' }
+    if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'FullChain canonical runId must be a positive decimal identifier.' }
+    if ($RunAttempt -le 0) { throw 'FullChain canonical runAttempt must be positive.' }
+    if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'FullChain canonical testedSha must be a lowercase 40-character Git SHA.' }
+    if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'FullChain canonical manifestDigest must be a lowercase SHA-256 digest.' }
+    if (-not [string]::Equals($ScenarioId, 'sales-order-demand', [StringComparison]::Ordinal)) { throw "FullChain canonical scenarioId must be 'sales-order-demand'." }
+    if ($TrackIdentifier -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'FullChain canonical track identifier must be canonical.' }
+    if (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf) { Remove-Item -LiteralPath $canonicalResultFullPath -Force }
+}
 
 $workflowJobs = Get-NervCiWorkflowBudgets -Path $WorkflowPath
 $fullChainWorkflowJobs = @($workflowJobs | Where-Object {
@@ -251,7 +277,24 @@ foreach ($member in $selectedMembers) {
                 Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds $fullstackEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
             }
             elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) {
-                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+                $scriptArguments = @()
+                if ($canonicalResultEnabled -and [string]::Equals([string]$member.id, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
+                    $scriptArguments = @(
+                        '-CanonicalResultPath', $canonicalResultFullPath,
+                        '-TrackIdentifier', $TrackIdentifier,
+                        '-Repository', $Repository,
+                        '-RunId', $RunId,
+                        '-RunAttempt', [string]$RunAttempt,
+                        '-TestedSha', $TestedSha,
+                        '-ManifestDigest', $ManifestDigest,
+                        '-ScenarioId', $ScenarioId
+                    )
+                }
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -Arguments $scriptArguments -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+                if ($canonicalResultEnabled -and [string]::Equals([string]$member.id, 'sales-order-demand-planning', [StringComparison]::Ordinal) -and
+                    -not (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf)) {
+                    throw 'FullChain sales-order-demand member did not produce its canonical result.'
+                }
             }
             elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) {
                 Invoke-DotNetOutput -Name "full-chain-$($member.id)-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds $dotnetEntrypointTimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--no-build', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null

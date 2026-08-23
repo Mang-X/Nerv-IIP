@@ -10,6 +10,7 @@
 #     - artifacts/acceptance/man517/sales-order-demand-planning-evidence.json
 #     - artifacts/acceptance/man517/cleanup-evidence.json
 #     - artifacts/acceptance/man517/diagnostics/** on failure
+#     - A caller-selected canonical acceptance result path when requested
 #   Cleanup:
 #     - Stops every managed service process in finally
 #     - Drops the disposable PostgreSQL database in finally
@@ -24,6 +25,14 @@
 param(
     [string]$PostgresAdminConnectionString = $env:NERV_IIP_TEST_POSTGRES,
     [string]$RedisConnectionString = $env:NERV_IIP_TEST_REDIS,
+    [string]$CanonicalResultPath,
+    [string]$TrackIdentifier,
+    [string]$Repository,
+    [string]$RunId,
+    [int]$RunAttempt,
+    [string]$TestedSha,
+    [string]$ManifestDigest,
+    [string]$ScenarioId,
     [switch]$SkipBuild
 )
 
@@ -33,6 +42,21 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1')
+
+$canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
+$canonicalResultFullPath = $null
+if ($canonicalResultEnabled) {
+    $canonicalResultFullPath = Resolve-NervAcceptanceCanonicalOutputPath -Path $CanonicalResultPath -RepositoryRoot $root.Path -Context 'MAN-517 canonical result path'
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository $Repository)) { throw 'MAN-517 canonical repository must be a canonical owner/name identifier.' }
+    if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'MAN-517 canonical runId must be a positive decimal identifier.' }
+    if ($RunAttempt -le 0) { throw 'MAN-517 canonical runAttempt must be positive.' }
+    if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'MAN-517 canonical testedSha must be a lowercase 40-character Git SHA.' }
+    if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'MAN-517 canonical manifestDigest must be a lowercase SHA-256 digest.' }
+    if (-not [string]::Equals($ScenarioId, 'sales-order-demand', [StringComparison]::Ordinal)) { throw "MAN-517 canonical scenarioId must be 'sales-order-demand'." }
+    if ($TrackIdentifier -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'MAN-517 canonical track identifier must be canonical.' }
+    if (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf) { Remove-Item -LiteralPath $canonicalResultFullPath -Force }
+}
 
 if ([string]::IsNullOrWhiteSpace($PostgresAdminConnectionString) -or [string]::IsNullOrWhiteSpace($RedisConnectionString)) {
     throw 'Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS; credentials are never embedded in this verification script.'
@@ -623,19 +647,31 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
 }
 $capVersion = "man517-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $internalToken = "man517-$([Guid]::NewGuid().ToString('N'))"
-$masterDataUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
-$erpUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
-$demandPlanningUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
+$masterDataPort = Get-FreeTcpPort
+$erpPort = Get-FreeTcpPort
+$demandPlanningPort = Get-FreeTcpPort
+$masterDataUrl = "http://127.0.0.1:$masterDataPort"
+$erpUrl = "http://127.0.0.1:$erpPort"
+$demandPlanningUrl = "http://127.0.0.1:$demandPlanningPort"
 $masterDataProcess = $null
 $erpProcess = $null
 $demandPlanningProcess = $null
 $databaseCreated = $false
 $acceptanceFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
+$cleanupErrorCodes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 # 清理证据按「这次运行拥有的东西」逐项记账：托管进程按 pid+启动时间确认身份，
 # 数据库按精确名字，容器只算本脚本启动的那几个。
 $ownedProcesses = [System.Collections.Generic.List[object]]::new()
 $fullChainProbeCounters = $null
+$probeResultsPath = $null
+$acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
+$sourceStateCommittedBeforeMutation = $false
+$changeV2Converged = $false
+$changeV3Converged = $false
+$duplicateConverged = $false
+$outOfOrderConverged = $false
+$cancellationConverged = $false
 
 $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj'
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
@@ -703,15 +739,18 @@ try {
     }
     $erpSalesOrder = Wait-ErpSalesOrderReady -ErpUrl $erpUrl -Headers $headers
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
+    $sourceStateCommittedBeforeMutation = $true
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Stage 'erp-change-line-v2' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
     } | Out-Null
     $changedV2 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 2 -Quantity 4 -Status 'active'
+    $changeV2Converged = $true
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Stage 'erp-change-line-v3' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 5; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v3'
     } | Out-Null
     $changedV3 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active'
+    $changeV3Converged = $true
 
     Invoke-WithScopedEnvironment -Variables @{
         NERV_IIP_TEST_POSTGRES = $databaseConnectionString
@@ -723,12 +762,14 @@ try {
         [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "probe-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
+        $script:probeResultsPath = [IO.Path]::GetFullPath($probeResults)
         Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_injects_duplicate_and_out_of_order_sales_order_events', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-out-of-order-probe' | Out-Null
         if (-not (Test-Path -LiteralPath $probeResults)) {
             throw 'MAN-517 fault-injection probe produced no TRX result; the selected test may be absent from a stale build.'
         }
         [xml]$probeTrx = Get-Content -LiteralPath $probeResults -Raw
-        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.External_process_injects_duplicate_and_out_of_order_sales_order_events', [StringComparison]::Ordinal) })
+        $frozenTestIdentity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events'
+        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { [string]::Equals([string]$_.GetAttribute('testName'), $frozenTestIdentity, [StringComparison]::Ordinal) })
         if ($probeExecutions.Count -ne 1 -or (-not [string]::Equals([string]($probeExecutions[0].GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase))) {
             throw 'MAN-517 fault-injection probe did not execute exactly once and pass.'
         }
@@ -758,12 +799,15 @@ try {
     }
     $outOfOrder = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active' # out-of-order v2 and duplicate v3 must not regress
     $duplicateReplay = $outOfOrder # probes above and below exercise duplicate delivery through the real Redis transport
+    $duplicateConverged = $true
+    $outOfOrderConverged = $true
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Stage 'erp-cancel-order' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'
     } | Out-Null
     Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled' | Out-Null
     $cancelled = Assert-DemandStable -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled'
+    $cancellationConverged = $true
 
     $evidencePath = Join-Path $root 'artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
@@ -791,29 +835,30 @@ finally {
     $remainingOwnedServices = @()
     if ($demandPlanningProcess) {
         try { $demandPlanningProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
-        catch { $cleanupFailures.Add("demand-planning process: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("demand-planning process: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('managed-process-cleanup-failed') }
     }
     if ($erpProcess) {
         try { $erpProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
-        catch { $cleanupFailures.Add("erp process: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("erp process: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('managed-process-cleanup-failed') }
     }
     if ($masterDataProcess) {
         try { $masterDataProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
-        catch { $cleanupFailures.Add("master-data process: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("master-data process: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('managed-process-cleanup-failed') }
     }
     # 停止请求返回不等于进程没了；逐个按 pid + 启动时间复核，剩余必须为 0。
     try {
         $remainingProcessNames = @(Get-Man517RemainingProcessNames -Descriptors $ownedProcesses.ToArray())
         if ($remainingProcessNames.Count -gt 0) {
             $cleanupFailures.Add("managed processes still running: $($remainingProcessNames -join ', ')")
+            [void]$cleanupErrorCodes.Add('managed-process-cleanup-failed')
         }
     }
-    catch { $cleanupFailures.Add("process cleanup verification: $($_.Exception.Message)") }
+    catch { $cleanupFailures.Add("process cleanup verification: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('cleanup-verification-failed') }
     if ($databaseCreated) {
         try {
             Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);") -WorkingDirectory $root -Name 'man517-drop-database' | Out-Null
         }
-        catch { $cleanupFailures.Add("database: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("database: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('disposable-database-cleanup-failed') }
         # 只复核这次运行创建的那个随机库名，绝不扫描或触碰同一台 PostgreSQL 上的其他库。
         try {
             $remainingDatabaseResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
@@ -824,15 +869,17 @@ finally {
             $parsedRemainingDatabases = 0
             if (-not [int]::TryParse("$($remainingDatabaseResult.Stdout)".Trim(), [ref]$parsedRemainingDatabases)) {
                 $cleanupFailures.Add('database cleanup verification returned no countable result.')
+                [void]$cleanupErrorCodes.Add('cleanup-verification-failed')
             }
             else {
                 $remainingDatabases = $parsedRemainingDatabases
                 if ($parsedRemainingDatabases -ne 0) {
                     $cleanupFailures.Add("disposable database still present: $databaseName")
+                    [void]$cleanupErrorCodes.Add('disposable-database-cleanup-failed')
                 }
             }
         }
-        catch { $cleanupFailures.Add("database cleanup verification: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("database cleanup verification: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('cleanup-verification-failed') }
     }
     $servicesToStop = @()
     if ($startedPostgres) { $servicesToStop += 'postgres' }
@@ -841,7 +888,7 @@ finally {
         try {
             Invoke-DockerCompose -Arguments (@('-f', $composeFile, 'stop') + $servicesToStop) -WorkingDirectory $root -Name 'man517-infrastructure-stop' | Out-Null
         }
-        catch { $cleanupFailures.Add("infrastructure: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("infrastructure: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('owned-resource-cleanup-failed') }
         # 只对本脚本启动的服务记账；脚本运行前就在跑的基础设施不属于这次运行，也不许被算进来。
         try {
             $stillRunningResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man517-verify-infrastructure-stopped'
@@ -849,9 +896,10 @@ finally {
             $remainingOwnedServices = @($servicesToStop | Where-Object { $stillRunning -contains $_ })
             if ($remainingOwnedServices.Count -gt 0) {
                 $cleanupFailures.Add("script-owned compose services still running: $($remainingOwnedServices -join ', ')")
+                [void]$cleanupErrorCodes.Add('owned-resource-cleanup-failed')
             }
         }
-        catch { $cleanupFailures.Add("infrastructure cleanup verification: $($_.Exception.Message)") }
+        catch { $cleanupFailures.Add("infrastructure cleanup verification: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('cleanup-verification-failed') }
     }
     try {
         $injectedCleanupEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
@@ -878,7 +926,7 @@ finally {
             cleanupFailures = @($cleanupFailures | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $cleanupEvidencePath -Encoding utf8
     }
-    catch { $cleanupFailures.Add("cleanup evidence: $($_.Exception.Message)") }
+    catch { $cleanupFailures.Add("cleanup evidence: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('evidence-write-failed') }
 }
 
 if ($cleanupFailures.Count -gt 0) {
@@ -893,4 +941,87 @@ if ($cleanupFailures.Count -gt 0) {
 
 if ($null -ne $acceptanceFailure) {
     throw $acceptanceFailure
+}
+
+if ($canonicalResultEnabled) {
+    if (-not $sourceStateCommittedBeforeMutation -or
+        -not $changeV2Converged -or
+        -not $changeV3Converged -or
+        -not $duplicateConverged -or
+        -not $outOfOrderConverged -or
+        -not $cancellationConverged) {
+        throw 'MAN-517 canonical success requires every executed business assertion to have converged.'
+    }
+    if ($null -eq $fullChainProbeCounters -or
+        $fullChainProbeCounters.total -ne 1 -or
+        $fullChainProbeCounters.executed -ne 1 -or
+        $fullChainProbeCounters.passed -ne 1 -or
+        $fullChainProbeCounters.failed -ne 0 -or
+        $fullChainProbeCounters.skipped -ne 0) {
+        throw 'MAN-517 canonical success requires exact TRX counts expected=1, discovered=1, passed=1, failed=0, skipped=0.'
+    }
+    if ($remainingProcessNames.Count -ne 0 -or $remainingDatabases -ne 0 -or $remainingOwnedServices.Count -ne 0 -or $cleanupErrorCodes.Count -ne 0) {
+        throw 'MAN-517 canonical success requires zero cleanup remaining counts and empty cleanup error codes.'
+    }
+
+    $canonicalCompletedAtUtc = [DateTimeOffset]::UtcNow
+    $canonicalCleanupErrorCodes = [string[]]@($cleanupErrorCodes)
+    [Array]::Sort($canonicalCleanupErrorCodes, [StringComparer]::Ordinal)
+    $canonicalResult = [pscustomobject][ordered]@{
+        schemaVersion = 1
+        provenance = [pscustomobject][ordered]@{
+            repository = $Repository
+            runId = $RunId
+            runAttempt = $RunAttempt
+            testedSha = $TestedSha
+            manifestDigest = $ManifestDigest
+            scenarioId = $ScenarioId
+        }
+        track = $TrackIdentifier
+        conclusion = 'passed'
+        test = [pscustomobject][ordered]@{
+            identity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events'
+            expected = 1
+            discovered = [int]$fullChainProbeCounters.total
+            passed = [int]$fullChainProbeCounters.passed
+            failed = [int]$fullChainProbeCounters.failed
+            skipped = [int]$fullChainProbeCounters.skipped
+        }
+        businessFacts = [pscustomobject][ordered]@{
+            sourceStateCommittedBeforeMutation = $sourceStateCommittedBeforeMutation
+            changeV2Converged = $changeV2Converged
+            changeV3Converged = $changeV3Converged
+            duplicateConverged = $duplicateConverged
+            outOfOrderConverged = $outOfOrderConverged
+            cancellationConverged = $cancellationConverged
+        }
+        diagnostics = [pscustomobject][ordered]@{
+            schemas = @('demand_planning', 'erp', 'master_data')
+            failureCaptureSupported = $true
+            failureDiagnosticsCaptured = $false
+            secretsRedacted = $true
+        }
+        cleanup = [pscustomobject][ordered]@{
+            managedProcessesRemaining = $remainingProcessNames.Count
+            disposableDatabasesRemaining = $remainingDatabases
+            ownedResourcesRemaining = $remainingOwnedServices.Count
+            errorCodes = @($canonicalCleanupErrorCodes)
+        }
+        volatile = [pscustomobject][ordered]@{
+            databaseName = $databaseName
+            processIds = @($ownedProcesses | ForEach-Object { [int64]$_.ProcessId })
+            capSuffix = $capVersion
+            startedAtUtc = $acceptanceStartedAtUtc.ToString('O')
+            completedAtUtc = $canonicalCompletedAtUtc.ToString('O')
+            cleanupErrors = @($cleanupFailures | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
+            ports = [pscustomobject][ordered]@{ masterData = $masterDataPort; erp = $erpPort; demandPlanning = $demandPlanningPort }
+            paths = [pscustomobject][ordered]@{
+                businessEvidence = [IO.Path]::GetFullPath($evidencePath)
+                probeTrx = [IO.Path]::GetFullPath($probeResultsPath)
+                cleanupEvidence = [IO.Path]::GetFullPath($cleanupEvidencePath)
+                canonicalResult = $canonicalResultFullPath
+            }
+        }
+    }
+    Write-NervAcceptanceCanonicalJson -Value $canonicalResult -Path $canonicalResultFullPath -RepositoryRoot $root.Path -Context 'MAN-517 canonical result' | Out-Null
 }

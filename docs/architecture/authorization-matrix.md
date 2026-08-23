@@ -52,6 +52,19 @@
 | `external-client` | 必须 | 常规必须 | 常规必须 | 常规必须 | 面向平台应用或第三方系统；授权必须有有效期和可撤销授予。 |
 | `internal-service` | 必须 | 按调用需要 | 按调用需要 | 按调用需要 | 仅用于平台服务间调用；调用方身份不替代最终用户或机器主体授权。 |
 
+## 默认 ERP 岗位角色
+
+IAM 在角色缺失时创建下列 ERP 岗位角色，并赋予当前组织的显式 Organization scope。
+跨域读权限是岗位主流程选择伙伴、物料、单位、工厂或来源单据所需的最小读面，不授予关联域的管理权限。
+
+| 角色 ID | 角色名称 | 默认权限 | 默认 scope |
+| --- | --- | --- | --- |
+| `role-erp-procurement` | ERP 采购专员 | `business.erp.procurement.read`、`business.erp.procurement.manage`、`business.masterdata.products.read`、`business.masterdata.resources.read` | Organization |
+| `role-erp-sales` | ERP 销售专员 | `business.erp.sales.read`、`business.erp.sales.manage`、`business.masterdata.products.read`、`business.masterdata.resources.read` | Organization |
+| `role-erp-finance` | ERP 财务专员 | `business.erp.finance.read`、`business.erp.finance.manage`、`business.erp.procurement.read`、`business.erp.sales.read`、`business.masterdata.resources.read` | Organization |
+
+重复执行 seed 不覆盖同 ID 角色的现有名称、权限或 data scope，避免回滚运营人员已调整的授权事实。
+
 ## 已实现服务权限码表
 
 下表来自当前 IAM 初始权限集和 Gateway 已接入的权限强制校验。状态为“已写入初始数据”表示 IAM 初始角色权限会包含该权限码；状态为“Gateway 已强制校验”表示现有控制台 API 已实际声明并转发到 IAM 授权检查。
@@ -212,6 +225,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
 | `business.wms.counts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看盘点工作范围、作业候选和盘点执行列表；不授权创建、派工或完成盘点。 |
 | `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS 适配器任务并处理外部自动化设备回执。 |
+| `business.wms.work-pools.manage` | `user` / `internal-service` | environment + resource | 建立现场作业池并维护其操作员成员资格；作业池成员资格是 WMS 派工的被指派人前置条件，不替代 IAM 精确站点授权（站点仍须落在调用方授权范围内）。 |
 | `business.mes.foundation.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 基础就绪、生产版本、物料、质量、设备、条码和编号阻塞项。 |
 | `business.mes.overview.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 生产驾驶舱和待办摘要。 |
 | `business.mes.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看生产计划候选、计划就绪和转工单前检查。 |

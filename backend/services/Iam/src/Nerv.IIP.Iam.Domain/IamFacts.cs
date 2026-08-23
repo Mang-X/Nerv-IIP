@@ -34,6 +34,46 @@ public sealed record UserSessionFact(
     DateTimeOffset? MfaVerifiedAtUtc);
 public sealed record ConnectorHostCredentialFact(string ConnectorHostId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> CapabilityScope, string SecretHash, DateTimeOffset ValidFromUtc, DateTimeOffset? ValidToUtc);
 
+public sealed record SeedRoleDefinition(
+    string RoleId,
+    string RoleName,
+    IReadOnlyList<string> PermissionCodes);
+
+public static class NervIipSeedRoles
+{
+    public static readonly SeedRoleDefinition[] ErpJobRoles =
+    [
+        new(
+            "role-erp-procurement",
+            "ERP 采购专员",
+            [
+                "business.masterdata.products.read",
+                "business.masterdata.resources.read",
+                "business.erp.procurement.read",
+                "business.erp.procurement.manage",
+            ]),
+        new(
+            "role-erp-sales",
+            "ERP 销售专员",
+            [
+                "business.masterdata.products.read",
+                "business.masterdata.resources.read",
+                "business.erp.sales.read",
+                "business.erp.sales.manage",
+            ]),
+        new(
+            "role-erp-finance",
+            "ERP 财务专员",
+            [
+                "business.masterdata.resources.read",
+                "business.erp.procurement.read",
+                "business.erp.sales.read",
+                "business.erp.finance.read",
+                "business.erp.finance.manage",
+            ]),
+    ];
+}
+
 public static class NervIipSeedPermissions
 {
     public static readonly string[] All =
@@ -140,6 +180,7 @@ public static class NervIipSeedPermissions
         "business.wms.shipments.manage",
         "business.wms.counts.read",
         "business.wms.automation.manage",
+        "business.wms.work-pools.manage",
         "business.iiot.tags.manage",
         "business.iiot.alarm-rules.manage",
         "business.iiot.telemetry.read",

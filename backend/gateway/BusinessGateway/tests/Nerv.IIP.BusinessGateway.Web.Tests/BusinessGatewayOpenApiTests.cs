@@ -196,6 +196,20 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/planning/demands/{demandSourceId}/cancel", "post", "cancelBusinessConsolePlanningDemand");
         AssertOperationId(paths, "/api/business-console/v1/planning/forecasts", "get", "listBusinessConsolePlanningForecasts");
         AssertOperationId(paths, "/api/business-console/v1/planning/forecasts", "post", "createOrUpdateBusinessConsolePlanningForecast");
+        AssertStringBodyPropertyMaxLength(
+            document,
+            paths,
+            "/api/business-console/v1/planning/forecasts",
+            "post",
+            "forecastReference",
+            128);
+        AssertStringBodyPropertyMaxLength(
+            document,
+            paths,
+            "/api/business-console/v1/planning/forecasts",
+            "post",
+            "idempotencyKey",
+            128);
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "post", "runBusinessConsolePlanningMrp");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "get", "listBusinessConsolePlanningMrpRuns");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs/{runId}/pegging", "get", "getBusinessConsolePlanningMrpPegging");
@@ -1007,6 +1021,22 @@ public sealed class BusinessGatewayOpenApiTests
         var schemaName = schemaRef.Split('/')[^1];
         var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
         Assert.Contains(propertyName, schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(maxLength, schema.GetProperty("properties").GetProperty(propertyName).GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertStringBodyPropertyMaxLength(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string method,
+        string propertyName,
+        int maxLength)
+    {
+        var operation = paths.GetProperty(path).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schemaName = schemaRef.Split('/')[^1];
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
         Assert.Equal(maxLength, schema.GetProperty("properties").GetProperty(propertyName).GetProperty("maxLength").GetInt32());
     }
 

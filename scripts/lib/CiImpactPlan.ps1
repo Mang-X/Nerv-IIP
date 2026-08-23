@@ -57,6 +57,9 @@ function Get-NervCiImpactPlan {
             'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
             'scripts/run-acceptance-scenario-matrix.ps1'
             'scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1'
+            'scripts/lib/AcceptanceScenarioMatrixEquivalence.ps1'
+            'scripts/verify-acceptance-scenario-matrix-equivalence.ps1'
+            'scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1'
         ),
         [StringComparer]::Ordinal)
     $knownBusinessServices = @($knownBusinessServiceNames | ForEach-Object { ConvertTo-NervCiImpactServiceId -Name $_ })

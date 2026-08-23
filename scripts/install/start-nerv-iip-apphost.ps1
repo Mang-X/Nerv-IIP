@@ -84,9 +84,8 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
         throw "-MessagingProvider InMemory is only allowed in Development. Use Redis or RabbitMQ outside Development."
     }
 
-    if ([string]::Equals([string]($MessagingProvider), [string]("Redis"), [StringComparison]::OrdinalIgnoreCase) -and
-        [string]::IsNullOrWhiteSpace($RedisPassword)) {
-        throw "-RedisPassword is required when -MessagingProvider Redis is selected outside Development."
+    if ([string]::IsNullOrWhiteSpace($RedisPassword)) {
+        throw "-RedisPassword is required outside Development because the AppHost Redis cache resource is always present."
     }
 
     if ([string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
@@ -245,7 +244,7 @@ if (-not [string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
     $environment["Security__Cors__AllowedOrigins"] = $CorsAllowedOrigins
 }
 
-# 仓储站点/库位：AppHost 只在 Development 回落到演示种子值（SITE-001 + WH-WB-*），非 Development
+# 仓储站点/库位：AppHost 只在 Development 回落到主线产品位置词汇（SITE-001 + loc-*），非 Development
 # 必须由这里显式给出真实值，否则相关键根本不下发，MES 线边收料与 WMS 领料按各自 fail-closed
 # 路径显式失败（#2008）。键名与服务读取的配置节同名。
 if (-not [string]::IsNullOrWhiteSpace($InventorySiteCode)) {

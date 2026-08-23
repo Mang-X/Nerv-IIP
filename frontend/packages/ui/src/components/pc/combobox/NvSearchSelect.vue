@@ -27,6 +27,8 @@ const props = withDefaults(
     loading?: boolean
     id?: string
     ariaLabel?: string
+    ariaInvalid?: boolean
+    ariaDescribedby?: string
     /** 弹层内搜索框的可访问名称；缺省时从字段 ariaLabel 派生（读屏可知搜的是哪个字段）。 */
     searchAriaLabel?: string
     class?: HTMLAttributes['class']
@@ -105,6 +107,8 @@ function onKeydown(e: KeyboardEvent) {
         :id="id"
         type="button"
         :aria-label="ariaLabel"
+        :aria-invalid="ariaInvalid || undefined"
+        :aria-describedby="ariaDescribedby"
         aria-haspopup="listbox"
         :aria-expanded="open"
         :aria-controls="open ? listboxId : undefined"
