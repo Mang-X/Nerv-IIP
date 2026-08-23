@@ -4903,7 +4903,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             cancellationToken);
         return new BusinessConsoleForecastInputItem(
             response.ForecastInputId,
-            request.ForecastReference,
+            response.ForecastReference,
             request.SkuCode,
             request.UomCode,
             request.SiteCode,
@@ -5129,7 +5129,9 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 
     private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
-    private sealed record DownstreamCreateOrUpdateForecastInputResponse(string ForecastInputId);
+    private sealed record DownstreamCreateOrUpdateForecastInputResponse(
+        string ForecastInputId,
+        string ForecastReference);
 
     private sealed record DownstreamMpsBucketItem(
         string MpsId,

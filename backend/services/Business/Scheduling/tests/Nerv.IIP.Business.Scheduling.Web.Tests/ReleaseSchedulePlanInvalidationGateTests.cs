@@ -54,7 +54,7 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ReleaseSchedulePlanCommand("plan-invalid", "org-001", "env-dev"),
             CancellationToken.None));
-        Assert.Contains("invalidated", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("排程输入变化失效", exception.Message, StringComparison.Ordinal);
 
         var persisted = await dbContext.SchedulePlans.SingleAsync(x => x.PlanId == "plan-invalid");
         Assert.Equal(SchedulePlanLifecycleStatus.Generated, persisted.Status);
