@@ -40,6 +40,7 @@ const GOLD_STANDARD_PAGES = [
   // facilities.vue 是「工厂结构」树-详情示范页（左树 + 右详情），不再是黄金标准列表，
   // 不含 DataTable/DataTablePagination 必备块，故从此清单移除。树页自身约束见 facilities.test.ts。
   'master-data/devices.vue',
+  'master-data/tooling.vue',
   'master-data/units.vue',
   // organization.vue 改为「组织与班组」树-详情页（左部门树 + 右详情/班组），不再是黄金标准列表，
   // 不含主 DataTable/DataTablePagination 必备块，故从此清单移除。树页约束见 organization.test.ts。
