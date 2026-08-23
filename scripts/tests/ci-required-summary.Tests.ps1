@@ -1,7 +1,8 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs the CI required-summary verifier against temporary workflow mutations
+#     - Runs the CI required-summary verifier once against the repository workflow
+#     - Runs the dot-sourced production contract against temporary workflow mutations
 #   Writes:
 #     - Temporary workflow fixtures under the operating-system temp directory
 #     - artifacts/script-logs/**
@@ -64,9 +65,27 @@ function Invoke-Mutation {
     $mutated = $Workflow.Replace($Original, $Replacement)
     Assert-Contract (-not [string]::Equals($mutated, $Workflow, [StringComparison]::Ordinal)) "Mutation '$Name' did not match the workflow."
     [IO.File]::WriteAllText($fixturePath, $mutated, [Text.UTF8Encoding]::new($false))
-    $result = Invoke-SummaryVerifier -Name $Name -Path $fixturePath
-    Assert-Contract (-not $result.Passed) "Mutation '$Name' must fail required-summary governance."
-    Assert-Contract ($result.Message.Contains($ExpectedDiagnostic, [StringComparison]::Ordinal)) "Mutation '$Name' returned the wrong diagnostic: $($result.Message)"
+    $findings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $fixturePath -RepositoryRoot $repoRoot)
+    Assert-Contract ($findings.Count -gt 0) "Mutation '$Name' must fail required-summary governance."
+    $matchingDiagnostics = @($findings | Where-Object {
+            [string]::Equals([string]$_, $ExpectedDiagnostic, [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($matchingDiagnostics.Count -eq 1) "Mutation '$Name' returned the wrong diagnostic: $($findings -join '; ')"
+}
+
+function Assert-AcceptedMutation {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $Original,
+        [Parameter(Mandatory)] [string] $Replacement,
+        [Parameter(Mandatory)] [string] $Workflow
+    )
+
+    $mutated = $Workflow.Replace($Original, $Replacement)
+    Assert-Contract (-not [string]::Equals($mutated, $Workflow, [StringComparison]::Ordinal)) "Mutation '$Name' did not match the workflow."
+    [IO.File]::WriteAllText($fixturePath, $mutated, [Text.UTF8Encoding]::new($false))
+    $findings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $fixturePath -RepositoryRoot $repoRoot)
+    Assert-Contract ($findings.Count -eq 0) "Accepted mutation '$Name' returned findings: $($findings -join '; ')"
 }
 
 function Assert-FullChainAggregateContract {
@@ -202,6 +221,8 @@ try {
     Assert-FullChainAggregateContract -Path $workflowPath
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
+    $directBaselineFindings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $workflowPath -RepositoryRoot $repoRoot)
+    Assert-Contract ($directBaselineFindings.Count -eq 0) "The in-process production contract must agree with the production verifier baseline: $($directBaselineFindings -join '; ')"
 
     $crlfLibraryPath = Join-Path $fixtureRoot 'CiRequiredSummary-crlf.ps1'
     $librarySource = [IO.File]::ReadAllText($libraryPath).Replace("`r`n", "`n").Replace("`n", "`r`n")
@@ -212,6 +233,18 @@ try {
 
     $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.'
     $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.'
+    $fullChainAggregateDiagnostic = 'Stable Business FullChain Acceptance must retain the exact planning, v1, shadow, legacy ERP, equivalence, and selected/skipped result contract.'
+    $fullChainEvidenceOwnerDiagnostic = "Only 'business-full-chain-acceptance-v1' may collect or publish formal full-chain MAN-661 evidence."
+
+    Assert-AcceptedMutation -Name 'full-chain-v1-collector-single-quoted-lane' -Workflow $workflow `
+        -Original '-Lane full-chain' -Replacement "-Lane 'full-chain'"
+
+    Assert-AcceptedMutation -Name 'full-chain-v1-collector-double-quoted-lane' -Workflow $workflow `
+        -Original '-Lane full-chain' -Replacement '-Lane "full-chain"'
+
+    Assert-AcceptedMutation -Name 'full-chain-v1-evidence-upload-v5' -Workflow $workflow `
+        -Original "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v4" `
+        -Replacement "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v5"
 
     foreach ($aggregateMutation in @(
             @{
@@ -262,6 +295,104 @@ try {
         try { Assert-FullChainAggregateContract -Path $fixturePath } catch { $aggregateMutationFailure = $_ }
         Assert-Contract ($null -ne $aggregateMutationFailure) "FullChain aggregate mutation '$($aggregateMutation.Name)' must be rejected."
     }
+
+    foreach ($requiredAggregateNeed in @(
+        'acceptance-scenario-matrix-planning',
+        'business-full-chain-acceptance-v1',
+        'acceptance-scenario-matrix-runtime',
+        'erp-sales-order-demand-acceptance',
+        'acceptance-scenario-matrix-equivalence'
+    )) {
+        Invoke-Mutation -Name "full-chain-aggregate-production-drops-$requiredAggregateNeed" -Workflow $workflow `
+            -Original "      - $requiredAggregateNeed$([Environment]::NewLine)" -Replacement '' `
+            -ExpectedDiagnostic $fullChainAggregateDiagnostic
+    }
+
+    foreach ($selectedResultMutation in @(
+        @{ Name = 'planning'; Original = '          test "$planning_result" = "success"'; Replacement = '          test "$planning_result" = "skipped"' },
+        @{ Name = 'v1'; Original = '          test "$v1_result" = "success"'; Replacement = '          test "$v1_result" = "skipped"' },
+        @{ Name = 'shadow'; Original = '              test "$shadow_result" = "success"'; Replacement = '              test "$shadow_result" = "skipped"' },
+        @{ Name = 'legacy-erp'; Original = '              test "$legacy_erp_result" = "success"'; Replacement = '              test "$legacy_erp_result" = "skipped"' },
+        @{ Name = 'equivalence'; Original = '              test "$equivalence_result" = "success"'; Replacement = '              test "$equivalence_result" = "skipped"' }
+    )) {
+        Invoke-Mutation -Name "full-chain-aggregate-production-selected-allows-$($selectedResultMutation.Name)-skip" -Workflow $workflow `
+            -Original $selectedResultMutation.Original -Replacement $selectedResultMutation.Replacement `
+            -ExpectedDiagnostic $fullChainAggregateDiagnostic
+    }
+
+    Invoke-Mutation -Name 'full-chain-shadow-collects-formal-evidence' -Workflow $workflow `
+        -Original "            -TrackIdentifier 'shadow'$([Environment]::NewLine)" `
+        -Replacement "            -TrackIdentifier 'shadow'$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-shadow-collects-formal-evidence-single-quoted-lane' -Workflow $workflow `
+        -Original "            -TrackIdentifier 'shadow'$([Environment]::NewLine)" `
+        -Replacement "            -TrackIdentifier 'shadow'$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane 'full-chain'$([Environment]::NewLine)" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-shadow-collects-formal-evidence-double-quoted-lane' -Workflow $workflow `
+        -Original "            -TrackIdentifier 'shadow'$([Environment]::NewLine)" `
+        -Replacement "            -TrackIdentifier 'shadow'$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane `"full-chain`"$([Environment]::NewLine)" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-shadow-publishes-formal-evidence-artifact' -Workflow $workflow `
+        -Original 'name: acceptance-scenario-matrix-runtime-summary-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -Replacement 'name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-shadow-publishes-contained-formal-evidence-artifact-with-v5' -Workflow $workflow `
+        -Original "        uses: actions/upload-artifact@v4$([Environment]::NewLine)        with:$([Environment]::NewLine)          name: acceptance-scenario-matrix-runtime-summary-`${{ github.run_id }}-`${{ github.run_attempt }}" `
+        -Replacement "        uses: actions/upload-artifact@v5$([Environment]::NewLine)        with:$([Environment]::NewLine)          name: shadow-`${{ github.run_id }}-test-evidence-full-chain-`${{ github.run_attempt }}" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-legacy-erp-collects-formal-evidence' -Workflow $workflow `
+        -Original "            -TrackIdentifier 'legacy-erp' ``$([Environment]::NewLine)" `
+        -Replacement "            -TrackIdentifier 'legacy-erp' ``$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-legacy-erp-publishes-formal-evidence-artifact' -Workflow $workflow `
+        -Original 'name: ${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}' `
+        -Replacement 'name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-equivalence-collects-formal-evidence' -Workflow $workflow `
+        -Original "            -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json$([Environment]::NewLine)" `
+        -Replacement "            -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-equivalence-publishes-formal-evidence-artifact' -Workflow $workflow `
+        -Original 'name: acceptance-scenario-matrix-equivalence-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -Replacement 'name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-stable-aggregate-collects-formal-evidence' -Workflow $workflow `
+        -Original "          planning_result=`"`${{ needs.acceptance-scenario-matrix-planning.result }}`"$([Environment]::NewLine)" `
+        -Replacement "          planning_result=`"`${{ needs.acceptance-scenario-matrix-planning.result }}`"$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    $stableAggregateStepHeader = "    steps:$([Environment]::NewLine)      - name: Require FullChain planning, v1 authority, and selected shadow equivalence"
+    $stableAggregateFormalArtifact = @"
+    steps:
+      - name: Publish forbidden formal evidence
+        timeout-minutes: 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-full-chain-`${{ github.run_id }}-`${{ github.run_attempt }}
+          path: artifacts/forbidden
+      - name: Require FullChain planning, v1 authority, and selected shadow equivalence
+"@.Replace("`r`n", [Environment]::NewLine).TrimEnd()
+    Invoke-Mutation -Name 'full-chain-stable-aggregate-publishes-formal-evidence-artifact' -Workflow $workflow `
+        -Original $stableAggregateStepHeader -Replacement $stableAggregateFormalArtifact `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-v1-drops-formal-evidence-collector' -Workflow $workflow `
+        -Original ('          ./scripts/collect-test-evidence.ps1' + [Environment]::NewLine) -Replacement '' `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
+
+    Invoke-Mutation -Name 'full-chain-v1-drops-formal-evidence-artifact' -Workflow $workflow `
+        -Original 'name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -Replacement 'name: full-chain-normalized-${{ github.run_id }}-${{ github.run_attempt }}' `
+        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     $needLine = '      - impact-plan'
     Invoke-Mutation -Name 'ci-summary-missing-need' -Workflow $workflow `

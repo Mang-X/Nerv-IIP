@@ -359,6 +359,27 @@ public sealed class FastEndpointsArchitectureTests
     }
 
     [Fact]
+    public void Aspire_apphost_closes_production_security_inputs_without_development_fallbacks()
+    {
+        var root = FindRepositoryRoot();
+        var programText = File.ReadAllText(Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost", "Program.cs"));
+
+        Assert.Contains("AddParameter(\"iam-enterprise-identity-mfa-code\", secret: true)", programText);
+        Assert.Contains(
+            ".WithEnvironment(\"Iam__EnterpriseIdentity__Mfa__DevelopmentCode\", iamEnterpriseIdentityMfaCode)",
+            programText);
+        Assert.Contains("Messaging:Provider must be Redis or RabbitMQ outside Development.", programText);
+        Assert.Contains("DeploymentRequiredValue(\"ConnectorHost:ConnectorHostId\"", programText);
+        Assert.Contains("DeploymentRequiredValue(\"ConnectorHost:OrganizationId\"", programText);
+        Assert.Contains("DeploymentRequiredValue(\"ConnectorHost:EnvironmentId\"", programText);
+        Assert.Contains("Security:Cors:AllowedOrigins is required outside Development.", programText);
+        Assert.DoesNotContain(
+            "builder.Configuration[\"ConnectorHost:EnvironmentId\"] ?? \"env-dev\"",
+            programText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Aspire_apphost_product_engineering_uses_master_data_service_discovery()
     {
         var root = FindRepositoryRoot();
