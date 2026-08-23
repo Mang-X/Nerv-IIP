@@ -92,6 +92,12 @@ public sealed class MasterDataSeedServiceTests
         Assert.Equal(2, await db.Teams.CountAsync());
         Assert.Equal(6, await db.TeamMembers.CountAsync());
         Assert.Equal(13, await db.PersonnelSkills.CountAsync());
+        Assert.Equal(
+            MasterDataDictionaryRules.StandardReferenceData.Count(x => x.CodeSet == "inventory-location"),
+            await db.ReferenceDataCodes.CountAsync(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.CodeSet == "inventory-location"));
     }
 
     private static ApplicationDbContext CreateDbContext()

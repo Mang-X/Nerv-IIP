@@ -6,7 +6,7 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 /// <summary>
 /// 领料默认库位的部署面契约（#2008）。服务读的配置键与 AppHost 下发的环境变量键过去只靠人眼对齐，
 /// 任一侧改名的唯一表现是「领料消息全部进死信」，没有任何测试转红；这里把两侧的键集合对起来。
-/// 同时钉住环境门控：演示库位只允许在 Development 回落，不得无条件下发到生产安装。
+/// 同时钉住环境门控：主线产品库位只允许在 Development 回落；历史世界观库位若回归也必须被门禁捕获。
 /// </summary>
 public sealed class WmsMaterialIssueDeploymentConfigurationTests
 {
@@ -58,17 +58,23 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
     }
 
     [Fact]
-    public void AppHost_confines_every_product_location_literal_to_the_gated_helpers()
+    public void AppHost_confines_every_location_literal_to_the_gated_helpers()
     {
-        // 围栏而不是形态匹配：只禁 `.WithEnvironment("Key", "loc-…")` 双字面量形态时，把主线产品值
-        // 经 const/局部变量转手就能绕过。这里改为要求**每一个**演示字面量都出现在同一条语句内的
+        // 围栏而不是形态匹配：只禁某一个位置码前缀的双字面量形态时，把受治理位置值经
+        // const/局部变量转手就能绕过。这里要求**每一个**位置字面量都出现在同一条语句内的
         // DeploymentWarehouseLocation(s) 调用里，转手一次就落到调用之外，立刻转红。
         foreach (var literal in DemandLocationLiterals(ReadRepositoryFile(AppHostProgramPath)))
         {
             Assert.True(
                 literal.IsGated,
-                $"演示站点/库位字面量 {literal.Value} 未经 DeploymentWarehouseLocation(s) 门控下发。");
+                $"受治理站点/库位字面量 {literal.Value} 未经 DeploymentWarehouseLocation(s) 门控下发。");
         }
+    }
+
+    [Fact]
+    public void AppHost_does_not_reintroduce_world_bible_location_literals()
+    {
+        Assert.DoesNotMatch(@"""WH-WB-[^""]*""", ReadRepositoryFile(AppHostProgramPath));
     }
 
     [Fact]
@@ -78,7 +84,7 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
         var collapsed = CollapseWhitespace(appHost);
 
         // 门控判据的**值**必须一并钉住：只钉 `LocalDevelopmentEnvironment` 这个名字的话，把常量改成
-        // "Production" 就恰好是本门禁要拦的错误（生产回落演示库位），却一条测试都不会红。
+        // "Production" 就恰好是本门禁要拦的错误（生产回落主线位置），却一条测试都不会红。
         Assert.Contains(
             "const string LocalDevelopmentEnvironment = \"Development\";",
             appHost,
@@ -159,12 +165,12 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
             .ToArray();
 
     /// <summary>
-    /// AppHost 源码里的全部主线产品站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
-    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>loc-*</c> 不带
-    /// 引号，不会被计入。
+    /// AppHost 源码里的全部受治理站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
+    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>WH-WB-*</c>/
+    /// <c>loc-*</c> 不带引号，不会被计入。
     /// </summary>
     internal static IReadOnlyList<(string Value, bool IsGated)> DemandLocationLiterals(string appHost) =>
-        Regex.Matches(appHost, @"""(SITE-|loc-)[^""]*""")
+        Regex.Matches(appHost, @"""(SITE-|WH-WB-|loc-)[^""]*""")
             .Select(match =>
             {
                 var precedingText = appHost[..match.Index];
