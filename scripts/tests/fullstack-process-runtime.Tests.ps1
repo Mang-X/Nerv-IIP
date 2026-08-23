@@ -154,6 +154,23 @@ Assert-OrdinalEqual `
 $script:NervFullStackProcessRuntimeInventoryAction = $null
 $script:NervFullStackProcessRuntimeStopAction = $null
 try {
+    # The private test seam must invoke the supplied script blocks and preserve their arguments/results.
+    $script:seamInventoryCalls = 0
+    $script:seamStopPid = 0
+    $script:NervFullStackProcessRuntimeInventoryAction = {
+        $script:seamInventoryCalls++
+        New-TestInventory -Records @($root)
+    }
+    $script:NervFullStackProcessRuntimeStopAction = {
+        param([int] $ExactPid)
+        $script:seamStopPid = $ExactPid
+    }
+    $seamInventory = Invoke-NervFullStackProcessRuntimeInventory
+    Invoke-NervFullStackProcessRuntimeStop -ProcessId 41997
+    Assert-True ($script:seamInventoryCalls -eq 1) 'The inventory seam must invoke its supplied script block exactly once.'
+    Assert-True ([bool] $seamInventory.complete) 'The inventory seam must preserve the supplied action result.'
+    Assert-True ($script:seamStopPid -eq 41997) 'The stop seam must pass the exact process ID to its supplied script block.'
+
     # Synthetic behavior fixture: exact root/child/grandchild, child-first order, and complete exit readback.
     $script:testRecords = Copy-TestRecords @($root, $child, $grandchild)
     $script:testStopOrder = [Collections.Generic.List[int]]::new()
@@ -249,7 +266,25 @@ try {
         -MaxPasses 2 `
         -Timeout ([timespan]::FromMilliseconds(100))
     Assert-True (-not $incompleteResult.complete) 'Incomplete inventory must be non-green.'
+    Assert-OrdinalEqual $incompleteResult.disposition 'Blocked' 'Incomplete pass inventory must be blocked.'
+    Assert-True (@($incompleteResult.diagnostics).Contains('process:inventory-incomplete')) 'Incomplete pass inventory must retain its pass-level diagnostic.'
     Assert-True ($script:testStopOrder.Count -eq 0) 'Incomplete inventory must cause zero destructive calls.'
+
+    $script:inventoryCallCount = 0
+    $script:NervFullStackProcessRuntimeInventoryAction = {
+        $script:inventoryCallCount++
+        if ($script:inventoryCallCount -eq 1) { return New-TestInventory -Records @($root, $child) }
+        return New-TestInventory -Records @($root, $child) -Complete $false -Diagnostics @('fixture-revalidation-incomplete')
+    }
+    $revalidationIncompleteResult = Stop-NervFullStackOwnedProcessTree `
+        -RootIdentity $root `
+        -ExcludedIdentities @() `
+        -MaxPasses 2 `
+        -Timeout ([timespan]::FromMilliseconds(100))
+    Assert-True (-not $revalidationIncompleteResult.complete) 'Incomplete revalidation inventory must be non-green.'
+    Assert-OrdinalEqual $revalidationIncompleteResult.disposition 'Blocked' 'Incomplete revalidation inventory must be blocked.'
+    Assert-True (@($revalidationIncompleteResult.diagnostics).Contains('process:revalidation-inventory-incomplete')) 'Incomplete revalidation must retain its phase diagnostic.'
+    Assert-True ($script:testStopOrder.Count -eq 0) 'Incomplete revalidation inventory must cause zero destructive calls.'
 
     $script:NervFullStackProcessRuntimeInventoryAction = { New-TestInventory -Records @((New-TestProcessRecord -ProcessId 41001 -ParentPid 1 -StartTimeUtc $nextTime)) }
     $mismatchResult = Stop-NervFullStackOwnedProcessTree `
@@ -301,8 +336,27 @@ $completeDrain = Wait-NervFullStackProcessOutputDrain `
     -Timeout ([timespan]::FromSeconds(1))
 Assert-True $completeDrain.complete 'A completed readable stream must be green.'
 Assert-OrdinalEqual $completeDrain.disposition 'Complete' 'Completed stream disposition must be Complete.'
+Assert-True (-not $completeDrain.partialOutput) 'A completed drain must not report partial output.'
 Assert-True $completeDrain.output[0].text.Contains('<redacted>', [StringComparison]::Ordinal) 'Completed output must be redacted.'
 Assert-True (-not $completeDrain.output[0].text.Contains('plain-secret', [StringComparison]::Ordinal)) 'Completed output must not retain a token value.'
+
+$sensitiveCompletedText = @'
+safe-prefix {"token":"quoted-json-secret","authorization":"Bearer quoted-bearer-secret"}
+-----BEGIN PRIVATE KEY-----
+pem-secret-material
+-----END PRIVATE KEY-----
+https://url-user:url-password@example.test/path safe-suffix
+'@
+$sensitiveCompletedDrain = Wait-NervFullStackProcessOutputDrain `
+    -StreamHandles @([pscustomobject]@{ name = 'stdout'; completion = [Threading.Tasks.Task]::FromResult[string]($sensitiveCompletedText) }) `
+    -Timeout ([timespan]::FromSeconds(1))
+$sensitiveCompletedOutput = [string] $sensitiveCompletedDrain.output[0].text
+Assert-True $sensitiveCompletedDrain.complete 'A completed sensitive stream must remain green after redaction.'
+Assert-True $sensitiveCompletedOutput.Contains('safe-prefix', [StringComparison]::Ordinal) 'Redaction must preserve non-sensitive completed output.'
+Assert-True $sensitiveCompletedOutput.Contains('safe-suffix', [StringComparison]::Ordinal) 'Redaction must preserve trailing non-sensitive completed output.'
+foreach ($secretValue in @('quoted-json-secret', 'quoted-bearer-secret', 'pem-secret-material', 'url-user', 'url-password')) {
+    Assert-True (-not $sensitiveCompletedOutput.Contains($secretValue, [StringComparison]::Ordinal)) "Completed output must redact '$secretValue'."
+}
 
 $pending = [Threading.Tasks.TaskCompletionSource[string]]::new()
 $script:partialDrainText = 'prefix password=hunter2'
@@ -314,6 +368,20 @@ Assert-OrdinalEqual $partialDrain.disposition 'Timeout' 'Pending stream disposit
 Assert-True $partialDrain.partialOutput 'A timeout with buffered text must report partial output.'
 Assert-True $partialDrain.output[0].text.Contains('<redacted>', [StringComparison]::Ordinal) 'Partial output must be retained in redacted form.'
 Assert-True (-not $partialDrain.output[0].text.Contains('hunter2', [StringComparison]::Ordinal)) 'Partial output must not retain a password value.'
+
+$pendingSensitive = [Threading.Tasks.TaskCompletionSource[string]]::new()
+$script:sensitivePartialDrainText = 'partial-safe {"client_secret":"partial-json-secret"} https://partial-user:partial-password@example.test/waiting'
+$sensitivePartialDrain = Wait-NervFullStackProcessOutputDrain `
+    -StreamHandles @([pscustomobject]@{ name = 'stderr'; completion = $pendingSensitive.Task; snapshotAction = { $script:sensitivePartialDrainText } }) `
+    -Timeout ([timespan]::FromMilliseconds(60))
+$sensitivePartialOutput = [string] $sensitivePartialDrain.output[0].text
+Assert-True (-not $sensitivePartialDrain.complete) 'A sensitive drain timeout must remain non-green.'
+Assert-OrdinalEqual $sensitivePartialDrain.disposition 'Timeout' 'A sensitive partial stream must retain timeout disposition.'
+Assert-True $sensitivePartialDrain.partialOutput 'A sensitive timeout must retain redacted partial output.'
+Assert-True $sensitivePartialOutput.Contains('partial-safe', [StringComparison]::Ordinal) 'Redaction must preserve non-sensitive partial output.'
+foreach ($secretValue in @('partial-json-secret', 'partial-user', 'partial-password')) {
+    Assert-True (-not $sensitivePartialOutput.Contains($secretValue, [StringComparison]::Ordinal)) "Partial output must redact '$secretValue'."
+}
 
 $faultedDrain = Wait-NervFullStackProcessOutputDrain `
     -StreamHandles @([pscustomobject]@{ name = 'stdout'; completion = [Threading.Tasks.Task]::FromException[string]([InvalidOperationException]::new('token=unsafe')) }) `

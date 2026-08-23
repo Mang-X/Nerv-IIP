@@ -350,21 +350,21 @@ function Get-NervFullStackProcessIdentityState {
     }
 
     $records = @(Get-NervFullStackProcessRuntimeProperty -InputObject $InventorySnapshot -Name 'records')
-    $matches = @($records | Where-Object {
+    $pidMatches = @($records | Where-Object {
         $recordPid = 0
         [int]::TryParse([string] (Get-NervFullStackProcessRuntimeProperty -InputObject $_ -Name 'pid'), [ref] $recordPid) -and
             $recordPid -eq $pidValue
     })
-    if ($matches.Count -eq 0) { return 'Absent' }
-    if ($matches.Count -ne 1) { return 'Unknown' }
+    if ($pidMatches.Count -eq 0) { return 'Absent' }
+    if ($pidMatches.Count -ne 1) { return 'Unknown' }
 
     $actualStart = ConvertTo-NervFullStackProcessUtcTime -Value (
-        Get-NervFullStackProcessRuntimeProperty -InputObject $matches[0] -Name 'processStartTimeUtc')
+        Get-NervFullStackProcessRuntimeProperty -InputObject $pidMatches[0] -Name 'processStartTimeUtc')
     $precisionTicks = 0L
     if (
         $null -eq $actualStart -or
         -not [long]::TryParse(
-            [string] (Get-NervFullStackProcessRuntimeProperty -InputObject $matches[0] -Name 'processStartTimePrecisionTicks'),
+            [string] (Get-NervFullStackProcessRuntimeProperty -InputObject $pidMatches[0] -Name 'processStartTimePrecisionTicks'),
             [ref] $precisionTicks) -or
         $precisionTicks -lt 1
     ) {
@@ -378,9 +378,20 @@ function Get-NervFullStackProcessIdentityState {
     return 'Mismatched'
 }
 
+function Invoke-NervFullStackProcessRuntimeAction {
+    param(
+        [Parameter(Mandatory)]
+        [scriptblock] $Action,
+
+        [object[]] $ArgumentList = @()
+    )
+
+    & $Action @ArgumentList
+}
+
 function Invoke-NervFullStackProcessRuntimeInventory {
     if ($null -ne $script:NervFullStackProcessRuntimeInventoryAction) {
-        return $script:NervFullStackProcessRuntimeInventoryAction.Invoke()
+        return Invoke-NervFullStackProcessRuntimeAction -Action $script:NervFullStackProcessRuntimeInventoryAction
     }
     return Get-NervFullStackProcessInventory
 }
@@ -389,7 +400,9 @@ function Invoke-NervFullStackProcessRuntimeStop {
     param([Parameter(Mandatory)] [int] $ProcessId)
 
     if ($null -ne $script:NervFullStackProcessRuntimeStopAction) {
-        $script:NervFullStackProcessRuntimeStopAction.Invoke($ProcessId)
+        $null = Invoke-NervFullStackProcessRuntimeAction `
+            -Action $script:NervFullStackProcessRuntimeStopAction `
+            -ArgumentList @($ProcessId)
         return
     }
     Stop-Process -Id $ProcessId -Force -ErrorAction Stop
@@ -731,7 +744,16 @@ function Stop-NervFullStackOwnedProcessTree {
 function Protect-NervFullStackProcessOutputText {
     param([AllowNull()] [string] $Text)
     if ($null -eq $Text) { return '' }
-    $safe = [regex]::Replace($Text, '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+', '$1<redacted>')
+    $safe = [regex]::Replace(
+        $Text,
+        '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
+        '<redacted-pem>')
+    $safe = [regex]::Replace($safe, '(?i)(https?://)[^/@\s]+@', '$1<redacted>@')
+    $safe = [regex]::Replace(
+        $safe,
+        '(?i)(["''](?:authorization|password|pwd|token|secret|client_secret)["'']\s*:\s*["''])[^"'']*(["''])',
+        '$1<redacted>$2')
+    $safe = [regex]::Replace($safe, '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+', '$1<redacted>')
     $safe = [regex]::Replace($safe, '(?i)((?:password|pwd|token|secret|client_secret)\s*[:=]\s*)[^;\s''"]+', '$1<redacted>')
     $safe = [regex]::Replace($safe, '(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;\s]+', '$1<redacted>')
     return $safe
@@ -742,7 +764,7 @@ function Get-NervFullStackStreamSnapshot {
 
     $snapshotAction = Get-NervFullStackProcessRuntimeProperty -InputObject $Handle -Name 'snapshotAction'
     if ($snapshotAction -is [scriptblock]) {
-        return [string] $snapshotAction.Invoke()
+        return [string] (Invoke-NervFullStackProcessRuntimeAction -Action $snapshotAction)
     }
 
     $snapshotMethod = $Handle.PSObject.Methods['Snapshot']
