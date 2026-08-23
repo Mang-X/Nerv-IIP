@@ -55,8 +55,12 @@ public sealed class WarehouseWorkPoolProvisioningTests
         Assert.Equal("user-emp-049", authorization.OperatorPrincipalId);
     }
 
+    /// <summary>
+    /// 证明范围：**同一执行流内重放**的应用层编排幂等（check-then-insert）。
+    /// 并发双写的去重不由本用例背书——那要靠库侧唯一约束，尚未建立（见 PR 讨论）。
+    /// </summary>
     [Fact]
-    public async Task Repeated_provisioning_is_idempotent_and_never_duplicates_rows()
+    public async Task Repeated_provisioning_is_idempotent_on_replay_and_never_duplicates_rows()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -159,6 +163,34 @@ public sealed class WarehouseWorkPoolProvisioningTests
         Assert.Equal("inactive-or-unknown-work-pool", unknownPool.Reason);
         Assert.Equal("membership-window-not-forward", backwardWindow.ReasonCode);
         Assert.Equal("site-outside-exact-grant", crossSiteMember.Reason);
+        Assert.Empty(dbContext.WarehouseWorkPoolMemberships);
+    }
+
+    /// <summary>
+    /// 停用是作业池的真实状态（聚合有 <c>Deactivate</c>）。成员写面查询带 <c>Active</c> 谓词，
+    /// 但此前没有用例锁住它——去掉该谓词时全套仍绿（M5 变异逃逸）。这条把停用池的 fail-closed 钉死：
+    /// 往停用池里加成员必须被拒，否则会绕过「池停用即失去作业资格」的边界。
+    /// </summary>
+    [Fact]
+    public async Task Deactivated_pool_rejects_new_members_instead_of_failing_open()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new AddWarehouseWorkPoolMemberCommandHandler(
+            dbContext,
+            new StaticTimeProvider(Now));
+
+        await new ProvisionWarehouseWorkPoolCommandHandler(dbContext)
+            .Handle(ProvisionCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.WarehouseWorkPools.Single().Deactivate(Now);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var failure = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            handler.Handle(MemberCommand(), CancellationToken.None));
+
+        Assert.Equal("inactive-or-unknown-work-pool", failure.Reason);
         Assert.Empty(dbContext.WarehouseWorkPoolMemberships);
     }
 

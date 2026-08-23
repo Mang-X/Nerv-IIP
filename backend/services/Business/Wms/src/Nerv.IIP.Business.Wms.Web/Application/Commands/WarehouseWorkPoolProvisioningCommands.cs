@@ -155,8 +155,8 @@ public sealed class AddWarehouseWorkPoolMemberCommandHandler(
         if (effectiveToUtc is not null && effectiveToUtc <= effectiveFromUtc)
         {
             throw new WmsUnprocessableException(
-                "membership-window-not-forward",
-                "membership-window-not-forward");
+                WmsUnprocessableReasonCodes.WorkPoolMembershipWindowNotForward,
+                WmsUnprocessableReasonCodes.WorkPoolMembershipWindowNotForward);
         }
 
         var existing = await dbContext.WarehouseWorkPoolMemberships
