@@ -248,7 +248,7 @@ Organization 边界，不代表 Team、WorkCenter、Workshop 等五级范围已�
 | 维修人员          | `EMP-043`–`EMP-046` 是维修技师，`EMP-047` 是点检员；均有 `equipment-maintenance` 技能。                     | 没有已知口令、可登录 membership、维修角色、准确 permissionCodes、Self/Team/WorkCenter/Workshop 范围或维修派工事实。由 #1158、#1164、#1168、#1178 补齐并验收。                              |
 | 班组长            | `EMP-004`–`EMP-009` 分别是六个 World Bible Team 的 `isLeader=true` 成员。                                   | 没有已知口令、可登录 membership、班组长角色/权限或 Team scope；`isLeader` 不能代替授权。由 #1158、#1164、#1179 补齐。                                                                      |
 | 车间主任/车间组长 | `EMP-001`–`EMP-003` 的 Worker `JobTitle=车间主任`；World Bible 规格曾在构造阶段为其分配三个 workshop code。 | 持久 Worker 不保存 workshop，World Bible Workshop `managerUserId=null`，也无登录 membership、角色/权限或 Workshop scope；运行时不能证实三人分别管理哪个车间。由 #1158、#1164、#1179 补齐。 |
-| PC 管理角色       | seed 可创建 `admin` / `role-platform-admin`，拥有权限 catalog 全集及显式 Organization scope。               | 这是平台超级管理员且无 Worker 映射，不代表计划员、质量主管、设备主管、仓储主管、班组长或车间主任的最小权限 PC 身份；缺各业务角色和默认工作台。由 #1158、#1173、#1182 补齐。                |
+| PC 管理角色       | seed 可创建 `admin` / `role-platform-admin`，以及采购、销售、财务三类最小闭环 ERP 岗位角色；这些角色均有显式 Organization scope。 | ERP 岗位角色尚未绑定可登录的默认身份或默认工作台；平台超级管理员仍无 Worker 映射，也不代表计划员、质量主管、设备主管、仓储主管、班组长或车间主任的最小权限 PC 身份。由 #1158、#1173、#1182 继续补齐。 |
 
 人员号段和岗位分布证据：
 [WorldBibleWorkerSpec.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/WorldBibleWorkerSpec.cs)、

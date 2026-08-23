@@ -129,6 +129,7 @@ try {
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/test-evidence.Tests.ps1") -Name "compat-test-evidence-contracts" -TimeoutSeconds 300
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix.Tests.ps1") -Name "compat-acceptance-scenario-matrix-contracts" -TimeoutSeconds 300
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1") -Name "compat-acceptance-scenario-matrix-runtime-contracts" -TimeoutSeconds 300
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1") -Name "compat-acceptance-scenario-matrix-equivalence-contracts" -TimeoutSeconds 300
   Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
 
   if (-not $FastOnly) {

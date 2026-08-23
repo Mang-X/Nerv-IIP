@@ -3638,7 +3638,6 @@ public sealed class BusinessGatewayProxyTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            forecastReference = "FC-2026-06-SKU-FG-1000",
             skuCode = "SKU-FG-1000",
             uomCode = "pcs",
             siteCode = "SITE-01",
@@ -3647,14 +3646,20 @@ public sealed class BusinessGatewayProxyTests
             quantity = 10m,
             backwardConsumptionDays = 7,
             forwardConsumptionDays = 3,
+            idempotencyKey = "forecast-create-001",
         });
 
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.Equal(HttpStatusCode.OK, create.StatusCode);
         Assert.Equal("internal-test-token", planning.LastInternalToken);
         Assert.Equal(new BusinessConsoleForecastInputListRequest("org-001", "env-dev", "SKU-FG-1000", "SITE-01"), planning.LastForecastListRequest);
-        Assert.Equal("FC-2026-06-SKU-FG-1000", planning.LastCreateForecastRequest!.ForecastReference);
+        Assert.Null(planning.LastCreateForecastRequest!.ForecastReference);
+        Assert.Equal("forecast-create-001", planning.LastCreateForecastRequest.IdempotencyKey);
         Assert.Equal(7, planning.LastCreateForecastRequest.BackwardConsumptionDays);
+        using var createDocument = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "FC-20260822-000001",
+            createDocument.RootElement.GetProperty("data").GetProperty("forecastReference").GetString());
     }
 
     [Fact]
@@ -12648,7 +12653,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         LastCreateForecastRequest = request;
         return Task.FromResult(new BusinessConsoleForecastInputItem(
             "forecast-created",
-            request.ForecastReference,
+            request.ForecastReference ?? "FC-20260822-000001",
             request.SkuCode,
             request.UomCode,
             request.SiteCode,

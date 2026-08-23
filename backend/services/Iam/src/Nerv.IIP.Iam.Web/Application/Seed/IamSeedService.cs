@@ -61,6 +61,21 @@ public sealed class IamSeedService(
             dbContext.Environments.Add(new IamEnvironment(environmentId, organizationId, seed.EnvironmentName, "active"));
         }
 
+        foreach (var seedRole in NervIipSeedRoles.ErpJobRoles)
+        {
+            var roleId = new RoleId(seedRole.RoleId);
+            if (await dbContext.Roles.FindAsync([roleId], cancellationToken) is not null)
+            {
+                continue;
+            }
+
+            var erpRole = new Role(roleId, seedRole.RoleName, seedRole.PermissionCodes);
+            erpRole.ReplaceDataScopes([
+                new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId),
+            ]);
+            dbContext.Roles.Add(erpRole);
+        }
+
         var role = await dbContext.Roles
             .Include(x => x.Permissions)
             .Include(x => x.DataScopes)
