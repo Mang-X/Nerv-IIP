@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check, generate
 #   SideEffects:
-#     - Reads one governed planning artifact and exactly three canonical acceptance result files
+#     - Reads one governed planning artifact and exactly two canonical acceptance result files
 #   Writes:
 #     - A caller-declared machine-readable equivalence report through atomic file replacement
 #   Cleanup:
@@ -28,8 +28,6 @@ param(
     [int] $V1RunAttempt = $RunAttempt,
     [Parameter(Mandatory)] [string] $ShadowResultPath,
     [int] $ShadowRunAttempt = $RunAttempt,
-    [Parameter(Mandatory)] [string] $LegacyErpResultPath,
-    [int] $LegacyErpRunAttempt = $RunAttempt,
     [string] $ReportPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/equivalence-report.json')
 )
 
@@ -55,6 +53,4 @@ Invoke-NervAcceptanceScenarioMatrixEquivalence `
     -V1RunAttempt $V1RunAttempt `
     -ShadowResultPath $ShadowResultPath `
     -ShadowRunAttempt $ShadowRunAttempt `
-    -LegacyErpResultPath $LegacyErpResultPath `
-    -LegacyErpRunAttempt $LegacyErpRunAttempt `
     -ReportPath $ReportPath
