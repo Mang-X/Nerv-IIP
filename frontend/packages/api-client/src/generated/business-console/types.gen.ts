@@ -1834,6 +1834,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     deviceAssetId?: string | null;
     documentType?: string | null;
     characteristics: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicInput>;
+    timeIntervalHours?: number | null;
+    quantityInterval?: number | null;
+    assignedInspectorUserId?: string | null;
+    assignedTeamId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicInput = {
@@ -1892,6 +1896,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     attemptNumber?: number | null;
     reinspectionOfInspectionRecordId?: string | null;
     closeReason?: string | null;
+    timeIntervalHours?: number | null;
+    quantityInterval?: number | null;
+    assignedInspectorUserId?: string | null;
+    assignedTeamId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanListRequest = {

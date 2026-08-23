@@ -1468,7 +1468,11 @@ public sealed record BusinessConsoleQualityItem(
     int? AttemptNumber = null,
     string? ReinspectionOfInspectionRecordId = null,
     // NCR 关单审计事实：closed 行必有关闭原因（界面必填字段），非 NCR 行恒为 null。
-    string? CloseReason = null);
+    string? CloseReason = null,
+    decimal? TimeIntervalHours = null,
+    decimal? QuantityInterval = null,
+    string? AssignedInspectorUserId = null,
+    string? AssignedTeamId = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
@@ -1484,7 +1488,11 @@ public sealed record BusinessConsoleCreateInspectionPlanRequest(
     string? WorkCenterId,
     string? DeviceAssetId,
     string? DocumentType,
-    IReadOnlyCollection<BusinessConsoleInspectionPlanCharacteristicInput> Characteristics);
+    IReadOnlyCollection<BusinessConsoleInspectionPlanCharacteristicInput> Characteristics,
+    decimal? TimeIntervalHours = null,
+    decimal? QuantityInterval = null,
+    string? AssignedInspectorUserId = null,
+    string? AssignedTeamId = null);
 
 public sealed record BusinessConsoleInspectionPlanCharacteristicInput(
     string CharacteristicCode,
