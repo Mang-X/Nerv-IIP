@@ -78,8 +78,9 @@ describe('LoginForm', () => {
     for (const wrapper of [zhWrapper, enWrapper]) {
       const forbidden = /admin|管理员|seeded/i
       const renderedRoot = wrapper.element as HTMLElement
-      const renderedAttributeValues = Array.from(renderedRoot.querySelectorAll('*')).flatMap(
-        (element) => Array.from(element.attributes, (attribute) => attribute.value),
+      const renderedElements = [renderedRoot, ...renderedRoot.querySelectorAll('*')]
+      const renderedAttributeValues = renderedElements.flatMap((element) =>
+        Array.from(element.attributes, (attribute) => attribute.value),
       )
 
       expect(wrapper.text()).not.toMatch(forbidden)
