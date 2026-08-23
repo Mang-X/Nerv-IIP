@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
@@ -127,13 +128,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await RecordReceiptAsync(
-            dbContext,
-            "PO-AP-DAMAGED",
-            "RCV-AP-DAMAGED",
-            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-001", "kg", 5m, 12.5m, new DateOnly(2026, 7, 1))],
-            [new PurchaseReceiptCommandLine("LINE-001", 2m, "damaged")]);
-        var integrationEvent = await BuildReceiptRecordedEventAsync(dbContext, "RCV-AP-DAMAGED");
+        var integrationEvent = await SeedLegacyUnsupportedQualityReceiptAsync(dbContext);
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateHandler(scope, dbContext, deadLetters);
 
@@ -160,6 +155,55 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
             .SingleAsync(x => x.PurchaseReceiptNo == purchaseReceiptNo, CancellationToken.None);
         return new PurchaseReceiptRecordedIntegrationEventConverter()
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
+    }
+
+    private static async Task<PurchaseReceiptRecordedIntegrationEvent> SeedLegacyUnsupportedQualityReceiptAsync(
+        Infrastructure.ApplicationDbContext dbContext)
+    {
+        await RecordReceiptAsync(
+            dbContext,
+            "PO-AP-DAMAGED",
+            "RCV-AP-DAMAGED",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-001", "kg", 5m, 12.5m, new DateOnly(2026, 7, 1))],
+            [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted")]);
+
+        var receipt = await dbContext.PurchaseReceipts
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.PurchaseReceiptNo == "RCV-AP-DAMAGED", CancellationToken.None);
+        var line = Assert.Single(receipt.Lines);
+
+        // 模拟领域值域收紧前已落库的非法历史事实；当前聚合不应被测试夹具重新绕过。
+        dbContext.Entry(receipt).Property(x => x.QualityStatus).CurrentValue = "damaged";
+        dbContext.Entry(line).Property(x => x.QualityStatus).CurrentValue = "damaged";
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        return new PurchaseReceiptRecordedIntegrationEvent(
+            "evt-legacy-unsupported-quality",
+            ErpIntegrationEventTypes.PurchaseReceiptRecorded,
+            ErpIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-legacy-quality",
+            "cause-legacy-quality",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            "erp:purchase-receipt-recorded:org-001:env-dev:RCV-AP-DAMAGED",
+            new PurchaseReceiptRecordedPayload(
+                receipt.Id.ToString(),
+                "RCV-AP-DAMAGED",
+                "PO-AP-DAMAGED",
+                "SUP-001",
+                "SITE-01",
+                "damaged",
+                [new PurchaseReceiptRecordedLinePayload(
+                    "LINE-001",
+                    "SKU-RM-001",
+                    "kg",
+                    "SITE-01",
+                    null,
+                    2m,
+                    "damaged")]));
     }
 
     private static PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual CreateHandler(
