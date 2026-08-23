@@ -225,6 +225,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
 | `business.wms.counts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看盘点工作范围、作业候选和盘点执行列表；不授权创建、派工或完成盘点。 |
 | `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS 适配器任务并处理外部自动化设备回执。 |
+| `business.wms.work-pools.manage` | `user` / `internal-service` | environment + resource | 建立现场作业池并维护其操作员成员资格；作业池成员资格是 WMS 派工的被指派人前置条件，不替代 IAM 精确站点授权（站点仍须落在调用方授权范围内）。 |
 | `business.mes.foundation.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 基础就绪、生产版本、物料、质量、设备、条码和编号阻塞项。 |
 | `business.mes.overview.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 生产驾驶舱和待办摘要。 |
 | `business.mes.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看生产计划候选、计划就绪和转工单前检查。 |
