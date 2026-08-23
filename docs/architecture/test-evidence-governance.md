@@ -17,6 +17,9 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 | `connector-host` | `Connector Host Tests` | — |
 | `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`、`masterdata-postgres-profile`、`scheduling-postgres-profile`、`apphub-postgres-profile`（`test-owned`）、`barcodelabel-postgres-profile`、`filestorage-postgres-profile`、`industrialtelemetry-postgres-profile`、`quality-postgres-profile`、`mes-postgres-profile`、`wms-postgres-profile`（`test-owned`）、`erp-postgres-profile`、`demandplanning-postgres-profile`（`test-owned`）、`acceptance-postgres-profile`、`maintenance-device-pause-postgres`（拆解②与③全八批） |
 | `redis-cap` | `Redis/CAP Transport Tests` | `demandplanning-sales-order-redis-cap`（拆解④） |
+| `full-chain` | `Business FullChain Acceptance / v1 Authority` | 五个 active/core FullChain 场景 |
+
+`full-chain` 的物理证据 owner 唯一绑定 `business-full-chain-acceptance-v1`：只有它可以调用 `collect-test-evidence.ps1 -Lane full-chain` 并发布 `test-evidence-full-chain-*`。shadow、legacy ERP、equivalence 与稳定 `Business FullChain Acceptance` aggregate 分别发布轨道/比较/汇总产物，不是 MAN-661 formal evidence owner。执行链为 planning → v1/shadow/legacy ERP → equivalence → stable aggregate → `CI Summary`；`CI Summary` 只消费稳定 aggregate，同时在迁移期独立消费 legacy ERP。fixture/local、PR exact-head 与 merge-SHA main 是三种不同证据边界，任何一层通过都不能替代下一层。
 
 `Backend Tests` 仍是稳定的必需聚合作业。它不运行测试、不拥有证据执行通道，只断言分片治理与全部四个分片作业成功。`scripts/verify-backend-test-shards.ps1` 从结构上强制执行该接线：执行通道/作业绑定、仅存原始结果的目录、精确的采集器参数，以及每个分片作业恰好一个脱敏证据产物。若分片作业上传原始目录、声称拥有另一条执行通道、通过 shell 管道包装运行器，或将采集降级为 `success()`，该门禁就会失败。
 
