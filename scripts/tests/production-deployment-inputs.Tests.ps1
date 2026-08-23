@@ -20,6 +20,8 @@ $dependenciesText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose
 $platformText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.platform.yml') -Raw
 $environmentExampleText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.production.env.example') -Raw
 $releaseRehearsalText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-production-release-rehearsal.ps1') -Raw
+$environmentArtifactVerifierText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-aspire-apphost-environment-artifacts.ps1') -Raw
+$ciWorkflowText = Get-Content -LiteralPath (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
 
 function Assert-ContainsOrdinal {
     param(
@@ -46,6 +48,20 @@ function Assert-StartFails {
     }
 }
 
+$requiredProductionPublishInputs = @(
+    "Messaging__Provider = 'Redis'",
+    "Security__Cors__AllowedOrigins = 'https://console.example.test,https://business.example.test'",
+    "ConnectorHost__ConnectorHostId = 'verify-connector-host'",
+    "ConnectorHost__OrganizationId = 'verify-organization'",
+    "ConnectorHost__EnvironmentId = 'verify-environment'"
+)
+$missingProductionPublishInputs = @($requiredProductionPublishInputs | Where-Object {
+        -not $environmentArtifactVerifierText.Contains($_, [StringComparison]::Ordinal)
+    })
+if ($missingProductionPublishInputs.Count -gt 0) {
+    throw "Production AppHost artifact publish must inject minimal compliant inputs. Missing: $($missingProductionPublishInputs -join ', ')"
+}
+
 Assert-StartFails -Arguments @('-EnvironmentName', 'Production', '-MessagingProvider', 'InMemory') `
     -ExpectedMarker '-MessagingProvider InMemory'
 Assert-StartFails -Arguments @('-EnvironmentName', 'Production', '-MessagingProvider', 'Redis') `
@@ -53,6 +69,16 @@ Assert-StartFails -Arguments @('-EnvironmentName', 'Production', '-MessagingProv
 Assert-StartFails -Arguments @(
     '-EnvironmentName', 'Production',
     '-MessagingProvider', 'RabbitMQ',
+    '-IamJwtSigningKeyId', 'kid',
+    '-IamJwtPrivateKeyPem', 'private-key',
+    '-IamJwtJwksJson', '{"keys":[]}',
+    '-IamSecretsPepper', 'pepper',
+    '-IamEnterpriseIdentityMfaCode', '654321'
+) -ExpectedMarker '-RedisPassword is required'
+Assert-StartFails -Arguments @(
+    '-EnvironmentName', 'Production',
+    '-MessagingProvider', 'RabbitMQ',
+    '-RedisPassword', 'redis-password',
     '-IamJwtSigningKeyId', 'kid',
     '-IamJwtPrivateKeyPem', 'private-key',
     '-IamJwtJwksJson', '{"keys":[]}',
@@ -73,7 +99,8 @@ foreach ($contract in @(
     @($environmentExampleText, 'NERV_IIP_REDIS_PASSWORD=change-me-strong-redis-password', 'production env example must declare the Redis password'),
     @($environmentExampleText, 'NERV_IIP_IAM_SECRETS_PEPPER=change-me-strong-iam-secrets-pepper', 'production env example must declare the IAM pepper'),
     @($environmentExampleText, 'NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE=change-me-non-development-mfa-code', 'production env example must declare the MFA override'),
-    @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container')
+    @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container'),
+    @($ciWorkflowText, './scripts/tests/production-deployment-inputs.Tests.ps1', 'Script Governance must run the production deployment input contract tests')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]
 }
