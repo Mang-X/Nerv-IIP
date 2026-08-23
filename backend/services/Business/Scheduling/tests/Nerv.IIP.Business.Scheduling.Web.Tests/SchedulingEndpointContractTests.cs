@@ -514,7 +514,7 @@ public sealed class SchedulingEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId, problem.OrganizationId, problem.EnvironmentId), CancellationToken.None));
 
-        Assert.Contains("cannot be released", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("不能发布", exception.Message, StringComparison.Ordinal);
         Assert.Equal(SchedulePlanLifecycleStatus.Generated, (await dbContext.SchedulePlans.SingleAsync(x => x.PlanId == created.PlanId)).Status);
     }
 
@@ -963,7 +963,7 @@ public sealed class SchedulingEndpointContractTests
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.False(document.RootElement.GetProperty("success").GetBoolean());
-        Assert.Contains("Schedule plan was not found", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Contains("未找到排程方案", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
     }
 
     private static SchedulingProblemContract CreateSingleOperationProblem()

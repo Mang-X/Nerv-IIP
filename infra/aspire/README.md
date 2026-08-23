@@ -254,7 +254,7 @@ aspire otel traces
 
 相同的 MinIO root 用户和密码会作为本地 MinIO access key 和 secret key 传递给 FileStorage。若未来本地 profile 配置独立的 MinIO 服务账户，必须同时更新 AppHost 参数连线和本文档。
 
-FileStorage 元数据不存储在 MinIO 或 Redis 中。AppHost 配置独立的 `file-storage-db` PostgreSQL 资源（`nerv_iip_filestorage`），将其注入为 `ConnectionStrings__FileStorageDb`，选择 `Persistence__Provider=PostgreSQL`，并在启动 FileStorage 前等待该数据库。FileStorage 遵循 AppHost 环境，而不采用旧资源使用的本地开发兼容性覆盖：本地 Development 启用 Web-host 自动迁移，而 Aspire 生产发布会输出 `ASPNETCORE_ENVIRONMENT=Production`、`DOTNET_ENVIRONMENT=Production` 和 `Persistence__AutoMigrate=false`。PoC 和生产操作人员须先通过 `scripts/install/migrate-file-storage.ps1` 应用迁移，并从当前进程或机密管理器提供 `NERV_IIP_FILE_STORAGE_DB`。
+FileStorage 元数据不存储在 MinIO 或 Redis 中。AppHost 配置独立的 `file-storage-db` PostgreSQL 资源（`nerv_iip_filestorage`），将其注入为 `ConnectionStrings__FileStorageDb`，选择 `Persistence__Provider=PostgreSQL`，并在启动 FileStorage 前等待该数据库。所有项目资源都继承 AppHost 环境：本地 Development 启用 Web-host 自动迁移，而 Aspire 生产发布会输出 `ASPNETCORE_ENVIRONMENT=Production`、`DOTNET_ENVIRONMENT=Production` 和 `Persistence__AutoMigrate=false`。PoC 和生产操作人员须先通过 `scripts/install/migrate-file-storage.ps1` 应用迁移，并从当前进程或机密管理器提供 `NERV_IIP_FILE_STORAGE_DB`。
 
 这些值仅供本地开发。不得将真实凭据提交到 `appsettings*.json`、源文件或文档示例中。
 
@@ -330,6 +330,12 @@ AppHost 包含 Aspire Docker Compose 部署目标。必须从 AppHost 生成 Com
 
 ```powershell
 .\nerv.ps1 publish-compose
+```
+
+发布前可运行下列真实产物验证；它会分别生成临时 Development 与 Production Compose 产物并逐资源检查环境、迁移和开发 seed 门控，随后删除该临时目录：
+
+```powershell
+pwsh scripts/verify-aspire-apphost-environment-artifacts.ps1
 ```
 
 默认输出路径为 `artifacts/aspire-output/compose`。要准备环境特定的值并构建镜像，请使用：
