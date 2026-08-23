@@ -38,10 +38,10 @@ const stubs = {
   NvFieldGroup: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
   NvInput: {
-    props: ['id', 'modelValue'],
+    props: ['id', 'invalid', 'modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<div data-slot="nv-input" :data-invalid="invalid || undefined"><input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
   },
   NvEntityPicker: {
     props: ['id', 'modelValue', 'options'],
@@ -126,6 +126,25 @@ describe('首件检验方案配置', () => {
       wrapper.get('#first-article-item-name-0').element.closest('[data-invalid="true"]'),
     ).not.toBeNull()
     expect(state.createAndActivate).not.toHaveBeenCalled()
+  })
+
+  it('点提交后为所有必填输入接通红框状态', async () => {
+    const wrapper = mountSheet()
+    await wrapper.get('#first-article-item-method-0').setValue('')
+    await wrapper.get('#first-article-item-sampling-0').setValue('')
+    await wrapper.get('form').trigger('submit')
+
+    for (const id of [
+      '#first-article-plan-code',
+      '#first-article-item-code-0',
+      '#first-article-item-name-0',
+      '#first-article-item-method-0',
+      '#first-article-item-sampling-0',
+    ]) {
+      expect(
+        wrapper.get(id).element.closest('[data-slot="nv-input"]')?.getAttribute('data-invalid'),
+      ).toBe('true')
+    }
   })
 
   it('取消后重新打开会清空草稿和校验反馈', async () => {

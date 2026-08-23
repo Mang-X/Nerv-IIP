@@ -213,6 +213,7 @@ async function submit() {
             <NvInput
               id="first-article-plan-code"
               v-model="form.planCode"
+              :invalid="submitted && !form.planCode.trim()"
               :aria-invalid="submitted && !form.planCode.trim()"
             />
           </NvField>
@@ -268,6 +269,7 @@ async function submit() {
               <NvInput
                 :id="`first-article-item-code-${index}`"
                 v-model="item.characteristicCode"
+                :invalid="characteristicCodeInvalid(index)"
                 :aria-invalid="characteristicCodeInvalid(index)"
               />
             </NvField>
@@ -276,6 +278,7 @@ async function submit() {
               <NvInput
                 :id="`first-article-item-name-${index}`"
                 v-model="item.name"
+                :invalid="submitted && !item.name.trim()"
                 :aria-invalid="submitted && !item.name.trim()"
               />
             </NvField>
@@ -284,6 +287,7 @@ async function submit() {
               <NvInput
                 :id="`first-article-item-method-${index}`"
                 v-model="item.method"
+                :invalid="submitted && !item.method.trim()"
                 :aria-invalid="submitted && !item.method.trim()"
               />
             </NvField>
@@ -316,6 +320,7 @@ async function submit() {
               <NvInput
                 :id="`first-article-item-sampling-${index}`"
                 v-model="item.samplingRule"
+                :invalid="submitted && !item.samplingRule.trim()"
                 :aria-invalid="submitted && !item.samplingRule.trim()"
               />
               <NvFieldDescription
