@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
@@ -75,7 +74,6 @@ function submit() {
               required
               type="text"
             />
-            <FieldDescription>{{ t('login.loginNameHint') }}</FieldDescription>
           </Field>
 
           <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">

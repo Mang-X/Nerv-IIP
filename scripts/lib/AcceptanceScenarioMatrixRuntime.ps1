@@ -508,17 +508,21 @@ function Get-NervAcceptanceRuntimeArtifactSelection {
         [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
     })
+    $canonicalSelectedIds = [string[]]@($selectedScenarios | ForEach-Object { [string]$_.id })
+    $canonicalActiveCoreIds = [string[]]@($activeCore | ForEach-Object { [string]$_.id })
+    [Array]::Sort($canonicalSelectedIds, [StringComparer]::Ordinal)
+    [Array]::Sort($canonicalActiveCoreIds, [StringComparer]::Ordinal)
     if ([string]::Equals($Event, 'push', [StringComparison]::Ordinal)) {
         if (-not [string]::Equals($selectionMode, 'main-active-core', [StringComparison]::Ordinal) -or
             -not (Test-NervAcceptanceOrdinalSequenceEqual -Left $selectionReasons -Right ([string[]]@('main'))) -or
-            -not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($selectedScenarios | ForEach-Object { [string]$_.id })) -Right ([string[]]@($activeCore | ForEach-Object { [string]$_.id })))) {
+            -not (Test-NervAcceptanceOrdinalSequenceEqual -Left $canonicalSelectedIds -Right $canonicalActiveCoreIds)) {
             throw 'Runtime push planning artifact must preserve the main active/core selection provenance.'
         }
     }
     elseif ([string]::Equals($Event, 'schedule', [StringComparison]::Ordinal)) {
         if (-not [string]::Equals($selectionMode, 'nightly-active', [StringComparison]::Ordinal) -or
             -not (Test-NervAcceptanceOrdinalSequenceEqual -Left $selectionReasons -Right ([string[]]@('nightly'))) -or
-            -not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($selectedScenarios | ForEach-Object { [string]$_.id })) -Right ([string[]]@($activeCore | ForEach-Object { [string]$_.id })))) {
+            -not (Test-NervAcceptanceOrdinalSequenceEqual -Left $canonicalSelectedIds -Right $canonicalActiveCoreIds)) {
             throw 'Runtime scheduled planning artifact must preserve the nightly active selection provenance.'
         }
     }
@@ -532,7 +536,7 @@ function Get-NervAcceptanceRuntimeArtifactSelection {
         elseif ([string]::Equals($selectionMode, 'workflow-dispatch-all-active', [StringComparison]::Ordinal)) {
             $allowedReasons = [Collections.Generic.HashSet[string]]::new([string[]]@('dispatch:lane', 'dispatch:full'), [StringComparer]::Ordinal)
             if ($selectionReasons.Count -ne 1 -or -not $allowedReasons.Contains($selectionReasons[0]) -or
-                -not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($selectedScenarios | ForEach-Object { [string]$_.id })) -Right ([string[]]@($activeCore | ForEach-Object { [string]$_.id })))) {
+                -not (Test-NervAcceptanceOrdinalSequenceEqual -Left $canonicalSelectedIds -Right $canonicalActiveCoreIds)) {
                 throw 'Runtime workflow_dispatch all-active selection provenance is inconsistent.'
             }
         }
@@ -543,7 +547,7 @@ function Get-NervAcceptanceRuntimeArtifactSelection {
             [string[]]@('impact-rules-invalid', 'impact-rules-failed', 'changed-paths-missing-or-invalid'),
             [StringComparer]::Ordinal)
         if ($selectionReasons.Count -ne 1 -or -not $allowedReasons.Contains($selectionReasons[0]) -or
-            -not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($selectedScenarios | ForEach-Object { [string]$_.id })) -Right ([string[]]@($activeCore | ForEach-Object { [string]$_.id })))) {
+            -not (Test-NervAcceptanceOrdinalSequenceEqual -Left $canonicalSelectedIds -Right $canonicalActiveCoreIds)) {
             throw 'Runtime conservative PR selection provenance is inconsistent.'
         }
     }

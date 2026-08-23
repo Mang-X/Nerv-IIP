@@ -47,7 +47,7 @@ public sealed class HttpSchedulingIntegrationEventContextAccessor(IHttpContextAc
                 string.IsNullOrWhiteSpace(trimmed[..separator]) ||
                 string.IsNullOrWhiteSpace(trimmed[(separator + 1)..]))
             {
-                throw new KnownException("A canonical X-Actor is required for forwarded actor requests.");
+                throw new KnownException("转发请求缺少规范的 X-Actor，请补充后重试。");
             }
 
             return trimmed;

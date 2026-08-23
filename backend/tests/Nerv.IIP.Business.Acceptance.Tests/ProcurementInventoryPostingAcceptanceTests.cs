@@ -74,10 +74,7 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
         await using var inventoryDb = CreateInventoryContext();
         var publisher = new RecordingIntegrationEventPublisher();
         var handler = CreateInventoryHandler(inventoryDb, publisher);
-        var movementEvent = CreateErpReceiptMovementEvents(
-                [new PurchaseReceiptLineDraft("LINE-001", 2m, "damaged", "RAW-A-01", "LOT-001")],
-                receiptNo: "RCV-DAMAGED")
-            .Single();
+        var movementEvent = CreateInventoryMovementRequestedEvent("inbound", "damaged", "RCV-DAMAGED");
 
         Assert.Equal("damaged", movementEvent.Payload.QualityStatus);
 
@@ -148,7 +145,10 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
             .ToArray();
     }
 
-    private static InventoryMovementRequestedIntegrationEvent CreateInventoryMovementRequestedEvent(string movementType, string qualityStatus)
+    private static InventoryMovementRequestedIntegrationEvent CreateInventoryMovementRequestedEvent(
+        string movementType,
+        string qualityStatus,
+        string sourceDocumentId = "RCV-INVALID")
     {
         return new InventoryMovementRequestedIntegrationEvent(
             "evt-invalid-input",
@@ -161,11 +161,11 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
             "org-001",
             "env-dev",
             "system:erp",
-            $"erp:invalid:{movementType}:{qualityStatus}",
+            $"erp:invalid:{movementType}:{qualityStatus}:{sourceDocumentId}",
             new InventoryMovementRequestedPayload(
                 movementType,
                 InventoryIntegrationEventSources.BusinessErp,
-                "RCV-INVALID",
+                sourceDocumentId,
                 "LINE-001",
                 $"idem-invalid-{movementType}-{qualityStatus}",
                 "SKU-RM-1000",

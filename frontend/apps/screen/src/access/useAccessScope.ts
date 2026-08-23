@@ -1,13 +1,9 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import {
-  FACTORIES,
-  type LineRef,
-  LINES,
-  type WorkshopRef,
-  workshopsByFactory,
-} from '@/data/mock/masterdata'
-import { DEFAULT_PERSONA_ID, PERSONAS, type ScreenKey } from '@/data/mock/scope'
+import type { LineRef, WorkshopRef } from '@/data/contracts/masterdata'
+import type { ScreenKey } from '@/data/contracts/scope'
+import { FACTORIES, LINES, workshopsByFactory } from '@/data/mock/masterdata'
+import { DEFAULT_PERSONA_ID, PERSONAS } from '@/data/mock/scope'
 
 /**
  * 大屏访问上下文（mock persona，IAM-ready）。
