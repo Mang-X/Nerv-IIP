@@ -89,6 +89,7 @@ var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: 
 var iamJwtPrivateKeyPem = builder.AddParameter("iam-jwt-private-key-pem", secret: true);
 var iamJwtJwksJson = builder.AddParameter("iam-jwt-jwks-json", secret: true);
 var iamSecretsPepper = builder.AddParameter("iam-secrets-pepper", secret: true);
+var iamEnterpriseIdentityMfaCode = builder.AddParameter("iam-enterprise-identity-mfa-code", secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
@@ -101,13 +102,17 @@ var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestio
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
 var useRedisMessaging = string.Equals(messagingProvider, "Redis", StringComparison.OrdinalIgnoreCase);
+if (!localDevelopmentAppHost && !useRabbitMq && !useRedisMessaging)
+{
+    throw new InvalidOperationException("Messaging:Provider must be Redis or RabbitMQ outside Development.");
+}
 var useOtelCollector = builder.Configuration.GetValue("Observability:UseCollector", false);
 var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs:Enabled", true);
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
 var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
-var connectorHostId = builder.Configuration["ConnectorHost:ConnectorHostId"] ?? "connector-host-001";
-var connectorHostOrganizationId = builder.Configuration["ConnectorHost:OrganizationId"] ?? "org-001";
-var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:EnvironmentId"] ?? "env-dev";
+var connectorHostId = DeploymentRequiredValue("ConnectorHost:ConnectorHostId", "connector-host-001");
+var connectorHostOrganizationId = DeploymentRequiredValue("ConnectorHost:OrganizationId", "org-001");
+var connectorHostEnvironmentId = DeploymentRequiredValue("ConnectorHost:EnvironmentId", "env-dev");
 var connectorHealthAcceptanceEnabled = builder.Configuration.GetValue("ConnectorHealthAcceptance:Enabled", false);
 var maintenancePmGenerationEnabled = builder.Configuration.GetValue("Maintenance:PmGeneration:Enabled", false);
 var maintenancePmGenerationOrganizationId = builder.Configuration["Maintenance:PmGeneration:OrganizationId"];
@@ -116,7 +121,9 @@ var maintenancePmGenerationInterval = builder.Configuration["Maintenance:PmGener
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
-    gatewayCorsAllowedOrigins = "http://localhost:5105,http://localhost:5125,http://localhost:5128";
+    gatewayCorsAllowedOrigins = localDevelopmentAppHost
+        ? "http://localhost:5105,http://localhost:5125,http://localhost:5128"
+        : throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
 }
 
 // 主线产品站点/库位（SITE-001 + loc-*）是本地主线种子事实，只在 Development 成立。
@@ -231,6 +238,7 @@ var iam = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Project
     .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
     .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
+    .WithEnvironment("Iam__EnterpriseIdentity__Mfa__DevelopmentCode", iamEnterpriseIdentityMfaCode)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(iamDatabase, "IamDb")
     .WithReference(redis)
@@ -1005,6 +1013,19 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<T> WithFullStackOwnership<T>(
     return fullStackEphemeral
         ? resource.WithContainerRuntimeArgs("--label", $"com.nerv-iip.session={fullStackSessionId}")
         : resource;
+}
+
+string DeploymentRequiredValue(string configurationKey, string developmentFallback)
+{
+    var configured = builder.Configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return configured.Trim();
+    }
+
+    return localDevelopmentAppHost
+        ? developmentFallback
+        : throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 // 单值仓储位置：显式配置优先；未配置时只有 Development 回落到演示种子值，其他环境返回 null

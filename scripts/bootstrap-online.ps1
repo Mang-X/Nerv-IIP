@@ -368,6 +368,7 @@ function Initialize-LocalAppHostSecrets {
         'Parameters:internal-service-bearer-token' = New-SecretValue -Bytes 48
         'Parameters:postgres-password' = New-SecretValue -Bytes 24
         'Parameters:redis-password' = New-SecretValue -Bytes 24
+        'Parameters:iam-enterprise-identity-mfa-code' = '654321'
         'Parameters:minio-root-user' = 'nerv-local-minio'
         'Parameters:minio-root-password' = New-SecretValue -Bytes 24
         'Parameters:iam-seed-admin-password' = $adminPassword
