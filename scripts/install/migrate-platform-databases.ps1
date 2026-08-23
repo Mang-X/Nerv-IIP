@@ -75,7 +75,7 @@ foreach ($entry in $manifest) {
     }
 
     $contextName = [string]$entry.context
-    $contextSeparator = $contextName.LastIndexOf('.')
+    $contextSeparator = $contextName.LastIndexOf([string]'.', [StringComparison]::Ordinal)
     if ($contextSeparator -le 0 -or $contextSeparator -eq ($contextName.Length - 1)) {
         throw "Release database migration manifest context is invalid for service '$($entry.service)'."
     }
