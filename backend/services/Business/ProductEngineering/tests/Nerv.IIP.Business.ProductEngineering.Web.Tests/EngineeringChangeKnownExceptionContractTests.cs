@@ -4,6 +4,7 @@ using MediatR;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
@@ -61,7 +62,8 @@ public sealed class EngineeringChangeKnownExceptionContractTests
             new ManufacturingBomRepository(dbContext),
             new RoutingRepository(dbContext),
             new ProductionVersionRepository(dbContext),
-            new ApprovedVerifier());
+            new ApprovedVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ReleaseEngineeringChangeCommand(
@@ -76,6 +78,70 @@ public sealed class EngineeringChangeKnownExceptionContractTests
 
         Assert.Equal("工程 BOM 归档失败，请检查版本状态和替代版本。", exception.Message);
         Assert.DoesNotContain("Only released", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Public_release_active_production_successor_message_is_actionable_and_within_display_limit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-OLD",
+            "MBOM-OLD:A",
+            "ROUTE-OLD:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        var successor = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-NEW",
+            "MBOM-NEW:A",
+            "ROUTE-NEW:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            20,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.AddRange(oldVersion, successor);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new ApprovedVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-PV-SKU-MISMATCH",
+                "Reject successor SKU mismatch",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
+            CancellationToken.None));
+
+        Assert.Equal("替代生产版本的 SKU 或状态不符合要求，请检查替代版本。", exception.Message);
+        Assert.Contains("SKU", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("状态", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
+        Assert.DoesNotContain(successor.Id.Id.ToString("D"), exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -98,6 +164,8 @@ public sealed class EngineeringChangeKnownExceptionContractTests
 
         Assert.Equal("取消工程变更失败，请确认变更处于已排期状态。", cancelException.Message);
         Assert.Equal("改期工程变更失败，请确认变更处于已排期状态。", rescheduleException.Message);
+        Assert.Equal("Only scheduled engineering changes can be changed by this operation.", cancelException.InnerException?.Message);
+        Assert.Equal("Only scheduled engineering changes can be changed by this operation.", rescheduleException.InnerException?.Message);
     }
 
     [Fact]

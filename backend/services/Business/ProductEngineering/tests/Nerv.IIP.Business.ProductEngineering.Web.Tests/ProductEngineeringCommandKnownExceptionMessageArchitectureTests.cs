@@ -161,6 +161,72 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
             "ProductEngineering command user messages must be static, contain Chinese, and be at most 60 estimated characters. Offenders:"
             + Environment.NewLine
             + string.Join(Environment.NewLine, violations));
+
+        var engineeringChangeTargets = ExpectedSites
+            .Where(site => site.Kind == ProductEngineeringCommandSiteKind.Target
+                && (site.TypeName is "ReleaseEngineeringChangeCommandHandler"
+                    or "CancelScheduledEngineeringChangeCommandHandler"
+                    or "RescheduleEngineeringChangeCommandHandler"
+                    or "HttpEngineeringApprovalVerifier"))
+            .ToArray();
+        Assert.Equal(25, engineeringChangeTargets.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(9, engineeringChangeTargets.Sum(site => site.AsKnownExceptionCallCount));
+
+        var targetMethods = engineeringChangeTargets
+            .Where(site => site.AsKnownExceptionCallCount > 0)
+            .Select(site => (site.TypeName, MethodName: site.MethodName.Split('<')[0]))
+            .ToHashSet();
+        var targetMessages = documents
+            .Where(document => document.Path == ReleaseCommandsPath)
+            .SelectMany(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path)
+                .GetRoot()
+                .DescendantNodes()
+                .OfType<MethodDeclarationSyntax>()
+                .Where(method => method.Ancestors().OfType<TypeDeclarationSyntax>()
+                    .Any(type => targetMethods.Contains((type.Identifier.ValueText, method.Identifier.ValueText))))
+                .SelectMany(method => method.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Where(IsProductEngineeringAsKnownException)
+                    .Select(invocation => (method, invocation))))
+            .ToArray();
+
+        Assert.Equal(9, targetMessages.Length);
+        foreach (var (_, invocation) in targetMessages)
+        {
+            var arguments = invocation.ArgumentList?.Arguments ?? [];
+            Assert.True(arguments.Count >= 2, $"{invocation.GetLocation()} 的 AsKnownException 必须提供固定中文外层文案。");
+            var message = arguments[1].Expression;
+            var (containsChinese, estimatedLength) = EstimateMessage(message);
+            Assert.True(containsChinese, $"{invocation.GetLocation()} 的 AsKnownException 外层文案必须包含中文。");
+            Assert.True(estimatedLength <= 60, $"{invocation.GetLocation()} 的 AsKnownException 外层文案估算长度超过 60 个字符。");
+        }
+    }
+
+    private static bool IsProductEngineeringAsKnownException(InvocationExpressionSyntax invocation) =>
+        invocation.Expression is MemberAccessExpressionSyntax memberAccess
+        && memberAccess.Name.Identifier.ValueText == "AsKnownException"
+        && memberAccess.Expression.ToString().EndsWith("ProductEngineeringReleaseValidation", StringComparison.Ordinal);
+
+    private static (bool ContainsChinese, int EstimatedLength) EstimateMessage(ExpressionSyntax expression)
+    {
+        if (expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
+        {
+            var value = literal.Token.ValueText;
+            return (value.Any(character => character is >= '\u3400' and <= '\u9fff'), value.Length);
+        }
+
+        if (expression is InterpolatedStringExpressionSyntax interpolated)
+        {
+            var fixedText = interpolated.Contents
+                .OfType<InterpolatedStringTextSyntax>()
+                .Select(content => content.TextToken.ValueText)
+                .ToArray();
+            var value = string.Concat(fixedText);
+            return (
+                value.Any(character => character is >= '\u3400' and <= '\u9fff'),
+                value.Length + interpolated.Contents.OfType<InterpolationSyntax>().Count() * 12);
+        }
+
+        return (false, int.MaxValue);
     }
 
     private static ProductEngineeringCommandKnownExceptionSite Target(

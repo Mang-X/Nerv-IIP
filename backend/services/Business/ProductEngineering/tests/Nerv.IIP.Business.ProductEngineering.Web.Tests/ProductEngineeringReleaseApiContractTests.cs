@@ -2141,6 +2141,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("生产版本替代失败，请检查版本状态、生效日期和替代版本窗口。", exception.Message);
+        var domainException = Assert.IsType<ArgumentException>(exception.InnerException);
+        Assert.Equal(
+            "Successor production version effective window must include the supersede effective date. (Parameter 'effectiveDate')",
+            domainException.Message);
         Assert.Equal(ProductionVersionStatus.Active, oldVersion.Status);
         Assert.Null(oldVersion.ValidTo);
         Assert.Equal(new DateOnly(2026, 3, 1), successor.ValidFrom);
@@ -2315,6 +2319,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("工程 BOM 归档失败，请检查版本状态和替代版本。", exception.Message);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
         Assert.Empty(dbContext.EngineeringChanges);
     }
 

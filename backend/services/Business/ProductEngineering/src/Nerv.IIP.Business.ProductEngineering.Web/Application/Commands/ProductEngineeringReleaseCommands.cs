@@ -1024,7 +1024,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         {
             nameof(AffectedVersionCommand.VersionKind) => "受影响版本类型",
             nameof(AffectedVersionCommand.VersionId) => "受影响版本标识",
-            _ => "字段"
+            _ => throw new InvalidOperationException($"不支持的工程变更字段：{fieldName}")
         };
         return string.IsNullOrWhiteSpace(value)
             ? throw new KnownException($"{displayName}不能为空。")
@@ -1116,7 +1116,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     {
         if (bom is not null && successor is not null)
         {
-            EnsurePublishedSuccessor(successor.Status, successor.BomCode == bom.BomCode, successor.BomCode);
+            EnsurePublishedSuccessor("工程 BOM", successor.Status, successor.BomCode == bom.BomCode, successor.BomCode);
         }
 
         return bom is null
@@ -1130,7 +1130,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     {
         if (bom is not null && successor is not null)
         {
-            EnsurePublishedSuccessor(successor.Status, successor.BomCode == bom.BomCode, successor.BomCode);
+            EnsurePublishedSuccessor("制造 BOM", successor.Status, successor.BomCode == bom.BomCode, successor.BomCode);
         }
 
         return bom is null
@@ -1144,7 +1144,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     {
         if (routing is not null && successor is not null)
         {
-            EnsurePublishedSuccessor(successor.Status, successor.RoutingCode == routing.RoutingCode, successor.RoutingCode);
+            EnsurePublishedSuccessor("工艺路线", successor.Status, successor.RoutingCode == routing.RoutingCode, successor.RoutingCode);
         }
 
         return routing is null
@@ -1158,7 +1158,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     {
         if (version is not null && successor is not null)
         {
-            EnsureActiveSuccessor(successor, version, versionId);
+            EnsureActiveSuccessor(successor, version);
         }
 
         return version is null
@@ -1176,7 +1176,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     {
         if (document is not null && successor is not null)
         {
-            EnsurePublishedSuccessor(successor.Status, successor.DocumentNumber == document.DocumentNumber, successor.DocumentNumber);
+            EnsurePublishedSuccessor("工程文档", successor.Status, successor.DocumentNumber == document.DocumentNumber, successor.DocumentNumber);
         }
 
         return document is null
@@ -1192,19 +1192,23 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ?? throw new KnownException("发布工程文档变更需要配置工程文档仓储。");
     }
 
-    private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string successorCode)
+    private static void EnsurePublishedSuccessor(
+        string versionType,
+        EngineeringVersionStatus status,
+        bool sameBusinessCode,
+        string successorCode)
     {
         if (status != EngineeringVersionStatus.Published || !sameBusinessCode)
         {
-            throw new KnownException($"替代版本 '{successorCode}' 必须与原版本使用相同编码且已发布。");
+            throw new KnownException($"替代{versionType} '{successorCode}' 必须与原版本使用相同编码且已发布。");
         }
     }
 
-    private static void EnsureActiveSuccessor(ProductionVersion successor, ProductionVersion version, string versionId)
+    private static void EnsureActiveSuccessor(ProductionVersion successor, ProductionVersion version)
     {
         if (successor.Status != ProductionVersionStatus.Active || successor.SkuCode != version.SkuCode)
         {
-            throw new KnownException($"替代生产版本 '{successor.Id.Id:D}' 必须与原版本使用相同 SKU 且处于有效状态。");
+            throw new KnownException("替代生产版本的 SKU 或状态不符合要求，请检查替代版本。");
         }
     }
 }
