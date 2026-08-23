@@ -27,6 +27,35 @@ function Assert-Contract([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Assert-RuntimeSelectionAccepted {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [object] $Artifact,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $Event,
+        [Parameter(Mandatory)] [string[]] $ExpectedScenarioIds
+    )
+
+    $selection = Get-NervAcceptanceRuntimeArtifactSelection -Artifact $Artifact -Manifest $Manifest -Event $Event
+    $observedIds = [string[]]@($selection.scenarios | ForEach-Object { [string]$_.id })
+    Assert-Contract (Test-NervAcceptanceOrdinalSequenceEqual -Left $observedIds -Right $ExpectedScenarioIds) "Selection fixture '$Name' must preserve the artifact scenario order after validating set membership."
+}
+
+function Assert-RuntimeSelectionRejected {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [object] $Artifact,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $Event,
+        [Parameter(Mandatory)] [string] $ExpectedMessage
+    )
+
+    $observedMessage = '<no exception>'
+    try { Get-NervAcceptanceRuntimeArtifactSelection -Artifact $Artifact -Manifest $Manifest -Event $Event | Out-Null }
+    catch { $observedMessage = $_.Exception.Message }
+    Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Selection mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
+}
+
 function Copy-JsonObject {
     param([Parameter(Mandatory)] [object] $Value)
 
@@ -698,6 +727,39 @@ function Invoke-PwshScript {
     $mainArguments = Get-RunnerArguments -ArtifactPath $mainArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $mainArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $mainSummaryPath -Action $mainAction -Event 'push'
     $mainResult = & $runnerPath @mainArguments
     Assert-Contract ($mainActionCalls.Count -eq 1 -and $mainResult.contract.selected) 'A valid main five-scenario planning artifact must extract and execute sales exactly once.'
+
+    $reversedActiveCoreIds = [string[]]@($activeCoreIds)
+    [Array]::Reverse($reversedActiveCoreIds)
+    $blockedScenario = @($manifest.scenarios | Where-Object {
+        [string]::Equals([string]$_.status, 'blocked', [StringComparison]::Ordinal)
+    })[0]
+    foreach ($selectionCase in @(
+        @{ Name = 'push'; Event = 'push'; Mode = 'main-active-core'; Reasons = @('main'); Failure = 'Runtime push planning artifact must preserve the main active/core selection provenance.' },
+        @{ Name = 'schedule'; Event = 'schedule'; Mode = 'nightly-active'; Reasons = @('nightly'); Failure = 'Runtime scheduled planning artifact must preserve the nightly active selection provenance.' },
+        @{ Name = 'workflow-dispatch-all-active'; Event = 'workflow_dispatch'; Mode = 'workflow-dispatch-all-active'; Reasons = @('dispatch:lane'); Failure = 'Runtime workflow_dispatch all-active selection provenance is inconsistent.' },
+        @{ Name = 'conservative-pr'; Event = 'pull_request'; Mode = 'conservative-active-core'; Reasons = @('impact-rules-failed'); Failure = 'Runtime conservative PR selection provenance is inconsistent.' }
+    )) {
+        $originalOrderArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds $activeCoreIds -Event $selectionCase.Event -SelectionMode $selectionCase.Mode -SelectionReasons $selectionCase.Reasons
+        Assert-RuntimeSelectionAccepted -Name "$($selectionCase.Name)-manifest-order" -Artifact $originalOrderArtifact -Manifest $manifest -Event $selectionCase.Event -ExpectedScenarioIds $activeCoreIds
+
+        $reversedOrderArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds $reversedActiveCoreIds -Event $selectionCase.Event -SelectionMode $selectionCase.Mode -SelectionReasons $selectionCase.Reasons
+        Assert-RuntimeSelectionAccepted -Name "$($selectionCase.Name)-reversed-order" -Artifact $reversedOrderArtifact -Manifest $manifest -Event $selectionCase.Event -ExpectedScenarioIds $reversedActiveCoreIds
+
+        $subsetArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds ([string[]]@($activeCoreIds | Select-Object -First ($activeCoreIds.Count - 1))) -Event $selectionCase.Event -SelectionMode $selectionCase.Mode -SelectionReasons $selectionCase.Reasons
+        Assert-RuntimeSelectionRejected -Name "$($selectionCase.Name)-true-subset" -Artifact $subsetArtifact -Manifest $manifest -Event $selectionCase.Event -ExpectedMessage $selectionCase.Failure
+
+        $extraArtifact = Copy-JsonObject $originalOrderArtifact
+        $extraArtifact.scenarios = @($extraArtifact.scenarios) + [pscustomobject][ordered]@{ id = 'unknown-active-core'; status = 'active'; tier = 'core' }
+        Assert-RuntimeSelectionRejected -Name "$($selectionCase.Name)-extra-member" -Artifact $extraArtifact -Manifest $manifest -Event $selectionCase.Event -ExpectedMessage "must identify one selected active/core manifest scenario"
+
+        $duplicateArtifact = Copy-JsonObject $originalOrderArtifact
+        $duplicateArtifact.scenarios = @($duplicateArtifact.scenarios) + (Copy-JsonObject $duplicateArtifact.scenarios[0])
+        Assert-RuntimeSelectionRejected -Name "$($selectionCase.Name)-duplicate-member" -Artifact $duplicateArtifact -Manifest $manifest -Event $selectionCase.Event -ExpectedMessage 'duplicate selected scenario'
+
+        $illegalArtifact = Copy-JsonObject $originalOrderArtifact
+        $illegalArtifact.scenarios = @($illegalArtifact.scenarios) + [pscustomobject][ordered]@{ id = [string]$blockedScenario.id; status = 'blocked'; tier = 'extended' }
+        Assert-RuntimeSelectionRejected -Name "$($selectionCase.Name)-illegal-member" -Artifact $illegalArtifact -Manifest $manifest -Event $selectionCase.Event -ExpectedMessage "must identify one selected active/core manifest scenario"
+    }
 
     $multiPrArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds @('sales-order-demand', 'wms-delivery-erp') -Event 'pull_request' -SelectionMode 'pull-request-impact' -SelectionReasons @('impact:backend/services/Business/Erp/src/example.cs')
     $multiPrArtifactPath = Join-Path $fixtureRoot 'multi-pr-planning-artifact.json'
