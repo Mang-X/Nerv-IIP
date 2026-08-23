@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: release-install
 #   SideEffects:
-#     - Applies repository EF Core migrations to explicitly allowlisted platform PostgreSQL databases
+#     - Applies repository EF Core migrations to explicitly allowlisted platform or business PostgreSQL databases
 #     - Updates only each selected service schema and its __EFMigrationsHistory table
 #   Writes:
 #     - Selected service migration history and schema objects
@@ -13,7 +13,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10 and repository dotnet tools
-#     - Process-scoped connection variables declared by release-database-migrations.json
+#     - Process-scoped connection variables declared by release-database-migrations.json or business-release-database-migrations.json
 
 [CmdletBinding()]
 param(
@@ -24,7 +24,8 @@ param(
     [string[]] $Service = @(),
 
     [ValidateSet('platform', 'business')]
-    [string] $Profile = 'platform',
+    [Alias('Profile')]
+    [string] $ManifestProfile = 'platform',
 
     [switch] $ValidateOnly
 )
@@ -39,7 +40,7 @@ if ($ReleaseId -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'ReleaseId may contain only letters, digits, dot, underscore, and hyphen.'
 }
 
-$manifestFileName = if ([string]::Equals($Profile, 'business', [StringComparison]::OrdinalIgnoreCase)) {
+$manifestFileName = if ([string]::Equals($ManifestProfile, 'business', [StringComparison]::OrdinalIgnoreCase)) {
     'business-release-database-migrations.json'
 }
 else {
@@ -58,14 +59,48 @@ foreach ($entry in $manifest) {
         throw 'Release database migration manifest contains an empty or duplicate service.'
     }
 
-    foreach ($requiredProperty in @('connectionEnvironmentVariable', 'expectedDatabase', 'project', 'context')) {
+    foreach ($requiredProperty in @('connectionEnvironmentVariable', 'expectedDatabase', 'project', 'startupProject', 'context')) {
         if ([string]::IsNullOrWhiteSpace([string]$entry.$requiredProperty)) {
             throw "Release database migration manifest service '$($entry.service)' is missing '$requiredProperty'."
         }
     }
 
-    if (-not (Test-Path -LiteralPath (Join-Path $root ([string]$entry.project)) -PathType Leaf)) {
+    $projectPath = Join-Path $root ([string]$entry.project)
+    if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
         throw "Release database migration manifest project is missing for service '$($entry.service)'."
+    }
+    $startupProjectPath = Join-Path $root ([string]$entry.startupProject)
+    if (-not (Test-Path -LiteralPath $startupProjectPath -PathType Leaf)) {
+        throw "Release database migration manifest startup project is missing for service '$($entry.service)'."
+    }
+
+    $contextName = [string]$entry.context
+    $contextSeparator = $contextName.LastIndexOf('.')
+    if ($contextSeparator -le 0 -or $contextSeparator -eq ($contextName.Length - 1)) {
+        throw "Release database migration manifest context is invalid for service '$($entry.service)'."
+    }
+    $contextNamespace = $contextName.Substring(0, $contextSeparator)
+    $contextClassName = $contextName.Substring($contextSeparator + 1)
+    $contextPattern = '(?ms)namespace\s+' + [regex]::Escape($contextNamespace) + '\s*[;{].*?\b(?:partial\s+)?class\s+' + [regex]::Escape($contextClassName) + '\b'
+    $projectDirectory = Split-Path -Parent $projectPath
+    $contextSources = @(Get-ChildItem -LiteralPath $projectDirectory -Filter '*.cs' -File -Recurse |
+        Where-Object { $_.FullName -notmatch '[\\/](?:bin|obj|Migrations)[\\/]' })
+    $contextMatches = @($contextSources | Where-Object {
+        (Get-Content -LiteralPath $_.FullName -Raw) -match $contextPattern
+    })
+    if ($contextMatches.Count -ne 1) {
+        throw "Release database migration manifest context '$contextName' must resolve exactly once inside project '$($entry.project)' for service '$($entry.service)'."
+    }
+
+    $startupProjectDirectory = Split-Path -Parent $startupProjectPath
+    $startupSources = @(Get-ChildItem -LiteralPath $startupProjectDirectory -Filter '*.cs' -File -Recurse |
+        Where-Object { $_.FullName -notmatch '[\\/](?:bin|obj|Migrations)[\\/]' })
+    $factoryPattern = 'IDesignTimeDbContextFactory\s*<\s*' + [regex]::Escape($contextClassName) + '\s*>'
+    $factoryMatches = @($startupSources | Where-Object {
+        (Get-Content -LiteralPath $_.FullName -Raw) -match $factoryPattern
+    })
+    if ($factoryMatches.Count -ne 1) {
+        throw "Release database migration manifest startup project '$($entry.startupProject)' must contain exactly one design-time factory for context '$contextName' and service '$($entry.service)'."
     }
 }
 
@@ -105,7 +140,7 @@ foreach ($entry in $selected) {
         throw "Target database '$targetDatabase' for service '$($entry.service)' does not match allowlisted database '$($entry.expectedDatabase)'."
     }
 
-    $validationLogDirectory = New-ScriptAutomationLogDirectory -Name "$Profile-migration-$($entry.service)-validation"
+    $validationLogDirectory = New-ScriptAutomationLogDirectory -Name "$ManifestProfile-migration-$($entry.service)-validation"
     Write-Diagnostic "releaseId=$ReleaseId service=$($entry.service) dbProfile=PostgreSQL targetDatabase=$targetDatabase migrationFrom=database-current migrationTo=repository-latest seedStep=none correlationId=$CorrelationId logPath=$validationLogDirectory"
     $validated.Add([pscustomobject]@{
         Entry = $entry
@@ -115,7 +150,7 @@ foreach ($entry in $selected) {
 }
 
 if ($ValidateOnly) {
-    Write-Diagnostic "$Profile migration configuration validation completed for $($validated.Count) service(s); no database command was executed."
+    Write-Diagnostic "$ManifestProfile migration configuration validation completed for $($validated.Count) service(s); no database command was executed."
     exit 0
 }
 
@@ -123,7 +158,7 @@ $restore = Invoke-DotNet `
     -Arguments @('tool', 'restore') `
     -WorkingDirectory $root `
     -TimeoutSeconds 300 `
-    -Name "$Profile-migration-tool-restore-$ReleaseId"
+    -Name "$ManifestProfile-migration-tool-restore-$ReleaseId"
 
 foreach ($item in $validated) {
     $entry = $item.Entry
@@ -131,6 +166,7 @@ foreach ($item in $validated) {
         'tool', 'run', 'dotnet-ef',
         'database', 'update',
         '--project', [string]$entry.project,
+        '--startup-project', [string]$entry.startupProject,
         '--context', [string]$entry.context,
         '--connection', [string]$item.ConnectionString
     )
@@ -139,8 +175,8 @@ foreach ($item in $validated) {
         -Arguments $migrationArguments `
         -WorkingDirectory $root `
         -TimeoutSeconds 900 `
-        -Name "$Profile-migration-apply-$($entry.service)-$ReleaseId" `
+        -Name "$ManifestProfile-migration-apply-$($entry.service)-$ReleaseId" `
         -SensitiveArgumentIndexes @($connectionArgumentIndex)
 
-    Write-Diagnostic "$Profile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) correlationId=$CorrelationId restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
+    Write-Diagnostic "$ManifestProfile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) correlationId=$CorrelationId restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
 }

@@ -98,7 +98,7 @@ SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
 
 ## 当前平台与 FileStorage 受治理迁移入口
 
-AppHub、IAM、Ops、Notification 通过显式 allowlist manifest 共享一个 release-install 入口。连接串只能放在当前进程环境变量中；脚本先核对目标 database 名称，再串行执行，任一服务失败即停止后续服务，不建库、不 seed、不删除或回滚已经成功应用的 migration：
+AppHub、IAM、Ops、Notification 通过显式 allowlist manifest 共享一个 release-install 入口。连接串只能放在当前进程环境变量中；脚本先核对目标 database 名称，再串行执行，任一服务失败即停止后续服务。入口不显式执行建库、seed、删除或回滚命令；发布前必须预先创建目标 database 并限制迁移账号权限，因为 `dotnet ef database update` 在账号具备建库权限且目标 database 不存在时可能创建 database：
 
 ```powershell
 $env:NERV_IIP_APPHUB_DB = "<apphub-postgres-connection-string>"
@@ -110,7 +110,7 @@ pwsh scripts/install/migrate-platform-databases.ps1 -ReleaseId "<release-id>"
 Remove-Item Env:\NERV_IIP_APPHUB_DB,Env:\NERV_IIP_IAM_DB,Env:\NERV_IIP_OPS_DB,Env:\NERV_IIP_NOTIFICATION_DB -ErrorAction SilentlyContinue
 ```
 
-`-Service apphub,iam` 可用于经过发布计划明确批准的子集；未传 `-Service` 时必须覆盖 manifest 全部服务。manifest 的 service、连接变量、expected database、Infrastructure project 与 DbContext 都是显式 allowlist，不允许用目录扫描替代。
+`-Service apphub,iam` 可用于经过发布计划明确批准的子集；未传 `-Service` 时必须覆盖 manifest 全部服务。manifest 的 service、连接变量、expected database、Infrastructure project、startup project 与 DbContext 都是显式 allowlist，不允许用目录扫描替代。
 
 13 个业务数据库使用同一个执行器的独立 `business` manifest，并通过受治理包装入口执行：
 
@@ -119,9 +119,10 @@ Remove-Item Env:\NERV_IIP_APPHUB_DB,Env:\NERV_IIP_IAM_DB,Env:\NERV_IIP_OPS_DB,En
 # connectionEnvironmentVariable 字段设置 13 个当前进程连接变量。
 pwsh scripts/install/migrate-business-databases.ps1 -ValidateOnly -ReleaseId "<release-id>"
 pwsh scripts/install/migrate-business-databases.ps1 -ReleaseId "<release-id>"
+Remove-Item Env:\NERV_IIP_BUSINESS_MASTER_DATA_DB,Env:\NERV_IIP_BUSINESS_PRODUCT_ENGINEERING_DB,Env:\NERV_IIP_BUSINESS_INVENTORY_DB,Env:\NERV_IIP_BUSINESS_QUALITY_DB,Env:\NERV_IIP_BUSINESS_MES_DB,Env:\NERV_IIP_BUSINESS_DEMAND_PLANNING_DB,Env:\NERV_IIP_BUSINESS_BARCODE_LABEL_DB,Env:\NERV_IIP_BUSINESS_APPROVAL_DB,Env:\NERV_IIP_BUSINESS_WMS_DB,Env:\NERV_IIP_BUSINESS_INDUSTRIAL_TELEMETRY_DB,Env:\NERV_IIP_BUSINESS_MAINTENANCE_DB,Env:\NERV_IIP_BUSINESS_ERP_DB,Env:\NERV_IIP_BUSINESS_SCHEDULING_DB -ErrorAction SilentlyContinue
 ```
 
-业务 manifest 必须与 AppHost 的 13 个 business `AddDatabase` resource 一一对应；脚本验证 expected database 后串行运行，任一项失败立即停止。连接变量名与清理动作以 manifest 为事实源，部署工具应从 manifest 生成 operator checklist，不得把连接串复制进命令行、仓库文件或日志。
+业务 manifest 必须与 AppHost 的 13 个 business `AddDatabase` resource 双向精确对应；执行器在数据库动作前验证 project、startup project 与 DbContext 配对，验证 expected database 后串行运行，任一项失败立即停止。连接变量名与清理动作以 manifest 为事实源，部署工具应从 manifest 生成 operator checklist，不得把连接串复制进命令行、仓库文件或日志。
 
 下面的 `dotnet-ef` 命令只保留为实现原理与开发排障参考，不是客户 release-install 入口。
 

@@ -32,7 +32,7 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
 $executor = Join-Path $PSScriptRoot 'migrate-platform-databases.ps1'
-$arguments = @('-Profile', 'business', '-ReleaseId', $ReleaseId, '-CorrelationId', $CorrelationId)
+$arguments = @('-ManifestProfile', 'business', '-ReleaseId', $ReleaseId, '-CorrelationId', $CorrelationId)
 if ($Service.Count -gt 0) {
     $arguments += '-Service'
     $arguments += $Service
@@ -40,9 +40,13 @@ if ($Service.Count -gt 0) {
 if ($ValidateOnly) {
     $arguments += '-ValidateOnly'
 }
-Invoke-PwshScript `
-    -ScriptPath $executor `
-    -Arguments $arguments `
+$result = Invoke-NativeCommandOutput `
+    -Command 'pwsh' `
+    -Arguments (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $executor) + $arguments) `
     -WorkingDirectory $root `
     -TimeoutSeconds 14400 `
-    -Name "business-release-migration-$ReleaseId" | Out-Null
+    -Name "business-release-migration-$ReleaseId"
+
+if (-not [string]::IsNullOrWhiteSpace([string]$result.Stdout)) {
+    Write-Host (Protect-ScriptAutomationText ([string]$result.Stdout))
+}
