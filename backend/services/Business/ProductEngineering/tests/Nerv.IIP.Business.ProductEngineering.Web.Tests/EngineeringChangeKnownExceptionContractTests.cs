@@ -4,6 +4,7 @@ using MediatR;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
@@ -78,6 +79,40 @@ public sealed class EngineeringChangeKnownExceptionContractTests
 
         Assert.Equal("工程 BOM 归档失败，请检查版本状态和替代版本。", exception.Message);
         Assert.DoesNotContain("Only released", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Public_release_engineering_document_archive_wrapper_preserves_diagnostic_inner_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var archivedDocument = EngineeringDocument.Register(
+            "org-001", "env-dev", "DOC-ARCHIVED", "A", "file-001", "manual.pdf", "application/pdf", "manual");
+        archivedDocument.Archive("seed archive");
+        dbContext.EngineeringDocuments.Add(archivedDocument);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new ApprovedVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)),
+            engineeringDocumentRepository: new EngineeringDocumentRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001", "env-dev", "ECO-DOC-ARCHIVE", "Reject archived document", Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-document", "DOC-ARCHIVED:A")]),
+            CancellationToken.None));
+
+        Assert.Equal("工程文档归档失败，请检查版本状态和替代版本。", exception.Message);
+        Assert.Equal(
+            "Only published engineering document versions can be archived.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]

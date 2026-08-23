@@ -1507,7 +1507,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("EBOM 发布失败，请检查物料行和生效日期。", exception.Message);
-        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Engineering BOM already contains child item 'ENG-2001'.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]
@@ -1544,7 +1546,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("MBOM 发布失败，请检查物料行、配方和来源 EBOM。", exception.Message);
-        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Manufacturing BOM already contains SKU 'SKU-RM-2000'.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]
@@ -1576,7 +1580,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("工艺路线发布失败，请检查工序和生效日期。", exception.Message);
-        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Routing already contains operation sequence '10'.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]
