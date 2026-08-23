@@ -9,6 +9,8 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
 {
     private const string ReleaseCommandsPath =
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs";
+    private const string ScheduledReleasePath =
+        "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Scheduling/EngineeringChangeScheduledReleaseService.cs";
     private const string StandardOperationCommandsPath =
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/StandardOperations/StandardOperationCommands.cs";
     private const string ArchiveProductionVersionCommandPath =
@@ -21,6 +23,7 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
     private static readonly IReadOnlyCollection<string> CommandSourcePaths =
     [
         ReleaseCommandsPath,
+        ScheduledReleasePath,
         StandardOperationCommandsPath,
         ArchiveProductionVersionCommandPath,
         CreateProductionVersionCommandPath,
@@ -57,30 +60,48 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         // The provider boundary is not part of this command-message layer.
         Excluded(ReleaseCommandsPath, "HttpProductEngineeringMasterDataReferenceValidator", "ValidateActiveReferencesAsync", 3, "provider boundary"),
 
-        // Engineering Change and scheduled/internal command paths remain separate layers.
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ResolveAffectedVersionAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureAcyclicSupersedeTopology", 3, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "SupersedeCycleException", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "NormalizeRequired", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringBomAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorManufacturingBomAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorRoutingAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorProductionVersionAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringDocumentAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringBom", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveManufacturingBom", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveRouting", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveProductionVersion", 1, "Engineering Change", asKnownExceptionCallCount: 2),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringDocument", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetEngineeringDocumentRepository", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsurePublishedSuccessor", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureActiveSuccessor", 1, "Engineering Change"),
+        // Engineering Change public synchronous release and archive paths are the target layer.
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "Handle", 0, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ResolveAffectedVersionAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureAcyclicSupersedeTopology", 3),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "SupersedeCycleException", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "NormalizeRequired", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringBomAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorManufacturingBomAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorRoutingAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorProductionVersionAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringDocumentAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringBom", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveManufacturingBom", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveRouting", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveProductionVersion", 1, asKnownExceptionCallCount: 2),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringDocument", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetEngineeringDocumentRepository", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsurePublishedSuccessor", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureActiveSuccessor", 1),
+        // Scheduled promotion remains an internal background command and is excluded from this public layer.
         Excluded(ReleaseCommandsPath, "PromoteScheduledEngineeringChangeCommandHandler", "Handle", 1, "scheduled/internal command", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "CancelScheduledEngineeringChangeCommandHandler", "Handle", 1, "scheduled/internal command", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "RescheduleEngineeringChangeCommandHandler", "Handle", 1, "scheduled/internal command", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "EnsureApprovedAsync", 3, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "ValidateApprovedChain", 1, "Engineering Change"),
+        // The archive resolver is only reached by the background scheduler and remains excluded.
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ResolveAffectedVersionAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorEngineeringBomAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorManufacturingBomAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorRoutingAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorProductionVersionAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorEngineeringDocumentAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveEngineeringBom", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveManufacturingBom", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveRouting", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveProductionVersion", 1, "scheduler/background", asKnownExceptionCallCount: 2),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveEngineeringDocument", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetEngineeringDocumentRepository", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "EnsurePublishedSuccessor", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "EnsureActiveSuccessor", 1, "scheduler/background"),
+        Target(ReleaseCommandsPath, "CancelScheduledEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "RescheduleEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
+        // The fallback verifier has no public facade and remains explicitly excluded.
+        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "fallback/no-facade"),
+        Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "EnsureApprovedAsync", 3),
+        Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "ValidateApprovedChain", 1),
     ];
 
     [Fact]

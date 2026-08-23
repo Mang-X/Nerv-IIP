@@ -11,16 +11,6 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
             "GetMasterDataWorkCenterUsageQueryHandler",
             "Handle",
             "internal work-center usage is outside this query layer"),
-        new(
-            "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/ProductEngineeringReleaseQueries.cs",
-            "GetEngineeringChangeQueryHandler",
-            "Handle",
-            "Engineering Change is outside this query layer"),
-        new(
-            "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/ProductEngineeringImpactQueries.cs",
-            "GetEngineeringChangeImpactPreviewQueryHandler",
-            "Handle",
-            "Engineering Change is outside this query layer"),
     ];
 
     public static TheoryData<string, string> EnglishUserMessageSources => new()
