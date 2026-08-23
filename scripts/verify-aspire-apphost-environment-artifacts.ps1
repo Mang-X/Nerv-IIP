@@ -109,7 +109,19 @@ try {
     $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
     foreach ($environmentName in @('Development', 'Production')) {
         $outputPath = Join-Path $temporaryRoot $environmentName.ToLowerInvariant()
-        Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($environmentName.ToLowerInvariant())-publish" | Out-Null
+        $publishEnvironment = @{}
+        if ([string]::Equals($environmentName, 'Production', [StringComparison]::Ordinal)) {
+            $publishEnvironment = @{
+                Messaging__Provider = 'Redis'
+                Security__Cors__AllowedOrigins = 'https://console.example.test,https://business.example.test'
+                ConnectorHost__ConnectorHostId = 'verify-connector-host'
+                ConnectorHost__OrganizationId = 'verify-organization'
+                ConnectorHost__EnvironmentId = 'verify-environment'
+            }
+        }
+        Invoke-WithScopedEnvironment -Variables $publishEnvironment -ScriptBlock {
+            Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($environmentName.ToLowerInvariant())-publish" | Out-Null
+        }
         $composePath = Join-Path $outputPath 'docker-compose.yaml'
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName

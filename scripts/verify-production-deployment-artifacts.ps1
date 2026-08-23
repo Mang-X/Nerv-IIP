@@ -73,6 +73,7 @@ if ($ciWorkflow -match "(?m)^\s*uses:\s+pnpm/action-setup@(?![0-9a-f]{40}(?:\s+#
 if (-not $SkipDockerComposeConfig) {
     $environment = @{
         NERV_IIP_POSTGRES_PASSWORD = "postgres-password-32chars-test"
+        NERV_IIP_REDIS_PASSWORD = "redis-password-32chars-test"
         NERV_IIP_MINIO_ROOT_USER = "minioadmin"
         NERV_IIP_MINIO_ROOT_PASSWORD = "minio-password-32chars-test"
         NERV_IIP_INTERNAL_SERVICE_BEARER_TOKEN = "internal-token-32chars-test-value"
@@ -84,6 +85,8 @@ if (-not $SkipDockerComposeConfig) {
         NERV_IIP_IAM_JWT_SIGNING_KEY_ID = "deployment-test-rsa-key"
         NERV_IIP_IAM_JWT_PRIVATE_KEY_PEM = "deployment-test-private-key-pem"
         NERV_IIP_IAM_JWT_JWKS_JSON = '{"keys":[{"kty":"RSA","use":"sig","kid":"deployment-test-rsa-key","alg":"RS256","n":"deployment-test-modulus","e":"AQAB"}]}'
+        NERV_IIP_IAM_SECRETS_PEPPER = "iam-pepper-48chars-test-value-not-a-real-secret"
+        NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE = "654321"
         NERV_IIP_CORS_ALLOWED_ORIGINS = "https://console.example.test,https://business.example.test"
     }
 

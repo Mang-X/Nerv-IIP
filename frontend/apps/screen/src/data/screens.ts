@@ -1,4 +1,4 @@
-import type { ScreenKey } from '@/data/mock/scope'
+import type { ScreenKey } from '@/data/contracts/scope'
 
 export interface ScreenDef {
   key: ScreenKey
