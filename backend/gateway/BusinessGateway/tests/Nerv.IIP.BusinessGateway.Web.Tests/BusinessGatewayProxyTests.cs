@@ -7546,6 +7546,50 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_time_interval_above_timespan_precision()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", "SKU-RUN-001", null, "WC-RUN-001", null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            TimeIntervalHours: 256_204_778.801522m);
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("时间间隔", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("time-minimum")]
+    [InlineData("time-maximum")]
+    [InlineData("quantity-minimum")]
+    [InlineData("quantity-maximum")]
+    public void Create_quality_inspection_plan_validator_accepts_supported_interval_boundaries(string boundary)
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", "SKU-RUN-001", null, "WC-RUN-001", null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            TimeIntervalHours: boundary switch
+            {
+                "time-minimum" => 0.000001m,
+                "time-maximum" => 256_204_778.801521m,
+                _ => null,
+            },
+            QuantityInterval: boundary switch
+            {
+                "quantity-minimum" => 0.000001m,
+                "quantity-maximum" => 999_999_999_999.999999m,
+                _ => null,
+            });
+
+        var result = validator.Validate(request);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_real_downstream_inspection_plan_payload_to_console_items()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new

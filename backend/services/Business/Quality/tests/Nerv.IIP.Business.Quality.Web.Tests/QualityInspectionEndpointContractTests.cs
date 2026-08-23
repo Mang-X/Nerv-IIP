@@ -392,6 +392,66 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public void Create_inspection_plan_validator_rejects_time_interval_above_timespan_precision()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 256_204_778.801522m);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("时间间隔", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("time-minimum")]
+    [InlineData("time-maximum")]
+    [InlineData("quantity-minimum")]
+    [InlineData("quantity-maximum")]
+    public void Create_inspection_plan_validator_accepts_supported_interval_boundaries(string boundary)
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: boundary switch
+            {
+                "time-minimum" => 0.000001m,
+                "time-maximum" => 256_204_778.801521m,
+                _ => null,
+            },
+            QuantityInterval: boundary switch
+            {
+                "quantity-minimum" => 0.000001m,
+                "quantity-maximum" => 999_999_999_999.999999m,
+                _ => null,
+            });
+
+        var result = validator.Validate(command);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
     public async Task Create_inspection_plan_http_request_persists_periodic_policy_fields()
     {
         var databaseName = $"quality-inspection-plan-http-{Guid.NewGuid():N}";

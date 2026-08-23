@@ -630,13 +630,13 @@ public sealed class InspectionAggregateTests
         var timeIntervalHours = boundary switch
         {
             "time-minimum" => 0.000001m,
-            "time-maximum" => (decimal)TimeSpan.MaxValue.TotalHours,
+            "time-maximum" => 256_204_778.801521m,
             _ => (decimal?)null,
         };
         var quantityInterval = boundary switch
         {
             "quantity-minimum" => 0.000001m,
-            "quantity-maximum" => InspectionPlan.MaximumQuantityInterval,
+            "quantity-maximum" => 999_999_999_999.999999m,
             _ => (decimal?)null,
         };
 
@@ -647,6 +647,10 @@ public sealed class InspectionAggregateTests
 
         Assert.Equal(timeIntervalHours, plan.TimeIntervalHours);
         Assert.Equal(quantityInterval, plan.QuantityInterval);
+        if (timeIntervalHours.HasValue)
+        {
+            _ = TimeSpan.FromHours((double)timeIntervalHours.Value);
+        }
     }
 
     [Theory]
@@ -665,7 +669,7 @@ public sealed class InspectionAggregateTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => InspectionPlan.Create(
             "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
-            timeIntervalHours: (decimal)TimeSpan.MaxValue.TotalHours + 1m));
+            timeIntervalHours: 256_204_778.801522m));
     }
 
     [Theory]

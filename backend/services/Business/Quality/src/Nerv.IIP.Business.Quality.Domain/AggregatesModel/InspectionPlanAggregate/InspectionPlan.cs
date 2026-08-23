@@ -9,6 +9,8 @@ public partial record InspectionPlanCharacteristicId : IGuidStronglyTypedId;
 public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
 {
     private const decimal MinimumPeriodicInterval = 0.000001m;
+    // Largest six-decimal hour value that TimeSpan.FromHours can represent without overflow.
+    public const decimal MaximumTimeIntervalHours = 256_204_778.801521m;
     public const decimal MaximumQuantityInterval = 999_999_999_999.999999m;
     private static readonly HashSet<string> Categories =
     [
@@ -126,7 +128,7 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(timeIntervalHours), "Time interval hours must be at least 0.000001.");
         }
 
-        if (timeIntervalHours > (decimal)TimeSpan.MaxValue.TotalHours)
+        if (timeIntervalHours > MaximumTimeIntervalHours)
         {
             throw new ArgumentOutOfRangeException(nameof(timeIntervalHours), "Time interval hours must fit in a TimeSpan.");
         }

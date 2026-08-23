@@ -291,6 +291,7 @@ public sealed class BusinessConsoleQualityInspectionPlanCharacteristicsRequestVa
 public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
     : Validator<BusinessConsoleCreateInspectionPlanRequest>
 {
+    private const decimal MaximumTimeIntervalHours = 256_204_778.801521m;
     private const decimal MaximumQuantityInterval = 999_999_999_999.999999m;
 
     public BusinessConsoleCreateInspectionPlanRequestValidator()
@@ -308,7 +309,7 @@ public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
             .Must(value => value is null || value >= 0.000001m)
             .WithMessage("巡检时间间隔必须至少为 0.000001 小时。");
         RuleFor(x => x.TimeIntervalHours)
-            .Must(value => value is null || value <= (decimal)TimeSpan.MaxValue.TotalHours)
+            .Must(value => value is null || value <= MaximumTimeIntervalHours)
             .WithMessage("巡检时间间隔超出支持范围。");
         RuleFor(x => x.QuantityInterval)
             .Must(value => value is null || value >= 0.000001m)
