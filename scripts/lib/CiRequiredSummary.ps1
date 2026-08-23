@@ -150,11 +150,12 @@ esac
 
         $formalEvidenceCollectors = [Collections.Generic.List[string]]::new()
         $formalEvidenceArtifacts = [Collections.Generic.List[string]]::new()
+        $directFullChainCollectorPattern = '(?s)(?:^|\r?\n)\s*\./scripts/collect-test-evidence\.ps1(?:\s|$).*?-Lane\s+(?:full-chain|''full-chain''|"full-chain")(?:\s|$)'
         foreach ($jobProperty in $jobs.PSObject.Properties) {
             $jobName = [string] $jobProperty.Name
             foreach ($jobStep in @($jobProperty.Value.steps)) {
                 $stepRun = Get-NervCiRequiredSummaryStringValue -Object $jobStep -PropertyName 'run'
-                if ($stepRun -match '(?s)collect-test-evidence\.ps1.*?-Lane\s+full-chain(?:\s|$)') {
+                if ($stepRun -cmatch $directFullChainCollectorPattern) {
                     $formalEvidenceCollectors.Add($jobName)
                 }
 
@@ -164,17 +165,19 @@ esac
                     Get-NervCiRequiredSummaryStringValue -Object $stepWith.Value -PropertyName 'name'
                 }
                 else { '' }
-                if ([string]::Equals($stepUses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal) -and
-                    $artifactName.StartsWith('test-evidence-full-chain-', [StringComparison]::Ordinal)) {
+                if ($stepUses -cmatch '^actions/upload-artifact@v(?:4|5)$' -and
+                    $artifactName.Contains('test-evidence-full-chain-', [StringComparison]::Ordinal)) {
                     $formalEvidenceArtifacts.Add($jobName)
                 }
             }
         }
 
-        if ($formalEvidenceCollectors.Count -ne 1 -or
-            $formalEvidenceArtifacts.Count -ne 1 -or
-            -not [string]::Equals($formalEvidenceCollectors[0], 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal) -or
-            -not [string]::Equals($formalEvidenceArtifacts[0], 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)) {
+        $formalEvidenceOwnerValid = $false
+        if ($formalEvidenceCollectors.Count -eq 1 -and $formalEvidenceArtifacts.Count -eq 1) {
+            $formalEvidenceOwnerValid = [string]::Equals($formalEvidenceCollectors[0], 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal) -and
+                [string]::Equals($formalEvidenceArtifacts[0], 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)
+        }
+        if (-not $formalEvidenceOwnerValid) {
             $findings.Add("Only 'business-full-chain-acceptance-v1' may collect or publish formal full-chain MAN-661 evidence.")
         }
 
