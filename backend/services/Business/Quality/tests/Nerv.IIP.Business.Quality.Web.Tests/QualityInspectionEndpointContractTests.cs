@@ -335,6 +335,73 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public void Create_inspection_plan_validator_rejects_invalid_periodic_policy()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-RECEIVING-001",
+            "receiving",
+            "SKU-RM-1000",
+            null,
+            null,
+            null,
+            "purchase-receipt",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 0m,
+            QuantityInterval: -1m,
+            AssignedInspectorUserId: "user-inspector-001",
+            AssignedTeamId: "team-quality-001");
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("时间间隔", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("operation", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("不能同时", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_assignment_without_interval()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            AssignedTeamId: "team-quality-001");
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("至少一个巡检间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_periodic_policy_without_sku_and_work_center()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", null, null, null, null, "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 1m);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("SKU 和 WorkCenterId", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Inspection_plan_repository_uses_an_explicit_aggregate_load_method()
     {
         var declaredMethods = typeof(IInspectionPlanRepository).GetMethods()
@@ -631,6 +698,32 @@ public sealed class QualityInspectionEndpointContractTests
 
         Assert.Equal(3, response.Total);
         Assert.Single(response.Items);
+    }
+
+    [Fact]
+    public async Task List_inspection_plans_returns_periodic_inspection_policy()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: 2m,
+            quantityInterval: 100m,
+            assignedInspectorUserId: null,
+            assignedTeamId: "team-quality-001");
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal(2m, item.TimeIntervalHours);
+        Assert.Equal(100m, item.QuantityInterval);
+        Assert.Null(item.AssignedInspectorUserId);
+        Assert.Equal("team-quality-001", item.AssignedTeamId);
     }
 
     [Fact]

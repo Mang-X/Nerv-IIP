@@ -7493,6 +7493,44 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_assignment_without_interval()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001",
+            "env-dev",
+            "IP-RUN-001",
+            "operation",
+            "SKU-RUN-001",
+            null,
+            "WC-RUN-001",
+            null,
+            "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            AssignedTeamId: "team-quality-001");
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("至少一个巡检间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_periodic_policy_without_sku_and_work_center()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", null, null, null, null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            QuantityInterval: 100m);
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("SKU 和 WorkCenterId", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_real_downstream_inspection_plan_payload_to_console_items()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -7508,6 +7546,10 @@ public sealed class BusinessGatewayProxyTests
                         planCode = "IP-001",
                         category = "incoming",
                         skuCode = "SKU-001",
+                        timeIntervalHours = 2.5m,
+                        quantityInterval = 100m,
+                        assignedInspectorUserId = "user-inspector-001",
+                        assignedTeamId = (string?)null,
                         status = "active",
                     },
                 },
@@ -7531,6 +7573,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("active", item.Status);
         Assert.Equal("incoming", item.Category);
         Assert.Equal("SKU-001", item.SkuCode);
+        Assert.Equal(2.5m, item.TimeIntervalHours);
+        Assert.Equal(100m, item.QuantityInterval);
+        Assert.Equal("user-inspector-001", item.AssignedInspectorUserId);
+        Assert.Null(item.AssignedTeamId);
         var request = handler.Requests.Single();
         Assert.Equal("/api/business/v1/quality/inspection-plans?organizationId=org-001&environmentId=env-dev&status=active&keyword=IP-001&skip=0&take=12", request.RequestUri!.PathAndQuery);
     }
@@ -7572,7 +7618,11 @@ public sealed class BusinessGatewayProxyTests
                     "major",
                     true,
                     "100-percent",
-                    "attribute")]),
+                    "attribute")],
+                TimeIntervalHours: 2.5m,
+                QuantityInterval: 100m,
+                AssignedInspectorUserId: null,
+                AssignedTeamId: "team-quality-001"),
             CancellationToken.None);
 
         Assert.Equal("019f87d0-3f7f-7ad0-a829-7724ea91c111", response.InspectionPlanId);
@@ -7588,6 +7638,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SKU-RUN-001", root.GetProperty("skuCode").GetString());
         Assert.Equal("WC-RUN-001", root.GetProperty("workCenterId").GetString());
         Assert.Equal("operation-task", root.GetProperty("documentType").GetString());
+        Assert.Equal(2.5m, root.GetProperty("timeIntervalHours").GetDecimal());
+        Assert.Equal(100m, root.GetProperty("quantityInterval").GetDecimal());
+        Assert.Equal("team-quality-001", root.GetProperty("assignedTeamId").GetString());
         Assert.Equal("ATTR-RUN-001", root.GetProperty("characteristics")[0].GetProperty("characteristicCode").GetString());
     }
 

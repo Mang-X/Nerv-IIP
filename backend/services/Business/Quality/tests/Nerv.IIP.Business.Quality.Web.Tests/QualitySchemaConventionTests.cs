@@ -115,6 +115,23 @@ public sealed class QualitySchemaConventionTests
     }
 
     [Fact]
+    public void Inspection_plan_periodic_policy_migration_fails_closed_on_invalid_persisted_values()
+    {
+        using var fixture = CreateFixture();
+
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260730150913_AddInspectionTaskAssignmentScope",
+            "20260823032400_AddInspectionPlanPeriodicPolicy");
+
+        Assert.Contains("ck_inspection_plans_time_interval_positive", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_quantity_interval_positive", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_policy_operation_only", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_policy_applicability", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_assignment_target", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_assignment_requires_interval", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Mes_defect_source_unique_index_is_scoped_to_auto_created_mes_ncrs()
     {
         using var fixture = CreateFixture();

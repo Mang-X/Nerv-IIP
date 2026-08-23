@@ -597,6 +597,114 @@ public sealed class InspectionAggregateTests
     }
 
     [Fact]
+    public void Operation_inspection_plan_preserves_normalized_periodic_inspection_policy()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            " WC-001 ",
+            null,
+            "mes-operation",
+            timeIntervalHours: 2.5m,
+            quantityInterval: 100m,
+            assignedInspectorUserId: " user-inspector-001 ",
+            assignedTeamId: null);
+
+        Assert.Equal(2.5m, plan.TimeIntervalHours);
+        Assert.Equal(100m, plan.QuantityInterval);
+        Assert.Equal("user-inspector-001", plan.AssignedInspectorUserId);
+        Assert.Null(plan.AssignedTeamId);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(0.0000001)]
+    public void Periodic_inspection_policy_rejects_time_interval_below_supported_minimum(double hours)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: (decimal)hours));
+    }
+
+    [Fact]
+    public void Periodic_inspection_policy_rejects_time_interval_that_cannot_be_converted_to_time_span()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: (decimal)TimeSpan.MaxValue.TotalHours + 1m));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(0.0000001)]
+    public void Periodic_inspection_policy_rejects_quantity_interval_below_supported_minimum(double quantity)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            quantityInterval: (decimal)quantity));
+    }
+
+    [Fact]
+    public void Periodic_inspection_policy_rejects_non_operation_plan()
+    {
+        Assert.Throws<InvalidOperationException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-RECEIVING-001", "receiving", "SKU-RM-1000", null, null, null, "purchase-receipt",
+            timeIntervalHours: 1m));
+    }
+
+    [Theory]
+    [InlineData(null, "WC-001")]
+    [InlineData("SKU-FG-1000", null)]
+    public void Periodic_inspection_policy_requires_sku_and_work_center(string? skuCode, string? workCenterId)
+    {
+        Assert.Throws<InvalidOperationException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", skuCode, null, workCenterId, null, "mes-operation",
+            timeIntervalHours: 1m));
+    }
+
+    [Fact]
+    public void Periodic_inspection_policy_rejects_conflicting_assignment_targets()
+    {
+        Assert.Throws<ArgumentException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: 1m,
+            assignedInspectorUserId: "user-inspector-001",
+            assignedTeamId: "team-quality-001"));
+    }
+
+    [Fact]
+    public void Periodic_inspection_policy_rejects_assignment_without_interval()
+    {
+        Assert.Throws<ArgumentException>(() => InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            assignedTeamId: "team-quality-001"));
+    }
+
+    [Fact]
+    public void Activated_inspection_plan_cannot_change_periodic_inspection_policy()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: 1m);
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
+        plan.Activate();
+
+        Assert.Equal(1m, plan.TimeIntervalHours);
+        Assert.Null(plan.QuantityInterval);
+        Assert.Throws<InvalidOperationException>(() => plan.ConfigurePeriodicInspectionPolicy(
+            timeIntervalHours: 2m,
+            quantityInterval: null,
+            assignedInspectorUserId: null,
+            assignedTeamId: "team-quality-001"));
+    }
+
+    [Fact]
     public void New_plan_version_supersedes_previous_plan()
     {
         var plan = NewPlan();
@@ -610,6 +718,26 @@ public sealed class InspectionAggregateTests
         Assert.Equal(2, nextVersion.Version);
         Assert.Equal(plan.Id, nextVersion.SupersedesPlanId);
         Assert.Equal("appearance", Assert.Single(nextVersion.Characteristics).CharacteristicCode);
+    }
+
+    [Fact]
+    public void New_plan_version_copies_periodic_inspection_policy()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: 2m,
+            quantityInterval: 50m,
+            assignedInspectorUserId: null,
+            assignedTeamId: "team-quality-001");
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
+        plan.Activate();
+
+        var nextVersion = plan.Supersede("IQP-OPERATION-002");
+
+        Assert.Equal(2m, nextVersion.TimeIntervalHours);
+        Assert.Equal(50m, nextVersion.QuantityInterval);
+        Assert.Null(nextVersion.AssignedInspectorUserId);
+        Assert.Equal("team-quality-001", nextVersion.AssignedTeamId);
     }
 
     [Fact]
