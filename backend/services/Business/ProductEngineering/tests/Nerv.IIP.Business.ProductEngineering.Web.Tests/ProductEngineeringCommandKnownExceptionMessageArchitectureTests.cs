@@ -98,8 +98,8 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "EnsureActiveSuccessor", 1, "scheduler/background"),
         Target(ReleaseCommandsPath, "CancelScheduledEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
         Target(ReleaseCommandsPath, "RescheduleEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
-        // The fallback verifier fails six-step step 3: Program.cs:46 binds production HTTP facade instead.
-        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "六步第3步失败：Program.cs:46 生产注册 HttpEngineeringApprovalVerifier，fallback 不可达"),
+        // The fallback verifier fails six-step step 1: no production synchronous root reaches it after DI binding.
+        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "六步第1步失败：Program.cs:46 生产注册 HttpEngineeringApprovalVerifier，fallback 同步根不可达"),
         Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "EnsureApprovedAsync", 3),
         Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "ValidateApprovedChain", 1),
     ];
@@ -108,6 +108,9 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
     public void Command_known_exception_messages_have_a_closed_static_and_excluded_ledger()
     {
         var repositoryRoot = FindRepositoryRoot();
+        var programPath = Path.Combine(repositoryRoot, "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Program.cs");
+        var programText = File.ReadAllText(programPath);
+        Assert.Contains("AddHttpClient<IEngineeringApprovalVerifier, HttpEngineeringApprovalVerifier>", programText, StringComparison.Ordinal);
         var documents = CommandSourcePaths
             .Select(path => Path.Combine(repositoryRoot, path.Replace('/', Path.DirectorySeparatorChar)))
             .Select(file => new ProductEngineeringSourceDocument(
@@ -207,7 +210,13 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
             var arguments = invocation.ArgumentList?.Arguments ?? [];
             Assert.True(arguments.Count >= 2, $"{invocation.GetLocation()} 的 AsKnownException 必须提供固定中文外层文案。");
             var message = arguments[1].Expression;
-            var (containsChinese, estimatedLength) = EstimateMessage(message);
+            var isStaticMessage = ProductEngineeringUserMessageSourceAnalyzer.TryExtractMessage(
+                message,
+                out var messageText,
+                out var estimatedLength);
+            var containsChinese = isStaticMessage
+                && messageText.Any(character => character is >= '\u3400' and <= '\u9fff');
+            Assert.True(isStaticMessage, $"{invocation.GetLocation()} 的 AsKnownException 外层文案必须是可静态分析字符串。");
             Assert.True(containsChinese, $"{invocation.GetLocation()} 的 AsKnownException 外层文案必须包含中文。");
             Assert.True(estimatedLength <= 60, $"{invocation.GetLocation()} 的 AsKnownException 外层文案估算长度超过 60 个字符。");
         }
@@ -217,39 +226,6 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         invocation.Expression is MemberAccessExpressionSyntax memberAccess
         && memberAccess.Name.Identifier.ValueText == "AsKnownException"
         && memberAccess.Expression.ToString().EndsWith("ProductEngineeringReleaseValidation", StringComparison.Ordinal);
-
-    private static (bool ContainsChinese, int EstimatedLength) EstimateMessage(ExpressionSyntax expression)
-    {
-        if (expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
-        {
-            var value = literal.Token.ValueText;
-            return (value.Any(character => character is >= '\u3400' and <= '\u9fff'), value.Length);
-        }
-
-        if (expression is InterpolatedStringExpressionSyntax interpolated)
-        {
-            var fixedText = interpolated.Contents
-                .OfType<InterpolatedStringTextSyntax>()
-                .Select(content => content.TextToken.ValueText)
-                .ToArray();
-            var value = string.Concat(fixedText);
-            return (
-                value.Any(character => character is >= '\u3400' and <= '\u9fff'),
-                value.Length + interpolated.Contents.OfType<InterpolationSyntax>().Sum(EstimateInterpolationLength));
-        }
-
-        return (false, int.MaxValue);
-    }
-
-    private static int EstimateInterpolationLength(InterpolationSyntax interpolation)
-    {
-        var expression = interpolation.Expression.ToString();
-        var format = interpolation.FormatClause?.FormatStringToken.ValueText;
-        return string.Equals(format, "D", StringComparison.OrdinalIgnoreCase)
-            || expression.Contains("Guid", StringComparison.Ordinal)
-            ? 36
-            : 12;
-    }
 
     private static ProductEngineeringCommandKnownExceptionSite Target(
         string path,

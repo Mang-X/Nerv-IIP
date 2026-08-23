@@ -1,4 +1,6 @@
 using NetCorePal.Extensions.Primitives;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
@@ -182,6 +184,30 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
             "ProductEngineering exposed query messages must be static, contain Chinese, and be at most 60 estimated characters. Offenders:"
             + Environment.NewLine
             + string.Join(Environment.NewLine, violations));
+
+        var targetQuerySites = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "GetEngineeringChangeQueryHandler.Handle",
+            "GetEngineeringChangeImpactPreviewQueryHandler.Handle",
+        };
+        var directSites = documents
+            .SelectMany(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path)
+                .GetRoot()
+                .DescendantNodes()
+                .OfType<ObjectCreationExpressionSyntax>()
+                .Where(creation => creation.Type.ToString() == "KnownException")
+                .Select(creation =>
+                {
+                    var method = creation.Ancestors().OfType<MethodDeclarationSyntax>().First();
+                    var type = method.Ancestors().OfType<TypeDeclarationSyntax>().First();
+                    return $"{type.Identifier.ValueText}.{method.Identifier.ValueText}";
+                })
+                .Where(targetQuerySites.Contains))
+            .ToArray();
+        Assert.Equal(2, directSites.Length);
+        Assert.Equal(
+            ["GetEngineeringChangeImpactPreviewQueryHandler.Handle", "GetEngineeringChangeQueryHandler.Handle"],
+            directSites.OrderBy(site => site, StringComparer.Ordinal).ToArray());
     }
 
     private static IReadOnlyList<string> AnalyzeProbe(string source) =>

@@ -2183,7 +2183,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("engineering-bom", "EBOM-SELF:A", " EBOM-SELF:A ")]),
             CancellationToken.None));
 
-        Assert.Equal("受影响版本 'engineering-bom:EBOM-SELF:A' 不能将自身设为替代版本，请修改替代版本。", exception.Message);
+        Assert.Equal("第 1 条受影响版本不能将自身设为替代版本，请修改替代版本。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2217,7 +2217,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Equal("受影响版本 'engineering-bom:EBOM-CYCLE:A' 的替代关系形成循环，请修改替代版本。", exception.Message);
+        Assert.Equal("第 1 条与第 2 条受影响版本的替代关系形成循环，请修改替代版本。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2251,7 +2251,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Equal("受影响版本 'engineering-bom:ebom-dup:a' 已指定其他替代版本，请删除重复项。", exception.Message);
+        Assert.Equal("第 2 条受影响版本已指定其他替代版本，请删除重复项。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2401,7 +2401,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("production-version", foreignProductionVersion.Id.Id.ToString("D"))]),
             CancellationToken.None));
 
-        Assert.Equal($"生产版本 '{foreignProductionVersion.Id.Id:D}' 不存在。", exception.Message);
+        Assert.Equal("第 1 条受影响生产版本不存在，请检查版本标识。", exception.Message);
         Assert.Equal(ProductionVersionStatus.Active, foreignProductionVersion.Status);
         Assert.Empty(dbContext.EngineeringChanges);
     }

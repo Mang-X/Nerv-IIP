@@ -126,7 +126,7 @@ public static class ProductEngineeringUserMessageSourceAnalyzer
         }
     }
 
-    private static bool TryExtractMessage(
+    public static bool TryExtractMessage(
         ExpressionSyntax expression,
         out string message,
         out int estimatedLength)

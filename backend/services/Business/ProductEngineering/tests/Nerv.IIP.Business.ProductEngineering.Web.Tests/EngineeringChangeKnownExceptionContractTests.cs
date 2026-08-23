@@ -172,7 +172,7 @@ public sealed class EngineeringChangeKnownExceptionContractTests
                 [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
             CancellationToken.None));
 
-        Assert.Equal("替代生产版本的 SKU 或状态不符合要求，请检查替代版本。", exception.Message);
+        Assert.Equal("第 1 条受影响生产版本的替代版本 SKU 或状态不符合要求，请检查替代版本。", exception.Message);
         Assert.Contains("SKU", exception.Message, StringComparison.Ordinal);
         Assert.Contains("状态", exception.Message, StringComparison.Ordinal);
         Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
@@ -180,11 +180,11 @@ public sealed class EngineeringChangeKnownExceptionContractTests
     }
 
     [Theory]
-    [InlineData("unsupported", "engineering-change", "EC-001", "受影响版本 'engineering-change:EC-001' 不受支持，请检查提交内容。")]
-    [InlineData("self", "engineering-bom", "EBOM-SELF:A", "受影响版本 'engineering-bom:EBOM-SELF:A' 不能将自身设为替代版本，请修改替代版本。")]
-    [InlineData("duplicate-different-successor", "engineering-bom", "EBOM-DUP:A", "受影响版本 'engineering-bom:EBOM-DUP:A' 已指定其他替代版本，请删除重复项。")]
-    [InlineData("duplicate-same-successor", "engineering-bom", "EBOM-DUP:A", "受影响版本 'engineering-bom:EBOM-DUP:A' 重复声明，请保留一项。")]
-    [InlineData("cycle", "engineering-bom", "EBOM-CYCLE:A", "受影响版本 'engineering-bom:EBOM-CYCLE:A' 的替代关系形成循环，请修改替代版本。")]
+    [InlineData("unsupported", "engineering/bom", "<EC-001>\n", "第 1 条受影响版本类型不受支持，请检查提交内容。")]
+    [InlineData("self", "engineering-bom", "EBOM-SELF:A", "第 1 条受影响版本不能将自身设为替代版本，请修改替代版本。")]
+    [InlineData("duplicate-different-successor", "engineering-bom", "EBOM-DUP:A", "第 2 条受影响版本已指定其他替代版本，请删除重复项。")]
+    [InlineData("duplicate-same-successor", "engineering-bom", "EBOM-DUP:A", "第 2 条受影响版本重复声明，请保留一项。")]
+    [InlineData("cycle", "engineering-bom", "EBOM-CYCLE:A", "第 1 条与第 2 条受影响版本的替代关系形成循环，请修改替代版本。")]
     public async Task Public_release_batch_validation_names_the_affected_version_and_next_action(
         string caseName,
         string versionKind,
@@ -222,14 +222,21 @@ public sealed class EngineeringChangeKnownExceptionContractTests
             CancellationToken.None));
 
         Assert.Equal(expectedMessage, exception.Message);
-        Assert.Contains(versionKind, exception.Message, StringComparison.Ordinal);
-        Assert.Contains(versionId, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("第 ", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(versionKind, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(versionId, exception.Message, StringComparison.Ordinal);
         Assert.Contains("请", exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("cannot", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过安全展示上限");
+        Assert.DoesNotMatch("[\\x00-\\x1F\\x7F]", exception.Message);
+        Assert.DoesNotContain("<", exception.Message);
+        Assert.DoesNotContain(">", exception.Message);
+        Assert.DoesNotContain("/", exception.Message);
+        Assert.DoesNotContain("\\", exception.Message);
     }
 
     [Fact]
-    public async Task Public_release_batch_validation_uses_estimated_display_budget_for_maximum_version_id()
+    public async Task Public_release_batch_validation_keeps_maximum_version_id_out_of_public_message()
     {
         const string versionKind = "engineering-bom";
         var versionId = new string('V', 150);
@@ -248,9 +255,9 @@ public sealed class EngineeringChangeKnownExceptionContractTests
                 [new AffectedVersionCommand(versionKind, versionId, versionId)]),
             CancellationToken.None));
 
-        Assert.Contains($"{versionKind}:{versionId}", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("不能将自身设为替代版本", exception.Message, StringComparison.Ordinal);
-        Assert.True(exception.Message.Length > 60, "最大 150 字符 VersionId 的运行时文案不应伪称严格 <=60 字符。");
+        Assert.Equal("第 1 条受影响版本不能将自身设为替代版本，请修改替代版本。", exception.Message);
+        Assert.DoesNotContain(versionId, exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60);
     }
 
     [Fact]
