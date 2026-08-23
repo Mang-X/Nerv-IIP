@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
 
@@ -818,7 +819,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             ? []
             : await dbContext.InventoryMovementRequests
                 .AsNoTracking()
-                .Where(x => x.MovementType == "outbound" && orderNos.Contains(x.SourceDocumentId))
+                .Where(x => x.MovementType == InventoryMovementTypes.Outbound && orderNos.Contains(x.SourceDocumentId))
                 .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
                 .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
                 .ToArrayAsync(cancellationToken);
@@ -1378,7 +1379,7 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.MovementType == "count-adjustment"
+                && x.MovementType == InventoryMovementTypes.CountAdjustment
                 && countNumbers.Contains(x.SourceDocumentId)
                 && x.SourceDocumentLineId == null)
             .OrderBy(x => x.CreatedAtUtc)

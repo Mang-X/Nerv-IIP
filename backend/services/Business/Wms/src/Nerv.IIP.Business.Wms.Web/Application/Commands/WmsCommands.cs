@@ -388,7 +388,7 @@ public sealed class CompleteInboundOrderCommandHandler
         foreach (var line in inbound.Lines)
         {
             if (!requestsByLine.TryGetValue(line.LineNo, out var replayRequest)
-                || replayRequest.MovementType != "inbound"
+                || replayRequest.MovementType != InventoryMovementTypes.Inbound
                 || !replayKeysByLine[line.LineNo].Contains(replayRequest.IdempotencyKey, StringComparer.Ordinal)
                 || replayRequest.SkuCode != line.SkuCode
                 || replayRequest.UomCode != line.UomCode
@@ -1795,7 +1795,7 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
         var failedRequests = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
-                && x.MovementType == "outbound"
+                && x.MovementType == InventoryMovementTypes.Outbound
                 && x.SourceDocumentId == outbound.OutboundOrderNo
                 && x.Status == InventoryMovementRequestStatus.Failed)
             .ToArrayAsync(cancellationToken);
@@ -1988,7 +1988,7 @@ public sealed class CompleteCountExecutionCommandHandler
             .Where(x =>
                 x.OrganizationId == count.OrganizationId &&
                 x.EnvironmentId == count.EnvironmentId &&
-                x.MovementType == "count-adjustment" &&
+                x.MovementType == InventoryMovementTypes.CountAdjustment &&
                 x.SourceDocumentId == count.CountNo &&
                 x.SourceDocumentLineId == null)
             .ToArrayAsync(cancellationToken);
@@ -2052,7 +2052,7 @@ public sealed class CompleteCountExecutionCommandHandler
             var postedReceipt = InventoryMovementRequest.RecordPosted(
                 count.OrganizationId,
                 count.EnvironmentId,
-                "count-adjustment",
+                InventoryMovementTypes.CountAdjustment,
                 count.CountNo,
                 baseIdempotencyKey,
                 count.SkuCode,
@@ -2086,7 +2086,7 @@ public sealed class CompleteCountExecutionCommandHandler
         var movementRequest = InventoryMovementRequest.Create(
             count.OrganizationId,
             count.EnvironmentId,
-            "count-adjustment",
+            InventoryMovementTypes.CountAdjustment,
             count.CountNo,
             null,
             baseIdempotencyKey,
@@ -2166,7 +2166,7 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
         }
 
         movementRequest.MarkPosted(request.InventoryMovementId);
-        if (!string.Equals(request.MovementType, "outbound", StringComparison.Ordinal)
+        if (!string.Equals(request.MovementType, InventoryMovementTypes.Outbound, StringComparison.Ordinal)
             || movementRequest.SourceDocumentLineId is null)
         {
             return;
@@ -2188,7 +2188,7 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
         var postingRequests = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
-                && x.MovementType == "outbound"
+                && x.MovementType == InventoryMovementTypes.Outbound
                 && x.SourceDocumentId == outbound.OutboundOrderNo)
             .ToArrayAsync(cancellationToken);
         var latestRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingRequests);
@@ -2233,19 +2233,19 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(
             return;
         }
 
-        if (request.MovementType == "outbound" && movementRequest.InventoryReservationId is not null && inventoryReservationClient is not null)
+        if (request.MovementType == InventoryMovementTypes.Outbound && movementRequest.InventoryReservationId is not null && inventoryReservationClient is not null)
         {
             await inventoryReservationClient.ReleaseAsync(
                 new WmsInventoryReservationReleaseRequest(movementRequest.InventoryReservationId, Math.Abs(movementRequest.Quantity)),
                 cancellationToken);
         }
-        else if (request.MovementType == "outbound" && movementRequest.InventoryReservationId is not null)
+        else if (request.MovementType == InventoryMovementTypes.Outbound && movementRequest.InventoryReservationId is not null)
         {
             throw new KnownException("Inventory reservation client is required to release failed outbound reserved stock.");
         }
 
         movementRequest.MarkFailed(request.FailureCode, request.FailureMessage);
-        if (request.MovementType == "inbound")
+        if (request.MovementType == InventoryMovementTypes.Inbound)
         {
             var inbound = await dbContext.InboundOrders.SingleOrDefaultAsync(
                 x => x.OrganizationId == request.OrganizationId
@@ -2254,7 +2254,7 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(
                 cancellationToken);
             inbound?.MarkInventoryPostingFailed();
         }
-        else if (request.MovementType == "outbound")
+        else if (request.MovementType == InventoryMovementTypes.Outbound)
         {
             var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
                 x => x.OrganizationId == request.OrganizationId
