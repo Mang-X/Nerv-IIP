@@ -245,6 +245,26 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsolePreviewCodeRuleRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
+        string internalBearerToken,
+        BusinessConsoleListToolingAssetsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterToolingAssetRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
+        string internalBearerToken,
+        BusinessConsoleChangeToolingStatusRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordToolingUsageRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessInventoryClient
@@ -1853,7 +1873,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         CancellationToken cancellationToken,
         JsonSerializerOptions? jsonOptions = null,
         Action<HttpRequestMessage>? configureRequest = null,
-        bool failClosedOnFailureEnvelope = false)
+        bool failClosedOnFailureEnvelope = false,
+        Func<TResponse>? noContentResponseFactory = null)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
@@ -1906,6 +1927,11 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 throw response.StatusCode == HttpStatusCode.BadRequest
                     ? BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage)
                     : BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, downstreamMessage);
+            }
+
+            if (response.StatusCode == HttpStatusCode.NoContent && noContentResponseFactory is not null)
+            {
+                return noContentResponseFactory();
             }
 
             try
@@ -2270,6 +2296,11 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
 public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMasterDataClient
 {
+    private static readonly JsonSerializerOptions ToolingJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+    };
+
     public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
         string internalBearerToken,
         BusinessMasterDataPrincipalWorkContextRequest request,
@@ -2794,6 +2825,72 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             CodeRulePath(request.RuleKey) + "/preview",
             request,
             cancellationToken);
+
+    public async Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
+        string internalBearerToken,
+        BusinessConsoleListToolingAssetsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleToolingAssetListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/tooling-assets?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("status", request.Status?.ToString().ToLowerInvariant()),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            failClosedOnFailureEnvelope: true);
+        if (response.Items is null || response.Total < response.Items.Count)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return response;
+    }
+
+    public Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterToolingAssetRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleToolingRegistrationResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/tooling-assets",
+            request,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions);
+
+    public Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
+        string internalBearerToken,
+        BusinessConsoleChangeToolingStatusRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/tooling-assets/status",
+            request,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            noContentResponseFactory: static () => new BusinessConsoleAcceptedResponse(true));
+
+    public Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordToolingUsageRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/tooling-assets/usage",
+            request,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            noContentResponseFactory: static () => new BusinessConsoleAcceptedResponse(true));
 
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
         string internalBearerToken,

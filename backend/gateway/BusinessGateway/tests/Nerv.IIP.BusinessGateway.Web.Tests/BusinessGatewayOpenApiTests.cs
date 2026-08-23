@@ -93,6 +93,15 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "createBusinessConsoleCodeRuleVersion");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "changeReason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/preview", "post", "previewBusinessConsoleCodeRule");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets", "get", "listBusinessConsoleToolingAssets");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets", "post", "registerBusinessConsoleToolingAsset");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets/status", "post", "changeBusinessConsoleToolingStatus");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets/usage", "post", "recordBusinessConsoleToolingUsage");
+        AssertToolingStatusParameterEnum(
+            document,
+            paths.GetProperty("/api/business-console/v1/master-data/tooling-assets").GetProperty("get"),
+            "status");
+        AssertToolingStatusBodyEnum(document, paths);
         AssertOperationId(paths, "/api/business-console/v1/inventory/availability", "get", "getBusinessConsoleInventoryAvailability");
         AssertOperationId(paths, "/api/business-console/v1/inventory/expiry-alerts", "get", "listBusinessConsoleInventoryExpiryAlerts");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "post", "postBusinessConsoleInventoryMovement");
@@ -1197,6 +1206,66 @@ public sealed class BusinessGatewayOpenApiTests
             .Select(item => item.GetString())
             .ToArray();
         Assert.Equal(expected, actual);
+    }
+
+    private static void AssertToolingStatusBodyEnum(JsonDocument document, JsonElement paths)
+    {
+        var requestSchemaRef = paths
+            .GetProperty("/api/business-console/v1/master-data/tooling-assets/status")
+            .GetProperty("post")
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString()!;
+        var requestSchema = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(requestSchemaRef.Split('/')[^1]);
+        var statusSchema = requestSchema.GetProperty("properties").GetProperty("status");
+        var values = statusSchema.TryGetProperty("enum", out var inlineValues)
+            ? inlineValues
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(statusSchema.GetProperty("$ref").GetString()!.Split('/')[^1])
+                .GetProperty("enum");
+
+        Assert.Equal(
+            new string?[] { "available", "maintenance", "retired" },
+            values.EnumerateArray().Select(value => value.GetString()).ToArray());
+    }
+
+    private static void AssertToolingStatusParameterEnum(
+        JsonDocument document,
+        JsonElement operation,
+        string parameterName)
+    {
+        var parameterSchema = operation
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == parameterName)
+            .GetProperty("schema");
+        var enumSchema = parameterSchema.TryGetProperty("allOf", out var allOf)
+            ? allOf.EnumerateArray().First(item => item.TryGetProperty("$ref", out _))
+            : parameterSchema.TryGetProperty("oneOf", out var oneOf)
+                ? oneOf.EnumerateArray().First(item => item.TryGetProperty("$ref", out _))
+                : parameterSchema;
+        Assert.True(
+            enumSchema.TryGetProperty("enum", out _) || enumSchema.TryGetProperty("$ref", out _),
+            $"Tooling status query must expose a governed enum: {parameterSchema.GetRawText()}");
+        var values = enumSchema.TryGetProperty("enum", out var inlineValues)
+            ? inlineValues
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(enumSchema.GetProperty("$ref").GetString()!.Split('/')[^1])
+                .GetProperty("enum");
+
+        Assert.Equal(
+            new string?[] { "available", "maintenance", "retired" },
+            values.EnumerateArray().Select(value => value.GetString()).ToArray());
     }
 
     private static void AssertJsonResponseRef(

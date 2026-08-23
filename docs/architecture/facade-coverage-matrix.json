@@ -2091,8 +2091,13 @@
       "method": "GET",
       "route": "/api/business/v1/master-data/tooling-assets",
       "operationId": "listBusinessMasterDataToolingAssets",
-      "classification": "deferred",
-      "followUp": "BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleToolingAssets"
+      ]
     },
     {
       "service": "MasterData",
@@ -2151,24 +2156,39 @@
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets",
       "operationId": "registerBusinessMasterDataToolingAsset",
-      "classification": "deferred",
-      "followUp": "BusinessGateway and Business Console tooling maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "registerBusinessConsoleToolingAsset"
+      ]
     },
     {
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets/status",
       "operationId": "changeBusinessMasterDataToolingStatus",
-      "classification": "deferred",
-      "followUp": "BusinessGateway and Business Console tooling lifecycle maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "changeBusinessConsoleToolingStatus"
+      ]
     },
     {
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets/usage",
       "operationId": "recordBusinessMasterDataToolingUsage",
-      "classification": "deferred",
-      "followUp": "Equipment counter integration and Business Console tooling usage maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleToolingUsage"
+      ]
     },
     {
       "service": "MasterData",
