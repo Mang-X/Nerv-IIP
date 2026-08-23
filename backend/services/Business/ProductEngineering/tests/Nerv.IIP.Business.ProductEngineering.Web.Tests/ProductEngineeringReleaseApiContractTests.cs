@@ -2177,7 +2177,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("engineering-bom", "EBOM-SELF:A", " EBOM-SELF:A ")]),
             CancellationToken.None));
 
-        Assert.Equal("受影响版本不能将自身设为替代版本。", exception.Message);
+        Assert.Equal("受影响版本 'engineering-bom:EBOM-SELF:A' 不能将自身设为替代版本，请修改替代版本。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2211,7 +2211,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Equal("受影响版本的替代关系不能形成循环。", exception.Message);
+        Assert.Equal("受影响版本 'engineering-bom:EBOM-CYCLE:A' 的替代关系形成循环，请修改替代版本。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2245,7 +2245,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Equal("同一工程变更中，一个受影响版本只能指定一个替代版本。", exception.Message);
+        Assert.Equal("受影响版本 'engineering-bom:ebom-dup:a' 已指定其他替代版本，请删除重复项。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2913,11 +2913,6 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class FixedBusinessDateProvider(DateOnly businessDate) : IProductEngineeringBusinessDateProvider
-    {
-        public DateOnly GetBusinessDate() => businessDate;
     }
 
     private sealed class EngineeringChangeReleasedDomainEventRecorder

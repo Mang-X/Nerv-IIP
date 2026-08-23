@@ -12,6 +12,7 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -939,7 +940,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.VersionId,
                 cancellationToken), affectedVersion.VersionId, await GetSuccessorEngineeringDocumentAsync(request, affectedVersion, cancellationToken)),
-            _ => throw new KnownException("受影响版本类型不受支持。")
+            _ => throw new KnownException($"受影响版本 '{affectedVersion.VersionKind}:{affectedVersion.VersionId}' 不受支持，请检查提交内容。")
         };
     }
 
@@ -960,17 +961,17 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             if (affectedVersion.SupersededByVersionId is not null &&
                 string.Equals(affectedVersion.VersionId, affectedVersion.SupersededByVersionId, StringComparison.OrdinalIgnoreCase))
             {
-                throw new KnownException("受影响版本不能将自身设为替代版本。");
+                throw new KnownException($"受影响版本 '{affectedVersion.VersionKind}:{affectedVersion.VersionId}' 不能将自身设为替代版本，请修改替代版本。");
             }
 
             if (edgesByVersion.TryGetValue(key, out var existing))
             {
                 if (!string.Equals(existing.SupersededByVersionId ?? string.Empty, affectedVersion.SupersededByVersionId ?? string.Empty, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new KnownException("同一工程变更中，一个受影响版本只能指定一个替代版本。");
+                    throw new KnownException($"受影响版本 '{affectedVersion.VersionKind}:{affectedVersion.VersionId}' 已指定其他替代版本，请删除重复项。");
                 }
 
-                throw new KnownException("同一工程变更中不能重复声明受影响版本。");
+                throw new KnownException($"受影响版本 '{affectedVersion.VersionKind}:{affectedVersion.VersionId}' 重复声明，请保留一项。");
             }
 
             edgesByVersion.Add(key, affectedVersion);
@@ -991,13 +992,13 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 var currentKey = AffectedVersionKey(current.VersionKind, current.VersionId);
                 if (!visited.Add(currentKey))
                 {
-                    throw SupersedeCycleException(affectedVersion, current);
+                    throw SupersedeCycleException(affectedVersion);
                 }
 
                 var successorKey = AffectedVersionKey(current.VersionKind, current.SupersededByVersionId);
                 if (successorKey == startKey || visited.Contains(successorKey))
                 {
-                    throw SupersedeCycleException(affectedVersion, current);
+                    throw SupersedeCycleException(affectedVersion);
                 }
 
                 if (!edgesByVersion.TryGetValue(successorKey, out current))
@@ -1008,9 +1009,9 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         }
     }
 
-    private static KnownException SupersedeCycleException(AffectedVersionCommand start, AffectedVersionCommand current)
+    private static KnownException SupersedeCycleException(AffectedVersionCommand start)
     {
-        return new KnownException("受影响版本的替代关系不能形成循环。");
+        return new KnownException($"受影响版本 '{start.VersionKind}:{start.VersionId}' 的替代关系形成循环，请修改替代版本。");
     }
 
     private static string AffectedVersionKey(string versionKind, string versionId)
@@ -1024,7 +1025,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         {
             nameof(AffectedVersionCommand.VersionKind) => "受影响版本类型",
             nameof(AffectedVersionCommand.VersionId) => "受影响版本标识",
-            _ => throw new InvalidOperationException($"不支持的工程变更字段：{fieldName}")
+            _ => throw new UnreachableException($"不支持的工程变更字段：{fieldName}")
         };
         return string.IsNullOrWhiteSpace(value)
             ? throw new KnownException($"{displayName}不能为空。")

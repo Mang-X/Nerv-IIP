@@ -144,6 +144,80 @@ public sealed class EngineeringChangeKnownExceptionContractTests
         Assert.DoesNotContain(successor.Id.Id.ToString("D"), exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("unsupported", "engineering-change", "EC-001", "受影响版本 'engineering-change:EC-001' 不受支持，请检查提交内容。")]
+    [InlineData("self", "engineering-bom", "EBOM-SELF:A", "受影响版本 'engineering-bom:EBOM-SELF:A' 不能将自身设为替代版本，请修改替代版本。")]
+    [InlineData("duplicate-different-successor", "engineering-bom", "EBOM-DUP:A", "受影响版本 'engineering-bom:EBOM-DUP:A' 已指定其他替代版本，请删除重复项。")]
+    [InlineData("duplicate-same-successor", "engineering-bom", "EBOM-DUP:A", "受影响版本 'engineering-bom:EBOM-DUP:A' 重复声明，请保留一项。")]
+    [InlineData("cycle", "engineering-bom", "EBOM-CYCLE:A", "受影响版本 'engineering-bom:EBOM-CYCLE:A' 的替代关系形成循环，请修改替代版本。")]
+    public async Task Public_release_batch_validation_names_the_affected_version_and_next_action(
+        string caseName,
+        string versionKind,
+        string versionId,
+        string expectedMessage)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var handler = CreateHandler(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        IReadOnlyCollection<AffectedVersionCommand> affectedVersions = caseName switch
+        {
+            "unsupported" => [new AffectedVersionCommand(versionKind, versionId)],
+            "self" => [new AffectedVersionCommand(versionKind, versionId, versionId)],
+            "duplicate-different-successor" => [
+                new AffectedVersionCommand(versionKind, versionId, "EBOM-A:A"),
+                new AffectedVersionCommand(versionKind, versionId, "EBOM-B:A")],
+            "duplicate-same-successor" => [
+                new AffectedVersionCommand(versionKind, versionId, "EBOM-A:A"),
+                new AffectedVersionCommand(versionKind, versionId, "EBOM-A:A")],
+            "cycle" => [
+                new AffectedVersionCommand(versionKind, versionId, "EBOM-CYCLE:B"),
+                new AffectedVersionCommand(versionKind, "EBOM-CYCLE:B", versionId)],
+            _ => throw new ArgumentOutOfRangeException(nameof(caseName), caseName, null)
+        };
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                $"ECO-BATCH-{caseName}",
+                "Reject invalid affected version batch",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                affectedVersions),
+            CancellationToken.None));
+
+        Assert.Equal(expectedMessage, exception.Message);
+        Assert.Contains(versionKind, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(versionId, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("请", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("cannot", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Public_release_batch_validation_uses_estimated_display_budget_for_maximum_version_id()
+    {
+        const string versionKind = "engineering-bom";
+        var versionId = new string('V', 150);
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var handler = CreateHandler(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-BATCH-LONG-ID",
+                "Reject self supersede with maximum identifier",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand(versionKind, versionId, versionId)]),
+            CancellationToken.None));
+
+        Assert.Contains($"{versionKind}:{versionId}", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不能将自身设为替代版本", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length > 60, "最大 150 字符 VersionId 的运行时文案不应伪称严格 <=60 字符。");
+    }
+
     [Fact]
     public async Task Public_cancel_and_reschedule_hide_domain_state_messages_behind_stable_chinese_text()
     {
@@ -195,6 +269,18 @@ public sealed class EngineeringChangeKnownExceptionContractTests
             .BuildServiceProvider();
     }
 
+    private static ReleaseEngineeringChangeCommandHandler CreateHandler(ApplicationDbContext dbContext)
+    {
+        return new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new ApprovedVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
+    }
+
     private sealed class ApprovedVerifier : IEngineeringApprovalVerifier
     {
         public Task EnsureApprovedAsync(
@@ -205,8 +291,4 @@ public sealed class EngineeringChangeKnownExceptionContractTests
             CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class FixedBusinessDateProvider(DateOnly businessDate) : IProductEngineeringBusinessDateProvider
-    {
-        public DateOnly GetBusinessDate() => businessDate;
-    }
 }

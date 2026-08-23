@@ -73,6 +73,17 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Guid_D_interpolation_uses_its_explicit_36_character_shape()
+    {
+        const string source =
+            "using NetCorePal.Extensions.Primitives; using System; class Probe { KnownException Create() => new($\"一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五{Guid.NewGuid():D}\"); }";
+
+        var violations = AnalyzeProbe(source);
+
+        Assert.Equal(["Probe.cs:1: 用户消息估算长度不能超过 60 个字符。"], violations);
+    }
+
+    [Fact]
     public void Chinese_raw_string_user_messages_are_allowed()
     {
         const string source =

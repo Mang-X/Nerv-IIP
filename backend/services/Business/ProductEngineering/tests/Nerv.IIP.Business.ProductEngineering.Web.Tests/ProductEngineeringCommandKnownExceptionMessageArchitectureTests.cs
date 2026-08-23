@@ -98,8 +98,8 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "EnsureActiveSuccessor", 1, "scheduler/background"),
         Target(ReleaseCommandsPath, "CancelScheduledEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
         Target(ReleaseCommandsPath, "RescheduleEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
-        // The fallback verifier has no public facade and remains explicitly excluded.
-        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "fallback/no-facade"),
+        // The fallback verifier fails six-step step 3: Program.cs:46 binds production HTTP facade instead.
+        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "六步第3步失败：Program.cs:46 生产注册 HttpEngineeringApprovalVerifier，fallback 不可达"),
         Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "EnsureApprovedAsync", 3),
         Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "ValidateApprovedChain", 1),
     ];
@@ -169,8 +169,20 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
                     or "RescheduleEngineeringChangeCommandHandler"
                     or "HttpEngineeringApprovalVerifier"))
             .ToArray();
-        Assert.Equal(25, engineeringChangeTargets.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(9, engineeringChangeTargets.Sum(site => site.AsKnownExceptionCallCount));
+        var discoveredEngineeringChangeTargets = discovered
+            .Where(site => engineeringChangeTargets.Any(expected => expected.Key == site.Key))
+            .ToArray();
+        Assert.Equal(19, discoveredEngineeringChangeTargets
+            .Where(site => site.TypeName == "ReleaseEngineeringChangeCommandHandler")
+            .Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(2, discoveredEngineeringChangeTargets
+            .Where(site => site.TypeName is "CancelScheduledEngineeringChangeCommandHandler" or "RescheduleEngineeringChangeCommandHandler")
+            .Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(4, discoveredEngineeringChangeTargets
+            .Where(site => site.TypeName == "HttpEngineeringApprovalVerifier")
+            .Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(25, discoveredEngineeringChangeTargets.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(9, discoveredEngineeringChangeTargets.Sum(site => site.AsKnownExceptionCallCount));
 
         var targetMethods = engineeringChangeTargets
             .Where(site => site.AsKnownExceptionCallCount > 0)
@@ -223,10 +235,20 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
             var value = string.Concat(fixedText);
             return (
                 value.Any(character => character is >= '\u3400' and <= '\u9fff'),
-                value.Length + interpolated.Contents.OfType<InterpolationSyntax>().Count() * 12);
+                value.Length + interpolated.Contents.OfType<InterpolationSyntax>().Sum(EstimateInterpolationLength));
         }
 
         return (false, int.MaxValue);
+    }
+
+    private static int EstimateInterpolationLength(InterpolationSyntax interpolation)
+    {
+        var expression = interpolation.Expression.ToString();
+        var format = interpolation.FormatClause?.FormatStringToken.ValueText;
+        return string.Equals(format, "D", StringComparison.OrdinalIgnoreCase)
+            || expression.Contains("Guid", StringComparison.Ordinal)
+            ? 36
+            : 12;
     }
 
     private static ProductEngineeringCommandKnownExceptionSite Target(
