@@ -110,11 +110,21 @@ describe('首件检验方案配置', () => {
     expect(summary.text()).toContain('请选择适用物料。')
     expect(summary.text()).toContain('请选择工序工作中心。')
     expect(wrapper.get('form').element.firstElementChild).toBe(summary.element)
-    expect(wrapper.get('#first-article-plan-code').element.closest('[data-invalid="true"]')).not.toBeNull()
-    expect(wrapper.get('#first-article-sku').element.closest('[data-invalid="true"]')).not.toBeNull()
-    expect(wrapper.get('#first-article-work-center').element.closest('[data-invalid="true"]')).not.toBeNull()
-    expect(wrapper.get('#first-article-item-code-0').element.closest('[data-invalid="true"]')).not.toBeNull()
-    expect(wrapper.get('#first-article-item-name-0').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-plan-code').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-sku').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-work-center').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-item-code-0').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-item-name-0').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
     expect(state.createAndActivate).not.toHaveBeenCalled()
   })
 
@@ -134,7 +144,9 @@ describe('首件检验方案配置', () => {
   it('重复检验项编号会标记两个冲突字段且不发送请求', async () => {
     const wrapper = mountSheet()
     await fillRequiredFields(wrapper)
-    const addButton = wrapper.findAll('button').find((button) => button.text().includes('添加检验项'))
+    const addButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('添加检验项'))
     expect(addButton).toBeDefined()
     await addButton!.trigger('click')
     await wrapper.get('#first-article-item-code-1').setValue('APPEARANCE')
@@ -142,8 +154,12 @@ describe('首件检验方案配置', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.get('[role="alert"]').text()).toContain('检验项编号不能重复。')
-    expect(wrapper.get('#first-article-item-code-0').element.closest('[data-invalid="true"]')).not.toBeNull()
-    expect(wrapper.get('#first-article-item-code-1').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-item-code-0').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
+    expect(
+      wrapper.get('#first-article-item-code-1').element.closest('[data-invalid="true"]'),
+    ).not.toBeNull()
     expect(state.createAndActivate).not.toHaveBeenCalled()
   })
 

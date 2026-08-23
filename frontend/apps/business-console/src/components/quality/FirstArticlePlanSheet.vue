@@ -311,10 +311,7 @@ async function submit() {
                 <Trash2Icon aria-hidden="true" />
               </NvButton>
             </div>
-            <NvField
-              class="md:col-span-3"
-              :data-invalid="submitted && !item.samplingRule.trim()"
-            >
+            <NvField class="md:col-span-3" :data-invalid="submitted && !item.samplingRule.trim()">
               <NvFieldLabel :for="`first-article-item-sampling-${index}`">抽样要求</NvFieldLabel>
               <NvInput
                 :id="`first-article-item-sampling-${index}`"
