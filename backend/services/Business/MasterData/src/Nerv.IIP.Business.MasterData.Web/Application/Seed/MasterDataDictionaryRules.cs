@@ -58,6 +58,11 @@ public static class MasterDataDictionaryRules
         new("storage-condition", "esd", "防静电"),
         new("storage-condition", "hazardous", "危化品"),
 
+        new("inventory-location", "loc-raw-01", "原料库"),
+        new("inventory-location", "loc-semi-01", "半成品库"),
+        new("inventory-location", "loc-fg-01", "成品库"),
+        new("inventory-location", "loc-line-01", "线边库"),
+
         new("barcode-rule", "code128", "Code128"),
         new("barcode-rule", "ean13", "EAN-13"),
         new("barcode-rule", "gs1-128", "GS1-128"),
