@@ -196,6 +196,23 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         [int]$equivalenceContractStep.'timeout-minutes' -eq 5 -and
         $null -eq $equivalenceContractStep.PSObject.Properties['if']) 'The equivalence fixture contract must run as one unconditional five-minute pwsh step.'
 
+    foreach ($migratorContract in @(
+            @{ Name = 'Test platform release migrator contract'; Run = './scripts/tests/platform-release-migrator.Tests.ps1' },
+            @{ Name = 'Test business release migrator contract'; Run = './scripts/tests/business-release-migrator.Tests.ps1' },
+            @{ Name = 'Test FileStorage release migrator contract'; Run = './scripts/tests/file-storage-migration.Tests.ps1' }
+        )) {
+        $migratorSteps = @($scriptGovernanceSteps | Where-Object {
+                [string]::Equals([string]$_.name, [string]$migratorContract.Name, [StringComparison]::Ordinal)
+            })
+        Assert-Contract ($migratorSteps.Count -eq 1) "Script Governance must contain exactly one independent '$($migratorContract.Name)' step."
+        $migratorStep = $migratorSteps[0]
+        Assert-Contract ([string]::Equals([string]$migratorStep.shell, 'pwsh', [StringComparison]::Ordinal) -and
+            [string]::Equals([string]$migratorStep.run, [string]$migratorContract.Run, [StringComparison]::Ordinal) -and
+            [int]$migratorStep.'timeout-minutes' -eq 5 -and
+            $null -eq $migratorStep.PSObject.Properties['if'] -and
+            $null -eq $migratorStep.PSObject.Properties['continue-on-error']) "Migrator contract '$($migratorContract.Name)' must run only its declared script as one unconditional failure-propagating five-minute pwsh step."
+    }
+
     Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
@@ -1153,12 +1170,12 @@ try {
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 153m（31 个 step：3m checkout',
-        'step 预算合计 148m（30 个 step：3m checkout').Replace(
-        '+ 30 × 5m；',
-        '+ 29 × 5m；')
+        'step 预算合计 168m（34 个 step：3m checkout',
+        'step 预算合计 163m（33 个 step：3m checkout').Replace(
+        '+ 33 × 5m；',
+        '+ 32 × 5m；')
     Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 148m（30 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 29 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 30 steps and 148m.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 163m（33 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 32 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 33 steps and 163m.'
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
@@ -1175,27 +1192,77 @@ try {
 
 '@
     $workflowWithoutAcceptanceEquivalenceContract = $workflow.Replace($acceptanceEquivalenceContractStep, '').Replace(
-        'step 预算合计 153m（31 个 step：3m checkout',
-        'step 预算合计 148m（30 个 step：3m checkout').Replace(
-        '+ 30 × 5m；',
-        '+ 29 × 5m；')
+        'step 预算合计 168m（34 个 step：3m checkout',
+        'step 预算合计 163m（33 个 step：3m checkout').Replace(
+        '+ 33 × 5m；',
+        '+ 32 × 5m；')
     $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
     $equivalenceWorkflowContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceEquivalenceContractPath } catch { $equivalenceWorkflowContractFailure = $_ }
     Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
 
+    foreach ($migratorMutation in @(
+            @{
+                Slug = 'platform'
+                Name = 'Test platform release migrator contract'
+                Block = "      - name: Test platform release migrator contract$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        shell: pwsh$([Environment]::NewLine)        run: ./scripts/tests/platform-release-migrator.Tests.ps1$([Environment]::NewLine)$([Environment]::NewLine)"
+            },
+            @{
+                Slug = 'business'
+                Name = 'Test business release migrator contract'
+                Block = "      - name: Test business release migrator contract$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        shell: pwsh$([Environment]::NewLine)        run: ./scripts/tests/business-release-migrator.Tests.ps1$([Environment]::NewLine)$([Environment]::NewLine)"
+            },
+            @{
+                Slug = 'filestorage'
+                Name = 'Test FileStorage release migrator contract'
+                Block = "      - name: Test FileStorage release migrator contract$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        shell: pwsh$([Environment]::NewLine)        run: ./scripts/tests/file-storage-migration.Tests.ps1$([Environment]::NewLine)$([Environment]::NewLine)"
+            }
+        )) {
+        $workflowWithoutMigrator = $workflow.Replace([string]$migratorMutation.Block, '')
+        Assert-Contract (-not [string]::Equals($workflowWithoutMigrator, $workflow, [StringComparison]::Ordinal)) "Migrator deletion mutation '$($migratorMutation.Slug)' must remove its canonical independent step."
+        $workflowWithoutMigratorPath = Join-Path $workflowMutationRoot "script-governance-drops-$($migratorMutation.Slug)-migrator.yml"
+        [IO.File]::WriteAllText($workflowWithoutMigratorPath, $workflowWithoutMigrator, [Text.UTF8Encoding]::new($false))
+        $migratorDeletionFailure = $null
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutMigratorPath } catch { $migratorDeletionFailure = $_ }
+        $expectedMigratorDiagnostic = "Script Governance must contain exactly one independent '$($migratorMutation.Name)' step."
+        $observedMigratorDiagnostic = if ($null -eq $migratorDeletionFailure) { '<none>' } else { [string]$migratorDeletionFailure.Exception.Message }
+        Assert-Contract ([string]::Equals($observedMigratorDiagnostic, $expectedMigratorDiagnostic, [StringComparison]::Ordinal)) "Deleting migrator step '$($migratorMutation.Name)' must fail with its exact uniqueness diagnostic. Observed: $observedMigratorDiagnostic"
+    }
+
+    $workflowWithNoOpMigrator = $workflow.Replace(
+        '        run: ./scripts/tests/business-release-migrator.Tests.ps1',
+        "        run: Write-Host 'business migrator no-op'",
+        [StringComparison]::Ordinal)
+    Assert-Contract (-not [string]::Equals($workflowWithNoOpMigrator, $workflow, [StringComparison]::Ordinal)) 'Business migrator no-op mutation must replace the canonical command.'
+    $workflowWithNoOpMigratorPath = Join-Path $workflowMutationRoot 'script-governance-no-op-business-migrator.yml'
+    [IO.File]::WriteAllText($workflowWithNoOpMigratorPath, $workflowWithNoOpMigrator, [Text.UTF8Encoding]::new($false))
+    $noOpMigratorFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithNoOpMigratorPath } catch { $noOpMigratorFailure = $_ }
+    Assert-Contract ($null -ne $noOpMigratorFailure -and $noOpMigratorFailure.Exception.Message.Contains("Migrator contract 'Test business release migrator contract' must run only its declared script", [StringComparison]::Ordinal)) 'Replacing the business migrator step with a no-op must fail its execution contract.'
+
+    $workflowWithSwallowedMigratorFailure = $workflow.Replace(
+        "      - name: Test FileStorage release migrator contract$([Environment]::NewLine)        timeout-minutes: 5",
+        "      - name: Test FileStorage release migrator contract$([Environment]::NewLine)        continue-on-error: true$([Environment]::NewLine)        timeout-minutes: 5",
+        [StringComparison]::Ordinal)
+    Assert-Contract (-not [string]::Equals($workflowWithSwallowedMigratorFailure, $workflow, [StringComparison]::Ordinal)) 'FileStorage continue-on-error mutation must alter the canonical step.'
+    $workflowWithSwallowedMigratorFailurePath = Join-Path $workflowMutationRoot 'script-governance-swallows-filestorage-migrator-failure.yml'
+    [IO.File]::WriteAllText($workflowWithSwallowedMigratorFailurePath, $workflowWithSwallowedMigratorFailure, [Text.UTF8Encoding]::new($false))
+    $swallowedMigratorFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithSwallowedMigratorFailurePath } catch { $swallowedMigratorFailure = $_ }
+    Assert-Contract ($null -ne $swallowedMigratorFailure -and $swallowedMigratorFailure.Exception.Message.Contains("Migrator contract 'Test FileStorage release migrator contract' must run only its declared script", [StringComparison]::Ordinal)) 'Adding continue-on-error to the FileStorage migrator step must fail its failure-propagation contract.'
+
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 153m（31 个 step：3m checkout',
-        'step 预算合计 148m（30 个 step：3m checkout').Replace(
-        '+ 30 × 5m；',
-        '+ 29 × 5m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 31-step/153m comment.'
+        'step 预算合计 168m（34 个 step：3m checkout',
+        'step 预算合计 163m（33 个 step：3m checkout').Replace(
+        '+ 33 × 5m；',
+        '+ 32 × 5m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 34-step/168m comment.'
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 31-step/153m structure.'
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 34-step/168m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 
