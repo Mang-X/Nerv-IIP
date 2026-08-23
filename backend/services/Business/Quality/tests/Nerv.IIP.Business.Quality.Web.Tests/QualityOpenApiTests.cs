@@ -46,6 +46,31 @@ public sealed class QualityOpenApiTests
         }
 
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
+        AssertSchemaProperties(
+            document,
+            "NervIIPBusinessQualityWebEndpointsInspectionPlansCreateInspectionPlanRequest",
+            "timeIntervalHours",
+            "quantityInterval",
+            "assignedInspectorUserId",
+            "assignedTeamId");
+        AssertSchemaProperties(
+            document,
+            "NervIIPBusinessQualityWebApplicationQueriesInspectionPlansInspectionPlanResponse",
+            "timeIntervalHours",
+            "quantityInterval",
+            "assignedInspectorUserId",
+            "assignedTeamId");
+    }
+
+    private static void AssertSchemaProperties(JsonDocument document, string schemaName, params string[] propertyNames)
+    {
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var schema = schemas.GetProperty(schemaName);
+        var properties = schema.GetProperty("properties");
+        foreach (var propertyName in propertyNames)
+        {
+            Assert.True(properties.TryGetProperty(propertyName, out _), $"Schema '{schemaName}' is missing '{propertyName}'.");
+        }
     }
 
     private static void AssertRequiredReason(JsonDocument document, string route)
