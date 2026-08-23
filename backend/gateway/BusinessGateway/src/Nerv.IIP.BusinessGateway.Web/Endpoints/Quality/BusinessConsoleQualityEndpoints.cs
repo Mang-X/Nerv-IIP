@@ -288,6 +288,36 @@ public sealed class BusinessConsoleQualityInspectionPlanCharacteristicsRequestVa
     }
 }
 
+public sealed class BusinessConsoleQualityInspectionPlanListRequestValidator
+    : Validator<BusinessConsoleQualityInspectionPlanListRequest>
+{
+    public BusinessConsoleQualityInspectionPlanListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(200);
+        RuleFor(x => x.Category).MaximumLength(50);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleQualityInspectionRecordListRequestValidator
+    : Validator<BusinessConsoleQualityInspectionRecordListRequest>
+{
+    public BusinessConsoleQualityInspectionRecordListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(200);
+        RuleFor(x => x.SourceType).MaximumLength(50);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
 public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
     : Validator<BusinessConsoleCreateInspectionPlanRequest>
 {
@@ -390,16 +420,16 @@ public sealed class ListBusinessConsoleQualityInspectionPlansEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityInspectionPlanListRequest, BusinessConsoleQualityListResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsRead)
 {
-    protected override string OrganizationId(BusinessConsoleQualityListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleQualityInspectionPlanListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleQualityListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleQualityInspectionPlanListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleQualityListResponse> ForwardAsync(
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionPlanListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListInspectionPlansAsync(tokenProvider.BearerToken, request, cancellationToken);
@@ -468,16 +498,16 @@ public sealed class ListBusinessConsoleQualityInspectionRecordsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityInspectionRecordListRequest, BusinessConsoleQualityListResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsRead)
 {
-    protected override string OrganizationId(BusinessConsoleQualityListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleQualityInspectionRecordListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleQualityListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleQualityInspectionRecordListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleQualityListResponse> ForwardAsync(
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionRecordListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListInspectionRecordsAsync(tokenProvider.BearerToken, request, cancellationToken);

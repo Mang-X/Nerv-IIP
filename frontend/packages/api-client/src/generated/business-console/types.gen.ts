@@ -1894,7 +1894,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     closeReason?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanListRequest = {
     [key: string]: never;
 };
 
@@ -1957,6 +1957,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
     measuringDeviceId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionRecordListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenNcrFromInspectionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2107,6 +2111,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
     [key: string]: never;
 };
 
@@ -10737,6 +10745,7 @@ export type ListBusinessConsoleQualityInspectionPlansData = {
         environmentId: string;
         status?: string | null;
         keyword?: string | null;
+        category?: string | null;
         skip?: number;
         take?: number;
     };
@@ -10744,6 +10753,10 @@ export type ListBusinessConsoleQualityInspectionPlansData = {
 };
 
 export type ListBusinessConsoleQualityInspectionPlansErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -10753,6 +10766,8 @@ export type ListBusinessConsoleQualityInspectionPlansErrors = {
      */
     403: unknown;
 };
+
+export type ListBusinessConsoleQualityInspectionPlansError = ListBusinessConsoleQualityInspectionPlansErrors[keyof ListBusinessConsoleQualityInspectionPlansErrors];
 
 export type ListBusinessConsoleQualityInspectionPlansResponses = {
     /**
@@ -10839,6 +10854,7 @@ export type ListBusinessConsoleQualityInspectionRecordsData = {
         environmentId: string;
         status?: string | null;
         keyword?: string | null;
+        sourceType?: string | null;
         skip?: number;
         take?: number;
     };
@@ -10846,6 +10862,10 @@ export type ListBusinessConsoleQualityInspectionRecordsData = {
 };
 
 export type ListBusinessConsoleQualityInspectionRecordsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -10855,6 +10875,8 @@ export type ListBusinessConsoleQualityInspectionRecordsErrors = {
      */
     403: unknown;
 };
+
+export type ListBusinessConsoleQualityInspectionRecordsError = ListBusinessConsoleQualityInspectionRecordsErrors[keyof ListBusinessConsoleQualityInspectionRecordsErrors];
 
 export type ListBusinessConsoleQualityInspectionRecordsResponses = {
     /**

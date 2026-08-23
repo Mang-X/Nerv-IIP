@@ -51,11 +51,12 @@ export const INSPECTION_TASK_SOURCE_TYPES: readonly string[] = ['receiving', 'op
 
 /**
  * 质量单据（检验记录 / NCR）来源类型（镜像 Quality 检验记录 sourceType 口径：
- * operation/receiving/final/maintenance/customer-return）。与检验任务的三类来源不同，
+ * operation/first-article/receiving/final/maintenance/customer-return）。与检验任务的三类来源不同，
  * 这里覆盖 NCR 分析、检验记录带出区等展示场景；未知码原样返回，不吞真值。
  */
 export const qualitySourceTypeLabels: Record<string, string> = {
   operation: '工序',
+  'first-article': '首件检验',
   'in-process': '过程检验',
   receiving: '收货',
   final: '终检',

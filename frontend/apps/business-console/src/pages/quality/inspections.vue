@@ -8,6 +8,7 @@ import { listBusinessConsoleQualityInspectionTasks } from '@nerv-iip/api-client'
 import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
 import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
+  useQualityFirstArticlePlanActions,
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,
 } from '@/composables/useBusinessQuality'
@@ -20,6 +21,7 @@ import {
 } from '@/composables/useQualityPickerCatalog'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -32,6 +34,8 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
+import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
+import FirstArticlePlanDialog from '@/components/quality/FirstArticlePlanDialog.vue'
 import {
   NvButton,
   NvCombobox,
@@ -59,11 +63,16 @@ import {
   NvSelectValue,
   Spinner,
   NvStatusBadge,
+  NvTabs,
+  NvTabsContent,
+  NvTabsList,
+  NvTabsTrigger,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
+import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Settings2Icon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 definePage({
   meta: {
@@ -75,6 +84,13 @@ definePage({
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
+const canManageInspectionPlans = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-plans.manage'),
+)
+const activeView = shallowRef(
+  firstQuery(route.query.view) === 'first-article-records' ? 'first-article-records' : 'plans',
+)
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
 const {
   createInspectionRecord,
@@ -94,6 +110,7 @@ const { page, pageSize } = usePagedList(filters, {
 })
 
 const recordSheetOpen = shallowRef(false)
+const firstArticlePlanDialogOpen = shallowRef(false)
 const recordCreatedFromLocatedPlanId = shallowRef('')
 const characteristicsAppliedPlanId = shallowRef('')
 
@@ -276,6 +293,9 @@ const planCatalog = useQualityInspectionPlanCatalog()
 const skuCatalog = useQualitySkuCatalog()
 const uomCatalog = useQualityUomCatalog()
 const reasonCatalog = useQualityReasonCatalog()
+const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
+const { activateFirstArticlePlan, activateFirstArticlePlanPending } =
+  useQualityFirstArticlePlanActions(filters)
 // 换检验方案等于换了检验对象：方案自带的物料要跟着走，已填的特性行不再属于新方案，重置回一行空行。
 const recordPlanModel = computed({
   get: () => recordForm.inspectionPlanId,
@@ -495,7 +515,35 @@ function formatSpecification(characteristic: {
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
   if (plan.skuCode && !firstQuery(route.query.skuCode)) recordForm.skuCode = plan.skuCode
+  if (plan.category?.trim().toLowerCase() === 'first-article') {
+    recordForm.sourceType = 'first-article'
+    recordForm.sourceService = 'mes-operation'
+  }
   recordSheetOpen.value = true
+}
+async function activateDraftFirstArticlePlan(plan: BusinessConsoleQualityItem) {
+  const inspectionPlanId = plan.id?.trim()
+  if (!inspectionPlanId) return
+  try {
+    await activateFirstArticlePlan(inspectionPlanId)
+    notifySuccess(`首件检验方案 ${plan.code ?? ''} 已启用。`)
+    await refreshInspectionPlans()
+  } catch (error) {
+    notifyOperationFailure('首件方案启用失败', error, '首件检验方案启用失败，请稍后重试。')
+  }
+}
+async function openFirstArticleRecord(inspectionRecordId: string) {
+  activeView.value = 'first-article-records'
+  await router.push({
+    path: '/quality/inspections',
+    query: { ...route.query, view: 'first-article-records', inspectionRecordId },
+  })
+}
+function isDraftFirstArticlePlan(plan: BusinessConsoleQualityItem) {
+  return (
+    plan.category?.trim().toLowerCase() === 'first-article' &&
+    plan.status?.trim().toLowerCase() === 'draft'
+  )
 }
 function addCharacteristicRow() {
   recordForm.resultLines.push(emptyLine())
@@ -720,6 +768,7 @@ function hasRequiredDefectContext(line: {
 const CATEGORY_LABELS: Record<string, string> = {
   receiving: '来料检',
   operation: '工序检',
+  'first-article': '首件检验',
   'in-process': '工序检',
   final: '终检',
   outgoing: '出货检',
@@ -773,6 +822,16 @@ function isPresent(value: string | undefined | null): value is string {
       :count="`${inspectionPlansTotal} 个检验方案`"
     >
       <template #actions>
+        <NvButton
+          v-if="activeView === 'plans' && canManageInspectionPlans"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="firstArticlePlanDialogOpen = true"
+        >
+          <Settings2Icon aria-hidden="true" />
+          配置首件检验方案
+        </NvButton>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
             >返回工单 {{ contextWorkOrderId }}</RouterLink
@@ -798,52 +857,99 @@ function isPresent(value: string | undefined | null): value is string {
       </template>
     </NvPageHeader>
 
-    <NvToolbar :show-search="false">
-      <template #filters>
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-32"
-          placeholder="状态（可选）"
-          aria-label="检验状态"
+    <NvTabs v-model="activeView">
+      <NvTabsList>
+        <NvTabsTrigger value="plans">检验方案</NvTabsTrigger>
+        <NvTabsTrigger value="first-article-records">首件检验记录</NvTabsTrigger>
+      </NvTabsList>
+
+      <NvTabsContent value="plans" class="grid gap-3">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">检验方案</h2>
+            <p class="text-sm text-muted-foreground">
+              首件检验方案固定关联物料与工序工作中心，草稿方案可在行操作中继续启用。
+            </p>
+          </div>
+          <span class="text-sm text-muted-foreground">{{ inspectionPlansTotal }} 个方案</span>
+        </div>
+
+        <NvToolbar :show-search="false">
+          <template #filters>
+            <NvInput
+              v-model="filters.status"
+              class="h-9 w-32"
+              placeholder="状态（可选）"
+              aria-label="检验状态"
+            />
+          </template>
+        </NvToolbar>
+
+        <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+          {{ listErrorMessage }}
+        </p>
+        <p v-else-if="targetInspectionPlanMissing" class="text-sm text-warning" role="status">
+          未找到检验方案 {{ targetInspectionPlanId }}。请确认该方案是否已归档或无权访问。
+        </p>
+
+        <NvDataTable
+          manual
+          :page="page"
+          :page-size="pageSize"
+          :total-items="inspectionPlansTotal"
+          :columns="columns"
+          :rows="inspectionPlans"
+          :row-key="(r) => r.id ?? r.code ?? '无'"
+          :loading="inspectionPlansPending"
+          :searchable="false"
+          :column-settings="false"
+          empty-message="当前筛选下没有检验方案。可配置首件检验方案，或从工单、收货、检验任务进入创建检验记录。"
+          @update:page="page = $event"
+          @update:page-size="(v) => (pageSize = String(v))"
+        >
+          <template #cell-code="{ row }">
+            <span class="font-medium">{{ row.code ?? '无' }}</span>
+          </template>
+          <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+          <template #cell-actions="{ row }">
+            <NvRowActions :label="`检验方案操作 ${row.code ?? ''}`">
+              <NvDropdownMenuItem
+                v-if="canManageInspectionPlans && isDraftFirstArticlePlan(row)"
+                :disabled="activateFirstArticlePlanPending"
+                @click="activateDraftFirstArticlePlan(row)"
+              >
+                <Settings2Icon aria-hidden="true" />
+                启用首件方案
+              </NvDropdownMenuItem>
+              <NvDropdownMenuItem @click="useInspectionPlan(row)">
+                <ClipboardCheckIcon aria-hidden="true" />
+                创建检验记录
+              </NvDropdownMenuItem>
+            </NvRowActions>
+          </template>
+        </NvDataTable>
+      </NvTabsContent>
+
+      <NvTabsContent value="first-article-records" class="grid gap-3">
+        <FirstArticleInspectionRecords
+          :sku-options="skuCatalog.skuOptions.value"
+          :skus-pending="skuCatalog.skusPending.value"
+          @open-record="openFirstArticleRecord"
         />
-      </template>
-    </NvToolbar>
+      </NvTabsContent>
+    </NvTabs>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-    <p v-else-if="targetInspectionPlanMissing" class="text-sm text-warning" role="status">
-      未找到检验方案 {{ targetInspectionPlanId }}。请确认该方案是否已归档或无权访问。
-    </p>
-
-    <NvDataTable
-      manual
-      :page="page"
-      :page-size="pageSize"
-      :total-items="inspectionPlansTotal"
-      @update:page="page = $event"
-      @update:page-size="(v) => (pageSize = String(v))"
-      :columns="columns"
-      :rows="inspectionPlans"
-      :row-key="(r) => r.id ?? r.code ?? '无'"
-      :loading="inspectionPlansPending"
-      :searchable="false"
-      :column-settings="false"
-      empty-message="当前筛选下没有检验方案。检验记录应从工单、收货或检验任务进入；也可用右上角创建检验记录临时补录。"
-    >
-      <template #cell-code="{ row }">
-        <span class="font-medium">{{ row.code ?? '无' }}</span>
-      </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
-      <template #cell-actions="{ row }">
-        <NvRowActions :label="`检验方案操作 ${row.code ?? ''}`">
-          <NvDropdownMenuItem @click="useInspectionPlan(row)">
-            <ClipboardCheckIcon aria-hidden="true" />
-            创建检验记录
-          </NvDropdownMenuItem>
-        </NvRowActions>
-      </template>
-    </NvDataTable>
+    <FirstArticlePlanDialog
+      v-if="canManageInspectionPlans"
+      v-model:open="firstArticlePlanDialogOpen"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+      :sku-options="skuCatalog.skuOptions.value"
+      :skus-pending="skuCatalog.skusPending.value"
+      :work-center-options="workCenterOptions"
+      :work-centers-pending="workCentersPending"
+      @completed="refreshInspectionPlans"
+    />
 
     <NvDialog v-model:open="recordSheetOpen">
       <!-- 高度不再由调用点写死：`NvDialogContent` 已改成遮罩层滚动、本体不定高。

@@ -13,6 +13,7 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
         "receiving",
         "operation",
         "final",
+        "first-article",
         "maintenance",
         "customer-return",
     ];

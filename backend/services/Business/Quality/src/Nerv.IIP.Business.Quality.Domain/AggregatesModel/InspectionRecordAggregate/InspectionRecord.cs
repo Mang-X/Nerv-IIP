@@ -32,6 +32,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         "receiving",
         "operation",
         "final",
+        "first-article",
         "maintenance",
         "customer-return",
     ];

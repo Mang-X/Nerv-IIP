@@ -1431,6 +1431,24 @@ public sealed record BusinessConsoleQualityListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleQualityInspectionPlanListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? Category = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityInspectionRecordListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? SourceType = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleQualityItem(
     string Id,
     string Code,

@@ -1,13 +1,17 @@
 import {
+  activateBusinessConsoleQualityInspectionPlanMutationOptions,
   closeBusinessConsoleQualityNcr,
+  createBusinessConsoleQualityInspectionPlanMutationOptions,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
   getBusinessConsoleQualityNcrQueryOptions,
   getBusinessConsoleQualityInspectionRecordQueryOptions,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
+  listBusinessConsoleQualityInspectionRecordsQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   submitBusinessConsoleQualityNcrDisposition,
   type BusinessConsoleCreateInspectionRecordRequest,
+  type BusinessConsoleCreateInspectionPlanRequest,
   type BusinessConsoleInspectionRecordDetailResponse,
   type BusinessConsoleInspectionPlanCharacteristicItem,
   type BusinessConsoleNcrCloseRequest,
@@ -32,6 +36,11 @@ export interface QualityListFilters extends BusinessContextFields {
   keyword?: string
   skip: number
   take: number
+}
+
+export interface FirstArticleRecordFilters extends QualityListFilters {
+  skuCode?: string
+  result?: string
 }
 
 function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
@@ -194,6 +203,110 @@ export function useQualityInspectionPlans(initialFilters: Partial<QualityListFil
     inspectionPlansPending: plansQuery.isLoading,
     inspectionPlansTotal: computed(() => listTotal(plansQuery.data.value)),
     refreshInspectionPlans: () => refetchWithBusinessContext(filters, plansQuery),
+  }
+}
+
+/**
+ * 首件检验页的数据边界：方案写入固定 first-article 分类，记录读面固定 first-article 来源。
+ * 创建与启用是两个独立事实；启用失败时把草稿 id 返回给页面，允许用户明确恢复。
+ */
+export function useQualityFirstArticleInspections(
+  initialFilters: Partial<FirstArticleRecordFilters> = {},
+) {
+  const recordFilters = defaultFilters(initialFilters) as FirstArticleRecordFilters
+  const recordsQuery = useQuery(() => {
+    const options = {
+      query: {
+        organizationId: recordFilters.organizationId,
+        environmentId: recordFilters.environmentId,
+        sourceType: 'first-article',
+        // Gateway 公共查询沿用通用 status / keyword；下游再分别映射为 result / skuCode。
+        ...optionalQuery('keyword', recordFilters.skuCode),
+        ...optionalQuery('status', recordFilters.result),
+        skip: recordFilters.skip,
+        take: recordFilters.take,
+      },
+    } as Parameters<typeof listBusinessConsoleQualityInspectionRecordsQueryOptions>[0]
+    return {
+      ...listBusinessConsoleQualityInspectionRecordsQueryOptions(options),
+      enabled: hasBusinessContext(recordFilters),
+    }
+  })
+  return {
+    firstArticleRecords: computed<BusinessConsoleQualityItem[]>(() =>
+      listItems(recordsQuery.data.value),
+    ),
+    firstArticleRecordsError: recordsQuery.error,
+    firstArticleRecordsPending: recordsQuery.isLoading,
+    firstArticleRecordsTotal: computed(() => listTotal(recordsQuery.data.value)),
+    recordFilters,
+    refreshFirstArticleRecords: () => refetchWithBusinessContext(recordFilters, recordsQuery),
+  }
+}
+
+export function useQualityFirstArticlePlanActions(defaultContext?: BusinessContextFields) {
+  const queryCache = useQueryCache()
+  const createPlanMutation = useMutation(
+    createBusinessConsoleQualityInspectionPlanMutationOptions(),
+  )
+  const activatePlanMutation = useMutation(
+    activateBusinessConsoleQualityInspectionPlanMutationOptions(),
+  )
+
+  async function invalidatePlans() {
+    await queryCache
+      .invalidateQueries({
+        predicate: isBusinessQuery('listBusinessConsoleQualityInspectionPlans'),
+      })
+      .catch(ignoreBackgroundError)
+  }
+
+  async function activateFirstArticlePlan(
+    inspectionPlanId: string,
+    context: BusinessContextFields | undefined = defaultContext,
+  ) {
+    if (!context) throw new Error('business-context-missing')
+    const response = await activatePlanMutation.mutateAsync({
+      path: { inspectionPlanId },
+      body: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+      },
+    })
+    await invalidatePlans()
+    return response
+  }
+
+  async function createAndActivateFirstArticlePlan(
+    body: BusinessConsoleCreateInspectionPlanRequest,
+  ) {
+    const created = await createPlanMutation.mutateAsync({
+      body: { ...body, category: 'first-article' },
+    })
+    const inspectionPlanId = created?.data?.inspectionPlanId?.trim()
+    if (!inspectionPlanId) {
+      throw new Error('inspection-plan-id-missing')
+    }
+    await invalidatePlans()
+    try {
+      await activateFirstArticlePlan(inspectionPlanId, body)
+      return { inspectionPlanId, activated: true as const }
+    } catch (activationError) {
+      return {
+        inspectionPlanId,
+        activated: false as const,
+        activationError,
+      }
+    }
+  }
+
+  return {
+    activateFirstArticlePlan,
+    activateFirstArticlePlanError: activatePlanMutation.error,
+    activateFirstArticlePlanPending: activatePlanMutation.isLoading,
+    createAndActivateFirstArticlePlan,
+    createFirstArticlePlanError: createPlanMutation.error,
+    createFirstArticlePlanPending: createPlanMutation.isLoading,
   }
 }
 

@@ -180,10 +180,41 @@ vi.mock('@/composables/useQualityPickerCatalog', async () => {
   }
 })
 
+vi.mock('@/composables/useEquipmentPickerCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    useEquipmentWorkCenterCatalog: () => ({
+      workCenterOptions: computed(() => [{ value: 'WC-001', label: '总装一线' }]),
+      workCentersPending: shallowRef(false),
+    }),
+  }
+})
+
 vi.mock('@/composables/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 
   return {
+    useQualityFirstArticlePlanActions: () => ({
+      activateFirstArticlePlan: vi.fn(),
+      activateFirstArticlePlanPending: shallowRef(false),
+      createAndActivateFirstArticlePlan: vi.fn(),
+      createFirstArticlePlanPending: shallowRef(false),
+    }),
+    useQualityFirstArticleInspections: () => ({
+      firstArticleRecords: shallowRef([]),
+      firstArticleRecordsError: shallowRef(),
+      firstArticleRecordsPending: shallowRef(false),
+      firstArticleRecordsTotal: shallowRef(0),
+      recordFilters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skuCode: undefined,
+        result: undefined,
+        skip: 0,
+        take: 100,
+      }),
+      refreshFirstArticleRecords: vi.fn(),
+    }),
     useQualityInspectionPlanCharacteristics: (source: () => { inspectionPlanId: string }) => {
       const planCharacteristics = shallowRef(
         source().inspectionPlanId ? qualityState.planCharacteristics : [],
@@ -359,6 +390,14 @@ describe('quality route location behavior', () => {
     qualityState.ncrInitialContext = { organizationId: 'org-001', environmentId: 'env-dev' }
     qualityState.ncrFilters = undefined
     qualityState.recordError = undefined
+    qualityState.inspectionPlans = [
+      {
+        id: 'PLAN-001',
+        code: 'IQP-001',
+        skuCode: 'SKU-001',
+        status: 'active',
+      },
+    ]
     qualityState.planCharacteristics = [
       {
         characteristicCode: 'DIM-01',
@@ -564,6 +603,39 @@ describe('quality route location behavior', () => {
         unitCode: 'mm',
       }),
     ])
+  })
+
+  it('uses the first-article source contract when creating a record from a first-article plan', async () => {
+    const firstArticlePlan = {
+      id: 'PLAN-FA-001',
+      code: 'FA-PLAN-001',
+      category: 'first-article',
+      skuCode: 'SKU-FA-001',
+      status: 'active',
+    }
+    qualityState.inspectionPlans = [firstArticlePlan]
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        inspectionPlanId: string
+        sourceType: string
+        sourceService: string
+        skuCode: string
+      }
+      useInspectionPlan: (plan: typeof firstArticlePlan) => void
+    }
+    vm.useInspectionPlan(firstArticlePlan)
+
+    expect(vm.recordForm).toEqual(
+      expect.objectContaining({
+        inspectionPlanId: 'PLAN-FA-001',
+        sourceType: 'first-article',
+        sourceService: 'mes-operation',
+        skuCode: 'SKU-FA-001',
+      }),
+    )
   })
 
   it('accepts whole-number quantities prefilled by an inspection task', async () => {

@@ -9,6 +9,44 @@ namespace Nerv.IIP.Business.Quality.Domain.Tests;
 public sealed class InspectionAggregateTests
 {
     [Fact]
+    public void First_article_plan_and_record_preserve_quality_sku_work_center_applicability()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "FAI-SKU-001-WC-001",
+            "first-article",
+            "SKU-001",
+            null,
+            "WC-001",
+            null,
+            "operation-task");
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "100-percent");
+        plan.Activate();
+
+        var record = InspectionRecord.CreateFromPlan(
+            plan,
+            "first-article",
+            "mes-operation",
+            "OP-001",
+            "SKU-001",
+            1m,
+            null,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "accepted", null, [])],
+            null,
+            []);
+
+        Assert.Equal("first-article", plan.Category);
+        Assert.Equal("SKU-001", plan.SkuCode);
+        Assert.Equal("WC-001", plan.WorkCenterId);
+        Assert.Equal("first-article", record.SourceType);
+        Assert.Equal(plan.Id, record.InspectionPlanId);
+        Assert.Equal("SKU-001", record.SkuCode);
+    }
+
+    [Fact]
     public void Draft_inspection_plan_can_add_characteristics()
     {
         var plan = NewPlan();
