@@ -7,7 +7,27 @@ public sealed class InspectionPlanEntityTypeConfiguration : IEntityTypeConfigura
     public void Configure(EntityTypeBuilder<InspectionPlan> builder)
     {
         builder.ToTable("inspection_plans", tableBuilder =>
-            tableBuilder.HasComment("Quality inspection plan version and applicability facts."));
+        {
+            tableBuilder.HasComment("Quality inspection plan version and applicability facts.");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_plans_time_interval_positive",
+                "time_interval_hours IS NULL OR time_interval_hours > 0");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_plans_quantity_interval_positive",
+                "quantity_interval IS NULL OR quantity_interval > 0");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_plans_periodic_policy_operation_only",
+                "category = 'operation' OR (time_interval_hours IS NULL AND quantity_interval IS NULL AND assigned_inspector_user_id IS NULL AND assigned_team_id IS NULL)");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_plans_periodic_policy_applicability",
+                "(time_interval_hours IS NULL AND quantity_interval IS NULL AND assigned_inspector_user_id IS NULL AND assigned_team_id IS NULL) OR (sku_code IS NOT NULL AND work_center_id IS NOT NULL)");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_plans_periodic_assignment_target",
+                "assigned_inspector_user_id IS NULL OR assigned_team_id IS NULL");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_plans_periodic_assignment_requires_interval",
+                "(assigned_inspector_user_id IS NULL AND assigned_team_id IS NULL) OR time_interval_hours IS NOT NULL OR quantity_interval IS NOT NULL");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Inspection plan aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the plan.");
@@ -19,6 +39,10 @@ public sealed class InspectionPlanEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").HasMaxLength(150).HasComment("Optional work center public reference id.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(150).HasComment("Optional device asset public reference id.");
         builder.Property(x => x.DocumentType).HasColumnName("document_type").HasMaxLength(100).HasComment("Optional source document type covered by the plan.");
+        builder.Property(x => x.TimeIntervalHours).HasColumnName("time_interval_hours").HasPrecision(18, 6).HasComment("Optional positive hour interval for periodic operation inspection task generation.");
+        builder.Property(x => x.QuantityInterval).HasColumnName("quantity_interval").HasPrecision(18, 6).HasComment("Optional positive produced quantity interval in the SKU base unit of measure for periodic operation inspection task generation.");
+        builder.Property(x => x.AssignedInspectorUserId).HasColumnName("assigned_inspector_user_id").HasMaxLength(150).HasComment("Optional inspector user target copied to generated periodic inspection tasks.");
+        builder.Property(x => x.AssignedTeamId).HasColumnName("assigned_team_id").HasMaxLength(150).HasComment("Optional team target copied to generated periodic inspection tasks.");
         builder.Property(x => x.Version).HasColumnName("version").IsRequired().HasComment("Plan version number.");
         builder.Property(x => x.SupersedesPlanId).HasColumnName("supersedes_plan_id").HasComment("Previous inspection plan version id superseded by this version.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Inspection plan lifecycle status.");

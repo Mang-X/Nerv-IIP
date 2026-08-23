@@ -36358,6 +36358,28 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicInput"
             }
+          },
+          "timeIntervalHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "quantityInterval": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "assignedInspectorUserId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          },
+          "assignedTeamId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -36571,6 +36593,24 @@
             "nullable": true
           },
           "closeReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeIntervalHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "quantityInterval": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "assignedInspectorUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignedTeamId": {
             "type": "string",
             "nullable": true
           }

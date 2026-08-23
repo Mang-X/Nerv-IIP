@@ -1,13 +1,18 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
@@ -335,6 +340,193 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public void Create_inspection_plan_validator_rejects_invalid_periodic_policy()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-RECEIVING-001",
+            "receiving",
+            "SKU-RM-1000",
+            null,
+            null,
+            null,
+            "purchase-receipt",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 0m,
+            QuantityInterval: -1m,
+            AssignedInspectorUserId: "user-inspector-001",
+            AssignedTeamId: "team-quality-001");
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("时间间隔", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("operation", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("不能同时", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_quantity_interval_above_database_precision()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            QuantityInterval: 1_000_000_000_000m);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_time_interval_above_timespan_precision()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 256_204_778.801522m);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("时间间隔", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("time-minimum")]
+    [InlineData("time-maximum")]
+    [InlineData("quantity-minimum")]
+    [InlineData("quantity-maximum")]
+    public void Create_inspection_plan_validator_accepts_supported_interval_boundaries(string boundary)
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: boundary switch
+            {
+                "time-minimum" => 0.000001m,
+                "time-maximum" => 256_204_778.801521m,
+                _ => null,
+            },
+            QuantityInterval: boundary switch
+            {
+                "quantity-minimum" => 0.000001m,
+                "quantity-maximum" => 999_999_999_999.999999m,
+                _ => null,
+            });
+
+        var result = validator.Validate(command);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task Create_inspection_plan_http_request_persists_periodic_policy_fields()
+    {
+        var databaseName = $"quality-inspection-plan-http-{Guid.NewGuid():N}";
+        await using var factory = CreateFactory(databaseName);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var request = new CreateInspectionPlanRequest(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-HTTP-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 2.5m,
+            QuantityInterval: 100m,
+            AssignedInspectorUserId: "user-inspector-001");
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/quality/inspection-plans", request);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, responseBody);
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await dbContext.InspectionPlans
+            .AsNoTracking()
+            .SingleAsync(plan => plan.PlanCode == request.PlanCode);
+        Assert.Equal(2.5m, persisted.TimeIntervalHours);
+        Assert.Equal(100m, persisted.QuantityInterval);
+        Assert.Equal("user-inspector-001", persisted.AssignedInspectorUserId);
+        Assert.Null(persisted.AssignedTeamId);
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_assignment_without_interval()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            AssignedTeamId: "team-quality-001");
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("至少一个巡检间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_periodic_policy_without_sku_and_work_center()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", null, null, null, null, "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 1m);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("SKU 和 WorkCenterId", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Inspection_plan_repository_uses_an_explicit_aggregate_load_method()
     {
         var declaredMethods = typeof(IInspectionPlanRepository).GetMethods()
@@ -631,6 +823,32 @@ public sealed class QualityInspectionEndpointContractTests
 
         Assert.Equal(3, response.Total);
         Assert.Single(response.Items);
+    }
+
+    [Fact]
+    public async Task List_inspection_plans_returns_periodic_inspection_policy()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: 2m,
+            quantityInterval: 100m,
+            assignedInspectorUserId: null,
+            assignedTeamId: "team-quality-001");
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal(2m, item.TimeIntervalHours);
+        Assert.Equal(100m, item.QuantityInterval);
+        Assert.Null(item.AssignedInspectorUserId);
+        Assert.Equal("team-quality-001", item.AssignedTeamId);
     }
 
     [Fact]
@@ -1480,6 +1698,23 @@ public sealed class QualityInspectionEndpointContractTests
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(settings));
             });
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(string inMemoryDatabaseName)
+    {
+        return CreateFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ApplicationDbContext>();
+                services.RemoveAll<DbContextOptions>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options
+                    .UseInMemoryDatabase(inMemoryDatabaseName)
+                    .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            });
+        });
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
