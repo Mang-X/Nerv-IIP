@@ -85,8 +85,11 @@ describe('useBusinessTooling', () => {
     expect(toolingStatusLabel('maintenance')).toBe('保养中')
     expect(toolingStatusLabel('retired')).toBe('已退役')
     expect(toolingTypeLabel('mould')).toBe('模具')
+    expect(toolingTypeLabel('fixture')).toBe('夹具')
+    expect(toolingTypeLabel('jig')).toBe('工装夹具')
     expect(toolingTypeLabel('cutting')).toBe('刀具')
-    expect(toolingTypeLabel('cutting-tool')).toBe('cutting-tool')
+    expect(toolingTypeLabel('gauge')).toBe('检具')
+    expect(toolingTypeLabel('unknown-tooling')).toBe('unknown-tooling')
   })
 
   it('把关键字、状态与分页作为服务端查询参数，并读取服务端总数', () => {

@@ -79,19 +79,28 @@ vi.mock('@nerv-iip/ui', async (original) => ({
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  NvSheet: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
+  NvSheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvSheetContent: { template: '<section><slot /></section>' },
   NvSheetHeader: { template: '<header><slot /></header>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvSheetDescription: { template: '<p><slot /></p>' },
   NvSheetFooter: { template: '<footer><slot /></footer>' },
-  NvDialog: { template: '<div><slot /></div>' },
+  NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvDialogContent: { template: '<section><slot /></section>' },
   NvDialogHeader: { template: '<header><slot /></header>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
   NvDialogFooter: { template: '<footer><slot /></footer>' },
+  NvAlertDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  NvAlertDialogContent: {
+    template: '<section data-testid="retire-alert"><slot /></section>',
+  },
+  NvAlertDialogHeader: { template: '<header><slot /></header>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogFooter: { template: '<footer><slot /></footer>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -152,14 +161,26 @@ describe('工装与模具维护台', () => {
     await flushPromises()
 
     expect(button(wrapper, '查看')).toBeUndefined()
-    expect(wrapper.find('[data-testid="row-actions"]').exists()).toBe(true)
+    const rowActions = wrapper.find('[data-testid="row-actions"]')
+    expect(rowActions.exists()).toBe(true)
+    expect(rowActions.text()).toContain('转保养')
+    expect(rowActions.text()).toContain('退役')
+    expect(wrapper.text()).not.toContain('适用工作中心')
     const codeButton = button(wrapper, 'MOULD-001')
     expect(codeButton).toBeTruthy()
     await codeButton!.trigger('click')
-    expect(wrapper.text()).toContain('前地板拉延模')
+    expect(wrapper.text()).toContain('适用工作中心')
+    expect(wrapper.text()).toContain('WC-PRESS')
     expect(button(wrapper, '登记使用')).toBeTruthy()
-    expect(button(wrapper, '转保养')).toBeTruthy()
-    expect(button(wrapper, '退役')).toBeTruthy()
+  })
+
+  it('点击注册工装后才打开注册表单', async () => {
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    expect(wrapper.find('form').exists()).toBe(false)
+    await button(wrapper, '注册工装')!.trigger('click')
+    expect(wrapper.find('form').exists()).toBe(true)
   })
 
   it('注册提交后同时展示校验汇总与对应字段错误', async () => {
@@ -169,10 +190,14 @@ describe('工装与模具维护台', () => {
     await wrapper.find('form').trigger('submit')
 
     expect(state.register).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('请检查以下必填项')
+    expect(wrapper.text()).toContain('请修正已标红的字段，并完整填写带 * 的必填项')
     expect(wrapper.text()).toContain('请填写工装名称。')
     expect(wrapper.text()).toContain('请至少选择一个适用工作中心。')
     expect(wrapper.text()).toContain('请至少选择一个适用 SKU。')
+    const nameInput = wrapper.find('#tooling-name')
+    expect(nameInput.element.parentElement?.getAttribute('data-invalid')).toBe('true')
+    expect(nameInput.element.parentElement?.classList).toContain('!border-destructive')
+    expect(wrapper.find('label[for="tooling-name"] > span').classes()).toContain('text-destructive')
   })
 
   it('注册校验工作中心、SKU 与正整数寿命，合法时显示组合数并提交真实编码', async () => {
@@ -189,11 +214,11 @@ describe('工装与模具维护台', () => {
     const checks = wrapper.findAll('input[type="checkbox"]')
     await checks[0]!.setValue(true)
     await checks[1]!.setValue(true)
+    expect(wrapper.text()).toContain('1 个适用组合')
+    expect(wrapper.text()).toContain('工作中心目录共 201 项，当前候选加载上限为 200 项')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('1 个适用组合')
-    expect(wrapper.text()).toContain('工作中心目录共 201 项，当前候选加载上限为 200 项')
     expect(state.register).toHaveBeenCalledWith(
       expect.objectContaining({
         idempotencyKey: expect.any(String),
@@ -266,6 +291,25 @@ describe('工装与模具维护台', () => {
     await button(wrapper, '确认登记')!.trigger('click')
     await flushPromises()
     expect(state.recordUsage).toHaveBeenCalledWith('MOULD-001', 800)
+  })
+
+  it('退役使用破坏性确认，原因纯空白时不可确认', async () => {
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    await button(wrapper, '退役')!.trigger('click')
+    expect(wrapper.find('[data-testid="retire-alert"]').exists()).toBe(true)
+    const confirmRetire = button(wrapper, '确认退役')!
+    expect(confirmRetire.attributes('disabled')).toBeDefined()
+    expect(confirmRetire.classes()).toContain('bg-destructive')
+
+    await wrapper.find('#tooling-retire-reason').setValue('  ')
+    expect(confirmRetire.attributes('disabled')).toBeDefined()
+    await wrapper.find('#tooling-retire-reason').setValue('达到报废标准')
+    expect(confirmRetire.attributes('disabled')).toBeUndefined()
+    await confirmRetire.trigger('click')
+    await flushPromises()
+    expect(state.changeStatus).toHaveBeenCalledWith('MOULD-001', 'retired', '达到报废标准')
   })
 
   it('仅有只读权限时不展示写操作', async () => {
