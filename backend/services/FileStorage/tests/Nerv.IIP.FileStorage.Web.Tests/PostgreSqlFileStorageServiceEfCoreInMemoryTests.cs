@@ -159,9 +159,24 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         Assert.Empty(await dbContext.UploadSessions.ToListAsync());
     }
 
+    [Fact]
+    public async Task CreateBarcodeLabelTemplateUpload_AtSixtyFourKiB_IsAccepted()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+
+        var result = await service.CreateUploadSessionAsync(
+            CreateBarcodeLabelTemplateUploadRequest() with { ExpectedSizeBytes = 64 * 1024 },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.Single(await dbContext.UploadSessions.ToListAsync());
+    }
+
     [Theory]
     [InlineData("other-service", "label-template")]
     [InlineData("business-barcode-label", "other-owner")]
+    [InlineData("Business-Barcode-Label", "label-template")]
     public async Task CreateBarcodeLabelTemplateUpload_WrongOwner_IsRejected(
         string ownerService,
         string ownerType)
@@ -183,6 +198,8 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("sha256:not-a-digest")]
+    [InlineData("sha256:0123456789abcdef0123456789abcdef")]
+    [InlineData("sha256:gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg")]
     public async Task CreateBarcodeLabelTemplateUpload_MissingOrInvalidSha256_IsRejected(string? checksum)
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
@@ -198,7 +215,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     }
 
     [Fact]
-    public async Task CreateBarcodeLabelTemplateUpload_WhenPurposeQuotaIsConsumed_IsRejected()
+    public async Task CreateBarcodeLabelTemplateUpload_MultipleAssetsBelowPurposeQuota_AreAccepted()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
         dbContext.StoredFiles.Add(StoredFileRecord.Create(
@@ -212,6 +229,37 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             "existing.json",
             "application/vnd.nerv-iip.label-template+json",
             64 * 1024,
+            $"sha256:{new string('b', 64)}",
+            "org-001/file_existing_template",
+            "available",
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow));
+        await dbContext.SaveChangesAsync();
+        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+
+        var result = await service.CreateUploadSessionAsync(
+            CreateBarcodeLabelTemplateUploadRequest() with { ExpectedSizeBytes = 1 },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.Single(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateBarcodeLabelTemplateUpload_WhenEightMiBPurposeQuotaIsConsumed_IsRejected()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        dbContext.StoredFiles.Add(StoredFileRecord.Create(
+            "file_existing_template",
+            "org-001",
+            "prod",
+            "business-barcode-label",
+            "label-template",
+            "TPL-EXISTING",
+            "barcode-label-template",
+            "existing.json",
+            "application/vnd.nerv-iip.label-template+json",
+            8 * 1024 * 1024,
             $"sha256:{new string('b', 64)}",
             "org-001/file_existing_template",
             "available",

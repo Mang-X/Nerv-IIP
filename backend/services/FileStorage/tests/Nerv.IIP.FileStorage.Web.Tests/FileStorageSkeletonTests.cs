@@ -64,30 +64,43 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         Assert.Contains("UploadProvider", boundaries.ProviderBoundaries);
     }
 
-    [Theory]
-    [InlineData("application-package")]
-    [InlineData("avatar")]
-    [InlineData("attachment")]
-    [InlineData("diagnostic-log")]
-    [InlineData("quality-evidence")]
-    [InlineData("maintenance-photo")]
-    [InlineData("engineering-document")]
-    [InlineData("barcode-label-template")]
-    public async Task Configured_file_purpose_is_exposed_as_registered(string purpose)
+    [Fact]
+    public async Task Configured_file_purposes_are_complete_and_exposed_as_registered()
     {
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
             InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+        var expectedPurposes = new[]
+        {
+            "application-package",
+            "attachment",
+            "avatar",
+            "barcode-label-template",
+            "diagnostic-log",
+            "engineering-document",
+            "maintenance-photo",
+            "quality-evidence"
+        };
+        var configuredPurposes = FileStorageTestConfiguration.Default
+            .GetSection("FileStorage:PurposePolicies")
+            .GetChildren()
+            .Select(section => section.Key)
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedPurposes, configuredPurposes);
 
-        var response = await client.GetFromJsonAsync<FilePurposeBoundary>(
-            $"/internal/file-storage/v1/purposes/{purpose}");
+        foreach (var purpose in expectedPurposes)
+        {
+            var response = await client.GetFromJsonAsync<FilePurposeBoundary>(
+                $"/internal/file-storage/v1/purposes/{purpose}");
 
-        Assert.NotNull(response);
-        Assert.Equal(purpose, response.Purpose);
-        Assert.True(response.Allowed);
-        Assert.Null(response.ErrorCode);
-        Assert.Null(response.Message);
+            Assert.NotNull(response);
+            Assert.Equal(purpose, response.Purpose);
+            Assert.True(response.Allowed);
+            Assert.Null(response.ErrorCode);
+            Assert.Null(response.Message);
+        }
     }
 
     [Fact]

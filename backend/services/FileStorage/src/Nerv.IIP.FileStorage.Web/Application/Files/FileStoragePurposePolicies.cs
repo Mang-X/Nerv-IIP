@@ -86,8 +86,10 @@ internal static class FileStoragePurposePolicies
         string ownerType,
         IConfiguration? configuration)
     {
-        var requiredOwnerService = configuration?[$"FileStorage:PurposePolicies:{filePurpose}:RequiredOwnerService"];
-        var requiredOwnerType = configuration?[$"FileStorage:PurposePolicies:{filePurpose}:RequiredOwnerType"];
+        var requiredOwnerService = configuration?.GetValue<string>(
+            $"FileStorage:PurposePolicies:{filePurpose}:RequiredOwnerService");
+        var requiredOwnerType = configuration?.GetValue<string>(
+            $"FileStorage:PurposePolicies:{filePurpose}:RequiredOwnerType");
         var ownerMatches = (string.IsNullOrWhiteSpace(requiredOwnerService)
                 || string.Equals(ownerService, requiredOwnerService, StringComparison.Ordinal))
             && (string.IsNullOrWhiteSpace(requiredOwnerType)
