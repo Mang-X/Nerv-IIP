@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.Quality.Domain\Nerv.IIP.Business.Quality.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
   </ItemGroup>
 
 </Project>
