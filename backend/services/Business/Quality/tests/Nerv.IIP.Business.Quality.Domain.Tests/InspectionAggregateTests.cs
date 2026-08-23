@@ -621,6 +621,35 @@ public sealed class InspectionAggregateTests
     }
 
     [Theory]
+    [InlineData("time-minimum")]
+    [InlineData("time-maximum")]
+    [InlineData("quantity-minimum")]
+    [InlineData("quantity-maximum")]
+    public void Periodic_inspection_policy_accepts_supported_interval_boundaries(string boundary)
+    {
+        var timeIntervalHours = boundary switch
+        {
+            "time-minimum" => 0.000001m,
+            "time-maximum" => (decimal)TimeSpan.MaxValue.TotalHours,
+            _ => (decimal?)null,
+        };
+        var quantityInterval = boundary switch
+        {
+            "quantity-minimum" => 0.000001m,
+            "quantity-maximum" => InspectionPlan.MaximumQuantityInterval,
+            _ => (decimal?)null,
+        };
+
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "IQP-OPERATION-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            timeIntervalHours: timeIntervalHours,
+            quantityInterval: quantityInterval);
+
+        Assert.Equal(timeIntervalHours, plan.TimeIntervalHours);
+        Assert.Equal(quantityInterval, plan.QuantityInterval);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(0.0000001)]
