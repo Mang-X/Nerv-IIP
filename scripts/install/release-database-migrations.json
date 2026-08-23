@@ -1,0 +1,30 @@
+[
+  {
+    "service": "apphub",
+    "connectionEnvironmentVariable": "NERV_IIP_APPHUB_DB",
+    "expectedDatabase": "nerv_iip_apphub",
+    "project": "backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppHub.Infrastructure.csproj",
+    "context": "Nerv.IIP.AppHub.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "iam",
+    "connectionEnvironmentVariable": "NERV_IIP_IAM_DB",
+    "expectedDatabase": "nerv_iip_iam",
+    "project": "backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Nerv.IIP.Iam.Infrastructure.csproj",
+    "context": "Nerv.IIP.Iam.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "ops",
+    "connectionEnvironmentVariable": "NERV_IIP_OPS_DB",
+    "expectedDatabase": "nerv_iip_ops",
+    "project": "backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infrastructure.csproj",
+    "context": "Nerv.IIP.Ops.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "notification",
+    "connectionEnvironmentVariable": "NERV_IIP_NOTIFICATION_DB",
+    "expectedDatabase": "nerv_iip_notification",
+    "project": "backend/services/Notification/src/Nerv.IIP.Notification.Infrastructure/Nerv.IIP.Notification.Infrastructure.csproj",
+    "context": "Nerv.IIP.Notification.Infrastructure.ApplicationDbContext"
+  }
+]
