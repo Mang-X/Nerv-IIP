@@ -80,8 +80,12 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   const nameInput = page.getByLabel('工装名称 *')
   const nameFrame = nameInput.locator('..')
   const nameLabel = page.locator('label[for="tooling-name"] > span')
+  const firstCandidate = page.getByRole('checkbox').first().locator('..')
   const beforeBorder = await nameFrame.evaluate((element) => getComputedStyle(element).borderColor)
   const beforeLabel = await nameLabel.evaluate((element) => getComputedStyle(element).color)
+  const beforeCandidate = await firstCandidate.evaluate(
+    (element) => getComputedStyle(element).color,
+  )
   await page.getByRole('button', { name: '确认注册' }).click()
   await expect(page.getByText('请填写工装名称。', { exact: true })).toBeVisible()
   await expect(nameFrame).toHaveAttribute('data-invalid', 'true')
@@ -91,10 +95,43 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect
     .poll(() => nameLabel.evaluate((element) => getComputedStyle(element).color))
     .not.toBe(beforeLabel)
+  await expect
+    .poll(() => firstCandidate.evaluate((element) => getComputedStyle(element).color))
+    .toBe(beforeCandidate)
   await page.screenshot({
     path: path.join(SCREENSHOT_DIR, '03-register-validation.png'),
   })
   await page.keyboard.press('Escape')
+
+  await page.getByRole('button', { name: '工装操作 MOULD-FLOOR-OP10' }).click()
+  await page.getByRole('menuitem', { name: '转保养' }).click()
+  const statusDialog = page.getByRole('dialog')
+  const statusReason = statusDialog.getByLabel('原因 *')
+  const statusFrame = statusReason.locator('..')
+  const statusBorderBefore = await statusFrame.evaluate(
+    (element) => getComputedStyle(element).borderColor,
+  )
+  await statusDialog.getByRole('button', { name: '确认转保养' }).click()
+  await expect(statusFrame).toHaveAttribute('data-invalid', 'true')
+  await expect
+    .poll(() => statusFrame.evaluate((element) => getComputedStyle(element).borderColor))
+    .not.toBe(statusBorderBefore)
+  await statusDialog.getByRole('button', { name: '取消' }).click()
+
+  await page.getByRole('button', { name: '登记使用' }).first().click()
+  const usageDialog = page.getByRole('dialog')
+  const usageInput = usageDialog.getByLabel('本次使用次数 *')
+  const usageFrame = usageInput.locator('..')
+  const usageBorderBefore = await usageFrame.evaluate(
+    (element) => getComputedStyle(element).borderColor,
+  )
+  await usageInput.fill('0')
+  await usageDialog.getByRole('button', { name: '确认登记' }).click()
+  await expect(usageFrame).toHaveAttribute('data-invalid', 'true')
+  await expect
+    .poll(() => usageFrame.evaluate((element) => getComputedStyle(element).borderColor))
+    .not.toBe(usageBorderBefore)
+  await usageDialog.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '工装操作 MOULD-FLOOR-OP10' }).click()
   await page.getByRole('menuitem', { name: '退役' }).click()

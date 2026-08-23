@@ -105,9 +105,12 @@ const stubs = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><slot /></select>',
   },
-  NvSelectTrigger: { template: '<span />' },
+  NvSelectTrigger: {
+    props: ['invalid'],
+    template: '<span data-testid="select-trigger" :data-invalid="invalid || undefined" />',
+  },
   NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
@@ -187,17 +190,36 @@ describe('工装与模具维护台', () => {
     const wrapper = mount(ToolingPage, { global: { stubs } })
     await flushPromises()
     await button(wrapper, '注册工装')!.trigger('click')
+    await wrapper.find('form select').setValue('')
+    await wrapper.find('#tooling-life').setValue('0')
     await wrapper.find('form').trigger('submit')
 
     expect(state.register).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('请修正已标红的字段，并完整填写带 * 的必填项')
     expect(wrapper.text()).toContain('请填写工装名称。')
+    expect(wrapper.text()).toContain('请选择工装类型。')
+    expect(wrapper.text()).toContain('使用寿命必须是正整数。')
     expect(wrapper.text()).toContain('请至少选择一个适用工作中心。')
     expect(wrapper.text()).toContain('请至少选择一个适用 SKU。')
-    const nameInput = wrapper.find('#tooling-name')
-    expect(nameInput.element.parentElement?.getAttribute('data-invalid')).toBe('true')
-    expect(nameInput.element.parentElement?.classList).toContain('!border-destructive')
+    for (const selector of ['#tooling-name', '#tooling-life']) {
+      const input = wrapper.find(selector)
+      expect(input.element.parentElement?.getAttribute('data-invalid')).toBe('true')
+      expect(input.element.closest('[data-slot="nv-field"]')?.getAttribute('data-invalid')).toBe(
+        'true',
+      )
+    }
+    expect(wrapper.find('form [data-testid="select-trigger"]').attributes('data-invalid')).toBe(
+      'true',
+    )
     expect(wrapper.find('label[for="tooling-name"] > span').classes()).toContain('text-destructive')
+
+    for (const errorText of ['请至少选择一个适用工作中心。', '请至少选择一个适用 SKU。']) {
+      const error = wrapper.findAll('[role="alert"]').find((item) => item.text() === errorText)!
+      const field = error.element.closest('[data-slot="nv-field"]')
+      expect(field?.getAttribute('data-invalid')).toBeNull()
+      expect(field?.getAttribute('aria-invalid')).toBe('true')
+      expect(field?.querySelector('[data-invalid="true"]')).not.toBeNull()
+    }
   })
 
   it('注册校验工作中心、SKU 与正整数寿命，合法时显示组合数并提交真实编码', async () => {
@@ -271,6 +293,14 @@ describe('工装与模具维护台', () => {
     await button(wrapper, '转保养')!.trigger('click')
     await button(wrapper, '确认转保养')!.trigger('click')
     expect(state.changeStatus).not.toHaveBeenCalled()
+    const statusReason = wrapper.find('#tooling-status-reason')
+    expect(statusReason.element.parentElement?.getAttribute('data-invalid')).toBe('true')
+    expect(
+      statusReason.element.closest('[data-slot="nv-field"]')?.getAttribute('data-invalid'),
+    ).toBe('true')
+    expect(wrapper.find('label[for="tooling-status-reason"] > span').classes()).toContain(
+      'text-destructive',
+    )
     await wrapper.find('#tooling-status-reason').setValue('达到规定冲次，安排保养')
     await button(wrapper, '确认转保养')!.trigger('click')
     await flushPromises()
@@ -285,6 +315,14 @@ describe('工装与模具维护台', () => {
     await button(wrapper, '确认登记')!.trigger('click')
     expect(state.recordUsage).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('使用次数必须是正整数。')
+    const usageInput = wrapper.find('#tooling-usage-count')
+    expect(usageInput.element.parentElement?.getAttribute('data-invalid')).toBe('true')
+    expect(usageInput.element.closest('[data-slot="nv-field"]')?.getAttribute('data-invalid')).toBe(
+      'true',
+    )
+    expect(wrapper.find('label[for="tooling-usage-count"] > span').classes()).toContain(
+      'text-destructive',
+    )
 
     await wrapper.find('#tooling-usage-count').setValue('800')
     expect(wrapper.text()).toContain('保存后工装将自动转为保养中，并停止参与排程')
@@ -310,6 +348,23 @@ describe('工装与模具维护台', () => {
     await confirmRetire.trigger('click')
     await flushPromises()
     expect(state.changeStatus).toHaveBeenCalledWith('MOULD-001', 'retired', '达到报废标准')
+  })
+
+  it('退役请求失败后保留确认框与已填写原因', async () => {
+    state.changeStatus.mockRejectedValueOnce(new Error('暂时不可用'))
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    await button(wrapper, '退役')!.trigger('click')
+    await wrapper.find('#tooling-retire-reason').setValue('达到报废标准')
+    await button(wrapper, '确认退役')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="retire-alert"]').exists()).toBe(true)
+    expect((wrapper.find('#tooling-retire-reason').element as HTMLInputElement).value).toBe(
+      '达到报废标准',
+    )
+    expect(state.toastError).toHaveBeenCalled()
   })
 
   it('仅有只读权限时不展示写操作', async () => {
