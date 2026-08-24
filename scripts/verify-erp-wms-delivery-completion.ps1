@@ -4,16 +4,20 @@
 #     - Starts local PostgreSQL and Redis compose services when they are not already running
 #     - Builds and starts ERP, WMS, and Inventory as separate managed processes
 #     - Creates a disposable PostgreSQL database and publishes real Redis CAP integration events
+#     - Deletes an exact diagnostic artifact path when its post-write scan detects retained secret material
 #   Writes:
 #     - bin/ and obj/ outputs for ERP, WMS, Inventory, and the full-chain replay probe
 #     - artifacts/script-logs/**
 #     - artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
 #     - artifacts/acceptance/man527/diagnostics/** on failure
 #     - A caller-selected canonical acceptance result when requested
+#     - Same-directory .<leaf>.<guid>.tmp files before atomic diagnostic/evidence publication
 #   Cleanup:
 #     - Stops every managed service process in finally
 #     - Drops the disposable PostgreSQL database in finally
 #     - Stops only compose services started by this script
+#     - Removes owned same-directory diagnostic/evidence temp files in writer finally blocks
+#     - Removes the exact temp or published artifact whose scan detects retained secret material
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
@@ -294,7 +298,8 @@ function Wait-WmsOutboundOrder {
         [hashtable]$Headers,
         [string]$DeliveryOrderNo,
         [string]$ActorPrincipalId,
-        [string]$SiteCode)
+        [string]$SiteCode,
+        [switch]$RequireCompleted)
     $keyword = [Uri]::EscapeDataString($DeliveryOrderNo)
     $actor = [Uri]::EscapeDataString($ActorPrincipalId)
     $site = [Uri]::EscapeDataString($SiteCode)
@@ -303,7 +308,10 @@ function Wait-WmsOutboundOrder {
         try {
             $response = Invoke-RestMethod -Method Get -Uri "$WmsUrl/api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&keyword=$keyword&actorPrincipalId=$actor&authorizedSiteCodes=$site&scopeKind=site&scopeId=$site&siteCode=$site" -Headers $Headers
             $rows = @($response.data.items | Where-Object { $_.outboundOrderNo -eq $DeliveryOrderNo })
-            if ($rows.Count -eq 1) { return $rows[0] }
+            if ($rows.Count -eq 1 -and
+                (-not $RequireCompleted -or (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback $rows[0]))) {
+                return $rows[0]
+            }
         }
         catch { }
         Start-Sleep -Milliseconds 500
@@ -481,8 +489,6 @@ $scenarioError = $null
 $businessEvidence = $null
 $probeResultsPath = $null
 $fullChainProbeCounters = $null
-$pickingLifecycleCompleted = $false
-$completionHttpReplayConverged = $false
 $repeatedEventConverged = $false
 $acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
 $evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
@@ -749,6 +755,13 @@ try {
     if (-not $completionHttpReplayConverged) {
         throw 'Public WMS completion replay did not return the same non-empty inventory movement requestId.'
     }
+    $completedOutboundOrder = Wait-WmsOutboundOrder `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -DeliveryOrderNo $deliveryOrderNo `
+        -ActorPrincipalId $wmsActorPrincipalId `
+        -SiteCode $wmsSiteCode `
+        -RequireCompleted
 
     $deliveryBeforeReplay = Wait-ErpDeliveryOrder -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
     $receivableBeforeReplay = Wait-Receivable -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
@@ -831,6 +844,7 @@ try {
             pickingLifecycleCompleted = $pickingLifecycleCompleted
             completionHttpReplay = 'same idempotency key accepted twice'
             completionHttpReplayConverged = $completionHttpReplayConverged
+            completionReadback = [ordered]@{ status = $completedOutboundOrder.status; completedAtUtc = $completedOutboundOrder.completedAtUtc }
         }
         erpDelivery = [ordered]@{
             status = $deliveryAfterReplay.status

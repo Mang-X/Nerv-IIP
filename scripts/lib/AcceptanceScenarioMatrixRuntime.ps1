@@ -3,10 +3,14 @@
 #   SideEffects:
 #     - Reads a supplied GitHub Actions workflow through the acceptance planning contract
 #     - Invokes only a caller-supplied in-process runtime action after all preflight checks pass
+#     - Deletes an exact diagnostic artifact path when its post-write scan detects retained secret material
 #   Writes:
 #     - A caller-declared runtime summary through atomic file replacement
+#     - Same-directory diagnostic artifact and .<leaf>.<guid>.tmp files through atomic file replacement
 #   Cleanup:
 #     - Removes owned temporary summary files after each persistence attempt
+#     - Removes owned diagnostic temp files after each persistence attempt
+#     - Removes the exact diagnostic temp or published artifact whose scan detects retained secret material
 #   Requires:
 #     - PowerShell 7
 
@@ -461,7 +465,7 @@ function Get-NervAcceptanceRuntimeScenarioAdapter {
             v1Alias = 'erp-wms-delivery-completion'
             entrypoint = 'scripts/verify-erp-wms-delivery-completion.ps1'
             identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'
-            businessFactFields = @('outboundAssigned', 'pickingLifecycleCompleted', 'deliveryCompleted', 'receivableCreated', 'completionReplayConverged', 'repeatedEventConverged')
+            businessFactFields = @('outboundAssigned', 'pickingLifecycleCompleted', 'outboundCompleted', 'deliveryCompleted', 'receivableCreated', 'completionReplayConverged', 'repeatedEventConverged')
             portFields = @('erp', 'wms', 'inventory')
         }
     }
@@ -1036,8 +1040,15 @@ function Test-NervAcceptanceWmsCompletionReplay {
     $firstRequestId = [string]$FirstCompletion.data.requestId
     $replayRequestId = [string]$ReplayCompletion.data.requestId
     return -not [string]::IsNullOrWhiteSpace($firstRequestId) -and
-        -not [string]::IsNullOrWhiteSpace($replayRequestId) -and
         [string]::Equals($replayRequestId, $firstRequestId, [StringComparison]::Ordinal)
+}
+
+function Test-NervAcceptanceWmsCompletedOutboundReadback {
+    param([Parameter(Mandatory)] [AllowNull()] [object] $Readback)
+
+    return $null -ne $Readback -and
+        [string]::Equals([string]$Readback.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
+        -not [string]::IsNullOrWhiteSpace([string]$Readback.completedAtUtc)
 }
 
 function Protect-NervAcceptanceWmsDiagnosticText {
@@ -1200,8 +1211,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                                 [string]::Equals($node.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
                         }, $true))) {
                 if (-not (& $hasConditionalAncestor $captureCall) -and
-                    -not (& $hasFunctionAncestor $captureCall) -and
-                    $captureCall.Extent.StartOffset -lt $tryStatement.Finally.Extent.StartOffset) {
+                    -not (& $hasFunctionAncestor $captureCall)) {
                     [void]$orderedCaptureCalls.Add($captureCall)
                 }
             }
@@ -1210,6 +1220,11 @@ function Test-NervAcceptanceWmsVerifierContract {
 
     $testAssignment = {
         param([string] $CommandName, [string] $VariableName)
+        $allAssignments = @($ast.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+                        [string]::Equals($node.Left.Extent.Text, "`$$VariableName", [StringComparison]::Ordinal)
+                }, $true) | Where-Object { -not (& $hasFunctionAncestor $_) })
         $matches = @($ast.FindAll({
                     param($node)
                     $node -is [Management.Automation.Language.CommandAst] -and
@@ -1227,7 +1242,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                         -not (& $hasConditionalAncestor $command) -and
                         -not (& $hasFunctionAncestor $command)
                 })
-        return $matches.Count -eq 1
+        return $allAssignments.Count -eq 1 -and $matches.Count -eq 1
     }
 
     return [pscustomobject][ordered]@{
@@ -1288,11 +1303,12 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
         throw 'MAN-527 canonical business checkpoint flags must be JSON booleans.'
     }
     $pickingLifecycleCompleted = [bool]$BusinessEvidence.wmsOutboundOrder.pickingLifecycleCompleted
+    $outboundCompleted = Test-NervAcceptanceWmsCompletedOutboundReadback -Readback $BusinessEvidence.wmsOutboundOrder.completionReadback
     $deliveryCompleted = [string]::Equals([string]$BusinessEvidence.erpDelivery.status, 'completed', [StringComparison]::OrdinalIgnoreCase) -and [decimal]$BusinessEvidence.erpDelivery.shippedQuantity -eq 2 -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.erpDelivery.shippedAtUtc) -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.erpDelivery.completedAtUtc)
     $receivableCreated = -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.accountReceivable.receivableNo) -and [string]::Equals([string]$BusinessEvidence.accountReceivable.sourceDocumentNo, [string]$BusinessEvidence.deliveryOrderNo, [StringComparison]::Ordinal)
     $completionReplayConverged = [bool]$BusinessEvidence.wmsOutboundOrder.completionHttpReplayConverged
     $repeatedEventConverged = [bool]$BusinessEvidence.repeatedEventConverged
-    if (-not $outboundAssigned -or -not $pickingLifecycleCompleted -or -not $deliveryCompleted -or -not $receivableCreated -or -not $completionReplayConverged -or -not $repeatedEventConverged) { throw 'MAN-527 canonical success requires every business checkpoint to have converged.' }
+    if (-not $outboundAssigned -or -not $pickingLifecycleCompleted -or -not $outboundCompleted -or -not $deliveryCompleted -or -not $receivableCreated -or -not $completionReplayConverged -or -not $repeatedEventConverged) { throw 'MAN-527 canonical success requires every business checkpoint to have converged.' }
 
     Assert-NervAcceptanceObjectSchema -Object $DiagnosticEvidence -AllowedFields @('failureCaptureSupported', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -RequiredFields @('failureCaptureSupported', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -Context 'MAN-527 canonical diagnostic evidence'
     foreach ($name in @('failureCaptureSupported', 'failureDiagnosticsCaptured', 'secretsRedacted')) {
@@ -1311,7 +1327,7 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
         track = $Track
         conclusion = 'passed'
         test = [pscustomobject][ordered]@{ identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'; expected = 1; discovered = [int]$TestCounters.total; passed = [int]$TestCounters.passed; failed = [int]$TestCounters.failed; skipped = [int]$TestCounters.skipped }
-        businessFacts = [pscustomobject][ordered]@{ outboundAssigned = $outboundAssigned; pickingLifecycleCompleted = $pickingLifecycleCompleted; deliveryCompleted = $deliveryCompleted; receivableCreated = $receivableCreated; completionReplayConverged = $completionReplayConverged; repeatedEventConverged = $repeatedEventConverged }
+        businessFacts = [pscustomobject][ordered]@{ outboundAssigned = $outboundAssigned; pickingLifecycleCompleted = $pickingLifecycleCompleted; outboundCompleted = $outboundCompleted; deliveryCompleted = $deliveryCompleted; receivableCreated = $receivableCreated; completionReplayConverged = $completionReplayConverged; repeatedEventConverged = $repeatedEventConverged }
         diagnostics = [pscustomobject][ordered]@{ schemas = @('erp', 'inventory', 'wms'); failureCaptureSupported = [bool]$DiagnosticEvidence.failureCaptureSupported; failureDiagnosticsCaptured = [bool]$DiagnosticEvidence.failureDiagnosticsCaptured; secretsRedacted = [bool]$DiagnosticEvidence.secretsRedacted }
         cleanup = [pscustomobject][ordered]@{ managedProcessesRemaining = [int]$CleanupEvidence.managedProcessRemaining; disposableDatabasesRemaining = [int]$CleanupEvidence.exactDatabaseRemaining; ownedResourcesRemaining = [int]$ownedResourcesRemaining; errorCodes = @($cleanupErrorCodes) }
         volatile = [pscustomobject][ordered]@{ databaseName = [string]$Volatile.databaseName; processIds = @($Volatile.processIds); capSuffix = [string]$Volatile.capSuffix; startedAtUtc = [string]$Volatile.startedAtUtc; completedAtUtc = [string]$Volatile.completedAtUtc; cleanupErrors = @($cleanupErrors); ports = $Volatile.ports; paths = $Volatile.paths }

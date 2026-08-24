@@ -529,6 +529,7 @@ function New-WmsEquivalenceFixture {
         businessFacts = [pscustomobject][ordered]@{
             outboundAssigned = $true
             pickingLifecycleCompleted = $true
+            outboundCompleted = $true
             deliveryCompleted = $true
             receivableCreated = $true
             completionReplayConverged = $true
@@ -637,6 +638,7 @@ try {
             pickingLifecycleCompleted = $true
             completionHttpReplay = 'same idempotency key accepted twice'
             completionHttpReplayConverged = $true
+            completionReadback = [pscustomobject][ordered]@{ status = 'Completed'; completedAtUtc = '2026-08-24T00:00:30Z' }
         }
         erpDelivery = [pscustomobject][ordered]@{ status = 'completed'; shippedQuantity = 2; shippedAtUtc = '2026-08-24T00:00:00Z'; completedAtUtc = '2026-08-24T00:01:00Z' }
         accountReceivable = [pscustomobject][ordered]@{ receivableNo = 'AR-001'; sourceDocumentNo = 'DO-MAN527-1234ABCD' }
@@ -656,12 +658,14 @@ try {
         paths = [pscustomobject][ordered]@{ businessEvidence = '/tmp/evidence.json'; probeTrx = '/tmp/probe.trx'; cleanupEvidence = '/tmp/evidence.json'; canonicalResult = '/tmp/result.json' }
     }
     $wmsBuiltCanonical = New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $wmsCanonicalResult.provenance -Track shadow -BusinessEvidence $wmsBusinessEvidence -TestCounters $wmsCounters -CleanupEvidence $wmsCleanup -DiagnosticEvidence $wmsDiagnostics -Volatile $wmsVolatile
-    Assert-Contract ([string]::Equals([string]$wmsBuiltCanonical.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal) -and $wmsBuiltCanonical.businessFacts.repeatedEventConverged) 'The MAN-527 adapter must construct the WMS canonical result from business evidence, exact TRX counters, and cleanup readback.'
+    Assert-Contract ([string]::Equals([string]$wmsBuiltCanonical.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal) -and $wmsBuiltCanonical.businessFacts.outboundCompleted -and $wmsBuiltCanonical.businessFacts.repeatedEventConverged) 'The MAN-527 adapter must construct the WMS canonical result from WMS completion evidence, exact TRX counters, and cleanup readback.'
     foreach ($wmsInputMutation in @(
         @{ Name = 'bad-provenance'; Message = 'runId must be a positive'; Provenance = { param($value) $value.runId = '01' } },
         @{ Name = 'missing-business-evidence'; Message = 'missing required field'; Business = { param($value) $value.PSObject.Properties.Remove('accountReceivable') } },
         @{ Name = 'empty-assignment'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.firstAssignment.poolCode = '' } },
         @{ Name = 'picking-not-completed'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.pickingLifecycleCompleted = $false } },
+        @{ Name = 'outbound-pending'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionReadback.status = 'Pending' } },
+        @{ Name = 'outbound-completion-time-missing'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionReadback.completedAtUtc = '' } },
         @{ Name = 'delivery-pending'; Message = 'every business checkpoint'; Business = { param($value) $value.erpDelivery.status = 'pending' } },
         @{ Name = 'completion-replay-not-converged'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionHttpReplayConverged = $false } },
         @{ Name = 'repeated-event-not-converged'; Message = 'every business checkpoint'; Business = { param($value) $value.repeatedEventConverged = $false } },
@@ -704,7 +708,7 @@ try {
     foreach ($pickingMutation in @(
         @{ Name = 'status'; Apply = { param($value) $value[0].status = 'InProgress' } },
         @{ Name = 'planned-quantity'; Apply = { param($value) $value[0].plannedQuantity = 2 } },
-        @{ Name = 'executed-quantity'; Apply = { param($value) $value[0].executedQuantity = 2 } },
+        @{ Name = 'requested-quantity'; Apply = { param($value) $value[0].plannedQuantity = 2; $value[0].executedQuantity = 2 } },
         @{ Name = 'completed-at'; Apply = { param($value) $value[0].completedAtUtc = '' } }
     )) {
         $mutatedPickingReadbacks = Copy-JsonObject $validPickingReadbacks
@@ -719,12 +723,17 @@ try {
     foreach ($completionMutation in @(
         @{ Name = 'empty-first'; First = ''; Replay = 'movement-request-1' },
         @{ Name = 'empty-replay'; First = 'movement-request-1'; Replay = '' },
+        @{ Name = 'both-empty'; First = ''; Replay = '' },
         @{ Name = 'ordinal-mismatch'; First = 'movement-request-1'; Replay = 'MOVEMENT-REQUEST-1' }
     )) {
         $mutatedFirstCompletion = [pscustomobject]@{ data = [pscustomobject]@{ requestId = $completionMutation.First } }
         $mutatedReplayCompletion = [pscustomobject]@{ data = [pscustomobject]@{ requestId = $completionMutation.Replay } }
         Assert-Contract (-not (Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $mutatedFirstCompletion -ReplayCompletion $mutatedReplayCompletion)) "Completion replay mutation '$($completionMutation.Name)' must fail closed."
     }
+
+    Assert-Contract (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback ([pscustomobject]@{ status = 'Completed'; completedAtUtc = '2026-08-24T00:00:30Z' })) 'A public WMS outbound readback must prove both Completed status and a completion timestamp.'
+    Assert-Contract (-not (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback ([pscustomobject]@{ status = 'Pending'; completedAtUtc = '2026-08-24T00:00:30Z' }))) 'A pending public WMS outbound readback must not prove completion.'
+    Assert-Contract (-not (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback ([pscustomobject]@{ status = 'Completed'; completedAtUtc = '' }))) 'A completed public WMS outbound readback without completedAtUtc must fail closed.'
 
     $diagnosticArtifactPath = Join-Path $fixtureRoot 'wms-diagnostics/actual-evidence.json'
     $diagnosticSecret = 'wms-runtime-secret-123'
@@ -763,6 +772,12 @@ try {
     try { Assert-NervAcceptanceWmsDiagnosticArtifactRedacted -Path $unannouncedSecretArtifactPath -SensitiveValues @() | Out-Null }
     catch { $unannouncedSecretRejected = $_.Exception.Message.Contains('secret pattern', [StringComparison]::Ordinal) }
     Assert-Contract ($unannouncedSecretRejected -and -not (Test-Path -LiteralPath $unannouncedSecretArtifactPath)) 'The independent diagnostic scanner must reject and remove an unpublished artifact containing an undeclared bearer secret.'
+    $unannouncedPasswordArtifactPath = Join-Path $fixtureRoot 'wms-diagnostics/unannounced-password.json'
+    [IO.File]::WriteAllText($unannouncedPasswordArtifactPath, 'Password=unannounced-password-321', [Text.UTF8Encoding]::new($false))
+    $unannouncedPasswordRejected = $false
+    try { Assert-NervAcceptanceWmsDiagnosticArtifactRedacted -Path $unannouncedPasswordArtifactPath -SensitiveValues @() | Out-Null }
+    catch { $unannouncedPasswordRejected = $_.Exception.Message.Contains('secret pattern', [StringComparison]::Ordinal) }
+    Assert-Contract ($unannouncedPasswordRejected -and -not (Test-Path -LiteralPath $unannouncedPasswordArtifactPath)) 'The independent diagnostic scanner must reject and remove an unpublished artifact containing an undeclared password field.'
     $atomicDiagnosticPath = Join-Path $fixtureRoot 'wms-diagnostics/atomic-evidence.json'
     [IO.File]::WriteAllText($atomicDiagnosticPath, '{"status":"previous-safe-evidence"}', [Text.UTF8Encoding]::new($false))
     $unannouncedUserInfoRejected = $false
@@ -805,7 +820,28 @@ try {
         [IO.File]::WriteAllText($unusedFunctionMutationPath, $unusedFunctionMutationSource, [Text.UTF8Encoding]::new($false))
         $unusedFunctionContract = Test-NervAcceptanceWmsVerifierContract -Path $unusedFunctionMutationPath
         Assert-Contract (-not [bool]$unusedFunctionContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier unused-function mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
+
+        if (-not [string]::Equals([string]$contractMutation.Property, 'failureCaptureSupported', [StringComparison]::Ordinal)) {
+            $overrideMutationPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-top-level-override.ps1"
+            $overrideMutationSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`n$($contractMutation.Variable) = `$true")
+            [IO.File]::WriteAllText($overrideMutationPath, $overrideMutationSource, [Text.UTF8Encoding]::new($false))
+            $overrideContract = Test-NervAcceptanceWmsVerifierContract -Path $overrideMutationPath
+            Assert-Contract (-not [bool]$overrideContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier top-level override mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
+        }
     }
+
+    $failureAssignmentCommand = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.CommandAst] -and
+                    [string]::Equals($node.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
+            }, $true))[0]
+    $failureAssignment = $failureAssignmentCommand.Parent
+    while ($failureAssignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $failureAssignment = $failureAssignment.Parent }
+    $duplicateFailureCapturePath = Join-Path $fixtureRoot 'wms-diagnostics/failure-capture-duplicate.ps1'
+    $duplicateFailureCaptureSource = $wmsVerifierSource.Insert($failureAssignment.Extent.EndOffset, "`n$($failureAssignment.Extent.Text)")
+    [IO.File]::WriteAllText($duplicateFailureCapturePath, $duplicateFailureCaptureSource, [Text.UTF8Encoding]::new($false))
+    $duplicateFailureCaptureContract = Test-NervAcceptanceWmsVerifierContract -Path $duplicateFailureCapturePath
+    Assert-Contract (-not $duplicateFailureCaptureContract.failureCaptureSupported) 'A duplicate top-level failure exporter assignment must invalidate failureCaptureSupported.'
     $wmsAction = { param([object] $Contract) $wmsActionContracts.Add($Contract); return $wmsCanonicalResult }.GetNewClosure()
     $wmsArguments = Get-RuntimeArguments -ArtifactPath $wmsArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $wmsSummaryPath -Action $wmsAction -ScenarioId 'wms-delivery-erp'
     $wmsRuntimeResult = Invoke-NervAcceptanceScenarioRuntime @wmsArguments

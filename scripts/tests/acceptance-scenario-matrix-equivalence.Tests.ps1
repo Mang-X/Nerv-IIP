@@ -119,6 +119,7 @@ function New-WmsCanonicalResult([string] $Track, [string] $ManifestDigest, [stri
         businessFacts = [pscustomobject][ordered]@{
             outboundAssigned = $true
             pickingLifecycleCompleted = $true
+            outboundCompleted = $true
             deliveryCompleted = $true
             receivableCreated = $true
             completionReplayConverged = $true
@@ -288,7 +289,7 @@ try {
     Assert-Contract ([string]::Equals([string]$wmsSuccess.status, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$wmsSuccess.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) 'Two valid WMS canonical tracks must pass the explicit WMS adapter.'
     Assert-Contract ([string]::Equals([string]$wmsSuccess.planning.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) 'The WMS equivalence report planning identity must match the explicit WMS scenario.'
     $wmsDrift = Get-Content -LiteralPath $wmsResultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
-    $wmsDrift.businessFacts.repeatedEventConverged = $false
+    $wmsDrift.businessFacts.outboundCompleted = $false
     Write-JsonFixture -Path $wmsResultPaths[1] -Value $wmsDrift
     $wmsDriftReportPath = Join-Path $fixtureRoot 'wms-drift-report.json'
     $wmsDriftFailure = $null
