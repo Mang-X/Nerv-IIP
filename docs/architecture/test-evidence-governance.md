@@ -17,6 +17,9 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 | `connector-host` | `Connector Host Tests` | — |
 | `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`、`masterdata-postgres-profile`、`scheduling-postgres-profile`、`apphub-postgres-profile`（`test-owned`）、`barcodelabel-postgres-profile`、`filestorage-postgres-profile`、`industrialtelemetry-postgres-profile`、`quality-postgres-profile`、`mes-postgres-profile`、`wms-postgres-profile`（`test-owned`）、`erp-postgres-profile`、`demandplanning-postgres-profile`（`test-owned`）、`acceptance-postgres-profile`、`maintenance-device-pause-postgres`（拆解②与③全八批） |
 | `redis-cap` | `Redis/CAP Transport Tests` | `demandplanning-sales-order-redis-cap`（拆解④） |
+| `full-chain` | `Business FullChain Acceptance / v1 Authority` | — |
+
+`scripts/test-evidence-baseline.json` 当前只含 `backend-shard-1` 至 `backend-shard-4` 与 `connector-host` 的 lane provenance，没有 `full-chain` baseline id，因此表中如实记为 `—`。`full-chain` 的物理证据 owner 架构上唯一绑定 `business-full-chain-acceptance-v1`。当前门禁只静态识别 workflow step 对 `collect-test-evidence.ps1` 的直接调用及 `upload-artifact` 中包含 `test-evidence-full-chain-` 的 artifact-name 字面；wrapper 或动态构造不在这一静态证明范围内。shadow、equivalence 与稳定 `Business FullChain Acceptance` aggregate 分别发布轨道/比较/汇总产物，不是 MAN-661 formal evidence owner。执行链为 planning → v1/shadow → equivalence → stable aggregate → `CI Summary`；`CI Summary` 只消费稳定 aggregate。fixture/local、PR exact-head 与 merge-SHA main 是三种不同证据边界，任何一层通过都不能替代下一层。
 
 `Backend Tests` 仍是稳定的必需聚合作业。它不运行测试、不拥有证据执行通道，只断言分片治理与全部四个分片作业成功。`scripts/verify-backend-test-shards.ps1` 从结构上强制执行该接线：执行通道/作业绑定、仅存原始结果的目录、精确的采集器参数，以及每个分片作业恰好一个脱敏证据产物。若分片作业上传原始目录、声称拥有另一条执行通道、通过 shell 管道包装运行器，或将采集降级为 `success()`，该门禁就会失败。
 
@@ -51,7 +54,7 @@ artifacts/test-evidence/<run>/attempt-<n>/<lane>/
 2. **每个显式步骤都声明 `timeout-minutes`**——包括 checkout、SDK/pnpm 设置、缓存恢复以及证据采集/上传步骤。`if: always()` 不会免除步骤预算要求。
 3. **发布证据的作业必须使步骤预算总和严格小于作业预算。**这样作业预算实际上才不可达：某个步骤必须先超过自身预算，而步骤超时只会使该步骤失败，因此作业会继续进入 `Collect …` / `Upload …`，脱敏包仍可发布。只要存在一个无预算步骤，就会重新打开作业预算先触发并连同产物一起取消的路径。
 
-规则 3 有意限定范围。四个后端快速分片（`backend-tests-business-gateway`、`backend-tests-platform`、`backend-tests-business-core-a`、`backend-tests-business-core-b`）、`postgres-provider-tests`、`business-full-chain-acceptance-v1`、`erp-sales-order-demand-acceptance` 和 `connector-host-tests` 都有 `if: always()` 采集/上传步骤，因此确有可能损失的内容；它们的作业预算远高于任何真实运行时间，以覆盖步骤预算总和。当前 `.github/workflows/ci.yml` 的显式预算为：`business-full-chain-acceptance-v1` 作业 `225m`、步骤合计 `220m`、余量 `5m`；`erp-sales-order-demand-acceptance` 作业 `55m`、步骤合计 `47m`、余量 `8m`。`backend-tests`（MAN-669 留下的不运行测试的聚合作业）、`backend-test-shard-governance`、`frontend`、`openapi-client-drift` 和 `script-governance` 没有能在前一步失败后继续运行的步骤：活得比自身预算更久也不会保留任何内容，因此将预算抬高到步骤总和以上只会把快速失败变成缓慢失败。
+规则 3 有意限定范围。四个后端快速分片（`backend-tests-business-gateway`、`backend-tests-platform`、`backend-tests-business-core-a`、`backend-tests-business-core-b`）、`postgres-provider-tests`、`business-full-chain-acceptance-v1` 和 `connector-host-tests` 都有 `if: always()` 采集/上传步骤，因此确有可能损失的内容；它们的作业预算远高于任何真实运行时间，以覆盖步骤预算总和。当前 `.github/workflows/ci.yml` 中 `business-full-chain-acceptance-v1` 作业为 `225m`、步骤合计 `220m`、余量 `5m`。`backend-tests`（MAN-669 留下的不运行测试的聚合作业）、`backend-test-shard-governance`、`frontend`、`openapi-client-drift` 和 `script-governance` 没有能在前一步失败后继续运行的步骤：活得比自身预算更久也不会保留任何内容，因此将预算抬高到步骤总和以上只会把快速失败变成缓慢失败。
 
 因此在 B 级中，**作业**预算是根据观测运行时间设定的快速失败上限，步骤预算仅是逐步骤上限。这里有意不声称各步骤预算都可独立触发：`frontend` 在 20 分钟作业内的步骤预算合计为 58 分钟，因此其 15 分钟构建预算绝不可能自行触发——作业预算总会先到。门禁对 B 级强制执行的唯一规则，是任何调度下都不可能生效的情形：步骤预算大于或等于整个作业预算。两级都保留步骤预算；在 B 级中，它既记录健康步骤的成本，也是在作业只有一个长步骤时真正触发的上限。
 
@@ -69,7 +72,7 @@ artifacts/test-evidence/<run>/attempt-<n>/<lane>/
 
 MAN-669 PR-A 重新配平分片内容时，同一规则第二次适用。旧的逐分片差异（BusinessGateway 8 分钟、Platform 10 分钟、Business Core A 15 分钟、Business Core B 12 分钟）来自一个分片承担 357 秒 TRX elapsed、另一个仅承担 23 秒的拓扑。按实测成本重新安置项目后，该差异消失。在分支的三次运行（`31114441118`、`31115903098`、`31116998822`）中，分片测试步骤依次实测为 3.5 / 3.0 / 4.2 / 2.4 分钟，4.5 / 3.0 / 4.2 / 3.3 分钟，以及 4.7 / 3.1 / — / 3.1 分钟。同一提交在托管运行器上的波动可达数十个百分点，并会改变最慢分片；这本身就说明应共享一个预算而非使用四个预算，否则逐分片预算会编码噪声。四个分片现均采用 10 分钟测试步骤预算（约为三次运行最大值 4.7 分钟的 2 倍）、39 分钟步骤预算总和和 45 分钟作业预算。跨拓扑变更继承预算，与加速后继承预算属于同一失败模式：它描述的是已不存在的事物。
 
-规则 2 覆盖 `steps:` 中的**显式**步骤——只有这些步骤能携带 `timeout-minutes`。GitHub 还会运行不在 `steps:` 中、因而无法分配预算的步骤：首个步骤前的 `Set up job`，以及组合 action 的隐式后置步骤（`actions/cache` 的 post-save、`setup-node` 的 post-cache）。作业预算在 `Set up job` 前开始计时，并持续到后置步骤结束，因此作业剩余余量——作业预算减去步骤预算总和——必须吸收这些成本。相对于实测仅数十秒的隐式开销，当前四个后端快速分片的余量各为 6 分钟，`business-full-chain-acceptance-v1` 为 5 分钟，`erp-sales-order-demand-acceptance` 为 8 分钟，`connector-host-tests` 为 9 分钟。
+规则 2 覆盖 `steps:` 中的**显式**步骤——只有这些步骤能携带 `timeout-minutes`。GitHub 还会运行不在 `steps:` 中、因而无法分配预算的步骤：首个步骤前的 `Set up job`，以及组合 action 的隐式后置步骤（`actions/cache` 的 post-save、`setup-node` 的 post-cache）。作业预算在 `Set up job` 前开始计时，并持续到后置步骤结束，因此作业剩余余量——作业预算减去步骤预算总和——必须吸收这些成本。相对于实测仅数十秒的隐式开销，当前四个后端快速分片的余量各为 6 分钟，`business-full-chain-acceptance-v1` 为 5 分钟，`connector-host-tests` 为 9 分钟。
 
 证据结论不受该缺口影响：隐式后置步骤安排在最后一个显式步骤**之后**，因此运行时 `Upload … test evidence` 已经发布产物。它们会消耗作业预算，但不会使证据丢失。它们可能在每个步骤都处于自身预算内的情况下仍使作业触及作业预算；因此设计必须考虑余量，而不仅是严格不等式。
 

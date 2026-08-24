@@ -63,7 +63,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
   `gatewayOperationIds`，删除 `followUp`。
 - **新增业务服务** → 将其 `.Web` project reference 与 assembly name 加入门禁项目
   （`Nerv.IIP.FacadeCoverage.Tests`），使其 endpoints 被覆盖。
-- 此处按数量汇总 `exposed` 行；含逐 endpoint facade operation id 的完整 415 行登记表位于 JSON 中。
+- 此处按数量汇总 `exposed` 行；含逐 endpoint facade operation id 的完整登记表位于 JSON 中（行数以 JSON 为准，不在本文重复硬编码——此前写死的数字已随登记增长失真）。
 
 ## 汇总
 
@@ -83,8 +83,8 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      41 |      29 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
-| Wms                 |      47 |      37 |        5 |        5 |
-| **Total**           | **417** | **345** |   **47** |   **25** |
+| Wms                 |      49 |      37 |        7 |        5 |
+| **Total**           | **419** | **345** |   **49** |   **25** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -168,6 +168,8 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | Wms                 | GET    | `/api/business/v1/wms/replenishment-tasks`                                                      | BusinessGateway facade 待交付；跟随 #707 跟踪的余下 WMS 深化和 Business Console 作业批次。                                                                                              |
 | Wms                 | POST   | `/api/business/v1/wms/backorder-orders/{backorderOrderId}/close`                                | BusinessGateway facade 待交付；跟随 #707 跟踪的余下 WMS 深化和 Business Console 作业批次。                                                                                              |
 | Wms                 | POST   | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel`                                 | BusinessGateway facade 待交付；WMS 出库取消跟随 WMS 作业菜单阶段。                                                                                                                      |
+| Wms                 | POST   | `/api/business/v1/wms/work-pools`                                                               | BusinessGateway facade 待交付；作业池管理页面尚未立项。#1910 先落写面，让现场作业池夹具不再依赖 LeaderDemo 世界观种子。                                                                 |
+| Wms                 | POST   | `/api/business/v1/wms/work-pools/{poolCode}/members`                                            | BusinessGateway facade 待交付；成员资格管理与 `provisionWmsWorkPool` 同一未立项页面（#1910）。                                                                                          |
 
 ### 内部 endpoint（按设计永不暴露）
 

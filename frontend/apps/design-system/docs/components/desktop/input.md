@@ -49,6 +49,8 @@ const codeValue = ref('WO-2406-0413')
 
 ## 错误态与禁用
 
+`invalid` 会在组件根节点应用错误色边框；聚焦时继续使用错误色聚焦环，避免错误态被默认边框覆盖。
+
 <Demo>
   <div style="display:flex;flex-direction:column;gap:12px;max-width:320px">
     <NvInput :model-value="'数量不能为空'" invalid />

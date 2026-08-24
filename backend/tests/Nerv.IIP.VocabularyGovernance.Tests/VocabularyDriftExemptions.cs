@@ -38,6 +38,7 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/GetPrincipalWorkContextQuery.cs",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListMasterDataResourcesQuery.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/InspectionTaskTriggerIntegrationEventHandlers.cs",
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/PeriodicInspectionIntegrationEventHandlers.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/Spc/SpcAnalysisQueries.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/LeaderDemoSeedService.cs",
             "services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs"),
@@ -106,20 +107,11 @@ internal static class VocabularyDriftExemptions
         ..Group("transfer", "同值不同义：检验任务转派动作（质量域内动作面），非审批链裁决动作。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionTasks/InspectionTaskAssignmentCommands.cs"),
 
-        // ── 库存移动类型族（#1891 建立词表后待子票销账） ───────────────────────────
-        // 下列均与 InventoryMovementTypes 同义；#1891 只收敛 Inventory，跨域消费者按 Scope Gate
-        // 分票改引。白名单键为值 × 精确文件，同文件同值的多处出现由同一条目覆盖。
-        ..Group("inbound", "待已登记跟踪票销账：#1905 将 WMS 的库存入库移动类型改引 InventoryMovementTypes.Inbound 后删除。",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WarehouseAssignmentCommands.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs"),
-        ..Group("outbound", "待已登记跟踪票销账：#1905 将 WMS 的库存出库移动类型改引 InventoryMovementTypes.Outbound 后删除。",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WarehouseAssignmentCommands.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs"),
-        ..Group("count-adjustment", "待已登记跟踪票销账：#1905 将 WMS 的盘点调整移动类型改引 InventoryMovementTypes.CountAdjustment 后删除。",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs"),
+        // ── WMS 资源类别（与库存移动类型同值不同义） ──────────────────────────────
+        ..Group("inbound", "同值不同义：仓库作业资源类别 inbound，不是库存流水移动类型。",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WarehouseAssignmentCommands.cs"),
+        ..Group("outbound", "同值不同义：仓库作业资源类别 outbound，不是库存流水移动类型。",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WarehouseAssignmentCommands.cs"),
 
         // ── "quality"（票面 (a) 类点名的多义值） ────────────────────────────────────
         // 库存质量状态族（quality/unrestricted/blocked/restricted/qualified）已于 #1370 ③ 批次 A 销账；

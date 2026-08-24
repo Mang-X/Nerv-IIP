@@ -105,6 +105,20 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-tasks/{countTaskId}/cancel", "post", "cancelBusinessConsoleInventoryCountTask");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans", "get", "listBusinessConsoleQualityInspectionPlans");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans", "post", "createBusinessConsoleQualityInspectionPlan");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleCreateInspectionPlanRequest",
+            "timeIntervalHours",
+            "quantityInterval",
+            "assignedInspectorUserId",
+            "assignedTeamId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleQualityItem",
+            "timeIntervalHours",
+            "quantityInterval",
+            "assignedInspectorUserId",
+            "assignedTeamId");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate", "post", "activateBusinessConsoleQualityInspectionPlan");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "get", "listBusinessConsoleQualityInspectionRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");
@@ -913,6 +927,7 @@ public sealed class BusinessGatewayOpenApiTests
             "get",
             "organizationId",
             "environmentId",
+            "category",
             "status",
             "keyword",
             "skip",
@@ -923,6 +938,7 @@ public sealed class BusinessGatewayOpenApiTests
             "get",
             "organizationId",
             "environmentId",
+            "sourceType",
             "status",
             "keyword",
             "skip",

@@ -73,8 +73,6 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         [int] $V1RunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ShadowResultPath,
         [int] $ShadowRunAttempt = $RunAttempt,
-        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $LegacyErpResultPath,
-        [int] $LegacyErpRunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [string] $ReportPath
     )
 
@@ -93,8 +91,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         foreach ($sourceAttempt in @(
                 @{ Name = 'planning'; Value = $PlanningRunAttempt },
                 @{ Name = 'v1'; Value = $V1RunAttempt },
-                @{ Name = 'shadow'; Value = $ShadowRunAttempt },
-                @{ Name = 'legacy ERP'; Value = $LegacyErpRunAttempt }
+                @{ Name = 'shadow'; Value = $ShadowRunAttempt }
             )) {
             if ([int]$sourceAttempt.Value -le 0) {
                 throw "Acceptance equivalence $($sourceAttempt.Name) source run attempt must be positive."
@@ -145,8 +142,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         $vectorsByTrack = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
         $resultDescriptors = @(
             [pscustomobject]@{ track = 'v1'; path = $V1ResultPath; sourceRunAttempt = $V1RunAttempt },
-            [pscustomobject]@{ track = 'shadow'; path = $ShadowResultPath; sourceRunAttempt = $ShadowRunAttempt },
-            [pscustomobject]@{ track = 'legacy-erp'; path = $LegacyErpResultPath; sourceRunAttempt = $LegacyErpRunAttempt }
+            [pscustomobject]@{ track = 'shadow'; path = $ShadowResultPath; sourceRunAttempt = $ShadowRunAttempt }
         )
         foreach ($descriptor in $resultDescriptors) {
             $failureClassification = 'track-result-invalid'
@@ -177,14 +173,14 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
                 })
         }
 
-        $governedTracks = [string[]]@('v1', 'shadow', 'legacy-erp')
+        $governedTracks = [string[]]@('v1', 'shadow')
         $observedTracks = [string[]]@($vectorsByTrack.Keys)
         [Array]::Sort($observedTracks, [StringComparer]::Ordinal)
         $expectedTracks = [string[]]@($governedTracks)
         [Array]::Sort($expectedTracks, [StringComparer]::Ordinal)
         $failureClassification = 'track-set-invalid'
         if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $observedTracks -Right $expectedTracks)) {
-            throw "Acceptance equivalence track set must be exactly 'v1', 'shadow', and 'legacy-erp'."
+            throw "Acceptance equivalence track set must be exactly 'v1' and 'shadow'."
         }
 
         $orderedReportTracks = [Collections.Generic.List[object]]::new()

@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 
@@ -145,7 +146,7 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
             throw new InvalidOperationException("CAPA effectiveness verification requires a passed verification inspection.");
         }
 
-        if (!string.Equals(effectivenessInspectionResult, "passed", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(effectivenessInspectionResult, QualityInspectionDispositionStatuses.Passed, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("CAPA effectiveness verification inspection must be passed.");
         }

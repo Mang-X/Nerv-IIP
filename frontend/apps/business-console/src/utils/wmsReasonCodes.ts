@@ -83,6 +83,12 @@ const REASON_MESSAGES: Record<string, (context?: WmsReasonContext) => string> = 
   'missing-work-scope-kind': () => '本次操作没有带上作业范围，请在页面顶部选择库区/站点后重试。',
 
   'missing-work-scope-id': () => '本次操作没有带上作业范围，请在页面顶部选择库区/站点后重试。',
+
+  // —— 422（作业池写面，#1910）——
+  // 该写面尚未经 BusinessGateway 暴露（作业池管理页面未立项），当前控制台走不到这条。
+  // 仍按 `WmsUnprocessableReasonCodes.cs` 的「新增代码必须同步」契约登记，避免开门时漏成兜底文案。
+  'membership-window-not-forward': () =>
+    '作业池成员的生效结束时间不晚于开始时间，这段资格窗口不成立。请把结束时间改到开始时间之后，或留空表示长期有效。',
 }
 
 /**

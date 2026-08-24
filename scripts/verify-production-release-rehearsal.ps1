@@ -93,6 +93,7 @@ function New-ReleaseRehearsalEnvironment {
         DOTNET_ENVIRONMENT = "Production"
         NERV_IIP_POSTGRES_USER = "nerv"
         NERV_IIP_POSTGRES_PASSWORD = "postgres-password-32chars-test"
+        NERV_IIP_REDIS_PASSWORD = "redis-password-32chars-test"
         NERV_IIP_POSTGRES_DB = "nerv_iip"
         NERV_IIP_MINIO_ROOT_USER = "minioadmin"
         NERV_IIP_MINIO_ROOT_PASSWORD = "minio-password-32chars-test"
@@ -105,6 +106,8 @@ function New-ReleaseRehearsalEnvironment {
         NERV_IIP_IAM_JWT_SIGNING_KEY_ID = "dev-rsa-2026-01"
         NERV_IIP_IAM_JWT_PRIVATE_KEY_PEM = $devJwtPrivateKeyPem
         NERV_IIP_IAM_JWT_JWKS_JSON = $devJwtJwksJson
+        NERV_IIP_IAM_SECRETS_PEPPER = "iam-pepper-48chars-test-value-not-a-real-secret"
+        NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE = "654321"
         NERV_IIP_CORS_ALLOWED_ORIGINS = "https://console.example.test,https://business.example.test"
         NERV_IIP_IMAGE_TAG = "release-rehearsal"
         NERV_IIP_AUTO_MIGRATE = "false"
@@ -226,8 +229,9 @@ function Invoke-ReleaseRehearsalSmokeChecks {
             "exec",
             "-T",
             "redis",
-            "redis-cli",
-            "ping"
+            "sh",
+            "-c",
+            'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping'
         )) -WorkingDirectory $root -TimeoutSeconds 60 -Name "release-rehearsal-redis-smoke" | Out-Null
 
     Wait-ReleaseRehearsalHttpHealth -Name "minio" -Uri "http://localhost:$($Environment.NERV_IIP_MINIO_API_PORT)/minio/health/live" -WaitSeconds 90

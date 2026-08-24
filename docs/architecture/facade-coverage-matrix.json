@@ -5078,6 +5078,22 @@
       "operationId": "resetWmsWcsDispatchCircuit",
       "classification": "internal",
       "rationale": "Manual WCS circuit reset is an internal guarded operations action and is not exposed through the business-console facade."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/work-pools",
+      "operationId": "provisionWmsWorkPool",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; the WMS work-pool administration console page is not scoped yet. Added by #1910 so field work-pool fixtures no longer depend on the LeaderDemo world-history seed."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/work-pools/{poolCode}/members",
+      "operationId": "addWmsWorkPoolMember",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; work-pool membership administration follows the same unscoped console page as provisionWmsWorkPool (#1910)."
     }
   ]
 }

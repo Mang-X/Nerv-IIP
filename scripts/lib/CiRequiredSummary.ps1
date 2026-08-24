@@ -51,7 +51,6 @@ function Get-NervCiRequiredSummaryFindings {
         'postgres-provider-tests',
         'redis-cap-transport-tests',
         'business-full-chain-acceptance',
-        'erp-sales-order-demand-acceptance',
         'connector-host-tests',
         'frontend-unit-tests',
         'frontend',
@@ -65,6 +64,117 @@ function Get-NervCiRequiredSummaryFindings {
         if ($null -eq $jobs) {
             $findings.Add('CI workflow must define jobs.')
             return @($findings)
+        }
+
+        $fullChainAggregateDiagnostic = 'Stable Business FullChain Acceptance must retain the exact planning, v1, shadow, equivalence, and selected/skipped result contract.'
+        $fullChainAggregateValid = $true
+        $fullChainAggregateProperty = $jobs.PSObject.Properties['business-full-chain-acceptance']
+        if ($null -eq $fullChainAggregateProperty) {
+            $fullChainAggregateValid = $false
+        }
+        else {
+            $fullChainAggregate = $fullChainAggregateProperty.Value
+            $expectedFullChainNeeds = @(
+                'impact-plan',
+                'acceptance-scenario-matrix-planning',
+                'business-full-chain-acceptance-v1',
+                'acceptance-scenario-matrix-runtime',
+                'acceptance-scenario-matrix-equivalence'
+            )
+            $actualFullChainNeeds = @($fullChainAggregate.needs | ForEach-Object { [string] $_ })
+            $expectedFullChainNeedSet = Get-NervStringSet -Values $expectedFullChainNeeds -Comparer ([StringComparer]::Ordinal)
+            $actualFullChainNeedSet = Get-NervStringSet -Values $actualFullChainNeeds -Comparer ([StringComparer]::Ordinal)
+            $fullChainAggregateValid = $actualFullChainNeeds.Count -eq $expectedFullChainNeeds.Count -and
+                $actualFullChainNeedSet.Count -eq $expectedFullChainNeedSet.Count -and
+                @($expectedFullChainNeeds | Where-Object { -not $actualFullChainNeedSet.Contains([string] $_) }).Count -eq 0
+
+            $expectedFullChainCondition = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
+            $fullChainAggregateValid = $fullChainAggregateValid -and
+                [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainAggregate -PropertyName 'name'), 'Business FullChain Acceptance', [StringComparison]::Ordinal) -and
+                [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainAggregate -PropertyName 'runs-on'), 'ubuntu-latest', [StringComparison]::Ordinal) -and
+                [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainAggregate -PropertyName 'timeout-minutes'), '5', [StringComparison]::Ordinal) -and
+                [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainAggregate -PropertyName 'if'), $expectedFullChainCondition, [StringComparison]::Ordinal) -and
+                $null -eq $fullChainAggregate.PSObject.Properties['continue-on-error']
+
+            $fullChainSteps = @($fullChainAggregate.steps)
+            if ($fullChainSteps.Count -ne 1) {
+                $fullChainAggregateValid = $false
+            }
+            else {
+                $fullChainStep = $fullChainSteps[0]
+                $fullChainAggregateValid = $fullChainAggregateValid -and
+                    [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'name'), 'Require FullChain planning, v1 authority, and selected shadow equivalence', [StringComparison]::Ordinal) -and
+                    [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'timeout-minutes'), '3', [StringComparison]::Ordinal) -and
+                    [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'shell'), 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal) -and
+                    $null -eq $fullChainStep.PSObject.Properties['if'] -and
+                    $null -eq $fullChainStep.PSObject.Properties['continue-on-error']
+
+                $expectedFullChainRun = @'
+planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
+v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
+sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
+shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
+equivalence_result="${{ needs.acceptance-scenario-matrix-equivalence.result }}"
+
+test "$planning_result" = "success"
+test "$v1_result" = "success"
+case "$sales_order_demand_selected" in
+  true)
+    test "$shadow_result" = "success"
+    test "$equivalence_result" = "success"
+    ;;
+  false)
+    test "$shadow_result" = "skipped"
+    test "$equivalence_result" = "skipped"
+    ;;
+  *)
+    echo "sales-order-demand-selected must be exactly 'true' or 'false'." >&2
+    exit 1
+    ;;
+esac
+'@
+                $actualFullChainRun = Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'run'
+                $fullChainAggregateValid = $fullChainAggregateValid -and [string]::Equals(
+                    $actualFullChainRun.Replace("`r`n", "`n").TrimEnd(),
+                    $expectedFullChainRun.Replace("`r`n", "`n").TrimEnd(),
+                    [StringComparison]::Ordinal)
+            }
+        }
+        if (-not $fullChainAggregateValid) {
+            $findings.Add($fullChainAggregateDiagnostic)
+        }
+
+        $formalEvidenceCollectors = [Collections.Generic.List[string]]::new()
+        $formalEvidenceArtifacts = [Collections.Generic.List[string]]::new()
+        $directFullChainCollectorPattern = '(?s)(?:^|\r?\n)\s*\./scripts/collect-test-evidence\.ps1(?:\s|$).*?-Lane\s+(?:full-chain|''full-chain''|"full-chain")(?:\s|$)'
+        foreach ($jobProperty in $jobs.PSObject.Properties) {
+            $jobName = [string] $jobProperty.Name
+            foreach ($jobStep in @($jobProperty.Value.steps)) {
+                $stepRun = Get-NervCiRequiredSummaryStringValue -Object $jobStep -PropertyName 'run'
+                if ($stepRun -cmatch $directFullChainCollectorPattern) {
+                    $formalEvidenceCollectors.Add($jobName)
+                }
+
+                $stepUses = Get-NervCiRequiredSummaryStringValue -Object $jobStep -PropertyName 'uses'
+                $stepWith = $jobStep.PSObject.Properties['with']
+                $artifactName = if ($null -ne $stepWith) {
+                    Get-NervCiRequiredSummaryStringValue -Object $stepWith.Value -PropertyName 'name'
+                }
+                else { '' }
+                if ($stepUses -cmatch '^actions/upload-artifact@v(?:4|5)$' -and
+                    $artifactName.Contains('test-evidence-full-chain-', [StringComparison]::Ordinal)) {
+                    $formalEvidenceArtifacts.Add($jobName)
+                }
+            }
+        }
+
+        $formalEvidenceOwnerValid = $false
+        if ($formalEvidenceCollectors.Count -eq 1 -and $formalEvidenceArtifacts.Count -eq 1) {
+            $formalEvidenceOwnerValid = [string]::Equals($formalEvidenceCollectors[0], 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal) -and
+                [string]::Equals($formalEvidenceArtifacts[0], 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)
+        }
+        if (-not $formalEvidenceOwnerValid) {
+            $findings.Add("Only 'business-full-chain-acceptance-v1' may collect or publish formal full-chain MAN-661 evidence.")
         }
 
         $summaryProperty = $jobs.PSObject.Properties['ci-summary']
@@ -81,7 +191,7 @@ function Get-NervCiRequiredSummaryFindings {
         $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
         $missingJobs = @($expectedNeeds | Where-Object { $null -eq $jobs.PSObject.Properties[$_] })
         if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0 -or $missingJobs.Count -gt 0) {
-            $findings.Add('CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.')
+            $findings.Add('CI Summary must need the impact plan, five current required jobs, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.')
         }
 
         $name = Get-NervCiRequiredSummaryStringValue -Object $summary -PropertyName 'name'
@@ -126,7 +236,6 @@ function Get-NervCiRequiredSummaryFindings {
         $expectedRun = @'
 impact_result="${{ needs.impact-plan.result }}"
 backend_result="${{ needs.backend-tests.result }}"
-erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
 connector_result="${{ needs.connector-host-tests.result }}"
 script_governance_result="${{ needs.script-governance.result }}"
 openapi_result="${{ needs.openapi-client-drift.result }}"
@@ -134,7 +243,6 @@ postgres_result="${{ needs.postgres-provider-tests.result }}"
 redis_cap_result="${{ needs.redis-cap-transport-tests.result }}"
 full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
 backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
-erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false' }}"
 connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
 script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
 openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
@@ -146,11 +254,6 @@ if [[ "$backend_selected" = "true" ]]; then
   backend_policy="selected"
 else
   backend_policy="skipped by design"
-fi
-if [[ "$erp_selected" = "true" ]]; then
-  erp_policy="selected"
-else
-  erp_policy="skipped by design"
 fi
 if [[ "$connector_selected" = "true" ]]; then
   connector_policy="selected"
@@ -189,7 +292,6 @@ fi
   echo "| Lane | Policy | Result |"
   echo "| --- | --- | --- |"
   echo "| Backend Tests | $backend_policy | $backend_result |"
-  echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
   echo "| Connector Host Tests | $connector_policy | $connector_result |"
   echo "| Script Governance | $script_governance_policy | $script_governance_result |"
   echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
@@ -202,11 +304,6 @@ test "$impact_result" = "success"
 test "$backend_result" = "success"
 test "${{ needs.frontend-unit-tests.result }}" = "success"
 test "${{ needs.frontend.result }}" = "success"
-if [[ "$erp_selected" = "true" ]]; then
-  test "$erp_result" = "success"
-else
-  test "$erp_result" = "skipped"
-fi
 if [[ "$connector_selected" = "true" ]]; then
   test "$connector_result" = "success"
 else

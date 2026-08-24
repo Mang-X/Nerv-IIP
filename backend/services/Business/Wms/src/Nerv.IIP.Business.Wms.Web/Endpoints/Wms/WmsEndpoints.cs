@@ -486,6 +486,56 @@ public sealed record ListReceivingQualityGatesRequest(
     bool IncludeNotRequired = false,
     string? InboundOrderNo = null);
 public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record ProvisionWarehouseWorkPoolRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string PoolCode,
+    string DisplayName,
+    string SiteCode);
+
+public sealed record AddWarehouseWorkPoolMemberRequest(
+    string PoolCode,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string PrincipalId,
+    DateTime? EffectiveFromUtc = null,
+    DateTime? EffectiveToUtc = null);
+
+public sealed class ProvisionWarehouseWorkPoolRequestValidator
+    : Validator<ProvisionWarehouseWorkPoolRequest>
+{
+    public ProvisionWarehouseWorkPoolRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PoolCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class AddWarehouseWorkPoolMemberRequestValidator
+    : Validator<AddWarehouseWorkPoolMemberRequest>
+{
+    public AddWarehouseWorkPoolMemberRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PoolCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PrincipalId).NotEmpty().MaximumLength(200);
+    }
+}
+
 public sealed record WarehouseWorkScopeCatalogRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1513,6 +1563,54 @@ public sealed class GetCountWorkScopesEndpoint(
         SendCatalogAsync(req, ct);
 }
 
+public sealed class ProvisionWarehouseWorkPoolEndpoint(ISender sender)
+    : WmsEndpoint<ProvisionWarehouseWorkPoolRequest, ResponseData<WarehouseWorkPoolProvisionResult>>
+{
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<ProvisionWarehouseWorkPoolEndpoint>(),
+        StatusCodes.Status403Forbidden);
+
+    public override async Task HandleAsync(
+        ProvisionWarehouseWorkPoolRequest req,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(new ProvisionWarehouseWorkPoolCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.PoolCode,
+            req.DisplayName,
+            req.SiteCode), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AddWarehouseWorkPoolMemberEndpoint(ISender sender)
+    : WmsEndpoint<AddWarehouseWorkPoolMemberRequest, ResponseData<WarehouseWorkPoolMemberResult>>
+{
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<AddWarehouseWorkPoolMemberEndpoint>(),
+        StatusCodes.Status403Forbidden,
+        StatusCodes.Status422UnprocessableEntity);
+
+    public override async Task HandleAsync(
+        AddWarehouseWorkPoolMemberRequest req,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(new AddWarehouseWorkPoolMemberCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.PoolCode,
+            req.PrincipalId,
+            req.EffectiveFromUtc,
+            req.EffectiveToUtc), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record WmsEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class WmsEndpointContracts
@@ -1563,6 +1661,8 @@ public static class WmsEndpointContracts
         new(typeof(ListReceivingQualityGatesEndpoint), "GET", "/api/business/v1/wms/receiving-quality-gates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReceivingQualityGates"),
         new(typeof(ListSupplierReturnRequestsEndpoint), "GET", "/api/business/v1/wms/supplier-return-requests", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsSupplierReturnRequests"),
         new(typeof(ListWarehouseOperationalCandidatesEndpoint), "GET", "/api/business/v1/wms/operational-candidates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOperationalCandidates"),
+        new(typeof(ProvisionWarehouseWorkPoolEndpoint), "POST", "/api/business/v1/wms/work-pools", WmsPermissionCodes.WorkPoolsManage, InternalServiceAuthorizationPolicy.Name, "provisionWmsWorkPool"),
+        new(typeof(AddWarehouseWorkPoolMemberEndpoint), "POST", "/api/business/v1/wms/work-pools/{poolCode}/members", WmsPermissionCodes.WorkPoolsManage, InternalServiceAuthorizationPolicy.Name, "addWmsWorkPoolMember"),
         new(typeof(GetReceiptWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/receipts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsReceiptWorkScopes"),
         new(typeof(GetShipmentWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/shipments", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "getWmsShipmentWorkScopes"),
         new(typeof(GetCountWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/counts", WmsPermissionCodes.CountsRead, InternalServiceAuthorizationPolicy.Name, "getWmsCountWorkScopes"),

@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Validates three-track acceptance equivalence with repository and temporary JSON fixtures
+#     - Validates two-track acceptance equivalence with repository and temporary JSON fixtures
 #   Writes:
 #     - Temporary planning, canonical-result, report, and workflow fixtures under the operating-system temp directory
 #   Cleanup:
@@ -105,7 +105,6 @@ function Invoke-ComparatorFixture {
         [int] $PlanningRunAttempt = 2,
         [int] $V1RunAttempt = 2,
         [int] $ShadowRunAttempt = 2,
-        [int] $LegacyErpRunAttempt = 2,
         [int] $RunAttempt = 2
     )
 
@@ -127,8 +126,6 @@ function Invoke-ComparatorFixture {
         -V1RunAttempt $V1RunAttempt `
         -ShadowResultPath $ResultPaths[1] `
         -ShadowRunAttempt $ShadowRunAttempt `
-        -LegacyErpResultPath $ResultPaths[2] `
-        -LegacyErpRunAttempt $LegacyErpRunAttempt `
         -ReportPath $ReportPath
 }
 
@@ -160,8 +157,8 @@ function Assert-RejectedWithReport {
 }
 
 try {
-    Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'Three-track equivalence library must exist.'
-    Assert-Contract (Test-Path -LiteralPath $runnerPath -PathType Leaf) 'Three-track equivalence CLI must exist.'
+    Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'Two-track equivalence library must exist.'
+    Assert-Contract (Test-Path -LiteralPath $runnerPath -PathType Leaf) 'Two-track equivalence CLI must exist.'
     . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
     . $libraryPath
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
@@ -199,7 +196,7 @@ try {
     $script:planningDigest = Get-FileDigest -Path $script:planningPath
 
     $resultPaths = @()
-    foreach ($track in @('v1', 'shadow', 'legacy-erp')) {
+    foreach ($track in @('v1', 'shadow')) {
         $path = Join-Path $fixtureRoot "$track.json"
         Write-JsonFixture -Path $path -Value (New-CanonicalResult -Track $track -ManifestDigest $script:manifestDigest -VolatileMarker $track)
         $resultPaths += $path
@@ -207,8 +204,8 @@ try {
 
     $successReportPath = Join-Path $fixtureRoot 'success-report.json'
     $success = Invoke-ComparatorFixture -ResultPaths $resultPaths -ReportPath $successReportPath
-    Assert-Contract ([string]::Equals([string]$success.status, 'passed', [StringComparison]::Ordinal)) 'Three valid tracks with only volatile differences must pass.'
-    Assert-Contract ([string]::Equals((@($success.tracks.track) -join '|'), 'v1|shadow|legacy-erp', [StringComparison]::Ordinal)) 'The report must retain the exact governed track order.'
+    Assert-Contract ([string]::Equals([string]$success.status, 'passed', [StringComparison]::Ordinal)) 'Two valid tracks with only volatile differences must pass.'
+    Assert-Contract ([string]::Equals((@($success.tracks.track) -join '|'), 'v1|shadow', [StringComparison]::Ordinal)) 'The report must retain the exact governed track order.'
     Assert-Contract (@($success.tracks | Where-Object { [string]$_.canonicalResultDigest -cnotmatch '^[0-9a-f]{64}$' -or [string]$_.stableVectorDigest -cnotmatch '^[0-9a-f]{64}$' }).Count -eq 0) 'Every track must publish canonical-result and stable-vector digests.'
     $stableVectorDigests = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($stableVectorDigest in @($success.tracks.stableVectorDigest)) {
@@ -226,8 +223,7 @@ try {
     $mixedResultPaths = @()
     foreach ($mixedTrack in @(
             @{ Track = 'v1'; Attempt = 2 },
-            @{ Track = 'shadow'; Attempt = 1 },
-            @{ Track = 'legacy-erp'; Attempt = 1 }
+            @{ Track = 'shadow'; Attempt = 1 }
         )) {
         $mixedPath = Join-Path $fixtureRoot "mixed-$($mixedTrack.Track).json"
         Write-JsonFixture -Path $mixedPath -Value (New-CanonicalResult -Track $mixedTrack.Track -ManifestDigest $script:manifestDigest -VolatileMarker "mixed-$($mixedTrack.Track)" -RunAttempt $mixedTrack.Attempt)
@@ -240,25 +236,23 @@ try {
         -PlanningRunAttempt 1 `
         -V1RunAttempt 2 `
         -ShadowRunAttempt 1 `
-        -LegacyErpRunAttempt 1 `
         -RunAttempt 2 `
         -ResultPaths $mixedResultPaths `
         -ReportPath $mixedReportPath
     Assert-Contract ([string]::Equals([string]$mixed.status, 'passed', [StringComparison]::Ordinal)) 'Mixed physical producer attempts with one common run/SHA/manifest and stable vector must pass equivalence.'
     Assert-Contract ($mixed.provenance.runAttempt -eq 2 -and $mixed.planning.sourceRunAttempt -eq 1) 'The equivalence report must distinguish comparison attempt 2 from planning source attempt 1.'
-    Assert-Contract ([string]::Equals((@($mixed.tracks | ForEach-Object { "$($_.track):$($_.sourceRunAttempt)" }) -join '|'), 'v1:2|shadow:1|legacy-erp:1', [StringComparison]::Ordinal)) 'The equivalence report must retain the exact physical source attempt for every governed track.'
+    Assert-Contract ([string]::Equals((@($mixed.tracks | ForEach-Object { "$($_.track):$($_.sourceRunAttempt)" }) -join '|'), 'v1:2|shadow:1', [StringComparison]::Ordinal)) 'The equivalence report must retain the exact physical source attempt for every governed track.'
     $mixedReportText = [IO.File]::ReadAllText($mixedReportPath)
     Assert-Contract (-not $mixedReportText.Contains('mixed-v1', [StringComparison]::Ordinal) -and -not $mixedReportText.Contains('databaseName', [StringComparison]::Ordinal)) 'Mixed-attempt reporting must not serialize volatile markers or objects.'
 
     foreach ($attemptMutation in @(
-            @{ Name = 'v1-source-attempt'; V1 = 1; Shadow = 1; Legacy = 1 },
-            @{ Name = 'shadow-source-attempt'; V1 = 2; Shadow = 2; Legacy = 1 },
-            @{ Name = 'legacy-source-attempt'; V1 = 2; Shadow = 1; Legacy = 2 }
+            @{ Name = 'v1-source-attempt'; V1 = 1; Shadow = 1 },
+            @{ Name = 'shadow-source-attempt'; V1 = 2; Shadow = 2 }
         )) {
         $attemptMutationReportPath = Join-Path $fixtureRoot "$($attemptMutation.Name)-report.json"
         $attemptMutationFailure = $null
         try {
-            Invoke-ComparatorFixture -ArtifactPath $mixedPlanningPath -ExpectedArtifactDigest (Get-FileDigest -Path $mixedPlanningPath) -PlanningRunAttempt 1 -V1RunAttempt $attemptMutation.V1 -ShadowRunAttempt $attemptMutation.Shadow -LegacyErpRunAttempt $attemptMutation.Legacy -RunAttempt 2 -ResultPaths $mixedResultPaths -ReportPath $attemptMutationReportPath | Out-Null
+            Invoke-ComparatorFixture -ArtifactPath $mixedPlanningPath -ExpectedArtifactDigest (Get-FileDigest -Path $mixedPlanningPath) -PlanningRunAttempt 1 -V1RunAttempt $attemptMutation.V1 -ShadowRunAttempt $attemptMutation.Shadow -RunAttempt 2 -ResultPaths $mixedResultPaths -ReportPath $attemptMutationReportPath | Out-Null
         }
         catch { $attemptMutationFailure = $_ }
         Assert-Contract ($null -ne $attemptMutationFailure -and $attemptMutationFailure.Exception.Message.Contains('provenance runAttempt', [StringComparison]::Ordinal)) "Equivalence must reject mismatched $($attemptMutation.Name)."
@@ -267,7 +261,7 @@ try {
     $swappedTrackReportPath = Join-Path $fixtureRoot 'swapped-track-binding-report.json'
     $swappedTrackFailure = $null
     try {
-        Invoke-ComparatorFixture -ArtifactPath $mixedPlanningPath -ExpectedArtifactDigest (Get-FileDigest -Path $mixedPlanningPath) -PlanningRunAttempt 1 -V1RunAttempt 1 -ShadowRunAttempt 2 -LegacyErpRunAttempt 1 -RunAttempt 2 -ResultPaths @($mixedResultPaths[1], $mixedResultPaths[0], $mixedResultPaths[2]) -ReportPath $swappedTrackReportPath | Out-Null
+        Invoke-ComparatorFixture -ArtifactPath $mixedPlanningPath -ExpectedArtifactDigest (Get-FileDigest -Path $mixedPlanningPath) -PlanningRunAttempt 1 -V1RunAttempt 1 -ShadowRunAttempt 2 -RunAttempt 2 -ResultPaths @($mixedResultPaths[1], $mixedResultPaths[0]) -ReportPath $swappedTrackReportPath | Out-Null
     }
     catch { $swappedTrackFailure = $_ }
     Assert-Contract ($null -ne $swappedTrackFailure -and $swappedTrackFailure.Exception.Message.Contains("must identify track 'v1'", [StringComparison]::Ordinal)) 'Equivalence must reject swapped producer path/track/attempt bindings instead of reclassifying by artifact self-report.'
@@ -275,7 +269,7 @@ try {
     $wrongPlanningSourceReportPath = Join-Path $fixtureRoot 'wrong-planning-source-attempt-report.json'
     $wrongPlanningSourceFailure = $null
     try {
-        Invoke-ComparatorFixture -ArtifactPath $mixedPlanningPath -ExpectedArtifactDigest (Get-FileDigest -Path $mixedPlanningPath) -PlanningRunAttempt 2 -V1RunAttempt 2 -ShadowRunAttempt 1 -LegacyErpRunAttempt 1 -RunAttempt 2 -ResultPaths $mixedResultPaths -ReportPath $wrongPlanningSourceReportPath | Out-Null
+        Invoke-ComparatorFixture -ArtifactPath $mixedPlanningPath -ExpectedArtifactDigest (Get-FileDigest -Path $mixedPlanningPath) -PlanningRunAttempt 2 -V1RunAttempt 2 -ShadowRunAttempt 1 -RunAttempt 2 -ResultPaths $mixedResultPaths -ReportPath $wrongPlanningSourceReportPath | Out-Null
     }
     catch { $wrongPlanningSourceFailure = $_ }
     Assert-Contract ($null -ne $wrongPlanningSourceFailure -and $wrongPlanningSourceFailure.Exception.Message.Contains('Planning artifact runAttempt does not match expected provenance.', [StringComparison]::Ordinal)) 'Equivalence must reject a planning artifact whose source attempt output is wrong.'
@@ -286,16 +280,16 @@ try {
     Assert-RejectedWithReport -Name 'stable-business-drift' -ResultPaths $resultPaths -Classification 'stable-vector-drift' -ExpectedMessage 'stable equivalence vector'
     Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
 
-    $missingTrackPath = Join-Path $fixtureRoot 'missing-legacy-erp.json'
-    Assert-RejectedWithReport -Name 'missing-track-file' -ResultPaths @($resultPaths[0], $resultPaths[1], $missingTrackPath) -Classification 'track-result-invalid' -ExpectedMessage 'existing file'
-    Write-JsonFixture -Path $resultPaths[2] -Value (New-CanonicalResult -Track extra -ManifestDigest $script:manifestDigest -VolatileMarker extra)
-    Assert-RejectedWithReport -Name 'unexpected-track-binding' -ResultPaths $resultPaths -Classification 'track-result-invalid' -ExpectedMessage "must identify track 'legacy-erp'"
-    Write-JsonFixture -Path $resultPaths[2] -Value (New-CanonicalResult -Track legacy-erp -ManifestDigest $script:manifestDigest -VolatileMarker legacy)
-    $duplicateTrack = Get-Content -LiteralPath $resultPaths[2] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
-    $duplicateTrack.track = 'shadow'
-    Write-JsonFixture -Path $resultPaths[2] -Value $duplicateTrack
-    Assert-RejectedWithReport -Name 'duplicate-track' -ResultPaths $resultPaths -Classification 'track-result-invalid' -ExpectedMessage "must identify track 'legacy-erp'"
-    Write-JsonFixture -Path $resultPaths[2] -Value (New-CanonicalResult -Track legacy-erp -ManifestDigest $script:manifestDigest -VolatileMarker legacy)
+    $missingTrackPath = Join-Path $fixtureRoot 'missing-shadow.json'
+    Assert-RejectedWithReport -Name 'missing-track-file' -ResultPaths @($resultPaths[0], $missingTrackPath) -Classification 'track-result-invalid' -ExpectedMessage 'existing file'
+    Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track extra -ManifestDigest $script:manifestDigest -VolatileMarker extra)
+    Assert-RejectedWithReport -Name 'unexpected-track-binding' -ResultPaths $resultPaths -Classification 'track-result-invalid' -ExpectedMessage "must identify track 'shadow'"
+    Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
+    $duplicateTrack = Get-Content -LiteralPath $resultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
+    $duplicateTrack.track = 'v1'
+    Write-JsonFixture -Path $resultPaths[1] -Value $duplicateTrack
+    Assert-RejectedWithReport -Name 'duplicate-track' -ResultPaths $resultPaths -Classification 'track-result-invalid' -ExpectedMessage "must identify track 'shadow'"
+    Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
 
     $wrongProvenance = Get-Content -LiteralPath $resultPaths[0] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
     $wrongProvenance.provenance.runId = '999'
@@ -307,24 +301,24 @@ try {
     Assert-RejectedWithReport -Name 'malformed-result' -ResultPaths $resultPaths -Classification 'track-result-invalid' -ExpectedMessage 'JSON'
     Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
 
-    $failed = Get-Content -LiteralPath $resultPaths[2] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
+    $failed = Get-Content -LiteralPath $resultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
     $failed.conclusion = 'failed'
-    Write-JsonFixture -Path $resultPaths[2] -Value $failed
+    Write-JsonFixture -Path $resultPaths[1] -Value $failed
     Assert-RejectedWithReport -Name 'failed-track' -ResultPaths $resultPaths -Classification 'stable-vector-drift' -ExpectedMessage 'stable equivalence vector'
-    Write-JsonFixture -Path $resultPaths[2] -Value (New-CanonicalResult -Track legacy-erp -ManifestDigest $script:manifestDigest -VolatileMarker legacy)
+    Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
 
-    $skipped = Get-Content -LiteralPath $resultPaths[2] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
+    $skipped = Get-Content -LiteralPath $resultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
     $skipped.test.passed = 0
     $skipped.test.skipped = 1
-    Write-JsonFixture -Path $resultPaths[2] -Value $skipped
+    Write-JsonFixture -Path $resultPaths[1] -Value $skipped
     Assert-RejectedWithReport -Name 'skipped-track' -ResultPaths $resultPaths -Classification 'stable-vector-drift' -ExpectedMessage 'stable equivalence vector'
-    Write-JsonFixture -Path $resultPaths[2] -Value (New-CanonicalResult -Track legacy-erp -ManifestDigest $script:manifestDigest -VolatileMarker legacy)
+    Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
 
-    $cleanupIncomplete = Get-Content -LiteralPath $resultPaths[2] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
+    $cleanupIncomplete = Get-Content -LiteralPath $resultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
     $cleanupIncomplete.cleanup.ownedResourcesRemaining = 1
-    Write-JsonFixture -Path $resultPaths[2] -Value $cleanupIncomplete
+    Write-JsonFixture -Path $resultPaths[1] -Value $cleanupIncomplete
     Assert-RejectedWithReport -Name 'cleanup-incomplete' -ResultPaths $resultPaths -Classification 'stable-vector-drift' -ExpectedMessage 'stable equivalence vector'
-    Write-JsonFixture -Path $resultPaths[2] -Value (New-CanonicalResult -Track legacy-erp -ManifestDigest $script:manifestDigest -VolatileMarker legacy)
+    Write-JsonFixture -Path $resultPaths[1] -Value (New-CanonicalResult -Track shadow -ManifestDigest $script:manifestDigest -VolatileMarker shadow)
 
     Assert-RejectedWithReport -Name 'artifact-digest-drift' -ResultPaths $resultPaths -Classification 'planning-input-invalid' -ExpectedMessage 'bytes do not match' -ExpectedArtifactDigest ('0' * 64)
     Assert-RejectedWithReport -Name 'manifest-digest-drift' -ResultPaths $resultPaths -Classification 'planning-input-invalid' -ExpectedMessage 'bytes do not match' -ExpectedManifestDigest ('0' * 64)
@@ -347,16 +341,18 @@ try {
             '-Event', 'push',
             '-V1ResultPath', $resultPaths[0],
             '-ShadowResultPath', $resultPaths[1],
-            '-LegacyErpResultPath', $resultPaths[2],
             '-ReportPath', $cliReportPath
         ) `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 60 `
         -Name 'acceptance-equivalence-cli-fixture' | Out-Null
     Assert-Contract (Test-Path -LiteralPath $cliReportPath -PathType Leaf) 'The governed CLI must publish a passing report.'
+
+    $runnerCommand = Get-Command -Name $runnerPath -CommandType ExternalScript -ErrorAction Stop
+    Assert-Contract (-not $runnerCommand.Parameters.ContainsKey('LegacyErpResultPath')) 'The two-track CLI must not expose the retired LegacyErpResultPath parameter.'
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
 }
 
-Write-Output 'Acceptance scenario matrix three-track equivalence contract tests passed.'
+Write-Output 'Acceptance scenario matrix two-track equivalence contract tests passed.'
