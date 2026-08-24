@@ -291,6 +291,9 @@ public sealed class BusinessConsoleQualityInspectionPlanCharacteristicsRequestVa
 public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
     : Validator<BusinessConsoleCreateInspectionPlanRequest>
 {
+    private const decimal MaximumTimeIntervalHours = 256_204_778.801521m;
+    private const decimal MaximumQuantityInterval = 999_999_999_999.999999m;
+
     public BusinessConsoleCreateInspectionPlanRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
@@ -302,6 +305,32 @@ public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
         RuleFor(x => x.WorkCenterId).MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(100);
         RuleFor(x => x.DocumentType).MaximumLength(100);
+        RuleFor(x => x.TimeIntervalHours)
+            .Must(value => value is null || value >= 0.000001m)
+            .WithMessage("巡检时间间隔必须至少为 0.000001 小时。");
+        RuleFor(x => x.TimeIntervalHours)
+            .Must(value => value is null || value <= MaximumTimeIntervalHours)
+            .WithMessage("巡检时间间隔超出支持范围。");
+        RuleFor(x => x.QuantityInterval)
+            .Must(value => value is null || value >= 0.000001m)
+            .WithMessage("巡检数量间隔必须至少为 0.000001。");
+        RuleFor(x => x.QuantityInterval)
+            .Must(value => value is null || value <= MaximumQuantityInterval)
+            .WithMessage($"巡检数量间隔不能超过 {MaximumQuantityInterval}。");
+        RuleFor(x => x.AssignedInspectorUserId).MaximumLength(150);
+        RuleFor(x => x.AssignedTeamId).MaximumLength(150);
+        RuleFor(x => x)
+            .Must(x => !HasPeriodicPolicy(x) || string.Equals(x.Category?.Trim(), "operation", StringComparison.OrdinalIgnoreCase))
+            .WithMessage("只有 operation 类检验方案可以配置巡检策略。");
+        RuleFor(x => x)
+            .Must(x => !HasPeriodicPolicy(x) || (!string.IsNullOrWhiteSpace(x.SkuCode) && !string.IsNullOrWhiteSpace(x.WorkCenterId)))
+            .WithMessage("巡检策略必须同时配置 SKU 和 WorkCenterId。");
+        RuleFor(x => x)
+            .Must(x => string.IsNullOrWhiteSpace(x.AssignedInspectorUserId) || string.IsNullOrWhiteSpace(x.AssignedTeamId))
+            .WithMessage("巡检策略不能同时指定检验员和团队。");
+        RuleFor(x => x)
+            .Must(x => !HasAssignment(x) || x.TimeIntervalHours.HasValue || x.QuantityInterval.HasValue)
+            .WithMessage("巡检投递目标必须同时配置至少一个巡检间隔。");
         RuleFor(x => x.Characteristics).NotEmpty();
         RuleForEach(x => x.Characteristics).ChildRules(characteristic =>
         {
@@ -312,6 +341,15 @@ public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
             characteristic.RuleFor(x => x.SamplingRule).NotEmpty().MaximumLength(200);
         });
     }
+
+    private static bool HasPeriodicPolicy(BusinessConsoleCreateInspectionPlanRequest request) =>
+        request.TimeIntervalHours.HasValue
+        || request.QuantityInterval.HasValue
+        || HasAssignment(request);
+
+    private static bool HasAssignment(BusinessConsoleCreateInspectionPlanRequest request) =>
+        !string.IsNullOrWhiteSpace(request.AssignedInspectorUserId)
+        || !string.IsNullOrWhiteSpace(request.AssignedTeamId);
 }
 
 public sealed class BusinessConsoleActivateInspectionPlanRequestValidator

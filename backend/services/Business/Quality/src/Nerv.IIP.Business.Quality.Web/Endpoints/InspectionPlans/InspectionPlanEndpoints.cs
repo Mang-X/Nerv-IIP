@@ -17,7 +17,11 @@ public sealed record CreateInspectionPlanRequest(
     string? WorkCenterId,
     string? DeviceAssetId,
     string? DocumentType,
-    IReadOnlyCollection<InspectionPlanCharacteristicInput>? Characteristics);
+    IReadOnlyCollection<InspectionPlanCharacteristicInput>? Characteristics,
+    decimal? TimeIntervalHours = null,
+    decimal? QuantityInterval = null,
+    string? AssignedInspectorUserId = null,
+    string? AssignedTeamId = null);
 
 public sealed record CreateInspectionPlanResponse(InspectionPlanId InspectionPlanId);
 
@@ -57,7 +61,11 @@ public sealed class CreateInspectionPlanEndpoint(ISender sender)
             req.WorkCenterId,
             req.DeviceAssetId,
             req.DocumentType,
-            req.Characteristics ?? []), ct);
+            req.Characteristics ?? [],
+            req.TimeIntervalHours,
+            req.QuantityInterval,
+            req.AssignedInspectorUserId,
+            req.AssignedTeamId), ct);
         await Send.OkAsync(new CreateInspectionPlanResponse(id).AsResponseData(), cancellation: ct);
     }
 }
