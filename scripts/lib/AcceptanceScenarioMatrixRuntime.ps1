@@ -1225,7 +1225,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                 $path = $_.VariablePath
                 if ($path.IsUnqualified) { [string]$path.UserPath }
                 elseif ($path.IsGlobal -or $path.IsLocal -or $path.IsPrivate -or $path.IsScript -or
-                    ($path.IsDriveQualified -and [string]::Equals([string]$path.DriveName, 'variable', [StringComparison]::OrdinalIgnoreCase))) {
+                    ($path.IsVariable -and ([string]$path.UserPath).StartsWith('variable:', [StringComparison]::OrdinalIgnoreCase))) {
                     ([string]$path.UserPath).Substring(([string]$path.UserPath).IndexOf(':') + 1)
                 }
             })

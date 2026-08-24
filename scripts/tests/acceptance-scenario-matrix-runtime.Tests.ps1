@@ -831,12 +831,19 @@ try {
             $alternateOverrideMutations = if ([string]::Equals([string]$contractMutation.Property, 'pickingReadbackWired', [StringComparison]::Ordinal)) {
                 @(
                     @{ Name = 'script-scoped'; Statement = '$script:pickingLifecycleCompleted = $true' },
+                    @{ Name = 'global-scoped'; Statement = '$global:pickingLifecycleCompleted = $true' },
+                    @{ Name = 'local-scoped'; Statement = '$local:pickingLifecycleCompleted = $true' },
+                    @{ Name = 'private-scoped'; Statement = '$private:pickingLifecycleCompleted = $true' },
+                    @{ Name = 'variable-drive'; Statement = '$variable:pickingLifecycleCompleted = $true' },
                     @{ Name = 'braced'; Statement = '${pickingLifecycleCompleted} = $true' }
                 )
             }
             else {
                 @(
-                    @{ Name = 'set-variable'; Statement = 'Set-Variable -Name completionHttpReplayConverged -Value $true' },
+                    @{ Name = 'set-variable-named'; Statement = 'Set-Variable -Name completionHttpReplayConverged -Value $true' },
+                    @{ Name = 'set-variable-positional'; Statement = 'Set-Variable completionHttpReplayConverged $true' },
+                    @{ Name = 'set-variable-module-qualified'; Statement = 'Microsoft.PowerShell.Utility\Set-Variable -Name completionHttpReplayConverged -Value $true' },
+                    @{ Name = 'set-variable-dynamic'; Statement = '$dynamicWmsVariableName = ''completionHttpReplayConverged''; Set-Variable -Name $dynamicWmsVariableName -Value $true' },
                     @{ Name = 'typed'; Statement = '[bool]$completionHttpReplayConverged = $true' }
                 )
             }
