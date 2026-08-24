@@ -16,6 +16,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
     private readonly IConfiguration? configuration;
     private readonly TimeProvider timeProvider;
+    private readonly IUploadCommitStorage commitStorage;
+    private readonly UploadSessionGateRegistry gateRegistry;
 
     public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IConfiguration configuration)
         : this(dbContext, new ServerProxyUploadProvider(), configuration: configuration)
@@ -27,13 +29,17 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         IFileStorageUploadProvider uploadProvider,
         ILocalTusFileStoreAccessor? tusStoreAccessor = null,
         IConfiguration? configuration = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IUploadCommitStorage? commitStorage = null,
+        UploadSessionGateRegistry? gateRegistry = null)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
         this.tusStoreAccessor = tusStoreAccessor;
         this.configuration = configuration;
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.commitStorage = commitStorage ?? new UnavailableUploadCommitStorage();
+        this.gateRegistry = gateRegistry ?? new UploadSessionGateRegistry();
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -167,22 +173,11 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         CompleteUploadSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(
-            x => x.UploadSessionId == uploadSessionId,
-            cancellationToken);
+        await using var executionGate = await gateRegistry.EnterCommitExecutionAsync(uploadSessionId, cancellationToken);
+        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(x => x.UploadSessionId == uploadSessionId, cancellationToken);
         if (session is null)
         {
             return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
-        }
-
-        if (session.Completed)
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
-        }
-
-        if (session.ExpiresAtUtc <= timeProvider.GetUtcNow())
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
         }
 
         if (!string.Equals(session.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
@@ -190,6 +185,22 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+        }
+
+        if (session.Completed)
+        {
+            var completedFile = await dbContext.StoredFiles.SingleOrDefaultAsync(x => x.FileId == session.FileId, cancellationToken);
+            return completedFile is null
+                ? FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "Completed upload metadata is temporarily unavailable.")
+                : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(completedFile));
+        }
+
+        if (string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal)
+            && session.ExpiresAtUtc <= timeProvider.GetUtcNow())
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
         }
 
         var completionChecksum = FileStoragePurposePolicies.ValidateCompletionChecksum(
@@ -202,32 +213,118 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileMetadataResponse>.BadRequest(completionChecksum.Message!);
         }
 
-        var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
-            session.Provider,
-            session.UploadSessionId,
-            session.ExpectedSizeBytes,
-            session.Checksum,
-            request,
-            tusStoreAccessor,
-            cancellationToken);
-        if (tusValidation is not null)
-        {
-            return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
-        }
-
-        if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
-                session.FileName,
-                session.ContentType,
-                session.Provider,
-                session.UploadSessionId,
-                tusStoreAccessor,
-                cancellationToken))
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Uploaded content does not match the declared file type.");
-        }
-
         var now = timeProvider.GetUtcNow();
-        session.MarkCompleted(now);
+        if (string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
+        {
+            await using var patchGate = await gateRegistry.EnterPatchCommitAsync(uploadSessionId, cancellationToken);
+            await dbContext.Entry(session).ReloadAsync(cancellationToken);
+            if (!string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
+            {
+                return FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status409Conflict,
+                    "Upload completion is already in progress; retry later.");
+            }
+
+            session.BeginCommit(
+                NewId("cmt"),
+                NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum),
+                now);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken); // Tx1 is durably committed before any storage I/O.
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                dbContext.ChangeTracker.Clear();
+                session = await dbContext.UploadSessions.SingleOrDefaultAsync(
+                    x => x.UploadSessionId == uploadSessionId,
+                    cancellationToken);
+                if (session is null
+                    || !string.Equals(session.State, UploadSessionState.Committing, StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(session.CommitId))
+                {
+                    return FileStorageResult<FileMetadataResponse>.Failure(
+                        StatusCodes.Status409Conflict,
+                        "Upload completion ownership changed concurrently; retry later.");
+                }
+            }
+        }
+
+        if (!string.Equals(session.State, UploadSessionState.Committing, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(session.CommitId))
+        {
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                StatusCodes.Status409Conflict,
+                "Upload session cannot enter the committing state.");
+        }
+
+        var executionOwnerId = NewId("wrk");
+        if (!await TryClaimCommitExecutionAsync(session, executionOwnerId, cancellationToken))
+        {
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                StatusCodes.Status409Conflict,
+                "Upload completion is being recovered by another worker; retry later.");
+        }
+
+        if (session.StorageActionStartedAtUtc is null)
+        {
+            session.MarkStorageActionStarted(timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        UploadCommitStorageResult storageResult;
+        try
+        {
+            storageResult = await commitStorage.CommitAsync(ToCommitIntent(session), cancellationToken);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            storageResult = UploadCommitStorageResult.RetryableUnavailable();
+        }
+
+        if (!storageResult.IsVerified
+            && storageResult.FailureDisposition == UploadCommitFailureDisposition.ProvenNoFinalActionStarted)
+        {
+            session.ReopenAfterStorageProvedNotStarted();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                storageResult.StatusCode is >= 400 and <= 599
+                    ? storageResult.StatusCode
+                    : StatusCodes.Status503ServiceUnavailable,
+                string.IsNullOrWhiteSpace(storageResult.Message)
+                    ? "Final storage action was not started; the upload session is open for retry."
+                    : storageResult.Message);
+        }
+
+        if (!storageResult.IsVerified
+            || storageResult.SizeBytes != session.ExpectedSizeBytes
+            || NormalizeCanonicalChecksum(storageResult.CanonicalChecksum) is not { } canonicalChecksum
+            || (session.CommitChecksum is not null
+                && !string.Equals(session.CommitChecksum, canonicalChecksum, StringComparison.Ordinal)))
+        {
+            var errorCode = string.IsNullOrWhiteSpace(storageResult.ErrorCode)
+                ? "invalid-final-evidence"
+                : storageResult.ErrorCode;
+            session.RecordRecoveryFailure(errorCode, NextRecoveryAtUtc(session.RecoveryAttemptCount, timeProvider.GetUtcNow()));
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                storageResult.StatusCode is >= 400 and <= 599
+                    ? storageResult.StatusCode
+                    : StatusCodes.Status503ServiceUnavailable,
+                string.IsNullOrWhiteSpace(storageResult.Message)
+                    ? "Final storage evidence is invalid; retry later."
+                    : storageResult.Message);
+        }
+
+        var existingFile = await dbContext.StoredFiles.SingleOrDefaultAsync(x => x.FileId == session.FileId, cancellationToken);
+        if (existingFile is not null)
+        {
+            session.MarkCompleted(existingFile.CompletedAtUtc);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(existingFile));
+        }
+
+        var completedAtUtc = timeProvider.GetUtcNow();
         var file = StoredFileRecord.Create(
             session.FileId,
             session.OrganizationId,
@@ -238,15 +335,16 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             session.FilePurpose,
             session.FileName,
             session.ContentType,
-            session.ExpectedSizeBytes,
-            session.Checksum,
+            storageResult.SizeBytes,
+            canonicalChecksum,
             session.ObjectKey,
             FileStorageFileStatus.Available,
             session.CreatedAtUtc,
-            now);
+            completedAtUtc);
 
         dbContext.StoredFiles.Add(file);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        session.MarkCompleted(completedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken); // Tx2 atomically commits metadata and completed state.
 
         return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
     }
@@ -460,7 +558,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return dbContext.UploadSessions.AnyAsync(x =>
             x.UploadSessionId == uploadSessionId
             && x.Provider == TusUploadProvider.Name
-            && !x.Completed
+            && x.State == UploadSessionState.Open
             && x.ExpiresAtUtc > now,
             cancellationToken);
     }
@@ -472,7 +570,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return await dbContext.UploadSessions
             .Where(x => x.UploadSessionId == uploadSessionId
                 && x.Provider == TusUploadProvider.Name
-                && !x.Completed)
+                && x.State == UploadSessionState.Open)
             .Select(x => new LocalTusUploadSession(
                 x.UploadSessionId,
                 x.ExpectedSizeBytes,
@@ -508,6 +606,79 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return $"{organizationId}/{fileId}";
     }
 
+    private static UploadCommitIntent ToCommitIntent(UploadSessionRecord session) =>
+        new(
+            session.CommitId!,
+            session.UploadSessionId,
+            session.FileId,
+            session.OrganizationId,
+            session.EnvironmentId,
+            session.FilePurpose,
+            session.ObjectKey,
+            session.ExpectedSizeBytes,
+            session.CommitChecksum);
+
+    private static string? NormalizeCanonicalChecksum(string? checksum)
+    {
+        const string prefix = "sha256:";
+        if (checksum is null
+            || !checksum.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || checksum.Length != prefix.Length + 64
+            || checksum[prefix.Length..].Any(character => character is not (
+                >= '0' and <= '9'
+                or >= 'a' and <= 'f'
+                or >= 'A' and <= 'F')))
+        {
+            return null;
+        }
+
+        return $"{prefix}{checksum[prefix.Length..].ToLowerInvariant()}";
+    }
+
+    private static DateTimeOffset NextRecoveryAtUtc(int priorAttemptCount, DateTimeOffset now)
+    {
+        var seconds = Math.Min(300, 1 << Math.Min(priorAttemptCount, 8));
+        return now.AddSeconds(seconds);
+    }
+
+    private async Task<bool> TryClaimCommitExecutionAsync(
+        UploadSessionRecord session,
+        string executionOwnerId,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var leaseUntil = now.AddMinutes(5);
+        if (!dbContext.Database.IsRelational())
+        {
+            if (session.ExecutionLeaseUntilUtc is { } existingLease && existingLease > now)
+            {
+                return false;
+            }
+
+            session.ClaimExecution(executionOwnerId, leaseUntil);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        var claimed = await dbContext.UploadSessions
+            .Where(x => x.UploadSessionId == session.UploadSessionId
+                && x.State == UploadSessionState.Committing
+                && (x.ExecutionLeaseUntilUtc == null || x.ExecutionLeaseUntilUtc <= now))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.ExecutionOwnerId, executionOwnerId)
+                    .SetProperty(x => x.ExecutionLeaseUntilUtc, leaseUntil)
+                    .SetProperty(x => x.ConcurrencyVersion, x => x.ConcurrencyVersion + 1),
+                cancellationToken);
+        if (claimed != 1)
+        {
+            return false;
+        }
+
+        await dbContext.Entry(session).ReloadAsync(cancellationToken);
+        return string.Equals(session.ExecutionOwnerId, executionOwnerId, StringComparison.Ordinal);
+    }
+
     private async Task<long> CalculateUsedBytesAsync(
         string organizationId,
         string environmentId,
@@ -527,7 +698,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
         var now = timeProvider.GetUtcNow();
         var reservedBytes = dbContext.UploadSessions
-            .Where(session => !session.Completed
+            .Where(session => session.State != UploadSessionState.Completed
                 && session.ExpiresAtUtc > now
                 && session.OrganizationId == organizationId
                 && session.EnvironmentId == environmentId);

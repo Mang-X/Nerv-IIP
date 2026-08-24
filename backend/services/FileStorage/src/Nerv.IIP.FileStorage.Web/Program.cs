@@ -94,9 +94,14 @@ builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
     return new MinioVersionedObjectStore(client, minioComplianceArchiveBucket!);
 });
 builder.Services.AddSingleton<VersionedArchiveService>();
+builder.Services.AddSingleton<UploadSessionGateRegistry>();
+builder.Services.AddSingleton<IUploadSessionMutationGate, UploadSessionMutationGate>();
+builder.Services.AddSingleton<IUploadCommitStorage, UnavailableUploadCommitStorage>();
 
 builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
+builder.Services.AddScoped<UploadCommitRecoveryProcessor>();
 builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
+builder.Services.AddHostedService<UploadCommitRecoveryHostedService>();
 builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
 
 builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);

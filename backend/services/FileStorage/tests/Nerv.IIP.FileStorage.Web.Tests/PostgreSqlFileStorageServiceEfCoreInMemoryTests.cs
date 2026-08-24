@@ -313,7 +313,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CompleteBarcodeLabelTemplateUpload_MetadataPreservesScopeOwnerAndChecksum()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = CreateSuccessfulCommitService(dbContext, $"sha256:{new string('a', 64)}");
         var request = CreateBarcodeLabelTemplateUploadRequest();
         var createdResult = await service.CreateUploadSessionAsync(request, CancellationToken.None);
         Assert.Equal(StatusCodes.Status200OK, createdResult.StatusCode);
@@ -405,7 +405,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CompleteBarcodeLabelTemplateUpload_SameChecksumWithUppercaseHex_IsAccepted()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = CreateSuccessfulCommitService(dbContext, $"sha256:{new string('a', 64)}");
         var request = CreateBarcodeLabelTemplateUploadRequest();
         var created = (await service.CreateUploadSessionAsync(request, CancellationToken.None)).Value!;
 
@@ -535,7 +535,12 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CompleteUploadSession_MarksSessionCompletedAndInsertsStoredFileRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var storage = new SuccessfulUploadCommitStorage("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var service = new PostgreSqlFileStorageService(
+            dbContext,
+            new ServerProxyUploadProvider(),
+            configuration: FileStorageTestConfiguration.Default,
+            commitStorage: storage);
         var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
 
         var result = await service.CompleteUploadSessionAsync(
@@ -559,14 +564,58 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         Assert.Equal("demo.zip", storedFile.FileName);
         Assert.Equal("application/zip", storedFile.ContentType);
         Assert.Equal(4096, storedFile.SizeBytes);
-        Assert.Equal("sha256:test", storedFile.Checksum);
+        Assert.Equal("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", storedFile.Checksum);
         Assert.Equal(session.ObjectKey, storedFile.ObjectKey);
         Assert.Equal("available", storedFile.Status);
         AssertObjectKeyIsNotExposed(result.Value);
     }
 
     [Fact]
-    public async Task CompleteUploadSession_TusMagicMismatch_ReturnsBadRequestWithoutCompleting()
+    public async Task CompleteUploadSession_WhenStorageProvesNoFinalActionStarted_ReopensSession()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
+
+        var result = await service.CompleteUploadSessionAsync(
+            created.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
+        var session = await dbContext.UploadSessions.SingleAsync();
+        Assert.Equal(UploadSessionState.Open, session.State);
+        Assert.Null(session.CommitId);
+        Assert.Null(session.CommittingAtUtc);
+        Assert.Null(session.StorageActionStartedAtUtc);
+        Assert.Empty(await dbContext.StoredFiles.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task CompleteUploadSession_AfterResponseLoss_ReturnsSameFileWithoutRepeatingStorage()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var storage = new SuccessfulUploadCommitStorage("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        var service = new PostgreSqlFileStorageService(
+            dbContext,
+            new ServerProxyUploadProvider(),
+            configuration: FileStorageTestConfiguration.Default,
+            commitStorage: storage);
+        var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
+        var request = new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096);
+
+        var first = await service.CompleteUploadSessionAsync(created.UploadSessionId, request, CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+        var replay = await service.CompleteUploadSessionAsync(created.UploadSessionId, request, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, first.StatusCode);
+        Assert.Equal(first.Value, replay.Value);
+        Assert.Equal(1, storage.Attempts);
+        Assert.Single(await dbContext.StoredFiles.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task CompleteUploadSession_CurrentTusStagingCannotMasqueradeAsFinalEvidence()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -596,9 +645,10 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 9),
                 CancellationToken.None);
 
-            Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
-            Assert.Equal("Uploaded content does not match the declared file type.", result.Error?.Message);
+            Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
+            Assert.Equal("Final storage commit is not available yet; retry this upload completion later.", result.Error?.Message);
             Assert.False((await dbContext.UploadSessions.SingleAsync()).Completed);
+            Assert.Equal(UploadSessionState.Open, (await dbContext.UploadSessions.SingleAsync()).State);
             Assert.Empty(await dbContext.StoredFiles.ToArrayAsync());
         }
         finally
@@ -828,7 +878,9 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task TryGetUploadSessionIdForDownloadGrant_ExpiredGrant_ReturnsFalse()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = CreateSuccessfulCommitService(
+            dbContext,
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
         var complete = await service.CompleteUploadSessionAsync(
             created.UploadSessionId,
@@ -1357,6 +1409,19 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         }
     }
 
+    private sealed class SuccessfulUploadCommitStorage(string checksum) : IUploadCommitStorage
+    {
+        public int Attempts { get; private set; }
+
+        public Task<UploadCommitStorageResult> CommitAsync(
+            UploadCommitIntent intent,
+            CancellationToken cancellationToken)
+        {
+            Attempts++;
+            return Task.FromResult(UploadCommitStorageResult.Verified(intent.ExpectedSizeBytes, checksum));
+        }
+    }
+
     private static ApplicationDbContext CreateEfCoreInMemoryDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -1367,6 +1432,15 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         Assert.Equal("Microsoft.EntityFrameworkCore.InMemory", dbContext.Database.ProviderName);
         return dbContext;
     }
+
+    private static PostgreSqlFileStorageService CreateSuccessfulCommitService(
+        ApplicationDbContext dbContext,
+        string checksum) =>
+        new(
+            dbContext,
+            new ServerProxyUploadProvider(),
+            configuration: FileStorageTestConfiguration.Default,
+            commitStorage: new SuccessfulUploadCommitStorage(checksum));
 
     private static CreateUploadSessionRequest CreateUploadRequest()
     {

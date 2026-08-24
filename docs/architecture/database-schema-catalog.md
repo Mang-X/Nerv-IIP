@@ -788,27 +788,29 @@ MAN-631/#1168 迁移 `20260731210404_AddMaintenanceKeywordSearchIndexes` 启用 
 5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260608105829_AddStoredFilesTenantListIndex.cs`
 6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260705065020_AddFileStorageSecurityHardening.cs`
 7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260817080323_RemoveFileStorageScanning.cs`
-8. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs:17`
-9. `scripts/install/migrate-file-storage.ps1`
+8. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260824091513_AddDurableUploadCommitProtocol.cs`
+9. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs:17`
+10. `scripts/install/migrate-file-storage.ps1`
 
 | 表                   | 类别     | 用途                                                                                  | 关键关系与索引                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ----------------------- | -------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `stored_files`          | business | FileStorage 已完成文件的公开元数据、内部对象定位和生命周期清理事实。                   | 物理列为 `file_id`、`organization_id`、`environment_id`、`owner_service`、`owner_type`、`owner_id`、`file_purpose`、`file_name`、`content_type`、`size_bytes`、可空 `checksum`、`object_key`、`status`、`created_at_utc`、`completed_at_utc`、可空 `deleted_at_utc`、`physical_delete_after_utc`、`deletion_reason`。`file_id` 是业务生成字符串 ID；`object_key` 唯一且仅限内部持久化；`status` 记录文件生命周期且只有 `available` 可兑换下载授权；软删三列记录到物理清理窗口。`organization_id + environment_id + owner_service + owner_type + owner_id` 支持按业务 owner 查询，`organization_id + environment_id + completed_at_utc` 支持 Console 文件列表按租户分页读取，`status + physical_delete_after_utc` 支持过期物理清理。 |
-| `upload_sessions`       | business | 上传会话元数据，记录预留 fileId、调用方上下文、provider、过期时间和完成状态。            | 物理列为 `upload_session_id`、`file_id`、`organization_id`、`environment_id`、`owner_service`、`owner_type`、`owner_id`、`file_purpose`、`file_name`、`content_type`、`expected_size_bytes`、可空 `checksum`、`object_key`、`provider`、`created_at_utc`、`expires_at_utc`、`completed`、可空 `completed_at_utc`。`upload_session_id` 是业务生成字符串 ID；`file_id` 和 `object_key` 分别唯一；`organization_id + environment_id + expires_at_utc` 支持过期会话扫描。 |
+| `upload_sessions`       | business | 上传会话及 durable complete 恢复意图，记录预留 fileId、调用方上下文、provider、过期时间、状态和 storage execution claim。 | 物理列在原会话字段外包含 `state`、可空 `commit_id` / `commit_checksum` / `committing_at_utc` / `storage_action_started_at_utc`、`recovery_attempt_count`、可空 `next_recovery_at_utc` / `last_recovery_error_code`、可空 `execution_owner_id` / `execution_lease_until_utc`、`concurrency_version` 与可空 `completed_at_utc`；旧 `completed` bool 已删除。`state` 只允许 `open` / `committing` / `completed` 且受 state/intent check constraint 约束；`commit_id` 唯一，`state + next_recovery_at_utc` 支持恢复扫描；`file_id` 和 `object_key` 继续分别唯一。 |
 | `download_grants`       | business | 短期下载授权元数据，当前用于平台控制下载路径；tus provider 下可映射到本地 tus 字节内容。 | 物理列为 `download_grant_id`、`file_id`、`organization_id`、`environment_id`、`provider`、`created_at_utc`、`expires_at_utc`。`download_grant_id` 是业务生成字符串 ID；`file_id` 以级联删除外键指向 `stored_files`；`organization_id + environment_id + file_id + expires_at_utc` 支持授权校验和清理。 |
 | `__EFMigrationsHistory` | system   | EF Core 迁移历史表，记录 FileStorage 已应用迁移。                           | 必须位于 `filestorage` Schema；业务代码不直接读写。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-当前迁移基线只有以下四项（以及配对的 Designer/model snapshot），它们是上述物理 schema 的唯一迁移依据：
+当前迁移基线只有以下五项（以及配对的 Designer/model snapshot），它们是上述物理 schema 的唯一迁移依据：
 
 1. `InitialFileStorageSchema` 创建 `filestorage`、`stored_files`、`upload_sessions`、`download_grants`、三张表的初始列/主键、download grant 到 stored file 的外键及初始索引。
 2. `AddStoredFilesTenantListIndex` 新增 `stored_files` 的 `organization_id + environment_id + completed_at_utc` 列表读取索引。
 3. `AddFileStorageSecurityHardening` 新增 `deleted_at_utc`、`deletion_reason`、`physical_delete_after_utc` 与当时的扫描列/索引，并新增当前仍存在的 `status + physical_delete_after_utc` 清理索引。
 4. `RemoveFileStorageScanning` 先把历史非 `clean` 文件软删并安排物理清理，再删除扫描索引和 `scan_detail`、`scan_status`、`scanned_at_utc`；这些扫描列不是当前物理 schema。
+5. `AddDurableUploadCommitProtocol` 把旧 `completed` 确定映射为 `open` / `committing` / `completed`：只有同时存在 completed timestamp 与同 `file_id` / `object_key` 的 `stored_files` 事实才回填 `completed`，其余历史 completed 标记失败关闭为 `committing`；合法的大小写 SHA-256 checksum 统一以 lowercase canonical 形式冻结；同时新增 immutable intent、execution claim、恢复退避、并发版本、唯一/扫描索引和 state/intent check constraint。
 
 当前事实与已批准目标：
 
 1. `object_key` 已在 `stored_files` 与 `upload_sessions` 中存在且各自受唯一索引约束，但尚未成为实际 final 字节定位符。当前本地 tus 字节链路仍按 upload session 派生的路径读写；不得把该现状误登记为 ADR 0023/0024 所定义的 canonical key、staging/final 或跨 provider complete 语义已经实施。
-2. ADR 0023/0024 的 canonical key、staging/final 分离、storage provider 和提交语义是**已批准目标**，不是本 catalog 的当前数据库基线；只有后续 migration、实体配置与实际交付出现后才能登记为物理 schema。
+2. ADR 0023 的 durable `open/committing/completed`、Tx1 intent、storage execution claim、Tx2 收敛和恢复扫描已进入当前数据库基线；ADR 0023/0024 的 canonical key grammar、staging/final 分离、provider promote 与 final 回读适配仍未实现。默认 storage seam 因此失败关闭为 503，不把现有 server-proxy metadata 或 tus staging 当成 final evidence。
 
 已知差距：
 

@@ -22,7 +22,18 @@ public sealed class UploadSessionRecord
     public string Provider { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset ExpiresAtUtc { get; private set; }
-    public bool Completed { get; private set; }
+    public string State { get; private set; } = UploadSessionState.Open;
+    public string? CommitId { get; private set; }
+    public string? CommitChecksum { get; private set; }
+    public DateTimeOffset? CommittingAtUtc { get; private set; }
+    public DateTimeOffset? StorageActionStartedAtUtc { get; private set; }
+    public int RecoveryAttemptCount { get; private set; }
+    public DateTimeOffset? NextRecoveryAtUtc { get; private set; }
+    public string? LastRecoveryErrorCode { get; private set; }
+    public string? ExecutionOwnerId { get; private set; }
+    public DateTimeOffset? ExecutionLeaseUntilUtc { get; private set; }
+    public long ConcurrencyVersion { get; private set; }
+    public bool Completed => string.Equals(State, UploadSessionState.Completed, StringComparison.Ordinal);
     public DateTimeOffset? CompletedAtUtc { get; private set; }
 
     public static UploadSessionRecord Create(
@@ -61,13 +72,87 @@ public sealed class UploadSessionRecord
             Provider = provider,
             CreatedAtUtc = createdAtUtc,
             ExpiresAtUtc = expiresAtUtc,
-            Completed = false
+            State = UploadSessionState.Open
         };
+    }
+
+    public void BeginCommit(string commitId, string? commitChecksum, DateTimeOffset committingAtUtc)
+    {
+        if (!string.Equals(State, UploadSessionState.Open, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Only an open upload session can begin committing.");
+        }
+
+        State = UploadSessionState.Committing;
+        CommitId = commitId;
+        CommitChecksum = commitChecksum;
+        CommittingAtUtc = committingAtUtc;
+        ConcurrencyVersion++;
+    }
+
+    public void MarkStorageActionStarted(DateTimeOffset startedAtUtc)
+    {
+        if (!string.Equals(State, UploadSessionState.Committing, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Storage work requires a committing upload session.");
+        }
+
+        StorageActionStartedAtUtc ??= startedAtUtc;
+        ConcurrencyVersion++;
+    }
+
+    public void RecordRecoveryFailure(string errorCode, DateTimeOffset nextRecoveryAtUtc)
+    {
+        RecoveryAttemptCount++;
+        LastRecoveryErrorCode = errorCode;
+        NextRecoveryAtUtc = nextRecoveryAtUtc;
+        ExecutionOwnerId = null;
+        ExecutionLeaseUntilUtc = null;
+        ConcurrencyVersion++;
+    }
+
+    public void ClaimExecution(string ownerId, DateTimeOffset leaseUntilUtc)
+    {
+        ExecutionOwnerId = ownerId;
+        ExecutionLeaseUntilUtc = leaseUntilUtc;
+        ConcurrencyVersion++;
+    }
+
+    public void ReopenAfterStorageProvedNotStarted()
+    {
+        if (!string.Equals(State, UploadSessionState.Committing, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Only a committing upload session can be safely reopened.");
+        }
+
+        State = UploadSessionState.Open;
+        CommitId = null;
+        CommitChecksum = null;
+        CommittingAtUtc = null;
+        StorageActionStartedAtUtc = null;
+        RecoveryAttemptCount = 0;
+        NextRecoveryAtUtc = null;
+        LastRecoveryErrorCode = null;
+        ExecutionOwnerId = null;
+        ExecutionLeaseUntilUtc = null;
+        ConcurrencyVersion++;
     }
 
     public void MarkCompleted(DateTimeOffset completedAtUtc)
     {
-        Completed = true;
+        State = UploadSessionState.Completed;
         CompletedAtUtc = completedAtUtc;
+        NextRecoveryAtUtc = null;
+        LastRecoveryErrorCode = null;
+        ExecutionOwnerId = null;
+        ExecutionLeaseUntilUtc = null;
+        ConcurrencyVersion++;
     }
+}
+
+public static class UploadSessionState
+{
+    public const string Open = "open";
+    public const string Committing = "committing";
+    public const string Completed = "completed";
 }

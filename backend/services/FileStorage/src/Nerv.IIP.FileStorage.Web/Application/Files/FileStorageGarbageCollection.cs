@@ -34,7 +34,7 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
     {
         var now = clock.GetUtcNow();
         var expiredUploadSessions = await dbContext.UploadSessions
-            .Where(x => !x.Completed && x.ExpiresAtUtc <= now)
+            .Where(x => x.State == UploadSessionState.Open && x.ExpiresAtUtc <= now)
             .ToArrayAsync(cancellationToken);
         var expiredDownloadGrants = await dbContext.DownloadGrants
             .Where(x => x.ExpiresAtUtc <= now)
@@ -105,7 +105,7 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
             }
 
             var retainedTusUploadSessionIds = await dbContext.UploadSessions
-                .Where(x => x.Completed || x.ExpiresAtUtc > now)
+                .Where(x => x.State != UploadSessionState.Open || x.ExpiresAtUtc > now)
                 .Select(x => x.UploadSessionId)
                 .ToArrayAsync(cancellationToken);
             localTusFilesRemoved += store.DeleteFilesExcept(
