@@ -41,7 +41,7 @@ function Get-NervCiImpactPlan {
     )
     $knownBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($knownBusinessServiceName in $knownBusinessServiceNames) { [void]$knownBusinessServiceNameSet.Add($knownBusinessServiceName) }
-    $erpAcceptanceBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
+    $salesOrderDemandBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@('Erp', 'DemandPlanning', 'MasterData'),
         [StringComparer]::Ordinal)
     $acceptanceScenarioMatrixOwningPathSet = [Collections.Generic.HashSet[string]]::new(
@@ -84,7 +84,6 @@ function Get-NervCiImpactPlan {
         postgresql = $false
         redis_cap = $false
         full_chain = $false
-        erp_sales_order_demand = $false
     }
     $reasonLists = [ordered]@{}
     $serviceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -246,7 +245,7 @@ function Get-NervCiImpactPlan {
 
         if ([string]::Equals($path, 'backend/Directory.Build.props', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
+            foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
 
@@ -288,7 +287,7 @@ function Get-NervCiImpactPlan {
 
         if ($path.StartsWith('backend/common/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'connector_hosts' -Reason $reason
-            Select-Impact -Name 'erp_sales_order_demand' -Reason $reason
+            Select-Impact -Name 'full_chain' -Reason $reason
         }
 
         if ($path.StartsWith('backend/common/Contracts/', [StringComparison]::Ordinal)) {
@@ -326,8 +325,8 @@ function Get-NervCiImpactPlan {
                 continue
             }
             Select-BusinessServices -Services @((ConvertTo-NervCiImpactServiceId -Name $serviceName)) -Reason $reason
-            if ($erpAcceptanceBusinessServiceNameSet.Contains($serviceName)) {
-                Select-Impact -Name 'erp_sales_order_demand' -Reason $reason
+            if ($salesOrderDemandBusinessServiceNameSet.Contains($serviceName)) {
+                Select-Impact -Name 'full_chain' -Reason $reason
             }
             if ((Test-MessagingImpactPath -Path $path) -or (Test-CrossServiceIntegrationEventPath -Path $path)) {
                 foreach ($flag in @('redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
@@ -345,7 +344,7 @@ function Get-NervCiImpactPlan {
             continue
         }
         if ($path.StartsWith('backend/tests/Nerv.IIP.Business.FullChain.Tests/', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'postgresql', 'redis_cap', 'full_chain', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
+            foreach ($flag in @('backend', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
         if ($path.StartsWith('backend/', [StringComparison]::Ordinal)) {
@@ -388,7 +387,7 @@ function Get-NervCiImpactPlan {
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
             if ($acceptanceScenarioMatrixRuntimeOwningPathSet.Contains($path)) {
-                foreach ($flag in @('backend', 'full_chain', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
+                foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
                 continue
             }
             if ($acceptanceScenarioMatrixOwningPathSet.Contains($path)) {
@@ -403,7 +402,7 @@ function Get-NervCiImpactPlan {
                 continue
             }
             if ([string]::Equals($path, 'scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) {
-                foreach ($flag in @('backend', 'full_chain', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
+                foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
             if ([string]::Equals($path, 'scripts/verify-erp-wms-delivery-completion.ps1', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
@@ -430,7 +429,7 @@ function Get-NervCiImpactPlan {
         if ($path.StartsWith('infra/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'infra' -Reason $reason
             if ([string]::Equals($path, 'infra/docker-compose.dev.yml', [StringComparison]::Ordinal)) {
-                Select-Impact -Name 'erp_sales_order_demand' -Reason $reason
+                Select-Impact -Name 'full_chain' -Reason $reason
             }
             if ($path.StartsWith('infra/aspire/', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }

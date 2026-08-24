@@ -807,6 +807,8 @@ function Invoke-NativeCommandOutput {
 
         [string] $LogDirectory,
 
+        [switch] $PersistOutput,
+
         [switch] $AllowPartialOutput,
 
         [scriptblock] $StreamReadTaskAction
@@ -884,9 +886,15 @@ function Invoke-NativeCommandOutput {
         Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
         $stdout = $drain.Stdout
         $stderr = $drain.Stderr
-        if ($drain.TimedOut) {
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
+        if ($PersistOutput -or $drain.TimedOut) {
+            $resolvedOutputLogDirectory = if ([string]::IsNullOrWhiteSpace([string]$drain.LogDirectory)) {
+                New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
+            }
+            else {
+                [string]$drain.LogDirectory
+            }
+            Write-ScriptAutomationProcessLog -Path (Join-Path $resolvedOutputLogDirectory 'stdout.log') -Content $stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            Write-ScriptAutomationProcessLog -Path (Join-Path $resolvedOutputLogDirectory 'stderr.log') -Content $stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
         }
 
         if ($exitCode -ne 0) {
@@ -898,8 +906,12 @@ function Invoke-NativeCommandOutput {
                 -ExitCode $exitCode `
                 -Stdout $stdout `
                 -Stderr $stderr
-            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput")
+            $logSuffix = if ($PersistOutput) { " Logs: $resolvedOutputLogDirectory" } else { '' }
+            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput$logSuffix")
             $failure.Data['ExitCode'] = [int] $exitCode
+            if ($PersistOutput) {
+                $failure.Data['LogDirectory'] = $resolvedOutputLogDirectory
+            }
             throw $failure
         }
         if (@($drain.DrainErrors).Count -gt 0) {
@@ -928,6 +940,9 @@ function Invoke-NativeCommandOutput {
             ExitCode = $exitCode
             Stdout = $stdout
             Stderr = $stderr
+            LogDirectory = if ($PersistOutput) { $resolvedOutputLogDirectory } else { $null }
+            StdoutPath = if ($PersistOutput) { Join-Path $resolvedOutputLogDirectory 'stdout.log' } else { $null }
+            StderrPath = if ($PersistOutput) { Join-Path $resolvedOutputLogDirectory 'stderr.log' } else { $null }
             PartialOutput = [bool] $drain.TimedOut
             UnfinishedStreams = @($drain.UnfinishedStreams)
         }
