@@ -24,8 +24,8 @@ public sealed class BarcodeLabelListQueryTests
         var templateA = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
         var templateB = LabelTemplate.Create("org-001", "env-dev", "tpl-b", "Template B", "file-b", "{}", "active");
         var templateInactive = LabelTemplate.Create("org-001", "env-dev", "tpl-c", "Template C", "file-c", "{}", "inactive");
-        var batchA = LabelPrintBatch.Create("org-001", "env-dev", ruleA, templateA.Id, "work-order", "WO-001", "batch-a", "{}", 1);
-        var batchB = LabelPrintBatch.Create("org-001", "env-dev", ruleA, templateA.Id, "work-order", "WO-002", "batch-b", "{}", 1);
+        var batchA = LabelPrintBatch.Create("org-001", "env-dev", ruleA, templateA.Id, LabelPrintBatchTestData.Snapshot(), "work-order", "WO-001", "batch-a", "{}", 1);
+        var batchB = LabelPrintBatch.Create("org-001", "env-dev", ruleA, templateA.Id, LabelPrintBatchTestData.Snapshot(), "work-order", "WO-002", "batch-b", "{}", 1);
         var scanA = ScanRecord.Record("org-001", "env-dev", "PDA-01", "BC-001", "wms.receiving", "ASN-001", "scan-a", "accepted", null);
         var scanB = ScanRecord.Record("org-001", "env-dev", "PDA-01", "BC-002", "wms.receiving", "ASN-002", "scan-b", "rejected", "bad");
 

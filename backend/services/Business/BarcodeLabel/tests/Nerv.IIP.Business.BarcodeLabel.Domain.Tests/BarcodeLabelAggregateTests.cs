@@ -112,6 +112,7 @@ public sealed class BarcodeLabelAggregateTests
             "env-dev",
             rule,
             new LabelTemplateId(Guid.CreateVersion7()),
+            ReplaySnapshot("gs1-128"),
             "wms.inbound",
             "ASN-001",
             "idem-print-gs1-001",
@@ -147,6 +148,7 @@ public sealed class BarcodeLabelAggregateTests
             "env-dev",
             rule,
             new LabelTemplateId(Guid.CreateVersion7()),
+            ReplaySnapshot("gs1-128"),
             "wms.inbound",
             "ASN-001",
             "idem-print-gs1-001",
@@ -220,6 +222,7 @@ public sealed class BarcodeLabelAggregateTests
             "env-dev",
             rule,
             new LabelTemplateId(Guid.CreateVersion7()),
+            ReplaySnapshot(),
             "wms.inbound",
             "ASN-001",
             "idem-print-001",
@@ -230,6 +233,7 @@ public sealed class BarcodeLabelAggregateTests
             "env-dev",
             rule,
             new LabelTemplateId(Guid.CreateVersion7()),
+            ReplaySnapshot(),
             "wms.inbound",
             "ASN-001",
             "idem-print-001",
@@ -289,6 +293,109 @@ public sealed class BarcodeLabelAggregateTests
         Assert.True(batch.HasSameIdempotencyPayload(same));
         Assert.False(batch.HasSameIdempotencyPayload(conflict));
         Assert.Throws<InvalidOperationException>(() => batch.EnsureSameIdempotencyPayload(conflict));
+    }
+
+    [Fact]
+    public void Print_batch_idempotency_compares_every_frozen_snapshot_fact()
+    {
+        var rule = ActiveRule();
+        var templateId = new LabelTemplateId(Guid.CreateVersion7());
+        var snapshot = ReplaySnapshot();
+        var batch = NewPrintBatch(rule, templateId, snapshot, "idem-print-snapshot-001", "ASN-001", 1);
+        var snapshotConflicts = new[]
+        {
+            snapshot with { TemplateFileId = "file-template-002" },
+            snapshot with { TemplateAssetSha256 = $"sha256:{new string('b', 64)}" },
+            snapshot with { VariableSchemaJson = """{"version":1,"variables":[]}""" },
+            snapshot with { RendererContractVersion = "zpl-v2" },
+        };
+        var conflicts = snapshotConflicts
+            .Select(conflict => NewPrintBatch(rule, templateId, conflict, "idem-print-snapshot-001", "ASN-001", 1))
+            .ToList();
+        var barcodeTypeConflict = NewPrintBatch(rule, templateId, snapshot, "idem-print-snapshot-001", "ASN-001", 1);
+        typeof(LabelPrintBatch)
+            .GetProperty(nameof(LabelPrintBatch.BarcodeTypeSnapshot))!
+            .SetValue(barcodeTypeConflict, "qr");
+        conflicts.Add(barcodeTypeConflict);
+
+        Assert.All(conflicts, conflict =>
+        {
+            Assert.False(batch.HasSameIdempotencyPayload(conflict));
+            Assert.Throws<InvalidOperationException>(() => batch.EnsureSameIdempotencyPayload(conflict));
+        });
+    }
+
+    [Fact]
+    public void New_print_batch_requires_all_frozen_snapshot_facts()
+    {
+        var rule = ActiveRule();
+        var templateId = new LabelTemplateId(Guid.CreateVersion7());
+        var snapshot = ReplaySnapshot();
+        var incomplete = new[]
+        {
+            snapshot with { TemplateFileId = " " },
+            snapshot with { TemplateAssetSha256 = " " },
+            snapshot with { VariableSchemaJson = " " },
+            snapshot with { BarcodeType = " " },
+            snapshot with { RendererContractVersion = " " },
+        };
+
+        Assert.All(incomplete, value =>
+            Assert.Throws<ArgumentException>(() =>
+                NewPrintBatch(rule, templateId, value, "idem-print-incomplete-001", "ASN-001", 1)));
+    }
+
+    [Fact]
+    public void New_print_batch_rejects_barcode_type_snapshot_that_differs_from_the_rule()
+    {
+        var rule = ActiveRule();
+
+        Assert.Throws<ArgumentException>(() => NewPrintBatch(
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            ReplaySnapshot("qr"),
+            "idem-print-barcode-type-conflict-001",
+            "ASN-001",
+            1));
+    }
+
+    [Fact]
+    public void Legacy_print_batch_is_explicitly_not_replayable()
+    {
+        var rule = ActiveRule();
+
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
+            "org-001",
+            "env-dev",
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            "wms.inbound",
+            "ASN-001",
+            "idem-print-legacy-001",
+            """{"sku":"SKU-FG-1000"}""",
+            1);
+
+        Assert.False(batch.HasCompleteReplaySnapshot);
+        Assert.Throws<InvalidOperationException>(() => batch.EnsureCompleteReplaySnapshot());
+    }
+
+    [Fact]
+    public void Inactive_gs1_rule_cannot_generate_serialized_values()
+    {
+        var rule = BarcodeRule.Create(
+            "org-001",
+            "env-dev",
+            "GS1-FG",
+            "gs1-128",
+            "0950600013435",
+            80,
+            "gs1-mod10",
+            ["wms.inbound"],
+            "inactive",
+            7);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            rule.GenerateGs1Value("wms.inbound", "LOT-A", "SN-", 1));
     }
 
     [Theory]
@@ -556,12 +663,42 @@ public sealed class BarcodeLabelAggregateTests
             "env-dev",
             rule,
             templateId,
+            ReplaySnapshot(rule.BarcodeType),
             "wms.inbound",
             documentId,
             idempotencyKey,
             """{"sku":"SKU-FG-1000"}""",
             quantity);
     }
+
+    private static LabelPrintBatch NewPrintBatch(
+        BarcodeRule rule,
+        LabelTemplateId templateId,
+        LabelPrintBatchSnapshot snapshot,
+        string idempotencyKey,
+        string documentId,
+        int quantity)
+    {
+        return LabelPrintBatch.Create(
+            "org-001",
+            "env-dev",
+            rule,
+            templateId,
+            snapshot,
+            "wms.inbound",
+            documentId,
+            idempotencyKey,
+            """{"sku":"SKU-FG-1000"}""",
+            quantity);
+    }
+
+    private static LabelPrintBatchSnapshot ReplaySnapshot(string barcodeType = "code128") =>
+        new(
+            "file-template-001",
+            $"sha256:{new string('a', 64)}",
+            """{"version":1,"variables":[{"name":"sku","type":"string"}]}""",
+            barcodeType,
+            "zpl-v1");
 
     private static ScanRecord NewScan(string idempotencyKey, string scannedValue)
     {

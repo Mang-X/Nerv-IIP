@@ -237,6 +237,8 @@ public sealed class WorldHistoryLabelSeedServiceTests(ITestOutputHelper output)
             Assert.Contains(batch.Status, new[] { "printed", "failed" });
             Assert.Equal(batch.RequestedQuantity, batch.Items.Count);
             Assert.NotNull(batch.CompletedAtUtc);
+            Assert.False(batch.HasCompleteReplaySnapshot);
+            Assert.Throws<InvalidOperationException>(() => batch.EnsureCompleteReplaySnapshot());
         }
 
         Assert.Contains(batches, batch => batch.Status == "failed");

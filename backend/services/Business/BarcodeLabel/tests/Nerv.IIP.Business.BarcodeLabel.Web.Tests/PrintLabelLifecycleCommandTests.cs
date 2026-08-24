@@ -37,7 +37,7 @@ public sealed class PrintLabelLifecycleCommandTests
     private static LabelPrintBatch CreateBatch(int quantity)
     {
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG", "code128", "FG", 13, "none", ["wms.inbound"], "active");
-        return LabelPrintBatch.Create("org-001", "env-dev", rule, new LabelTemplateId(Guid.CreateVersion7()), "wms.inbound", "ASN-001", "idem-print", "{}", quantity);
+        return LabelPrintBatch.Create("org-001", "env-dev", rule, new LabelTemplateId(Guid.CreateVersion7()), LabelPrintBatchTestData.Snapshot(), "wms.inbound", "ASN-001", "idem-print", "{}", quantity);
     }
 
     private static ApplicationDbContext CreateDbContext()

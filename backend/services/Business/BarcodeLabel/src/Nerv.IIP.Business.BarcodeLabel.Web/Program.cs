@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
@@ -13,6 +14,7 @@ using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
+using Nerv.IIP.Sdk.FileStorage;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
@@ -58,6 +60,29 @@ try
     }
 
     builder.Services.AddBarcodeLabelPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    var fileStorageBaseAddressText = builder.Configuration["FileStorage:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(fileStorageBaseAddressText) && (builder.Environment.IsDevelopment() || isTesting))
+    {
+        fileStorageBaseAddressText = "http://localhost:5104";
+    }
+
+    if (!Uri.TryCreate(fileStorageBaseAddressText, UriKind.Absolute, out var fileStorageBaseAddress)
+        || (fileStorageBaseAddress.Scheme != Uri.UriSchemeHttp && fileStorageBaseAddress.Scheme != Uri.UriSchemeHttps))
+    {
+        throw new InvalidOperationException("FileStorage:BaseUrl must be an absolute HTTP(S) URI for BarcodeLabel template assets.");
+    }
+
+    builder.Services.AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
+    {
+        client.BaseAddress = fileStorageBaseAddress;
+        var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }).UseHttpClientMetrics();
+    builder.Services.AddScoped<ILabelTemplateAssetPort>(services =>
+        new HttpFileStorageLabelTemplateAssetAdapter(
+            services.GetRequiredService<IFileStorageClient>(),
+            fileStorageBaseAddress,
+            TimeSpan.FromSeconds(10)));
     builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
     builder.Services.AddSingleton<ZplTcpLabelPrinter>();
     builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();

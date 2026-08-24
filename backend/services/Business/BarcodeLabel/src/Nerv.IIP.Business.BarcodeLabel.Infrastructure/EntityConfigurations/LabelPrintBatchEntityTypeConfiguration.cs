@@ -14,6 +14,11 @@ public sealed class LabelPrintBatchEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the print batch was created.");
         builder.Property(x => x.BarcodeRuleId).HasColumnName("barcode_rule_id").IsRequired().HasComment("Barcode rule id used for deterministic label generation.");
         builder.Property(x => x.LabelTemplateId).HasColumnName("label_template_id").IsRequired().HasComment("Label template id used for the print batch.");
+        builder.Property(x => x.TemplateFileIdSnapshot).HasColumnName("template_file_id_snapshot").HasMaxLength(150).HasComment("Nullable FileStorage template file id snapshot; null only for legacy rows created before replay snapshots.");
+        builder.Property(x => x.TemplateAssetSha256).HasColumnName("template_asset_sha256").HasMaxLength(71).HasComment("Nullable canonical sha256-prefixed template asset snapshot; null only for legacy rows and never synthesized.");
+        builder.Property(x => x.VariableSchemaJsonSnapshot).HasColumnName("variable_schema_json_snapshot").HasColumnType("text").HasComment("Nullable variable schema JSON snapshot produced by BarcodeLabel for deterministic replay; null legacy rows are not replayable.");
+        builder.Property(x => x.BarcodeTypeSnapshot).HasColumnName("barcode_type_snapshot").HasMaxLength(30).HasComment("Nullable barcode type snapshot used by the renderer; null only for legacy rows.");
+        builder.Property(x => x.RendererContractVersion).HasColumnName("renderer_contract_version").HasMaxLength(30).HasComment("Nullable deterministic renderer contract version; null only for legacy rows.");
         builder.Property(x => x.SourceDocumentType).HasColumnName("source_document_type").IsRequired().HasMaxLength(100).HasComment("Source workflow or document type requesting label printing.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source business document public id.");
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Client supplied idempotency key for print batch creation.");

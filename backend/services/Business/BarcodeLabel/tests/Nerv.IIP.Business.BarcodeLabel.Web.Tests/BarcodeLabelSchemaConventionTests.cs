@@ -36,6 +36,17 @@ public sealed class BarcodeLabelSchemaConventionTests
         Assert.Empty(failures);
     }
 
+    [Fact]
+    public void Print_batch_template_checksum_snapshot_fits_the_canonical_sha256_value()
+    {
+        using var fixture = CreateFixture();
+        var property = fixture.DbContext.Model
+            .FindEntityType(typeof(LabelPrintBatch))!
+            .FindProperty(nameof(LabelPrintBatch.TemplateAssetSha256))!;
+
+        Assert.Equal(71, property.GetMaxLength());
+    }
+
     private static BarcodeLabelSchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();

@@ -123,6 +123,11 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 
     public Gs1BarcodeValue GenerateGs1Value(string sourceDocumentType, string lotNo, string serialPrefix, int sequence)
     {
+        if (Status != "active")
+        {
+            throw new InvalidOperationException("Only active barcode rules can generate label values.");
+        }
+
         if (!BarcodeType.StartsWith("gs1-", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Only GS1 barcode rules can generate GS1 values.");

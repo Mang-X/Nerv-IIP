@@ -107,6 +107,7 @@ public sealed class BarcodeLabelIntegrationEventTests
             "env-dev",
             rule,
             new LabelTemplateId(Guid.CreateVersion7()),
+            LabelPrintBatchTestData.Snapshot(),
             "wms.inbound",
             "ASN-001",
             "idem-print-001",
