@@ -226,6 +226,20 @@ describe('business quality composables', () => {
     })
   })
 
+  it('passes the selected inspection-plan category to the facade query', () => {
+    useQualityInspectionPlans({ category: 'first-article', take: 25 })
+
+    expect(listBusinessConsoleQualityInspectionPlansQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        category: 'first-article',
+        skip: 0,
+        take: 25,
+      },
+    })
+  })
+
   it('lists NCRs with a take limit and invalidates after actions', async () => {
     coladaState.queryDataById.set('listBusinessConsoleQualityNcrs', {
       success: true,
