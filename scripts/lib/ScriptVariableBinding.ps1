@@ -9,7 +9,12 @@
 #   Requires:
 #     - PowerShell 7
 
-$script:nervScriptVariableScopeQualifiers = @('local', 'script', 'global', 'private', 'variable')
+$script:nervScriptVariableScopeQualifiers = [Collections.Generic.HashSet[string]]::new(
+    [string[]]@('local', 'script', 'global', 'private', 'variable'),
+    [StringComparer]::OrdinalIgnoreCase)
+$script:nervScriptVariableSetItemCommands = [Collections.Generic.HashSet[string]]::new(
+    [string[]]@('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si'),
+    [StringComparer]::OrdinalIgnoreCase)
 $script:nervScriptVariableBinderCanonicalNames = @('Set-Variable', 'New-Variable')
 $script:nervScriptVariableBinderCommands = [Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($seamBinderCanonicalName in $script:nervScriptVariableBinderCanonicalNames) {
@@ -45,9 +50,7 @@ function Get-NervScriptVariableBindingNameFromText {
     $separator = $candidate.IndexOf(':', [StringComparison]::Ordinal)
     if ($separator -lt 0) { return $candidate }
     $qualifier = $candidate.Substring(0, $separator)
-    if (@($script:nervScriptVariableScopeQualifiers | Where-Object {
-                [string]::Equals([string]$_, $qualifier, [StringComparison]::OrdinalIgnoreCase)
-            }).Count -eq 0) { return $null }
+    if (-not $script:nervScriptVariableScopeQualifiers.Contains($qualifier)) { return $null }
     return $candidate.Substring($separator + 1)
 }
 
@@ -196,9 +199,7 @@ function Test-NervScriptVariableSetItemCommandWritesName {
         [Parameter(Mandatory)] [string] $Name)
 
     $commandName = [string]$Command.GetCommandName()
-    if (-not (@('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si') | Where-Object {
-                [string]::Equals([string]$_, $commandName, [StringComparison]::OrdinalIgnoreCase)
-            })) { return $false }
+    if (-not $script:nervScriptVariableSetItemCommands.Contains($commandName)) { return $false }
     $parameters = Get-NervScriptVariableBinderParameters -CanonicalName 'Set-Item'
     $elements = @($Command.CommandElements)
     $positionals = [Collections.Generic.List[Management.Automation.Language.Ast]]::new()

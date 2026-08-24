@@ -1171,49 +1171,87 @@ function Test-NervAcceptanceWmsVerifierContract {
         return [pscustomobject][ordered]@{ failureCaptureSupported = $false; pickingReadbackWired = $false; completionReplayWired = $false; outboundCompletionWired = $false }
     }
 
-    $hasConditionalAncestor = {
-        param([Management.Automation.Language.Ast] $Node)
+    $hasAncestor = {
+        param(
+            [Management.Automation.Language.Ast] $Node,
+            [Management.Automation.Language.Ast] $ExpectedAncestor)
         $ancestor = $Node.Parent
+        while ($null -ne $ancestor) {
+            if ([object]::ReferenceEquals($ancestor, $ExpectedAncestor)) { return $true }
+            $ancestor = $ancestor.Parent
+        }
+        return $false
+    }
+    $typedInventory = @($ast.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.AssignmentStatementAst] -or
+                    $node -is [Management.Automation.Language.CommandAst] -or
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -or
+                    $node -is [Management.Automation.Language.TryStatementAst] -or
+                    $node -is [Management.Automation.Language.ReturnStatementAst]
+            }, $true))
+    $assignments = [Collections.Generic.List[object]]::new()
+    $commands = [Collections.Generic.List[object]]::new()
+    $functions = [Collections.Generic.List[object]]::new()
+    $tryStatements = [Collections.Generic.List[object]]::new()
+    $returnStatements = [Collections.Generic.List[object]]::new()
+    $conditionalNodeFlags = [Collections.Generic.Dictionary[Management.Automation.Language.Ast, bool]]::new()
+    $inactiveNodeFlags = [Collections.Generic.Dictionary[Management.Automation.Language.Ast, bool]]::new()
+    $commandsByName = [Collections.Hashtable]::new([StringComparer]::Ordinal)
+    foreach ($node in $typedInventory) {
+        if ($node -is [Management.Automation.Language.AssignmentStatementAst]) { $assignments.Add($node) }
+        elseif ($node -is [Management.Automation.Language.CommandAst]) {
+            $commands.Add($node)
+            $commandName = [string]$node.GetCommandName()
+            if (-not [string]::IsNullOrEmpty($commandName)) {
+                if (-not $commandsByName.ContainsKey($commandName)) {
+                    $commandsByName[$commandName] = [Collections.Generic.List[object]]::new()
+                }
+                $commandsByName[$commandName].Add($node)
+            }
+        }
+        elseif ($node -is [Management.Automation.Language.FunctionDefinitionAst]) { $functions.Add($node) }
+        elseif ($node -is [Management.Automation.Language.TryStatementAst]) { $tryStatements.Add($node) }
+        elseif ($node -is [Management.Automation.Language.ReturnStatementAst]) {
+            $returnStatements.Add($node)
+            continue
+        }
+        $conditional = $false
+        $inactive = $false
+        $ancestor = $node.Parent
         while ($null -ne $ancestor) {
             if ($ancestor -is [Management.Automation.Language.IfStatementAst] -or
                 $ancestor -is [Management.Automation.Language.LoopStatementAst] -or
                 $ancestor -is [Management.Automation.Language.SwitchStatementAst] -or
-                $ancestor -is [Management.Automation.Language.TernaryExpressionAst]) { return $true }
-            $ancestor = $ancestor.Parent
-        }
-        return $false
-    }
-    $hasInactiveCodeAncestor = {
-        param([Management.Automation.Language.Ast] $Node)
-        $ancestor = $Node.Parent
-        while ($null -ne $ancestor) {
+                $ancestor -is [Management.Automation.Language.TernaryExpressionAst]) { $conditional = $true }
             if ($ancestor -is [Management.Automation.Language.FunctionDefinitionAst] -or
-                $ancestor -is [Management.Automation.Language.ScriptBlockExpressionAst]) { return $true }
+                $ancestor -is [Management.Automation.Language.ScriptBlockExpressionAst]) { $inactive = $true }
+            if ($conditional -and $inactive) { break }
             $ancestor = $ancestor.Parent
         }
-        return $false
+        $conditionalNodeFlags[$node] = $conditional
+        $inactiveNodeFlags[$node] = $inactive
     }
-    $exportFunctions = @($ast.FindAll({
-                param($node)
-                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                    [string]::Equals($node.Name, 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
-            }, $true) | Where-Object {
-                -not (& $hasConditionalAncestor $_) -and
-                -not (& $hasInactiveCodeAncestor $_)
-            })
+    $exportFunctions = [Collections.Generic.List[object]]::new()
+    foreach ($function in $functions) {
+        if ([string]::Equals($function.Name, 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal) -and
+            -not $conditionalNodeFlags[$function] -and -not $inactiveNodeFlags[$function]) {
+            $exportFunctions.Add($function)
+        }
+    }
     $orderedCaptureCalls = [Collections.Generic.List[object]]::new()
-    $topLevelTryStatements = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $null -ne $node.Finally }, $true) | Where-Object {
-            -not (& $hasInactiveCodeAncestor $_)
-        })
+    $topLevelTryStatements = [Collections.Generic.List[object]]::new()
+    foreach ($tryStatement in $tryStatements) {
+        if ($null -ne $tryStatement.Finally -and -not $inactiveNodeFlags[$tryStatement]) {
+            $topLevelTryStatements.Add($tryStatement)
+        }
+    }
     foreach ($tryStatement in $topLevelTryStatements) {
         foreach ($catchClause in @($tryStatement.CatchClauses)) {
-            foreach ($captureCall in @($catchClause.Body.FindAll({
-                            param($node)
-                            $node -is [Management.Automation.Language.CommandAst] -and
-                                [string]::Equals($node.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
-                        }, $true))) {
-                if (-not (& $hasConditionalAncestor $captureCall) -and
-                    -not (& $hasInactiveCodeAncestor $captureCall)) {
+            $captureCandidates = if ($commandsByName.ContainsKey('Export-Man527FailureDiagnostics')) { @($commandsByName['Export-Man527FailureDiagnostics']) } else { @() }
+            foreach ($captureCall in @($captureCandidates | Where-Object { & $hasAncestor $_ $catchClause.Body })) {
+                if (-not $conditionalNodeFlags[$captureCall] -and
+                    -not $inactiveNodeFlags[$captureCall]) {
                     [void]$orderedCaptureCalls.Add($captureCall)
                 }
             }
@@ -1223,76 +1261,99 @@ function Test-NervAcceptanceWmsVerifierContract {
     $getAssignmentVariableNames = {
         param([Management.Automation.Language.AssignmentStatementAst] $Assignment)
 
-        @($Assignment.Left.FindAll({ param($node) $node -is [Management.Automation.Language.VariableExpressionAst] }, $true) | ForEach-Object {
-                Get-NervScriptVariableBindingName -VariablePath $_.VariablePath
-            })
+        $variableNodes = if ($Assignment.Left -is [Management.Automation.Language.VariableExpressionAst]) {
+            @($Assignment.Left)
+        }
+        elseif ($Assignment.Left -is [Management.Automation.Language.ConvertExpressionAst] -and
+            $Assignment.Left.Child -is [Management.Automation.Language.VariableExpressionAst]) {
+            @($Assignment.Left.Child)
+        }
+        else {
+            @($Assignment.Left.FindAll({ param($node) $node -is [Management.Automation.Language.VariableExpressionAst] }, $true))
+        }
+        foreach ($variableNode in $variableNodes) {
+            Get-NervScriptVariableBindingName -VariablePath $variableNode.VariablePath
+        }
     }
     $testAssignmentWritesVariable = {
         param(
             [Management.Automation.Language.AssignmentStatementAst] $Assignment,
             [string] $VariableName)
 
-        return @(& $getAssignmentVariableNames $Assignment | Where-Object {
-                [string]::Equals([string]$_, $VariableName, [StringComparison]::OrdinalIgnoreCase)
-            }).Count -gt 0
-    }
-    $testCommandWritesVariable = {
-        param(
-            [Management.Automation.Language.CommandAst] $Command,
-            [string] $VariableName)
-
-        foreach ($boundName in @(Get-NervScriptVariableCommandLiteralBindingNames -Command $Command)) {
-            if ([string]::Equals([string]$boundName, $VariableName, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        foreach ($assignmentName in @(& $getAssignmentVariableNames $Assignment)) {
+            if ([string]::Equals([string]$assignmentName, $VariableName, [StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
-        return Test-NervScriptVariableSetItemCommandWritesName -Command $Command -Name $VariableName
+        return $false
+    }
+    $contractVariableNames = @(
+        'pickingLifecycleCompleted',
+        'completionHttpReplayConverged',
+        'completedOutboundOrder',
+        'businessEvidence')
+    $writesByVariable = [Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($variableName in $contractVariableNames) {
+        $writesByVariable[$variableName] = [Collections.Generic.HashSet[object]]::new()
+    }
+    foreach ($assignment in $assignments) {
+        if ($inactiveNodeFlags[$assignment]) { continue }
+        foreach ($assignmentName in @(& $getAssignmentVariableNames $assignment)) {
+            if ($writesByVariable.ContainsKey([string]$assignmentName)) {
+                [void]$writesByVariable[[string]$assignmentName].Add($assignment)
+            }
+        }
+    }
+    foreach ($command in $commands) {
+        if ($inactiveNodeFlags[$command]) { continue }
+        $commandName = [string]$command.GetCommandName()
+        $binderName = Resolve-NervScriptVariableBinderCanonicalName -WrittenName $commandName
+        if (-not [string]::IsNullOrEmpty($binderName)) {
+            foreach ($boundName in @(Get-NervScriptVariableCommandLiteralBindingNames -Command $command)) {
+                if ($writesByVariable.ContainsKey([string]$boundName)) {
+                    [void]$writesByVariable[[string]$boundName].Add($command)
+                }
+            }
+            continue
+        }
+        if ($script:nervScriptVariableSetItemCommands.Contains($commandName)) {
+            foreach ($variableName in $contractVariableNames) {
+                if (Test-NervScriptVariableSetItemCommandWritesName -Command $command -Name $variableName) {
+                    [void]$writesByVariable[$variableName].Add($command)
+                }
+            }
+        }
     }
     $testAssignment = {
         param([string] $CommandName, [string] $VariableName)
-        $allWrites = @($ast.FindAll({
-                    param($node)
-                    $node -is [Management.Automation.Language.AssignmentStatementAst] -or
-                        $node -is [Management.Automation.Language.CommandAst]
-                }, $true) | Where-Object {
-                    -not (& $hasInactiveCodeAncestor $_) -and
-                        (($_ -is [Management.Automation.Language.AssignmentStatementAst] -and (& $testAssignmentWritesVariable $_ $VariableName)) -or
-                            ($_ -is [Management.Automation.Language.CommandAst] -and (& $testCommandWritesVariable $_ $VariableName)))
-                })
-        $matches = @($ast.FindAll({
-                    param($node)
-                    $node -is [Management.Automation.Language.CommandAst] -and
-                        [string]::Equals($node.GetCommandName(), $CommandName, [StringComparison]::Ordinal)
-                }, $true) | Where-Object {
-                    $command = $_
-                    $assignment = $command.Parent
-                    while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) {
-                        if (& $hasConditionalAncestor $command) { break }
-                        $assignment = $assignment.Parent
-                    }
-                    $null -ne $assignment -and
-                        $assignment -is [Management.Automation.Language.AssignmentStatementAst] -and
-                        (& $testAssignmentWritesVariable $assignment $VariableName) -and
-                        -not (& $hasConditionalAncestor $command) -and
-                        -not (& $hasInactiveCodeAncestor $command)
-                })
+        $allWrites = @($writesByVariable[$VariableName])
+        $matchingCommands = if ($commandsByName.ContainsKey($CommandName)) { @($commandsByName[$CommandName]) } else { @() }
+        $matches = [Collections.Generic.List[object]]::new()
+        foreach ($command in $matchingCommands) {
+            $assignment = $command.Parent
+            while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) {
+                if ($conditionalNodeFlags[$command]) { break }
+                $assignment = $assignment.Parent
+            }
+            if ($null -ne $assignment -and
+                $assignment -is [Management.Automation.Language.AssignmentStatementAst] -and
+                (& $testAssignmentWritesVariable $assignment $VariableName) -and
+                -not $conditionalNodeFlags[$command] -and
+                -not $inactiveNodeFlags[$command]) {
+                $matches.Add($command)
+            }
+        }
         return $allWrites.Count -eq 1 -and $matches.Count -eq 1
     }
 
     $testOutboundCompletion = {
         if (-not (& $testAssignment 'Wait-WmsOutboundOrder' 'completedOutboundOrder')) { return $false }
-        $waitFunctions = @($ast.FindAll({
-                    param($node)
-                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                        [string]::Equals($node.Name, 'Wait-WmsOutboundOrder', [StringComparison]::Ordinal)
-                }, $true) | Where-Object {
-                    -not (& $hasConditionalAncestor $_) -and
-                        -not (& $hasInactiveCodeAncestor $_)
+        $waitFunctions = @($functions | Where-Object {
+                [string]::Equals($_.Name, 'Wait-WmsOutboundOrder', [StringComparison]::Ordinal) -and
+                    -not $conditionalNodeFlags[$_] -and
+                    -not $inactiveNodeFlags[$_]
                 })
         if ($waitFunctions.Count -ne 1) { return $false }
-        $completedPredicates = @($waitFunctions[0].Body.FindAll({
-                    param($node)
-                    $node -is [Management.Automation.Language.CommandAst] -and
-                        [string]::Equals($node.GetCommandName(), 'Test-NervAcceptanceWmsCompletedOutboundReadback', [StringComparison]::Ordinal)
-                }, $true))
+        $completedPredicateCandidates = if ($commandsByName.ContainsKey('Test-NervAcceptanceWmsCompletedOutboundReadback')) { @($commandsByName['Test-NervAcceptanceWmsCompletedOutboundReadback']) } else { @() }
+        $completedPredicates = @($completedPredicateCandidates | Where-Object { & $hasAncestor $_ $waitFunctions[0].Body })
         if ($completedPredicates.Count -ne 1) { return $false }
         $predicate = $completedPredicates[0]
         if ($predicate.CommandElements.Count -ne 3 -or
@@ -1335,26 +1396,23 @@ function Test-NervAcceptanceWmsVerifierContract {
             $combinedGate.Right.Pipeline.PipelineElements.Count -ne 1 -or
             $combinedGate.Right.Pipeline.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst] -or
             -not [object]::ReferenceEquals($combinedGate.Right.Pipeline.PipelineElements[0].Expression, $requireCompletedGate)) { return $false }
-        $guardReturns = @($predicateIfAncestors[0].Clauses | ForEach-Object { $_.Item2 } | ForEach-Object {
-                $_.FindAll({ param($node) $node -is [Management.Automation.Language.ReturnStatementAst] }, $true)
-            } | Where-Object {
-                $null -ne $_.Pipeline -and
-                    [string]::Equals([string]$_.Pipeline.Extent.Text, '$rows[0]', [StringComparison]::Ordinal)
+        $guardReturns = @($returnStatements | Where-Object {
+                $guardReturn = $_
+                @($predicateIfAncestors[0].Clauses | Where-Object { & $hasAncestor $guardReturn $_.Item2 }).Count -gt 0 -and
+                $null -ne $guardReturn.Pipeline -and
+                    [string]::Equals([string]$guardReturn.Pipeline.Extent.Text, '$rows[0]', [StringComparison]::Ordinal)
             })
         if ($predicateIfAncestors[0].Clauses.Count -ne 1 -or $guardReturns.Count -ne 1) { return $false }
 
-        $waitCalls = @($ast.FindAll({
-                    param($node)
-                    $node -is [Management.Automation.Language.CommandAst] -and
-                        [string]::Equals($node.GetCommandName(), 'Wait-WmsOutboundOrder', [StringComparison]::Ordinal)
-                }, $true) | Where-Object {
+        $waitCallCandidates = if ($commandsByName.ContainsKey('Wait-WmsOutboundOrder')) { @($commandsByName['Wait-WmsOutboundOrder']) } else { @() }
+        $waitCalls = @($waitCallCandidates | Where-Object {
                     $command = $_
                     $assignment = $command.Parent
                     while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $assignment = $assignment.Parent }
                     $null -ne $assignment -and
                         (& $testAssignmentWritesVariable $assignment 'completedOutboundOrder') -and
-                        -not (& $hasConditionalAncestor $command) -and
-                        -not (& $hasInactiveCodeAncestor $command)
+                        -not $conditionalNodeFlags[$command] -and
+                        -not $inactiveNodeFlags[$command]
                 })
         if ($waitCalls.Count -ne 1) { return $false }
         $requireCompletedParameters = @($waitCalls[0].CommandElements | Where-Object {
@@ -1364,18 +1422,10 @@ function Test-NervAcceptanceWmsVerifierContract {
             })
         if ($requireCompletedParameters.Count -ne 1) { return $false }
 
-        $businessEvidenceWrites = @($ast.FindAll({
-                    param($node)
-                    $node -is [Management.Automation.Language.AssignmentStatementAst] -or
-                        $node -is [Management.Automation.Language.CommandAst]
-                }, $true) | Where-Object {
-                    -not (& $hasInactiveCodeAncestor $_) -and
-                        (($_ -is [Management.Automation.Language.AssignmentStatementAst] -and (& $testAssignmentWritesVariable $_ 'businessEvidence')) -or
-                            ($_ -is [Management.Automation.Language.CommandAst] -and (& $testCommandWritesVariable $_ 'businessEvidence')))
-                })
+        $businessEvidenceWrites = @($writesByVariable['businessEvidence'])
         $businessEvidenceAssignments = @($businessEvidenceWrites | Where-Object {
                 $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
-                    -not (& $hasConditionalAncestor $_) -and
+                    -not $conditionalNodeFlags[$_] -and
                     $_.Right -is [Management.Automation.Language.CommandExpressionAst] -and
                     $_.Right.Expression -is [Management.Automation.Language.ConvertExpressionAst] -and
                     $_.Right.Expression.Child -is [Management.Automation.Language.HashtableAst]
