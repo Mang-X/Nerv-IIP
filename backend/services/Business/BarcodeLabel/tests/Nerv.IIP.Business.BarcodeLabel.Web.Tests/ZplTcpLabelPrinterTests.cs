@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
@@ -9,31 +11,143 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed class ZplTcpLabelPrinterTests
 {
     [Fact]
-    public async Task Zpl_tcp_printer_sends_a_complete_zpl_document_and_truthfully_reports_sent_to_printer()
+    public async Task Full_write_sends_exact_compiled_bytes_half_closes_and_reports_sent_to_printer()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var received = ReceiveAsync(listener);
+        var received = ReceiveUntilEofAsync(listener);
         var printer = new ZplTcpLabelPrinter(Options.Create(new LabelPrinterOptions
         {
             Host = IPAddress.Loopback.ToString(),
             Port = port,
             ConnectTimeoutSeconds = 5,
+            WriteTimeoutSeconds = 5,
         }));
+        var documents = CompileDocuments(2);
 
-        var result = await printer.PrintAsync("printer-zpl-01", ["LABEL-001"], CancellationToken.None);
-        var zpl = await received;
+        var result = await printer.PrintAsync("printer-zpl-01", documents, CancellationToken.None);
+        var payload = await received;
 
         Assert.Equal("sent-to-printer", result.Status);
         Assert.False(string.IsNullOrWhiteSpace(result.PrintJobId));
         Assert.Null(result.FailureReason);
-        Assert.Contains("^XA", zpl, StringComparison.Ordinal);
-        Assert.Contains("^FDLABEL-001^FS", zpl, StringComparison.Ordinal);
-        Assert.Contains("^XZ", zpl, StringComparison.Ordinal);
+        Assert.Equal(documents.SelectMany(document => document.Payload.ToArray()).ToArray(), payload);
     }
 
-    private static async Task<string> ReceiveAsync(TcpListener listener)
+    [Fact]
+    public async Task Failure_before_the_first_byte_reports_failed()
+    {
+        var factory = new ScriptedConnectionFactory { ConnectFailure = new SocketException((int)SocketError.ConnectionRefused) };
+        var result = await CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Null(result.PrintJobId);
+        Assert.Equal(1, factory.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task Helper_timeout_before_the_first_byte_reports_failed()
+    {
+        var connection = new ScriptedConnection(_ => throw new OperationCanceledException("scripted timeout"));
+        var factory = new ScriptedConnectionFactory { Connection = connection };
+
+        var result = await CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal(1, factory.ConnectCalls);
+        Assert.Equal(1, connection.SendCalls);
+    }
+
+    [Fact]
+    public async Task Failure_after_a_partial_write_reports_delivery_unknown_without_retrying()
+    {
+        var connection = new ScriptedConnection(buffer => Math.Min(3, buffer.Length), _ => throw new IOException("scripted disconnect"));
+        var factory = new ScriptedConnectionFactory { Connection = connection };
+        var result = await CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("delivery-unknown", result.Status);
+        Assert.False(string.IsNullOrWhiteSpace(result.PrintJobId));
+        Assert.Equal(1, factory.ConnectCalls);
+        Assert.Equal(2, connection.SendCalls);
+        Assert.False(connection.ShutdownSendCalled);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_before_the_first_byte_is_propagated()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var factory = new ScriptedConnectionFactory { HonorCancellationDuringConnect = true };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateScriptedPrinter(factory).PrintAsync(
+            "printer-01", CompileDocuments(1), cancellation.Token));
+
+        Assert.Equal(1, factory.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_after_the_first_byte_reports_delivery_unknown_without_retrying()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var connection = new ScriptedConnection(
+            buffer => { cancellation.Cancel(); return Math.Min(1, buffer.Length); },
+            _ => throw new OperationCanceledException(cancellation.Token));
+        var factory = new ScriptedConnectionFactory { Connection = connection };
+
+        var result = await CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), cancellation.Token);
+
+        Assert.Equal("delivery-unknown", result.Status);
+        Assert.Equal(1, factory.ConnectCalls);
+        Assert.Equal(2, connection.SendCalls);
+    }
+
+    [Fact]
+    public async Task Simulated_mode_is_rejected_in_production()
+    {
+        var options = Options.Create(new LabelPrinterOptions { Mode = "simulated" });
+        var printer = new ConfiguredLabelPrinter(options, new ZplTcpLabelPrinter(options), new TestHostEnvironment("Production"));
+
+        var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public async Task Simulated_mode_only_reports_sent_to_printer_in_explicit_nonproduction_environments(string environmentName)
+    {
+        var options = Options.Create(new LabelPrinterOptions { Mode = "simulated" });
+        var printer = new ConfiguredLabelPrinter(options, new ZplTcpLabelPrinter(options), new TestHostEnvironment(environmentName));
+
+        var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("sent-to-printer", result.Status);
+    }
+
+    private static ZplTcpLabelPrinter CreateScriptedPrinter(ScriptedConnectionFactory factory) =>
+        new(Options.Create(new LabelPrinterOptions
+        {
+            Host = "printer.test",
+            Port = 9100,
+            ConnectTimeoutSeconds = 1,
+            WriteTimeoutSeconds = 1,
+        }), factory);
+
+    private static IReadOnlyCollection<CompiledLabelDocument> CompileDocuments(int count)
+    {
+        const string templateJson =
+            """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
+        var template = LabelTemplateDocument.Parse(templateJson);
+        var schema = LabelVariableSchema.Parse("""{"version":1,"variables":[]}""");
+        var items = Enumerable.Range(1, count)
+            .Select(sequence => new LabelCompilationItem("{}", new LabelReservedVariables($"LABEL-{sequence:000}", null, sequence, "ASN-001")))
+            .ToArray();
+        return ZplV1LabelCompiler.CompileBatch(template, schema, "code128", items);
+    }
+
+    private static async Task<byte[]> ReceiveUntilEofAsync(TcpListener listener)
     {
         using var client = await listener.AcceptTcpClientAsync();
         await using var stream = client.GetStream();
@@ -45,6 +159,46 @@ public sealed class ZplTcpLabelPrinterTests
             await buffer.WriteAsync(bytes.AsMemory(0, read));
         }
 
-        return Encoding.UTF8.GetString(buffer.ToArray());
+        return buffer.ToArray();
+    }
+
+    private sealed class ScriptedConnectionFactory : IZplTcpConnectionFactory
+    {
+        public int ConnectCalls { get; private set; }
+        public Exception? ConnectFailure { get; init; }
+        public bool HonorCancellationDuringConnect { get; init; }
+        public ScriptedConnection Connection { get; init; } = new(buffer => buffer.Length);
+
+        public Task<IZplTcpConnection> ConnectAsync(string host, int port, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            ConnectCalls++;
+            if (HonorCancellationDuringConnect) cancellationToken.ThrowIfCancellationRequested();
+            if (ConnectFailure is not null) throw ConnectFailure;
+            return Task.FromResult<IZplTcpConnection>(Connection);
+        }
+    }
+
+    private sealed class ScriptedConnection(params Func<ReadOnlyMemory<byte>, int>[] steps) : IZplTcpConnection
+    {
+        private readonly Queue<Func<ReadOnlyMemory<byte>, int>> remainingSteps = new(steps);
+        public int SendCalls { get; private set; }
+        public bool ShutdownSendCalled { get; private set; }
+
+        public ValueTask<int> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+        {
+            SendCalls++;
+            return ValueTask.FromResult(remainingSteps.Count == 0 ? payload.Length : remainingSteps.Dequeue()(payload));
+        }
+
+        public void ShutdownSend() => ShutdownSendCalled = true;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "BarcodeLabel.Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

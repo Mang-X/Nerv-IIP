@@ -122,6 +122,31 @@ public sealed class BarcodeLabelEndpointContractTests
     }
 
     [Fact]
+    public void Lifecycle_requests_and_commands_require_organization_and_environment_scope()
+    {
+        Assert.NotNull(typeof(DispatchLabelPrintBatchRequest).GetProperty("OrganizationId"));
+        Assert.NotNull(typeof(DispatchLabelPrintBatchRequest).GetProperty("EnvironmentId"));
+        Assert.NotNull(typeof(ReprintLabelRequest).GetProperty("OrganizationId"));
+        Assert.NotNull(typeof(ReprintLabelRequest).GetProperty("EnvironmentId"));
+        Assert.NotNull(typeof(VoidLabelRequest).GetProperty("OrganizationId"));
+        Assert.NotNull(typeof(VoidLabelRequest).GetProperty("EnvironmentId"));
+
+        var dispatch = new DispatchLabelPrintBatchCommandValidator().Validate(
+            new DispatchLabelPrintBatchCommand("", "", new(Guid.CreateVersion7()), "printer-01"));
+        var reprint = new ReprintLabelCommandValidator().Validate(
+            new ReprintLabelCommand("", "", new(Guid.CreateVersion7()), 1, "printer-01"));
+        var voidLabel = new VoidLabelCommandValidator().Validate(
+            new VoidLabelCommand("", "", new(Guid.CreateVersion7()), 1, "damaged"));
+
+        Assert.Contains(dispatch.Errors, error => SameProperty(error.PropertyName, "OrganizationId"));
+        Assert.Contains(dispatch.Errors, error => SameProperty(error.PropertyName, "EnvironmentId"));
+        Assert.Contains(reprint.Errors, error => SameProperty(error.PropertyName, "OrganizationId"));
+        Assert.Contains(reprint.Errors, error => SameProperty(error.PropertyName, "EnvironmentId"));
+        Assert.Contains(voidLabel.Errors, error => SameProperty(error.PropertyName, "OrganizationId"));
+        Assert.Contains(voidLabel.Errors, error => SameProperty(error.PropertyName, "EnvironmentId"));
+    }
+
+    [Fact]
     public void Validators_reject_missing_scan_device_and_scanned_value()
     {
         var result = new RecordScanCommandValidator().Validate(new RecordScanCommand(

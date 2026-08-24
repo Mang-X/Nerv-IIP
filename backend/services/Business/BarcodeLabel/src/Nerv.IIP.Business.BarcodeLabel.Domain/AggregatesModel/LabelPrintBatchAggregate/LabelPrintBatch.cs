@@ -22,6 +22,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 {
     private const string Pending = "pending";
     private const string SentToPrinter = "sent-to-printer";
+    private const string DeliveryUnknown = "delivery-unknown";
     private const string Printed = "printed";
     private const string Failed = "failed";
 
@@ -208,6 +209,20 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         Status = Printed;
         CompletedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new LabelPrintBatchCompletedDomainEvent(this));
+    }
+
+    public void RecordDeliveryUnknown(string printerId, string printJobId, string failureReason)
+    {
+        if (Status is not (Pending or Failed or Printed))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot record unknown delivery.");
+        }
+
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+        Status = DeliveryUnknown;
     }
 
     public void RecordPrintFailed(string failureReason)

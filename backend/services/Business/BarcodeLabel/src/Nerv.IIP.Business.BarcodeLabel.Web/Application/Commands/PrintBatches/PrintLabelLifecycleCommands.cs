@@ -1,19 +1,37 @@
+using System.Collections.Immutable;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
-public sealed record DispatchLabelPrintBatchCommand(LabelPrintBatchId PrintBatchId, string PrinterId) : ICommand<LabelPrintBatchId>;
+public sealed record DispatchLabelPrintBatchCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    LabelPrintBatchId PrintBatchId,
+    string PrinterId) : ICommand<LabelPrintBatchId>;
 
-public sealed record ReprintLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string PrinterId) : ICommand<LabelPrinterDispatchResult>;
+public sealed record ReprintLabelCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    LabelPrintBatchId PrintBatchId,
+    int SequenceNo,
+    string PrinterId) : ICommand<LabelPrinterDispatchResult>;
 
-public sealed record VoidLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string Reason) : ICommand<LabelPrintBatchId>;
+public sealed record VoidLabelCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    LabelPrintBatchId PrintBatchId,
+    int SequenceNo,
+    string Reason) : ICommand<LabelPrintBatchId>;
 
 public sealed class DispatchLabelPrintBatchCommandValidator : AbstractValidator<DispatchLabelPrintBatchCommand>
 {
     public DispatchLabelPrintBatchCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.PrinterId).NotEmpty().MaximumLength(100);
     }
@@ -23,6 +41,8 @@ public sealed class ReprintLabelCommandValidator : AbstractValidator<ReprintLabe
 {
     public ReprintLabelCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.SequenceNo).GreaterThan(0);
         RuleFor(x => x.PrinterId).NotEmpty().MaximumLength(100);
@@ -33,39 +53,65 @@ public sealed class VoidLabelCommandValidator : AbstractValidator<VoidLabelComma
 {
     public VoidLabelCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.SequenceNo).GreaterThan(0);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 
-public sealed class DispatchLabelPrintBatchCommandHandler(ApplicationDbContext dbContext, ILabelPrinter printer)
+public sealed class DispatchLabelPrintBatchCommandHandler(
+    ApplicationDbContext dbContext,
+    ILabelTemplateAssetPort templateAssetPort,
+    ILabelPrinter printer)
     : ICommandHandler<DispatchLabelPrintBatchCommand, LabelPrintBatchId>
 {
     public async Task<LabelPrintBatchId> Handle(DispatchLabelPrintBatchCommand request, CancellationToken cancellationToken)
     {
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
-        var result = await LabelPrintLifecycle.DispatchAsync(printer, request.PrinterId, batch.Items.Select(x => x.LabelValue).ToArray(), cancellationToken);
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PrintBatchId,
+            cancellationToken);
+        var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(
+            dbContext,
+            templateAssetPort,
+            batch,
+            cancellationToken);
+        var result = await printer.PrintAsync(request.PrinterId, documents, cancellationToken);
         LabelPrintLifecycle.ApplyResult(batch, request.PrinterId, result);
         return batch.Id;
     }
 }
 
-public sealed class ReprintLabelCommandHandler(ApplicationDbContext dbContext, ILabelPrinter printer)
+public sealed class ReprintLabelCommandHandler(
+    ApplicationDbContext dbContext,
+    ILabelTemplateAssetPort templateAssetPort,
+    ILabelPrinter printer)
     : ICommandHandler<ReprintLabelCommand, LabelPrinterDispatchResult>
 {
     public async Task<LabelPrinterDispatchResult> Handle(ReprintLabelCommand request, CancellationToken cancellationToken)
     {
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
-        var item = batch.Items.SingleOrDefault(x => x.SequenceNo == request.SequenceNo)
-            ?? throw new KnownException($"Print item not found, SequenceNo = {request.SequenceNo}");
-        var result = await LabelPrintLifecycle.DispatchAsync(printer, request.PrinterId, [item.LabelValue], cancellationToken);
-        if (result.Status == "printed")
-        {
-            batch.ReprintItem(request.SequenceNo);
-        }
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PrintBatchId,
+            cancellationToken);
+        var itemIndex = batch.Items
+            .OrderBy(item => item.SequenceNo)
+            .Select((item, index) => new { item.SequenceNo, Index = index })
+            .SingleOrDefault(item => item.SequenceNo == request.SequenceNo)
+            ?? throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。");
+        var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(
+            dbContext,
+            templateAssetPort,
+            batch,
+            cancellationToken);
 
-        return result;
+        return await printer.PrintAsync(request.PrinterId, [documents[itemIndex.Index]], cancellationToken);
     }
 }
 
@@ -74,7 +120,12 @@ public sealed class VoidLabelCommandHandler(ApplicationDbContext dbContext)
 {
     public async Task<LabelPrintBatchId> Handle(VoidLabelCommand request, CancellationToken cancellationToken)
     {
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PrintBatchId,
+            cancellationToken);
         batch.VoidItem(request.SequenceNo, request.Reason);
         return batch.Id;
     }
@@ -84,28 +135,84 @@ internal static class LabelPrintLifecycle
 {
     public static async Task<LabelPrintBatch> LoadBatchAsync(
         ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
         LabelPrintBatchId printBatchId,
         CancellationToken cancellationToken)
     {
         return await dbContext.LabelPrintBatches
             .Include(x => x.Items)
-            .SingleOrDefaultAsync(x => x.Id == printBatchId, cancellationToken)
-            ?? throw new KnownException($"Print batch not found, PrintBatchId = {printBatchId}");
+            .SingleOrDefaultAsync(
+                x => x.Id == printBatchId
+                    && x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId,
+                cancellationToken)
+            ?? throw new KnownException($"未找到当前组织和环境内的打印批次，批次 ID = {printBatchId}。");
     }
 
-    public static async Task<LabelPrinterDispatchResult> DispatchAsync(
-        ILabelPrinter printer,
-        string printerId,
-        IReadOnlyCollection<string> labels,
+    public static async Task<ImmutableArray<CompiledLabelDocument>> CompileFrozenBatchAsync(
+        ApplicationDbContext dbContext,
+        ILabelTemplateAssetPort templateAssetPort,
+        LabelPrintBatch batch,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await printer.PrintAsync(printerId, labels, cancellationToken);
+            batch.EnsureCompleteReplaySnapshot();
+            if (!string.Equals(batch.RendererContractVersion, ZplV1LabelCompiler.ContractVersion, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Unsupported renderer contract version.");
+            }
+
+            var templateCode = await dbContext.LabelTemplates
+                .Where(template =>
+                    template.Id == batch.LabelTemplateId
+                    && template.OrganizationId == batch.OrganizationId
+                    && template.EnvironmentId == batch.EnvironmentId)
+                .Select(template => template.TemplateCode)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(templateCode))
+            {
+                throw new InvalidOperationException("Template owner reference was not found in the batch scope.");
+            }
+
+            var asset = await templateAssetPort.GetVerifiedAsync(
+                new LabelTemplateAssetReference(
+                    batch.TemplateFileIdSnapshot!,
+                    batch.OrganizationId,
+                    batch.EnvironmentId,
+                    templateCode),
+                cancellationToken);
+            if (!string.Equals(asset.FileId, batch.TemplateFileIdSnapshot, StringComparison.Ordinal)
+                || !string.Equals(asset.Sha256, batch.TemplateAssetSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The verified template asset does not match the frozen batch snapshot.");
+            }
+
+            var template = LabelTemplateDocument.Parse(asset.Json);
+            var schema = LabelVariableSchema.Parse(batch.VariableSchemaJsonSnapshot!);
+            var items = batch.Items
+                .OrderBy(item => item.SequenceNo)
+                .Select(item => new LabelCompilationItem(
+                    batch.LabelValuesJson,
+                    new LabelReservedVariables(
+                        item.LabelValue,
+                        batch.BarcodeTypeSnapshot!.StartsWith("gs1-", StringComparison.Ordinal)
+                            ? Gs1ApplicationIdentifierParser.Parse(item.LabelValue)
+                            : null,
+                        item.SequenceNo,
+                        batch.SourceDocumentId)))
+                .ToArray();
+
+            return ZplV1LabelCompiler.CompileBatch(template, schema, batch.BarcodeTypeSnapshot!, items);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return LabelPrinterDispatchResult.Failed($"Printer adapter failed: {exception.Message}");
+            throw;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            throw new KnownException("打印批次冻结快照验证或编译失败。", exception);
         }
     }
 
@@ -116,15 +223,17 @@ internal static class LabelPrintLifecycle
             case "sent-to-printer":
                 batch.RecordSentToPrinter(printerId, RequiredJobId(result));
                 break;
-            case "printed":
-                batch.RecordSentToPrinter(printerId, RequiredJobId(result));
-                batch.RecordPrinted();
+            case "delivery-unknown":
+                batch.RecordDeliveryUnknown(
+                    printerId,
+                    RequiredJobId(result),
+                    result.FailureReason ?? "打印传输结果未知，禁止自动重试。");
                 break;
             case "failed":
-                batch.RecordPrintFailed(result.FailureReason ?? "Printer adapter reported an unspecified failure.");
+                batch.RecordPrintFailed(result.FailureReason ?? "打印机适配器报告失败，但未提供原因。");
                 break;
             default:
-                batch.RecordPrintFailed($"Unsupported printer adapter status '{result.Status}'.");
+                batch.RecordPrintFailed($"打印机适配器返回了不支持的状态：{result.Status}。");
                 break;
         }
     }
@@ -132,7 +241,7 @@ internal static class LabelPrintLifecycle
     private static string RequiredJobId(LabelPrinterDispatchResult result)
     {
         return string.IsNullOrWhiteSpace(result.PrintJobId)
-            ? throw new KnownException("Printer adapter returned no print job id.")
+            ? throw new KnownException("打印机适配器未返回打印任务 ID。")
             : result.PrintJobId;
     }
 }
