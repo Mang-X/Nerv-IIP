@@ -1,7 +1,7 @@
 using System.Text;
-using System.Globalization;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.Tests;
 
@@ -73,22 +73,15 @@ public sealed class ZplV1LabelCompilerTests
     }
 
     [Fact]
-    public void Compile_is_independent_of_the_process_culture()
+    public async Task Compile_is_independent_of_the_process_culture()
     {
-        var originalCulture = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
-            var english = Compile("code128", PlainItem("{\"skuCode\":\"SKU-001\"}", "MAT-0001"));
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fa-IR");
-            var persian = Compile("code128", PlainItem("{\"skuCode\":\"SKU-001\"}", "MAT-0001"));
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState.UseCulture("en-US");
+        var english = Compile("code128", PlainItem("{\"skuCode\":\"SKU-001\"}", "MAT-0001"));
+        globalState.UseCulture("fa-IR");
+        var persian = Compile("code128", PlainItem("{\"skuCode\":\"SKU-001\"}", "MAT-0001"));
 
-            Assert.Equal(english.Payload.ToArray(), persian.Payload.ToArray());
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = originalCulture;
-        }
+        Assert.Equal(english.Payload.ToArray(), persian.Payload.ToArray());
     }
 
     [Theory]

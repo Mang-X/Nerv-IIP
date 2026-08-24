@@ -6,6 +6,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Sdk.FileStorage;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
@@ -110,6 +111,25 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
+        Assert.Equal(1, fileStorage.GrantCalls);
+        Assert.Equal(0, http.Calls);
+    }
+
+    [Fact]
+    public async Task GetVerifiedAsync_AbsoluteGrantUrl_IsRejectedBeforeDownload()
+    {
+        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+        var fileStorage = new RecordingFileStorageClient(
+            CreateMetadata(bytes),
+            grantUrl: "https://untrusted.invalid/api/files/v1/download-grants/grant-secret/content");
+        var http = new RecordingHttpMessageHandler(_ =>
+            throw new Xunit.Sdk.XunitException("HTTP must not be called."));
+        using var adapter = CreateAdapter(fileStorage, http);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+
+        Assert.Equal("FileStorage returned an invalid template download grant.", exception.Message);
         Assert.Equal(1, fileStorage.GrantCalls);
         Assert.Equal(0, http.Calls);
     }
@@ -233,7 +253,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
         var http = new RecordingHttpMessageHandler(async (_, cancellationToken) =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
             throw new InvalidOperationException("unreachable");
         });
         using var adapter = CreateAdapter(fileStorage, http, TimeSpan.FromMilliseconds(250));
@@ -252,7 +272,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
         var http = new RecordingHttpMessageHandler(async (_, cancellationToken) =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
             throw new InvalidOperationException("unreachable");
         });
         using var adapter = CreateAdapter(fileStorage, http, TimeSpan.FromSeconds(5));
@@ -425,7 +445,8 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     private sealed class RecordingFileStorageClient(
         FileMetadataResponse metadata,
         Exception? metadataFailure = null,
-        Exception? grantFailure = null) : IFileStorageClient
+        Exception? grantFailure = null,
+        string grantUrl = "/api/files/v1/download-grants/grant-secret/content") : IFileStorageClient
     {
         public int MetadataCalls { get; private set; }
         public int GrantCalls { get; private set; }
@@ -449,7 +470,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
                     fileId,
                     DateTimeOffset.Parse("2026-08-24T00:10:00Z"),
                     new TransferInstructions(
-                        "/api/files/v1/download-grants/grant-secret/content",
+                        grantUrl,
                         new Dictionary<string, string> { ["x-nerv-download-grant"] = "grant-value" })))
                 : Task.FromException<DownloadGrantResponse>(grantFailure);
         }

@@ -299,6 +299,38 @@ FileStorage 的 metadata、upload session 和 download grant 在 AppHost 中默�
 
 ADR 0023 已批准的目标是：tus 为唯一公开传输协议、服务端目标采用 `tusdotnet`、staging 与 final 分离、final 只由内部 `ObjectKey` 定位，以及 complete 对所有 storage provider 统一证明字节存在性、size、canonical SHA-256、幂等 promote 与同 key 回读复验。这些是目标约束，不是当前实现。当前默认上传仍为 `server-proxy` placeholder，且没有对应字节 PUT endpoint；字节链路只在显式配置 `FileStorage:UploadProvider=tus` 时走自研部分 tus `HEAD`/`PATCH`。`CreateUploadSessionResponse` 仍暴露 `UploadMode` 与 `Provider` 两个独立 string 字段，当前实现恰好返回同值；字节仍由 `uploadSessionId` 派生的 `SHA256(uploadSessionId).bin` 就地承载，complete 前后位置不变；`ObjectKey` 只被生成、持久化并从 upload session 复制到 `StoredFile`，不参与实际读、写、下载或删除；complete 的实际大小与可选 checksum 校验只在 provider 等于 `tus` 的分支执行，其他 provider 可跳过字节证明。staging 到 final 的幂等 promote、final 回读复验、可恢复的持久 `committing` 提交意图与 canonical checksum 持久化均尚未实现。因此不能据当前 `ObjectKey` 的字面格式推导 Local 路径安全已就绪、provider 适配已完成或迁移只需切换配置。
 
+## 标签模板冻结、`zpl-v1` 与诚实打印生命周期（#2066）
+
+BarcodeLabel 新建打印批次会从同一 organization/environment 的 active `LabelTemplate` 与 active
+`BarcodeRule` 冻结五项重放事实：`TemplateFileIdSnapshot`、`TemplateAssetSha256`、
+`VariableSchemaJsonSnapshot`、`BarcodeTypeSnapshot` 和
+`RendererContractVersion = zpl-v1`。这些数据库列只为兼容历史行保持可空；新建入口要求全部完整，
+历史行不会被猜测或回填，缺任一快照即拒绝 dispatch/reprint。模板或规则后续变更只影响新批次；
+dispatch 与 reprint 读取同一 fileId、复核同一摘要，并使用同一版本 compiler 重放。
+
+FileStorage 消费 adapter 对 metadata 的 fileId、organization/environment、
+`business-barcode-label / label-template / {templateCode}` owner、
+`barcode-label-template` purpose、专用 content type、`.json`、`available`、64 KiB 上限和非空
+SHA-256 全部失败关闭；download grant 只接受以单个 `/` 开头的相对路径，不接受绝对或跨 origin URL，
+并拒绝 redirect、非 2xx、超时、空 body、超限、size 不一致、BOM、非法 UTF-8 与实际字节摘要不一致。
+失败诊断不记录 grant URL、header、token、模板字节或变量值。
+
+`zpl-v1` 只接受声明式 JSON 的 `text` / `barcode` fields，经冻结变量 Schema 完整校验后，确定性输出
+Code 128、GS1-128、QR、Data Matrix 或 GS1 Data Matrix 的 ZPL；任一 item、变量、布局、版本或
+GS1/FNC1 输入非法时整批在 transport 零调用前失败。生命周期命令按 organization/environment 加载批次；
+TCP 首字节写入前失败记为 `failed`，写入任意字节后发生超时、断连或取消记为
+`delivery-unknown` 且禁止自动重试，全部字节写入并正常关闭发送方向只记为
+`sent-to-printer`。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，dispatch/reprint
+也不把 item 改为 `printed` / `reprinted`。
+
+当前自动化证据边界为 pure compiler/领域测试、EF Core InMemory 应用编排、受控 HTTP handler 与
+loopback TCP 字节传输，以及 EF migration/model pending gate。它不证明真实 PostgreSQL 批次持久化、
+真实 FileStorage 服务间下载、真实打印机出纸、扫码枪解码、标签可读性或现场网络路由；这些结论必须由相应
+provider 或交付环境另行取证。`barcode-label-template` 当前 8 MiB 用途默认 quota 仍是单向棘轮：
+FileStorage 没有删除 API，该 purpose 也没有自动 retention，模板作废或换版不会释放已占配额。
+“确认没有 active 模板或历史批次引用、授权物理清理并释放配额”继续作为独立欠账；#2066 不虚构删除 API、
+不把 8 MiB 描述为永久容量方案。
+
 ## FileStorage storage provider、离线迁移与后续叶子（ADR 0024 / #992 / #1013）
 
 ADR 0024 已批准但尚未实现的目标包括：`IStorageProvider` final 字节面、LocalFileSystem/S3-compatible 部署期严格二选一、`tusdotnet` `ITusStore` 上传面、Local 显式持久 root 与稳定 storage identity、`v1/{organizationDigest}/{fileDigest}` canonical `ObjectKey`、路径 confinement、durable staging、同文件系统 atomic no-overwrite promote、final 回读复验，以及 startup blocked / runtime critical / capacity restricted 三类健康状态。当前源码中 `IStorageProvider` 在 `docs/` 之外零命中；`LocalTusFileStore` 未配置 `FileStorage:Tus:RootPath` 时回落 `Path.Combine(Path.GetTempPath(), "nerv-iip", "filestorage", "tus")`；`TusUploadCompletionValidator.ValidateAsync` 对非 `tus` provider 直接返回 `null`，因此不对其物理字节做验证。当前实现事实见本文件「FileStorage MVP 已完成范围」与 `file-storage-baseline.md`。
