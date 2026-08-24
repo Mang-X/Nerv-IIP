@@ -13,6 +13,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10 and repository dotnet tools
+#     - PostgreSQL client psql for fail-closed target database existence checks
 #     - Process-scoped connection variables declared by business-release-database-migrations.json
 
 [CmdletBinding()]
@@ -45,7 +46,8 @@ $result = Invoke-NativeCommandOutput `
     -Arguments (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $executor) + $arguments) `
     -WorkingDirectory $root `
     -TimeoutSeconds 14400 `
-    -Name "business-release-migration-$ReleaseId"
+    -Name "business-release-migration-$ReleaseId" `
+    -PersistOutput
 
 if (-not [string]::IsNullOrWhiteSpace([string]$result.Stdout)) {
     Write-Host (Protect-ScriptAutomationText ([string]$result.Stdout))
