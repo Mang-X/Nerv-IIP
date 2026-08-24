@@ -61,8 +61,19 @@ vi.mock('@/composables/useBusinessTooling', () => ({
         workCenterCodes: ['WC-PRESS'],
         skuCodes: ['SKU-FLOOR'],
       },
+      {
+        code: 'CUTTER-004',
+        name: '侧围冲孔刀具',
+        toolingType: 'cutting-tool',
+        status: 'available',
+        maintenanceLifeCount: 10000,
+        usageCount: 10000,
+        isSchedulable: true,
+        workCenterCodes: ['WC-PRESS'],
+        skuCodes: ['SKU-SILL'],
+      },
     ]),
-    toolingTotal: computed(() => 3),
+    toolingTotal: computed(() => 4),
     toolingPending: shallowRef(false),
     toolingError: shallowRef(),
     refresh: vi.fn(),
@@ -235,6 +246,19 @@ describe('工装与模具维护台', () => {
     expect(wrapper.text()).toContain('完成保养后将清零累计使用次数，并恢复为可用状态。')
   })
 
+  it('可用工装达到寿命后转保养不会披露完成保养清零', async () => {
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    const transferButtons = wrapper
+      .findAll('button')
+      .filter((candidate) => candidate.text().trim() === '转保养')
+    await transferButtons[1]!.trigger('click')
+
+    expect(wrapper.text()).toContain('请说明本次状态变更原因。')
+    expect(wrapper.text()).not.toContain('完成保养后将清零累计使用次数，并恢复为可用状态。')
+  })
+
   it('注册提交后同时展示校验汇总与对应字段错误', async () => {
     const wrapper = mount(ToolingPage, { global: { stubs } })
     await flushPromises()
@@ -245,6 +269,7 @@ describe('工装与模具维护台', () => {
     expect(state.register).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('请修正已标红的字段，并完整填写带 * 的必填项')
     expect(wrapper.text()).toContain('请填写工装名称。')
+    expect(wrapper.text()).toContain('请选择工装类型。')
     expect(wrapper.text()).toContain('使用寿命必须是正整数。')
     expect(wrapper.text()).toContain('请至少选择一个适用工作中心。')
     expect(wrapper.text()).toContain('请至少选择一个适用 SKU。')
@@ -256,6 +281,9 @@ describe('工装与模具维护台', () => {
       )
     }
     expect(wrapper.find('label[for="tooling-name"] > span').classes()).toContain('text-destructive')
+    expect(wrapper.find('form [data-testid="select-trigger"]').attributes('data-invalid')).toBe(
+      'true',
+    )
 
     for (const errorText of ['请至少选择一个适用工作中心。', '请至少选择一个适用 SKU。']) {
       const error = wrapper.findAll('[role="alert"]').find((item) => item.text() === errorText)!
@@ -271,6 +299,7 @@ describe('工装与模具维护台', () => {
     await flushPromises()
     await button(wrapper, '注册工装')!.trigger('click')
     await wrapper.find('#tooling-name').setValue('前地板拉延模')
+    await wrapper.find('form select').setValue('mould')
     await wrapper.find('#tooling-life').setValue('0')
     await wrapper.find('form').trigger('submit')
     expect(state.register).not.toHaveBeenCalled()
@@ -305,6 +334,7 @@ describe('工装与模具维护台', () => {
 
     async function fillRequiredFields() {
       await wrapper.find('#tooling-name').setValue('前地板拉延模')
+      await wrapper.find('form select').setValue('mould')
       const checks = wrapper.findAll('input[type="checkbox"]')
       await checks[0]!.setValue(true)
       await checks[1]!.setValue(true)

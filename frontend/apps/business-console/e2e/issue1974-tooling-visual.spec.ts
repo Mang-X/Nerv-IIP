@@ -2,11 +2,10 @@ import { expect, test, type Route } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
+import { requireBrowserEvidenceOutputDir } from '../playwright.config'
+
 const STORAGE_KEY = 'nerv-iip.business-console.auth'
-const SCREENSHOT_DIR = path.resolve(
-  process.env.NERV_IIP_OUT_DIR ??
-    path.join(process.cwd(), '../../DESIGN/roadmaps/assets/2026-08-23-issue-1974-tooling-console'),
-)
+const SCREENSHOT_DIR = requireBrowserEvidenceOutputDir()
 
 const principal = {
   principalId: 'tooling-maintainer-1',
@@ -78,6 +77,7 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
 
   await page.getByRole('button', { name: '注册工装' }).click()
   const nameInput = page.getByLabel('工装名称 *')
+  const typeTrigger = page.getByLabel('工装类型 *')
   const lifeInput = page.getByLabel('保养使用寿命（次）')
   const nameFrame = nameInput.locator('..')
   const lifeFrame = lifeInput.locator('..')
@@ -91,12 +91,18 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   const beforeLifeBorder = await lifeFrame.evaluate(
     (element) => getComputedStyle(element).borderColor,
   )
+  const beforeTypeBorder = await typeTrigger.evaluate(
+    (element) => getComputedStyle(element).borderColor,
+  )
+  await expect(typeTrigger).toContainText('请选择工装类型')
   await lifeInput.fill('0')
   await page.getByRole('button', { name: '确认注册' }).click()
   await expect(page.getByText('请填写工装名称。', { exact: true })).toBeVisible()
+  await expect(page.getByText('请选择工装类型。', { exact: true })).toBeVisible()
   await expect(page.getByText('使用寿命必须是正整数。', { exact: true })).toBeVisible()
   await expect(nameFrame).toHaveAttribute('data-invalid', 'true')
   await expect(lifeFrame).toHaveAttribute('data-invalid', 'true')
+  await expect(typeTrigger).toHaveAttribute('data-invalid', 'true')
   await expect
     .poll(() => nameFrame.evaluate((element) => getComputedStyle(element).borderColor))
     .not.toBe(beforeBorder)
@@ -109,6 +115,9 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect
     .poll(() => lifeFrame.evaluate((element) => getComputedStyle(element).borderColor))
     .not.toBe(beforeLifeBorder)
+  await expect
+    .poll(() => typeTrigger.evaluate((element) => getComputedStyle(element).borderColor))
+    .not.toBe(beforeTypeBorder)
   await page.screenshot({
     path: path.join(SCREENSHOT_DIR, '03-register-validation.png'),
   })
@@ -141,6 +150,18 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await page.getByRole('button', { name: '工装操作 GAUGE-DOOR-04' }).click()
   await page.getByRole('menuitem', { name: '完成保养' }).click()
   await expect(completionDialog).toContainText('完成保养后将清零累计使用次数，并恢复为可用状态。')
+  await expect(completionDialog).toContainText('请说明本次状态变更原因。')
+  await page.screenshot({
+    path: path.join(SCREENSHOT_DIR, '05-maintenance-completion-disclosure.png'),
+  })
+  await completionDialog.getByRole('button', { name: '取消' }).click()
+
+  await page.getByRole('button', { name: '工装操作 CUTTER-PUNCH-05' }).click()
+  await page.getByRole('menuitem', { name: '转保养' }).click()
+  await expect(completionDialog).toContainText('本次状态变更不会清零累计使用次数。')
+  await expect(completionDialog).not.toContainText(
+    '完成保养后将清零累计使用次数，并恢复为可用状态。',
+  )
   await completionDialog.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '登记使用' }).first().click()
@@ -231,8 +252,19 @@ async function routeBusinessConsoleApi(route: Route) {
             workCenterCodes: ['WC-QA-01'],
             skuCodes: ['SKU-DOOR-INNER-LH'],
           },
+          {
+            code: 'CUTTER-PUNCH-05',
+            name: '侧围冲孔刀具',
+            toolingType: 'cutting-tool',
+            status: 'available',
+            maintenanceLifeCount: 10000,
+            usageCount: 10000,
+            isSchedulable: true,
+            workCenterCodes: ['WC-PRESS-01'],
+            skuCodes: ['SKU-SILL-LH'],
+          },
         ],
-        total: 4,
+        total: 5,
       }),
     )
   }

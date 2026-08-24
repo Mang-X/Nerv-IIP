@@ -22,4 +22,13 @@ describe('Business Console Playwright diagnostics', () => {
       command: 'vp preview --host 127.0.0.1 --port 5126',
     })
   })
+
+  it('fails closed when the browser evidence output directory is not specified', async () => {
+    vi.stubEnv('NERV_IIP_OUT_DIR', '')
+    vi.resetModules()
+
+    const { requireBrowserEvidenceOutputDir } = await import('../playwright.config')
+
+    expect(() => requireBrowserEvidenceOutputDir()).toThrow('请显式指定产物目录')
+  })
 })

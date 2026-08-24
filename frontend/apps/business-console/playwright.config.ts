@@ -1,4 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
+import path from 'node:path'
+
+export function requireBrowserEvidenceOutputDir(outputDir = process.env.NERV_IIP_OUT_DIR): string {
+  if (!outputDir) {
+    throw new Error('请显式指定产物目录：设置 NERV_IIP_OUT_DIR 后再运行浏览器视觉核验。')
+  }
+  return path.resolve(outputDir)
+}
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
 const port = Number(process.env.PLAYWRIGHT_BUSINESS_CONSOLE_PORT ?? 5126)

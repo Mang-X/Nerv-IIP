@@ -1972,6 +1972,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
+    # A 级证据作业预算算术：显式步骤预算合计 71m，作业预算 80m，
+    # 留出 9m 给 Set up job 与 action 隐式后置步骤。
     timeout-minutes: 80
     runs-on: ubuntu-latest
     steps:

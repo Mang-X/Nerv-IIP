@@ -149,7 +149,7 @@ const registerForm = reactive({
   idempotencyKey: '',
   code: '',
   name: '',
-  toolingType: 'mould',
+  toolingType: '',
   maintenanceLifeCount: '',
   workCenterCodes: [] as string[],
   skuCodes: [] as string[],
@@ -165,6 +165,9 @@ const lifeValidationMessage = computed(() => {
 const registerNameError = computed(() =>
   registerShowErrors.value && !registerForm.name.trim() ? '请填写工装名称。' : '',
 )
+const registerTypeError = computed(() =>
+  registerShowErrors.value && !registerForm.toolingType ? '请选择工装类型。' : '',
+)
 const registerLifeError = computed(() =>
   registerShowErrors.value ? lifeValidationMessage.value : '',
 )
@@ -179,6 +182,7 @@ const registerSkuError = computed(() =>
 const registerErrors = computed(() =>
   [
     registerNameError.value,
+    registerTypeError.value,
     registerLifeError.value,
     registerWorkCenterError.value,
     registerSkuError.value,
@@ -201,7 +205,7 @@ function openRegister() {
     idempotencyKey: newRegisterIdempotencyKey(),
     code: '',
     name: '',
-    toolingType: 'mould',
+    toolingType: '',
     maintenanceLifeCount: '',
     workCenterCodes: [],
     skuCodes: [],
@@ -524,11 +528,15 @@ const listErrorMessage = computed(() =>
               />
               <NvFieldError v-if="registerNameError" :errors="[registerNameError]" />
             </NvField>
-            <NvField>
-              <NvFieldLabel>工装类型</NvFieldLabel>
+            <NvField :data-invalid="Boolean(registerTypeError)">
+              <NvFieldLabel for="tooling-type">
+                <span :class="registerTypeError ? 'text-destructive' : undefined">
+                  工装类型 <span class="text-destructive">*</span>
+                </span>
+              </NvFieldLabel>
               <NvSelect v-model="registerForm.toolingType">
-                <NvSelectTrigger>
-                  <NvSelectValue />
+                <NvSelectTrigger id="tooling-type" :invalid="Boolean(registerTypeError)">
+                  <NvSelectValue placeholder="请选择工装类型" />
                 </NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem
@@ -539,6 +547,7 @@ const listErrorMessage = computed(() =>
                   >
                 </NvSelectContent>
               </NvSelect>
+              <NvFieldError v-if="registerTypeError" :errors="[registerTypeError]" />
             </NvField>
             <NvField :data-invalid="Boolean(registerLifeError)">
               <NvFieldLabel for="tooling-life">
@@ -655,7 +664,7 @@ const listErrorMessage = computed(() =>
             <span v-if="statusWillClearUsage">
               完成保养后将清零累计使用次数，并恢复为可用状态。
             </span>
-            <span v-else>请说明本次状态变更原因。</span>
+            <span v-else>本次状态变更不会清零累计使用次数。</span>
           </NvDialogDescription>
         </NvDialogHeader>
         <NvField :data-invalid="statusReasonInvalid">
@@ -669,6 +678,7 @@ const listErrorMessage = computed(() =>
             v-model="statusReason"
             :invalid="statusReasonInvalid"
           />
+          <NvFieldDescription>请说明本次状态变更原因。</NvFieldDescription>
           <NvFieldError v-if="statusReasonInvalid" :errors="['请填写状态变更原因。']" />
         </NvField>
         <NvDialogFooter>
