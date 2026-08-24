@@ -138,7 +138,7 @@ function Assert-BusinessConsoleBrowserValidationWorkflowContract {
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $frontendValidation = $parsedWorkflow.jobs.'frontend-validation-shards'
-    Assert-Contract ([int]$frontendValidation.'timeout-minutes' -eq 75) 'Frontend Validation must keep its job budget above the 71-minute evidence-publishing step sum.'
+    Assert-Contract ([int]$frontendValidation.'timeout-minutes' -eq 80) 'Frontend Validation must leave a 9-minute job margin above the 71-minute evidence-publishing step sum for implicit post steps.'
     $businessConsoleBrowserCondition = "matrix.name == '@nerv-iip/business-console'"
     $resolveBrowserSteps = @($frontendValidation.steps | Where-Object {
             [string]::Equals([string]$_.name, 'Resolve Business Console browser', [StringComparison]::Ordinal)
