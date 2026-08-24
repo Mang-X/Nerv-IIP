@@ -4,9 +4,11 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
 const port = Number(process.env.PLAYWRIGHT_BUSINESS_CONSOLE_PORT ?? 5126)
 const externalBaseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${port}`
+const outputDir = process.env.NERV_IIP_OUT_DIR
 
 export default defineConfig({
   testDir: './e2e',
+  outputDir,
   forbidOnly: !!process.env.CI,
   fullyParallel: true,
   reporter: 'list',
@@ -15,12 +17,15 @@ export default defineConfig({
   use: {
     baseURL,
     launchOptions: executablePath ? { executablePath } : undefined,
-    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
   webServer: externalBaseURL
     ? undefined
     : {
-        command: `vp dev --host 127.0.0.1 --port ${port}`,
+        command: process.env.CI
+          ? `vp preview --host 127.0.0.1 --port ${port}`
+          : `vp dev --host 127.0.0.1 --port ${port}`,
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

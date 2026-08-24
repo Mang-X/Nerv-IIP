@@ -2077,7 +2077,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -2127,6 +2127,16 @@ jobs:
             sleep 15
           done
 
+      - name: Typecheck affected frontend workspace
+        if: matrix.run_typecheck
+        timeout-minutes: 10
+        run: pnpm -C frontend --filter "${{ matrix.name }}" typecheck
+
+      - name: Build affected frontend app
+        if: matrix.run_build
+        timeout-minutes: 20
+        run: pnpm -C frontend --filter "${{ matrix.name }}" build
+
       - name: Resolve Business Console browser
         if: matrix.name == '@nerv-iip/business-console'
         timeout-minutes: 3
@@ -2139,22 +2149,23 @@ jobs:
           fi
           echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$browser_path" >> "$GITHUB_ENV"
 
-      - name: Typecheck affected frontend workspace
-        if: matrix.run_typecheck
-        timeout-minutes: 10
-        run: pnpm -C frontend --filter "${{ matrix.name }}" typecheck
-
-      - name: Build affected frontend app
-        if: matrix.run_build
-        timeout-minutes: 20
-        run: pnpm -C frontend --filter "${{ matrix.name }}" build
-
       - name: Test Business Console browser invariants
+        id: business-console-browser-tests
         if: matrix.name == '@nerv-iip/business-console'
         timeout-minutes: 10
         env:
           NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
         run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list
+
+      - name: Upload Business Console browser diagnostics
+        timeout-minutes: 5
+        if: failure() && steps.business-console-browser-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-2098-tooling-browser
+          if-no-files-found: error
+          retention-days: 7
 
   frontend:
     name: Frontend Typecheck and Build

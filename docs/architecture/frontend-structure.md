@@ -255,7 +255,7 @@ scripts/verify-business-console-mes-pc-workbench.ps1
 scripts/verify-business-console-mes-pc-workbench.ps1 -E2E -ChromiumExecutablePath "C:\Program Files\Google\Chrome\Application\chrome.exe"
 ```
 
-当前 e2e smoke 覆盖桌面与移动视口下的 SKU、库存可用量、Quality NCR 和 MES PC 主要路由；本地缺少 Playwright managed Chromium 时，可临时设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 或使用脚本的 `-ChromiumExecutablePath` 指向已安装 Chrome/Chromium 后运行。
+当前 e2e smoke 覆盖桌面与移动视口下的 SKU、库存可用量、Quality NCR 和 MES PC 主要路由；本地缺少 Playwright managed Chromium 时，可临时设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 或使用脚本的 `-ChromiumExecutablePath` 指向已安装 Chrome/Chromium 后运行。`Frontend Validation` 还会在 Business Console matrix 项构建完成后，以 runner 预装的 `google-chrome` 和生产预览执行 `e2e/issue1974-tooling-visual.spec.ts` 的 desktop project；失败截图与 trace 会作为保留 7 天的运行级 artifact 上传。
 
 ADR 0014 后，APS/Gantt 不进入 `/mes/schedules` 页面内部。#206 负责后端 APS lite 排程契约和内核，#78 负责甘特/排产图展示；未来独立排程工作台应消费 APS 输出 DTO，并继续通过 BusinessGateway facade 访问业务数据。
 
