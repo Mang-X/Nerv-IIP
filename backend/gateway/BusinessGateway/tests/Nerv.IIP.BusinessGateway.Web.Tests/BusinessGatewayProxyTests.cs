@@ -821,7 +821,7 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&status=rejected&keyword=SKU-RM-1000&skip=2&take=25");
+        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&status=rejected&keyword=SKU-RM-1000&sourceType=first-article&skip=2&take=25");
         var openNcr = await client.PostAsJsonAsync("/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", new
         {
             inspectionRecordId = "ignored",
@@ -834,7 +834,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.Equal(HttpStatusCode.OK, openNcr.StatusCode);
         Assert.Equal("internal-test-token", quality.LastInternalToken);
-        Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "rejected", "SKU-RM-1000", 2, 25), quality.LastInspectionRecordListRequest);
+        Assert.Equal(new BusinessConsoleQualityInspectionRecordListRequest("org-001", "env-dev", "rejected", "SKU-RM-1000", "first-article", 2, 25), quality.LastInspectionRecordListRequest);
         Assert.Equal("inspection-001", quality.LastOpenNcrInspectionRecordId);
         Assert.Equal("inspection-001", quality.LastOpenNcrFromInspectionRequest!.InspectionRecordId);
         Assert.Equal("org-001", quality.LastOpenNcrFromInspectionRequest.OrganizationId);
@@ -7622,7 +7622,13 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionPlansAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", Keyword: "IP-001", Take: 12),
+            new BusinessConsoleQualityInspectionPlanListRequest(
+                "org-001",
+                "env-dev",
+                "active",
+                "IP-001",
+                "first-article",
+                Take: 12),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -7637,7 +7643,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("user-inspector-001", item.AssignedInspectorUserId);
         Assert.Null(item.AssignedTeamId);
         var request = handler.Requests.Single();
-        Assert.Equal("/api/business/v1/quality/inspection-plans?organizationId=org-001&environmentId=env-dev&status=active&keyword=IP-001&skip=0&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/quality/inspection-plans?organizationId=org-001&environmentId=env-dev&category=first-article&status=active&keyword=IP-001&skip=0&take=12", request.RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -7950,12 +7956,20 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionRecordsAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev"),
+            new BusinessConsoleQualityInspectionRecordListRequest(
+                "org-001",
+                "env-dev",
+                "passed",
+                "SKU-001",
+                "first-article"),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
         Assert.Equal(2, item.AttemptNumber);
         Assert.Equal("inspection-001", item.ReinspectionOfInspectionRecordId);
+        Assert.Equal(
+            "/api/business/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&sourceType=first-article&result=passed&skuCode=SKU-001&skip=0&take=100",
+            handler.Requests.Single().RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -11346,7 +11360,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastNcrListRequest { get; private set; }
 
-    public BusinessConsoleQualityListRequest? LastInspectionRecordListRequest { get; private set; }
+    public BusinessConsoleQualityInspectionRecordListRequest? LastInspectionRecordListRequest { get; private set; }
 
     public BusinessConsoleQualitySpcRequest? LastSpcControlChartRequest { get; private set; }
 
@@ -11416,7 +11430,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionPlanListRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleQualityListResponse([], 0));
 
@@ -11435,7 +11449,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionRecordListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

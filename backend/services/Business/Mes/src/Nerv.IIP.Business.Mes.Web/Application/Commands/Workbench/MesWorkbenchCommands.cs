@@ -69,12 +69,15 @@ public sealed class ReleaseWorkOrderCommandHandler(
             throw new KnownException("QUALITY_PLAN_MISSING: 工单缺少已发布生产版本，无法放行。");
         }
 
-        var hasOperationSnapshot = await dbContext.OperationTasks.AnyAsync(
-            x => x.OrganizationId == request.OrganizationId &&
+        var operationSnapshots = await dbContext.OperationTasks
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId,
-            cancellationToken);
-        if (!hasOperationSnapshot)
+                x.WorkOrderId == request.WorkOrderId)
+            .OrderBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationTaskIdValue)
+            .ToArrayAsync(cancellationToken);
+        if (operationSnapshots.Length == 0)
         {
             throw new KnownException($"工单缺少工艺路线快照，WorkOrderId = {request.WorkOrderId}");
         }
@@ -125,7 +128,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             }
         }
 
-        workOrder.MarkReleased();
+        workOrder.MarkReleased(operationSnapshots);
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
     }
 }

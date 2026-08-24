@@ -78,9 +78,13 @@ const scopeLevels = computed(() => [
   title="选择物料"
   placeholder="请选择物料"
   source-text="数据来自物料主数据"
+  :invalid="submitted && !material"
   clearable
 />
 ```
+
+表单提交后校验失败时传入 `invalid`。组件会给根节点设置 `data-invalid`、给触发按钮设置
+`aria-invalid`，并使用错误态边框；打开表单时不要提前传入错误态。
 
 ## NvCascadePicker 级联选择器
 
