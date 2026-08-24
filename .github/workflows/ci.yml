@@ -2022,6 +2022,18 @@ jobs:
             sleep 15
           done
 
+      - name: Resolve Business Console browser
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          browser_path="$(command -v google-chrome || true)"
+          if [ -z "$browser_path" ]; then
+            echo "GitHub runner 未提供 google-chrome，无法执行 Business Console 浏览器不变量。" >&2
+            exit 1
+          fi
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$browser_path" >> "$GITHUB_ENV"
+
       - name: Typecheck affected frontend workspace
         if: matrix.run_typecheck
         timeout-minutes: 10
@@ -2031,6 +2043,13 @@ jobs:
         if: matrix.run_build
         timeout-minutes: 20
         run: pnpm -C frontend --filter "${{ matrix.name }}" build
+
+      - name: Test Business Console browser invariants
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 10
+        env:
+          NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
+        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list
 
   frontend:
     name: Frontend Typecheck and Build

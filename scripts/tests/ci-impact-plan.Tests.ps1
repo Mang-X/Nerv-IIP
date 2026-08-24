@@ -200,6 +200,32 @@ function Assert-ConditionalRoutingWorkflow {
             Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Unrouted job '$($jobProperty.Name)' must not consume impact-plan outputs."
         }
     }
+
+    $frontendValidation = $parsedWorkflow.jobs.'frontend-validation-shards'
+    $businessConsoleBrowserCondition = "matrix.name == '@nerv-iip/business-console'"
+    $resolveBrowserSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Resolve Business Console browser', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($resolveBrowserSteps.Count -eq 1) 'Frontend Validation must resolve the Business Console browser exactly once.'
+    $resolveBrowserStep = $resolveBrowserSteps[0]
+    Assert-Contract ([string]::Equals([string]$resolveBrowserStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser resolution must run only for its validation matrix item.'
+    Assert-Contract ([int]$resolveBrowserStep.'timeout-minutes' -eq 3) 'Business Console browser resolution must keep a three-minute budget.'
+    Assert-Contract ([string]::Equals([string]$resolveBrowserStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'Business Console browser resolution must use the governed fail-fast Bash shell.'
+    Assert-Contract (([string]$resolveBrowserStep.run).Contains('command -v google-chrome', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('if [ -z "$browser_path" ]; then', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('exit 1', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('$GITHUB_ENV', [StringComparison]::Ordinal)) 'Business Console browser resolution must fail closed and export the runner Chrome path.'
+
+    $browserTestSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Test Business Console browser invariants', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($browserTestSteps.Count -eq 1) 'Frontend Validation must execute the Business Console browser invariants exactly once.'
+    $browserTestStep = $browserTestSteps[0]
+    Assert-Contract ([string]::Equals([string]$browserTestStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser invariants must run only for their validation matrix item.'
+    Assert-Contract ([int]$browserTestStep.'timeout-minutes' -eq 10) 'Business Console browser invariants must keep a ten-minute budget.'
+    Assert-Contract ([string]::Equals([string]$browserTestStep.env.NERV_IIP_OUT_DIR, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser artifacts must use the runner temporary directory.'
+    Assert-Contract ([string]::Equals([string]$browserTestStep.run, 'pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list', [StringComparison]::Ordinal)) 'Business Console browser invariants must run the governed desktop tooling specification.'
 }
 
 function Assert-AcceptanceScenarioMatrixWorkflowContract {
