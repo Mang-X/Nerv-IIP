@@ -976,9 +976,8 @@ finally {
     }
 
     $cleanupEvidence.errors = @($cleanupErrors)
-    $businessEvidenceVariable = Get-Variable -Name businessEvidence -ErrorAction SilentlyContinue
-    $evidencePayload = if ($null -ne $businessEvidenceVariable -and $null -ne $businessEvidenceVariable.Value) {
-        $businessEvidenceVariable.Value
+    $evidencePayload = if ($null -eq $scenarioError) {
+        $businessEvidence
     }
     else {
         [ordered]@{

@@ -1009,6 +1009,38 @@ try {
         Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $businessEvidenceOverridePath).outboundCompletionWired) "A later top-level businessEvidence $($businessEvidenceOverride.Name) override must invalidate outboundCompletionWired."
     }
 
+    $evidencePayloadAssignment = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+                    [string]::Equals([string]$node.Left.VariablePath.UserPath, 'evidencePayload', [StringComparison]::Ordinal)
+            }, $true))[0]
+    Assert-Contract ($null -ne $evidencePayloadAssignment) 'The failure evidence scope fixture requires the production evidencePayload assignment.'
+    $failureEvidenceFixture = [scriptblock]::Create(@"
+`$scenarioError = [Management.Automation.ErrorRecord]::new([InvalidOperationException]::new('fixture-scenario-failed'), 'fixture', [Management.Automation.ErrorCategory]::InvalidOperation, `$null)
+`$deliveryOrderNo = 'fixture-delivery'
+`$internalToken = `$null
+`$PostgresAdminConnectionString = `$null
+`$databaseConnectionString = `$null
+`$RedisConnectionString = `$null
+$($evidencePayloadAssignment.Extent.Text)
+return `$evidencePayload
+"@)
+    $priorGlobalBusinessEvidence = Get-Variable -Name businessEvidence -Scope Global -ErrorAction SilentlyContinue
+    try {
+        $global:businessEvidence = [ordered]@{ scenarioStatus = 'polluted-global-success' }
+        $failureEvidencePayload = & $failureEvidenceFixture
+        Assert-Contract ([string]::Equals([string]$failureEvidencePayload.scenarioStatus, 'failed', [StringComparison]::Ordinal)) 'A failed verifier must not consume a caller or global businessEvidence value.'
+    }
+    finally {
+        if ($null -ne $priorGlobalBusinessEvidence) {
+            Set-Variable -Name businessEvidence -Scope Global -Value $priorGlobalBusinessEvidence.Value
+        }
+        else {
+            Remove-Variable -Name businessEvidence -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
     $failureAssignmentCommand = @($mutationAst.FindAll({
                 param($node)
                 $node -is [Management.Automation.Language.CommandAst] -and
