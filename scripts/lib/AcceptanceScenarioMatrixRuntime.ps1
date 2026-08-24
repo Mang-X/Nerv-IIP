@@ -1226,7 +1226,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                 if ($path.IsUnqualified) { [string]$path.UserPath }
                 elseif ($path.IsGlobal -or $path.IsLocal -or $path.IsPrivate -or $path.IsScript -or
                     ($path.IsVariable -and ([string]$path.UserPath).StartsWith('variable:', [StringComparison]::OrdinalIgnoreCase))) {
-                    ([string]$path.UserPath).Substring(([string]$path.UserPath).IndexOf(':') + 1)
+                    ([string]$path.UserPath).Substring(([string]$path.UserPath).IndexOf(':', [StringComparison]::Ordinal) + 1)
                 }
             })
     }
