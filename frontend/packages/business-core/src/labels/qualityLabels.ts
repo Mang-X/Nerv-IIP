@@ -72,6 +72,19 @@ export function qualitySourceTypeLabel(value: string | null | undefined): string
 }
 
 /**
+ * 检验方案类别有序表（镜像 Quality `InspectionPlanCategories` 白名单）。
+ * 不从更宽的单据来源类型表反推，避免把 `in-process` 等合法来源码误当成方案类别。
+ */
+export const INSPECTION_PLAN_CATEGORIES = [
+  'receiving',
+  'operation',
+  'final',
+  'first-article',
+  'maintenance',
+  'customer-return',
+] as const
+
+/**
  * 检验记录权威结论（镜像 Quality `InspectionRecordResults`：passed/rejected/conditional-release）。
  * 用于检验记录详情/结果页的结论展示。
  */

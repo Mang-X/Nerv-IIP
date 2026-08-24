@@ -33,7 +33,7 @@ const model = useVModel(props, 'modelValue', emits, {
     :data-invalid="invalid || undefined"
     :class="
       cn(
-        'nv-input group/input flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 dark:bg-input/30',
+        'nv-input group/input flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 data-[invalid=true]:border-destructive dark:bg-input/30',
         props.class,
       )
     "

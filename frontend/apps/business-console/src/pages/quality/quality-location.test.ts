@@ -355,10 +355,13 @@ const uiStubs = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<select aria-label="检验类别" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="all">全部类别</option><option value="first-article">首件检验</option></select>',
+      '<div><select aria-label="检验类别" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="all">全部类别</option><option value="first-article">首件检验</option></select><div data-select-options><slot /></div></div>',
   },
   NvSelectContent: { template: '<div><slot /></div>' },
-  NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
+  NvSelectItem: {
+    props: ['value'],
+    template: '<div data-select-item :data-value="value"><slot /></div>',
+  },
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectValue: true,
   NvDialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
@@ -572,6 +575,24 @@ describe('quality route location behavior', () => {
     await wrapper.get('select[aria-label="检验类别"]').setValue('first-article')
 
     expect(qualityState.inspectionFilters!.category).toBe('first-article')
+  })
+
+  it('offers only inspection-plan categories accepted by the Quality domain', () => {
+    const wrapper = mountQualityPage(InspectionsPage)
+    const categoryOptions = wrapper
+      .get('select[aria-label="检验类别"] + [data-select-options]')
+      .findAll('[data-select-item]')
+      .map((option) => ({ value: option.attributes('data-value'), label: option.text() }))
+
+    expect(categoryOptions).toEqual([
+      { value: 'all', label: '全部类别' },
+      { value: 'receiving', label: '收货' },
+      { value: 'operation', label: '工序' },
+      { value: 'final', label: '终检' },
+      { value: 'first-article', label: '首件检验' },
+      { value: 'maintenance', label: '维修' },
+      { value: 'customer-return', label: '客户退货' },
+    ])
   })
 
   it('does not open the inspection record dialog for a plain inspectionPlanId location route', async () => {

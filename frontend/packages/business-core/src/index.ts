@@ -92,6 +92,7 @@ export type {
   QualityCharacteristicResultLine,
 } from './inspections/qualityResults'
 export {
+  INSPECTION_PLAN_CATEGORIES,
   INSPECTION_TASK_SOURCE_TYPES,
   inspectionRecordResultLabel,
   inspectionRecordResultLabels,

@@ -6,7 +6,7 @@ import type {
 } from '@nerv-iip/api-client'
 import { listBusinessConsoleQualityInspectionTasks } from '@nerv-iip/api-client'
 import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
-import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
+import { INSPECTION_PLAN_CATEGORIES, qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
   useQualityFirstArticlePlanActions,
   useQualityInspectionPlanCharacteristics,
@@ -783,15 +783,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   outgoing: '出货检',
   rework: '返工检',
 }
-const INSPECTION_PLAN_CATEGORY_OPTIONS = [
-  { value: 'receiving', label: CATEGORY_LABELS.receiving },
-  { value: 'operation', label: CATEGORY_LABELS.operation },
-  { value: 'first-article', label: CATEGORY_LABELS['first-article'] },
-  { value: 'in-process', label: CATEGORY_LABELS['in-process'] },
-  { value: 'final', label: CATEGORY_LABELS.final },
-  { value: 'outgoing', label: CATEGORY_LABELS.outgoing },
-  { value: 'rework', label: CATEGORY_LABELS.rework },
-]
+const INSPECTION_PLAN_CATEGORY_OPTIONS = INSPECTION_PLAN_CATEGORIES.map((value) => ({
+  value,
+  label: qualitySourceTypeLabel(value),
+}))
 // 来源类型是英文码，只读带出区要显示中文（映射来自 business-core qualityLabels，PC/PDA 同源）。
 function sourceTypeLabel(value?: string | null) {
   return qualitySourceTypeLabel(value)
