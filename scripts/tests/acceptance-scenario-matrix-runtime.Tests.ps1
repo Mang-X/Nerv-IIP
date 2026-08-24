@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $runnerPath = Join-Path $repoRoot 'scripts/run-acceptance-scenario-matrix.ps1'
 $runtimeLibraryPath = Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
+$wmsVerifierPath = Join-Path $repoRoot 'scripts/verify-erp-wms-delivery-completion.ps1'
 $manifestPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
 $v1ManifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-acceptance-runtime-$([Guid]::NewGuid().ToString('N'))"
@@ -644,7 +645,7 @@ try {
     }
     $wmsCounters = [pscustomobject][ordered]@{ total = 1; executed = 1; passed = 1; failed = 0; skipped = 0 }
     $wmsCleanup = [pscustomobject][ordered]@{ managedProcessRemaining = 0; exactDatabaseRemaining = 0; postgres = 'owned-stopped'; redis = 'owned-stopped'; errors = @() }
-    $wmsDiagnostics = [pscustomobject][ordered]@{ failureCaptureSupported = $true; captureBeforeCleanup = $true; failureDiagnosticsCaptured = $false; secretsRedacted = $true; artifactPaths = @(); errors = @() }
+    $wmsDiagnostics = [pscustomobject][ordered]@{ failureCaptureSupported = $true; failureDiagnosticsCaptured = $false; secretsRedacted = $true; artifactPaths = @(); errors = @() }
     $wmsVolatile = [pscustomobject][ordered]@{
         databaseName = 'man527_1234567890abcdef1234567890abcdef'
         processIds = @(701, 702, 703)
@@ -664,6 +665,7 @@ try {
         @{ Name = 'delivery-pending'; Message = 'every business checkpoint'; Business = { param($value) $value.erpDelivery.status = 'pending' } },
         @{ Name = 'completion-replay-not-converged'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionHttpReplayConverged = $false } },
         @{ Name = 'repeated-event-not-converged'; Message = 'every business checkpoint'; Business = { param($value) $value.repeatedEventConverged = $false } },
+        @{ Name = 'business-checkpoint-string-false'; Message = 'business checkpoint flags must be JSON booleans'; Business = { param($value) $value.wmsOutboundOrder.pickingLifecycleCompleted = 'false' } },
         @{ Name = 'extra-test-identity'; Message = 'exact TRX counts'; Counters = { param($value) $value.total = 2; $value.executed = 2; $value.passed = 2 } },
         @{ Name = 'zero-execution'; Message = 'exact TRX counts'; Counters = { param($value) $value.total = 0; $value.executed = 0; $value.passed = 0 } },
         @{ Name = 'managed-process-residue'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.managedProcessRemaining = 1 } },
@@ -672,9 +674,9 @@ try {
         @{ Name = 'postgres-pending'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.postgres = 'owned-pending-cleanup' } },
         @{ Name = 'redis-pending'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.redis = 'owned-pending-cleanup' } },
         @{ Name = 'diagnostic-capture-unsupported'; Message = 'diagnostic failure capture'; Diagnostics = { param($value) $value.failureCaptureSupported = $false } },
-        @{ Name = 'diagnostic-capture-after-cleanup'; Message = 'before cleanup'; Diagnostics = { param($value) $value.captureBeforeCleanup = $false } },
         @{ Name = 'success-with-failure-diagnostics'; Message = 'must not claim failure diagnostics'; Diagnostics = { param($value) $value.failureDiagnosticsCaptured = $true } },
         @{ Name = 'diagnostics-not-redacted'; Message = 'diagnostic secrets must be redacted'; Diagnostics = { param($value) $value.secretsRedacted = $false } },
+        @{ Name = 'diagnostic-checkpoint-string-false'; Message = 'diagnostic evidence secretsRedacted must be a JSON boolean'; Diagnostics = { param($value) $value.secretsRedacted = 'false' } },
         @{ Name = 'success-with-diagnostic-artifact'; Message = 'must not retain failure diagnostic artifacts'; Diagnostics = { param($value) $value.artifactPaths = @('/tmp/failure-summary.json') } },
         @{ Name = 'diagnostic-capture-error'; Message = 'diagnostic capture errors must be empty'; Diagnostics = { param($value) $value.errors = @('capture-failed') } }
     )) {
@@ -692,6 +694,58 @@ try {
         try { New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $mutatedProvenance -Track shadow -BusinessEvidence $mutatedBusiness -TestCounters $mutatedCounters -CleanupEvidence $mutatedCleanup -DiagnosticEvidence $mutatedDiagnostics -Volatile $wmsVolatile | Out-Null }
         catch { $mutationMessage = $_.Exception.Message }
         Assert-Contract ($mutationMessage.Contains([string]$wmsInputMutation.Message, [StringComparison]::Ordinal)) "WMS canonical input mutation '$($wmsInputMutation.Name)' must fail closed; observed '$mutationMessage'."
+    }
+
+    $diagnosticArtifactPath = Join-Path $fixtureRoot 'wms-diagnostics/actual-evidence.json'
+    $diagnosticSecret = 'wms-runtime-secret-123'
+    $diagnosticWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact `
+        -Path $diagnosticArtifactPath `
+        -Content "actual evidence Authorization: Bearer $diagnosticSecret" `
+        -SensitiveValues @($diagnosticSecret)
+    Assert-Contract ($diagnosticWriteProof.evidenceWritten -and $diagnosticWriteProof.secretsRedacted) 'The WMS diagnostic writer must earn capability flags from an actual persisted artifact and post-write scan.'
+    $writtenDiagnosticContent = [IO.File]::ReadAllText($diagnosticArtifactPath)
+    Assert-Contract (-not $writtenDiagnosticContent.Contains($diagnosticSecret, [StringComparison]::Ordinal)) 'The actual WMS diagnostic artifact must not retain the declared sensitive value.'
+    $successfulDiagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $diagnosticWriteProof
+    Assert-Contract ($successfulDiagnosticEvidence.failureCaptureSupported -and $successfulDiagnosticEvidence.secretsRedacted -and -not $successfulDiagnosticEvidence.failureDiagnosticsCaptured) 'WMS canonical diagnostic capability must be derived from the actual artifact write proof.'
+    foreach ($invalidProof in @(
+        [pscustomobject]@{ evidenceWritten = $false; secretsRedacted = $true },
+        [pscustomobject]@{ evidenceWritten = $true; secretsRedacted = $false },
+        [pscustomobject]@{ evidenceWritten = 'true'; secretsRedacted = $true }
+    )) {
+        $invalidProofRejected = $false
+        try { New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $invalidProof | Out-Null }
+        catch { $invalidProofRejected = $_.Exception.Message.Contains('actual persisted artifact', [StringComparison]::Ordinal) }
+        Assert-Contract $invalidProofRejected 'WMS diagnostic capability must reject missing, false, or non-boolean artifact write proof fields.'
+    }
+
+    $tokens = $parseErrors = $null
+    $wmsVerifierAst = [Management.Automation.Language.Parser]::ParseFile($wmsVerifierPath, [ref]$tokens, [ref]$parseErrors)
+    Assert-Contract ($parseErrors.Count -eq 0) 'The MAN-527 verifier must parse before its failure-capture ordering can be trusted.'
+    $orderedFailureCapture = @($wmsVerifierAst.FindAll({
+                param($node)
+                if ($node -isnot [Management.Automation.Language.TryStatementAst] -or $null -eq $node.Finally) { return $false }
+                $captureCalls = @($node.CatchClauses | ForEach-Object {
+                        $_.Body.FindAll({
+                                param($candidate)
+                                $candidate -is [Management.Automation.Language.CommandAst] -and
+                                    [string]::Equals($candidate.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
+                            }, $true)
+                    })
+                return $captureCalls.Count -eq 1 -and $captureCalls[0].Extent.StartOffset -lt $node.Finally.Extent.StartOffset
+            }, $true))
+    Assert-Contract ($orderedFailureCapture.Count -eq 1) 'The MAN-527 verifier must invoke the real failure exporter in catch before entering finally cleanup.'
+    $wmsVerifierSource = [IO.File]::ReadAllText($wmsVerifierPath)
+    foreach ($requiredReadback in @(
+        '$completedPickingTask = Wait-WmsPickingTask',
+        '$completedPickingTask.status',
+        '$completedPickingTask.executedQuantity',
+        '$completedPickingTask.completedAtUtc',
+        '$outboundAfterFirstCompletion = Wait-WmsOutboundOrder',
+        '$outboundAfterCompletionReplay = Wait-WmsOutboundOrder',
+        '$outboundAfterCompletionReplay.version -eq $outboundAfterFirstCompletion.version',
+        '$outboundAfterCompletionReplay.completedAtUtc -eq $outboundAfterFirstCompletion.completedAtUtc'
+    )) {
+        Assert-Contract ($wmsVerifierSource.Contains($requiredReadback, [StringComparison]::Ordinal)) "The MAN-527 verifier must derive WMS convergence from public readback checkpoint '$requiredReadback'."
     }
     $wmsAction = { param([object] $Contract) $wmsActionContracts.Add($Contract); return $wmsCanonicalResult }.GetNewClosure()
     $wmsArguments = Get-RuntimeArguments -ArtifactPath $wmsArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $wmsSummaryPath -Action $wmsAction -ScenarioId 'wms-delivery-erp'

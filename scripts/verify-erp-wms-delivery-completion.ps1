@@ -84,10 +84,8 @@ function Get-Man527TrxCounter {
 function Write-Man527DiagnosticFile {
     param([Parameter(Mandatory)] [string] $Path, [AllowNull()] [string] $Content)
 
-    [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
     $sensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
-    $protectedContent = Protect-NervAcceptanceWmsDiagnosticText -Text $Content -SensitiveValues $sensitiveValues
-    [IO.File]::WriteAllText($Path, "$protectedContent`n", [Text.UTF8Encoding]::new($false))
+    [void](Write-NervAcceptanceWmsDiagnosticArtifact -Path $Path -Content $Content -SensitiveValues $sensitiveValues)
 }
 
 function Invoke-Man527DiagnosticCommand {
@@ -183,7 +181,6 @@ ORDER BY schemaname, relname;
     Write-Diagnostic -Level 'WARN' -Message "MAN-527 failure diagnostics captured before cleanup: $diagnosticsRoot"
     return [pscustomobject][ordered]@{
         failureCaptureSupported = $true
-        captureBeforeCleanup = $true
         failureDiagnosticsCaptured = $true
         secretsRedacted = $true
         artifactPaths = $artifactPaths.ToArray()
@@ -493,15 +490,10 @@ $injectedEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHA
 $evidencePath = if ([string]::IsNullOrWhiteSpace($injectedEvidencePath)) { Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json' } else { [IO.Path]::GetFullPath($injectedEvidencePath) }
 $evidenceDirectory = Split-Path -Parent $evidencePath
 $declaredSensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
-$redactionProbe = $declaredSensitiveValues -join '|'
-$protectedRedactionProbe = Protect-NervAcceptanceWmsDiagnosticText -Text $redactionProbe -SensitiveValues $declaredSensitiveValues
-$retainedSensitiveValues = @($declaredSensitiveValues | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and $protectedRedactionProbe.Contains([string]$_, [StringComparison]::Ordinal) })
-$redactionCapabilityVerified = $retainedSensitiveValues.Count -eq 0
 $diagnosticEvidence = [ordered]@{
-    failureCaptureSupported = $null -ne (Get-Command Export-Man527FailureDiagnostics -CommandType Function -ErrorAction SilentlyContinue)
-    captureBeforeCleanup = $true
+    failureCaptureSupported = $false
     failureDiagnosticsCaptured = $false
-    secretsRedacted = $redactionCapabilityVerified
+    secretsRedacted = $false
     artifactPaths = @()
     errors = @()
 }
@@ -713,6 +705,18 @@ try {
             executedQuantity = [decimal]$outboundLine.requestedQuantity
             differenceReason = $null
         }) | Out-Null
+        $completedPickingTask = Wait-WmsPickingTask `
+            -WmsUrl $wmsUrl `
+            -Headers $headers `
+            -TaskNo $taskNo `
+            -ActorPrincipalId $wmsActorPrincipalId `
+            -SiteCode $wmsSiteCode
+        if (-not [string]::Equals([string]$completedPickingTask.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -or
+            [decimal]$completedPickingTask.executedQuantity -ne [decimal]$completedPickingTask.plannedQuantity -or
+            [decimal]$completedPickingTask.executedQuantity -ne [decimal]$outboundLine.requestedQuantity -or
+            [string]::IsNullOrWhiteSpace([string]$completedPickingTask.completedAtUtc)) {
+            throw "Public WMS readback did not prove completed picking lifecycle for task $taskNo."
+        }
         $completedPickingLines++
     }
     $pickingLifecycleCompleted = $completedPickingLines -eq $outboundLines.Count
@@ -739,8 +743,31 @@ try {
     }
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
     Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
+    $outboundAfterFirstCompletion = Wait-WmsOutboundOrder `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -DeliveryOrderNo $deliveryOrderNo `
+        -ActorPrincipalId $wmsActorPrincipalId `
+        -SiteCode $wmsSiteCode
     Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
-    $completionHttpReplayConverged = $true
+    $outboundAfterCompletionReplay = Wait-WmsOutboundOrder `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -DeliveryOrderNo $deliveryOrderNo `
+        -ActorPrincipalId $wmsActorPrincipalId `
+        -SiteCode $wmsSiteCode
+    $completionHttpReplayConverged =
+        [string]::Equals([string]$outboundAfterFirstCompletion.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$outboundAfterCompletionReplay.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
+        $outboundAfterCompletionReplay.version -eq $outboundAfterFirstCompletion.version -and
+        $outboundAfterCompletionReplay.completedAtUtc -eq $outboundAfterFirstCompletion.completedAtUtc -and
+        [string]::Equals(
+            [string]($outboundAfterCompletionReplay.lines | ConvertTo-Json -Depth 8 -Compress),
+            [string]($outboundAfterFirstCompletion.lines | ConvertTo-Json -Depth 8 -Compress),
+            [StringComparison]::Ordinal)
+    if (-not $completionHttpReplayConverged) {
+        throw 'Public WMS readback changed after idempotent outbound completion HTTP replay.'
+    }
 
     $deliveryBeforeReplay = Wait-ErpDeliveryOrder -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
     $receivableBeforeReplay = Wait-Receivable -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
@@ -969,10 +996,16 @@ finally {
     $evidencePayload.diagnostics = $diagnosticEvidence
     $evidencePayload.cleanup = $cleanupEvidence
     try {
-        [System.IO.Directory]::CreateDirectory($evidenceDirectory) | Out-Null
         $evidenceJson = $evidencePayload | ConvertTo-Json -Depth 12
-        $protectedEvidenceJson = Protect-NervAcceptanceWmsDiagnosticText -Text $evidenceJson -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
-        [IO.File]::WriteAllText($evidencePath, "$protectedEvidenceJson`n", [Text.UTF8Encoding]::new($false))
+        $evidenceWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact -Path $evidencePath -Content $evidenceJson -SensitiveValues $declaredSensitiveValues
+        if ($null -eq $scenarioError) {
+            $diagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $evidenceWriteProof
+        }
+        $evidencePayload.diagnostics = $diagnosticEvidence
+        $finalEvidenceWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact -Path $evidencePath -Content ($evidencePayload | ConvertTo-Json -Depth 12) -SensitiveValues $declaredSensitiveValues
+        if (-not $finalEvidenceWriteProof.evidenceWritten -or -not $finalEvidenceWriteProof.secretsRedacted) {
+            throw 'MAN-527 final evidence write or post-write redaction scan did not succeed.'
+        }
         Write-Diagnostic "MAN-527 ERP/WMS delivery-completion evidence written after cleanup to $evidencePath"
     }
     catch {

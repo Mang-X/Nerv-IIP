@@ -1023,6 +1023,50 @@ function Protect-NervAcceptanceWmsDiagnosticText {
     return $protected
 }
 
+function Write-NervAcceptanceWmsDiagnosticArtifact {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [AllowNull()] [string] $Content,
+        [AllowEmptyCollection()] [string[]] $SensitiveValues = @()
+    )
+
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+    $protectedContent = Protect-NervAcceptanceWmsDiagnosticText -Text $Content -SensitiveValues $SensitiveValues
+    [IO.File]::WriteAllText($Path, "$protectedContent`n", [Text.UTF8Encoding]::new($false))
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "WMS diagnostic artifact was not persisted: $Path"
+    }
+    $persistedContent = [IO.File]::ReadAllText($Path)
+    foreach ($sensitiveValue in @($SensitiveValues)) {
+        if (-not [string]::IsNullOrWhiteSpace($sensitiveValue) -and
+            $persistedContent.Contains($sensitiveValue, [StringComparison]::Ordinal)) {
+            throw "WMS diagnostic artifact retained a declared sensitive value: $Path"
+        }
+    }
+    return [pscustomobject][ordered]@{
+        artifactPath = [IO.Path]::GetFullPath($Path)
+        evidenceWritten = $true
+        secretsRedacted = $true
+    }
+}
+
+function New-NervAcceptanceWmsSuccessfulDiagnosticEvidence {
+    param([Parameter(Mandatory)] [object] $WriteProof)
+
+    Assert-NervAcceptanceObjectSchema -Object $WriteProof -AllowedFields @('artifactPath', 'evidenceWritten', 'secretsRedacted') -RequiredFields @('evidenceWritten', 'secretsRedacted') -Context 'MAN-527 successful diagnostic write proof'
+    if ($WriteProof.evidenceWritten -isnot [bool] -or $WriteProof.secretsRedacted -isnot [bool] -or
+        -not [bool]$WriteProof.evidenceWritten -or -not [bool]$WriteProof.secretsRedacted) {
+        throw 'MAN-527 successful diagnostics require an actual persisted artifact and a passing post-write sensitive-value scan.'
+    }
+    return [pscustomobject][ordered]@{
+        failureCaptureSupported = [bool]$WriteProof.evidenceWritten
+        failureDiagnosticsCaptured = $false
+        secretsRedacted = [bool]$WriteProof.secretsRedacted
+        artifactPaths = @()
+        errors = @()
+    }
+}
+
 function New-NervAcceptanceWmsDeliveryCanonicalResult {
     param(
         [Parameter(Mandatory)] [object] $Provenance,
@@ -1080,12 +1124,11 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
     $repeatedEventConverged = [bool]$BusinessEvidence.repeatedEventConverged
     if (-not $outboundAssigned -or -not $pickingLifecycleCompleted -or -not $deliveryCompleted -or -not $receivableCreated -or -not $completionReplayConverged -or -not $repeatedEventConverged) { throw 'MAN-527 canonical success requires every business checkpoint to have converged.' }
 
-    Assert-NervAcceptanceObjectSchema -Object $DiagnosticEvidence -AllowedFields @('failureCaptureSupported', 'captureBeforeCleanup', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -RequiredFields @('failureCaptureSupported', 'captureBeforeCleanup', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -Context 'MAN-527 canonical diagnostic evidence'
-    foreach ($name in @('failureCaptureSupported', 'captureBeforeCleanup', 'failureDiagnosticsCaptured', 'secretsRedacted')) {
+    Assert-NervAcceptanceObjectSchema -Object $DiagnosticEvidence -AllowedFields @('failureCaptureSupported', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -RequiredFields @('failureCaptureSupported', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -Context 'MAN-527 canonical diagnostic evidence'
+    foreach ($name in @('failureCaptureSupported', 'failureDiagnosticsCaptured', 'secretsRedacted')) {
         if ($DiagnosticEvidence.PSObject.Properties[$name].Value -isnot [bool]) { throw "MAN-527 canonical diagnostic evidence $name must be a JSON boolean." }
     }
     if (-not [bool]$DiagnosticEvidence.failureCaptureSupported) { throw 'MAN-527 canonical success requires diagnostic failure capture support.' }
-    if (-not [bool]$DiagnosticEvidence.captureBeforeCleanup) { throw 'MAN-527 canonical failure diagnostics must be captured before cleanup.' }
     if ([bool]$DiagnosticEvidence.failureDiagnosticsCaptured) { throw 'MAN-527 canonical success must not claim failure diagnostics were captured.' }
     if (-not [bool]$DiagnosticEvidence.secretsRedacted) { throw 'MAN-527 canonical diagnostic secrets must be redacted.' }
     if ($DiagnosticEvidence.artifactPaths -isnot [array] -or @($DiagnosticEvidence.artifactPaths).Count -ne 0) { throw 'MAN-527 canonical success must not retain failure diagnostic artifacts.' }
