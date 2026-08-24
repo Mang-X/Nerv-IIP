@@ -2146,7 +2146,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
             CancellationToken.None));
 
-        Assert.Equal("生产版本替代失败，请检查版本状态、生效日期和替代版本窗口。", exception.Message);
+        Assert.Equal("第 1 条受影响生产版本替代失败，请检查版本状态、生效日期和替代版本窗口。", exception.Message);
         var domainException = Assert.IsType<ArgumentException>(exception.InnerException);
         Assert.Equal(
             "Successor production version effective window must include the supersede effective date. (Parameter 'effectiveDate')",
@@ -2324,7 +2324,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("engineering-bom", "EBOM-DRAFT:A")]),
             CancellationToken.None));
 
-        Assert.Equal("工程 BOM 归档失败，请检查版本状态和替代版本。", exception.Message);
+        Assert.Equal("第 1 条受影响工程 BOM 归档失败，请检查版本状态和替代版本。", exception.Message);
         Assert.IsType<InvalidOperationException>(exception.InnerException);
         Assert.Empty(dbContext.EngineeringChanges);
     }

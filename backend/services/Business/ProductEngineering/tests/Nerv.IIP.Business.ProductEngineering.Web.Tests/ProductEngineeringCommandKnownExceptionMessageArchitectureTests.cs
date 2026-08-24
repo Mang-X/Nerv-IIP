@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NetCorePal.Extensions.Primitives;
+using System.Text.RegularExpressions;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
@@ -57,8 +58,8 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         Excluded(ReleaseCommandsPath, "ProductEngineeringReleaseValidation", "AsKnownException<T>", 2, "dynamic domain-message helper"),
         Excluded(ReleaseCommandsPath, "ProductEngineeringReleaseValidation", "AsKnownException", 2, "dynamic domain-message helper"),
 
-        // The provider boundary is not part of this command-message layer.
-        Excluded(ReleaseCommandsPath, "HttpProductEngineeringMasterDataReferenceValidator", "ValidateActiveReferencesAsync", 3, "provider boundary"),
+        // These three direct sites are already compliant Chinese provider-boundary messages on base.
+        Excluded(ReleaseCommandsPath, "HttpProductEngineeringMasterDataReferenceValidator", "ValidateActiveReferencesAsync", 3, "base已合规中文 provider boundary"),
 
         // Engineering Change public synchronous release and archive paths are the target layer.
         Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "Handle", 0, asKnownExceptionCallCount: 1),
@@ -110,7 +111,12 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         var repositoryRoot = FindRepositoryRoot();
         var programPath = Path.Combine(repositoryRoot, "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Program.cs");
         var programText = File.ReadAllText(programPath);
-        Assert.Contains("AddHttpClient<IEngineeringApprovalVerifier, HttpEngineeringApprovalVerifier>", programText, StringComparison.Ordinal);
+        var approvalRegistrations = Regex.Matches(
+                programText,
+                @"Add(?:HttpClient|Scoped|Transient|Singleton)\s*<\s*IEngineeringApprovalVerifier\s*,\s*(?<implementation>[A-Za-z0-9_]+)\s*>")
+            .Select(match => match.Groups["implementation"].Value)
+            .ToArray();
+        Assert.Equal(["HttpEngineeringApprovalVerifier"], approvalRegistrations);
         var documents = CommandSourcePaths
             .Select(path => Path.Combine(repositoryRoot, path.Replace('/', Path.DirectorySeparatorChar)))
             .Select(file => new ProductEngineeringSourceDocument(

@@ -923,27 +923,27 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), entry.Index, await GetSuccessorEngineeringBomAsync(request, affectedVersion, cancellationToken)),
+                cancellationToken), entry.Index, await GetSuccessorEngineeringBomAsync(request, entry, cancellationToken)),
             "manufacturing-bom" => ArchiveManufacturingBom(await manufacturingBomRepository.GetByVersionIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), entry.Index, await GetSuccessorManufacturingBomAsync(request, affectedVersion, cancellationToken)),
+                cancellationToken), entry.Index, await GetSuccessorManufacturingBomAsync(request, entry, cancellationToken)),
             "routing" => ArchiveRouting(await routingRepository.GetByVersionIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), entry.Index, await GetSuccessorRoutingAsync(request, affectedVersion, cancellationToken)),
+                cancellationToken), entry.Index, await GetSuccessorRoutingAsync(request, entry, cancellationToken)),
             "production-version" => ArchiveProductionVersion(await productionVersionRepository.GetByIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), entry.Index, await GetSuccessorProductionVersionAsync(request, affectedVersion, cancellationToken)),
+                cancellationToken), entry.Index, await GetSuccessorProductionVersionAsync(request, entry, cancellationToken)),
             "engineering-document" => ArchiveEngineeringDocument(await GetEngineeringDocumentRepository().GetByVersionIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), entry.Index, await GetSuccessorEngineeringDocumentAsync(request, affectedVersion, cancellationToken)),
+                cancellationToken), entry.Index, await GetSuccessorEngineeringDocumentAsync(request, entry, cancellationToken)),
             _ => throw new KnownException($"第 {entry.Index + 1} 条受影响版本类型不受支持，请检查提交内容。")
         };
     }
@@ -1051,9 +1051,10 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
 
     private async Task<EngineeringBom?> GetSuccessorEngineeringBomAsync(
         ReleaseEngineeringChangeCommand request,
-        AffectedVersionCommand affectedVersion,
+        AffectedVersionEntry entry,
         CancellationToken cancellationToken)
     {
+        var affectedVersion = entry.Command;
         return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
             ? null
             : await engineeringBomRepository.GetByVersionIdAsync(
@@ -1061,14 +1062,15 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.SupersededByVersionId,
                 cancellationToken)
-            ?? throw new KnownException($"替代工程 BOM 版本 '{affectedVersion.SupersededByVersionId}' 不存在。");
+            ?? throw new KnownException($"第 {entry.Index + 1} 条受影响版本的替代工程 BOM 不存在，请检查替代版本标识。");
     }
 
     private async Task<ManufacturingBom?> GetSuccessorManufacturingBomAsync(
         ReleaseEngineeringChangeCommand request,
-        AffectedVersionCommand affectedVersion,
+        AffectedVersionEntry entry,
         CancellationToken cancellationToken)
     {
+        var affectedVersion = entry.Command;
         return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
             ? null
             : await manufacturingBomRepository.GetByVersionIdAsync(
@@ -1076,14 +1078,15 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.SupersededByVersionId,
                 cancellationToken)
-            ?? throw new KnownException($"替代制造 BOM 版本 '{affectedVersion.SupersededByVersionId}' 不存在。");
+            ?? throw new KnownException($"第 {entry.Index + 1} 条受影响版本的替代制造 BOM 不存在，请检查替代版本标识。");
     }
 
     private async Task<Routing?> GetSuccessorRoutingAsync(
         ReleaseEngineeringChangeCommand request,
-        AffectedVersionCommand affectedVersion,
+        AffectedVersionEntry entry,
         CancellationToken cancellationToken)
     {
+        var affectedVersion = entry.Command;
         return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
             ? null
             : await routingRepository.GetByVersionIdAsync(
@@ -1091,14 +1094,15 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.SupersededByVersionId,
                 cancellationToken)
-            ?? throw new KnownException($"替代工艺路线版本 '{affectedVersion.SupersededByVersionId}' 不存在。");
+            ?? throw new KnownException($"第 {entry.Index + 1} 条受影响版本的替代工艺路线不存在，请检查替代版本标识。");
     }
 
     private async Task<ProductionVersion?> GetSuccessorProductionVersionAsync(
         ReleaseEngineeringChangeCommand request,
-        AffectedVersionCommand affectedVersion,
+        AffectedVersionEntry entry,
         CancellationToken cancellationToken)
     {
+        var affectedVersion = entry.Command;
         return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
             ? null
             : await productionVersionRepository.GetByIdAsync(
@@ -1106,14 +1110,15 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.SupersededByVersionId,
                 cancellationToken)
-            ?? throw new KnownException($"替代生产版本 '{affectedVersion.SupersededByVersionId}' 不存在。");
+            ?? throw new KnownException($"第 {entry.Index + 1} 条受影响版本的替代生产版本不存在，请检查替代版本标识。");
     }
 
     private async Task<EngineeringDocument?> GetSuccessorEngineeringDocumentAsync(
         ReleaseEngineeringChangeCommand request,
-        AffectedVersionCommand affectedVersion,
+        AffectedVersionEntry entry,
         CancellationToken cancellationToken)
     {
+        var affectedVersion = entry.Command;
         return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
             ? null
             : await GetEngineeringDocumentRepository().GetByVersionIdAsync(
@@ -1121,7 +1126,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.SupersededByVersionId,
                 cancellationToken)
-            ?? throw new KnownException($"替代工程文档版本 '{affectedVersion.SupersededByVersionId}' 不存在。");
+            ?? throw new KnownException($"第 {entry.Index + 1} 条受影响版本的替代工程文档不存在，请检查替代版本标识。");
     }
 
     private static Action<string, DateOnly> ArchiveEngineeringBom(EngineeringBom? bom, int index, EngineeringBom? successor)
@@ -1135,7 +1140,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ? throw new KnownException($"第 {index + 1} 条受影响工程 BOM 不存在，请检查版本标识。")
             : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(
                 () => bom.Archive(reason),
-                "工程 BOM 归档失败，请检查版本状态和替代版本。");
+                $"第 {index + 1} 条受影响工程 BOM 归档失败，请检查版本状态和替代版本。");
     }
 
     private static Action<string, DateOnly> ArchiveManufacturingBom(ManufacturingBom? bom, int index, ManufacturingBom? successor)
@@ -1149,7 +1154,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ? throw new KnownException($"第 {index + 1} 条受影响制造 BOM 不存在，请检查版本标识。")
             : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(
                 () => bom.Archive(reason),
-                "制造 BOM 归档失败，请检查版本状态和替代版本。");
+                $"第 {index + 1} 条受影响制造 BOM 归档失败，请检查版本状态和替代版本。");
     }
 
     private static Action<string, DateOnly> ArchiveRouting(Routing? routing, int index, Routing? successor)
@@ -1163,7 +1168,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ? throw new KnownException($"第 {index + 1} 条受影响工艺路线不存在，请检查版本标识。")
             : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(
                 () => routing.Archive(reason),
-                "工艺路线归档失败，请检查版本状态和替代版本。");
+                $"第 {index + 1} 条受影响工艺路线归档失败，请检查版本状态和替代版本。");
     }
 
     private static Action<string, DateOnly> ArchiveProductionVersion(ProductionVersion? version, int index, ProductionVersion? successor)
@@ -1178,10 +1183,10 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             : successor is null
                 ? (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(
                     () => version.Archive(reason),
-                    "生产版本归档失败，请检查版本状态和生效日期。")
+                    $"第 {index + 1} 条受影响生产版本归档失败，请检查版本状态和生效日期。")
                 : (reason, effectiveDate) => ProductEngineeringReleaseValidation.AsKnownException(
                     () => version.SupersedeWith(successor, effectiveDate, reason),
-                    "生产版本替代失败，请检查版本状态、生效日期和替代版本窗口。");
+                    $"第 {index + 1} 条受影响生产版本替代失败，请检查版本状态、生效日期和替代版本窗口。");
     }
 
     private static Action<string, DateOnly> ArchiveEngineeringDocument(EngineeringDocument? document, int index, EngineeringDocument? successor)
@@ -1195,7 +1200,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ? throw new KnownException($"第 {index + 1} 条受影响工程文档不存在，请检查版本标识。")
             : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(
                 () => document.Archive(reason),
-                "工程文档归档失败，请检查版本状态和替代版本。");
+                $"第 {index + 1} 条受影响工程文档归档失败，请检查版本状态和替代版本。");
     }
 
     private IEngineeringDocumentRepository GetEngineeringDocumentRepository()
@@ -1324,7 +1329,7 @@ public sealed class CancelScheduledEngineeringChangeCommandHandler(ApplicationDb
             x.EnvironmentId == request.EnvironmentId &&
             x.ChangeNumber == request.ChangeNumber,
             cancellationToken)
-            ?? throw new KnownException($"工程变更 '{request.ChangeNumber}' 不存在。");
+            ?? throw new KnownException("工程变更不存在，请检查变更编号。");
 
         ProductEngineeringReleaseValidation.AsKnownException(
             change.CancelScheduled,
@@ -1360,7 +1365,7 @@ public sealed class RescheduleEngineeringChangeCommandHandler(ApplicationDbConte
             x.EnvironmentId == request.EnvironmentId &&
             x.ChangeNumber == request.ChangeNumber,
             cancellationToken)
-            ?? throw new KnownException($"工程变更 '{request.ChangeNumber}' 不存在。");
+            ?? throw new KnownException("工程变更不存在，请检查变更编号。");
 
         ProductEngineeringReleaseValidation.AsKnownException(
             () => change.Reschedule(request.EffectiveDate),
