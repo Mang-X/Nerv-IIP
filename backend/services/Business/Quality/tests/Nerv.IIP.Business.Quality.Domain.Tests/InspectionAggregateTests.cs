@@ -8,6 +8,101 @@ namespace Nerv.IIP.Business.Quality.Domain.Tests;
 
 public sealed class InspectionAggregateTests
 {
+    [Theory]
+    [InlineData(null, "WC-001", "物料")]
+    [InlineData("SKU-001", null, "工作中心")]
+    public void First_article_plan_requires_sku_and_work_center(
+        string? skuCode,
+        string? workCenterId,
+        string expectedMessage)
+    {
+        var exception = Assert.Throws<KnownException>(() => InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "FAI-SKU-001-WC-001",
+            "first-article",
+            skuCode,
+            null,
+            workCenterId,
+            null,
+            "operation-task"));
+
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void First_article_plan_and_record_preserve_quality_sku_work_center_applicability()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "FAI-SKU-001-WC-001",
+            "first-article",
+            "SKU-001",
+            null,
+            "WC-001",
+            null,
+            "operation-task");
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "100-percent");
+        plan.Activate();
+
+        var record = InspectionRecord.CreateFromPlan(
+            plan,
+            "first-article",
+            "mes-operation",
+            "OP-001",
+            "SKU-001",
+            1m,
+            null,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "accepted", null, [])],
+            null,
+            []);
+
+        Assert.Equal("first-article", plan.Category);
+        Assert.Equal("SKU-001", plan.SkuCode);
+        Assert.Equal("WC-001", plan.WorkCenterId);
+        Assert.Equal("first-article", record.SourceType);
+        Assert.Equal(plan.Id, record.InspectionPlanId);
+        Assert.Equal("SKU-001", record.SkuCode);
+    }
+
+    [Fact]
+    public void Planned_record_rejects_source_type_outside_plan_category()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "FAI-SKU-001-WC-001",
+            "first-article",
+            "SKU-001",
+            null,
+            "WC-001",
+            null,
+            "operation-task");
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "100-percent");
+        plan.Activate();
+
+        var exception = Assert.Throws<KnownException>(() => InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-001",
+            1m,
+            null,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "accepted", null, [])],
+            null,
+            []));
+
+        Assert.Contains("适用环节", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("first-article", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("receiving", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Draft_inspection_plan_can_add_characteristics()
     {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  INSPECTION_PLAN_CATEGORIES,
   INSPECTION_TASK_SOURCE_TYPES,
+  inspectionPlanCategoryLabel,
   inspectionTaskSourceTypeLabel,
   inspectionTaskStatusLabel,
   qualitySourceTypeLabel,
@@ -35,6 +37,7 @@ describe('inspectionTaskSourceTypeLabel', () => {
 describe('qualitySourceTypeLabel', () => {
   it('maps the inspection-record/NCR source types to Chinese', () => {
     expect(qualitySourceTypeLabel('operation')).toBe('工序')
+    expect(qualitySourceTypeLabel('first-article')).toBe('首件检验')
     expect(qualitySourceTypeLabel('in-process')).toBe('过程检验')
     expect(qualitySourceTypeLabel('receiving')).toBe('收货')
     expect(qualitySourceTypeLabel('final')).toBe('终检')
@@ -53,5 +56,30 @@ describe('qualitySourceTypeLabel', () => {
 describe('INSPECTION_TASK_SOURCE_TYPES', () => {
   it('lists the backend source types in display order', () => {
     expect(INSPECTION_TASK_SOURCE_TYPES).toEqual(['receiving', 'operation', 'final'])
+  })
+})
+
+describe('INSPECTION_PLAN_CATEGORIES', () => {
+  it('lists only the categories accepted by the Quality domain', () => {
+    expect(INSPECTION_PLAN_CATEGORIES).toEqual([
+      'receiving',
+      'operation',
+      'final',
+      'first-article',
+      'maintenance',
+      'customer-return',
+    ])
+  })
+
+  it('shares one business-label vocabulary for every accepted category', () => {
+    expect(INSPECTION_PLAN_CATEGORIES.map(inspectionPlanCategoryLabel)).toEqual([
+      '来料检',
+      '工序检',
+      '终检',
+      '首件检验',
+      '维修检',
+      '客户退货检',
+    ])
+    expect(inspectionPlanCategoryLabel('future-category')).toBe('future-category')
   })
 })

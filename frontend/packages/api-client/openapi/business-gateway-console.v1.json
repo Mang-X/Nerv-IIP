@@ -6763,6 +6763,14 @@
             }
           },
           {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -6790,6 +6798,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -6957,6 +6975,14 @@
             }
           },
           {
+            "name": "sourceType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -6984,6 +7010,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -36616,7 +36652,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -36847,6 +36883,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionRecordListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenNcrFromInspectionResponse": {
         "allOf": [
@@ -37399,6 +37439,10 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest": {
         "type": "object",
         "additionalProperties": false
       },

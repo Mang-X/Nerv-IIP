@@ -211,6 +211,20 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
     }
 
+    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks)
+    {
+        ArgumentNullException.ThrowIfNull(operationTasks);
+        if (operationTasks.Count == 0)
+        {
+            throw new ArgumentException("At least one operation task is required.", nameof(operationTasks));
+        }
+
+        ThrowIfCannotRelease();
+
+        Status = ReleasedStatus;
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks));
+    }
+
     public void BindProductionVersion(string productionVersionId)
     {
         var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
