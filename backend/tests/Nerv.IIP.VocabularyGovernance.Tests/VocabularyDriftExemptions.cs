@@ -23,6 +23,7 @@ internal static class VocabularyDriftExemptions
         // 标签模板状态、需求来源状态、SKU 生命周期、采集点激活状态、库位状态、主数据启停状态、
         // 检验方案/SPC 控制图状态、雇佣状态、IAM 组织/环境状态——各域自己的生命周期词，不可互相引用。
         ..Group("active", "同值不同义：各域生命周期/激活状态，非 PE 生产版本契约状态。",
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/LabelTemplates/ListLabelTemplatesQuery.cs",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryConsistencyValidator.cs",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistorySeedService.cs",
