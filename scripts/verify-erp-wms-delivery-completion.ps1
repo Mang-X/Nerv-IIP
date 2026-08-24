@@ -506,8 +506,13 @@ $cleanupEvidence = [ordered]@{
     redis = if ($startedRedis) { 'owned-pending-cleanup' } else { 'pre-existing-running-not-stopped' }
     errors = @()
 }
+$verifierContract = $null
 
 try {
+    $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $PSCommandPath
+    if (-not $verifierContract.failureCaptureSupported -or -not $verifierContract.pickingReadbackWired -or -not $verifierContract.completionReplayWired) {
+        throw 'MAN-527 verifier structural contract did not prove reachable failure capture and public WMS checkpoint wiring.'
+    }
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man527-infrastructure-up' | Out-Null
     Wait-PostgresReady -ComposeFile $composeFile
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE $databaseName;") -WorkingDirectory $root -Name 'man527-create-database' | Out-Null
@@ -619,7 +624,8 @@ try {
     }
     $outboundLines = @($outbound.lines)
     if ($outboundLines.Count -eq 0) { throw 'Public WMS readback returned no outbound lines to pick.' }
-    $completedPickingLines = 0
+    $completedPickingReadbacks = [Collections.Generic.List[object]]::new()
+    $requestedPickingQuantities = [Collections.Generic.List[decimal]]::new()
     foreach ($outboundLine in $outboundLines) {
         Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/movements" -Headers $headers -Body @{
             organizationId = 'org-001'
@@ -711,15 +717,10 @@ try {
             -TaskNo $taskNo `
             -ActorPrincipalId $wmsActorPrincipalId `
             -SiteCode $wmsSiteCode
-        if (-not [string]::Equals([string]$completedPickingTask.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -or
-            [decimal]$completedPickingTask.executedQuantity -ne [decimal]$completedPickingTask.plannedQuantity -or
-            [decimal]$completedPickingTask.executedQuantity -ne [decimal]$outboundLine.requestedQuantity -or
-            [string]::IsNullOrWhiteSpace([string]$completedPickingTask.completedAtUtc)) {
-            throw "Public WMS readback did not prove completed picking lifecycle for task $taskNo."
-        }
-        $completedPickingLines++
+        [void]$completedPickingReadbacks.Add($completedPickingTask)
+        [void]$requestedPickingQuantities.Add([decimal]$outboundLine.requestedQuantity)
     }
-    $pickingLifecycleCompleted = $completedPickingLines -eq $outboundLines.Count
+    $pickingLifecycleCompleted = Test-NervAcceptanceWmsPickingReadbacks -Readbacks $completedPickingReadbacks.ToArray() -RequestedQuantities $requestedPickingQuantities.ToArray()
     if (-not $pickingLifecycleCompleted) { throw 'The public WMS picking lifecycle did not complete for every outbound line.' }
 
     $outboundAfterPicking = Wait-WmsOutboundOrder `
@@ -744,9 +745,7 @@ try {
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
     $firstCompletion = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
     $completionReplay = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
-    $completionHttpReplayConverged =
-        -not [string]::IsNullOrWhiteSpace([string]$firstCompletion.data.requestId) -and
-        [string]::Equals([string]$completionReplay.data.requestId, [string]$firstCompletion.data.requestId, [StringComparison]::Ordinal)
+    $completionHttpReplayConverged = Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $firstCompletion -ReplayCompletion $completionReplay
     if (-not $completionHttpReplayConverged) {
         throw 'Public WMS completion replay did not return the same non-empty inventory movement requestId.'
     }
@@ -975,18 +974,26 @@ finally {
             scenarioError = if ($null -ne $scenarioError) { Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) } else { 'Business evidence was not produced.' }
         }
     }
-    $evidencePayload.diagnostics = $diagnosticEvidence
     $evidencePayload.cleanup = $cleanupEvidence
     try {
-        $evidenceJson = $evidencePayload | ConvertTo-Json -Depth 12
-        $evidenceWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact -Path $evidencePath -Content $evidenceJson -SensitiveValues $declaredSensitiveValues
         if ($null -eq $scenarioError) {
-            $diagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $evidenceWriteProof
+            $evidencePayload.diagnostics = [ordered]@{
+                failureCaptureSupported = [bool]$verifierContract.failureCaptureSupported
+                failureDiagnosticsCaptured = $false
+                secretsRedacted = $true
+                artifactPaths = @()
+                errors = @()
+            }
         }
-        $evidencePayload.diagnostics = $diagnosticEvidence
-        $finalEvidenceWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact -Path $evidencePath -Content ($evidencePayload | ConvertTo-Json -Depth 12) -SensitiveValues $declaredSensitiveValues
-        if (-not $finalEvidenceWriteProof.evidenceWritten -or -not $finalEvidenceWriteProof.secretsRedacted) {
+        else {
+            $evidencePayload.diagnostics = $diagnosticEvidence
+        }
+        $evidenceWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact -Path $evidencePath -Content ($evidencePayload | ConvertTo-Json -Depth 12) -SensitiveValues $declaredSensitiveValues
+        if (-not $evidenceWriteProof.evidenceWritten -or -not $evidenceWriteProof.secretsRedacted) {
             throw 'MAN-527 final evidence write or post-write redaction scan did not succeed.'
+        }
+        if ($null -eq $scenarioError) {
+            $diagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $evidenceWriteProof -FailureCaptureSupported $verifierContract.failureCaptureSupported
         }
         Write-Diagnostic "MAN-527 ERP/WMS delivery-completion evidence written after cleanup to $evidencePath"
     }

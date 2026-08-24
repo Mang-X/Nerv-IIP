@@ -696,6 +696,36 @@ try {
         Assert-Contract ($mutationMessage.Contains([string]$wmsInputMutation.Message, [StringComparison]::Ordinal)) "WMS canonical input mutation '$($wmsInputMutation.Name)' must fail closed; observed '$mutationMessage'."
     }
 
+    $validPickingReadbacks = @(
+        [pscustomobject]@{ status = 'Completed'; plannedQuantity = 1; executedQuantity = 1; completedAtUtc = '2026-08-24T00:00:00Z' },
+        [pscustomobject]@{ status = 'completed'; plannedQuantity = 2; executedQuantity = 2; completedAtUtc = '2026-08-24T00:00:01Z' }
+    )
+    Assert-Contract (Test-NervAcceptanceWmsPickingReadbacks -Readbacks $validPickingReadbacks -RequestedQuantities @(1, 2)) 'Completed public picking readbacks must satisfy the WMS picking checkpoint.'
+    foreach ($pickingMutation in @(
+        @{ Name = 'status'; Apply = { param($value) $value[0].status = 'InProgress' } },
+        @{ Name = 'planned-quantity'; Apply = { param($value) $value[0].plannedQuantity = 2 } },
+        @{ Name = 'executed-quantity'; Apply = { param($value) $value[0].executedQuantity = 2 } },
+        @{ Name = 'completed-at'; Apply = { param($value) $value[0].completedAtUtc = '' } }
+    )) {
+        $mutatedPickingReadbacks = Copy-JsonObject $validPickingReadbacks
+        & $pickingMutation.Apply $mutatedPickingReadbacks
+        Assert-Contract (-not (Test-NervAcceptanceWmsPickingReadbacks -Readbacks $mutatedPickingReadbacks -RequestedQuantities @(1, 2))) "Picking readback mutation '$($pickingMutation.Name)' must fail closed."
+    }
+    Assert-Contract (-not (Test-NervAcceptanceWmsPickingReadbacks -Readbacks @($validPickingReadbacks[0]) -RequestedQuantities @(1, 2))) 'Missing public picking readbacks must fail closed.'
+
+    $firstCompletionResponse = [pscustomobject]@{ data = [pscustomobject]@{ requestId = 'movement-request-1' } }
+    $replayedCompletionResponse = [pscustomobject]@{ data = [pscustomobject]@{ requestId = 'movement-request-1' } }
+    Assert-Contract (Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $firstCompletionResponse -ReplayCompletion $replayedCompletionResponse) 'Matching non-empty completion requestIds must satisfy the WMS replay checkpoint.'
+    foreach ($completionMutation in @(
+        @{ Name = 'empty-first'; First = ''; Replay = 'movement-request-1' },
+        @{ Name = 'empty-replay'; First = 'movement-request-1'; Replay = '' },
+        @{ Name = 'ordinal-mismatch'; First = 'movement-request-1'; Replay = 'MOVEMENT-REQUEST-1' }
+    )) {
+        $mutatedFirstCompletion = [pscustomobject]@{ data = [pscustomobject]@{ requestId = $completionMutation.First } }
+        $mutatedReplayCompletion = [pscustomobject]@{ data = [pscustomobject]@{ requestId = $completionMutation.Replay } }
+        Assert-Contract (-not (Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $mutatedFirstCompletion -ReplayCompletion $mutatedReplayCompletion)) "Completion replay mutation '$($completionMutation.Name)' must fail closed."
+    }
+
     $diagnosticArtifactPath = Join-Path $fixtureRoot 'wms-diagnostics/actual-evidence.json'
     $diagnosticSecret = 'wms-runtime-secret-123'
     $diagnosticWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact `
@@ -705,47 +735,76 @@ try {
     Assert-Contract ($diagnosticWriteProof.evidenceWritten -and $diagnosticWriteProof.secretsRedacted) 'The WMS diagnostic writer must earn capability flags from an actual persisted artifact and post-write scan.'
     $writtenDiagnosticContent = [IO.File]::ReadAllText($diagnosticArtifactPath)
     Assert-Contract (-not $writtenDiagnosticContent.Contains($diagnosticSecret, [StringComparison]::Ordinal)) 'The actual WMS diagnostic artifact must not retain the declared sensitive value.'
-    $successfulDiagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $diagnosticWriteProof
+    $successfulDiagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $diagnosticWriteProof -FailureCaptureSupported $true
     Assert-Contract ($successfulDiagnosticEvidence.failureCaptureSupported -and $successfulDiagnosticEvidence.secretsRedacted -and -not $successfulDiagnosticEvidence.failureDiagnosticsCaptured) 'WMS canonical diagnostic capability must be derived from the actual artifact write proof.'
-    foreach ($invalidProof in @(
-        [pscustomobject]@{ evidenceWritten = $false; secretsRedacted = $true },
-        [pscustomobject]@{ evidenceWritten = $true; secretsRedacted = $false },
-        [pscustomobject]@{ evidenceWritten = 'true'; secretsRedacted = $true }
+    $canonicalResultWithFactoryDiagnostics = New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $wmsCanonicalResult.provenance -Track shadow -BusinessEvidence $wmsBusinessEvidence -TestCounters $wmsCounters -CleanupEvidence $wmsCleanup -DiagnosticEvidence $successfulDiagnosticEvidence -Volatile $wmsVolatile
+    Assert-Contract $canonicalResultWithFactoryDiagnostics.diagnostics.failureCaptureSupported 'The successful diagnostic factory output must feed the canonical builder directly.'
+    foreach ($invalidProofCase in @(
+        @{ Proof = [pscustomobject]@{ artifactPath = $diagnosticArtifactPath; evidenceWritten = $false; secretsRedacted = $true }; Message = 'actual persisted artifact' },
+        @{ Proof = [pscustomobject]@{ artifactPath = $diagnosticArtifactPath; evidenceWritten = $true; secretsRedacted = $false }; Message = 'actual persisted artifact' },
+        @{ Proof = [pscustomobject]@{ artifactPath = $diagnosticArtifactPath; evidenceWritten = 'true'; secretsRedacted = $true }; Message = 'actual persisted artifact' },
+        @{ Proof = [pscustomobject]@{ evidenceWritten = $true; secretsRedacted = $true }; Message = 'missing required field' }
     )) {
         $invalidProofRejected = $false
-        try { New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $invalidProof | Out-Null }
-        catch { $invalidProofRejected = $_.Exception.Message.Contains('actual persisted artifact', [StringComparison]::Ordinal) }
+        try { New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $invalidProofCase.Proof -FailureCaptureSupported $true | Out-Null }
+        catch { $invalidProofRejected = $_.Exception.Message.Contains([string]$invalidProofCase.Message, [StringComparison]::Ordinal) }
         Assert-Contract $invalidProofRejected 'WMS diagnostic capability must reject missing, false, or non-boolean artifact write proof fields.'
     }
+    foreach ($invalidFailureCaptureSupport in @($false, 'true')) {
+        $invalidFailureCaptureRejected = $false
+        try { New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $diagnosticWriteProof -FailureCaptureSupported $invalidFailureCaptureSupport | Out-Null }
+        catch { $invalidFailureCaptureRejected = $_.Exception.Message.Contains('failure-capture contract', [StringComparison]::Ordinal) }
+        Assert-Contract $invalidFailureCaptureRejected 'WMS successful diagnostics must reject false or non-boolean failure-capture contract proof.'
+    }
 
-    $tokens = $parseErrors = $null
-    $wmsVerifierAst = [Management.Automation.Language.Parser]::ParseFile($wmsVerifierPath, [ref]$tokens, [ref]$parseErrors)
-    Assert-Contract ($parseErrors.Count -eq 0) 'The MAN-527 verifier must parse before its failure-capture ordering can be trusted.'
-    $orderedFailureCapture = @($wmsVerifierAst.FindAll({
-                param($node)
-                if ($node -isnot [Management.Automation.Language.TryStatementAst] -or $null -eq $node.Finally) { return $false }
-                $captureCalls = @($node.CatchClauses | ForEach-Object {
-                        $_.Body.FindAll({
-                                param($candidate)
-                                $candidate -is [Management.Automation.Language.CommandAst] -and
-                                    [string]::Equals($candidate.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
-                            }, $true)
-                    })
-                return $captureCalls.Count -eq 1 -and $captureCalls[0].Extent.StartOffset -lt $node.Finally.Extent.StartOffset
-            }, $true))
-    Assert-Contract ($orderedFailureCapture.Count -eq 1) 'The MAN-527 verifier must invoke the real failure exporter in catch before entering finally cleanup.'
+    $unannouncedSecretArtifactPath = Join-Path $fixtureRoot 'wms-diagnostics/unannounced-secret.json'
+    [IO.File]::WriteAllText($unannouncedSecretArtifactPath, '{"authorization":"Bearer unannounced-secret-987"}', [Text.UTF8Encoding]::new($false))
+    $unannouncedSecretRejected = $false
+    try { Assert-NervAcceptanceWmsDiagnosticArtifactRedacted -Path $unannouncedSecretArtifactPath -SensitiveValues @() | Out-Null }
+    catch { $unannouncedSecretRejected = $_.Exception.Message.Contains('secret pattern', [StringComparison]::Ordinal) }
+    Assert-Contract ($unannouncedSecretRejected -and -not (Test-Path -LiteralPath $unannouncedSecretArtifactPath)) 'The independent diagnostic scanner must reject and remove an unpublished artifact containing an undeclared bearer secret.'
+    $atomicDiagnosticPath = Join-Path $fixtureRoot 'wms-diagnostics/atomic-evidence.json'
+    [IO.File]::WriteAllText($atomicDiagnosticPath, '{"status":"previous-safe-evidence"}', [Text.UTF8Encoding]::new($false))
+    $unannouncedUserInfoRejected = $false
+    try { Write-NervAcceptanceWmsDiagnosticArtifact -Path $atomicDiagnosticPath -Content 'postgres://dbuser:unannounced-secret-654@localhost/db' -SensitiveValues @() | Out-Null }
+    catch { $unannouncedUserInfoRejected = $_.Exception.Message.Contains('secret pattern', [StringComparison]::Ordinal) }
+    $remainingDiagnosticTemps = @(Get-ChildItem -LiteralPath (Split-Path -Parent $atomicDiagnosticPath) -Filter '*.tmp' -File)
+    Assert-Contract ($unannouncedUserInfoRejected -and [IO.File]::ReadAllText($atomicDiagnosticPath).Contains('previous-safe-evidence', [StringComparison]::Ordinal) -and $remainingDiagnosticTemps.Count -eq 0) 'The atomic diagnostic writer must reject an undeclared URI userinfo secret without replacing prior safe evidence or retaining its unpublished temporary artifact.'
+
+    $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $wmsVerifierPath
+    Assert-Contract ($verifierContract.failureCaptureSupported -and $verifierContract.pickingReadbackWired -and $verifierContract.completionReplayWired) 'The MAN-527 verifier must wire reachable failure capture and public WMS checkpoint predicates.'
     $wmsVerifierSource = [IO.File]::ReadAllText($wmsVerifierPath)
-    foreach ($requiredReadback in @(
-        '$completedPickingTask = Wait-WmsPickingTask',
-        '$completedPickingTask.status',
-        '$completedPickingTask.executedQuantity',
-        '$completedPickingTask.completedAtUtc',
-        '$firstCompletion = Invoke-JsonPost',
-        '$completionReplay = Invoke-JsonPost',
-        '$firstCompletion.data.requestId',
-        '[string]::Equals([string]$completionReplay.data.requestId, [string]$firstCompletion.data.requestId, [StringComparison]::Ordinal)'
+    $mutationTokens = $mutationParseErrors = $null
+    $mutationAst = [Management.Automation.Language.Parser]::ParseInput($wmsVerifierSource, [ref]$mutationTokens, [ref]$mutationParseErrors)
+    Assert-Contract ($mutationParseErrors.Count -eq 0) 'The verifier must parse before generating reachability mutations.'
+    foreach ($contractMutation in @(
+        @{ Name = 'failure-capture-if-false'; Command = 'Export-Man527FailureDiagnostics'; Variable = '$diagnosticEvidence'; Property = 'failureCaptureSupported' },
+        @{ Name = 'picking-if-false'; Command = 'Test-NervAcceptanceWmsPickingReadbacks'; Variable = '$pickingLifecycleCompleted'; Property = 'pickingReadbackWired' },
+        @{ Name = 'completion-if-false'; Command = 'Test-NervAcceptanceWmsCompletionReplay'; Variable = '$completionHttpReplayConverged'; Property = 'completionReplayWired' }
     )) {
-        Assert-Contract ($wmsVerifierSource.Contains($requiredReadback, [StringComparison]::Ordinal)) "The MAN-527 verifier must derive WMS convergence from public readback checkpoint '$requiredReadback'."
+        $mutationCommand = @($mutationAst.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.CommandAst] -and
+                        [string]::Equals($node.GetCommandName(), [string]$contractMutation.Command, [StringComparison]::Ordinal)
+                }, $true) | Where-Object {
+                    $ancestor = $_.Parent
+                    while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.AssignmentStatementAst]) { $ancestor = $ancestor.Parent }
+                    $null -ne $ancestor -and [string]::Equals($ancestor.Left.Extent.Text, [string]$contractMutation.Variable, [StringComparison]::Ordinal)
+                })
+        Assert-Contract ($mutationCommand.Count -eq 1) "Verifier contract mutation '$($contractMutation.Name)' requires one exact production assignment."
+        $mutationAssignment = $mutationCommand[0].Parent
+        while ($mutationAssignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $mutationAssignment = $mutationAssignment.Parent }
+        $mutatedVerifierPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name).ps1"
+        $mutatedVerifierSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, ' }').Insert($mutationAssignment.Extent.StartOffset, 'if ($false) { ')
+        [IO.File]::WriteAllText($mutatedVerifierPath, $mutatedVerifierSource, [Text.UTF8Encoding]::new($false))
+        $mutatedContract = Test-NervAcceptanceWmsVerifierContract -Path $mutatedVerifierPath
+        Assert-Contract (-not [bool]$mutatedContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier contract mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
+
+        $unusedFunctionMutationPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-unused-function.ps1"
+        $unusedFunctionMutationSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, ' }').Insert($mutationAssignment.Extent.StartOffset, "function Invoke-UnusedContractMutation { ")
+        [IO.File]::WriteAllText($unusedFunctionMutationPath, $unusedFunctionMutationSource, [Text.UTF8Encoding]::new($false))
+        $unusedFunctionContract = Test-NervAcceptanceWmsVerifierContract -Path $unusedFunctionMutationPath
+        Assert-Contract (-not [bool]$unusedFunctionContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier unused-function mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
     }
     $wmsAction = { param([object] $Contract) $wmsActionContracts.Add($Contract); return $wmsCanonicalResult }.GetNewClosure()
     $wmsArguments = Get-RuntimeArguments -ArtifactPath $wmsArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $wmsSummaryPath -Action $wmsAction -ScenarioId 'wms-delivery-erp'

@@ -1007,6 +1007,39 @@ function Assert-NervAcceptanceRuntimeIntegerField {
     return [int64]$value
 }
 
+function Test-NervAcceptanceWmsPickingReadbacks {
+    param(
+        [AllowEmptyCollection()] [object[]] $Readbacks = @(),
+        [AllowEmptyCollection()] [decimal[]] $RequestedQuantities = @()
+    )
+
+    if ($Readbacks.Count -eq 0 -or $Readbacks.Count -ne $RequestedQuantities.Count) { return $false }
+    for ($index = 0; $index -lt $Readbacks.Count; $index++) {
+        $readback = $Readbacks[$index]
+        if ($null -eq $readback -or
+            -not [string]::Equals([string]$readback.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -or
+            [decimal]$readback.executedQuantity -ne [decimal]$readback.plannedQuantity -or
+            [decimal]$readback.executedQuantity -ne $RequestedQuantities[$index] -or
+            [string]::IsNullOrWhiteSpace([string]$readback.completedAtUtc)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-NervAcceptanceWmsCompletionReplay {
+    param(
+        [Parameter(Mandatory)] [object] $FirstCompletion,
+        [Parameter(Mandatory)] [object] $ReplayCompletion
+    )
+
+    $firstRequestId = [string]$FirstCompletion.data.requestId
+    $replayRequestId = [string]$ReplayCompletion.data.requestId
+    return -not [string]::IsNullOrWhiteSpace($firstRequestId) -and
+        -not [string]::IsNullOrWhiteSpace($replayRequestId) -and
+        [string]::Equals($replayRequestId, $firstRequestId, [StringComparison]::Ordinal)
+}
+
 function Protect-NervAcceptanceWmsDiagnosticText {
     param(
         [AllowNull()] [string] $Text,
@@ -1030,40 +1063,177 @@ function Write-NervAcceptanceWmsDiagnosticArtifact {
         [AllowEmptyCollection()] [string[]] $SensitiveValues = @()
     )
 
-    [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
-    $protectedContent = Protect-NervAcceptanceWmsDiagnosticText -Text $Content -SensitiveValues $SensitiveValues
-    [IO.File]::WriteAllText($Path, "$protectedContent`n", [Text.UTF8Encoding]::new($false))
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $parentPath = Split-Path -Parent $fullPath
+    [IO.Directory]::CreateDirectory($parentPath) | Out-Null
+    $temporaryPath = Join-Path $parentPath ".$(Split-Path -Leaf $fullPath).$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+        $protectedContent = Protect-NervAcceptanceWmsDiagnosticText -Text $Content -SensitiveValues $SensitiveValues
+        [IO.File]::WriteAllText($temporaryPath, "$protectedContent`n", [Text.UTF8Encoding]::new($false))
+        [void](Assert-NervAcceptanceWmsDiagnosticArtifactRedacted -Path $temporaryPath -SensitiveValues $SensitiveValues)
+        [IO.File]::Move($temporaryPath, $fullPath, $true)
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+            throw "WMS diagnostic artifact was not persisted: $fullPath"
+        }
+        [void](Assert-NervAcceptanceWmsDiagnosticArtifactRedacted -Path $fullPath -SensitiveValues $SensitiveValues)
+        return [pscustomobject][ordered]@{
+            artifactPath = $fullPath
+            evidenceWritten = $true
+            secretsRedacted = $true
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+    }
+}
+
+function Assert-NervAcceptanceWmsDiagnosticArtifactRedacted {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [AllowEmptyCollection()] [string[]] $SensitiveValues = @()
+    )
+
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "WMS diagnostic artifact was not persisted: $Path"
     }
     $persistedContent = [IO.File]::ReadAllText($Path)
+    $finding = $null
     foreach ($sensitiveValue in @($SensitiveValues)) {
         if (-not [string]::IsNullOrWhiteSpace($sensitiveValue) -and
             $persistedContent.Contains($sensitiveValue, [StringComparison]::Ordinal)) {
-            throw "WMS diagnostic artifact retained a declared sensitive value: $Path"
+            $finding = 'declared sensitive value'
+            break
         }
     }
-    return [pscustomobject][ordered]@{
-        artifactPath = [IO.Path]::GetFullPath($Path)
-        evidenceWritten = $true
-        secretsRedacted = $true
+    if ($null -eq $finding) {
+        foreach ($pattern in @(
+            '(?i)\bBearer\s+(?!<redacted>\b)[A-Za-z0-9._~+/=-]{6,}',
+            '(?i)\b(?:password|pwd)\b\s*[=:]\s*["'']?(?!<redacted>\b)[^\s"'',;}]{4,}',
+            '(?i)\b[a-z][a-z0-9+.-]*://[^\s/:@]+:(?!<redacted>@)[^\s/@]+@'
+        )) {
+            if ([regex]::IsMatch($persistedContent, $pattern, [Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+                $finding = 'secret pattern'
+                break
+            }
+        }
     }
+    if ($null -ne $finding) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw "WMS diagnostic artifact retained a ${finding}: $Path"
+    }
+    return $true
 }
 
 function New-NervAcceptanceWmsSuccessfulDiagnosticEvidence {
-    param([Parameter(Mandatory)] [object] $WriteProof)
+    param(
+        [Parameter(Mandatory)] [object] $WriteProof,
+        [Parameter(Mandatory)] [object] $FailureCaptureSupported
+    )
 
-    Assert-NervAcceptanceObjectSchema -Object $WriteProof -AllowedFields @('artifactPath', 'evidenceWritten', 'secretsRedacted') -RequiredFields @('evidenceWritten', 'secretsRedacted') -Context 'MAN-527 successful diagnostic write proof'
+    Assert-NervAcceptanceObjectSchema -Object $WriteProof -AllowedFields @('artifactPath', 'evidenceWritten', 'secretsRedacted') -RequiredFields @('artifactPath', 'evidenceWritten', 'secretsRedacted') -Context 'MAN-527 successful diagnostic write proof'
     if ($WriteProof.evidenceWritten -isnot [bool] -or $WriteProof.secretsRedacted -isnot [bool] -or
+        [string]::IsNullOrWhiteSpace([string]$WriteProof.artifactPath) -or
         -not [bool]$WriteProof.evidenceWritten -or -not [bool]$WriteProof.secretsRedacted) {
         throw 'MAN-527 successful diagnostics require an actual persisted artifact and a passing post-write sensitive-value scan.'
     }
+    if ($FailureCaptureSupported -isnot [bool] -or -not [bool]$FailureCaptureSupported) {
+        throw 'MAN-527 successful diagnostics require a passing failure-capture contract proof.'
+    }
     return [pscustomobject][ordered]@{
-        failureCaptureSupported = [bool]$WriteProof.evidenceWritten
+        failureCaptureSupported = [bool]$FailureCaptureSupported
         failureDiagnosticsCaptured = $false
         secretsRedacted = [bool]$WriteProof.secretsRedacted
         artifactPaths = @()
         errors = @()
+    }
+}
+
+function Test-NervAcceptanceWmsVerifierContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $tokens = $parseErrors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count -ne 0) {
+        return [pscustomobject][ordered]@{ failureCaptureSupported = $false; pickingReadbackWired = $false; completionReplayWired = $false }
+    }
+
+    $hasConditionalAncestor = {
+        param([Management.Automation.Language.Ast] $Node)
+        $ancestor = $Node.Parent
+        while ($null -ne $ancestor) {
+            if ($ancestor -is [Management.Automation.Language.IfStatementAst] -or
+                $ancestor -is [Management.Automation.Language.LoopStatementAst] -or
+                $ancestor -is [Management.Automation.Language.SwitchStatementAst] -or
+                $ancestor -is [Management.Automation.Language.TernaryExpressionAst]) { return $true }
+            $ancestor = $ancestor.Parent
+        }
+        return $false
+    }
+    $hasFunctionAncestor = {
+        param([Management.Automation.Language.Ast] $Node)
+        $ancestor = $Node.Parent
+        while ($null -ne $ancestor) {
+            if ($ancestor -is [Management.Automation.Language.FunctionDefinitionAst]) { return $true }
+            $ancestor = $ancestor.Parent
+        }
+        return $false
+    }
+    $exportFunctions = @($ast.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                    [string]::Equals($node.Name, 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
+            }, $true) | Where-Object {
+                -not (& $hasConditionalAncestor $_) -and
+                -not (& $hasFunctionAncestor $_)
+            })
+    $orderedCaptureCalls = [Collections.Generic.List[object]]::new()
+    $topLevelTryStatements = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $null -ne $node.Finally }, $true) | Where-Object {
+            -not (& $hasFunctionAncestor $_)
+        })
+    foreach ($tryStatement in $topLevelTryStatements) {
+        foreach ($catchClause in @($tryStatement.CatchClauses)) {
+            foreach ($captureCall in @($catchClause.Body.FindAll({
+                            param($node)
+                            $node -is [Management.Automation.Language.CommandAst] -and
+                                [string]::Equals($node.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
+                        }, $true))) {
+                if (-not (& $hasConditionalAncestor $captureCall) -and
+                    -not (& $hasFunctionAncestor $captureCall) -and
+                    $captureCall.Extent.StartOffset -lt $tryStatement.Finally.Extent.StartOffset) {
+                    [void]$orderedCaptureCalls.Add($captureCall)
+                }
+            }
+        }
+    }
+
+    $testAssignment = {
+        param([string] $CommandName, [string] $VariableName)
+        $matches = @($ast.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.CommandAst] -and
+                        [string]::Equals($node.GetCommandName(), $CommandName, [StringComparison]::Ordinal)
+                }, $true) | Where-Object {
+                    $command = $_
+                    $assignment = $command.Parent
+                    while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) {
+                        if (& $hasConditionalAncestor $command) { break }
+                        $assignment = $assignment.Parent
+                    }
+                    $null -ne $assignment -and
+                        $assignment -is [Management.Automation.Language.AssignmentStatementAst] -and
+                        [string]::Equals($assignment.Left.Extent.Text, "`$$VariableName", [StringComparison]::Ordinal) -and
+                        -not (& $hasConditionalAncestor $command) -and
+                        -not (& $hasFunctionAncestor $command)
+                })
+        return $matches.Count -eq 1
+    }
+
+    return [pscustomobject][ordered]@{
+        failureCaptureSupported = $exportFunctions.Count -eq 1 -and $orderedCaptureCalls.Count -eq 1
+        pickingReadbackWired = & $testAssignment 'Test-NervAcceptanceWmsPickingReadbacks' 'pickingLifecycleCompleted'
+        completionReplayWired = & $testAssignment 'Test-NervAcceptanceWmsCompletionReplay' 'completionHttpReplayConverged'
     }
 }
 
