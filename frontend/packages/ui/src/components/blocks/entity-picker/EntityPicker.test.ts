@@ -12,6 +12,17 @@ function panelOpen(): boolean {
 }
 
 describe('NvEntityPicker', () => {
+  it('marks both the field root and trigger as invalid for inline validation', () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: { options, title: '选择物料', invalid: true },
+    })
+
+    expect(wrapper.get('[data-slot="nv-entity-picker"]').attributes('data-invalid')).toBe('true')
+    const trigger = wrapper.get('button[aria-haspopup]')
+    expect(trigger.attributes('aria-invalid')).toBe('true')
+    expect(trigger.classes()).toContain('border-destructive')
+  })
+
   it('shows the placeholder when nothing is selected, and name + code when selected', () => {
     const empty = mount(NvEntityPicker, {
       props: { options, title: '选择物料', placeholder: '请选择物料' },
