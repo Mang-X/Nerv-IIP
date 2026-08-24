@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
@@ -7,6 +9,7 @@ public sealed record ToolingAssetListItem(
     string Code,
     string Name,
     string ToolingType,
+    [property: JsonConverter(typeof(ToolingAssetStatusJsonConverter))]
     ToolingAssetStatus Status,
     long? MaintenanceLifeCount,
     long UsageCount,
@@ -15,6 +18,9 @@ public sealed record ToolingAssetListItem(
     IReadOnlyCollection<string> SkuCodes);
 
 public sealed record ToolingAssetListResponse(IReadOnlyCollection<ToolingAssetListItem> Items, int Total);
+
+public sealed class ToolingAssetStatusJsonConverter()
+    : JsonStringEnumConverter<ToolingAssetStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
 
 public sealed record ListToolingAssetsQuery(
     string OrganizationId,
