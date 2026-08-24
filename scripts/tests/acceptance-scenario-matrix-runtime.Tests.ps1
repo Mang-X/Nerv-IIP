@@ -827,6 +827,32 @@ try {
             [IO.File]::WriteAllText($overrideMutationPath, $overrideMutationSource, [Text.UTF8Encoding]::new($false))
             $overrideContract = Test-NervAcceptanceWmsVerifierContract -Path $overrideMutationPath
             Assert-Contract (-not [bool]$overrideContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier top-level override mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
+
+            $alternateOverrideMutations = if ([string]::Equals([string]$contractMutation.Property, 'pickingReadbackWired', [StringComparison]::Ordinal)) {
+                @(
+                    @{ Name = 'script-scoped'; Statement = '$script:pickingLifecycleCompleted = $true' },
+                    @{ Name = 'braced'; Statement = '${pickingLifecycleCompleted} = $true' }
+                )
+            }
+            else {
+                @(
+                    @{ Name = 'set-variable'; Statement = 'Set-Variable -Name completionHttpReplayConverged -Value $true' },
+                    @{ Name = 'typed'; Statement = '[bool]$completionHttpReplayConverged = $true' }
+                )
+            }
+            foreach ($alternateOverrideMutation in $alternateOverrideMutations) {
+                $alternateOverridePath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-$($alternateOverrideMutation.Name)-override.ps1"
+                $alternateOverrideSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`n$($alternateOverrideMutation.Statement)")
+                [IO.File]::WriteAllText($alternateOverridePath, $alternateOverrideSource, [Text.UTF8Encoding]::new($false))
+                $alternateOverrideContract = Test-NervAcceptanceWmsVerifierContract -Path $alternateOverridePath
+                Assert-Contract (-not [bool]$alternateOverrideContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier alternate top-level override mutation '$($contractMutation.Name)-$($alternateOverrideMutation.Name)' must be killed by '$($contractMutation.Property)'."
+
+                $functionLocalOverridePath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-$($alternateOverrideMutation.Name)-function-local.ps1"
+                $functionLocalOverrideSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`nfunction Invoke-UnusedAlternateOverride { $($alternateOverrideMutation.Statement) }")
+                [IO.File]::WriteAllText($functionLocalOverridePath, $functionLocalOverrideSource, [Text.UTF8Encoding]::new($false))
+                $functionLocalOverrideContract = Test-NervAcceptanceWmsVerifierContract -Path $functionLocalOverridePath
+                Assert-Contract ([bool]$functionLocalOverrideContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier function-local write '$($contractMutation.Name)-$($alternateOverrideMutation.Name)' must not be counted as a top-level override."
+            }
         }
     }
 

@@ -1218,13 +1218,72 @@ function Test-NervAcceptanceWmsVerifierContract {
         }
     }
 
+    $getAssignmentVariableNames = {
+        param([Management.Automation.Language.AssignmentStatementAst] $Assignment)
+
+        @($Assignment.Left.FindAll({ param($node) $node -is [Management.Automation.Language.VariableExpressionAst] }, $true) | ForEach-Object {
+                $path = $_.VariablePath
+                if ($path.IsUnqualified) { [string]$path.UserPath }
+                elseif ($path.IsGlobal -or $path.IsLocal -or $path.IsPrivate -or $path.IsScript -or
+                    ($path.IsDriveQualified -and [string]::Equals([string]$path.DriveName, 'variable', [StringComparison]::OrdinalIgnoreCase))) {
+                    ([string]$path.UserPath).Substring(([string]$path.UserPath).IndexOf(':') + 1)
+                }
+            })
+    }
+    $testAssignmentWritesVariable = {
+        param(
+            [Management.Automation.Language.AssignmentStatementAst] $Assignment,
+            [string] $VariableName)
+
+        return @(& $getAssignmentVariableNames $Assignment | Where-Object {
+                [string]::Equals([string]$_, $VariableName, [StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0
+    }
+    $testSetVariableWritesVariable = {
+        param(
+            [Management.Automation.Language.CommandAst] $Command,
+            [string] $VariableName)
+
+        $commandName = [string]$Command.GetCommandName()
+        if (-not ([string]::Equals($commandName, 'Set-Variable', [StringComparison]::OrdinalIgnoreCase) -or
+                $commandName.EndsWith('\Set-Variable', [StringComparison]::OrdinalIgnoreCase))) { return $false }
+
+        $nameElement = $null
+        $nameWasSpecified = $false
+        for ($index = 1; $index -lt $Command.CommandElements.Count; $index++) {
+            $element = $Command.CommandElements[$index]
+            if ($element -is [Management.Automation.Language.CommandParameterAst] -and
+                [string]::Equals([string]$element.ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase)) {
+                $nameWasSpecified = $true
+                $nameElement = if ($null -ne $element.Argument) { $element.Argument }
+                elseif ($index + 1 -lt $Command.CommandElements.Count) { $Command.CommandElements[$index + 1] }
+                break
+            }
+        }
+        if (-not $nameWasSpecified -and $Command.CommandElements.Count -gt 1 -and
+            $Command.CommandElements[1] -isnot [Management.Automation.Language.CommandParameterAst]) {
+            $nameWasSpecified = $true
+            $nameElement = $Command.CommandElements[1]
+        }
+        if (-not $nameWasSpecified -or $nameElement -isnot [Management.Automation.Language.StringConstantExpressionAst]) {
+            return $true
+        }
+
+        $targetName = [string]$nameElement.Value
+        if ($targetName -match '^(?i:global|local|private|script|variable):(.+)$') { $targetName = [string]$Matches[1] }
+        return [string]::Equals($targetName, $VariableName, [StringComparison]::OrdinalIgnoreCase)
+    }
     $testAssignment = {
         param([string] $CommandName, [string] $VariableName)
-        $allAssignments = @($ast.FindAll({
+        $allWrites = @($ast.FindAll({
                     param($node)
-                    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
-                        [string]::Equals($node.Left.Extent.Text, "`$$VariableName", [StringComparison]::Ordinal)
-                }, $true) | Where-Object { -not (& $hasFunctionAncestor $_) })
+                    $node -is [Management.Automation.Language.AssignmentStatementAst] -or
+                        $node -is [Management.Automation.Language.CommandAst]
+                }, $true) | Where-Object {
+                    -not (& $hasFunctionAncestor $_) -and
+                        (($_ -is [Management.Automation.Language.AssignmentStatementAst] -and (& $testAssignmentWritesVariable $_ $VariableName)) -or
+                            ($_ -is [Management.Automation.Language.CommandAst] -and (& $testSetVariableWritesVariable $_ $VariableName)))
+                })
         $matches = @($ast.FindAll({
                     param($node)
                     $node -is [Management.Automation.Language.CommandAst] -and
@@ -1238,11 +1297,11 @@ function Test-NervAcceptanceWmsVerifierContract {
                     }
                     $null -ne $assignment -and
                         $assignment -is [Management.Automation.Language.AssignmentStatementAst] -and
-                        [string]::Equals($assignment.Left.Extent.Text, "`$$VariableName", [StringComparison]::Ordinal) -and
+                        (& $testAssignmentWritesVariable $assignment $VariableName) -and
                         -not (& $hasConditionalAncestor $command) -and
                         -not (& $hasFunctionAncestor $command)
                 })
-        return $allAssignments.Count -eq 1 -and $matches.Count -eq 1
+        return $allWrites.Count -eq 1 -and $matches.Count -eq 1
     }
 
     return [pscustomobject][ordered]@{
