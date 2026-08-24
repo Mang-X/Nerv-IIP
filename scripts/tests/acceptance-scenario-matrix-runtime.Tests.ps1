@@ -743,7 +743,7 @@ try {
         '$outboundAfterFirstCompletion = Wait-WmsOutboundOrder',
         '$outboundAfterCompletionReplay = Wait-WmsOutboundOrder',
         '$outboundAfterCompletionReplay.version -eq $outboundAfterFirstCompletion.version',
-        '$outboundAfterCompletionReplay.completedAtUtc -eq $outboundAfterFirstCompletion.completedAtUtc'
+        '[string]::Equals([string]$outboundAfterCompletionReplay.completedAtUtc, [string]$outboundAfterFirstCompletion.completedAtUtc, [StringComparison]::Ordinal)'
     )) {
         Assert-Contract ($wmsVerifierSource.Contains($requiredReadback, [StringComparison]::Ordinal)) "The MAN-527 verifier must derive WMS convergence from public readback checkpoint '$requiredReadback'."
     }

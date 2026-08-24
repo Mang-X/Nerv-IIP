@@ -760,7 +760,7 @@ try {
         [string]::Equals([string]$outboundAfterFirstCompletion.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
         [string]::Equals([string]$outboundAfterCompletionReplay.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
         $outboundAfterCompletionReplay.version -eq $outboundAfterFirstCompletion.version -and
-        $outboundAfterCompletionReplay.completedAtUtc -eq $outboundAfterFirstCompletion.completedAtUtc -and
+        [string]::Equals([string]$outboundAfterCompletionReplay.completedAtUtc, [string]$outboundAfterFirstCompletion.completedAtUtc, [StringComparison]::Ordinal) -and
         [string]::Equals(
             [string]($outboundAfterCompletionReplay.lines | ConvertTo-Json -Depth 8 -Compress),
             [string]($outboundAfterFirstCompletion.lines | ConvertTo-Json -Depth 8 -Compress),
