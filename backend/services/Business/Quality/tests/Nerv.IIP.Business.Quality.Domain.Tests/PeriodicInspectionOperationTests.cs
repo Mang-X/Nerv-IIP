@@ -24,6 +24,7 @@ public sealed class PeriodicInspectionOperationTests
             [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]);
 
         var context = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(ReleasedAtUtc.AddHours(2).AddMinutes(15), context.NextTimeWindowAtUtc);
         Assert.Equal("SKU-FG-1000", context.SkuCode);
         Assert.Equal("WC-001", context.WorkCenterId);
         Assert.Equal(1, context.InspectionPlanVersion);
@@ -60,6 +61,62 @@ public sealed class PeriodicInspectionOperationTests
 
         var context = Assert.Single(operation.RuntimeContexts);
         Assert.Equal(ReleasedAtUtc.AddMinutes(10), context.FirstActivityAtUtc);
+    }
+
+    [Fact]
+    public void Time_windows_start_one_interval_after_first_production_activity_and_advance_once()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 40m, "EA", ReleasedAtUtc.AddMinutes(15), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Empty(context.TakeDueTimeWindows(ReleasedAtUtc.AddHours(2).AddMinutes(14), maxWindows: 24));
+
+        var first = Assert.Single(context.TakeDueTimeWindows(ReleasedAtUtc.AddHours(2).AddMinutes(15), maxWindows: 24));
+        Assert.Equal(1, first.Sequence);
+        Assert.Equal(ReleasedAtUtc.AddHours(2).AddMinutes(15), first.DueAtUtc);
+
+        Assert.Empty(context.TakeDueTimeWindows(ReleasedAtUtc.AddHours(2).AddMinutes(15), maxWindows: 24));
+        Assert.Equal(1, context.LastGeneratedTimeWindowSequence);
+        Assert.Equal(ReleasedAtUtc.AddHours(4).AddMinutes(15), context.NextTimeWindowAtUtc);
+    }
+
+    [Fact]
+    public void Time_window_catch_up_is_bounded_and_keeps_the_frozen_anchor_after_generation()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 40m, "EA", ReleasedAtUtc.AddHours(1), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        var firstBatch = context.TakeDueTimeWindows(ReleasedAtUtc.AddHours(8), maxWindows: 2);
+
+        Assert.Collection(
+            firstBatch,
+            window => Assert.Equal((1L, ReleasedAtUtc.AddHours(3)), (window.Sequence, window.DueAtUtc)),
+            window => Assert.Equal((2L, ReleasedAtUtc.AddHours(5)), (window.Sequence, window.DueAtUtc)));
+
+        operation.RecordProductionReport("RPT-LATE", "WC-001", 10m, "EA", ReleasedAtUtc.AddMinutes(30), false, null);
+        var secondBatch = context.TakeDueTimeWindows(ReleasedAtUtc.AddHours(8), maxWindows: 2);
+
+        Assert.Single(secondBatch);
+        Assert.Equal((3L, ReleasedAtUtc.AddHours(7)), (secondBatch[0].Sequence, secondBatch[0].DueAtUtc));
+        Assert.Equal(ReleasedAtUtc.AddHours(1), context.TimeScheduleAnchorAtUtc);
+        Assert.Equal(ReleasedAtUtc.AddHours(9), context.NextTimeWindowAtUtc);
+    }
+
+    [Fact]
+    public void Time_windows_are_not_generated_without_activity_or_after_context_closes()
+    {
+        var operation = ReleasedOperation();
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Empty(context.TakeDueTimeWindows(ReleasedAtUtc.AddDays(1), maxWindows: 24));
+
+        operation.RecordProductionReport("RPT-001", "WC-001", 40m, "EA", ReleasedAtUtc.AddMinutes(15), false, null);
+        operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", ReleasedAtUtc.AddHours(3));
+
+        Assert.Empty(context.TakeDueTimeWindows(ReleasedAtUtc.AddDays(1), maxWindows: 24));
+        Assert.Null(context.NextTimeWindowAtUtc);
     }
 
     [Fact]

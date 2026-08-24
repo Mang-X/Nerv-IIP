@@ -6,7 +6,13 @@
 
 BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。
 
-同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。真实 PostgreSQL profile 新增 3 条冻结身份，Quality core member 现为 11 条（此前“8 条”的描述是本项前基线），并继续由同一 `quality-postgres-profile` lane 承载。本子项只建立持久上下文和水位，不生成 `inspection_tasks`；按时间/数量触发任务仍属于 #1973 后续子项。
+## Quality 时间间隔巡检任务生成（#1973 子项③ / #2071）
+
+BusinessQuality 已新增职责独立的时间巡检扫描器。启用 `Quality:PeriodicInspectionTime:Enabled` 并配置 `Scopes` 后，扫描器使用注入的 `TimeProvider`，从首次生产活动起按方案冻结的 `TimeIntervalHours` 生成 `operation/mes` 巡检任务；首个任务在第一个完整间隔到点时生成，已关闭、尚无报工或没有正数量高水位的上下文不生成。上下文持久化下一到期时间，扫描时只按到期顺序领取候选，避免未到期记录占用批次；首次生成会冻结 UTC 调度锚点并原子推进窗口序号，后续乱序报工不移动已投递的窗口身份。每个窗口使用运行上下文 ID 与窗口序号形成稳定幂等键，同时保留工单和工序来源身份、SKU、UOM、方案版本及个人/班组投递目标。
+
+扫描周期默认 15 分钟；`MaxWindowsPerContext` 默认 24，限制单上下文单轮补发量，剩余窗口由后续扫描继续追赶；`ContextBatchSize` 默认 100，两个上限均只接受 1–1000。生成过程复用工序范围的 PostgreSQL transaction-scoped advisory lock，在同一事务提交任务与时间水位；任务唯一索引作为重试、重启与多实例竞争的第二道防线。该能力默认关闭，不新增 HTTP API；数量间隔生成仍由 #2072 交付。
+
+同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。真实 PostgreSQL profile 由同一 `quality-postgres-profile` lane 承载，当前登记 13 条冻结身份；数量间隔触发仍属于 #2072。
 
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 

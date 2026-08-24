@@ -1,7 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
@@ -10,6 +13,61 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 public sealed class PeriodicInspectionIntegrationEventTests
 {
+    [Fact]
+    public async Task Fake_time_at_the_first_due_window_generates_one_assigned_operation_task_and_advances_watermark()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = NewPeriodicPlan();
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(ProductionReport(), CancellationToken.None);
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-24T03:30:00Z"));
+        var handler = new GeneratePeriodicInspectionTimeTasksCommandHandler(dbContext, coordinator, clock);
+
+        var generated = await handler.Handle(
+            new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
+            CancellationToken.None);
+        var replayed = await handler.Handle(
+            new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
+            CancellationToken.None);
+
+        Assert.Equal(1, generated);
+        Assert.Equal(0, replayed);
+        var task = await dbContext.InspectionTasks.SingleAsync();
+        Assert.Equal(plan.Id, task.InspectionPlanId);
+        Assert.Equal("operation", task.SourceType);
+        Assert.Equal("mes", task.SourceService);
+        Assert.Equal("WO-001", task.SourceDocumentId);
+        Assert.Equal("OP-001:periodic-time:1", task.SourceDocumentLineId);
+        Assert.Equal("SKU-FG-1000", task.SkuCode);
+        Assert.Equal(25m, task.Quantity);
+        Assert.Equal("EA", task.UomCode);
+        Assert.Equal("team-quality-001", task.AssignedTeamId);
+        var operation = await dbContext.PeriodicInspectionOperations.Include(x => x.RuntimeContexts).SingleAsync();
+        var runtimeContext = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal($"quality:periodic-time:{runtimeContext.Id}:1", task.TriggerIdempotencyKey);
+        Assert.Equal(1, runtimeContext.LastGeneratedTimeWindowSequence);
+        Assert.Equal(DateTime.Parse("2026-08-24T05:30:00Z").ToUniversalTime(), runtimeContext.NextTimeWindowAtUtc);
+
+        var claimed = await new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+            new ClaimInspectionTaskCommand(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "inspector-001",
+                ["team-quality-001"],
+                "claim-periodic-time-task",
+                task.Version),
+            CancellationToken.None);
+        Assert.Equal(InspectionTaskStatuses.InProgress, claimed.Status);
+        Assert.Equal("inspector-001", claimed.AssignedInspectorUserId);
+    }
+
     [Fact]
     public async Task Out_of_order_mes_facts_reconcile_a_closed_periodic_context_without_generating_a_task()
     {
@@ -27,6 +85,13 @@ public sealed class PeriodicInspectionIntegrationEventTests
         await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
             dbContext, scopeCoordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
 
+        var generated = await new GeneratePeriodicInspectionTimeTasksCommandHandler(
+            dbContext,
+            scopeCoordinator,
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-08-25T01:00:00Z"))).Handle(
+                new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
+                CancellationToken.None);
+
         var operation = await dbContext.PeriodicInspectionOperations
             .Include(x => x.ProductionReports)
             .Include(x => x.RuntimeContexts)
@@ -38,8 +103,65 @@ public sealed class PeriodicInspectionIntegrationEventTests
         Assert.Equal(25m, context.QuantityHighWater);
         Assert.Equal("EA", context.UomCode);
         Assert.Equal("closed", context.Status);
+        Assert.Equal(0, generated);
         Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Released_periodic_context_without_a_production_report_does_not_generate_a_time_task()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext,
+            coordinator,
+            new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+
+        var generated = await new GeneratePeriodicInspectionTimeTasksCommandHandler(
+            dbContext,
+            coordinator,
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-08-25T01:00:00Z"))).Handle(
+                new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
+                CancellationToken.None);
+
+        Assert.Equal(0, generated);
+        Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Context_batch_limit_does_not_allow_an_earlier_not_due_context_to_hide_a_due_context()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var releaseHandler = new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters);
+        var reportHandler = new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters);
+
+        await releaseHandler.HandleAsync(WorkOrderReleased("WO-001", "OP-001"), CancellationToken.None);
+        await reportHandler.HandleAsync(
+            ProductionReport("RPT-001", "WO-001", "OP-001", "2026-08-24T03:00:00Z"),
+            CancellationToken.None);
+        await releaseHandler.HandleAsync(WorkOrderReleased("WO-002", "OP-002"), CancellationToken.None);
+        await reportHandler.HandleAsync(
+            ProductionReport("RPT-002", "WO-002", "OP-002", "2026-08-24T01:00:00Z"),
+            CancellationToken.None);
+
+        var generated = await new GeneratePeriodicInspectionTimeTasksCommandHandler(
+            dbContext,
+            coordinator,
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-08-24T03:30:00Z"))).Handle(
+                new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 1),
+                CancellationToken.None);
+
+        Assert.Equal(1, generated);
+        Assert.Equal("WO-002", (await dbContext.InspectionTasks.SingleAsync()).SourceDocumentId);
     }
 
     [Fact]
@@ -128,40 +250,46 @@ public sealed class PeriodicInspectionIntegrationEventTests
         return plan;
     }
 
-    private static WorkOrderReleasedIntegrationEvent WorkOrderReleased() => new(
-        "evt-release-001",
+    private static WorkOrderReleasedIntegrationEvent WorkOrderReleased(
+        string workOrderId = "WO-001",
+        string operationId = "OP-001") => new(
+        $"evt-release-{workOrderId}",
         MesIntegrationEventTypes.WorkOrderReleased,
         MesIntegrationEventVersions.V1,
         DateTimeOffset.Parse("2026-08-24T01:00:00Z"),
         MesIntegrationEventSources.BusinessMes,
-        "corr-release-001",
-        "WO-001",
+        $"corr-release-{workOrderId}",
+        workOrderId,
         "org-001",
         "env-dev",
         "system:mes",
-        "mes:work-order-released:org-001:env-dev:WO-001",
+        $"mes:work-order-released:org-001:env-dev:{workOrderId}",
         new WorkOrderReleasedPayload(
-            "WO-001",
+            workOrderId,
             "SKU-FG-1000",
             1000m,
             DateTimeOffset.Parse("2026-08-24T01:00:00Z"),
-            [new ReleasedOperationPayload("OP-001", 10, "WC-001")]));
+            [new ReleasedOperationPayload(operationId, 10, "WC-001")]));
 
-    private static ProductionReportRecordedIntegrationEvent ProductionReport() => new(
-        "evt-report-001",
+    private static ProductionReportRecordedIntegrationEvent ProductionReport(
+        string reportNo = "RPT-001",
+        string workOrderId = "WO-001",
+        string operationId = "OP-001",
+        string reportedAtUtc = "2026-08-24T01:30:00Z") => new(
+        $"evt-report-{reportNo}",
         MesIntegrationEventTypes.ProductionReportRecorded,
         MesIntegrationEventVersions.V1,
-        DateTimeOffset.Parse("2026-08-24T01:30:00Z"),
+        DateTimeOffset.Parse(reportedAtUtc),
         MesIntegrationEventSources.BusinessMes,
-        "corr-report-001",
-        "WO-001",
+        $"corr-report-{reportNo}",
+        workOrderId,
         "org-001",
         "env-dev",
         "system:mes",
-        "mes:production-report-recorded:org-001:env-dev:RPT-001",
+        $"mes:production-report-recorded:org-001:env-dev:{reportNo}",
         new ProductionReportRecordedPayload(
-            "RPT-001", "WO-001", "OP-001", "WC-001", null, 25m, 0m, 0m, "EA", null,
-            DateTimeOffset.Parse("2026-08-24T01:30:00Z"), false));
+            reportNo, workOrderId, operationId, "WC-001", null, 25m, 0m, 0m, "EA", null,
+            DateTimeOffset.Parse(reportedAtUtc), false));
 
     private static MesOperationTaskCompletedIntegrationEvent OperationCompleted() => new(
         "evt-complete-001",
