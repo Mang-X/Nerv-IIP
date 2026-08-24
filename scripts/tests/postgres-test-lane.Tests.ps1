@@ -335,11 +335,12 @@ try {
     Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
     # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
-    # Quality 同理：五个类共 21 条用例，只有 8 条是真实 PostgreSQL 证明。
+    # Quality 同理：六个类共 24 条用例，只有 11 条是真实 PostgreSQL 证明。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 8) 'The Quality member must freeze exactly its eight governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 11) 'The Quality member must freeze exactly its eleven governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
     foreach ($qualitySource in @(
+            'PeriodicInspectionPostgresProfileTests.cs',
             'QualityCalibrationRecordQueryTests.cs',
             'QualityCapaRedrivePostgresProfileTests.cs',
             'QualityInspectionTaskPostgresProfileTests.cs',
@@ -350,13 +351,14 @@ try {
         Assert-LaneOwnedDatabase -SourcePath $qualitySourcePath -InnerDatabaseFactory 'QualityPostgresTestDatabase.CreateAsync'
         Assert-LaneOwnedDatabase -SourcePath $qualitySourcePath -InnerDatabaseFactory 'TemporaryPostgresDatabase.CreateAsync'
     }
-    # 三个直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
+    # 直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
     # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
     # 只扫 InspectionTask 一个文件会留下盲区：SpcAnalysis 的 CreatePostgresProvider 与 Calibration 的
-    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部五个
+    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部六个
     # Quality lane 源，正则同时接受常量与字面量两种钉法。
     $qualityPinnedBuilders = 0
     foreach ($qualitySource in @(
+            'PeriodicInspectionPostgresProfileTests.cs',
             'QualityCalibrationRecordQueryTests.cs',
             'QualityCapaRedrivePostgresProfileTests.cs',
             'QualityInspectionTaskPostgresProfileTests.cs',
@@ -368,7 +370,7 @@ try {
         Assert-Contract ($historyOverrides -eq $rawNpgsqlBuilders) "Every raw DbContext option builder in '$qualitySource' must pin __EFMigrationsHistory to the quality schema; observed $rawNpgsqlBuilders builders and $historyOverrides pinned."
         $qualityPinnedBuilders += $historyOverrides
     }
-    Assert-Contract ($qualityPinnedBuilders -eq 5) 'The Quality lane sources must keep exactly their five pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
+    Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 7) 'The IndustrialTelemetry member must freeze exactly its seven governed PostgreSQL identities.'
