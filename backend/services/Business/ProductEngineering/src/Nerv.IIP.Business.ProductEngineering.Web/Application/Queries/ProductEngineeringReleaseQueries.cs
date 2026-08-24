@@ -865,6 +865,6 @@ public sealed class GetEngineeringChangeQueryHandler(ApplicationDbContext dbCont
                     .Select(version => new EngineeringChangeAffectedVersionItem(version.VersionKind, version.VersionId, version.SupersededByVersionId))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"工程变更 '{request.ChangeNumber}' 不存在。");
+            ?? throw new KnownException("工程变更不存在，请检查变更编号。");
     }
 }

@@ -951,9 +951,22 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     private static IReadOnlyList<AffectedVersionCommand> NormalizeAffectedVersions(IEnumerable<AffectedVersionCommand> affectedVersions)
     {
         return affectedVersions.Select(affectedVersion => new AffectedVersionCommand(
-            NormalizeRequired(affectedVersion.VersionKind, nameof(AffectedVersionCommand.VersionKind)).ToLowerInvariant(),
+            NormalizeVersionKind(affectedVersion.VersionKind),
             NormalizeRequired(affectedVersion.VersionId, nameof(AffectedVersionCommand.VersionId)),
             NormalizeOptional(affectedVersion.SupersededByVersionId))).ToArray();
+    }
+
+    private static string NormalizeVersionKind(string value)
+    {
+        return NormalizeRequired(value, nameof(AffectedVersionCommand.VersionKind)).ToLowerInvariant() switch
+        {
+            "engineering-bom" or "engineeringbom" or "engineering_bom" => "engineering-bom",
+            "manufacturing-bom" or "manufacturingbom" or "manufacturing_bom" => "manufacturing-bom",
+            "routing" => "routing",
+            "production-version" or "productionversion" or "production_version" => "production-version",
+            "engineering-document" or "engineeringdocument" or "engineering_document" => "engineering-document",
+            var unsupported => unsupported
+        };
     }
 
     private static void EnsureAcyclicSupersedeTopology(IReadOnlyList<AffectedVersionEntry> affectedVersions)

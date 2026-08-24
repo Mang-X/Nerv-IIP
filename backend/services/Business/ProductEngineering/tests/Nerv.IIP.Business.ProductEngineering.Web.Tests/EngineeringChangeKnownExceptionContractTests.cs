@@ -638,15 +638,120 @@ public sealed class EngineeringChangeKnownExceptionContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
+        const string missingChangeNumber = "<missing-change>/\u0001" + "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
         var getException = await Assert.ThrowsAsync<KnownException>(() => new GetEngineeringChangeQueryHandler(dbContext).Handle(
-            new GetEngineeringChangeQuery("org-001", "env-dev", "ECO-MISSING"),
+            new GetEngineeringChangeQuery("org-001", "env-dev", missingChangeNumber),
             CancellationToken.None));
         var previewException = await Assert.ThrowsAsync<KnownException>(() => new GetEngineeringChangeImpactPreviewQueryHandler(dbContext).Handle(
             new GetEngineeringChangeImpactPreviewQuery("org-001", "env-dev", new DateOnly(2026, 6, 1), []),
             CancellationToken.None));
 
-        Assert.Equal("工程变更 'ECO-MISSING' 不存在。", getException.Message);
+        Assert.Equal("工程变更不存在，请检查变更编号。", getException.Message);
+        Assert.DoesNotContain(missingChangeNumber, getException.Message, StringComparison.Ordinal);
+        Assert.True(getException.Message.Length <= 60);
+        Assert.DoesNotMatch("[\\x00-\\x1F\\x7F]", getException.Message);
+        Assert.DoesNotContain("<", getException.Message);
+        Assert.DoesNotContain(">", getException.Message);
+        Assert.DoesNotContain("/", getException.Message);
+        Assert.DoesNotContain("\\", getException.Message);
         Assert.Equal("影响预览至少需要一个受影响版本。", previewException.Message);
+    }
+
+    [Theory]
+    [InlineData("EngineeringBom", "engineering-bom")]
+    [InlineData("engineering-bom", "engineering-bom")]
+    [InlineData("engineering_bom", "engineering-bom")]
+    [InlineData("ManufacturingBom", "manufacturing-bom")]
+    [InlineData("manufacturing-bom", "manufacturing-bom")]
+    [InlineData("manufacturing_bom", "manufacturing-bom")]
+    [InlineData("Routing", "routing")]
+    [InlineData("routing", "routing")]
+    [InlineData("ProductionVersion", "production-version")]
+    [InlineData("production-version", "production-version")]
+    [InlineData("production_version", "production-version")]
+    public async Task Public_release_normalizes_pascal_kebab_and_snake_version_kinds(
+        string submittedVersionKind,
+        string canonicalVersionKind)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        IEngineeringDocumentRepository? engineeringDocumentRepository = null;
+        var sourceVersionId = SeedSupportedAffectedVersion(dbContext, canonicalVersionKind, ref engineeringDocumentRepository);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await CreateHandler(dbContext, engineeringDocumentRepository).Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001", "env-dev", $"ECO-NORMALIZE-{canonicalVersionKind}-{submittedVersionKind}", "Normalize version kind",
+                Guid.NewGuid().ToString("D"), new DateOnly(2026, 6, 10),
+                [new AffectedVersionCommand(submittedVersionKind, sourceVersionId)]),
+            CancellationToken.None);
+
+        Assert.Equal($"ECO-NORMALIZE-{canonicalVersionKind}-{submittedVersionKind}", result.Id);
+    }
+
+    private static string SeedSupportedAffectedVersion(
+        ApplicationDbContext dbContext,
+        string canonicalVersionKind,
+        ref IEngineeringDocumentRepository? engineeringDocumentRepository)
+    {
+        return canonicalVersionKind switch
+        {
+            "engineering-bom" => SeedEngineeringBom(dbContext),
+            "manufacturing-bom" => SeedManufacturingBom(dbContext),
+            "routing" => SeedRouting(dbContext),
+            "production-version" => SeedProductionVersion(dbContext),
+            "engineering-document" => SeedEngineeringDocument(dbContext, ref engineeringDocumentRepository),
+            _ => throw new ArgumentOutOfRangeException(nameof(canonicalVersionKind), canonicalVersionKind, null)
+        };
+    }
+
+    private static string SeedEngineeringBom(ApplicationDbContext dbContext)
+    {
+        var bom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-NORMALIZE", "A", "SKU-NORMALIZE")
+            .AddLine("SKU-COMPONENT", 1m, "EA");
+        bom.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.Add(bom);
+        return "EBOM-NORMALIZE:A";
+    }
+
+    private static string SeedManufacturingBom(ApplicationDbContext dbContext)
+    {
+        var bom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-NORMALIZE", "A", "SKU-NORMALIZE")
+            .AddMaterialLine("SKU-COMPONENT", 1m, "EA", 0m);
+        bom.ReleaseFromEngineeringBom("EBOM-NORMALIZE:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        dbContext.ManufacturingBoms.Add(bom);
+        return "MBOM-NORMALIZE:A";
+    }
+
+    private static string SeedRouting(ApplicationDbContext dbContext)
+    {
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-NORMALIZE", "A", "SKU-NORMALIZE")
+            .AddOperation(10, "WC-NORMALIZE", "operation", "Operation", 30);
+        routing.Release(new DateOnly(2026, 1, 1));
+        dbContext.Routings.Add(routing);
+        return "ROUTE-NORMALIZE:A";
+    }
+
+    private static string SeedProductionVersion(ApplicationDbContext dbContext)
+    {
+        var productionVersion = ProductionVersion.Create(
+            "org-001", "env-dev", "SKU-NORMALIZE", "MBOM-NORMALIZE:A", "ROUTE-NORMALIZE:A",
+            new DateOnly(2026, 1, 1), null, null, null, 10, true,
+            EngineeringVersionStatus.Published, EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.Add(productionVersion);
+        return productionVersion.Id.Id.ToString("D");
+    }
+
+    private static string SeedEngineeringDocument(
+        ApplicationDbContext dbContext,
+        ref IEngineeringDocumentRepository? engineeringDocumentRepository)
+    {
+        var document = EngineeringDocument.Register(
+            "org-001", "env-dev", "DOC-NORMALIZE", "A", "file-normalize", "normalize.pdf", "application/pdf", "manual");
+        dbContext.EngineeringDocuments.Add(document);
+        engineeringDocumentRepository = new EngineeringDocumentRepository(dbContext);
+        return "DOC-NORMALIZE:A";
     }
 
     private static ServiceProvider CreateInMemoryProvider()
