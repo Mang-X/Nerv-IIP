@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Quality 周期巡检工序上下文（#1973 子项② / #2070）
+
+BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。
+
+同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。真实 PostgreSQL profile 新增 2 条冻结身份，Quality core member 现为 10 条（此前“8 条”的描述是本项前基线），并继续由同一 `quality-postgres-profile` lane 承载。本子项只建立持久上下文和水位，不生成 `inspection_tasks`；按时间/数量触发任务仍属于 #1973 后续子项。
+
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 
 #1877 的内存见证落地后，hosted runner 已捕获至少七次同时带信号分类与内存快照的
