@@ -1007,6 +1007,22 @@ function Assert-NervAcceptanceRuntimeIntegerField {
     return [int64]$value
 }
 
+function Protect-NervAcceptanceWmsDiagnosticText {
+    param(
+        [AllowNull()] [string] $Text,
+        [AllowEmptyCollection()] [string[]] $SensitiveValues = @()
+    )
+
+    if ($null -eq $Text) { return $null }
+    $protected = Protect-ScriptAutomationText -Text $Text
+    foreach ($sensitiveValue in @($SensitiveValues)) {
+        if (-not [string]::IsNullOrWhiteSpace($sensitiveValue)) {
+            $protected = $protected.Replace($sensitiveValue, '<redacted>', [StringComparison]::Ordinal)
+        }
+    }
+    return $protected
+}
+
 function New-NervAcceptanceWmsDeliveryCanonicalResult {
     param(
         [Parameter(Mandatory)] [object] $Provenance,
@@ -1014,6 +1030,7 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
         [Parameter(Mandatory)] [object] $BusinessEvidence,
         [Parameter(Mandatory)] [object] $TestCounters,
         [Parameter(Mandatory)] [object] $CleanupEvidence,
+        [Parameter(Mandatory)] [object] $DiagnosticEvidence,
         [Parameter(Mandatory)] [object] $Volatile
     )
 
@@ -1026,7 +1043,7 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
     if (-not [string]::Equals([string]$Provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) { throw "MAN-527 canonical scenarioId must be 'wms-delivery-erp'." }
     if ($Track -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'MAN-527 canonical track identifier must be canonical.' }
 
-    Assert-NervAcceptanceObjectSchema -Object $BusinessEvidence -AllowedFields @('verifiedAtUtc', 'scenarioStatus', 'deliveryOrderNo', 'transport', 'persistence', 'wmsOutboundOrder', 'erpDelivery', 'accountReceivable', 'repeatedEvent', 'cleanup') -RequiredFields @('scenarioStatus', 'deliveryOrderNo', 'wmsOutboundOrder', 'erpDelivery', 'accountReceivable', 'repeatedEvent') -Context 'MAN-527 business evidence'
+    Assert-NervAcceptanceObjectSchema -Object $BusinessEvidence -AllowedFields @('verifiedAtUtc', 'scenarioStatus', 'deliveryOrderNo', 'transport', 'persistence', 'wmsOutboundOrder', 'erpDelivery', 'accountReceivable', 'repeatedEvent', 'repeatedEventConverged', 'cleanup', 'diagnostics') -RequiredFields @('scenarioStatus', 'deliveryOrderNo', 'wmsOutboundOrder', 'erpDelivery', 'accountReceivable', 'repeatedEvent', 'repeatedEventConverged') -Context 'MAN-527 business evidence'
     if (-not [string]::Equals([string]$BusinessEvidence.scenarioStatus, 'passed', [StringComparison]::Ordinal)) { throw 'MAN-527 canonical success requires passed business evidence.' }
     Assert-NervAcceptanceObjectSchema -Object $TestCounters -AllowedFields @('total', 'executed', 'passed', 'failed', 'skipped') -RequiredFields @('total', 'executed', 'passed', 'failed', 'skipped') -Context 'MAN-527 canonical TRX counters'
     foreach ($name in @('total', 'executed', 'passed', 'failed', 'skipped')) { [void](Assert-NervAcceptanceRuntimeIntegerField -Object $TestCounters -Name $name -Context 'MAN-527 canonical TRX counters') }
@@ -1036,19 +1053,43 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
     Assert-NervAcceptanceObjectSchema -Object $CleanupEvidence -AllowedFields @('managedProcessIds', 'managedProcessRemaining', 'databaseName', 'exactDatabaseRemaining', 'postgres', 'redis', 'errors') -RequiredFields @('managedProcessRemaining', 'exactDatabaseRemaining', 'postgres', 'redis', 'errors') -Context 'MAN-527 canonical cleanup evidence'
     foreach ($name in @('managedProcessRemaining', 'exactDatabaseRemaining')) { [void](Assert-NervAcceptanceRuntimeIntegerField -Object $CleanupEvidence -Name $name -Context 'MAN-527 canonical cleanup evidence') }
     if ($CleanupEvidence.errors -isnot [array]) { throw 'MAN-527 canonical cleanup errors must be an array.' }
-    if ([int64]$CleanupEvidence.managedProcessRemaining -ne 0 -or [int64]$CleanupEvidence.exactDatabaseRemaining -ne 0 -or @($CleanupEvidence.errors).Count -ne 0 -or
-        [string]::Equals([string]$CleanupEvidence.postgres, 'owned-pending-cleanup', [StringComparison]::Ordinal) -or
-        [string]::Equals([string]$CleanupEvidence.redis, 'owned-pending-cleanup', [StringComparison]::Ordinal)) {
+    $cleanupErrors = @($CleanupEvidence.errors)
+    $pendingOwnedResources = 0
+    foreach ($provider in @('postgres', 'redis')) {
+        if ([string]::Equals([string]$CleanupEvidence.PSObject.Properties[$provider].Value, 'owned-pending-cleanup', [StringComparison]::Ordinal)) {
+            $pendingOwnedResources++
+        }
+    }
+    $ownedResourcesRemaining = [int64]$CleanupEvidence.managedProcessRemaining + [int64]$CleanupEvidence.exactDatabaseRemaining + $pendingOwnedResources
+    $cleanupErrorCodes = @($cleanupErrors | ForEach-Object {
+        $separatorIndex = ([string]$_).IndexOf(':', [StringComparison]::Ordinal)
+        if ($separatorIndex -gt 0) { ([string]$_).Substring(0, $separatorIndex) } else { 'cleanup-error' }
+    })
+    if ($ownedResourcesRemaining -ne 0 -or $cleanupErrors.Count -ne 0) {
         throw 'MAN-527 canonical success requires zero cleanup remaining counts and no pending owned resources.'
     }
 
     $outboundAssigned = -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.wmsOutboundOrder.firstAssignment.poolCode) -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.wmsOutboundOrder.firstAssignment.operatorPrincipalId)
-    $pickingLifecycleCompleted = [string]::Equals([string]$BusinessEvidence.wmsOutboundOrder.pickingLifecycle, 'public create/read/assign/start/progress/complete for every outbound line', [StringComparison]::Ordinal)
+    if ($BusinessEvidence.wmsOutboundOrder.pickingLifecycleCompleted -isnot [bool] -or $BusinessEvidence.wmsOutboundOrder.completionHttpReplayConverged -isnot [bool] -or $BusinessEvidence.repeatedEventConverged -isnot [bool]) {
+        throw 'MAN-527 canonical business checkpoint flags must be JSON booleans.'
+    }
+    $pickingLifecycleCompleted = [bool]$BusinessEvidence.wmsOutboundOrder.pickingLifecycleCompleted
     $deliveryCompleted = [string]::Equals([string]$BusinessEvidence.erpDelivery.status, 'completed', [StringComparison]::OrdinalIgnoreCase) -and [decimal]$BusinessEvidence.erpDelivery.shippedQuantity -eq 2 -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.erpDelivery.shippedAtUtc) -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.erpDelivery.completedAtUtc)
     $receivableCreated = -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.accountReceivable.receivableNo) -and [string]::Equals([string]$BusinessEvidence.accountReceivable.sourceDocumentNo, [string]$BusinessEvidence.deliveryOrderNo, [StringComparison]::Ordinal)
-    $completionReplayConverged = [string]::Equals([string]$BusinessEvidence.wmsOutboundOrder.completionHttpReplay, 'same idempotency key accepted twice', [StringComparison]::Ordinal)
-    $repeatedEventConverged = [string]::Equals([string]$BusinessEvidence.repeatedEvent, 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter', [StringComparison]::Ordinal)
+    $completionReplayConverged = [bool]$BusinessEvidence.wmsOutboundOrder.completionHttpReplayConverged
+    $repeatedEventConverged = [bool]$BusinessEvidence.repeatedEventConverged
     if (-not $outboundAssigned -or -not $pickingLifecycleCompleted -or -not $deliveryCompleted -or -not $receivableCreated -or -not $completionReplayConverged -or -not $repeatedEventConverged) { throw 'MAN-527 canonical success requires every business checkpoint to have converged.' }
+
+    Assert-NervAcceptanceObjectSchema -Object $DiagnosticEvidence -AllowedFields @('failureCaptureSupported', 'captureBeforeCleanup', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -RequiredFields @('failureCaptureSupported', 'captureBeforeCleanup', 'failureDiagnosticsCaptured', 'secretsRedacted', 'artifactPaths', 'errors') -Context 'MAN-527 canonical diagnostic evidence'
+    foreach ($name in @('failureCaptureSupported', 'captureBeforeCleanup', 'failureDiagnosticsCaptured', 'secretsRedacted')) {
+        if ($DiagnosticEvidence.PSObject.Properties[$name].Value -isnot [bool]) { throw "MAN-527 canonical diagnostic evidence $name must be a JSON boolean." }
+    }
+    if (-not [bool]$DiagnosticEvidence.failureCaptureSupported) { throw 'MAN-527 canonical success requires diagnostic failure capture support.' }
+    if (-not [bool]$DiagnosticEvidence.captureBeforeCleanup) { throw 'MAN-527 canonical failure diagnostics must be captured before cleanup.' }
+    if ([bool]$DiagnosticEvidence.failureDiagnosticsCaptured) { throw 'MAN-527 canonical success must not claim failure diagnostics were captured.' }
+    if (-not [bool]$DiagnosticEvidence.secretsRedacted) { throw 'MAN-527 canonical diagnostic secrets must be redacted.' }
+    if ($DiagnosticEvidence.artifactPaths -isnot [array] -or @($DiagnosticEvidence.artifactPaths).Count -ne 0) { throw 'MAN-527 canonical success must not retain failure diagnostic artifacts.' }
+    if ($DiagnosticEvidence.errors -isnot [array] -or @($DiagnosticEvidence.errors).Count -ne 0) { throw 'MAN-527 canonical diagnostic capture errors must be empty.' }
 
     Assert-NervAcceptanceObjectSchema -Object $Volatile -AllowedFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'ports', 'paths') -RequiredFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'ports', 'paths') -Context 'MAN-527 canonical volatile evidence'
     return [pscustomobject][ordered]@{
@@ -1058,9 +1099,9 @@ function New-NervAcceptanceWmsDeliveryCanonicalResult {
         conclusion = 'passed'
         test = [pscustomobject][ordered]@{ identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'; expected = 1; discovered = [int]$TestCounters.total; passed = [int]$TestCounters.passed; failed = [int]$TestCounters.failed; skipped = [int]$TestCounters.skipped }
         businessFacts = [pscustomobject][ordered]@{ outboundAssigned = $outboundAssigned; pickingLifecycleCompleted = $pickingLifecycleCompleted; deliveryCompleted = $deliveryCompleted; receivableCreated = $receivableCreated; completionReplayConverged = $completionReplayConverged; repeatedEventConverged = $repeatedEventConverged }
-        diagnostics = [pscustomobject][ordered]@{ schemas = @('erp', 'inventory', 'wms'); failureCaptureSupported = $true; failureDiagnosticsCaptured = $false; secretsRedacted = $true }
-        cleanup = [pscustomobject][ordered]@{ managedProcessesRemaining = [int]$CleanupEvidence.managedProcessRemaining; disposableDatabasesRemaining = [int]$CleanupEvidence.exactDatabaseRemaining; ownedResourcesRemaining = 0; errorCodes = @() }
-        volatile = [pscustomobject][ordered]@{ databaseName = [string]$Volatile.databaseName; processIds = @($Volatile.processIds); capSuffix = [string]$Volatile.capSuffix; startedAtUtc = [string]$Volatile.startedAtUtc; completedAtUtc = [string]$Volatile.completedAtUtc; cleanupErrors = @(); ports = $Volatile.ports; paths = $Volatile.paths }
+        diagnostics = [pscustomobject][ordered]@{ schemas = @('erp', 'inventory', 'wms'); failureCaptureSupported = [bool]$DiagnosticEvidence.failureCaptureSupported; failureDiagnosticsCaptured = [bool]$DiagnosticEvidence.failureDiagnosticsCaptured; secretsRedacted = [bool]$DiagnosticEvidence.secretsRedacted }
+        cleanup = [pscustomobject][ordered]@{ managedProcessesRemaining = [int]$CleanupEvidence.managedProcessRemaining; disposableDatabasesRemaining = [int]$CleanupEvidence.exactDatabaseRemaining; ownedResourcesRemaining = [int]$ownedResourcesRemaining; errorCodes = @($cleanupErrorCodes) }
+        volatile = [pscustomobject][ordered]@{ databaseName = [string]$Volatile.databaseName; processIds = @($Volatile.processIds); capSuffix = [string]$Volatile.capSuffix; startedAtUtc = [string]$Volatile.startedAtUtc; completedAtUtc = [string]$Volatile.completedAtUtc; cleanupErrors = @($cleanupErrors); ports = $Volatile.ports; paths = $Volatile.paths }
     }
 }
 

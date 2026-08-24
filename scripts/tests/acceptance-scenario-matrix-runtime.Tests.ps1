@@ -600,6 +600,15 @@ function Assert-ResultRejected {
 
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+    . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+    $wmsDiagnosticSecret = 'man527-secret-token'
+    $protectedWmsDiagnostic = Protect-NervAcceptanceWmsDiagnosticText `
+        -Text "Authorization: Bearer $wmsDiagnosticSecret; Password=database-secret; endpoint-secret" `
+        -SensitiveValues @($wmsDiagnosticSecret, 'database-secret', 'endpoint-secret')
+    Assert-Contract (-not $protectedWmsDiagnostic.Contains($wmsDiagnosticSecret, [StringComparison]::Ordinal) -and
+        -not $protectedWmsDiagnostic.Contains('database-secret', [StringComparison]::Ordinal) -and
+        -not $protectedWmsDiagnostic.Contains('endpoint-secret', [StringComparison]::Ordinal)) 'MAN-527 diagnostic redaction must remove every caller-declared sensitive value.'
+    Assert-Contract ($protectedWmsDiagnostic.Contains('<redacted>', [StringComparison]::Ordinal)) 'MAN-527 diagnostic redaction must retain an explicit redaction marker.'
     $manifest = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $manifestPath -V1ManifestPath $v1ManifestPath -RepositoryRoot $repoRoot
     $manifestDigest = Get-NervAcceptanceManifestDigest -ManifestPath $manifestPath
     $artifact = New-SalesPlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest
@@ -624,14 +633,18 @@ try {
         wmsOutboundOrder = [pscustomobject][ordered]@{
             firstAssignment = [pscustomobject][ordered]@{ poolCode = 'POOL-MAN527-SHIPPING-1234ABCD'; operatorPrincipalId = 'man527-operator-1234abcd' }
             pickingLifecycle = 'public create/read/assign/start/progress/complete for every outbound line'
+            pickingLifecycleCompleted = $true
             completionHttpReplay = 'same idempotency key accepted twice'
+            completionHttpReplayConverged = $true
         }
         erpDelivery = [pscustomobject][ordered]@{ status = 'completed'; shippedQuantity = 2; shippedAtUtc = '2026-08-24T00:00:00Z'; completedAtUtc = '2026-08-24T00:01:00Z' }
         accountReceivable = [pscustomobject][ordered]@{ receivableNo = 'AR-001'; sourceDocumentNo = 'DO-MAN527-1234ABCD' }
         repeatedEvent = 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter'
+        repeatedEventConverged = $true
     }
     $wmsCounters = [pscustomobject][ordered]@{ total = 1; executed = 1; passed = 1; failed = 0; skipped = 0 }
     $wmsCleanup = [pscustomobject][ordered]@{ managedProcessRemaining = 0; exactDatabaseRemaining = 0; postgres = 'owned-stopped'; redis = 'owned-stopped'; errors = @() }
+    $wmsDiagnostics = [pscustomobject][ordered]@{ failureCaptureSupported = $true; captureBeforeCleanup = $true; failureDiagnosticsCaptured = $false; secretsRedacted = $true; artifactPaths = @(); errors = @() }
     $wmsVolatile = [pscustomobject][ordered]@{
         databaseName = 'man527_1234567890abcdef1234567890abcdef'
         processIds = @(701, 702, 703)
@@ -641,24 +654,42 @@ try {
         ports = [pscustomobject][ordered]@{ erp = 42001; wms = 42002; inventory = 42003 }
         paths = [pscustomobject][ordered]@{ businessEvidence = '/tmp/evidence.json'; probeTrx = '/tmp/probe.trx'; cleanupEvidence = '/tmp/evidence.json'; canonicalResult = '/tmp/result.json' }
     }
-    $wmsBuiltCanonical = New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $wmsCanonicalResult.provenance -Track shadow -BusinessEvidence $wmsBusinessEvidence -TestCounters $wmsCounters -CleanupEvidence $wmsCleanup -Volatile $wmsVolatile
+    $wmsBuiltCanonical = New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $wmsCanonicalResult.provenance -Track shadow -BusinessEvidence $wmsBusinessEvidence -TestCounters $wmsCounters -CleanupEvidence $wmsCleanup -DiagnosticEvidence $wmsDiagnostics -Volatile $wmsVolatile
     Assert-Contract ([string]::Equals([string]$wmsBuiltCanonical.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal) -and $wmsBuiltCanonical.businessFacts.repeatedEventConverged) 'The MAN-527 adapter must construct the WMS canonical result from business evidence, exact TRX counters, and cleanup readback.'
     foreach ($wmsInputMutation in @(
         @{ Name = 'bad-provenance'; Message = 'runId must be a positive'; Provenance = { param($value) $value.runId = '01' } },
         @{ Name = 'missing-business-evidence'; Message = 'missing required field'; Business = { param($value) $value.PSObject.Properties.Remove('accountReceivable') } },
+        @{ Name = 'empty-assignment'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.firstAssignment.poolCode = '' } },
+        @{ Name = 'picking-not-completed'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.pickingLifecycleCompleted = $false } },
+        @{ Name = 'delivery-pending'; Message = 'every business checkpoint'; Business = { param($value) $value.erpDelivery.status = 'pending' } },
+        @{ Name = 'completion-replay-not-converged'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionHttpReplayConverged = $false } },
+        @{ Name = 'repeated-event-not-converged'; Message = 'every business checkpoint'; Business = { param($value) $value.repeatedEventConverged = $false } },
         @{ Name = 'extra-test-identity'; Message = 'exact TRX counts'; Counters = { param($value) $value.total = 2; $value.executed = 2; $value.passed = 2 } },
-        @{ Name = 'cleanup-residue'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.exactDatabaseRemaining = 1 } }
+        @{ Name = 'zero-execution'; Message = 'exact TRX counts'; Counters = { param($value) $value.total = 0; $value.executed = 0; $value.passed = 0 } },
+        @{ Name = 'managed-process-residue'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.managedProcessRemaining = 1 } },
+        @{ Name = 'database-residue'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.exactDatabaseRemaining = 1 } },
+        @{ Name = 'cleanup-error'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.errors = @('stop-erp: still running') } },
+        @{ Name = 'postgres-pending'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.postgres = 'owned-pending-cleanup' } },
+        @{ Name = 'redis-pending'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.redis = 'owned-pending-cleanup' } },
+        @{ Name = 'diagnostic-capture-unsupported'; Message = 'diagnostic failure capture'; Diagnostics = { param($value) $value.failureCaptureSupported = $false } },
+        @{ Name = 'diagnostic-capture-after-cleanup'; Message = 'before cleanup'; Diagnostics = { param($value) $value.captureBeforeCleanup = $false } },
+        @{ Name = 'success-with-failure-diagnostics'; Message = 'must not claim failure diagnostics'; Diagnostics = { param($value) $value.failureDiagnosticsCaptured = $true } },
+        @{ Name = 'diagnostics-not-redacted'; Message = 'diagnostic secrets must be redacted'; Diagnostics = { param($value) $value.secretsRedacted = $false } },
+        @{ Name = 'success-with-diagnostic-artifact'; Message = 'must not retain failure diagnostic artifacts'; Diagnostics = { param($value) $value.artifactPaths = @('/tmp/failure-summary.json') } },
+        @{ Name = 'diagnostic-capture-error'; Message = 'diagnostic capture errors must be empty'; Diagnostics = { param($value) $value.errors = @('capture-failed') } }
     )) {
         $mutatedProvenance = Copy-JsonObject $wmsCanonicalResult.provenance
         $mutatedBusiness = Copy-JsonObject $wmsBusinessEvidence
         $mutatedCounters = Copy-JsonObject $wmsCounters
         $mutatedCleanup = Copy-JsonObject $wmsCleanup
+        $mutatedDiagnostics = Copy-JsonObject $wmsDiagnostics
         if ($null -ne $wmsInputMutation['Provenance']) { & $wmsInputMutation['Provenance'] $mutatedProvenance }
         if ($null -ne $wmsInputMutation['Business']) { & $wmsInputMutation['Business'] $mutatedBusiness }
         if ($null -ne $wmsInputMutation['Counters']) { & $wmsInputMutation['Counters'] $mutatedCounters }
         if ($null -ne $wmsInputMutation['Cleanup']) { & $wmsInputMutation['Cleanup'] $mutatedCleanup }
+        if ($null -ne $wmsInputMutation['Diagnostics']) { & $wmsInputMutation['Diagnostics'] $mutatedDiagnostics }
         $mutationMessage = '<no exception>'
-        try { New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $mutatedProvenance -Track shadow -BusinessEvidence $mutatedBusiness -TestCounters $mutatedCounters -CleanupEvidence $mutatedCleanup -Volatile $wmsVolatile | Out-Null }
+        try { New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $mutatedProvenance -Track shadow -BusinessEvidence $mutatedBusiness -TestCounters $mutatedCounters -CleanupEvidence $mutatedCleanup -DiagnosticEvidence $mutatedDiagnostics -Volatile $wmsVolatile | Out-Null }
         catch { $mutationMessage = $_.Exception.Message }
         Assert-Contract ($mutationMessage.Contains([string]$wmsInputMutation.Message, [StringComparison]::Ordinal)) "WMS canonical input mutation '$($wmsInputMutation.Name)' must fail closed; observed '$mutationMessage'."
     }

@@ -35,6 +35,7 @@ function New-NervAcceptanceEquivalenceReport {
         [AllowNull()] [object] $Provenance,
         [AllowNull()] [string] $ArtifactDigest,
         [AllowNull()] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $ScenarioId,
         [Parameter(Mandatory)] [int] $PlanningRunAttempt,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Tracks
     )
@@ -47,7 +48,7 @@ function New-NervAcceptanceEquivalenceReport {
         planning = [pscustomobject][ordered]@{
             artifactDigest = $ArtifactDigest
             manifestDigest = $ManifestDigest
-            scenarioId = 'sales-order-demand'
+            scenarioId = $ScenarioId
             sourceRunAttempt = $PlanningRunAttempt
         }
         tracks = @($Tracks)
@@ -207,6 +208,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             -Provenance $provenance `
             -ArtifactDigest $artifactDigest `
             -ManifestDigest $manifestDigest `
+            -ScenarioId $ScenarioId `
             -PlanningRunAttempt $PlanningRunAttempt `
             -Tracks $reportTracks.ToArray()
         Write-NervAcceptanceScenarioRuntimeSummary -Summary $report -Path $ReportPath
@@ -220,6 +222,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             -Provenance $provenance `
             -ArtifactDigest $artifactDigest `
             -ManifestDigest $manifestDigest `
+            -ScenarioId $ScenarioId `
             -PlanningRunAttempt $PlanningRunAttempt `
             -Tracks $reportTracks.ToArray()
         Write-NervAcceptanceScenarioRuntimeSummary -Summary $report -Path $ReportPath

@@ -8,6 +8,7 @@
 #     - bin/ and obj/ outputs for ERP, WMS, Inventory, and the full-chain replay probe
 #     - artifacts/script-logs/**
 #     - artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
+#     - artifacts/acceptance/man527/diagnostics/** on failure
 #     - A caller-selected canonical acceptance result when requested
 #   Cleanup:
 #     - Stops every managed service process in finally
@@ -78,6 +79,116 @@ function Get-Man527TrxCounter {
         throw "MAN-527 replay probe TRX counter '$Name' must be a non-negative integer."
     }
     return $parsed
+}
+
+function Write-Man527DiagnosticFile {
+    param([Parameter(Mandatory)] [string] $Path, [AllowNull()] [string] $Content)
+
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+    $sensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+    $protectedContent = Protect-NervAcceptanceWmsDiagnosticText -Text $Content -SensitiveValues $sensitiveValues
+    [IO.File]::WriteAllText($Path, "$protectedContent`n", [Text.UTF8Encoding]::new($false))
+}
+
+function Invoke-Man527DiagnosticCommand {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $Command,
+        [Parameter(Mandatory)] [string[]] $Arguments,
+        [Parameter(Mandatory)] [string] $OutputPath
+    )
+
+    try {
+        $result = Invoke-NativeCommandOutput -Command $Command -Arguments $Arguments -WorkingDirectory $root -Name $Name
+        Write-Man527DiagnosticFile -Path $OutputPath -Content $result.Stdout
+    }
+    catch {
+        Write-Man527DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed: $($_.Exception.Message)"
+    }
+}
+
+function Export-Man527FailureDiagnostics {
+    param([Parameter(Mandatory)] [object] $FailureRecord)
+
+    $diagnosticsRoot = Join-Path $evidenceDirectory 'diagnostics'
+    [IO.Directory]::CreateDirectory($diagnosticsRoot) | Out-Null
+    $artifactPaths = [Collections.Generic.List[string]]::new()
+    $summaryPath = Join-Path $diagnosticsRoot 'failure-summary.json'
+    Write-Man527DiagnosticFile -Path $summaryPath -Content ([pscustomobject][ordered]@{
+            capturedAtUtc = [DateTimeOffset]::UtcNow
+            capturePhase = 'before-cleanup'
+            database = $databaseName
+            capVersion = $capVersion
+            deliveryOrderNo = $deliveryOrderNo
+            failure = $FailureRecord.Exception.Message
+        } | ConvertTo-Json -Depth 8)
+    $artifactPaths.Add([IO.Path]::GetFullPath($summaryPath))
+
+    foreach ($entry in ([ordered]@{ erp = $erpProcess; wms = $wmsProcess; inventory = $inventoryProcess }).GetEnumerator()) {
+        if ($null -eq $entry.Value) { continue }
+        foreach ($stream in @('stdout', 'stderr')) {
+            $source = Join-Path $entry.Value.LogDirectory "$stream.log"
+            $target = Join-Path $diagnosticsRoot "$($entry.Key)-$stream-tail.log"
+            try {
+                $tail = Get-Content -LiteralPath $source -Tail 400 -ErrorAction Stop
+                Write-Man527DiagnosticFile -Path $target -Content ($tail -join [Environment]::NewLine)
+            }
+            catch {
+                Write-Man527DiagnosticFile -Path $target -Content "Could not read service log tail: $($_.Exception.Message)"
+            }
+            $artifactPaths.Add([IO.Path]::GetFullPath($target))
+        }
+    }
+
+    if ($databaseCreated) {
+        $postgresPath = Join-Path $diagnosticsRoot 'postgres-state.txt'
+        $databaseSql = @"
+SELECT schemaname, relname, n_live_tup
+FROM pg_stat_user_tables
+WHERE schemaname IN ('erp', 'inventory', 'wms')
+ORDER BY schemaname, relname;
+"@
+        Invoke-Man527DiagnosticCommand -Name 'man527-diagnostics-postgres' -Command 'docker' -Arguments @(
+            'compose', '-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', $databaseName,
+            '-X', '-v', 'ON_ERROR_STOP=1', '-P', 'pager=off', '-c', $databaseSql
+        ) -OutputPath $postgresPath
+        $artifactPaths.Add([IO.Path]::GetFullPath($postgresPath))
+    }
+
+    $redisPath = Join-Path $diagnosticsRoot 'redis-stream-state.txt'
+    $redisLines = [Collections.Generic.List[string]]::new()
+    foreach ($streamName in @('WmsIntegrationEvent', 'Nerv.IIP.Contracts.Wms.WmsIntegrationEvent')) {
+        foreach ($redisArguments in @(@('XINFO', 'STREAM', $streamName), @('XINFO', 'GROUPS', $streamName))) {
+            try {
+                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli') + $redisArguments) -WorkingDirectory $root -Name 'man527-diagnostics-redis'
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ')")
+                $redisLines.Add("$($result.Stdout)")
+            }
+            catch {
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED: $($_.Exception.Message)")
+            }
+        }
+    }
+    Write-Man527DiagnosticFile -Path $redisPath -Content ($redisLines -join [Environment]::NewLine)
+    $artifactPaths.Add([IO.Path]::GetFullPath($redisPath))
+    $sensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    foreach ($artifactPath in $artifactPaths) {
+        $artifactContent = [IO.File]::ReadAllText($artifactPath)
+        foreach ($sensitiveValue in $sensitiveValues) {
+            if ($artifactContent.Contains([string]$sensitiveValue, [StringComparison]::Ordinal)) {
+                throw "MAN-527 failure diagnostic retained a declared sensitive value: $artifactPath"
+            }
+        }
+    }
+    Write-Diagnostic -Level 'WARN' -Message "MAN-527 failure diagnostics captured before cleanup: $diagnosticsRoot"
+    return [pscustomobject][ordered]@{
+        failureCaptureSupported = $true
+        captureBeforeCleanup = $true
+        failureDiagnosticsCaptured = $true
+        secretsRedacted = $true
+        artifactPaths = $artifactPaths.ToArray()
+        errors = @()
+    }
 }
 
 function Wait-PostgresReady {
@@ -373,11 +484,27 @@ $scenarioError = $null
 $businessEvidence = $null
 $probeResultsPath = $null
 $fullChainProbeCounters = $null
+$pickingLifecycleCompleted = $false
+$completionHttpReplayConverged = $false
+$repeatedEventConverged = $false
 $acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
 $evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
 $injectedEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
 $evidencePath = if ([string]::IsNullOrWhiteSpace($injectedEvidencePath)) { Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json' } else { [IO.Path]::GetFullPath($injectedEvidencePath) }
 $evidenceDirectory = Split-Path -Parent $evidencePath
+$declaredSensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+$redactionProbe = $declaredSensitiveValues -join '|'
+$protectedRedactionProbe = Protect-NervAcceptanceWmsDiagnosticText -Text $redactionProbe -SensitiveValues $declaredSensitiveValues
+$retainedSensitiveValues = @($declaredSensitiveValues | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and $protectedRedactionProbe.Contains([string]$_, [StringComparison]::Ordinal) })
+$redactionCapabilityVerified = $retainedSensitiveValues.Count -eq 0
+$diagnosticEvidence = [ordered]@{
+    failureCaptureSupported = $null -ne (Get-Command Export-Man527FailureDiagnostics -CommandType Function -ErrorAction SilentlyContinue)
+    captureBeforeCleanup = $true
+    failureDiagnosticsCaptured = $false
+    secretsRedacted = $redactionCapabilityVerified
+    artifactPaths = @()
+    errors = @()
+}
 $cleanupEvidence = [ordered]@{
     managedProcessIds = @()
     managedProcessRemaining = $null
@@ -498,7 +625,10 @@ try {
         -not [string]::Equals([string]$outbound.assignedOperatorUserId, $wmsActorPrincipalId, [StringComparison]::Ordinal)) {
         throw "Public WMS readback did not prove the first assignment for $deliveryOrderNo."
     }
-    foreach ($outboundLine in @($outbound.lines)) {
+    $outboundLines = @($outbound.lines)
+    if ($outboundLines.Count -eq 0) { throw 'Public WMS readback returned no outbound lines to pick.' }
+    $completedPickingLines = 0
+    foreach ($outboundLine in $outboundLines) {
         Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/movements" -Headers $headers -Body @{
             organizationId = 'org-001'
             environmentId = 'env-dev'
@@ -583,7 +713,10 @@ try {
             executedQuantity = [decimal]$outboundLine.requestedQuantity
             differenceReason = $null
         }) | Out-Null
+        $completedPickingLines++
     }
+    $pickingLifecycleCompleted = $completedPickingLines -eq $outboundLines.Count
+    if (-not $pickingLifecycleCompleted) { throw 'The public WMS picking lifecycle did not complete for every outbound line.' }
 
     $outboundAfterPicking = Wait-WmsOutboundOrder `
         -WmsUrl $wmsUrl `
@@ -607,6 +740,7 @@ try {
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
     Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
     Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
+    $completionHttpReplayConverged = $true
 
     $deliveryBeforeReplay = Wait-ErpDeliveryOrder -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
     $receivableBeforeReplay = Wait-Receivable -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
@@ -660,6 +794,7 @@ try {
         $receivableAfterReplay.receivableNo -ne $receivableBeforeReplay.receivableNo) {
         throw 'Repeated completion changed the public ERP delivery or receivable facts.'
     }
+    $repeatedEventConverged = $true
 
     $businessEvidence = [ordered]@{
         verifiedAtUtc = [DateTimeOffset]::UtcNow
@@ -685,7 +820,9 @@ try {
                 establishedThrough = 'public WMS assignment endpoint'
             }
             pickingLifecycle = 'public create/read/assign/start/progress/complete for every outbound line'
+            pickingLifecycleCompleted = $pickingLifecycleCompleted
             completionHttpReplay = 'same idempotency key accepted twice'
+            completionHttpReplayConverged = $completionHttpReplayConverged
         }
         erpDelivery = [ordered]@{
             status = $deliveryAfterReplay.status
@@ -695,10 +832,19 @@ try {
         }
         accountReceivable = [ordered]@{ receivableNo = $receivableAfterReplay.receivableNo; sourceDocumentNo = $receivableAfterReplay.sourceDocumentNo }
         repeatedEvent = 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter'
+        repeatedEventConverged = $repeatedEventConverged
     }
 }
 catch {
     $scenarioError = $_
+    try {
+        $diagnosticEvidence = Export-Man527FailureDiagnostics -FailureRecord $scenarioError
+    }
+    catch {
+        $diagnosticCaptureError = Protect-NervAcceptanceWmsDiagnosticText -Text $_.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        $diagnosticEvidence.failureDiagnosticsCaptured = $false
+        $diagnosticEvidence.errors = @("capture-failed: $diagnosticCaptureError")
+    }
 }
 finally {
     # Cleanup-Step: stop-erp
@@ -817,13 +963,16 @@ finally {
             verifiedAtUtc = [DateTimeOffset]::UtcNow
             scenarioStatus = 'failed'
             deliveryOrderNo = $deliveryOrderNo
-            scenarioError = if ($null -ne $scenarioError) { $scenarioError.Exception.Message } else { 'Business evidence was not produced.' }
+            scenarioError = if ($null -ne $scenarioError) { Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) } else { 'Business evidence was not produced.' }
         }
     }
+    $evidencePayload.diagnostics = $diagnosticEvidence
     $evidencePayload.cleanup = $cleanupEvidence
     try {
         [System.IO.Directory]::CreateDirectory($evidenceDirectory) | Out-Null
-        $evidencePayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+        $evidenceJson = $evidencePayload | ConvertTo-Json -Depth 12
+        $protectedEvidenceJson = Protect-NervAcceptanceWmsDiagnosticText -Text $evidenceJson -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        [IO.File]::WriteAllText($evidencePath, "$protectedEvidenceJson`n", [Text.UTF8Encoding]::new($false))
         Write-Diagnostic "MAN-527 ERP/WMS delivery-completion evidence written after cleanup to $evidencePath"
     }
     catch {
@@ -834,10 +983,15 @@ finally {
 if ($null -ne $scenarioError -or $cleanupErrors.Count -ne 0) {
     $failureParts = [System.Collections.Generic.List[string]]::new()
     if ($null -ne $scenarioError) {
-        [void]$failureParts.Add("scenario: $($scenarioError.Exception.Message)")
+        $safeScenarioError = Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        [void]$failureParts.Add("scenario: $safeScenarioError")
     }
     foreach ($cleanupError in $cleanupErrors) {
-        [void]$failureParts.Add("cleanup: $cleanupError")
+        $safeCleanupError = Protect-NervAcceptanceWmsDiagnosticText -Text $cleanupError -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        [void]$failureParts.Add("cleanup: $safeCleanupError")
+    }
+    foreach ($diagnosticError in @($diagnosticEvidence.errors)) {
+        [void]$failureParts.Add("diagnostics: $diagnosticError")
     }
     throw "MAN-527 verification failed. $($failureParts -join ' | ')"
 }
@@ -857,6 +1011,7 @@ if ($canonicalResultEnabled) {
         -BusinessEvidence ([pscustomobject]$businessEvidence) `
         -TestCounters ([pscustomobject]$fullChainProbeCounters) `
         -CleanupEvidence ([pscustomobject]$cleanupEvidence) `
+        -DiagnosticEvidence ([pscustomobject]$diagnosticEvidence) `
         -Volatile ([pscustomobject][ordered]@{
             databaseName = $databaseName
             processIds = @($managedProcessIds | ForEach-Object { [int64]$_ })

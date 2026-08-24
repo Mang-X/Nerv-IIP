@@ -286,6 +286,7 @@ try {
     $wmsReportPath = Join-Path $fixtureRoot 'wms-success-report.json'
     $wmsSuccess = Invoke-ComparatorFixture -ScenarioId 'wms-delivery-erp' -ResultPaths $wmsResultPaths -ReportPath $wmsReportPath
     Assert-Contract ([string]::Equals([string]$wmsSuccess.status, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$wmsSuccess.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) 'Two valid WMS canonical tracks must pass the explicit WMS adapter.'
+    Assert-Contract ([string]::Equals([string]$wmsSuccess.planning.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) 'The WMS equivalence report planning identity must match the explicit WMS scenario.'
     $wmsDrift = Get-Content -LiteralPath $wmsResultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
     $wmsDrift.businessFacts.repeatedEventConverged = $false
     Write-JsonFixture -Path $wmsResultPaths[1] -Value $wmsDrift
