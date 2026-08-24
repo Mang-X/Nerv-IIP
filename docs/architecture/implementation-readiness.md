@@ -324,8 +324,12 @@ GS1 Data Matrix 在 `^FH` 上下文把业务数据中的 `_` 编码为 `_5F`，�
 TCP 首字节写入前失败记为 `failed`，写入任意字节后发生超时、断连或取消记为
 `delivery-unknown` 且禁止自动重试，全部字节写入并正常关闭发送方向只记为
 `sent-to-printer`。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，dispatch/reprint
-也不把 item 改为 `printed` / `reprinted`。重打会先拒绝 `voided` / `consumed` item，再把新的
-`sent-to-printer` / `delivery-unknown` / `failed` 传输结果写回批次；批次状态与 item 的物理状态保持分离。
+也不把 item 改为 `printed` / `reprinted`。本层的 reprint 是对单个冻结文档再次执行 transport，
+不是物理打印确认：批次处于 `sent-to-printer`、明确首字节前失败的 `failed`，或兼容既有数据的
+`printed` 时可发起；`pending` 尚未完成首次整批下发，`delivery-unknown` 则因可能已经出纸而禁止再次传输。
+重打会先拒绝 `voided` / `consumed` item，再把新的 `sent-to-printer` / `delivery-unknown` / `failed`
+传输结果写回批次，因此可以在完整发送或明确首字节前失败后再次重打；批次 transport 状态与 item 的物理状态保持分离。
+#2066 不提供生产 `printed` / `reprinted` 写入来源，现有 `RecordPrinted` 仅服务于既有聚合能力与世界观 seed。
 
 当前自动化证据边界为 pure compiler/领域测试、EF Core InMemory 应用编排、受控 HTTP handler 与
 loopback TCP 字节传输，以及 EF migration/model pending gate。它不证明真实 PostgreSQL 批次持久化、

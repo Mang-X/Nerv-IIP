@@ -12,7 +12,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
 {
-    private const int MaximumAssetBytes = 65536;
+    private const int MaximumAssetBytes = HttpFileStorageLabelTemplateAssetAdapter.MaximumAssetBytes;
 
     private const string TemplateJson = """
         {"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}

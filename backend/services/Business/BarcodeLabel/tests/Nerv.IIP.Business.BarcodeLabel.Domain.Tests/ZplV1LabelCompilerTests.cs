@@ -203,6 +203,25 @@ public sealed class ZplV1LabelCompilerTests
     }
 
     [Fact]
+    public void Binder_rejects_reserved_business_value_with_its_exact_reason()
+    {
+        var template = LabelTemplateDocument.Parse(Template());
+        var schema = new LabelVariableSchema(
+            LabelVariableSchema.SupportedVersion,
+            [
+                new LabelVariableDefinition("skuCode", null, "string", true, 200),
+                new LabelVariableDefinition("label.value", null, "string", true, 200),
+            ]);
+
+        var exception = Assert.Throws<ArgumentException>(() => LabelTemplateBinder.BindBatch(
+            template,
+            schema,
+            [PlainItem("{\"skuCode\":\"SKU-001\",\"label.value\":\"override\"}", "MAT-0001")]));
+
+        Assert.Equal("items[0].variables cannot override reserved variable 'label.value'.", exception.Message);
+    }
+
+    [Fact]
     public void Binder_enforces_explicit_max_length_and_allows_missing_optional_values()
     {
         var template = LabelTemplateDocument.Parse(Template());

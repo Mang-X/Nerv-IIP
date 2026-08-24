@@ -202,6 +202,16 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         Status = SentToPrinter;
     }
 
+    public void RecordReprintSentToPrinter(string printerId, string printJobId)
+    {
+        EnsureCanRecordReprintResult();
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = null;
+        CompletedAtUtc = null;
+        Status = SentToPrinter;
+    }
+
     public void RecordPrinted()
     {
         if (Status != SentToPrinter)
@@ -233,6 +243,16 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         Status = DeliveryUnknown;
     }
 
+    public void RecordReprintDeliveryUnknown(string printerId, string printJobId, string failureReason)
+    {
+        EnsureCanRecordReprintResult();
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+        Status = DeliveryUnknown;
+    }
+
     public void RecordPrintFailed(string failureReason)
     {
         if (Status is not (Pending or Failed or SentToPrinter or Printed))
@@ -245,6 +265,14 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         CompletedAtUtc = DateTimeOffset.UtcNow;
     }
 
+    public void RecordReprintFailed(string failureReason)
+    {
+        EnsureCanRecordReprintResult();
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+        Status = Failed;
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+    }
+
     public void ReprintItem(int sequenceNo)
     {
         FindItem(sequenceNo).MarkReprinted();
@@ -252,12 +280,12 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void EnsureItemCanBeReprinted(int sequenceNo)
     {
-        if (Status != Printed)
+        if (Status is not (SentToPrinter or Failed or Printed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot dispatch a reprint.");
         }
 
-        FindItem(sequenceNo).EnsureCanBeReprinted();
+        FindItem(sequenceNo).EnsureCanBeRedispatched();
     }
 
     public void VoidItem(int sequenceNo, string voidReason)
@@ -280,6 +308,14 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     {
         return Items.SingleOrDefault(x => x.SequenceNo == sequenceNo)
             ?? throw new InvalidOperationException($"Print item not found, SequenceNo = {sequenceNo}.");
+    }
+
+    private void EnsureCanRecordReprintResult()
+    {
+        if (Status is not (SentToPrinter or Failed or Printed))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot record a reprint result.");
+        }
     }
 }
 
@@ -356,6 +392,16 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
 
     internal void EnsureCanBeReprinted()
     {
+        EnsureCanBeRedispatched();
+
+        if (Status is not (Printed or Reprinted))
+        {
+            throw new InvalidOperationException($"Label in status '{Status}' cannot be reprinted.");
+        }
+    }
+
+    internal void EnsureCanBeRedispatched()
+    {
         if (Status == Voided)
         {
             throw new InvalidOperationException("Voided labels cannot be reprinted.");
@@ -365,12 +411,6 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
         {
             throw new InvalidOperationException("Consumed labels cannot be reprinted.");
         }
-
-        if (Status is not (Printed or Reprinted))
-        {
-            throw new InvalidOperationException($"Label in status '{Status}' cannot be reprinted.");
-        }
-
     }
 
     internal void Void(string voidReason)
