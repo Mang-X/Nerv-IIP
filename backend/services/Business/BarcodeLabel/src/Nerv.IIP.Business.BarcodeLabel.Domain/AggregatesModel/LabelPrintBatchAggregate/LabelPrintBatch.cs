@@ -154,6 +154,14 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         }
     }
 
+    public void EnsureCanBeDispatched()
+    {
+        if (Status is not (Pending or Failed or Printed))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot be dispatched.");
+        }
+    }
+
     public bool HasSameIdempotencyPayload(LabelPrintBatch other)
     {
         return OrganizationId == other.OrganizationId
@@ -227,7 +235,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void RecordPrintFailed(string failureReason)
     {
-        if (Status is not (Pending or SentToPrinter))
+        if (Status is not (Pending or Failed or SentToPrinter or Printed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked failed.");
         }
@@ -240,6 +248,16 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public void ReprintItem(int sequenceNo)
     {
         FindItem(sequenceNo).MarkReprinted();
+    }
+
+    public void EnsureItemCanBeReprinted(int sequenceNo)
+    {
+        if (Status != Printed)
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot dispatch a reprint.");
+        }
+
+        FindItem(sequenceNo).EnsureCanBeReprinted();
     }
 
     public void VoidItem(int sequenceNo, string voidReason)
@@ -332,6 +350,12 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
 
     internal void MarkReprinted()
     {
+        EnsureCanBeReprinted();
+        Status = Reprinted;
+    }
+
+    internal void EnsureCanBeReprinted()
+    {
         if (Status == Voided)
         {
             throw new InvalidOperationException("Voided labels cannot be reprinted.");
@@ -347,7 +371,6 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
             throw new InvalidOperationException($"Label in status '{Status}' cannot be reprinted.");
         }
 
-        Status = Reprinted;
     }
 
     internal void Void(string voidReason)

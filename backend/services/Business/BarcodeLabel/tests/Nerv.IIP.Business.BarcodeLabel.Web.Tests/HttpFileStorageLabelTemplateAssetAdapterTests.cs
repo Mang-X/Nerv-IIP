@@ -134,6 +134,25 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         Assert.Equal(0, http.Calls);
     }
 
+    [Theory]
+    [InlineData("api/files/v1/download-grants/grant-secret/content")]
+    [InlineData("//untrusted.invalid/api/files/v1/download-grants/grant-secret/content")]
+    public async Task GetVerifiedAsync_NonRootedOrNetworkPathGrantUrl_IsRejectedBeforeDownload(string grantUrl)
+    {
+        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes), grantUrl: grantUrl);
+        var http = new RecordingHttpMessageHandler(_ =>
+            throw new Xunit.Sdk.XunitException("HTTP must not be called."));
+        using var adapter = CreateAdapter(fileStorage, http);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+
+        Assert.Equal("FileStorage returned an invalid template download grant.", exception.Message);
+        Assert.Equal(1, fileStorage.GrantCalls);
+        Assert.Equal(0, http.Calls);
+    }
+
     [Fact]
     public async Task GetVerifiedAsync_ChecksumMismatch_RejectsDownloadedBytesWithoutRetry()
     {
@@ -202,9 +221,10 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         });
         using var adapter = CreateAdapter(fileStorage, http);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
+        Assert.Equal("FileStorage template download redirects are not allowed.", exception.Message);
         Assert.Equal(1, http.Calls);
     }
 
@@ -295,9 +315,10 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         var http = new RecordingHttpMessageHandler(_ => Response(HttpStatusCode.OK, new UnknownLengthContent(overflow)));
         using var adapter = CreateAdapter(fileStorage, http);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
+        Assert.Equal($"FileStorage template download exceeds {MaximumAssetBytes} bytes.", exception.Message);
         Assert.Equal(1, http.Calls);
     }
 

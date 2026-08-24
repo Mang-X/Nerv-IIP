@@ -317,18 +317,22 @@ SHA-256 全部失败关闭；download grant 只接受以单个 `/` 开头的相�
 
 `zpl-v1` 只接受声明式 JSON 的 `text` / `barcode` fields，经冻结变量 Schema 完整校验后，确定性输出
 Code 128、GS1-128、QR、Data Matrix 或 GS1 Data Matrix 的 ZPL；任一 item、变量、布局、版本或
-GS1/FNC1 输入非法时整批在 transport 零调用前失败。生命周期命令按 organization/environment 加载批次；
+GS1/FNC1 输入非法时整批在 transport 零调用前失败。Code 128 / GS1-128 条码数据拒绝 ZPL `>` 控制引导符，
+GS1 Data Matrix 在 `^FH` 上下文把业务数据中的 `_` 编码为 `_5F`，只保留 renderer 自己生成的 `_1` FNC1。
+`label.epcUri` 从打印项已持久化的冻结字段绑定，不从缺少 company-prefix-length 的 AI 字符串反解猜测。
+生命周期命令按 organization/environment 加载批次；
 TCP 首字节写入前失败记为 `failed`，写入任意字节后发生超时、断连或取消记为
 `delivery-unknown` 且禁止自动重试，全部字节写入并正常关闭发送方向只记为
 `sent-to-printer`。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，dispatch/reprint
-也不把 item 改为 `printed` / `reprinted`。
+也不把 item 改为 `printed` / `reprinted`。重打会先拒绝 `voided` / `consumed` item，再把新的
+`sent-to-printer` / `delivery-unknown` / `failed` 传输结果写回批次；批次状态与 item 的物理状态保持分离。
 
 当前自动化证据边界为 pure compiler/领域测试、EF Core InMemory 应用编排、受控 HTTP handler 与
 loopback TCP 字节传输，以及 EF migration/model pending gate。它不证明真实 PostgreSQL 批次持久化、
 真实 FileStorage 服务间下载、真实打印机出纸、扫码枪解码、标签可读性或现场网络路由；这些结论必须由相应
 provider 或交付环境另行取证。`barcode-label-template` 当前 8 MiB 用途默认 quota 仍是单向棘轮：
 FileStorage 没有删除 API，该 purpose 也没有自动 retention，模板作废或换版不会释放已占配额。
-“确认没有 active 模板或历史批次引用、授权物理清理并释放配额”继续作为独立欠账；#2066 不虚构删除 API、
+“确认没有 active 模板或历史批次引用、授权物理清理并释放配额”由 #2101 独立冻结合同与实施拆解；#2066 不虚构删除 API、
 不把 8 MiB 描述为永久容量方案。
 
 ## FileStorage storage provider、离线迁移与后续叶子（ADR 0024 / #992 / #1013）

@@ -282,6 +282,49 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
+    public void Delivery_unknown_is_allowed_from_pending_failed_and_printed_for_initial_or_reprint_dispatch()
+    {
+        var pending = NewPrintBatch(ActiveRule(), "idem-unknown-pending", "ASN-001", 1);
+        var failed = NewPrintBatch(ActiveRule(), "idem-unknown-failed", "ASN-001", 1);
+        failed.RecordPrintFailed("pre-write failure");
+        var printed = NewPrintBatch(ActiveRule(), "idem-unknown-printed", "ASN-001", 1);
+        printed.RecordSentToPrinter("printer-zpl-01", "job-initial");
+        printed.RecordPrinted();
+
+        pending.RecordDeliveryUnknown("printer-zpl-01", "job-pending", "partial write");
+        failed.RecordDeliveryUnknown("printer-zpl-01", "job-failed", "partial write");
+        printed.RecordDeliveryUnknown("printer-zpl-01", "job-reprint", "partial write");
+
+        Assert.All([pending, failed, printed], batch => Assert.Equal("delivery-unknown", batch.Status));
+    }
+
+    [Fact]
+    public void Delivery_unknown_is_rejected_after_sent_or_already_unknown_delivery()
+    {
+        var sent = NewPrintBatch(ActiveRule(), "idem-unknown-sent", "ASN-001", 1);
+        sent.RecordSentToPrinter("printer-zpl-01", "job-sent");
+        var unknown = NewPrintBatch(ActiveRule(), "idem-unknown-repeat", "ASN-001", 1);
+        unknown.RecordDeliveryUnknown("printer-zpl-01", "job-unknown", "partial write");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            sent.RecordDeliveryUnknown("printer-zpl-01", "job-sent-2", "partial write"));
+        Assert.Throws<InvalidOperationException>(() =>
+            unknown.RecordDeliveryUnknown("printer-zpl-01", "job-unknown-2", "partial write"));
+    }
+
+    [Fact]
+    public void Repeated_pre_write_failure_updates_the_failure_without_leaving_the_retry_state()
+    {
+        var batch = NewPrintBatch(ActiveRule(), "idem-repeat-failure", "ASN-001", 1);
+        batch.RecordPrintFailed("first failure");
+
+        batch.RecordPrintFailed("second failure");
+
+        Assert.Equal("failed", batch.Status);
+        Assert.Equal("second failure", batch.FailureReason);
+    }
+
+    [Fact]
     public void Print_batch_idempotency_accepts_same_payload_and_rejects_conflicts()
     {
         var rule = ActiveRule();

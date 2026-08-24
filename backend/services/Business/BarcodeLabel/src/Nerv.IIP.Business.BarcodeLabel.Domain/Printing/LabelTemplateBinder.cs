@@ -9,7 +9,8 @@ public sealed record LabelReservedVariables(
     string LabelValue,
     Gs1BarcodeValue? Gs1Value,
     int SequenceNo,
-    string SourceDocumentId);
+    string SourceDocumentId,
+    string? EpcUri = null);
 
 public sealed record LabelCompilationItem(
     string VariableValuesJson,
@@ -182,7 +183,7 @@ public static class LabelTemplateBinder
             ["label.gtin"] = reserved.Gs1Value?.Gtin ?? string.Empty,
             ["label.lotNo"] = reserved.Gs1Value?.LotNo ?? string.Empty,
             ["label.serialNumber"] = reserved.Gs1Value?.SerialNumber ?? string.Empty,
-            ["label.epcUri"] = reserved.Gs1Value?.EpcUri ?? string.Empty,
+            ["label.epcUri"] = reserved.EpcUri ?? reserved.Gs1Value?.EpcUri ?? string.Empty,
             ["item.sequenceNo"] = reserved.SequenceNo.ToString(CultureInfo.InvariantCulture),
             ["batch.sourceDocumentId"] = reserved.SourceDocumentId,
         };

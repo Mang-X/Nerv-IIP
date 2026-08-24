@@ -292,6 +292,43 @@ public sealed class ZplV1LabelCompilerTests
         Assert.DoesNotContain("(21)", zpl, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("MAT>8INJECT")]
+    [InlineData("MAT>;INJECT")]
+    [InlineData("MAT>:INJECT")]
+    public void Compiler_rejects_code128_control_sequences_in_barcode_data(string labelValue)
+    {
+        var exception = Assert.Throws<ArgumentException>(() => Compile(
+            "code128",
+            PlainItem("{\"skuCode\":\"SKU-001\"}", labelValue)));
+
+        Assert.Contains("Code 128", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("LOT>8INJECT", "SN-001")]
+    [InlineData("LOT-001", "SN>;INJECT")]
+    [InlineData("LOT>:INJECT", "SN-001")]
+    public void Compiler_rejects_gs1_128_control_sequences_in_application_identifier_data(string lotNo, string serialNumber)
+    {
+        var gs1 = new Gs1BarcodeValue("09501101530003", lotNo, serialNumber, null);
+
+        var exception = Assert.Throws<ArgumentException>(() => Compile("gs1-128", Gs1Item(gs1)));
+
+        Assert.Contains("GS1-128", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compiler_hex_escapes_literal_underscores_in_gs1_datamatrix_data()
+    {
+        var gs1 = new Gs1BarcodeValue("09501101530003", "LOT_A", "SN_001", null);
+
+        var zpl = Encoding.UTF8.GetString(Compile("gs1-datamatrix", Gs1Item(gs1)).Payload.Span);
+
+        Assert.Contains("^FD_1010950110153000310LOT_5FA_121SN_5F001^FS", zpl, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(zpl, "_1"));
+    }
+
     public static TheoryData<string, LabelCompilationItem, string, string> GoldenBarcodeCases()
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", "123456", "789012", null);

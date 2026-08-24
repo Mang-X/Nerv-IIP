@@ -108,6 +108,7 @@ public static class ZplV1LabelCompiler
         switch (barcodeType)
         {
             case "code128":
+                EnsureCode128Data(value, "Code 128");
                 builder.Append("^BCN,")
                     .Append(field.Height.ToString(CultureInfo.InvariantCulture))
                     .Append(",Y,N,N,A^FD>:")
@@ -118,7 +119,7 @@ public static class ZplV1LabelCompiler
                 builder.Append("^BCN,")
                     .Append(field.Height.ToString(CultureInfo.InvariantCulture))
                     .Append(",Y,N,N,A^FD>;>8")
-                    .Append(EncodeGs1(RequiredGs1(gs1Value), ">8"))
+                    .Append(EncodeGs1ForCode128(RequiredGs1(gs1Value), ">8"))
                     .Append("^FS");
                 return;
             case "qr":
@@ -133,7 +134,7 @@ public static class ZplV1LabelCompiler
                 return;
             case "gs1-datamatrix":
                 builder.Append("^BXN,6,200^FH^FD_1")
-                    .Append(EncodeGs1(RequiredGs1(gs1Value), "_1"))
+                    .Append(EncodeGs1ForDataMatrix(RequiredGs1(gs1Value), "_1"))
                     .Append("^FS");
                 return;
             default:
@@ -144,7 +145,20 @@ public static class ZplV1LabelCompiler
     private static Gs1BarcodeValue RequiredGs1(Gs1BarcodeValue? value) =>
         value ?? throw StrictJson.Contract("A GS1 barcode type requires a Gs1BarcodeValue.");
 
-    private static string EncodeGs1(Gs1BarcodeValue value, string separatorEscape)
+    private static string EncodeGs1ForCode128(Gs1BarcodeValue value, string separatorEscape) =>
+        EncodeGs1(value, separatorEscape, segment =>
+        {
+            EnsureCode128Data(segment, "GS1-128");
+            return segment;
+        });
+
+    private static string EncodeGs1ForDataMatrix(Gs1BarcodeValue value, string separatorEscape) =>
+        EncodeGs1(value, separatorEscape, segment => segment.Replace("_", "_5F", StringComparison.Ordinal));
+
+    private static string EncodeGs1(
+        Gs1BarcodeValue value,
+        string separatorEscape,
+        Func<string, string> encodeData)
     {
         if (string.IsNullOrWhiteSpace(value.Gtin) && string.IsNullOrWhiteSpace(value.Sscc))
         {
@@ -183,7 +197,7 @@ public static class ZplV1LabelCompiler
         var builder = new StringBuilder();
         for (var index = 0; index < segments.Count; index++)
         {
-            builder.Append(segments[index].Value);
+            builder.Append(encodeData(segments[index].Value));
             if (segments[index].VariableLength && index < segments.Count - 1)
             {
                 builder.Append(separatorEscape);
@@ -191,6 +205,14 @@ public static class ZplV1LabelCompiler
         }
 
         return builder.ToString();
+    }
+
+    private static void EnsureCode128Data(string value, string context)
+    {
+        if (value.Contains('>'))
+        {
+            throw StrictJson.Contract($"{context} data cannot contain the ZPL Code 128 control introducer '>'.");
+        }
     }
 
     private static void ValidateFixedDigits(string? value, int length, string name)

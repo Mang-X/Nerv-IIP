@@ -264,7 +264,6 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapter : ILabelTemplateAss
             || grant.Download is null
             || !string.Equals(grant.FileId, expectedFileId, StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(grant.Download.Url)
-            || !Uri.TryCreate(grant.Download.Url, UriKind.Relative, out var downloadPath)
             || !grant.Download.Url.StartsWith("/", StringComparison.Ordinal)
             || grant.Download.Url.StartsWith("//", StringComparison.Ordinal)
             || grant.Download.Headers is null)
@@ -272,7 +271,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapter : ILabelTemplateAss
             throw Failure("FileStorage returned an invalid template download grant.");
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, downloadPath);
+        var request = new HttpRequestMessage(HttpMethod.Get, new Uri(grant.Download.Url, UriKind.Relative));
         foreach (var header in grant.Download.Headers)
         {
             if (string.IsNullOrWhiteSpace(header.Key)

@@ -75,6 +75,7 @@ public sealed class DispatchLabelPrintBatchCommandHandler(
             request.EnvironmentId,
             request.PrintBatchId,
             cancellationToken);
+        batch.EnsureCanBeDispatched();
         var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(
             dbContext,
             templateAssetPort,
@@ -105,13 +106,16 @@ public sealed class ReprintLabelCommandHandler(
             .Select((item, index) => new { item.SequenceNo, Index = index })
             .SingleOrDefault(item => item.SequenceNo == request.SequenceNo)
             ?? throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。");
+        batch.EnsureItemCanBeReprinted(request.SequenceNo);
         var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(
             dbContext,
             templateAssetPort,
             batch,
             cancellationToken);
 
-        return await printer.PrintAsync(request.PrinterId, [documents[itemIndex.Index]], cancellationToken);
+        var result = await printer.PrintAsync(request.PrinterId, [documents[itemIndex.Index]], cancellationToken);
+        LabelPrintLifecycle.ApplyResult(batch, request.PrinterId, result);
+        return result;
     }
 }
 
@@ -198,10 +202,11 @@ internal static class LabelPrintLifecycle
                     new LabelReservedVariables(
                         item.LabelValue,
                         batch.BarcodeTypeSnapshot!.StartsWith("gs1-", StringComparison.Ordinal)
-                            ? Gs1ApplicationIdentifierParser.Parse(item.LabelValue)
+                            ? RehydrateFrozenGs1Value(item)
                             : null,
                         item.SequenceNo,
-                        batch.SourceDocumentId)))
+                        batch.SourceDocumentId,
+                        item.EpcUri)))
                 .ToArray();
 
             return ZplV1LabelCompiler.CompileBatch(template, schema, batch.BarcodeTypeSnapshot!, items);
@@ -216,17 +221,28 @@ internal static class LabelPrintLifecycle
         }
     }
 
+    private static Gs1BarcodeValue RehydrateFrozenGs1Value(LabelPrintItem item)
+    {
+        var parsed = Gs1ApplicationIdentifierParser.Parse(item.LabelValue);
+        return new Gs1BarcodeValue(
+            item.Gtin ?? parsed.Gtin,
+            item.LotNo ?? parsed.LotNo,
+            item.SerialNumber ?? parsed.SerialNumber,
+            parsed.Quantity,
+            Sscc: parsed.Sscc);
+    }
+
     public static void ApplyResult(LabelPrintBatch batch, string printerId, LabelPrinterDispatchResult result)
     {
         switch (result.Status)
         {
             case "sent-to-printer":
-                batch.RecordSentToPrinter(printerId, RequiredJobId(result));
+                batch.RecordSentToPrinter(printerId, result.PrintJobId!);
                 break;
             case "delivery-unknown":
                 batch.RecordDeliveryUnknown(
                     printerId,
-                    RequiredJobId(result),
+                    result.PrintJobId!,
                     result.FailureReason ?? "打印传输结果未知，禁止自动重试。");
                 break;
             case "failed":
@@ -238,10 +254,4 @@ internal static class LabelPrintLifecycle
         }
     }
 
-    private static string RequiredJobId(LabelPrinterDispatchResult result)
-    {
-        return string.IsNullOrWhiteSpace(result.PrintJobId)
-            ? throw new KnownException("打印机适配器未返回打印任务 ID。")
-            : result.PrintJobId;
-    }
 }
