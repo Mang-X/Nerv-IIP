@@ -17,6 +17,7 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
         "receiving",
         "operation",
         "final",
+        "first-article",
         "maintenance",
         "customer-return",
     ];
@@ -48,6 +49,16 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
         WorkCenterId = Optional(workCenterId);
         DeviceAssetId = Optional(deviceAssetId);
         DocumentType = Optional(documentType);
+        if (Category == "first-article" && SkuCode is null)
+        {
+            throw new KnownException("首件检验方案必须指定适用物料。");
+        }
+
+        if (Category == "first-article" && WorkCenterId is null)
+        {
+            throw new KnownException("首件检验方案必须指定工序工作中心。");
+        }
+
         Version = version <= 0 ? throw new ArgumentOutOfRangeException(nameof(version), "Version must be positive.") : version;
         SupersedesPlanId = supersedesPlanId;
         Status = "draft";
