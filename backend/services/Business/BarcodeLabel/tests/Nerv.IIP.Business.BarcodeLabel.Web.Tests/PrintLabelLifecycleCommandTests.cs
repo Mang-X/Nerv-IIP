@@ -14,6 +14,37 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed class PrintLabelLifecycleCommandTests
 {
     [Fact]
+    public void Every_lifecycle_rejection_reason_has_an_explicit_user_message_mapping()
+    {
+        const int sequenceNo = 37;
+        var expectedMessages = new Dictionary<LabelPrintLifecycleRejectionReason, string>
+        {
+            [LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched] = "当前打印批次状态不允许再次下发。",
+            [LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeDispatched] = "交付结果未知，禁止再次下发打印批次。",
+            [LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted] = "当前打印批次状态不允许单项再次传输。",
+            [LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted] = "交付结果未知，禁止再次传输标签。",
+            [LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch] = "整批打印失败后不能单项再次传输，请改用整批下发。",
+            [LabelPrintLifecycleRejectionReason.PrintItemNotFound] = "未找到打印项，序号 = 37。",
+            [LabelPrintLifecycleRejectionReason.PrintItemVoided] = "已作废标签不允许再次传输。",
+            [LabelPrintLifecycleRejectionReason.PrintItemConsumed] = "已消费标签不允许再次传输。",
+            [LabelPrintLifecycleRejectionReason.ConsumedPrintItemCannotBeVoided] = "已消费标签不允许作废。",
+        };
+
+        Assert.Equal(
+            Enum.GetValues<LabelPrintLifecycleRejectionReason>().Order(),
+            expectedMessages.Keys.Order());
+        foreach (var (reason, expectedMessage) in expectedMessages)
+        {
+            var rejection = new LabelPrintLifecycleRejectedException(reason, "领域拒绝。");
+
+            var exception = LabelPrintLifecycleKnownExceptionMapper.Create(rejection, sequenceNo);
+
+            Assert.Equal(expectedMessage, exception.Message);
+            Assert.Same(rejection, exception.InnerException);
+        }
+    }
+
+    [Fact]
     public async Task Dispatch_sent_to_printer_records_delivery_without_claiming_items_were_printed()
     {
         await using var dbContext = CreateDbContext();

@@ -34,7 +34,8 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
     private const int MaximumMessageLength = 60;
 
     public static IReadOnlyList<BarcodeLabelKnownExceptionSite> Discover(
-        IReadOnlyCollection<BarcodeLabelSourceDocument> documents)
+        IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
+        IReadOnlyCollection<string>? commandHandlerTypeNames = null)
     {
         if (documents.Count == 0)
         {
@@ -72,11 +73,12 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             }
         }
 
-        var commandHandlerDefinitions = new[]
-        {
-            compilation.GetTypeByMetadataName(CommandHandlerTypeName),
-            compilation.GetTypeByMetadataName(CommandHandlerWithResultTypeName),
-        }.Where(symbol => symbol is not null).Cast<INamedTypeSymbol>().ToArray();
+        commandHandlerTypeNames ??= [CommandHandlerTypeName, CommandHandlerWithResultTypeName];
+        var commandHandlerDefinitions = commandHandlerTypeNames
+            .Select(compilation.GetTypeByMetadataName)
+            .Where(symbol => symbol is not null)
+            .Cast<INamedTypeSymbol>()
+            .ToArray();
         if (commandHandlerDefinitions.Length != 2)
         {
             throw new InvalidOperationException("BarcodeLabel ICommandHandler 合同类型无法完整解析。");
@@ -90,15 +92,36 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             .Select(group => group.OrderBy(pair => NormalizePath(pair.Syntax.SyntaxTree.FilePath), StringComparer.Ordinal).First());
         foreach (var (syntax, typeSymbol) in declaredTypes)
         {
-            var isCommandHandler = typeSymbol!.AllInterfaces.Any(@interface =>
-                commandHandlerDefinitions.Any(definition =>
-                    SymbolEqualityComparer.Default.Equals(@interface.OriginalDefinition, definition)));
-            if (!isCommandHandler)
+            var handlerInterfaces = typeSymbol!.AllInterfaces
+                .Where(@interface => commandHandlerDefinitions.Any(definition =>
+                    SymbolEqualityComparer.Default.Equals(@interface.OriginalDefinition, definition)))
+                .ToArray();
+            if (handlerInterfaces.Length == 0)
             {
                 continue;
             }
 
-            var path = NormalizePath(syntax.SyntaxTree.FilePath);
+            var handlerInterfaceMembers = handlerInterfaces
+                .SelectMany(@interface => @interface.GetMembers("Handle"))
+                .OfType<IMethodSymbol>()
+                .ToArray();
+            var implementedHandleMethods = handlerInterfaceMembers
+                .Select(member => typeSymbol.FindImplementationForInterfaceMember(member))
+                .OfType<IMethodSymbol>();
+            var declaredHandleDeclarations = typeSymbol.DeclaringSyntaxReferences
+                .Select(reference => reference.GetSyntax())
+                .OfType<TypeDeclarationSyntax>()
+                .SelectMany(declaration => declaration.Members.OfType<MethodDeclarationSyntax>())
+                .Where(method => method.Identifier.ValueText == "Handle");
+            var handleDeclaration = declaredHandleDeclarations
+                .Concat(implementedHandleMethods
+                    .SelectMany(method => method.DeclaringSyntaxReferences)
+                    .Select(reference => reference.GetSyntax()))
+                .Where(node => sourceTrees.Contains(node.SyntaxTree))
+                .OrderBy(node => NormalizePath(node.SyntaxTree.FilePath), StringComparer.Ordinal)
+                .ThenBy(node => node.SpanStart)
+                .FirstOrDefault();
+            var path = NormalizePath((handleDeclaration ?? syntax).SyntaxTree.FilePath);
             var key = $"{path}|{typeSymbol.Name}|Handle";
             if (sites.TryGetValue(key, out var existing))
             {
@@ -305,9 +328,16 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         var containingType = symbol.ContainingType
             ?? throw new InvalidOperationException(
                 $"{NormalizePath(syntaxTree.FilePath)}:{GetLine(syntaxTree, member)}: KnownException 所在成员缺少包含类型。");
-        var memberName = symbol is IMethodSymbol { MethodKind: MethodKind.Constructor }
-            ? ".ctor"
-            : symbol.MetadataName;
+        var memberName = member switch
+        {
+            MethodDeclarationSyntax method => method.Identifier.ValueText,
+            _ => symbol switch
+            {
+                IMethodSymbol { MethodKind: MethodKind.Constructor } => ".ctor",
+                IMethodSymbol method => method.Name,
+                _ => symbol.MetadataName,
+            },
+        };
         return new MemberIdentity(containingType.Name, memberName);
     }
 

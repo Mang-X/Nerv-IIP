@@ -22,9 +22,10 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/BarcodeRules/CreateOrUpdateBarcodeRuleCommand.cs"), "CreateOrUpdateBarcodeRuleCommandHandler", "Handle", 4),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs"), "CreateOrUpdateLabelTemplateCommandHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs"), "CreateLabelPrintBatchCommandHandler", "Handle", 4),
-        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "DispatchLabelPrintBatchCommandHandler", "Handle", 2),
-        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "ReprintLabelCommandHandler", "Handle", 6),
-        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "VoidLabelCommandHandler", "Handle", 3),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "DispatchLabelPrintBatchCommandHandler", "Handle", 0),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "ReprintLabelCommandHandler", "Handle", 0),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "VoidLabelCommandHandler", "Handle", 0),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycleKnownExceptionMapper", "Create", 9),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "LoadBatchAsync", 1),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "CompileFrozenBatchAsync", 1),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs"), "RecordScanCommandHandler", "Handle", 3),
@@ -53,7 +54,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(0, ExpectedSites.Count(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded));
-        Assert.Equal(32, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
+        Assert.Equal(30, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(0, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
@@ -173,6 +174,69 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Discovery_merges_a_cross_file_partial_handler_into_the_file_that_declares_handle()
+    {
+        const string declarationSource = """
+            using NetCorePal.Extensions.Primitives;
+            sealed record SplitCommand : ICommand<string>;
+            partial class SplitHandler : ICommandHandler<SplitCommand, string> { }
+            """;
+        const string handleSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            partial class SplitHandler
+            {
+                public Task<string> Handle(SplitCommand command, CancellationToken cancellationToken) =>
+                    throw new KnownException("处理失败。");
+            }
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [
+                new BarcodeLabelSourceDocument("A_declaration.cs", declarationSource),
+                new BarcodeLabelSourceDocument("B_handle.cs", handleSource),
+            ]);
+
+        var handler = Assert.Single(discovered);
+        Assert.Equal("B_handle.cs|SplitHandler|Handle", handler.Key);
+        Assert.Equal(1, handler.DirectKnownExceptionCount);
+        Assert.True(handler.IsCommandHandler);
+    }
+
+    [Fact]
+    public void Discovery_merges_a_cross_file_partial_handler_with_an_explicit_interface_implementation()
+    {
+        const string declarationSource = """
+            using NetCorePal.Extensions.Primitives;
+            sealed record ExplicitCommand : ICommand<string>;
+            partial class ExplicitHandler : ICommandHandler<ExplicitCommand, string> { }
+            """;
+        const string handleSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using NetCorePal.Extensions.Primitives;
+            partial class ExplicitHandler
+            {
+                Task<string> ICommandHandler<ExplicitCommand, string>.Handle(
+                    ExplicitCommand command,
+                    CancellationToken cancellationToken) =>
+                    throw new KnownException("显式处理失败。");
+            }
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [
+                new BarcodeLabelSourceDocument("A_declaration.cs", declarationSource),
+                new BarcodeLabelSourceDocument("B_explicit_handle.cs", handleSource),
+            ]);
+
+        var handler = Assert.Single(discovered);
+        Assert.Equal("B_explicit_handle.cs|ExplicitHandler|Handle", handler.Key);
+        Assert.Equal(1, handler.DirectKnownExceptionCount);
+        Assert.True(handler.IsCommandHandler);
+    }
+
+    [Fact]
     public void Ledger_rejects_command_handler_exclusion_for_a_difficult_handler_shape()
     {
         const string source = """
@@ -254,6 +318,10 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(documents);
 
         Assert.Equal(4, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Contains(discovered, site => site.Key == "Derived.cs|PrimaryKnown|.ctor" && site.DirectKnownExceptionCount == 1);
+        Assert.Contains(discovered, site => site.Key == "Derived.cs|ClassicKnown|.ctor" && site.DirectKnownExceptionCount == 1);
+        Assert.Contains(discovered, site => site.Key == "Derived.cs|Probe|Handle" && site.DirectKnownExceptionCount == 2);
+        Assert.DoesNotContain(discovered, site => site.MethodName == ".type");
         Assert.Contains(violations, violation => violation.Contains("用户消息必须包含中文", StringComparison.Ordinal));
         Assert.Contains(violations, violation => violation.Contains("用户消息不能包含不安全字符", StringComparison.Ordinal));
         Assert.Contains(violations, violation => violation.Contains("用户消息必须是可静态分析", StringComparison.Ordinal));
@@ -303,6 +371,19 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             [new BarcodeLabelSourceDocument("Fake.cs", source)]);
 
         Assert.Empty(discovered);
+    }
+
+    [Fact]
+    public void Discovery_fails_closed_when_command_handler_contract_symbols_cannot_be_resolved()
+    {
+        const string source = "sealed class Probe { }";
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            BarcodeLabelUserMessageSourceAnalyzer.Discover(
+                [new BarcodeLabelSourceDocument("Probe.cs", source)],
+                ["Missing.ICommandHandler`1", "Missing.ICommandHandler`2"]));
+
+        Assert.Equal("BarcodeLabel ICommandHandler 合同类型无法完整解析。", exception.Message);
     }
 
     [Fact]

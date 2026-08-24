@@ -81,12 +81,7 @@ public sealed class DispatchLabelPrintBatchCommandHandler(
         }
         catch (LabelPrintLifecycleRejectedException exception)
         {
-            if (exception.Reason == LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeDispatched)
-            {
-                throw new KnownException("交付结果未知，禁止再次下发打印批次。", exception);
-            }
-
-            throw new KnownException("当前打印批次状态不允许再次下发。", exception);
+            throw LabelPrintLifecycleKnownExceptionMapper.Create(exception, sequenceNo: 0);
         }
         var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(
             dbContext,
@@ -119,21 +114,7 @@ public sealed class ReprintLabelCommandHandler(
         }
         catch (LabelPrintLifecycleRejectedException exception)
         {
-            switch (exception.Reason)
-            {
-                case LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted:
-                    throw new KnownException("交付结果未知，禁止再次传输标签。", exception);
-                case LabelPrintLifecycleRejectionReason.PrintItemNotFound:
-                    throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。", exception);
-                case LabelPrintLifecycleRejectionReason.PrintItemVoided:
-                    throw new KnownException("已作废标签不允许再次传输。", exception);
-                case LabelPrintLifecycleRejectionReason.PrintItemConsumed:
-                    throw new KnownException("已消费标签不允许再次传输。", exception);
-                case LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch:
-                    throw new KnownException("整批打印失败后不能单项再次传输，请改用整批下发。", exception);
-                default:
-                    throw new KnownException("当前打印批次状态不允许单项再次传输。", exception);
-            }
+            throw LabelPrintLifecycleKnownExceptionMapper.Create(exception, request.SequenceNo);
         }
         var selectedIndex = batch.Items
             .OrderBy(item => item.SequenceNo)
@@ -170,18 +151,37 @@ public sealed class VoidLabelCommandHandler(ApplicationDbContext dbContext)
         }
         catch (LabelPrintLifecycleRejectedException exception)
         {
-            switch (exception.Reason)
-            {
-                case LabelPrintLifecycleRejectionReason.PrintItemNotFound:
-                    throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。", exception);
-                case LabelPrintLifecycleRejectionReason.ConsumedPrintItemCannotBeVoided:
-                    throw new KnownException("已消费标签不允许作废。", exception);
-                default:
-                    throw new KnownException("当前标签状态不允许作废。", exception);
-            }
+            throw LabelPrintLifecycleKnownExceptionMapper.Create(exception, request.SequenceNo);
         }
         return batch.Id;
     }
+}
+
+public static class LabelPrintLifecycleKnownExceptionMapper
+{
+    public static KnownException Create(LabelPrintLifecycleRejectedException exception, int sequenceNo) =>
+        exception.Reason switch
+        {
+            LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched =>
+                new KnownException("当前打印批次状态不允许再次下发。", exception),
+            LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeDispatched =>
+                new KnownException("交付结果未知，禁止再次下发打印批次。", exception),
+            LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted =>
+                new KnownException("当前打印批次状态不允许单项再次传输。", exception),
+            LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted =>
+                new KnownException("交付结果未知，禁止再次传输标签。", exception),
+            LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch =>
+                new KnownException("整批打印失败后不能单项再次传输，请改用整批下发。", exception),
+            LabelPrintLifecycleRejectionReason.PrintItemNotFound =>
+                new KnownException($"未找到打印项，序号 = {sequenceNo}。", exception),
+            LabelPrintLifecycleRejectionReason.PrintItemVoided =>
+                new KnownException("已作废标签不允许再次传输。", exception),
+            LabelPrintLifecycleRejectionReason.PrintItemConsumed =>
+                new KnownException("已消费标签不允许再次传输。", exception),
+            LabelPrintLifecycleRejectionReason.ConsumedPrintItemCannotBeVoided =>
+                new KnownException("已消费标签不允许作废。", exception),
+            _ => throw new InvalidOperationException($"未登记的打印生命周期拒绝原因：{exception.Reason}。", exception),
+        };
 }
 
 internal static class LabelPrintLifecycle
