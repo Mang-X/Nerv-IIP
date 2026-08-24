@@ -75,9 +75,6 @@ const model = useVModel(props, 'modelValue', emits, {
       0 0 0 3px color-mix(in oklch, var(--nv-brand) 22%, transparent),
       0 1px 2px 0 color-mix(in oklch, black 6%, transparent);
   }
-  .nv-input[data-invalid] {
-    border-color: var(--destructive);
-  }
   .nv-input[data-invalid]:focus-within {
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 22%, transparent);
   }

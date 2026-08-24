@@ -4,8 +4,8 @@ import path from 'node:path'
 
 const STORAGE_KEY = 'nerv-iip.business-console.auth'
 const SCREENSHOT_DIR = path.resolve(
-  process.cwd(),
-  '../../DESIGN/roadmaps/assets/2026-08-23-issue-1974-tooling-console',
+  process.env.NERV_IIP_OUT_DIR ??
+    path.join(process.cwd(), '../../DESIGN/roadmaps/assets/2026-08-23-issue-1974-tooling-console'),
 )
 
 const principal = {
@@ -133,7 +133,14 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await page.getByRole('menuitem', { name: '完成保养' }).click()
   const completionDialog = page.getByRole('dialog')
   await expect(completionDialog).toContainText('请说明本次状态变更原因。')
-  await expect(completionDialog).not.toContainText('完成保养后将清零累计使用次数')
+  await expect(completionDialog).not.toContainText(
+    '完成保养后将清零累计使用次数，并恢复为可用状态。',
+  )
+  await completionDialog.getByRole('button', { name: '取消' }).click()
+
+  await page.getByRole('button', { name: '工装操作 GAUGE-DOOR-04' }).click()
+  await page.getByRole('menuitem', { name: '完成保养' }).click()
+  await expect(completionDialog).toContainText('完成保养后将清零累计使用次数，并恢复为可用状态。')
   await completionDialog.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '登记使用' }).first().click()
@@ -213,8 +220,19 @@ async function routeBusinessConsoleApi(route: Route) {
             workCenterCodes: ['WC-QA-01'],
             skuCodes: ['SKU-DOOR-INNER-LH'],
           },
+          {
+            code: 'GAUGE-DOOR-04',
+            name: '右前门内板检具',
+            toolingType: 'gauge',
+            status: 'maintenance',
+            maintenanceLifeCount: 30000,
+            usageCount: 30000,
+            isSchedulable: false,
+            workCenterCodes: ['WC-QA-01'],
+            skuCodes: ['SKU-DOOR-INNER-LH'],
+          },
         ],
-        total: 3,
+        total: 4,
       }),
     )
   }

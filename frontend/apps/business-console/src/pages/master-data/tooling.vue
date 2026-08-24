@@ -165,9 +165,6 @@ const lifeValidationMessage = computed(() => {
 const registerNameError = computed(() =>
   registerShowErrors.value && !registerForm.name.trim() ? '请填写工装名称。' : '',
 )
-const registerTypeError = computed(() =>
-  registerShowErrors.value && !registerForm.toolingType ? '请选择工装类型。' : '',
-)
 const registerLifeError = computed(() =>
   registerShowErrors.value ? lifeValidationMessage.value : '',
 )
@@ -182,7 +179,6 @@ const registerSkuError = computed(() =>
 const registerErrors = computed(() =>
   [
     registerNameError.value,
-    registerTypeError.value,
     registerLifeError.value,
     registerWorkCenterError.value,
     registerSkuError.value,
@@ -251,6 +247,11 @@ const statusActionLabel = computed(() =>
       ? '完成保养'
       : '退役',
 )
+const statusWillClearUsage = computed(() => {
+  const life = statusTarget.value?.maintenanceLifeCount
+  const usage = statusTarget.value?.usageCount ?? 0
+  return nextStatus.value === 'available' && life != null && usage >= life
+})
 const statusReasonInvalid = computed(() => statusShowErrors.value && !statusReason.value.trim())
 function openStatus(
   row: BusinessConsoleToolingAssetItem,
@@ -523,14 +524,10 @@ const listErrorMessage = computed(() =>
               />
               <NvFieldError v-if="registerNameError" :errors="[registerNameError]" />
             </NvField>
-            <NvField :data-invalid="Boolean(registerTypeError)">
-              <NvFieldLabel>
-                <span :class="registerTypeError ? 'text-destructive' : undefined">
-                  工装类型 <span class="text-destructive">*</span>
-                </span>
-              </NvFieldLabel>
+            <NvField>
+              <NvFieldLabel>工装类型</NvFieldLabel>
               <NvSelect v-model="registerForm.toolingType">
-                <NvSelectTrigger :invalid="Boolean(registerTypeError)">
+                <NvSelectTrigger>
                   <NvSelectValue />
                 </NvSelectTrigger>
                 <NvSelectContent>
@@ -542,7 +539,6 @@ const listErrorMessage = computed(() =>
                   >
                 </NvSelectContent>
               </NvSelect>
-              <NvFieldError v-if="registerTypeError" :errors="[registerTypeError]" />
             </NvField>
             <NvField :data-invalid="Boolean(registerLifeError)">
               <NvFieldLabel for="tooling-life">
@@ -655,7 +651,12 @@ const listErrorMessage = computed(() =>
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>{{ statusActionLabel }}</NvDialogTitle>
-          <NvDialogDescription>请说明本次状态变更原因。</NvDialogDescription>
+          <NvDialogDescription>
+            <span v-if="statusWillClearUsage">
+              完成保养后将清零累计使用次数，并恢复为可用状态。
+            </span>
+            <span v-else>请说明本次状态变更原因。</span>
+          </NvDialogDescription>
         </NvDialogHeader>
         <NvField :data-invalid="statusReasonInvalid">
           <NvFieldLabel for="tooling-status-reason">
