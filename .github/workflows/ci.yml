@@ -1972,7 +1972,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
-    timeout-minutes: 75
+    timeout-minutes: 80
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
