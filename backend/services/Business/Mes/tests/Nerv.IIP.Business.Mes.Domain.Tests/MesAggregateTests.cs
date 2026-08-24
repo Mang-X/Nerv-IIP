@@ -82,6 +82,60 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void WorkOrder_mark_released_with_operation_tasks_changes_state_and_publishes_supplied_tasks()
+    {
+        var releasedAtUtc = DateTimeOffset.Parse("2026-08-24T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-RELEASE",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            releasedAtUtc.AddDays(1));
+        var operationTasks = new[]
+        {
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095-RELEASE", "OP-10", 10, "WC-MIX", [], releasedAtUtc,
+                TimeSpan.FromMinutes(30)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095-RELEASE", "OP-20", 20, "WC-PACK", [], releasedAtUtc,
+                TimeSpan.FromMinutes(15)),
+        };
+        workOrder.ClearDomainEvents();
+
+        workOrder.MarkReleased(operationTasks);
+
+        Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Collection(
+            domainEvent.OperationTasks,
+            first => Assert.Same(operationTasks[0], first),
+            second => Assert.Same(operationTasks[1], second));
+    }
+
+    [Fact]
+    public void WorkOrder_mark_released_rejects_null_operation_tasks_without_changing_state_or_publishing_event()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-NULL",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
+        workOrder.ClearDomainEvents();
+
+        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!));
+
+        Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
+    }
+
+    [Fact]
     public void Rule_schedule_result_is_deterministic_for_same_assignments()
     {
         var scheduledAt = DateTimeOffset.Parse("2026-05-23T08:00:00Z");

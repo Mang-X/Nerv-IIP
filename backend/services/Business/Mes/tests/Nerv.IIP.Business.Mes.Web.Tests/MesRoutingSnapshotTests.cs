@@ -49,6 +49,9 @@ public sealed class MesRoutingSnapshotTests
                 "org-001", "env-dev", "WO-2095", "OP-015-A", 15, "WC-TIE-A", [], releasedAtUtc,
                 TimeSpan.FromMinutes(20)),
             OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-005", 30, "WC-FINISH", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)),
+            OperationTask.Queue(
                 "org-other", "env-dev", "WO-2095", "OP-OTHER-ORG", 5, "WC-OTHER", [], releasedAtUtc,
                 TimeSpan.FromMinutes(10)),
             OperationTask.Queue(
@@ -92,6 +95,12 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal("OP-020", operation.OperationTaskId);
                 Assert.Equal(20, operation.OperationSequence);
                 Assert.Equal("WC-PACK", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-005", operation.OperationTaskId);
+                Assert.Equal(30, operation.OperationSequence);
+                Assert.Equal("WC-FINISH", operation.WorkCenterId);
             });
 
         var integrationEvent = new WorkOrderReleasedIntegrationEventConverter().Convert(domainEvent);
@@ -120,6 +129,12 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal("OP-020", operation.OperationId);
                 Assert.Equal(20, operation.OperationSequence);
                 Assert.Equal("WC-PACK", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-005", operation.OperationId);
+                Assert.Equal(30, operation.OperationSequence);
+                Assert.Equal("WC-FINISH", operation.WorkCenterId);
             });
     }
 
