@@ -853,6 +853,8 @@ try {
                         @{ Name = 'new-variable-alias'; Statement = 'nv completionHttpReplayConverged $true -Force' },
                         @{ Name = 'new-variable-module-qualified'; Statement = 'Microsoft.PowerShell.Utility\New-Variable -Name completionHttpReplayConverged -Value $true -Force' },
                         @{ Name = 'set-item-variable-provider'; Statement = 'Set-Item -LiteralPath variable:completionHttpReplayConverged -Value $true' },
+                        @{ Name = 'set-item-common-parameter-before-path'; Statement = 'Set-Item -ErrorAction Stop variable:completionHttpReplayConverged -Value $true' },
+                        @{ Name = 'set-item-value-before-path'; Statement = 'Set-Item -Value $true variable:completionHttpReplayConverged' },
                         @{ Name = 'typed'; Statement = '[bool]$completionHttpReplayConverged = $true' }
                     )
             }
@@ -882,6 +884,7 @@ try {
         @{ Name = 'set-variable-unrelated'; Statement = 'Set-Variable -Name unrelatedWmsEvidence -Value $true' },
         @{ Name = 'new-variable-unrelated'; Statement = 'New-Variable -Name unrelatedWmsEvidence -Value $true -Force' },
         @{ Name = 'set-item-unrelated'; Statement = 'Set-Item -LiteralPath variable:unrelatedWmsEvidence -Value $true' },
+        @{ Name = 'set-item-common-parameter-unrelated'; Statement = 'Set-Item -ErrorAction Stop variable:unrelatedWmsEvidence -Value $true' },
         @{ Name = 'env-prefix'; Statement = '$env:pickingLifecycleCompleted = ''not-the-script-variable''' }
     )) {
         $nonTargetPath = Join-Path $fixtureRoot "wms-diagnostics/$($nonTargetWrite.Name).ps1"
@@ -943,6 +946,36 @@ try {
         $outboundWiringContract = Test-NervAcceptanceWmsVerifierContract -Path $outboundWiringPath
         Assert-Contract (-not $outboundWiringContract.outboundCompletionWired) "Outbound wiring mutation '$($outboundWiringMutation.Name)' must invalidate outboundCompletionWired."
     }
+
+    $completedReadbackPredicate = '(Test-NervAcceptanceWmsCompletedOutboundReadback -Readback $rows[0])'
+    Assert-Contract (([regex]::Matches($wmsVerifierSource, [regex]::Escape($completedReadbackPredicate))).Count -eq 1) 'The completed-outbound helper mutation requires one exact production predicate call.'
+    $bypassedReadbackPredicatePath = Join-Path $fixtureRoot 'wms-diagnostics/bypassed-completed-readback-predicate.ps1'
+    [IO.File]::WriteAllText($bypassedReadbackPredicatePath, $wmsVerifierSource.Replace($completedReadbackPredicate, '$true'), [Text.UTF8Encoding]::new($false))
+    Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $bypassedReadbackPredicatePath).outboundCompletionWired) 'Bypassing Test-NervAcceptanceWmsCompletedOutboundReadback inside Wait-WmsOutboundOrder must invalidate outboundCompletionWired.'
+
+    $completionReadbackNode = 'completionReadback = [ordered]@{ status = $completedOutboundOrder.status; completedAtUtc = $completedOutboundOrder.completedAtUtc }'
+    Assert-Contract (([regex]::Matches($wmsVerifierSource, [regex]::Escape($completionReadbackNode))).Count -eq 1) 'The canonical completionReadback mutation requires one exact production node.'
+    $dummyReadbackNode = 'dummyCompletionEvidence = if ($false) { [ordered]@{ completionReadback = [ordered]@{ status = $completedOutboundOrder.status; completedAtUtc = $completedOutboundOrder.completedAtUtc } } }'
+    $dummyReadbackPath = Join-Path $fixtureRoot 'wms-diagnostics/dead-dummy-completion-readback.ps1'
+    [IO.File]::WriteAllText($dummyReadbackPath, $wmsVerifierSource.Replace($completionReadbackNode, $dummyReadbackNode), [Text.UTF8Encoding]::new($false))
+    Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $dummyReadbackPath).outboundCompletionWired) 'A dead dummy completionReadback outside businessEvidence.wmsOutboundOrder must not prove outbound completion wiring.'
+
+    foreach ($deadMemberReadMutation in @(
+        @{ Name = 'dead-status-member-read'; Old = '$completedOutboundOrder.status'; New = "if (`$false) { `$completedOutboundOrder.status } else { 'Completed' }" },
+        @{ Name = 'dead-time-member-read'; Old = '$completedOutboundOrder.completedAtUtc'; New = "if (`$false) { `$completedOutboundOrder.completedAtUtc } else { '2026-08-24T00:00:30Z' }" }
+    )) {
+        Assert-Contract (([regex]::Matches($wmsVerifierSource, [regex]::Escape([string]$deadMemberReadMutation.Old))).Count -eq 1) "Dead member-read mutation '$($deadMemberReadMutation.Name)' requires one exact production expression."
+        $deadMemberReadPath = Join-Path $fixtureRoot "wms-diagnostics/$($deadMemberReadMutation.Name).ps1"
+        [IO.File]::WriteAllText($deadMemberReadPath, $wmsVerifierSource.Replace([string]$deadMemberReadMutation.Old, [string]$deadMemberReadMutation.New), [Text.UTF8Encoding]::new($false))
+        Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $deadMemberReadPath).outboundCompletionWired) "Dead member-read mutation '$($deadMemberReadMutation.Name)' must invalidate outboundCompletionWired."
+    }
+
+    $completedOutboundAssignmentText = $mutationAssignment.Extent.Text
+    Assert-Contract $completedOutboundAssignmentText.Contains('Wait-WmsOutboundOrder', [StringComparison]::Ordinal) 'The unused scriptblock mutation must target the completed outbound assignment.'
+    $unusedScriptblockPath = Join-Path $fixtureRoot 'wms-diagnostics/completed-outbound-unused-scriptblock.ps1'
+    $unusedScriptblockSource = $wmsVerifierSource.Remove($mutationAssignment.Extent.StartOffset, $mutationAssignment.Extent.EndOffset - $mutationAssignment.Extent.StartOffset).Insert($mutationAssignment.Extent.StartOffset, "`$unusedCompletedOutboundRead = { $completedOutboundAssignmentText }")
+    [IO.File]::WriteAllText($unusedScriptblockPath, $unusedScriptblockSource, [Text.UTF8Encoding]::new($false))
+    Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $unusedScriptblockPath).outboundCompletionWired) 'Moving the completed outbound wait into an uninvoked scriptblock must invalidate outboundCompletionWired.'
 
     $failureAssignmentCommand = @($mutationAst.FindAll({
                 param($node)

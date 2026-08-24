@@ -199,6 +199,7 @@ function Test-NervScriptVariableSetItemCommandWritesName {
     if (-not (@('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si') | Where-Object {
                 [string]::Equals([string]$_, $commandName, [StringComparison]::OrdinalIgnoreCase)
             })) { return $false }
+    $parameters = Get-NervScriptVariableBinderParameters -CanonicalName 'Set-Item'
     $elements = @($Command.CommandElements)
     $positionals = [Collections.Generic.List[Management.Automation.Language.Ast]]::new()
     $namedTargets = [Collections.Generic.List[Management.Automation.Language.Ast]]::new()
@@ -208,16 +209,19 @@ function Test-NervScriptVariableSetItemCommandWritesName {
             $positionals.Add($element)
             continue
         }
-        $parameterName = [string]$element.ParameterName
-        if (-not ([string]::Equals($parameterName, 'Path', [StringComparison]::OrdinalIgnoreCase) -or
-                [string]::Equals($parameterName, 'LiteralPath', [StringComparison]::OrdinalIgnoreCase))) { continue }
+        $resolved = Resolve-NervScriptVariableBinderParameter -Parameters $parameters -Written ([string]$element.ParameterName)
+        if ($null -eq $resolved) { return $false }
         $argument = if ($null -ne $element.Argument) { $element.Argument }
-        elseif ($index + 1 -lt $elements.Count -and $elements[$index + 1] -isnot [Management.Automation.Language.CommandParameterAst]) {
+        elseif ($resolved.TakesValue -and $index + 1 -lt $elements.Count -and $elements[$index + 1] -isnot [Management.Automation.Language.CommandParameterAst]) {
             $index++
             $elements[$index]
         }
         else { $null }
-        if ($null -ne $argument) { $namedTargets.Add($argument) }
+        if (($null -ne $argument) -and
+            ([string]::Equals([string]$resolved.Name, 'Path', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals([string]$resolved.Name, 'LiteralPath', [StringComparison]::OrdinalIgnoreCase))) {
+            $namedTargets.Add($argument)
+        }
     }
     foreach ($candidate in $namedTargets) {
         if (Test-NervScriptVariableProviderPathMayMatch -Candidate $candidate -Name $Name) { return $true }

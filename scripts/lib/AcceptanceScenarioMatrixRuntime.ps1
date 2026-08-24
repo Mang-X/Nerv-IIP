@@ -1183,11 +1183,12 @@ function Test-NervAcceptanceWmsVerifierContract {
         }
         return $false
     }
-    $hasFunctionAncestor = {
+    $hasInactiveCodeAncestor = {
         param([Management.Automation.Language.Ast] $Node)
         $ancestor = $Node.Parent
         while ($null -ne $ancestor) {
-            if ($ancestor -is [Management.Automation.Language.FunctionDefinitionAst]) { return $true }
+            if ($ancestor -is [Management.Automation.Language.FunctionDefinitionAst] -or
+                $ancestor -is [Management.Automation.Language.ScriptBlockExpressionAst]) { return $true }
             $ancestor = $ancestor.Parent
         }
         return $false
@@ -1198,11 +1199,11 @@ function Test-NervAcceptanceWmsVerifierContract {
                     [string]::Equals($node.Name, 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
             }, $true) | Where-Object {
                 -not (& $hasConditionalAncestor $_) -and
-                -not (& $hasFunctionAncestor $_)
+                -not (& $hasInactiveCodeAncestor $_)
             })
     $orderedCaptureCalls = [Collections.Generic.List[object]]::new()
     $topLevelTryStatements = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $null -ne $node.Finally }, $true) | Where-Object {
-            -not (& $hasFunctionAncestor $_)
+            -not (& $hasInactiveCodeAncestor $_)
         })
     foreach ($tryStatement in $topLevelTryStatements) {
         foreach ($catchClause in @($tryStatement.CatchClauses)) {
@@ -1212,7 +1213,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                                 [string]::Equals($node.GetCommandName(), 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
                         }, $true))) {
                 if (-not (& $hasConditionalAncestor $captureCall) -and
-                    -not (& $hasFunctionAncestor $captureCall)) {
+                    -not (& $hasInactiveCodeAncestor $captureCall)) {
                     [void]$orderedCaptureCalls.Add($captureCall)
                 }
             }
@@ -1252,7 +1253,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                     $node -is [Management.Automation.Language.AssignmentStatementAst] -or
                         $node -is [Management.Automation.Language.CommandAst]
                 }, $true) | Where-Object {
-                    -not (& $hasFunctionAncestor $_) -and
+                    -not (& $hasInactiveCodeAncestor $_) -and
                         (($_ -is [Management.Automation.Language.AssignmentStatementAst] -and (& $testAssignmentWritesVariable $_ $VariableName)) -or
                             ($_ -is [Management.Automation.Language.CommandAst] -and (& $testCommandWritesVariable $_ $VariableName)))
                 })
@@ -1271,13 +1272,56 @@ function Test-NervAcceptanceWmsVerifierContract {
                         $assignment -is [Management.Automation.Language.AssignmentStatementAst] -and
                         (& $testAssignmentWritesVariable $assignment $VariableName) -and
                         -not (& $hasConditionalAncestor $command) -and
-                        -not (& $hasFunctionAncestor $command)
+                        -not (& $hasInactiveCodeAncestor $command)
                 })
         return $allWrites.Count -eq 1 -and $matches.Count -eq 1
     }
 
     $testOutboundCompletion = {
         if (-not (& $testAssignment 'Wait-WmsOutboundOrder' 'completedOutboundOrder')) { return $false }
+        $waitFunctions = @($ast.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        [string]::Equals($node.Name, 'Wait-WmsOutboundOrder', [StringComparison]::Ordinal)
+                }, $true) | Where-Object {
+                    -not (& $hasConditionalAncestor $_) -and
+                        -not (& $hasInactiveCodeAncestor $_)
+                })
+        if ($waitFunctions.Count -ne 1) { return $false }
+        $completedPredicates = @($waitFunctions[0].Body.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.CommandAst] -and
+                        [string]::Equals($node.GetCommandName(), 'Test-NervAcceptanceWmsCompletedOutboundReadback', [StringComparison]::Ordinal)
+                }, $true))
+        if ($completedPredicates.Count -ne 1) { return $false }
+        $predicate = $completedPredicates[0]
+        if ($predicate.CommandElements.Count -ne 3 -or
+            $predicate.CommandElements[1] -isnot [Management.Automation.Language.CommandParameterAst] -or
+            -not [string]::Equals([string]$predicate.CommandElements[1].ParameterName, 'Readback', [StringComparison]::OrdinalIgnoreCase) -or
+            $null -ne $predicate.CommandElements[1].Argument -or
+            -not [string]::Equals([string]$predicate.CommandElements[2].Extent.Text, '$rows[0]', [StringComparison]::Ordinal)) { return $false }
+        $requireCompletedGate = $predicate.Parent
+        while ($null -ne $requireCompletedGate -and $requireCompletedGate -isnot [Management.Automation.Language.BinaryExpressionAst]) { $requireCompletedGate = $requireCompletedGate.Parent }
+        if ($null -eq $requireCompletedGate -or $requireCompletedGate.Operator -ne [Management.Automation.Language.TokenKind]::Or -or
+            $requireCompletedGate.Left -isnot [Management.Automation.Language.UnaryExpressionAst] -or
+            $requireCompletedGate.Left.TokenKind -ne [Management.Automation.Language.TokenKind]::Not -or
+            $requireCompletedGate.Left.Child -isnot [Management.Automation.Language.VariableExpressionAst] -or
+            -not [string]::Equals((Get-NervScriptVariableBindingName -VariablePath $requireCompletedGate.Left.Child.VariablePath), 'RequireCompleted', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+        $predicateIfAncestors = @()
+        $predicateAncestor = $predicate.Parent
+        while ($null -ne $predicateAncestor -and $predicateAncestor -ne $waitFunctions[0]) {
+            if ($predicateAncestor -is [Management.Automation.Language.IfStatementAst]) { $predicateIfAncestors += $predicateAncestor }
+            $predicateAncestor = $predicateAncestor.Parent
+        }
+        if ($predicateIfAncestors.Count -ne 1) { return $false }
+        $guardReturns = @($predicateIfAncestors[0].Clauses | ForEach-Object { $_.Item2 } | ForEach-Object {
+                $_.FindAll({ param($node) $node -is [Management.Automation.Language.ReturnStatementAst] }, $true)
+            } | Where-Object {
+                $null -ne $_.Pipeline -and
+                    [string]::Equals([string]$_.Pipeline.Extent.Text, '$rows[0]', [StringComparison]::Ordinal)
+            })
+        if ($predicateIfAncestors[0].Clauses.Count -ne 1 -or $guardReturns.Count -ne 1) { return $false }
+
         $waitCalls = @($ast.FindAll({
                     param($node)
                     $node -is [Management.Automation.Language.CommandAst] -and
@@ -1289,7 +1333,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                     $null -ne $assignment -and
                         (& $testAssignmentWritesVariable $assignment 'completedOutboundOrder') -and
                         -not (& $hasConditionalAncestor $command) -and
-                        -not (& $hasFunctionAncestor $command)
+                        -not (& $hasInactiveCodeAncestor $command)
                 })
         if ($waitCalls.Count -ne 1) { return $false }
         $requireCompletedParameters = @($waitCalls[0].CommandElements | Where-Object {
@@ -1299,35 +1343,53 @@ function Test-NervAcceptanceWmsVerifierContract {
             })
         if ($requireCompletedParameters.Count -ne 1) { return $false }
 
-        $completionReadbacks = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true) | Where-Object {
-                -not (& $hasFunctionAncestor $_) -and
-                    @($_.KeyValuePairs | Where-Object {
-                            $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
-                                [string]::Equals([string]$_.Item1.Value, 'completionReadback', [StringComparison]::Ordinal)
-                        }).Count -eq 1
+        $businessEvidenceAssignments = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] }, $true) | Where-Object {
+                (& $testAssignmentWritesVariable $_ 'businessEvidence') -and
+                    -not (& $hasConditionalAncestor $_) -and
+                    -not (& $hasInactiveCodeAncestor $_) -and
+                    $_.Right -is [Management.Automation.Language.CommandExpressionAst] -and
+                    $_.Right.Expression -is [Management.Automation.Language.ConvertExpressionAst] -and
+                    $_.Right.Expression.Child -is [Management.Automation.Language.HashtableAst]
             })
-        if ($completionReadbacks.Count -ne 1) { return $false }
-        $readbackPair = @($completionReadbacks[0].KeyValuePairs | Where-Object {
+        if ($businessEvidenceAssignments.Count -ne 1) { return $false }
+        $businessEvidenceTable = $businessEvidenceAssignments[0].Right.Expression.Child
+        $wmsPairs = @($businessEvidenceTable.KeyValuePairs | Where-Object {
+                $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
+                    [string]::Equals([string]$_.Item1.Value, 'wmsOutboundOrder', [StringComparison]::Ordinal)
+            })
+        if ($wmsPairs.Count -ne 1 -or
+            $wmsPairs[0].Item2 -isnot [Management.Automation.Language.PipelineAst] -or
+            $wmsPairs[0].Item2.PipelineElements.Count -ne 1 -or
+            $wmsPairs[0].Item2.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst] -or
+            $wmsPairs[0].Item2.PipelineElements[0].Expression -isnot [Management.Automation.Language.ConvertExpressionAst] -or
+            $wmsPairs[0].Item2.PipelineElements[0].Expression.Child -isnot [Management.Automation.Language.HashtableAst]) { return $false }
+        $wmsTable = $wmsPairs[0].Item2.PipelineElements[0].Expression.Child
+        $readbackPairs = @($wmsTable.KeyValuePairs | Where-Object {
                 $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
                     [string]::Equals([string]$_.Item1.Value, 'completionReadback', [StringComparison]::Ordinal)
-            })[0]
-        $readbackTables = @($readbackPair.Item2.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true))
-        if ($readbackTables.Count -ne 1) { return $false }
+            })
+        if ($readbackPairs.Count -ne 1 -or
+            $readbackPairs[0].Item2 -isnot [Management.Automation.Language.PipelineAst] -or
+            $readbackPairs[0].Item2.PipelineElements.Count -ne 1 -or
+            $readbackPairs[0].Item2.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst] -or
+            $readbackPairs[0].Item2.PipelineElements[0].Expression -isnot [Management.Automation.Language.ConvertExpressionAst] -or
+            $readbackPairs[0].Item2.PipelineElements[0].Expression.Child -isnot [Management.Automation.Language.HashtableAst]) { return $false }
+        $readbackTable = $readbackPairs[0].Item2.PipelineElements[0].Expression.Child
         foreach ($field in @('status', 'completedAtUtc')) {
-            $fieldPairs = @($readbackTables[0].KeyValuePairs | Where-Object {
+            $fieldPairs = @($readbackTable.KeyValuePairs | Where-Object {
                     $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
                         [string]::Equals([string]$_.Item1.Value, $field, [StringComparison]::Ordinal)
                 })
-            if ($fieldPairs.Count -ne 1) { return $false }
-            $memberReads = @($fieldPairs[0].Item2.FindAll({
-                        param($node)
-                        $node -is [Management.Automation.Language.MemberExpressionAst] -and
-                            $node.Expression -is [Management.Automation.Language.VariableExpressionAst] -and
-                            [string]::Equals((Get-NervScriptVariableBindingName -VariablePath $node.Expression.VariablePath), 'completedOutboundOrder', [StringComparison]::OrdinalIgnoreCase) -and
-                            $node.Member -is [Management.Automation.Language.StringConstantExpressionAst] -and
-                            [string]::Equals([string]$node.Member.Value, $field, [StringComparison]::OrdinalIgnoreCase)
-                    }, $true))
-            if ($memberReads.Count -ne 1) { return $false }
+            if ($fieldPairs.Count -ne 1 -or
+                $fieldPairs[0].Item2 -isnot [Management.Automation.Language.PipelineAst] -or
+                $fieldPairs[0].Item2.PipelineElements.Count -ne 1 -or
+                $fieldPairs[0].Item2.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst]) { return $false }
+            $memberRead = $fieldPairs[0].Item2.PipelineElements[0].Expression
+            if ($memberRead -isnot [Management.Automation.Language.MemberExpressionAst] -or
+                $memberRead.Expression -isnot [Management.Automation.Language.VariableExpressionAst] -or
+                -not [string]::Equals((Get-NervScriptVariableBindingName -VariablePath $memberRead.Expression.VariablePath), 'completedOutboundOrder', [StringComparison]::OrdinalIgnoreCase) -or
+                $memberRead.Member -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+                -not [string]::Equals([string]$memberRead.Member.Value, $field, [StringComparison]::OrdinalIgnoreCase)) { return $false }
         }
         return $true
     }
