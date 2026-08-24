@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
@@ -45,6 +47,17 @@ public sealed class BarcodeLabelSchemaConventionTests
             .FindProperty(nameof(LabelPrintBatch.TemplateAssetSha256))!;
 
         Assert.Equal(71, property.GetMaxLength());
+    }
+
+    [Fact]
+    public void Print_batch_status_comment_declares_delivery_unknown_truthfully()
+    {
+        using var fixture = CreateFixture();
+        var property = fixture.DbContext.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(LabelPrintBatch))!
+            .FindProperty(nameof(LabelPrintBatch.Status))!;
+
+        Assert.Contains("delivery-unknown", property.GetComment(), StringComparison.Ordinal);
     }
 
     private static BarcodeLabelSchemaFixture CreateFixture()
