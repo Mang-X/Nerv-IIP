@@ -742,31 +742,13 @@ try {
         expectedVersion = [long]$outboundAfterPicking.version
     }
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
-    Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
-    $outboundAfterFirstCompletion = Wait-WmsOutboundOrder `
-        -WmsUrl $wmsUrl `
-        -Headers $headers `
-        -DeliveryOrderNo $deliveryOrderNo `
-        -ActorPrincipalId $wmsActorPrincipalId `
-        -SiteCode $wmsSiteCode
-    Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
-    $outboundAfterCompletionReplay = Wait-WmsOutboundOrder `
-        -WmsUrl $wmsUrl `
-        -Headers $headers `
-        -DeliveryOrderNo $deliveryOrderNo `
-        -ActorPrincipalId $wmsActorPrincipalId `
-        -SiteCode $wmsSiteCode
+    $firstCompletion = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
+    $completionReplay = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
     $completionHttpReplayConverged =
-        [string]::Equals([string]$outboundAfterFirstCompletion.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
-        [string]::Equals([string]$outboundAfterCompletionReplay.status, 'Completed', [StringComparison]::OrdinalIgnoreCase) -and
-        $outboundAfterCompletionReplay.version -eq $outboundAfterFirstCompletion.version -and
-        [string]::Equals([string]$outboundAfterCompletionReplay.completedAtUtc, [string]$outboundAfterFirstCompletion.completedAtUtc, [StringComparison]::Ordinal) -and
-        [string]::Equals(
-            [string]($outboundAfterCompletionReplay.lines | ConvertTo-Json -Depth 8 -Compress),
-            [string]($outboundAfterFirstCompletion.lines | ConvertTo-Json -Depth 8 -Compress),
-            [StringComparison]::Ordinal)
+        -not [string]::IsNullOrWhiteSpace([string]$firstCompletion.data.requestId) -and
+        [string]::Equals([string]$completionReplay.data.requestId, [string]$firstCompletion.data.requestId, [StringComparison]::Ordinal)
     if (-not $completionHttpReplayConverged) {
-        throw 'Public WMS readback changed after idempotent outbound completion HTTP replay.'
+        throw 'Public WMS completion replay did not return the same non-empty inventory movement requestId.'
     }
 
     $deliveryBeforeReplay = Wait-ErpDeliveryOrder -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo

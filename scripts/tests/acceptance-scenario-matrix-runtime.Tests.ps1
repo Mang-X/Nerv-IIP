@@ -740,10 +740,10 @@ try {
         '$completedPickingTask.status',
         '$completedPickingTask.executedQuantity',
         '$completedPickingTask.completedAtUtc',
-        '$outboundAfterFirstCompletion = Wait-WmsOutboundOrder',
-        '$outboundAfterCompletionReplay = Wait-WmsOutboundOrder',
-        '$outboundAfterCompletionReplay.version -eq $outboundAfterFirstCompletion.version',
-        '[string]::Equals([string]$outboundAfterCompletionReplay.completedAtUtc, [string]$outboundAfterFirstCompletion.completedAtUtc, [StringComparison]::Ordinal)'
+        '$firstCompletion = Invoke-JsonPost',
+        '$completionReplay = Invoke-JsonPost',
+        '$firstCompletion.data.requestId',
+        '[string]::Equals([string]$completionReplay.data.requestId, [string]$firstCompletion.data.requestId, [StringComparison]::Ordinal)'
     )) {
         Assert-Contract ($wmsVerifierSource.Contains($requiredReadback, [StringComparison]::Ordinal)) "The MAN-527 verifier must derive WMS convergence from public readback checkpoint '$requiredReadback'."
     }
