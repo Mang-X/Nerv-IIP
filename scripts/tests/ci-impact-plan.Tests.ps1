@@ -160,7 +160,11 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ($impactUploads.Count -eq 1 -and [string]::Equals([string]$impactUploads[0].with.name, '${{ steps.impact-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and $null -eq $impactUploads[0].with.PSObject.Properties['overwrite']) 'Impact-plan upload must use its immutable producer identity without overwrite.'
     $scriptGovernanceProperty = $parsedWorkflow.jobs.PSObject.Properties['script-governance']
     Assert-Contract ($null -ne $scriptGovernanceProperty) 'CI must retain the script-governance job.'
-    $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
+    $scriptGovernanceJob = $scriptGovernanceProperty.Value
+    Assert-Contract ([int]$scriptGovernanceJob.'timeout-minutes' -eq 15) 'Script Governance must retain its 15-minute evidence-based job budget.'
+    Assert-Contract ($null -eq $scriptGovernanceJob.PSObject.Properties['continue-on-error']) 'Script Governance must propagate job failures.'
+    Assert-Contract ($null -eq $scriptGovernanceJob.PSObject.Properties['defaults']) 'Script Governance must not inject job-level run defaults into its heterogeneous action and pwsh steps.'
+    $scriptGovernanceSteps = @($scriptGovernanceJob.steps)
     $scriptGovernanceStepTimeouts = @($scriptGovernanceSteps | ForEach-Object { [int]$_.'timeout-minutes' })
     $scriptGovernanceStepBudgetMinutes = ($scriptGovernanceStepTimeouts | Measure-Object -Sum).Sum
     $fiveMinuteStepCount = @($scriptGovernanceStepTimeouts | Where-Object { $_ -eq 5 }).Count
@@ -216,6 +220,10 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
 
     Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
+    Assert-Contract ($workflowSource.Contains('2026-08-24 查询最近 30 次 main 成功运行：', [StringComparison]::Ordinal) -and
+        $workflowSource.Contains('min 387s、median 520s、p90 563s、max 574s', [StringComparison]::Ordinal) -and
+        $workflowSource.Contains('3 个迁移器契约 step 合计 27s', [StringComparison]::Ordinal) -and
+        $workflowSource.Contains('15m 给 601s 的同树上界保留 299s 余量', [StringComparison]::Ordinal)) 'Script Governance job budget comment must retain the dated live-history and exact-head increment evidence for 15 minutes.'
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
     $planningJobProperties = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
@@ -1260,6 +1268,41 @@ try {
     $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 34-step/168m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
+
+    foreach ($jobMutation in @(
+            @{
+                Slug = 'ten-minute-budget'
+                Source = $workflow.Replace(
+                    "    timeout-minutes: 15$([Environment]::NewLine)    runs-on: ubuntu-latest$([Environment]::NewLine)    needs: impact-plan",
+                    "    timeout-minutes: 10$([Environment]::NewLine)    runs-on: ubuntu-latest$([Environment]::NewLine)    needs: impact-plan",
+                    [StringComparison]::Ordinal)
+                Diagnostic = 'Script Governance must retain its 15-minute evidence-based job budget.'
+            },
+            @{
+                Slug = 'continue-on-error'
+                Source = $workflow.Replace(
+                    "  script-governance:$([Environment]::NewLine)    name: Script Governance$([Environment]::NewLine)",
+                    "  script-governance:$([Environment]::NewLine)    name: Script Governance$([Environment]::NewLine)    continue-on-error: true$([Environment]::NewLine)",
+                    [StringComparison]::Ordinal)
+                Diagnostic = 'Script Governance must propagate job failures.'
+            },
+            @{
+                Slug = 'run-defaults'
+                Source = $workflow.Replace(
+                    "  script-governance:$([Environment]::NewLine)    name: Script Governance$([Environment]::NewLine)",
+                    "  script-governance:$([Environment]::NewLine)    name: Script Governance$([Environment]::NewLine)    defaults:$([Environment]::NewLine)      run:$([Environment]::NewLine)        shell: bash$([Environment]::NewLine)",
+                    [StringComparison]::Ordinal)
+                Diagnostic = 'Script Governance must not inject job-level run defaults into its heterogeneous action and pwsh steps.'
+            }
+        )) {
+        Assert-Contract (-not [string]::Equals([string]$jobMutation.Source, $workflow, [StringComparison]::Ordinal)) "Script Governance job mutation '$($jobMutation.Slug)' must alter the canonical workflow."
+        $jobMutationPath = Join-Path $workflowMutationRoot "script-governance-$($jobMutation.Slug).yml"
+        [IO.File]::WriteAllText($jobMutationPath, [string]$jobMutation.Source, [Text.UTF8Encoding]::new($false))
+        $jobMutationFailure = $null
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $jobMutationPath } catch { $jobMutationFailure = $_ }
+        $observedJobMutationDiagnostic = if ($null -eq $jobMutationFailure) { '<none>' } else { [string]$jobMutationFailure.Exception.Message }
+        Assert-Contract ([string]::Equals($observedJobMutationDiagnostic, [string]$jobMutation.Diagnostic, [StringComparison]::Ordinal)) "Script Governance job mutation '$($jobMutation.Slug)' must fail with its exact diagnostic. Observed: $observedJobMutationDiagnostic"
+    }
 
     foreach ($mutation in @(
             @{
