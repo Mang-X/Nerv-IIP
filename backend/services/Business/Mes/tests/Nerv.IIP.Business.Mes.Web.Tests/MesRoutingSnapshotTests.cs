@@ -53,6 +53,9 @@ public sealed class MesRoutingSnapshotTests
                 TimeSpan.FromMinutes(10)),
             OperationTask.Queue(
                 "org-001", "env-other", "WO-2095", "OP-OTHER-ENV", 5, "WC-OTHER", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-OTHER", "OP-OTHER-WO", 5, "WC-OTHER", [], releasedAtUtc,
                 TimeSpan.FromMinutes(10)));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -118,6 +121,38 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal(20, operation.OperationSequence);
                 Assert.Equal("WC-PACK", operation.WorkCenterId);
             });
+    }
+
+    [Fact]
+    public async Task Release_work_order_rejects_missing_operation_snapshots_without_publishing_release_event()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var releasedAtUtc = DateTimeOffset.Parse("2026-08-24T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-NO-SNAPSHOT",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            releasedAtUtc.AddDays(1),
+            "PCS");
+        workOrder.ClearDomainEvents();
+        dbContext.WorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new ReleaseWorkOrderCommandHandler(
+            dbContext,
+            NoMaterialRequirementsProvider.Instance).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-2095-NO-SNAPSHOT", releasedAtUtc),
+            CancellationToken.None));
+
+        Assert.Contains("工单缺少工艺路线快照", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
     }
 
     [Fact]

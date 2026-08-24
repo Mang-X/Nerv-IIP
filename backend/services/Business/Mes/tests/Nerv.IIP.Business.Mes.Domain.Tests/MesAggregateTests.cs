@@ -62,6 +62,26 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void WorkOrder_mark_released_rejects_empty_operation_tasks_without_changing_state_or_publishing_event()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-EMPTY",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
+        workOrder.ClearDomainEvents();
+
+        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([]));
+
+        Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
+    }
+
+    [Fact]
     public void Rule_schedule_result_is_deterministic_for_same_assignments()
     {
         var scheduledAt = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
