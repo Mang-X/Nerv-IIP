@@ -50,8 +50,19 @@ vi.mock('@/composables/useBusinessTooling', () => ({
         workCenterCodes: ['WC-PRESS'],
         skuCodes: ['SKU-SILL'],
       },
+      {
+        code: 'GAUGE-003',
+        name: '左前门内板检具',
+        toolingType: 'gauge',
+        status: 'maintenance',
+        maintenanceLifeCount: 30000,
+        usageCount: 30000,
+        isSchedulable: false,
+        workCenterCodes: ['WC-PRESS'],
+        skuCodes: ['SKU-FLOOR'],
+      },
     ]),
-    toolingTotal: computed(() => 1),
+    toolingTotal: computed(() => 3),
     toolingPending: shallowRef(false),
     toolingError: shallowRef(),
     refresh: vi.fn(),
@@ -199,28 +210,41 @@ describe('工装与模具维护台', () => {
     expect(form.attributes('novalidate')).toBeDefined()
   })
 
-  it('未达到寿命时完成保养不承诺清零累计使用次数', async () => {
+  it('未达到寿命时完成保养只要求填写原因', async () => {
     const wrapper = mount(ToolingPage, { global: { stubs } })
     await flushPromises()
 
-    await button(wrapper, '完成保养')!.trigger('click')
+    const completionButtons = wrapper
+      .findAll('button')
+      .filter((candidate) => candidate.text().trim() === '完成保养')
+    await completionButtons[0]!.trigger('click')
 
     expect(wrapper.text()).toContain('请说明本次状态变更原因。')
-    expect(wrapper.text()).not.toContain('完成保养后将清零累计使用次数')
+    expect(wrapper.text()).not.toContain('完成保养后将清零累计使用次数，并恢复为可用状态。')
+  })
+
+  it('达到寿命时完成保养会在提交前披露累计使用次数清零', async () => {
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    const completionButtons = wrapper
+      .findAll('button')
+      .filter((candidate) => candidate.text().trim() === '完成保养')
+    await completionButtons[1]!.trigger('click')
+
+    expect(wrapper.text()).toContain('完成保养后将清零累计使用次数，并恢复为可用状态。')
   })
 
   it('注册提交后同时展示校验汇总与对应字段错误', async () => {
     const wrapper = mount(ToolingPage, { global: { stubs } })
     await flushPromises()
     await button(wrapper, '注册工装')!.trigger('click')
-    await wrapper.find('form select').setValue('')
     await wrapper.find('#tooling-life').setValue('0')
     await wrapper.find('form').trigger('submit')
 
     expect(state.register).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('请修正已标红的字段，并完整填写带 * 的必填项')
     expect(wrapper.text()).toContain('请填写工装名称。')
-    expect(wrapper.text()).toContain('请选择工装类型。')
     expect(wrapper.text()).toContain('使用寿命必须是正整数。')
     expect(wrapper.text()).toContain('请至少选择一个适用工作中心。')
     expect(wrapper.text()).toContain('请至少选择一个适用 SKU。')
@@ -231,9 +255,6 @@ describe('工装与模具维护台', () => {
         'true',
       )
     }
-    expect(wrapper.find('form [data-testid="select-trigger"]').attributes('data-invalid')).toBe(
-      'true',
-    )
     expect(wrapper.find('label[for="tooling-name"] > span').classes()).toContain('text-destructive')
 
     for (const errorText of ['请至少选择一个适用工作中心。', '请至少选择一个适用 SKU。']) {

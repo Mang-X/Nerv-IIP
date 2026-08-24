@@ -49,9 +49,6 @@ const forwarded = useForwardProps(delegated)
       0 0 0 3px color-mix(in oklch, var(--nv-brand) 22%, transparent),
       0 1px 2px 0 color-mix(in oklch, black 6%, transparent);
   }
-  .nv-strigger[data-invalid] {
-    border-color: var(--destructive);
-  }
   .nv-strigger-chevron {
     transition: transform 0.2s var(--nv-ease-out-quart, ease-out);
   }

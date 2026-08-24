@@ -6,7 +6,7 @@ import NvSelect from '../select/NvSelect.vue'
 import NvSelectTrigger from '../select/NvSelectTrigger.vue'
 
 describe('NvUI invalid controls', () => {
-  it('gives NvInput an invalid utility that survives host cascade layers', () => {
+  it('renders the NvInput invalid utility class', () => {
     const wrapper = mount(NvInput, { props: { invalid: true } })
     const frame = wrapper.get('[data-slot="nv-input"]')
 
