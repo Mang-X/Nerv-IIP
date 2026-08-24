@@ -15,6 +15,7 @@
 #     - PowerShell 7
 
 . (Join-Path $PSScriptRoot 'AcceptanceScenarioMatrix.ps1')
+. (Join-Path $PSScriptRoot 'ScriptVariableBinding.ps1')
 
 function Assert-NervAcceptanceCanonicalPhysicalPath {
     param(
@@ -1167,7 +1168,7 @@ function Test-NervAcceptanceWmsVerifierContract {
     $tokens = $parseErrors = $null
     $ast = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count -ne 0) {
-        return [pscustomobject][ordered]@{ failureCaptureSupported = $false; pickingReadbackWired = $false; completionReplayWired = $false }
+        return [pscustomobject][ordered]@{ failureCaptureSupported = $false; pickingReadbackWired = $false; completionReplayWired = $false; outboundCompletionWired = $false }
     }
 
     $hasConditionalAncestor = {
@@ -1222,12 +1223,7 @@ function Test-NervAcceptanceWmsVerifierContract {
         param([Management.Automation.Language.AssignmentStatementAst] $Assignment)
 
         @($Assignment.Left.FindAll({ param($node) $node -is [Management.Automation.Language.VariableExpressionAst] }, $true) | ForEach-Object {
-                $path = $_.VariablePath
-                if ($path.IsUnqualified) { [string]$path.UserPath }
-                elseif ($path.IsGlobal -or $path.IsLocal -or $path.IsPrivate -or $path.IsScript -or
-                    ($path.IsVariable -and ([string]$path.UserPath).StartsWith('variable:', [StringComparison]::OrdinalIgnoreCase))) {
-                    ([string]$path.UserPath).Substring(([string]$path.UserPath).IndexOf(':', [StringComparison]::Ordinal) + 1)
-                }
+                Get-NervScriptVariableBindingName -VariablePath $_.VariablePath
             })
     }
     $testAssignmentWritesVariable = {
@@ -1239,39 +1235,15 @@ function Test-NervAcceptanceWmsVerifierContract {
                 [string]::Equals([string]$_, $VariableName, [StringComparison]::OrdinalIgnoreCase)
             }).Count -gt 0
     }
-    $testSetVariableWritesVariable = {
+    $testCommandWritesVariable = {
         param(
             [Management.Automation.Language.CommandAst] $Command,
             [string] $VariableName)
 
-        $commandName = [string]$Command.GetCommandName()
-        if (-not ([string]::Equals($commandName, 'Set-Variable', [StringComparison]::OrdinalIgnoreCase) -or
-                $commandName.EndsWith('\Set-Variable', [StringComparison]::OrdinalIgnoreCase))) { return $false }
-
-        $nameElement = $null
-        $nameWasSpecified = $false
-        for ($index = 1; $index -lt $Command.CommandElements.Count; $index++) {
-            $element = $Command.CommandElements[$index]
-            if ($element -is [Management.Automation.Language.CommandParameterAst] -and
-                [string]::Equals([string]$element.ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase)) {
-                $nameWasSpecified = $true
-                $nameElement = if ($null -ne $element.Argument) { $element.Argument }
-                elseif ($index + 1 -lt $Command.CommandElements.Count) { $Command.CommandElements[$index + 1] }
-                break
-            }
+        foreach ($boundName in @(Get-NervScriptVariableCommandLiteralBindingNames -Command $Command)) {
+            if ([string]::Equals([string]$boundName, $VariableName, [StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
-        if (-not $nameWasSpecified -and $Command.CommandElements.Count -gt 1 -and
-            $Command.CommandElements[1] -isnot [Management.Automation.Language.CommandParameterAst]) {
-            $nameWasSpecified = $true
-            $nameElement = $Command.CommandElements[1]
-        }
-        if (-not $nameWasSpecified -or $nameElement -isnot [Management.Automation.Language.StringConstantExpressionAst]) {
-            return $true
-        }
-
-        $targetName = [string]$nameElement.Value
-        if ($targetName -match '^(?i:global|local|private|script|variable):(.+)$') { $targetName = [string]$Matches[1] }
-        return [string]::Equals($targetName, $VariableName, [StringComparison]::OrdinalIgnoreCase)
+        return Test-NervScriptVariableSetItemCommandWritesName -Command $Command -Name $VariableName
     }
     $testAssignment = {
         param([string] $CommandName, [string] $VariableName)
@@ -1282,7 +1254,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                 }, $true) | Where-Object {
                     -not (& $hasFunctionAncestor $_) -and
                         (($_ -is [Management.Automation.Language.AssignmentStatementAst] -and (& $testAssignmentWritesVariable $_ $VariableName)) -or
-                            ($_ -is [Management.Automation.Language.CommandAst] -and (& $testSetVariableWritesVariable $_ $VariableName)))
+                            ($_ -is [Management.Automation.Language.CommandAst] -and (& $testCommandWritesVariable $_ $VariableName)))
                 })
         $matches = @($ast.FindAll({
                     param($node)
@@ -1304,10 +1276,67 @@ function Test-NervAcceptanceWmsVerifierContract {
         return $allWrites.Count -eq 1 -and $matches.Count -eq 1
     }
 
+    $testOutboundCompletion = {
+        if (-not (& $testAssignment 'Wait-WmsOutboundOrder' 'completedOutboundOrder')) { return $false }
+        $waitCalls = @($ast.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.CommandAst] -and
+                        [string]::Equals($node.GetCommandName(), 'Wait-WmsOutboundOrder', [StringComparison]::Ordinal)
+                }, $true) | Where-Object {
+                    $command = $_
+                    $assignment = $command.Parent
+                    while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $assignment = $assignment.Parent }
+                    $null -ne $assignment -and
+                        (& $testAssignmentWritesVariable $assignment 'completedOutboundOrder') -and
+                        -not (& $hasConditionalAncestor $command) -and
+                        -not (& $hasFunctionAncestor $command)
+                })
+        if ($waitCalls.Count -ne 1) { return $false }
+        $requireCompletedParameters = @($waitCalls[0].CommandElements | Where-Object {
+                $_ -is [Management.Automation.Language.CommandParameterAst] -and
+                    [string]::Equals([string]$_.ParameterName, 'RequireCompleted', [StringComparison]::OrdinalIgnoreCase) -and
+                    $null -eq $_.Argument
+            })
+        if ($requireCompletedParameters.Count -ne 1) { return $false }
+
+        $completionReadbacks = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true) | Where-Object {
+                -not (& $hasFunctionAncestor $_) -and
+                    @($_.KeyValuePairs | Where-Object {
+                            $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
+                                [string]::Equals([string]$_.Item1.Value, 'completionReadback', [StringComparison]::Ordinal)
+                        }).Count -eq 1
+            })
+        if ($completionReadbacks.Count -ne 1) { return $false }
+        $readbackPair = @($completionReadbacks[0].KeyValuePairs | Where-Object {
+                $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
+                    [string]::Equals([string]$_.Item1.Value, 'completionReadback', [StringComparison]::Ordinal)
+            })[0]
+        $readbackTables = @($readbackPair.Item2.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true))
+        if ($readbackTables.Count -ne 1) { return $false }
+        foreach ($field in @('status', 'completedAtUtc')) {
+            $fieldPairs = @($readbackTables[0].KeyValuePairs | Where-Object {
+                    $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
+                        [string]::Equals([string]$_.Item1.Value, $field, [StringComparison]::Ordinal)
+                })
+            if ($fieldPairs.Count -ne 1) { return $false }
+            $memberReads = @($fieldPairs[0].Item2.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.MemberExpressionAst] -and
+                            $node.Expression -is [Management.Automation.Language.VariableExpressionAst] -and
+                            [string]::Equals((Get-NervScriptVariableBindingName -VariablePath $node.Expression.VariablePath), 'completedOutboundOrder', [StringComparison]::OrdinalIgnoreCase) -and
+                            $node.Member -is [Management.Automation.Language.StringConstantExpressionAst] -and
+                            [string]::Equals([string]$node.Member.Value, $field, [StringComparison]::OrdinalIgnoreCase)
+                    }, $true))
+            if ($memberReads.Count -ne 1) { return $false }
+        }
+        return $true
+    }
+
     return [pscustomobject][ordered]@{
         failureCaptureSupported = $exportFunctions.Count -eq 1 -and $orderedCaptureCalls.Count -eq 1
         pickingReadbackWired = & $testAssignment 'Test-NervAcceptanceWmsPickingReadbacks' 'pickingLifecycleCompleted'
         completionReplayWired = & $testAssignment 'Test-NervAcceptanceWmsCompletionReplay' 'completionHttpReplayConverged'
+        outboundCompletionWired = & $testOutboundCompletion
     }
 }
 

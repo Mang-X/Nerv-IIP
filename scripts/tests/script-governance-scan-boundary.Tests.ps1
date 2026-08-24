@@ -14,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $checker = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
+$bindingHelper = Join-Path $repoRoot 'scripts/lib/ScriptVariableBinding.ps1'
 
 # Split out of check-script-governance.Tests.ps1 so it can gate in CI: that file also exercises the
 # ScriptAutomation stream-drain and detached-process fixtures, which are far heavier than a boundary
@@ -39,6 +40,12 @@ $checkerParseErrors = $null
 $checkerAst = [System.Management.Automation.Language.Parser]::ParseInput($checkerText, [ref] $null, [ref] $checkerParseErrors)
 if ($checkerParseErrors -and $checkerParseErrors.Count -gt 0) {
     throw "Failed to parse the script governance checker: $($checkerParseErrors[0].Message)"
+}
+$bindingHelperText = Get-Content -LiteralPath $bindingHelper -Raw
+$bindingHelperParseErrors = $null
+$bindingHelperAst = [System.Management.Automation.Language.Parser]::ParseInput($bindingHelperText, [ref]$null, [ref]$bindingHelperParseErrors)
+if ($bindingHelperParseErrors -and $bindingHelperParseErrors.Count -gt 0) {
+    throw "Failed to parse the shared script variable binding helper: $($bindingHelperParseErrors[0].Message)"
 }
 
 # The checker is excluded from its own command-governance rules because it must name the forbidden
@@ -296,6 +303,7 @@ function Invoke-LibraryScopeCase {
 try {
     New-Item -ItemType Directory -Path $mirrorLib -Force | Out-Null
     Copy-Item -LiteralPath $checker -Destination $mirrorChecker -Force
+    Copy-Item -LiteralPath $bindingHelper -Destination (Join-Path $mirrorLib 'ScriptVariableBinding.ps1') -Force
 
     # The injected-action seam a library is allowed to keep: a [scriptblock] parameter, and a local
     # assigned a script-block literal. Neither dot-sources the wrapper, which is the MissingHelper
@@ -579,7 +587,7 @@ function Invoke-FixtureSetVariableAbbreviatedName {
         # the whole call. Measured exit 0 with `& $fixtureAction` really executing `/bin/echo`
         # (`/bin/echo` prints nothing, the seam returns 'seam' — the empty output is the proof).
         # Both spellings, because the named argument and the positional element reach the extraction
-        # by different paths in Get-SeamBinderNameArgument and fixing one alone leaves the other.
+        # by different paths in the shared binder argument walk and fixing one alone leaves the other.
         'set-variable-multiple-literal-names-positional' = @'
 function Invoke-FixtureMultipleNamesPositional {
     Set-Variable fixtureAction,zz 'dotnet'
@@ -1003,16 +1011,16 @@ function Invoke-FixtureCrossScopeAction {
     }
 
     # …and the shape half, structurally, in the same form as the `Left type set` contract above.
-    # Get-SeamBinderLiteralNames returns nothing for a shape it does not recognise — fail *open*, so
+    # Get-NervScriptVariableBinderLiteralNames returns nothing for a shape it does not recognise — fail *open*, so
     # a deleted branch silently stops shadowing and every fixture that does not spell that exact
     # shape stays green. Requiring the dispatch set verbatim turns a deletion red on its own.
-    $binderLiteralNamesFunction = $checkerAst.Find({
+    $binderLiteralNamesFunction = $bindingHelperAst.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string] $node.Name, 'Get-SeamBinderLiteralNames', [StringComparison]::OrdinalIgnoreCase)
+        [string]::Equals([string] $node.Name, 'Get-NervScriptVariableBinderLiteralNames', [StringComparison]::OrdinalIgnoreCase)
     }, $true)
     if (-not $binderLiteralNamesFunction) {
-        throw 'The script governance checker must keep its -Name argument walk in a function named Get-SeamBinderLiteralNames.'
+        throw 'The shared script variable binding helper must keep its -Name argument walk in Get-NervScriptVariableBinderLiteralNames.'
     }
     # Ordinal dedup+sort, per the #1507 ruling, for the same reason as the Left dispatch set above.
     $dispatchedNameArgumentTypes = @(
@@ -1032,7 +1040,7 @@ function Invoke-FixtureCrossScopeAction {
     $expectedDispatchedNameArgumentTypes = @(
         'ArrayExpressionAst', 'ArrayLiteralAst', 'ParenExpressionAst', 'StringConstantExpressionAst', 'SubExpressionAst')
     if (-not [string]::Equals(($dispatchedNameArgumentTypes -join '|'), ($expectedDispatchedNameArgumentTypes -join '|'), [StringComparison]::Ordinal)) {
-        throw "Get-SeamBinderLiteralNames dispatches on [$($dispatchedNameArgumentTypes -join ', ')]; the ruling in docs/architecture/script-automation-governance.md says [$($expectedDispatchedNameArgumentTypes -join ', ')]. Change both together."
+        throw "Get-NervScriptVariableBinderLiteralNames dispatches on [$($dispatchedNameArgumentTypes -join ', ')]; the ruling in docs/architecture/script-automation-governance.md says [$($expectedDispatchedNameArgumentTypes -join ', ')]. Change both together."
     }
     # …and the shapes really are what the parser produces for those spellings, so the dispatch set is
     # pinned to measured AST types rather than to remembered ones.
@@ -1084,14 +1092,14 @@ function Invoke-FixtureCrossScopeAction {
     # canonical cmdlets are declared in one place and the aliases come from `Get-Alias -Definition`
     # over exactly that declaration. Delete the discovery and this is red even though every fixture
     # still passes.
-    $binderCanonicalAssignment = $checkerAst.Find({
+    $binderCanonicalAssignment = $bindingHelperAst.Find({
         param($node)
         $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
         $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-        [string]::Equals([string] $node.Left.VariablePath.UserPath, 'seamBinderCanonicalNames', [StringComparison]::Ordinal)
+        [string]::Equals([string] $node.Left.VariablePath.UserPath, 'script:nervScriptVariableBinderCanonicalNames', [StringComparison]::Ordinal)
     }, $true)
     if (-not $binderCanonicalAssignment) {
-        throw 'The script governance checker must declare its binder cmdlets in a named $seamBinderCanonicalNames list.'
+        throw 'The shared script variable binding helper must declare its binder cmdlets in $script:nervScriptVariableBinderCanonicalNames.'
     }
     $declaredBinderCanonicalNames = @(
         $binderCanonicalAssignment.Right.FindAll({
@@ -1103,7 +1111,7 @@ function Invoke-FixtureCrossScopeAction {
         throw "Binder cmdlet set changed: expected [$($expectedBinderCanonicalNames -join ', ')], found [$($declaredBinderCanonicalNames -join ', ')]. Update docs/architecture/script-automation-governance.md and this contract together."
     }
     $binderAliasDiscovery = @(
-        $checkerAst.FindAll({
+        $bindingHelperAst.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.CommandAst] -and
             [string]::Equals([string] $node.GetCommandName(), 'Get-Alias', [StringComparison]::OrdinalIgnoreCase)
@@ -1115,7 +1123,7 @@ function Invoke-FixtureCrossScopeAction {
     $binderAliasDiscoveryText = [string] $binderAliasDiscovery[0].Extent.Text
     if ($binderAliasDiscoveryText.IndexOf('-Definition', [StringComparison]::Ordinal) -lt 0 -or
         $binderAliasDiscoveryText.IndexOf('$seamBinderCanonicalName', [StringComparison]::Ordinal) -lt 0) {
-        throw "Binder aliases must be discovered with Get-Alias -Definition over \$seamBinderCanonicalNames, not hand-listed; found: $binderAliasDiscoveryText"
+        throw "Binder aliases must be discovered with Get-Alias -Definition over the shared canonical-name list, not hand-listed; found: $binderAliasDiscoveryText"
     }
 
     # Guard 3, behavioural, against the one thing discovery cannot promise. `set` ships with

@@ -34,6 +34,8 @@
     and reading it as "the strict one" is what put these operators in the tree in the first place.
 #>
 
+. (Join-Path $PSScriptRoot 'ScriptVariableBinding.ps1')
+
 # These are functions rather than `$script:` arrays for the same reason Add-NervOrdinalContractFinding
 # is a function rather than a closure: *this library*, dot-sourced the way its two contract tests
 # dot-source it, was measured failing that way on the CI runner — the sibling function could not be
@@ -581,10 +583,12 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
         [Parameter(Mandatory)] [string] $Name
     )
 
+    if (Test-NervScriptVariableSetItemCommandWritesName -Command $Command -Name $Name) { return $true }
+
     $commandName = [string] $Command.GetCommandName()
     $kind = $null
     foreach ($entry in @(
-        [pscustomobject]@{ Kind = 'path'; Names = @('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si', 'Clear-Item', 'Microsoft.PowerShell.Management\Clear-Item', 'cli', 'Remove-Item', 'Microsoft.PowerShell.Management\Remove-Item', 'ri', 'rm', 'del', 'erase', 'rd', 'rmdir', 'Rename-Item', 'Microsoft.PowerShell.Management\Rename-Item', 'rni', 'ren') },
+        [pscustomobject]@{ Kind = 'path'; Names = @('Clear-Item', 'Microsoft.PowerShell.Management\Clear-Item', 'cli', 'Remove-Item', 'Microsoft.PowerShell.Management\Remove-Item', 'ri', 'rm', 'del', 'erase', 'rd', 'rmdir', 'Rename-Item', 'Microsoft.PowerShell.Management\Rename-Item', 'rni', 'ren') },
         [pscustomobject]@{ Kind = 'new-item'; Names = @('New-Item', 'Microsoft.PowerShell.Management\New-Item', 'ni') },
         [pscustomobject]@{ Kind = 'source-and-destination'; Names = @('Move-Item', 'Microsoft.PowerShell.Management\Move-Item', 'mi', 'mv', 'move') },
         [pscustomobject]@{ Kind = 'destination'; Names = @('Copy-Item', 'Microsoft.PowerShell.Management\Copy-Item', 'cpi', 'cp', 'copy') }

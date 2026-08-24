@@ -307,7 +307,7 @@ function Wait-WmsOutboundOrder {
     do {
         try {
             $response = Invoke-RestMethod -Method Get -Uri "$WmsUrl/api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&keyword=$keyword&actorPrincipalId=$actor&authorizedSiteCodes=$site&scopeKind=site&scopeId=$site&siteCode=$site" -Headers $Headers
-            $rows = @($response.data.items | Where-Object { $_.outboundOrderNo -eq $DeliveryOrderNo })
+            $rows = @($response.data.items | Where-Object { [string]::Equals([string]$_.outboundOrderNo, $DeliveryOrderNo, [StringComparison]::Ordinal) })
             if ($rows.Count -eq 1 -and
                 (-not $RequireCompleted -or (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback $rows[0]))) {
                 return $rows[0]
@@ -516,7 +516,7 @@ $verifierContract = $null
 
 try {
     $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $PSCommandPath
-    if (-not $verifierContract.failureCaptureSupported -or -not $verifierContract.pickingReadbackWired -or -not $verifierContract.completionReplayWired) {
+    if (-not $verifierContract.failureCaptureSupported -or -not $verifierContract.pickingReadbackWired -or -not $verifierContract.completionReplayWired -or -not $verifierContract.outboundCompletionWired) {
         throw 'MAN-527 verifier structural contract did not prove reachable failure capture and public WMS checkpoint wiring.'
     }
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man527-infrastructure-up' | Out-Null

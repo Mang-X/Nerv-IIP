@@ -664,6 +664,7 @@ try {
         @{ Name = 'missing-business-evidence'; Message = 'missing required field'; Business = { param($value) $value.PSObject.Properties.Remove('accountReceivable') } },
         @{ Name = 'empty-assignment'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.firstAssignment.poolCode = '' } },
         @{ Name = 'picking-not-completed'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.pickingLifecycleCompleted = $false } },
+        @{ Name = 'missing-completion-readback'; Message = 'completionReadback'; Business = { param($value) $value.wmsOutboundOrder.PSObject.Properties.Remove('completionReadback') } },
         @{ Name = 'outbound-pending'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionReadback.status = 'Pending' } },
         @{ Name = 'outbound-completion-time-missing'; Message = 'every business checkpoint'; Business = { param($value) $value.wmsOutboundOrder.completionReadback.completedAtUtc = '' } },
         @{ Name = 'delivery-pending'; Message = 'every business checkpoint'; Business = { param($value) $value.erpDelivery.status = 'pending' } },
@@ -732,6 +733,7 @@ try {
     }
 
     Assert-Contract (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback ([pscustomobject]@{ status = 'Completed'; completedAtUtc = '2026-08-24T00:00:30Z' })) 'A public WMS outbound readback must prove both Completed status and a completion timestamp.'
+    Assert-Contract (-not (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback $null)) 'A null public WMS outbound readback must fail closed.'
     Assert-Contract (-not (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback ([pscustomobject]@{ status = 'Pending'; completedAtUtc = '2026-08-24T00:00:30Z' }))) 'A pending public WMS outbound readback must not prove completion.'
     Assert-Contract (-not (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback ([pscustomobject]@{ status = 'Completed'; completedAtUtc = '' }))) 'A completed public WMS outbound readback without completedAtUtc must fail closed.'
 
@@ -787,15 +789,17 @@ try {
     Assert-Contract ($unannouncedUserInfoRejected -and [IO.File]::ReadAllText($atomicDiagnosticPath).Contains('previous-safe-evidence', [StringComparison]::Ordinal) -and $remainingDiagnosticTemps.Count -eq 0) 'The atomic diagnostic writer must reject an undeclared URI userinfo secret without replacing prior safe evidence or retaining its unpublished temporary artifact.'
 
     $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $wmsVerifierPath
-    Assert-Contract ($verifierContract.failureCaptureSupported -and $verifierContract.pickingReadbackWired -and $verifierContract.completionReplayWired) 'The MAN-527 verifier must wire reachable failure capture and public WMS checkpoint predicates.'
+    Assert-Contract ($verifierContract.failureCaptureSupported -and $verifierContract.pickingReadbackWired -and $verifierContract.completionReplayWired -and $verifierContract.outboundCompletionWired) 'The MAN-527 verifier must wire reachable failure capture and public WMS checkpoint predicates.'
     $wmsVerifierSource = [IO.File]::ReadAllText($wmsVerifierPath)
+    Assert-Contract $wmsVerifierSource.Contains('-not $verifierContract.outboundCompletionWired', [StringComparison]::Ordinal) 'The production WMS verifier must reject an unproven completed-outbound readback wiring contract before starting infrastructure.'
     $mutationTokens = $mutationParseErrors = $null
     $mutationAst = [Management.Automation.Language.Parser]::ParseInput($wmsVerifierSource, [ref]$mutationTokens, [ref]$mutationParseErrors)
     Assert-Contract ($mutationParseErrors.Count -eq 0) 'The verifier must parse before generating reachability mutations.'
     foreach ($contractMutation in @(
         @{ Name = 'failure-capture-if-false'; Command = 'Export-Man527FailureDiagnostics'; Variable = '$diagnosticEvidence'; Property = 'failureCaptureSupported' },
         @{ Name = 'picking-if-false'; Command = 'Test-NervAcceptanceWmsPickingReadbacks'; Variable = '$pickingLifecycleCompleted'; Property = 'pickingReadbackWired' },
-        @{ Name = 'completion-if-false'; Command = 'Test-NervAcceptanceWmsCompletionReplay'; Variable = '$completionHttpReplayConverged'; Property = 'completionReplayWired' }
+        @{ Name = 'completion-if-false'; Command = 'Test-NervAcceptanceWmsCompletionReplay'; Variable = '$completionHttpReplayConverged'; Property = 'completionReplayWired' },
+        @{ Name = 'outbound-completion-if-false'; Command = 'Wait-WmsOutboundOrder'; Variable = '$completedOutboundOrder'; Property = 'outboundCompletionWired' }
     )) {
         $mutationCommand = @($mutationAst.FindAll({
                     param($node)
@@ -830,22 +834,33 @@ try {
 
             $alternateOverrideMutations = if ([string]::Equals([string]$contractMutation.Property, 'pickingReadbackWired', [StringComparison]::Ordinal)) {
                 @(
-                    @{ Name = 'script-scoped'; Statement = '$script:pickingLifecycleCompleted = $true' },
-                    @{ Name = 'global-scoped'; Statement = '$global:pickingLifecycleCompleted = $true' },
-                    @{ Name = 'local-scoped'; Statement = '$local:pickingLifecycleCompleted = $true' },
-                    @{ Name = 'private-scoped'; Statement = '$private:pickingLifecycleCompleted = $true' },
-                    @{ Name = 'variable-drive'; Statement = '$variable:pickingLifecycleCompleted = $true' },
-                    @{ Name = 'braced'; Statement = '${pickingLifecycleCompleted} = $true' }
-                )
+                        @{ Name = 'script-scoped'; Statement = '$script:pickingLifecycleCompleted = $true' },
+                        @{ Name = 'global-scoped-uppercase'; Statement = '$GLOBAL:PICKINGLIFECYCLECOMPLETED = $true' },
+                        @{ Name = 'local-scoped'; Statement = '$local:pickingLifecycleCompleted = $true' },
+                        @{ Name = 'private-scoped'; Statement = '$private:pickingLifecycleCompleted = $true' },
+                        @{ Name = 'variable-drive'; Statement = '$variable:pickingLifecycleCompleted = $true' },
+                        @{ Name = 'braced'; Statement = '${pickingLifecycleCompleted} = $true' }
+                    )
             }
-            else {
+            elseif ([string]::Equals([string]$contractMutation.Property, 'completionReplayWired', [StringComparison]::Ordinal)) {
                 @(
-                    @{ Name = 'set-variable-named'; Statement = 'Set-Variable -Name completionHttpReplayConverged -Value $true' },
-                    @{ Name = 'set-variable-positional'; Statement = 'Set-Variable completionHttpReplayConverged $true' },
-                    @{ Name = 'set-variable-module-qualified'; Statement = 'Microsoft.PowerShell.Utility\Set-Variable -Name completionHttpReplayConverged -Value $true' },
-                    @{ Name = 'set-variable-dynamic'; Statement = '$dynamicWmsVariableName = ''completionHttpReplayConverged''; Set-Variable -Name $dynamicWmsVariableName -Value $true' },
-                    @{ Name = 'typed'; Statement = '[bool]$completionHttpReplayConverged = $true' }
-                )
+                        @{ Name = 'set-variable-named'; Statement = 'Set-Variable -Name completionHttpReplayConverged -Value $true' },
+                        @{ Name = 'set-variable-positional-after-valued'; Statement = 'Set-Variable -Scope Local completionHttpReplayConverged $true' },
+                        @{ Name = 'set-variable-positional-after-switch'; Statement = 'Set-Variable -Force completionHttpReplayConverged $true' },
+                        @{ Name = 'set-variable-alias'; Statement = 'sv -Name completionHttpReplayConverged -Value $true' },
+                        @{ Name = 'set-variable-module-qualified-uppercase-scope'; Statement = 'microsoft.powershell.utility\SET-VARIABLE -Name SCRIPT:COMPLETIONHTTPREPLAYCONVERGED -Value $true' },
+                        @{ Name = 'new-variable-named'; Statement = 'New-Variable -Name completionHttpReplayConverged -Value $true -Force' },
+                        @{ Name = 'new-variable-alias'; Statement = 'nv completionHttpReplayConverged $true -Force' },
+                        @{ Name = 'new-variable-module-qualified'; Statement = 'Microsoft.PowerShell.Utility\New-Variable -Name completionHttpReplayConverged -Value $true -Force' },
+                        @{ Name = 'set-item-variable-provider'; Statement = 'Set-Item -LiteralPath variable:completionHttpReplayConverged -Value $true' },
+                        @{ Name = 'typed'; Statement = '[bool]$completionHttpReplayConverged = $true' }
+                    )
+            }
+            elseif ([string]::Equals([string]$contractMutation.Property, 'outboundCompletionWired', [StringComparison]::Ordinal)) {
+                @(
+                        @{ Name = 'typed'; Statement = '[object]$completedOutboundOrder = $null' },
+                        @{ Name = 'set-variable'; Statement = 'Set-Variable -Name completedOutboundOrder -Value $null' }
+                    )
             }
             foreach ($alternateOverrideMutation in $alternateOverrideMutations) {
                 $alternateOverridePath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-$($alternateOverrideMutation.Name)-override.ps1"
@@ -861,6 +876,72 @@ try {
                 Assert-Contract ([bool]$functionLocalOverrideContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier function-local write '$($contractMutation.Name)-$($alternateOverrideMutation.Name)' must not be counted as a top-level override."
             }
         }
+    }
+
+    foreach ($nonTargetWrite in @(
+        @{ Name = 'set-variable-unrelated'; Statement = 'Set-Variable -Name unrelatedWmsEvidence -Value $true' },
+        @{ Name = 'new-variable-unrelated'; Statement = 'New-Variable -Name unrelatedWmsEvidence -Value $true -Force' },
+        @{ Name = 'set-item-unrelated'; Statement = 'Set-Item -LiteralPath variable:unrelatedWmsEvidence -Value $true' },
+        @{ Name = 'env-prefix'; Statement = '$env:pickingLifecycleCompleted = ''not-the-script-variable''' }
+    )) {
+        $nonTargetPath = Join-Path $fixtureRoot "wms-diagnostics/$($nonTargetWrite.Name).ps1"
+        $nonTargetSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`n$($nonTargetWrite.Statement)")
+        [IO.File]::WriteAllText($nonTargetPath, $nonTargetSource, [Text.UTF8Encoding]::new($false))
+        $nonTargetContract = Test-NervAcceptanceWmsVerifierContract -Path $nonTargetPath
+        Assert-Contract ($nonTargetContract.failureCaptureSupported -and $nonTargetContract.pickingReadbackWired -and $nonTargetContract.completionReplayWired -and $nonTargetContract.outboundCompletionWired) "Verifier unrelated write '$($nonTargetWrite.Name)' must not invalidate any production wiring fact."
+    }
+
+    foreach ($residualWrite in @(
+        @{ Name = 'computed-set-variable'; Statement = '$computedName = ''completionHttpReplayConverged''; Set-Variable -Name $computedName -Value $true' },
+        @{ Name = 'splatted-set-variable'; Statement = '$setArguments = @{ Name = ''completionHttpReplayConverged''; Value = $true }; Set-Variable @setArguments' },
+        @{ Name = 'computed-set-item-path'; Statement = '$computedPath = ''variable:completionHttpReplayConverged''; Set-Item -LiteralPath $computedPath -Value $true' },
+        @{ Name = 'psvariable-set'; Statement = '$ExecutionContext.SessionState.PSVariable.Set(''completionHttpReplayConverged'', $true)' },
+        @{ Name = 'ref-rebinding'; Statement = '$completionReference = [ref]$completionHttpReplayConverged; $completionReference.Value = $true' }
+    )) {
+        $residualPath = Join-Path $fixtureRoot "wms-diagnostics/$($residualWrite.Name).ps1"
+        $residualSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`n$($residualWrite.Statement)")
+        [IO.File]::WriteAllText($residualPath, $residualSource, [Text.UTF8Encoding]::new($false))
+        $residualContract = Test-NervAcceptanceWmsVerifierContract -Path $residualPath
+        Assert-Contract ($residualContract.completionReplayWired) "Documented static-analysis residual '$($residualWrite.Name)' must remain outside the verifier wiring proof."
+    }
+
+    $pickingPredicateCommand = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.CommandAst] -and
+                    [string]::Equals($node.GetCommandName(), 'Test-NervAcceptanceWmsPickingReadbacks', [StringComparison]::Ordinal)
+            }, $true))[0]
+    $pickingPredicateAssignment = $pickingPredicateCommand.Parent
+    while ($pickingPredicateAssignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $pickingPredicateAssignment = $pickingPredicateAssignment.Parent }
+    $doublePredicatePath = Join-Path $fixtureRoot 'wms-diagnostics/picking-double-predicate.ps1'
+    $doublePredicateRight = "($($pickingPredicateAssignment.Right.Extent.Text)) -and ($($pickingPredicateAssignment.Right.Extent.Text))"
+    $doublePredicateSource = $wmsVerifierSource.Remove($pickingPredicateAssignment.Right.Extent.StartOffset, $pickingPredicateAssignment.Right.Extent.EndOffset - $pickingPredicateAssignment.Right.Extent.StartOffset).Insert($pickingPredicateAssignment.Right.Extent.StartOffset, $doublePredicateRight)
+    [IO.File]::WriteAllText($doublePredicatePath, $doublePredicateSource, [Text.UTF8Encoding]::new($false))
+    $doublePredicateContract = Test-NervAcceptanceWmsVerifierContract -Path $doublePredicatePath
+    Assert-Contract (-not $doublePredicateContract.pickingReadbackWired) 'Two picking predicates inside one top-level assignment must invalidate pickingReadbackWired.'
+
+    $failureExporterFunction = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                    [string]::Equals($node.Name, 'Export-Man527FailureDiagnostics', [StringComparison]::Ordinal)
+            }, $true))[0]
+    $duplicateFailureExporterPath = Join-Path $fixtureRoot 'wms-diagnostics/failure-exporter-function-duplicate.ps1'
+    $duplicateFailureExporterSource = $wmsVerifierSource.Insert($failureExporterFunction.Extent.EndOffset, "`n$($failureExporterFunction.Extent.Text)")
+    [IO.File]::WriteAllText($duplicateFailureExporterPath, $duplicateFailureExporterSource, [Text.UTF8Encoding]::new($false))
+    $duplicateFailureExporterContract = Test-NervAcceptanceWmsVerifierContract -Path $duplicateFailureExporterPath
+    Assert-Contract (-not $duplicateFailureExporterContract.failureCaptureSupported) 'A duplicate top-level failure exporter function definition must invalidate failureCaptureSupported.'
+
+    foreach ($outboundWiringMutation in @(
+        @{ Name = 'missing-require-completed'; Old = '-RequireCompleted'; New = '' },
+        @{ Name = 'constant-completion-status'; Old = '$completedOutboundOrder.status'; New = "'Completed'" },
+        @{ Name = 'constant-completion-time'; Old = '$completedOutboundOrder.completedAtUtc'; New = "'2026-08-24T00:00:30Z'" }
+    )) {
+        $occurrences = ([regex]::Matches($wmsVerifierSource, [regex]::Escape([string]$outboundWiringMutation.Old))).Count
+        Assert-Contract ($occurrences -eq 1) "Outbound wiring mutation '$($outboundWiringMutation.Name)' requires one exact production occurrence."
+        $outboundWiringPath = Join-Path $fixtureRoot "wms-diagnostics/$($outboundWiringMutation.Name).ps1"
+        $outboundWiringSource = $wmsVerifierSource.Replace([string]$outboundWiringMutation.Old, [string]$outboundWiringMutation.New)
+        [IO.File]::WriteAllText($outboundWiringPath, $outboundWiringSource, [Text.UTF8Encoding]::new($false))
+        $outboundWiringContract = Test-NervAcceptanceWmsVerifierContract -Path $outboundWiringPath
+        Assert-Contract (-not $outboundWiringContract.outboundCompletionWired) "Outbound wiring mutation '$($outboundWiringMutation.Name)' must invalidate outboundCompletionWired."
     }
 
     $failureAssignmentCommand = @($mutationAst.FindAll({
@@ -892,7 +973,7 @@ try {
     [IO.Directory]::CreateDirectory($defaultRunnerLibraryRoot) | Out-Null
     [IO.Directory]::CreateDirectory($defaultRunnerWorkflowRoot) | Out-Null
     Copy-Item -LiteralPath $runnerPath -Destination (Join-Path $defaultRunnerScriptsRoot 'run-acceptance-scenario-matrix.ps1')
-    foreach ($libraryName in @('ScriptAutomation.ps1', 'AcceptanceScenarioMatrixRuntime.ps1', 'AcceptanceScenarioMatrix.ps1', 'CiWorkflowBudgets.ps1', 'OrdinalString.ps1')) {
+    foreach ($libraryName in @('ScriptAutomation.ps1', 'AcceptanceScenarioMatrixRuntime.ps1', 'AcceptanceScenarioMatrix.ps1', 'CiWorkflowBudgets.ps1', 'OrdinalString.ps1', 'ScriptVariableBinding.ps1')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $defaultRunnerLibraryRoot $libraryName)
     }
     $scriptAutomationFixturePath = Join-Path $defaultRunnerLibraryRoot 'ScriptAutomation.ps1'
