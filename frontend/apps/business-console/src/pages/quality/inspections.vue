@@ -6,7 +6,11 @@ import type {
 } from '@nerv-iip/api-client'
 import { listBusinessConsoleQualityInspectionTasks } from '@nerv-iip/api-client'
 import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
-import { INSPECTION_PLAN_CATEGORIES, qualitySourceTypeLabel } from '@nerv-iip/business-core'
+import {
+  INSPECTION_PLAN_CATEGORIES,
+  inspectionPlanCategoryLabel,
+  qualitySourceTypeLabel,
+} from '@nerv-iip/business-core'
 import {
   useQualityFirstArticlePlanActions,
   useQualityInspectionPlanCharacteristics,
@@ -773,28 +777,13 @@ function hasRequiredDefectContext(line: {
   if (!isNonEmpty(line.defectReason)) return false
   return line.result !== 'conditional-release' || (toOptionalNumber(line.defectQuantity) ?? 0) > 0
 }
-// 检验类别是英文码（receiving/operation/final…），摘要列直接拼会漏出 operation 这类工程语言。
-const CATEGORY_LABELS: Record<string, string> = {
-  receiving: '来料检',
-  operation: '工序检',
-  'first-article': '首件检验',
-  'in-process': '工序检',
-  final: '终检',
-  outgoing: '出货检',
-  rework: '返工检',
-}
 const INSPECTION_PLAN_CATEGORY_OPTIONS = INSPECTION_PLAN_CATEGORIES.map((value) => ({
   value,
-  label: qualitySourceTypeLabel(value),
+  label: inspectionPlanCategoryLabel(value),
 }))
 // 来源类型是英文码，只读带出区要显示中文（映射来自 business-core qualityLabels，PC/PDA 同源）。
 function sourceTypeLabel(value?: string | null) {
   return qualitySourceTypeLabel(value)
-}
-function categoryLabel(value?: string | null) {
-  const code = (value ?? '').trim()
-  if (!code) return ''
-  return CATEGORY_LABELS[code.toLowerCase()] ?? code
 }
 /** 「中文名（编码）」；名录查不到就只显编码，不编造名字。 */
 function namedCode(code: string | null | undefined, name: string | undefined) {
@@ -803,7 +792,7 @@ function namedCode(code: string | null | undefined, name: string | undefined) {
 }
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
   const values = [
-    categoryLabel(item.category),
+    inspectionPlanCategoryLabel(item.category),
     namedCode(item.skuCode, resolveSkuName(item.skuCode)),
     item.partnerId,
     namedCode(item.workCenterId, resolveWorkCenter(item.workCenterId)),

@@ -104,6 +104,7 @@ const qualityState = vi.hoisted(() => ({
     {
       id: 'PLAN-001',
       code: 'IQP-001',
+      category: undefined as string | undefined,
       skuCode: 'SKU-001',
       status: 'active',
     },
@@ -305,6 +306,25 @@ vi.mock('@/composables/useBusinessQuality', async () => {
   }
 })
 
+const dataTableStub = {
+  props: ['rows', 'columns'],
+  methods: {
+    summary(
+      this: {
+        columns?: Array<{
+          key: string
+          accessor?: (row: Record<string, unknown>) => unknown
+        }>
+      },
+      row: Record<string, unknown>,
+    ) {
+      return this.columns?.find((column) => column.key === 'summary')?.accessor?.(row) ?? ''
+    },
+  },
+  template:
+    '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td data-plan-summary>{{ summary(row) }}</td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
+}
+
 const uiStubs = {
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogCancel: { template: '<button><slot /></button>' },
@@ -321,11 +341,8 @@ const uiStubs = {
     template: '<section data-testid="approval-panel" />',
   },
   Button: { template: '<button><slot /></button>' },
-  DataTable: {
-    props: ['rows'],
-    template:
-      '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
-  },
+  DataTable: dataTableStub,
+  NvDataTable: dataTableStub,
   DataTablePagination: { props: ['page', 'pageSize', 'totalItems'], template: '<nav />' },
   Dialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
   DialogContent: { template: '<div><slot /></div>' },
@@ -409,6 +426,7 @@ describe('quality route location behavior', () => {
       {
         id: 'PLAN-001',
         code: 'IQP-001',
+        category: undefined,
         skuCode: 'SKU-001',
         status: 'active',
       },
@@ -586,13 +604,39 @@ describe('quality route location behavior', () => {
 
     expect(categoryOptions).toEqual([
       { value: 'all', label: '全部类别' },
-      { value: 'receiving', label: '收货' },
-      { value: 'operation', label: '工序' },
+      { value: 'receiving', label: '来料检' },
+      { value: 'operation', label: '工序检' },
       { value: 'final', label: '终检' },
       { value: 'first-article', label: '首件检验' },
-      { value: 'maintenance', label: '维修' },
-      { value: 'customer-return', label: '客户退货' },
+      { value: 'maintenance', label: '维修检' },
+      { value: 'customer-return', label: '客户退货检' },
     ])
+  })
+
+  it('renders every accepted inspection-plan category as a business label in table summaries', () => {
+    qualityState.inspectionPlans = [
+      {
+        id: 'PLAN-MAINTENANCE',
+        code: 'IQP-MAINTENANCE',
+        category: 'maintenance',
+        skuCode: 'SKU-001',
+        status: 'active',
+      },
+      {
+        id: 'PLAN-RETURN',
+        code: 'IQP-RETURN',
+        category: 'customer-return',
+        skuCode: 'SKU-002',
+        status: 'active',
+      },
+    ]
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    const summaries = wrapper.findAll('[data-plan-summary]').map((cell) => cell.text())
+
+    expect(summaries).toEqual(['维修检 / SKU-001', '客户退货检 / SKU-002'])
+    expect(wrapper.text()).not.toContain('maintenance')
+    expect(wrapper.text()).not.toContain('customer-return')
   })
 
   it('does not open the inspection record dialog for a plain inspectionPlanId location route', async () => {

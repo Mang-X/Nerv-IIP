@@ -84,6 +84,31 @@ export const INSPECTION_PLAN_CATEGORIES = [
   'customer-return',
 ] as const
 
+export type InspectionPlanCategory = (typeof INSPECTION_PLAN_CATEGORIES)[number]
+
+/**
+ * 检验方案类别标签。方案类别与检验记录来源类型是两套业务词汇，不能共用后者的短标签。
+ */
+export const inspectionPlanCategoryLabels: Record<InspectionPlanCategory, string> = {
+  receiving: '来料检',
+  operation: '工序检',
+  final: '终检',
+  'first-article': '首件检验',
+  maintenance: '维修检',
+  'customer-return': '客户退货检',
+}
+
+/** 方案类别码→中文名；未知码原样返回，空值返回空串。 */
+export function inspectionPlanCategoryLabel(value: string | null | undefined): string {
+  if (value == null) return ''
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return ''
+  const normalized = trimmed.toLowerCase()
+  return normalized in inspectionPlanCategoryLabels
+    ? inspectionPlanCategoryLabels[normalized as InspectionPlanCategory]
+    : trimmed
+}
+
 /**
  * 检验记录权威结论（镜像 Quality `InspectionRecordResults`：passed/rejected/conditional-release）。
  * 用于检验记录详情/结果页的结论展示。

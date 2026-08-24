@@ -94,6 +94,8 @@ export type {
 export {
   INSPECTION_PLAN_CATEGORIES,
   INSPECTION_TASK_SOURCE_TYPES,
+  inspectionPlanCategoryLabel,
+  inspectionPlanCategoryLabels,
   inspectionRecordResultLabel,
   inspectionRecordResultLabels,
   inspectionTaskSourceTypeLabel,
@@ -105,6 +107,7 @@ export {
   qualitySourceTypeLabel,
   qualitySourceTypeLabels,
 } from './labels/qualityLabels'
+export type { InspectionPlanCategory } from './labels/qualityLabels'
 export {
   EXPIRY_CRITICAL_THRESHOLD_DAYS,
   EXPIRY_NEAR_THRESHOLD_DAYS,

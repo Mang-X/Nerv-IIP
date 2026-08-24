@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { inspectionPlanCategoryLabel } from '@nerv-iip/business-core'
 
 const pageSource = readFileSync(resolve(process.cwd(), 'src/pages/quality/inspections.vue'), 'utf8')
 const detailSource = readFileSync(
@@ -33,7 +34,7 @@ describe('首件检验工作台合同', () => {
 
   it('首件方案固定业务分类并要求 SKU、工序工作中心和至少一个检验项', () => {
     expect(planSheetSource).toContain("category: 'first-article'")
-    expect(pageSource).toContain("'first-article': '首件检验'")
+    expect(inspectionPlanCategoryLabel('first-article')).toBe('首件检验')
     expect(planSheetSource).toContain('请选择适用物料。')
     expect(planSheetSource).toContain('请选择工序工作中心。')
     expect(planSheetSource).toContain('请至少添加一个检验项。')

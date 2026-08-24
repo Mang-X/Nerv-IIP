@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   INSPECTION_PLAN_CATEGORIES,
   INSPECTION_TASK_SOURCE_TYPES,
+  inspectionPlanCategoryLabel,
   inspectionTaskSourceTypeLabel,
   inspectionTaskStatusLabel,
   qualitySourceTypeLabel,
@@ -68,5 +69,17 @@ describe('INSPECTION_PLAN_CATEGORIES', () => {
       'maintenance',
       'customer-return',
     ])
+  })
+
+  it('shares one business-label vocabulary for every accepted category', () => {
+    expect(INSPECTION_PLAN_CATEGORIES.map(inspectionPlanCategoryLabel)).toEqual([
+      '来料检',
+      '工序检',
+      '终检',
+      '首件检验',
+      '维修检',
+      '客户退货检',
+    ])
+    expect(inspectionPlanCategoryLabel('future-category')).toBe('future-category')
   })
 })
