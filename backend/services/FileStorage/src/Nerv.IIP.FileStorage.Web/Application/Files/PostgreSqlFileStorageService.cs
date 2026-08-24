@@ -53,6 +53,34 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid.");
         }
 
+        var expectedSize = FileStoragePurposePolicies.ValidateExpectedSize(
+            request.FilePurpose,
+            request.ExpectedSizeBytes,
+            configuration);
+        if (!expectedSize.IsAllowed)
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest(expectedSize.Message!);
+        }
+
+        var owner = FileStoragePurposePolicies.ValidateOwner(
+            request.FilePurpose,
+            request.Owner.OwnerService,
+            request.Owner.OwnerType,
+            configuration);
+        if (!owner.IsAllowed)
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest(owner.Message!);
+        }
+
+        var checksum = FileStoragePurposePolicies.ValidateChecksum(
+            request.FilePurpose,
+            request.Checksum,
+            configuration);
+        if (!checksum.IsAllowed)
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest(checksum.Message!);
+        }
+
         var declaredType = FileStoragePurposePolicies.ValidateDeclaredType(
             request.FilePurpose,
             request.FileName,
@@ -162,6 +190,16 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+        }
+
+        var completionChecksum = FileStoragePurposePolicies.ValidateCompletionChecksum(
+            session.FilePurpose,
+            session.Checksum,
+            request.Checksum,
+            configuration);
+        if (!completionChecksum.IsAllowed)
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest(completionChecksum.Message!);
         }
 
         var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
