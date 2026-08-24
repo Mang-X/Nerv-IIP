@@ -95,11 +95,13 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             var response = await client.GetFromJsonAsync<FilePurposeBoundary>(
                 $"/internal/file-storage/v1/purposes/{purpose}");
 
-            Assert.NotNull(response);
-            Assert.Equal(purpose, response.Purpose);
-            Assert.True(response.Allowed);
-            Assert.Null(response.ErrorCode);
-            Assert.Null(response.Message);
+            Assert.True(response is not null, $"purpose={purpose}: boundary response is null.");
+            Assert.True(
+                string.Equals(purpose, response.Purpose, StringComparison.Ordinal),
+                $"purpose={purpose}: returned purpose={response.Purpose}.");
+            Assert.True(response.Allowed, $"purpose={purpose}: {response.Message}");
+            Assert.True(response.ErrorCode is null, $"purpose={purpose}: errorCode={response.ErrorCode}.");
+            Assert.True(response.Message is null, $"purpose={purpose}: message={response.Message}.");
         }
     }
 

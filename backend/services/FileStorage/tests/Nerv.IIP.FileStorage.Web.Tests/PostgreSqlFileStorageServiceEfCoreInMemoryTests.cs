@@ -370,6 +370,61 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     }
 
     [Fact]
+    public async Task CompleteBarcodeLabelTemplateUpload_WhenChecksumPolicyIsEnabledAfterSessionCreation_RejectsMissingChecksum()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var checksumOptionalConfiguration = new ConfigurationBuilder()
+            .AddConfiguration(FileStorageTestConfiguration.Default)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:PurposePolicies:barcode-label-template:RequireSha256Checksum"] = "false"
+            })
+            .Build();
+        var createService = new PostgreSqlFileStorageService(dbContext, configuration: checksumOptionalConfiguration);
+        var request = CreateBarcodeLabelTemplateUploadRequest() with { Checksum = null };
+        var created = (await createService.CreateUploadSessionAsync(request, CancellationToken.None)).Value!;
+        var completeService = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+
+        var result = await completeService.CompleteUploadSessionAsync(
+            created.UploadSessionId,
+            new CompleteUploadSessionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.FilePurpose,
+                null,
+                request.ExpectedSizeBytes),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("Upload checksum does not match the upload session.", result.Error?.Message);
+        Assert.False((await dbContext.UploadSessions.SingleAsync()).Completed);
+        Assert.Empty(await dbContext.StoredFiles.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CompleteBarcodeLabelTemplateUpload_SameChecksumWithUppercaseHex_IsAccepted()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var request = CreateBarcodeLabelTemplateUploadRequest();
+        var created = (await service.CreateUploadSessionAsync(request, CancellationToken.None)).Value!;
+
+        var result = await service.CompleteUploadSessionAsync(
+            created.UploadSessionId,
+            new CompleteUploadSessionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.FilePurpose,
+                request.Checksum!.ToUpperInvariant(),
+                request.ExpectedSizeBytes),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.True((await dbContext.UploadSessions.SingleAsync()).Completed);
+        Assert.Equal(request.Checksum, (await dbContext.StoredFiles.SingleAsync()).Checksum);
+    }
+
+    [Fact]
     public async Task CreateUploadSession_OverOrganizationPurposeQuota_ReturnsConflictWithoutPersisting()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
