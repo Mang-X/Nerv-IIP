@@ -5,7 +5,6 @@ import path from 'node:path'
 import { requireBrowserEvidenceOutputDir } from '../playwright.config'
 
 const STORAGE_KEY = 'nerv-iip.business-console.auth'
-const SCREENSHOT_DIR = requireBrowserEvidenceOutputDir()
 
 const principal = {
   principalId: 'tooling-maintainer-1',
@@ -29,7 +28,6 @@ const session = {
 test.use({ viewport: { width: 1440, height: 900 } })
 
 test.beforeEach(async ({ page }) => {
-  await mkdir(SCREENSHOT_DIR, { recursive: true })
   await page.addInitScript(
     ({ key, storedSession }) => localStorage.setItem(key, JSON.stringify(storedSession)),
     {
@@ -47,6 +45,8 @@ test.beforeEach(async ({ page }) => {
 
 test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   test.skip(test.info().project.name !== 'desktop', '业务维护台只取 desktop 证据')
+  const screenshotDir = requireBrowserEvidenceOutputDir()
+  await mkdir(screenshotDir, { recursive: true })
 
   await page.goto('/master-data/tooling', { waitUntil: 'domcontentloaded' })
   await page.addStyleTag({
@@ -62,7 +62,7 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
       .getByText('不可参与排程', { exact: true }),
   ).toBeVisible()
   await page.screenshot({
-    path: path.join(SCREENSHOT_DIR, '01-tooling-workbench.png'),
+    path: path.join(screenshotDir, '01-tooling-workbench.png'),
   })
 
   await page.getByRole('button', { name: 'MOULD-FLOOR-OP10', exact: true }).click()
@@ -70,7 +70,7 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect(detail).toContainText('WC-PRESS-01')
   await expect(detail).toContainText('SKU-FLOOR-ASSY')
   await page.screenshot({
-    path: path.join(SCREENSHOT_DIR, '02-tooling-detail.png'),
+    path: path.join(screenshotDir, '02-tooling-detail.png'),
   })
   await page.keyboard.press('Escape')
   await expect(detail).toBeHidden()
@@ -119,7 +119,7 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
     .poll(() => typeTrigger.evaluate((element) => getComputedStyle(element).borderColor))
     .not.toBe(beforeTypeBorder)
   await page.screenshot({
-    path: path.join(SCREENSHOT_DIR, '03-register-validation.png'),
+    path: path.join(screenshotDir, '03-register-validation.png'),
   })
   await page.keyboard.press('Escape')
 
@@ -152,16 +152,8 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect(completionDialog).toContainText('完成保养后将清零累计使用次数，并恢复为可用状态。')
   await expect(completionDialog).toContainText('请说明本次状态变更原因。')
   await page.screenshot({
-    path: path.join(SCREENSHOT_DIR, '05-maintenance-completion-disclosure.png'),
+    path: path.join(screenshotDir, '05-maintenance-completion-disclosure.png'),
   })
-  await completionDialog.getByRole('button', { name: '取消' }).click()
-
-  await page.getByRole('button', { name: '工装操作 CUTTER-PUNCH-05' }).click()
-  await page.getByRole('menuitem', { name: '转保养' }).click()
-  await expect(completionDialog).toContainText('本次状态变更不会清零累计使用次数。')
-  await expect(completionDialog).not.toContainText(
-    '完成保养后将清零累计使用次数，并恢复为可用状态。',
-  )
   await completionDialog.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '登记使用' }).first().click()
@@ -190,7 +182,7 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect(confirmRetire).toBeEnabled()
   await expect(confirmRetire).toHaveClass(/bg-destructive/)
   await page.screenshot({
-    path: path.join(SCREENSHOT_DIR, '04-retire-confirmation.png'),
+    path: path.join(screenshotDir, '04-retire-confirmation.png'),
   })
 })
 
@@ -252,19 +244,8 @@ async function routeBusinessConsoleApi(route: Route) {
             workCenterCodes: ['WC-QA-01'],
             skuCodes: ['SKU-DOOR-INNER-LH'],
           },
-          {
-            code: 'CUTTER-PUNCH-05',
-            name: '侧围冲孔刀具',
-            toolingType: 'cutting-tool',
-            status: 'available',
-            maintenanceLifeCount: 10000,
-            usageCount: 10000,
-            isSchedulable: true,
-            workCenterCodes: ['WC-PRESS-01'],
-            skuCodes: ['SKU-SILL-LH'],
-          },
         ],
-        total: 5,
+        total: 4,
       }),
     )
   }

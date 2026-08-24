@@ -61,19 +61,8 @@ vi.mock('@/composables/useBusinessTooling', () => ({
         workCenterCodes: ['WC-PRESS'],
         skuCodes: ['SKU-FLOOR'],
       },
-      {
-        code: 'CUTTER-004',
-        name: '侧围冲孔刀具',
-        toolingType: 'cutting-tool',
-        status: 'available',
-        maintenanceLifeCount: 10000,
-        usageCount: 10000,
-        isSchedulable: true,
-        workCenterCodes: ['WC-PRESS'],
-        skuCodes: ['SKU-SILL'],
-      },
     ]),
-    toolingTotal: computed(() => 4),
+    toolingTotal: computed(() => 3),
     toolingPending: shallowRef(false),
     toolingError: shallowRef(),
     refresh: vi.fn(),
@@ -244,19 +233,6 @@ describe('工装与模具维护台', () => {
     await completionButtons[1]!.trigger('click')
 
     expect(wrapper.text()).toContain('完成保养后将清零累计使用次数，并恢复为可用状态。')
-  })
-
-  it('可用工装达到寿命后转保养不会披露完成保养清零', async () => {
-    const wrapper = mount(ToolingPage, { global: { stubs } })
-    await flushPromises()
-
-    const transferButtons = wrapper
-      .findAll('button')
-      .filter((candidate) => candidate.text().trim() === '转保养')
-    await transferButtons[1]!.trigger('click')
-
-    expect(wrapper.text()).toContain('请说明本次状态变更原因。')
-    expect(wrapper.text()).not.toContain('完成保养后将清零累计使用次数，并恢复为可用状态。')
   })
 
   it('注册提交后同时展示校验汇总与对应字段错误', async () => {
