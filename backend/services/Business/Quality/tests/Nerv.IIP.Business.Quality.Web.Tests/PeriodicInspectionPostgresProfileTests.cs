@@ -79,6 +79,12 @@ public sealed class PeriodicInspectionPostgresProfileTests
             "SELECT next_time_window_at_utc FROM quality.periodic_inspection_runtime_contexts WHERE id = '00000000-0000-0000-0000-000000000202'",
             assertion);
         Assert.Equal(DBNull.Value, await closedCommand.ExecuteScalarAsync());
+        await using var commentCommand = new NpgsqlCommand(
+            "SELECT obj_description('quality.periodic_inspection_runtime_contexts'::regclass)",
+            assertion);
+        Assert.Equal(
+            "Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.",
+            await commentCommand.ExecuteScalarAsync());
     }
 
     [QualityPostgresFact]

@@ -1739,7 +1739,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.ToTable("periodic_inspection_runtime_contexts", "quality", t =>
                         {
-                            t.HasComment("Frozen per-plan periodic inspection runtime contexts and quantity/time watermarks; task generation is owned by a later stage.");
+                            t.HasComment("Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.");
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_assignment", "assigned_inspector_user_id IS NULL OR assigned_team_id IS NULL");
 

@@ -93,7 +93,7 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
             "periodic_inspection_runtime_contexts",
             table =>
             {
-                table.HasComment("Frozen per-plan periodic inspection runtime contexts and quantity/time watermarks; task generation is owned by a later stage.");
+                table.HasComment("Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.");
                 table.HasCheckConstraint(
                     "ck_periodic_inspection_runtime_interval",
                     "(time_interval_hours IS NOT NULL AND time_interval_hours > 0) OR (quantity_interval IS NOT NULL AND quantity_interval > 0)");

@@ -1,4 +1,5 @@
 using MediatR;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -17,8 +18,17 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
     [Fact]
     public async Task Enabled_scheduler_dispatches_configured_scope_on_fake_time_ticks()
     {
-        var sender = new CapturingSender();
-        var clock = new TimerRegistrationObservingTimeProvider();
+        var start = DateTimeOffset.Parse("2026-08-24T01:00:00Z");
+        var clock = new TimerRegistrationObservingTimeProvider(start);
+        var sender = new CapturingSender(
+            candidateCount: 2,
+            afterCommandCaptured: count =>
+            {
+                if (count == 1)
+                {
+                    clock.Advance(TimeSpan.FromMinutes(1));
+                }
+            });
         await using var services = new ServiceCollection().AddSingleton<ISender>(sender).BuildServiceProvider();
         var configuration = Configuration(enabled: true);
         var scheduler = new PeriodicInspectionTimeTaskScheduler(
@@ -28,16 +38,52 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             clock);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await WaitForCommandCountAsync(sender, 1);
-        await clock.WaitForTimerCountAsync(1);
-        clock.Advance(TimeSpan.FromHours(1));
         await WaitForCommandCountAsync(sender, 2);
+        await clock.WaitForTimerCountAsync(1);
+        clock.Advance(TimeSpan.FromMinutes(59));
+        await WaitForCommandCountAsync(sender, 4);
         await scheduler.StopAsync(CancellationToken.None);
 
         Assert.Equal(2, sender.Queries.Count);
         Assert.All(sender.Queries, query => Assert.Equal(100, query.ContextBatchSize));
-        Assert.Equal(2, sender.Commands.Count);
+        Assert.Equal(
+            [start.UtcDateTime, start.AddHours(1).UtcDateTime],
+            sender.Queries.Select(query => query.NowUtc).ToArray());
+        Assert.Equal(4, sender.Commands.Count);
         Assert.All(sender.Commands, command => Assert.Equal(24, command.MaxWindows));
+        Assert.Equal(
+            [start.UtcDateTime, start.UtcDateTime, start.AddHours(1).UtcDateTime, start.AddHours(1).UtcDateTime],
+            sender.Commands.Select(command => command.NowUtc).ToArray());
+    }
+
+    [Fact]
+    public async Task Each_candidate_is_dispatched_from_a_distinct_dependency_injection_scope()
+    {
+        var capture = new ScopeDispatchCapture();
+        var clock = new TimerRegistrationObservingTimeProvider();
+        await using var services = new ServiceCollection()
+            .AddSingleton(capture)
+            .AddScoped<ISender, ScopeObservingSender>()
+            .BuildServiceProvider();
+        var scheduler = new PeriodicInspectionTimeTaskScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            Configuration(enabled: true),
+            NullLogger<PeriodicInspectionTimeTaskScheduler>.Instance,
+            clock);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await Eventually.WaitAsync(
+            "periodic inspection scheduler dispatches two scoped candidate commands",
+            _ => ValueTask.FromResult(capture.CommandDispatches.Count),
+            count => count >= 2,
+            count => $"commands={count}; expected>=2",
+            new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+        await scheduler.StopAsync(CancellationToken.None);
+
+        var queryScopeId = Assert.Single(capture.QueryDispatches).ScopeId;
+        var commandScopeIds = capture.CommandDispatches.Select(dispatch => dispatch.ScopeId).ToArray();
+        Assert.Equal(2, commandScopeIds.Distinct().Count());
+        Assert.DoesNotContain(queryScopeId, commandScopeIds);
     }
 
     [Fact]
@@ -153,7 +199,10 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             count => $"commands={count}; expected>={expected}",
             new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
 
-    private sealed class CapturingSender(int candidateCount = 1, bool failFirstCandidate = false) : ISender
+    private sealed class CapturingSender(
+        int candidateCount = 1,
+        bool failFirstCandidate = false,
+        Action<int>? afterCommandCaptured = null) : ISender
     {
         private int commandCount;
         public List<object> Requests { get; } = [];
@@ -179,11 +228,58 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             var command = Assert.IsType<GeneratePeriodicInspectionTimeTaskForContextCommand>(request);
             Commands.Add(command);
             commandCount++;
+            afterCommandCaptured?.Invoke(commandCount);
             if (failFirstCandidate && commandCount == 1)
             {
                 throw new InvalidOperationException("poison candidate");
             }
 
+            return Task.FromResult((TResponse)(object)1);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class ScopeDispatchCapture
+    {
+        public ConcurrentQueue<ScopeDispatch> QueryDispatches { get; } = new();
+        public ConcurrentQueue<ScopeDispatch> CommandDispatches { get; } = new();
+    }
+
+    private sealed record ScopeDispatch(Guid ScopeId, object Request);
+
+    private sealed class ScopeObservingSender(ScopeDispatchCapture capture) : ISender
+    {
+        private readonly Guid scopeId = Guid.CreateVersion7();
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (request is ListDuePeriodicInspectionTimeContextsQuery)
+            {
+                capture.QueryDispatches.Enqueue(new ScopeDispatch(scopeId, request));
+                IReadOnlyList<DuePeriodicInspectionTimeContext> candidates =
+                [
+                    new("WO-001", "OP-001", new PeriodicInspectionRuntimeContextId(Guid.CreateVersion7())),
+                    new("WO-002", "OP-002", new PeriodicInspectionRuntimeContextId(Guid.CreateVersion7())),
+                ];
+                return Task.FromResult((TResponse)(object)candidates);
+            }
+
+            Assert.IsType<GeneratePeriodicInspectionTimeTaskForContextCommand>(request);
+            capture.CommandDispatches.Enqueue(new ScopeDispatch(scopeId, request));
             return Task.FromResult((TResponse)(object)1);
         }
 

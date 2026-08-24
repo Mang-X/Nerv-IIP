@@ -16,6 +16,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                 schema: "quality",
                 table: "periodic_inspection_runtime_contexts");
 
+            migrationBuilder.AlterTable(
+                name: "periodic_inspection_runtime_contexts",
+                schema: "quality",
+                comment: "Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.",
+                oldComment: "Frozen per-plan periodic inspection runtime contexts and quantity/time watermarks; task generation is owned by a later stage.");
+
             migrationBuilder.AddColumn<long>(
                 name: "last_generated_time_window_sequence",
                 schema: "quality",
@@ -90,6 +96,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                 name: "ck_periodic_inspection_runtime_time_watermark",
                 schema: "quality",
                 table: "periodic_inspection_runtime_contexts");
+
+            migrationBuilder.AlterTable(
+                name: "periodic_inspection_runtime_contexts",
+                schema: "quality",
+                comment: "Frozen per-plan periodic inspection runtime contexts and quantity/time watermarks; task generation is owned by a later stage.",
+                oldComment: "Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.");
 
             migrationBuilder.DropColumn(
                 name: "last_generated_time_window_sequence",

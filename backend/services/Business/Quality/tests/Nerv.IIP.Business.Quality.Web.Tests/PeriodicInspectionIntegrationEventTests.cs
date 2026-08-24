@@ -125,7 +125,7 @@ public sealed class PeriodicInspectionIntegrationEventTests
     }
 
     [Fact]
-    public async Task Context_batch_limit_does_not_allow_an_earlier_not_due_context_to_hide_a_due_context()
+    public async Task Due_context_query_filters_orders_and_applies_the_batch_limit()
     {
         await using var dbContext = CreateDbContext();
         dbContext.InspectionPlans.Add(NewPeriodicPlan());
@@ -139,21 +139,34 @@ public sealed class PeriodicInspectionIntegrationEventTests
 
         await releaseHandler.HandleAsync(WorkOrderReleased("WO-001", "OP-001"), CancellationToken.None);
         await reportHandler.HandleAsync(
-            ProductionReport("RPT-001", "WO-001", "OP-001", "2026-08-24T03:00:00Z"),
+            ProductionReport("RPT-001", "WO-001", "OP-001", "2026-08-24T04:00:00Z"),
             CancellationToken.None);
         await releaseHandler.HandleAsync(WorkOrderReleased("WO-002", "OP-002"), CancellationToken.None);
         await reportHandler.HandleAsync(
-            ProductionReport("RPT-002", "WO-002", "OP-002", "2026-08-24T01:00:00Z"),
+            ProductionReport("RPT-002", "WO-002", "OP-002", "2026-08-24T02:30:00Z"),
+            CancellationToken.None);
+        await releaseHandler.HandleAsync(WorkOrderReleased("WO-003", "OP-003"), CancellationToken.None);
+        await reportHandler.HandleAsync(
+            ProductionReport("RPT-003", "WO-003", "OP-003", "2026-08-24T01:00:00Z"),
+            CancellationToken.None);
+
+        var beforeAnyWindowIsDue = await new ListDuePeriodicInspectionTimeContextsQueryHandler(dbContext).Handle(
+            new ListDuePeriodicInspectionTimeContextsQuery(
+                "org-001",
+                "env-dev",
+                DateTimeOffset.Parse("2026-08-24T02:00:00Z").UtcDateTime,
+                1),
             CancellationToken.None);
 
         var generated = await GenerateDueAsync(
             dbContext,
             coordinator,
-            DateTime.Parse("2026-08-24T03:30:00Z").ToUniversalTime(),
+            DateTimeOffset.Parse("2026-08-24T04:45:00Z").UtcDateTime,
             1);
 
+        Assert.Empty(beforeAnyWindowIsDue);
         Assert.Equal(1, generated);
-        Assert.Equal("WO-002", (await dbContext.InspectionTasks.SingleAsync()).SourceDocumentId);
+        Assert.Equal("WO-003", (await dbContext.InspectionTasks.SingleAsync()).SourceDocumentId);
     }
 
     [Fact]
