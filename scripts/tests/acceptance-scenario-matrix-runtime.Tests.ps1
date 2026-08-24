@@ -953,6 +953,21 @@ try {
     [IO.File]::WriteAllText($bypassedReadbackPredicatePath, $wmsVerifierSource.Replace($completedReadbackPredicate, '$true'), [Text.UTF8Encoding]::new($false))
     Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $bypassedReadbackPredicatePath).outboundCompletionWired) 'Bypassing Test-NervAcceptanceWmsCompletedOutboundReadback inside Wait-WmsOutboundOrder must invalidate outboundCompletionWired.'
 
+    $completedReadbackCommand = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.CommandAst] -and
+                    [string]::Equals($node.GetCommandName(), 'Test-NervAcceptanceWmsCompletedOutboundReadback', [StringComparison]::Ordinal)
+            }, $true))[0]
+    $completionGate = $completedReadbackCommand.Parent
+    while ($completionGate -isnot [Management.Automation.Language.BinaryExpressionAst] -or $completionGate.Operator -ne [Management.Automation.Language.TokenKind]::Or) { $completionGate = $completionGate.Parent }
+    $completionGuard = $completedReadbackCommand.Parent
+    while ($completionGuard -isnot [Management.Automation.Language.IfStatementAst]) { $completionGuard = $completionGuard.Parent }
+    $ignoredGateGuard = $completionGuard.Extent.Text.Replace($completionGate.Extent.Text, '$true')
+    $ignoredGateGuard = $ignoredGateGuard.Insert($ignoredGateGuard.IndexOf('{', [StringComparison]::Ordinal) + 1, "`n`$ignoredCompletionGate = $($completionGate.Extent.Text)")
+    $ignoredGatePath = Join-Path $fixtureRoot 'wms-diagnostics/completed-readback-gate-in-if-body.ps1'
+    [IO.File]::WriteAllText($ignoredGatePath, $wmsVerifierSource.Replace($completionGuard.Extent.Text, $ignoredGateGuard), [Text.UTF8Encoding]::new($false))
+    Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $ignoredGatePath).outboundCompletionWired) 'The RequireCompleted helper gate must be the return if clause condition, not an ignored expression in its body.'
+
     $completionReadbackNode = 'completionReadback = [ordered]@{ status = $completedOutboundOrder.status; completedAtUtc = $completedOutboundOrder.completedAtUtc }'
     Assert-Contract (([regex]::Matches($wmsVerifierSource, [regex]::Escape($completionReadbackNode))).Count -eq 1) 'The canonical completionReadback mutation requires one exact production node.'
     $dummyReadbackNode = 'dummyCompletionEvidence = if ($false) { [ordered]@{ completionReadback = [ordered]@{ status = $completedOutboundOrder.status; completedAtUtc = $completedOutboundOrder.completedAtUtc } } }'
@@ -976,6 +991,23 @@ try {
     $unusedScriptblockSource = $wmsVerifierSource.Remove($mutationAssignment.Extent.StartOffset, $mutationAssignment.Extent.EndOffset - $mutationAssignment.Extent.StartOffset).Insert($mutationAssignment.Extent.StartOffset, "`$unusedCompletedOutboundRead = { $completedOutboundAssignmentText }")
     [IO.File]::WriteAllText($unusedScriptblockPath, $unusedScriptblockSource, [Text.UTF8Encoding]::new($false))
     Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $unusedScriptblockPath).outboundCompletionWired) 'Moving the completed outbound wait into an uninvoked scriptblock must invalidate outboundCompletionWired.'
+
+    $businessEvidenceAssignment = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+                    [string]::Equals([string]$node.Left.VariablePath.UserPath, 'businessEvidence', [StringComparison]::Ordinal) -and
+                    $node.Right.Extent.Text.Contains('wmsOutboundOrder', [StringComparison]::Ordinal)
+            }, $true))[0]
+    foreach ($businessEvidenceOverride in @(
+        @{ Name = 'direct'; Statement = '$businessEvidence = $null' },
+        @{ Name = 'set-variable'; Statement = 'Set-Variable -Name businessEvidence -Value $null' }
+    )) {
+        $businessEvidenceOverridePath = Join-Path $fixtureRoot "wms-diagnostics/business-evidence-$($businessEvidenceOverride.Name)-override.ps1"
+        $businessEvidenceOverrideSource = $wmsVerifierSource.Insert($businessEvidenceAssignment.Extent.EndOffset, "`n$($businessEvidenceOverride.Statement)")
+        [IO.File]::WriteAllText($businessEvidenceOverridePath, $businessEvidenceOverrideSource, [Text.UTF8Encoding]::new($false))
+        Assert-Contract (-not (Test-NervAcceptanceWmsVerifierContract -Path $businessEvidenceOverridePath).outboundCompletionWired) "A later top-level businessEvidence $($businessEvidenceOverride.Name) override must invalidate outboundCompletionWired."
+    }
 
     $failureAssignmentCommand = @($mutationAst.FindAll({
                 param($node)

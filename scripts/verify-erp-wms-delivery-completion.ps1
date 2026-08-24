@@ -486,7 +486,6 @@ $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests
 $managedProcessIds = [System.Collections.Generic.List[int]]::new()
 $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $scenarioError = $null
-$businessEvidence = $null
 $probeResultsPath = $null
 $fullChainProbeCounters = $null
 $repeatedEventConverged = $false
@@ -977,8 +976,9 @@ finally {
     }
 
     $cleanupEvidence.errors = @($cleanupErrors)
-    $evidencePayload = if ($null -ne $businessEvidence) {
-        $businessEvidence
+    $businessEvidenceVariable = Get-Variable -Name businessEvidence -ErrorAction SilentlyContinue
+    $evidencePayload = if ($null -ne $businessEvidenceVariable -and $null -ne $businessEvidenceVariable.Value) {
+        $businessEvidenceVariable.Value
     }
     else {
         [ordered]@{

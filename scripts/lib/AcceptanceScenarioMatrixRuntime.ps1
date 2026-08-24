@@ -1314,6 +1314,27 @@ function Test-NervAcceptanceWmsVerifierContract {
             $predicateAncestor = $predicateAncestor.Parent
         }
         if ($predicateIfAncestors.Count -ne 1) { return $false }
+        $guardCondition = $predicateIfAncestors[0].Clauses[0].Item1
+        if ($guardCondition -isnot [Management.Automation.Language.PipelineAst] -or
+            $guardCondition.PipelineElements.Count -ne 1 -or
+            $guardCondition.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst] -or
+            $guardCondition.PipelineElements[0].Expression -isnot [Management.Automation.Language.BinaryExpressionAst] -or
+            $guardCondition.PipelineElements[0].Expression.Operator -ne [Management.Automation.Language.TokenKind]::And) { return $false }
+        $combinedGate = $guardCondition.PipelineElements[0].Expression
+        $rowsGate = $combinedGate.Left
+        if ($rowsGate -isnot [Management.Automation.Language.BinaryExpressionAst] -or
+            $rowsGate.Operator -ne [Management.Automation.Language.TokenKind]::Ieq -or
+            $rowsGate.Left -isnot [Management.Automation.Language.MemberExpressionAst] -or
+            $rowsGate.Left.Expression -isnot [Management.Automation.Language.VariableExpressionAst] -or
+            -not [string]::Equals((Get-NervScriptVariableBindingName -VariablePath $rowsGate.Left.Expression.VariablePath), 'rows', [StringComparison]::OrdinalIgnoreCase) -or
+            $rowsGate.Left.Member -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+            -not [string]::Equals([string]$rowsGate.Left.Member.Value, 'Count', [StringComparison]::OrdinalIgnoreCase) -or
+            $rowsGate.Right -isnot [Management.Automation.Language.ConstantExpressionAst] -or
+            $rowsGate.Right.Value -ne 1 -or
+            $combinedGate.Right -isnot [Management.Automation.Language.ParenExpressionAst] -or
+            $combinedGate.Right.Pipeline.PipelineElements.Count -ne 1 -or
+            $combinedGate.Right.Pipeline.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst] -or
+            -not [object]::ReferenceEquals($combinedGate.Right.Pipeline.PipelineElements[0].Expression, $requireCompletedGate)) { return $false }
         $guardReturns = @($predicateIfAncestors[0].Clauses | ForEach-Object { $_.Item2 } | ForEach-Object {
                 $_.FindAll({ param($node) $node -is [Management.Automation.Language.ReturnStatementAst] }, $true)
             } | Where-Object {
@@ -1343,15 +1364,24 @@ function Test-NervAcceptanceWmsVerifierContract {
             })
         if ($requireCompletedParameters.Count -ne 1) { return $false }
 
-        $businessEvidenceAssignments = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] }, $true) | Where-Object {
-                (& $testAssignmentWritesVariable $_ 'businessEvidence') -and
-                    -not (& $hasConditionalAncestor $_) -and
+        $businessEvidenceWrites = @($ast.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.AssignmentStatementAst] -or
+                        $node -is [Management.Automation.Language.CommandAst]
+                }, $true) | Where-Object {
                     -not (& $hasInactiveCodeAncestor $_) -and
+                        (($_ -is [Management.Automation.Language.AssignmentStatementAst] -and (& $testAssignmentWritesVariable $_ 'businessEvidence')) -or
+                            ($_ -is [Management.Automation.Language.CommandAst] -and (& $testCommandWritesVariable $_ 'businessEvidence')))
+                })
+        $businessEvidenceAssignments = @($businessEvidenceWrites | Where-Object {
+                $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
+                    -not (& $hasConditionalAncestor $_) -and
                     $_.Right -is [Management.Automation.Language.CommandExpressionAst] -and
                     $_.Right.Expression -is [Management.Automation.Language.ConvertExpressionAst] -and
                     $_.Right.Expression.Child -is [Management.Automation.Language.HashtableAst]
             })
-        if ($businessEvidenceAssignments.Count -ne 1) { return $false }
+        if ($businessEvidenceWrites.Count -ne 1 -or $businessEvidenceAssignments.Count -ne 1 -or
+            -not [object]::ReferenceEquals($businessEvidenceWrites[0], $businessEvidenceAssignments[0])) { return $false }
         $businessEvidenceTable = $businessEvidenceAssignments[0].Right.Expression.Child
         $wmsPairs = @($businessEvidenceTable.KeyValuePairs | Where-Object {
                 $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
