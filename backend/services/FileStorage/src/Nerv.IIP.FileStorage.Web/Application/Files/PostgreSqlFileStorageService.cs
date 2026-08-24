@@ -177,14 +177,14 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         var session = await dbContext.UploadSessions.SingleOrDefaultAsync(x => x.UploadSessionId == uploadSessionId, cancellationToken);
         if (session is null)
         {
-            return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
+            return FileStorageResult<FileMetadataResponse>.NotFound($"未找到上传会话 '{uploadSessionId}'。");
         }
 
         if (!string.Equals(session.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(session.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+            return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话上下文不匹配。");
         }
 
         if (session.Completed)
@@ -193,14 +193,14 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return completedFile is null
                 ? FileStorageResult<FileMetadataResponse>.Failure(
                     StatusCodes.Status503ServiceUnavailable,
-                    "Completed upload metadata is temporarily unavailable.")
+                    "已完成上传的元数据暂不可用。")
                 : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(completedFile));
         }
 
         if (string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal)
             && session.ExpiresAtUtc <= timeProvider.GetUtcNow())
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
+            return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话已过期。");
         }
 
         var completionChecksum = FileStoragePurposePolicies.ValidateCompletionChecksum(
@@ -222,7 +222,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             {
                 return FileStorageResult<FileMetadataResponse>.Failure(
                     StatusCodes.Status409Conflict,
-                    "Upload completion is already in progress; retry later.");
+                    "上传完成操作正在进行中，请稍后重试。");
             }
 
             session.BeginCommit(
@@ -231,7 +231,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 now);
             try
             {
-                await dbContext.SaveChangesAsync(cancellationToken); // Tx1 is durably committed before any storage I/O.
+                await dbContext.SaveChangesAsync(cancellationToken); // 在执行任何存储 I/O 前持久提交 Tx1。
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -245,7 +245,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 {
                     return FileStorageResult<FileMetadataResponse>.Failure(
                         StatusCodes.Status409Conflict,
-                        "Upload completion ownership changed concurrently; retry later.");
+                        "上传完成操作的所有权已被并发变更，请稍后重试。");
                 }
             }
         }
@@ -255,7 +255,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         {
             return FileStorageResult<FileMetadataResponse>.Failure(
                 StatusCodes.Status409Conflict,
-                "Upload session cannot enter the committing state.");
+                "上传会话无法进入 committing 状态。");
         }
 
         var executionOwnerId = NewId("wrk");
@@ -263,7 +263,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         {
             return FileStorageResult<FileMetadataResponse>.Failure(
                 StatusCodes.Status409Conflict,
-                "Upload completion is being recovered by another worker; retry later.");
+                "另一工作进程正在恢复上传完成操作，请稍后重试。");
         }
 
         if (session.StorageActionStartedAtUtc is null)
@@ -292,7 +292,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                     ? storageResult.StatusCode
                     : StatusCodes.Status503ServiceUnavailable,
                 string.IsNullOrWhiteSpace(storageResult.Message)
-                    ? "Final storage action was not started; the upload session is open for retry."
+                    ? "最终存储操作尚未开始，上传会话已重新打开，可重试。"
                     : storageResult.Message);
         }
 
@@ -312,7 +312,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                     ? storageResult.StatusCode
                     : StatusCodes.Status503ServiceUnavailable,
                 string.IsNullOrWhiteSpace(storageResult.Message)
-                    ? "Final storage evidence is invalid; retry later."
+                    ? "最终存储证据无效，请稍后重试。"
                     : storageResult.Message);
         }
 
@@ -344,7 +344,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
         dbContext.StoredFiles.Add(file);
         session.MarkCompleted(completedAtUtc);
-        await dbContext.SaveChangesAsync(cancellationToken); // Tx2 atomically commits metadata and completed state.
+        await dbContext.SaveChangesAsync(cancellationToken); // Tx2 原子提交元数据与 completed 状态。
 
         return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
     }

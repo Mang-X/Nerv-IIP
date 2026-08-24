@@ -18,7 +18,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(71)",
                 maxLength: 71,
                 nullable: true,
-                comment: "Immutable expected canonical SHA-256 evidence, or null when final storage must calculate it.");
+                comment: "不可变的预期规范 SHA-256 证据；最终存储需要自行计算时为空。");
 
             migrationBuilder.AddColumn<string>(
                 name: "commit_id",
@@ -27,7 +27,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(64)",
                 maxLength: 64,
                 nullable: true,
-                comment: "Immutable unique ownership identifier created by the first committed Tx1.");
+                comment: "首次持久提交 Tx1 时创建的不可变唯一所有权标识。");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "committing_at_utc",
@@ -35,7 +35,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "UTC timestamp when Tx1 durably changed the session to committing.");
+                comment: "Tx1 将上传会话持久转换为 committing 状态时的 UTC 时间戳。");
 
             migrationBuilder.AddColumn<long>(
                 name: "concurrency_version",
@@ -44,7 +44,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "bigint",
                 nullable: false,
                 defaultValue: 0L,
-                comment: "Application-managed optimistic concurrency version for upload state transitions.");
+                comment: "应用程序管理的上传状态转换乐观并发版本。");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "execution_lease_until_utc",
@@ -52,7 +52,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "UTC expiry of the current storage execution claim.");
+                comment: "当前存储执行租约的 UTC 到期时间。");
 
             migrationBuilder.AddColumn<string>(
                 name: "execution_owner_id",
@@ -61,7 +61,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(64)",
                 maxLength: 64,
                 nullable: true,
-                comment: "Short-lived durable owner allowed to execute storage I/O for the commit intent.");
+                comment: "获准为提交意图执行存储 I/O 的短期持久所有者。");
 
             migrationBuilder.AddColumn<string>(
                 name: "last_recovery_error_code",
@@ -70,7 +70,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(64)",
                 maxLength: 64,
                 nullable: true,
-                comment: "Stable non-sensitive diagnostic code from the latest recovery attempt.");
+                comment: "最近一次恢复尝试产生的稳定非敏感诊断码。");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "next_recovery_at_utc",
@@ -78,7 +78,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "UTC timestamp before which the recovery worker must not retry this commit intent.");
+                comment: "恢复工作进程不得在此 UTC 时间戳之前重试此提交意图。");
 
             migrationBuilder.AddColumn<int>(
                 name: "recovery_attempt_count",
@@ -87,7 +87,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0,
-                comment: "Number of failed storage recovery attempts for this immutable commit intent.");
+                comment: "此不可变提交意图的存储恢复失败次数。");
 
             migrationBuilder.AddColumn<string>(
                 name: "state",
@@ -97,7 +97,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 maxLength: 32,
                 nullable: false,
                 defaultValue: "open",
-                comment: "Durable upload lifecycle state: open, committing, or completed.");
+                comment: "持久上传生命周期状态：open、committing 或 completed。");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "storage_action_started_at_utc",
@@ -105,7 +105,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "UTC durable marker written before any storage action that may establish final bytes.");
+                comment: "任何可能建立最终字节的存储操作开始前写入的 UTC 持久标记。");
 
             migrationBuilder.Sql(
                 """
@@ -187,7 +187,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "boolean",
                 nullable: false,
                 defaultValue: false,
-                comment: "Whether the upload session has been completed.");
+                comment: "上传会话是否已完成。");
 
             migrationBuilder.Sql(
                 """

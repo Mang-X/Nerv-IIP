@@ -304,7 +304,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
-        Assert.Equal("Upload session context does not match.", result.Error?.Message);
+        Assert.Equal("上传会话上下文不匹配。", result.Error?.Message);
         Assert.False((await dbContext.UploadSessions.SingleAsync()).Completed);
         Assert.Empty(await dbContext.StoredFiles.ToListAsync());
     }
@@ -646,7 +646,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 CancellationToken.None);
 
             Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
-            Assert.Equal("Final storage commit is not available yet; retry this upload completion later.", result.Error?.Message);
+            Assert.Equal("最终存储提交暂不可用，请稍后重试完成上传。", result.Error?.Message);
             Assert.False((await dbContext.UploadSessions.SingleAsync()).Completed);
             Assert.Equal(UploadSessionState.Open, (await dbContext.UploadSessions.SingleAsync()).State);
             Assert.Empty(await dbContext.StoredFiles.ToArrayAsync());

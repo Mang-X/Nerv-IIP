@@ -38,7 +38,7 @@ public sealed record UploadCommitStorageResult(
             null,
             StatusCodes.Status503ServiceUnavailable,
             "final-storage-not-ready",
-            "Final storage commit is not available yet; retry this upload completion later.");
+            "最终存储提交暂不可用，请稍后重试完成上传。");
 
     public static UploadCommitStorageResult ProvenNoFinalActionStarted() =>
         RetryableUnavailable() with

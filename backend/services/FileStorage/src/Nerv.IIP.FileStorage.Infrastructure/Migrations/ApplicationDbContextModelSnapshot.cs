@@ -231,18 +231,18 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasMaxLength(71)
                         .HasColumnType("character varying(71)")
                         .HasColumnName("commit_checksum")
-                        .HasComment("Immutable expected canonical SHA-256 evidence, or null when final storage must calculate it.");
+                        .HasComment("不可变的预期规范 SHA-256 证据；最终存储需要自行计算时为空。");
 
                     b.Property<string>("CommitId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("commit_id")
-                        .HasComment("Immutable unique ownership identifier created by the first committed Tx1.");
+                        .HasComment("首次持久提交 Tx1 时创建的不可变唯一所有权标识。");
 
                     b.Property<DateTimeOffset?>("CommittingAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("committing_at_utc")
-                        .HasComment("UTC timestamp when Tx1 durably changed the session to committing.");
+                        .HasComment("Tx1 将上传会话持久转换为 committing 状态时的 UTC 时间戳。");
 
                     b.Property<DateTimeOffset?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -253,7 +253,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint")
                         .HasColumnName("concurrency_version")
-                        .HasComment("Application-managed optimistic concurrency version for upload state transitions.");
+                        .HasComment("应用程序管理的上传状态转换乐观并发版本。");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
@@ -277,13 +277,13 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ExecutionLeaseUntilUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("execution_lease_until_utc")
-                        .HasComment("UTC expiry of the current storage execution claim.");
+                        .HasComment("当前存储执行租约的 UTC 到期时间。");
 
                     b.Property<string>("ExecutionOwnerId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("execution_owner_id")
-                        .HasComment("Short-lived durable owner allowed to execute storage I/O for the commit intent.");
+                        .HasComment("获准为提交意图执行存储 I/O 的短期持久所有者。");
 
                     b.Property<long>("ExpectedSizeBytes")
                         .HasColumnType("bigint")
@@ -320,12 +320,12 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("last_recovery_error_code")
-                        .HasComment("Stable non-sensitive diagnostic code from the latest recovery attempt.");
+                        .HasComment("最近一次恢复尝试产生的稳定非敏感诊断码。");
 
                     b.Property<DateTimeOffset?>("NextRecoveryAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("next_recovery_at_utc")
-                        .HasComment("UTC timestamp before which the recovery worker must not retry this commit intent.");
+                        .HasComment("恢复工作进程不得在此 UTC 时间戳之前重试此提交意图。");
 
                     b.Property<string>("ObjectKey")
                         .IsRequired()
@@ -372,19 +372,19 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                     b.Property<int>("RecoveryAttemptCount")
                         .HasColumnType("integer")
                         .HasColumnName("recovery_attempt_count")
-                        .HasComment("Number of failed storage recovery attempts for this immutable commit intent.");
+                        .HasComment("此不可变提交意图的存储恢复失败次数。");
 
                     b.Property<string>("State")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("state")
-                        .HasComment("Durable upload lifecycle state: open, committing, or completed.");
+                        .HasComment("持久上传生命周期状态：open、committing 或 completed。");
 
                     b.Property<DateTimeOffset?>("StorageActionStartedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("storage_action_started_at_utc")
-                        .HasComment("UTC durable marker written before any storage action that may establish final bytes.");
+                        .HasComment("任何可能建立最终字节的存储操作开始前写入的 UTC 持久标记。");
 
                     b.HasKey("UploadSessionId");
 

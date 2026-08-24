@@ -55,7 +55,7 @@ public sealed class UploadCommitRecoveryProcessor(
         if (sessions.Length > 0)
         {
             logger.LogInformation(
-                "FileStorage commit recovery pass examined {ExaminedCount} intents; completed {CompletedCount}; deferred {DeferredCount}.",
+                "FileStorage 提交恢复本轮检查了 {ExaminedCount} 个意图；完成 {CompletedCount} 个；延后 {DeferredCount} 个。",
                 sessions.Length,
                 completed,
                 sessions.Length - completed);
@@ -92,7 +92,7 @@ public sealed class UploadCommitRecoveryHostedService(
             {
                 logger.LogError(
                     exception,
-                    "FileStorage commit recovery pass failed before it could report a bounded result.");
+                    "FileStorage 提交恢复本轮在报告有界结果前失败。");
             }
         }
     }

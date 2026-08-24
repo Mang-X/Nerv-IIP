@@ -74,7 +74,7 @@ public sealed class FileStorageTusProviderTests
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
         Assert.Null(result.Value);
-        Assert.Equal("Final storage commit is not available yet; retry this upload completion later.", result.Error?.Message);
+        Assert.Equal("最终存储提交暂不可用，请稍后重试完成上传。", result.Error?.Message);
     }
 
     [Fact]
@@ -640,7 +640,7 @@ public sealed class FileStorageTusProviderTests
                     null,
                     StatusCodes.Status400BadRequest,
                     "final-size-mismatch",
-                    "Verified storage size does not match the upload session.");
+                    "已验证的存储大小与上传会话不匹配。");
             }
 
             var checksum = await store.ComputeSha256HexAsync(intent.UploadSessionId, cancellationToken);

@@ -80,7 +80,7 @@ public sealed class UploadSessionRecord
     {
         if (!string.Equals(State, UploadSessionState.Open, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Only an open upload session can begin committing.");
+            throw new InvalidOperationException("只有 open 状态的上传会话才能开始提交。");
         }
 
         State = UploadSessionState.Committing;
@@ -94,7 +94,7 @@ public sealed class UploadSessionRecord
     {
         if (!string.Equals(State, UploadSessionState.Committing, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Storage work requires a committing upload session.");
+            throw new InvalidOperationException("执行存储操作要求上传会话处于 committing 状态。");
         }
 
         StorageActionStartedAtUtc ??= startedAtUtc;
@@ -122,7 +122,7 @@ public sealed class UploadSessionRecord
     {
         if (!string.Equals(State, UploadSessionState.Committing, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Only a committing upload session can be safely reopened.");
+            throw new InvalidOperationException("只有 committing 状态的上传会话才能安全重新打开。");
         }
 
         State = UploadSessionState.Open;

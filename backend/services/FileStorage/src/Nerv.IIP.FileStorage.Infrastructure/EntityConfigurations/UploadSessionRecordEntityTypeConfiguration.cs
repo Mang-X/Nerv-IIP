@@ -94,42 +94,42 @@ public sealed class UploadSessionRecordEntityTypeConfiguration : IEntityTypeConf
             .HasColumnName("state")
             .IsRequired()
             .HasMaxLength(32)
-            .HasComment("Durable upload lifecycle state: open, committing, or completed.");
+            .HasComment("持久上传生命周期状态：open、committing 或 completed。");
         builder.Property(x => x.CommitId)
             .HasColumnName("commit_id")
             .HasMaxLength(64)
-            .HasComment("Immutable unique ownership identifier created by the first committed Tx1.");
+            .HasComment("首次持久提交 Tx1 时创建的不可变唯一所有权标识。");
         builder.Property(x => x.CommitChecksum)
             .HasColumnName("commit_checksum")
             .HasMaxLength(71)
-            .HasComment("Immutable expected canonical SHA-256 evidence, or null when final storage must calculate it.");
+            .HasComment("不可变的预期规范 SHA-256 证据；最终存储需要自行计算时为空。");
         builder.Property(x => x.CommittingAtUtc)
             .HasColumnName("committing_at_utc")
-            .HasComment("UTC timestamp when Tx1 durably changed the session to committing.");
+            .HasComment("Tx1 将上传会话持久转换为 committing 状态时的 UTC 时间戳。");
         builder.Property(x => x.StorageActionStartedAtUtc)
             .HasColumnName("storage_action_started_at_utc")
-            .HasComment("UTC durable marker written before any storage action that may establish final bytes.");
+            .HasComment("任何可能建立最终字节的存储操作开始前写入的 UTC 持久标记。");
         builder.Property(x => x.RecoveryAttemptCount)
             .HasColumnName("recovery_attempt_count")
-            .HasComment("Number of failed storage recovery attempts for this immutable commit intent.");
+            .HasComment("此不可变提交意图的存储恢复失败次数。");
         builder.Property(x => x.NextRecoveryAtUtc)
             .HasColumnName("next_recovery_at_utc")
-            .HasComment("UTC timestamp before which the recovery worker must not retry this commit intent.");
+            .HasComment("恢复工作进程不得在此 UTC 时间戳之前重试此提交意图。");
         builder.Property(x => x.LastRecoveryErrorCode)
             .HasColumnName("last_recovery_error_code")
             .HasMaxLength(64)
-            .HasComment("Stable non-sensitive diagnostic code from the latest recovery attempt.");
+            .HasComment("最近一次恢复尝试产生的稳定非敏感诊断码。");
         builder.Property(x => x.ConcurrencyVersion)
             .HasColumnName("concurrency_version")
             .IsConcurrencyToken()
-            .HasComment("Application-managed optimistic concurrency version for upload state transitions.");
+            .HasComment("应用程序管理的上传状态转换乐观并发版本。");
         builder.Property(x => x.ExecutionOwnerId)
             .HasColumnName("execution_owner_id")
             .HasMaxLength(64)
-            .HasComment("Short-lived durable owner allowed to execute storage I/O for the commit intent.");
+            .HasComment("获准为提交意图执行存储 I/O 的短期持久所有者。");
         builder.Property(x => x.ExecutionLeaseUntilUtc)
             .HasColumnName("execution_lease_until_utc")
-            .HasComment("UTC expiry of the current storage execution claim.");
+            .HasComment("当前存储执行租约的 UTC 到期时间。");
         builder.Property(x => x.CompletedAtUtc)
             .HasColumnName("completed_at_utc")
             .HasComment("UTC timestamp when the upload session was completed.");
