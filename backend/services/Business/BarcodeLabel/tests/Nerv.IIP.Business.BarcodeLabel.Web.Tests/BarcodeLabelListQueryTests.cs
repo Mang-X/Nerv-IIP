@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
@@ -14,6 +15,43 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed class BarcodeLabelListQueryTests
 {
+    [Fact]
+    public async Task Print_batch_queries_expose_whole_batch_status_and_latest_transport_facts_as_separate_semantics()
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
+        var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
+        var batch = LabelPrintBatch.Create(
+            "org-001", "env-dev", rule, template.Id, LabelPrintBatchTestData.Snapshot(),
+            "work-order", "WO-001", "batch-latest-transport", "{}", 1);
+        batch.RecordSentToPrinter("printer-dispatch", "job-dispatch");
+        batch.RecordReprintFailed("printer-reprint", "重打连接前失败。");
+        dbContext.AddRange(rule, template, batch);
+        await dbContext.SaveChangesAsync();
+
+        var summary = (await new ListLabelPrintBatchesQueryHandler(dbContext).Handle(
+            new ListLabelPrintBatchesQuery("org-001", "env-dev", null, null, null),
+            CancellationToken.None)).Items.Single();
+        var detail = await new GetLabelPrintBatchQueryHandler(dbContext).Handle(
+            new GetLabelPrintBatchQuery(batch.Id),
+            CancellationToken.None);
+
+        Assert.Equal("sent-to-printer", summary.Status);
+        Assert.Equal("printer-reprint", summary.LatestTransportPrinterId);
+        Assert.Null(summary.LatestTransportPrintJobId);
+        Assert.Equal("重打连接前失败。", summary.LatestTransportFailureReason);
+        Assert.Equal("sent-to-printer", detail.Status);
+        Assert.Equal("printer-reprint", detail.LatestTransportPrinterId);
+        Assert.Null(detail.LatestTransportPrintJobId);
+        Assert.Equal("重打连接前失败。", detail.LatestTransportFailureReason);
+
+        var json = JsonSerializer.Serialize(summary);
+        Assert.Contains("\"printerId\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"printJobId\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"failureReason\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("latestTransport", json, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task List_queries_apply_filters_skip_take_and_return_total()
     {

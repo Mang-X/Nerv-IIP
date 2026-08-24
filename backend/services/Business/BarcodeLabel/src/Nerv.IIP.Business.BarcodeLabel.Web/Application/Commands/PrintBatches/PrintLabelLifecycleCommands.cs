@@ -79,9 +79,9 @@ public sealed class DispatchLabelPrintBatchCommandHandler(
         {
             batch.EnsureCanBeDispatched();
         }
-        catch (InvalidOperationException exception)
+        catch (LabelPrintLifecycleRejectedException exception)
         {
-            if (batch.Status == "delivery-unknown")
+            if (exception.Reason == LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeDispatched)
             {
                 throw new KnownException("交付结果未知，禁止再次下发打印批次。", exception);
             }
@@ -113,41 +113,39 @@ public sealed class ReprintLabelCommandHandler(
             request.EnvironmentId,
             request.PrintBatchId,
             cancellationToken);
-        var selected = batch.Items
-            .OrderBy(item => item.SequenceNo)
-            .Select((item, index) => new { Item = item, Index = index })
-            .SingleOrDefault(item => item.Item.SequenceNo == request.SequenceNo)
-            ?? throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。");
         try
         {
             batch.EnsureItemCanBeReprinted(request.SequenceNo);
         }
-        catch (InvalidOperationException exception)
+        catch (LabelPrintLifecycleRejectedException exception)
         {
-            if (batch.Status == "delivery-unknown")
+            switch (exception.Reason)
             {
-                throw new KnownException("交付结果未知，禁止再次传输标签。", exception);
+                case LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted:
+                    throw new KnownException("交付结果未知，禁止再次传输标签。", exception);
+                case LabelPrintLifecycleRejectionReason.PrintItemNotFound:
+                    throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。", exception);
+                case LabelPrintLifecycleRejectionReason.PrintItemVoided:
+                    throw new KnownException("已作废标签不允许再次传输。", exception);
+                case LabelPrintLifecycleRejectionReason.PrintItemConsumed:
+                    throw new KnownException("已消费标签不允许再次传输。", exception);
+                default:
+                    throw new KnownException("当前打印批次状态不允许单项再次传输。", exception);
             }
-
-            if (selected.Item.Status == "voided")
-            {
-                throw new KnownException("已作废标签不允许再次传输。", exception);
-            }
-
-            if (selected.Item.Status == "consumed")
-            {
-                throw new KnownException("已消费标签不允许再次传输。", exception);
-            }
-
-            throw new KnownException("当前打印批次状态不允许单项再次传输。", exception);
         }
+        var selectedIndex = batch.Items
+            .OrderBy(item => item.SequenceNo)
+            .Select((item, index) => new { Item = item, Index = index })
+            .Single(item => item.Item.SequenceNo == request.SequenceNo)
+            .Index;
         var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(
             dbContext,
             templateAssetPort,
             batch,
             cancellationToken);
 
-        var result = await printer.PrintAsync(request.PrinterId, [documents[selected.Index]], cancellationToken);
+        var result = await printer.PrintAsync(request.PrinterId, [documents[selectedIndex]], cancellationToken);
+        result = LabelPrintLifecycle.AddReprintOperatorGuidance(result);
         LabelPrintLifecycle.ApplyReprintResult(batch, request.PrinterId, result);
         return result;
     }
@@ -164,7 +162,22 @@ public sealed class VoidLabelCommandHandler(ApplicationDbContext dbContext)
             request.EnvironmentId,
             request.PrintBatchId,
             cancellationToken);
-        batch.VoidItem(request.SequenceNo, request.Reason);
+        try
+        {
+            batch.VoidItem(request.SequenceNo, request.Reason);
+        }
+        catch (LabelPrintLifecycleRejectedException exception)
+        {
+            switch (exception.Reason)
+            {
+                case LabelPrintLifecycleRejectionReason.PrintItemNotFound:
+                    throw new KnownException($"未找到打印项，序号 = {request.SequenceNo}。", exception);
+                case LabelPrintLifecycleRejectionReason.ConsumedPrintItemCannotBeVoided:
+                    throw new KnownException("已消费标签不允许作废。", exception);
+                default:
+                    throw new KnownException("当前标签状态不允许作废。", exception);
+            }
+        }
         return batch.Id;
     }
 }
@@ -302,12 +315,28 @@ internal static class LabelPrintLifecycle
                     result.FailureReason ?? "打印传输结果未知，禁止自动重试。");
                 break;
             case "failed":
-                batch.RecordReprintFailed(result.FailureReason ?? "打印机适配器报告失败，但未提供原因。");
+                batch.RecordReprintFailed(printerId, result.FailureReason ?? "打印机适配器报告失败，但未提供原因。");
                 break;
             default:
-                batch.RecordReprintFailed($"打印机适配器返回了不支持的状态：{result.Status}。");
+                batch.RecordReprintFailed(printerId, $"打印机适配器返回了不支持的状态：{result.Status}。");
                 break;
         }
+    }
+
+    public static LabelPrinterDispatchResult AddReprintOperatorGuidance(LabelPrinterDispatchResult result)
+    {
+        if (result.Status != "delivery-unknown")
+        {
+            return result;
+        }
+
+        const string guidance = "请先现场确认上一张标签是否已出纸，再决定是否重新重打。";
+        var reason = result.FailureReason!.Trim();
+        return LabelPrinterDispatchResult.DeliveryUnknown(
+            result.PrintJobId!,
+            reason.Contains(guidance, StringComparison.Ordinal)
+                ? reason
+                : $"{reason} {guidance}");
     }
 
 }

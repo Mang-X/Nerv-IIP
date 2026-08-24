@@ -24,10 +24,10 @@ public sealed class LabelPrintBatchEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Client supplied idempotency key for print batch creation.");
         builder.Property(x => x.LabelValuesJson).HasColumnName("label_values_json").IsRequired().HasColumnType("text").HasComment("Label variable values JSON captured for repeatable printing.");
         builder.Property(x => x.RequestedQuantity).HasColumnName("requested_quantity").IsRequired().HasComment("Requested number of labels generated for the batch.");
-        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Truthful print batch lifecycle status: pending, sent-to-printer, delivery-unknown, printed or failed.");
-        builder.Property(x => x.PrinterId).HasColumnName("printer_id").HasMaxLength(100).HasComment("Configured printer identity selected for the transport attempt.");
-        builder.Property(x => x.PrintJobId).HasColumnName("print_job_id").HasMaxLength(150).HasComment("Printer or transport job identifier for the latest attempt.");
-        builder.Property(x => x.FailureReason).HasColumnName("failure_reason").HasMaxLength(500).HasComment("Latest printer transport or device failure reason.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Whole-batch dispatch lifecycle status: pending, sent-to-printer, delivery-unknown, printed or failed; single-item reprint does not change it.");
+        builder.Property(x => x.PrinterId).HasColumnName("printer_id").HasMaxLength(100).HasComment("Configured printer identity for the latest dispatch or reprint transport attempt.");
+        builder.Property(x => x.PrintJobId).HasColumnName("print_job_id").HasMaxLength(150).HasComment("Job identifier for the latest dispatch or reprint transport attempt; it may replace the original whole-batch job.");
+        builder.Property(x => x.FailureReason).HasColumnName("failure_reason").HasMaxLength(500).HasComment("Failure reason for the latest dispatch or reprint transport attempt; it is not by itself the whole-batch lifecycle conclusion.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the print batch was created.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when the print batch finished generation.");
         builder.HasMany(x => x.Items)

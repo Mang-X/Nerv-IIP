@@ -156,7 +156,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("failure_reason")
-                        .HasComment("Latest printer transport or device failure reason.");
+                        .HasComment("Failure reason for the latest dispatch or reprint transport attempt; it is not by itself the whole-batch lifecycle conclusion.");
 
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
@@ -187,13 +187,13 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("print_job_id")
-                        .HasComment("Printer or transport job identifier for the latest attempt.");
+                        .HasComment("Job identifier for the latest dispatch or reprint transport attempt; it may replace the original whole-batch job.");
 
                     b.Property<string>("PrinterId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("printer_id")
-                        .HasComment("Configured printer identity selected for the transport attempt.");
+                        .HasComment("Configured printer identity for the latest dispatch or reprint transport attempt.");
 
                     b.Property<string>("RendererContractVersion")
                         .HasMaxLength(30)
@@ -225,7 +225,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
-                        .HasComment("Truthful print batch lifecycle status: pending, sent-to-printer, delivery-unknown, printed or failed.");
+                        .HasComment("Whole-batch dispatch lifecycle status: pending, sent-to-printer, delivery-unknown, printed or failed; single-item reprint does not change it.");
 
                     b.Property<string>("TemplateAssetSha256")
                         .HasMaxLength(71)

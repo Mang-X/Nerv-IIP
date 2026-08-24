@@ -299,7 +299,7 @@ FileStorage 的 metadata、upload session 和 download grant 在 AppHost 中默�
 
 ADR 0023 已批准的目标是：tus 为唯一公开传输协议、服务端目标采用 `tusdotnet`、staging 与 final 分离、final 只由内部 `ObjectKey` 定位，以及 complete 对所有 storage provider 统一证明字节存在性、size、canonical SHA-256、幂等 promote 与同 key 回读复验。这些是目标约束，不是当前实现。当前默认上传仍为 `server-proxy` placeholder，且没有对应字节 PUT endpoint；字节链路只在显式配置 `FileStorage:UploadProvider=tus` 时走自研部分 tus `HEAD`/`PATCH`。`CreateUploadSessionResponse` 仍暴露 `UploadMode` 与 `Provider` 两个独立 string 字段，当前实现恰好返回同值；字节仍由 `uploadSessionId` 派生的 `SHA256(uploadSessionId).bin` 就地承载，complete 前后位置不变；`ObjectKey` 只被生成、持久化并从 upload session 复制到 `StoredFile`，不参与实际读、写、下载或删除；complete 的实际大小与可选 checksum 校验只在 provider 等于 `tus` 的分支执行，其他 provider 可跳过字节证明。staging 到 final 的幂等 promote、final 回读复验、可恢复的持久 `committing` 提交意图与 canonical checksum 持久化均尚未实现。因此不能据当前 `ObjectKey` 的字面格式推导 Local 路径安全已就绪、provider 适配已完成或迁移只需切换配置。
 
-## 标签模板冻结、`zpl-v1` 与诚实打印生命周期（#2066）
+## 标签模板冻结、`zpl-v1` 与诚实打印生命周期
 
 BarcodeLabel 新建打印批次会从同一 organization/environment 的 active `LabelTemplate` 与 active
 `BarcodeRule` 冻结五项重放事实：`TemplateFileIdSnapshot`、`TemplateAssetSha256`、
@@ -319,17 +319,29 @@ SHA-256 全部失败关闭；download grant 只接受以单个 `/` 开头的相�
 Code 128、GS1-128、QR、Data Matrix 或 GS1 Data Matrix 的 ZPL；任一 item、变量、布局、版本或
 GS1/FNC1 输入非法时整批在 transport 零调用前失败。Code 128 / GS1-128 条码数据拒绝 ZPL `>` 控制引导符，
 GS1 Data Matrix 在 `^FH` 上下文把业务数据中的 `_` 编码为 `_5F`，只保留 renderer 自己生成的 `_1` FNC1。
+GS1 CSET 82 合法 `>` 当前仍被 Code 128 数据上下文硬拒；以 ZPL 上下文编码替代硬拒且保持历史 renderer
+兼容的工作由 [#2149](https://github.com/Mang-X/Nerv-IIP/issues/2149) 承接。
 `label.epcUri` 从打印项已持久化的冻结字段绑定，不从缺少 company-prefix-length 的 AI 字符串反解猜测。
-生命周期命令按 organization/environment 加载批次；
-TCP 首字节写入前失败记为 `failed`，写入任意字节后发生超时、断连或取消记为
-`delivery-unknown` 且禁止自动重试，全部字节写入并正常关闭发送方向只记为
-`sent-to-printer`。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，dispatch/reprint
-也不把 item 改为 `printed` / `reprinted`。本层的 reprint 是对单个冻结文档再次执行 transport，
-不是物理打印确认：批次处于 `sent-to-printer`、明确首字节前失败的 `failed`，或兼容既有数据的
-`printed` 时可发起；`pending` 尚未完成首次整批下发，`delivery-unknown` 则因可能已经出纸而禁止再次传输。
-重打会先拒绝 `voided` / `consumed` item，再把新的 `sent-to-printer` / `delivery-unknown` / `failed`
-传输结果写回批次，因此可以在完整发送或明确首字节前失败后再次重打；批次 transport 状态与 item 的物理状态保持分离。
-#2066 不提供生产 `printed` / `reprinted` 写入来源，现有 `RecordPrinted` 仅服务于既有聚合能力与世界观 seed。
+生命周期命令按 organization/environment 加载批次。整批 dispatch 的 TCP 首字节写入前失败记为
+`failed`，写入任意字节后发生超时、断连或取消记为 `delivery-unknown` 并封死整批再次下发，
+全部字节写入并正常关闭发送方向只记为 `sent-to-printer`；`printed` 批次同样禁止整批再次下发，
+避免已经发布的完成事实被降级。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，
+dispatch/reprint 也不把 item 改为 `printed` / `reprinted`。
+
+本层的 reprint 是对单个冻结文档再次执行 transport，不是物理打印确认：批次处于
+`sent-to-printer`、明确首字节前失败的 `failed`，或兼容既有数据的 `printed` 时可发起；`pending`
+尚未完成首次整批下发，整批 `delivery-unknown` 则因可能已经出纸而拒绝 reprint。单项 reprint 的
+`sent-to-printer` / `failed` / `delivery-unknown` 结果只更新批次行上的最近一次 transport
+`printer_id` / `print_job_id` / `failure_reason`，不改变整批 `status` 或 `completed_at_utc`；这些最近尝试
+字段可能覆盖原始 dispatch job，查询和控制台不得仅凭 `failure_reason` 把整批解释为失败。单项
+`delivery-unknown` 不自动重试，但也没有独立 attempt 状态用于系统级封死；响应会要求操作员先现场确认
+上一张标签是否已出纸，再由新的显式人工意图决定是否重打。整批 unknown 的系统级封死与单项 unknown
+的人工确认是刻意保留的不对称，不能互相套用。独立的单项 transport 审计模型由
+[#2148](https://github.com/Mang-X/Nerv-IIP/issues/2148) 调查。
+
+当前实现不提供生产 `printed` / `reprinted` 写入来源；`RecordPrinted` 仅服务于既有聚合能力与世界观
+seed，因此 `LabelPrintBatchCompletedDomainEvent` 也没有生产触发源。依赖该事件的下游不得把 seed 证据
+误认为当前生产链路会发布完成事件。
 
 当前自动化证据边界为 pure compiler/领域测试、EF Core InMemory 应用编排、受控 HTTP handler 与
 loopback TCP 字节传输，以及 EF migration/model pending gate。它不证明真实 PostgreSQL 批次持久化、

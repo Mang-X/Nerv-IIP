@@ -9,6 +9,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     [
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/BarcodeRules/CreateOrUpdateBarcodeRuleCommand.cs",
+        $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs",
@@ -19,9 +20,11 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     [
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs"), "ApplicationDbContext", "TryMapUniqueConflict", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/BarcodeRules/CreateOrUpdateBarcodeRuleCommand.cs"), "CreateOrUpdateBarcodeRuleCommandHandler", "Handle", 4),
+        Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs"), "CreateOrUpdateLabelTemplateCommandHandler", "Handle", 0, "仅编排模板创建或更新，输入由 validator 与领域值对象校验"),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs"), "CreateLabelPrintBatchCommandHandler", "Handle", 4),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "DispatchLabelPrintBatchCommandHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "ReprintLabelCommandHandler", "Handle", 5),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "VoidLabelCommandHandler", "Handle", 3),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "LoadBatchAsync", 1, "PrintLabel lifecycle helper is internal/no-facade"),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "CompileFrozenBatchAsync", 1, "PrintLabel lifecycle helper is internal/no-facade"),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs"), "RecordScanCommandHandler", "Handle", 6),
@@ -48,7 +51,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(24, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
+        Assert.Equal(27, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(2, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
@@ -128,6 +131,26 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             [new BarcodeLabelExcludedSite("Internal.cs", "Probe", "Handle", "internal/no-facade")]);
 
         Assert.Empty(excluded);
+    }
+
+    [Fact]
+    public void Discovery_includes_command_handlers_that_have_no_known_exception_site()
+    {
+        const string source = """
+            interface ICommandHandler<TCommand, TResult> { }
+            sealed class ProbeHandler : ICommandHandler<int, string>
+            {
+                public string Handle(int command) => command.ToString();
+            }
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [new BarcodeLabelSourceDocument("Probe.cs", source)]);
+
+        var handler = Assert.Single(discovered);
+        Assert.Equal("ProbeHandler", handler.TypeName);
+        Assert.Equal("Handle", handler.MethodName);
+        Assert.Equal(0, handler.DirectKnownExceptionCount);
     }
 
     private static string SourcePath(string relativePath) => $"{BarcodeLabelSourceRoot}/{relativePath}";

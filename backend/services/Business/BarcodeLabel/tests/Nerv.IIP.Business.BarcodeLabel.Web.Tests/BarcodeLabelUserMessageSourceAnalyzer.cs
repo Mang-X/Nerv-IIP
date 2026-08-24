@@ -49,21 +49,26 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
             foreach (var method in syntaxTree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
-                var typeName = method.Ancestors()
-                    .OfType<TypeDeclarationSyntax>()
-                    .Select(type => type.Identifier.ValueText)
-                    .FirstOrDefault();
-                if (typeName is null)
+                var containingType = method.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
+                if (containingType is null)
                 {
                     continue;
                 }
+
+                var typeName = containingType.Identifier.ValueText;
 
                 var directKnownExceptionCount = method.DescendantNodes()
                     .OfType<BaseObjectCreationExpressionSyntax>()
                     .Count(creation =>
                         creation.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() == method
                         && IsKnownException(semanticModel, creation));
-                if (directKnownExceptionCount == 0)
+                var typeSymbol = semanticModel.GetDeclaredSymbol(containingType) as INamedTypeSymbol;
+                var isCommandHandlerHandle = method.Identifier.ValueText == "Handle"
+                    && typeSymbol is not null
+                    && typeSymbol.AllInterfaces.Any(@interface =>
+                        @interface.Name == "ICommandHandler"
+                        && @interface.Arity is 1 or 2);
+                if (directKnownExceptionCount == 0 && !isCommandHandlerHandle)
                 {
                     continue;
                 }

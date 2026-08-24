@@ -14,6 +14,12 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
 {
     private const int MaximumAssetBytes = HttpFileStorageLabelTemplateAssetAdapter.MaximumAssetBytes;
 
+    [Fact]
+    public void Maximum_asset_size_matches_the_approved_sixty_four_kibibyte_contract()
+    {
+        Assert.Equal(65536, HttpFileStorageLabelTemplateAssetAdapter.MaximumAssetBytes);
+    }
+
     private const string TemplateJson = """
         {"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}
         """;

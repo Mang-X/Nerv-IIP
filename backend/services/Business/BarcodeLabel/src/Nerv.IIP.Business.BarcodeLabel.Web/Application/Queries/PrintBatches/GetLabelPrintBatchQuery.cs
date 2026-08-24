@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 
@@ -14,9 +15,9 @@ public sealed record LabelPrintBatchDetail(
     string IdempotencyKey,
     int RequestedQuantity,
     string Status,
-    string? PrinterId,
-    string? PrintJobId,
-    string? FailureReason,
+    [property: JsonPropertyName("printerId")] string? LatestTransportPrinterId,
+    [property: JsonPropertyName("printJobId")] string? LatestTransportPrintJobId,
+    [property: JsonPropertyName("failureReason")] string? LatestTransportFailureReason,
     IReadOnlyCollection<LabelPrintItemDetail> Items);
 
 public sealed record LabelPrintItemDetail(int SequenceNo, string LabelValue, string? FileId, string Status, string? VoidReason);
