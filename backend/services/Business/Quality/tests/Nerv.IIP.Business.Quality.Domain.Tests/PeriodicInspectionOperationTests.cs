@@ -51,6 +51,18 @@ public sealed class PeriodicInspectionOperationTests
     }
 
     [Fact]
+    public void Later_arriving_report_with_later_business_time_does_not_replace_first_activity()
+    {
+        var operation = ReleasedOperation();
+
+        operation.RecordProductionReport("RPT-001", "WC-001", 10m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        operation.RecordProductionReport("RPT-002", "WC-001", 20m, "EA", ReleasedAtUtc.AddMinutes(40), false, null);
+
+        var context = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(ReleasedAtUtc.AddMinutes(10), context.FirstActivityAtUtc);
+    }
+
+    [Fact]
     public void Completion_before_release_closes_the_context_after_release_arrives()
     {
         var operation = PeriodicInspectionOperation.CreatePending("org-001", "env-dev", "WO-001", "OP-001");
@@ -79,6 +91,74 @@ public sealed class PeriodicInspectionOperationTests
         Assert.False(operation.RecordProductionReport("RPT-001", "WC-001", 25m, "EA", reportedAtUtc, false, null));
         Assert.Throws<InvalidOperationException>(() =>
             operation.RecordProductionReport("RPT-001", "WC-001", 30m, "EA", reportedAtUtc, false, null));
+    }
+
+    [Fact]
+    public void Identical_release_replay_does_not_match_plans_that_appeared_after_the_original_release()
+    {
+        var operation = ReleasedOperation();
+
+        operation.ApplyRelease(
+            "SKU-FG-1000",
+            operationSequence: 10,
+            "WC-001",
+            ReleasedAtUtc,
+            [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]);
+
+        Assert.Single(operation.RuntimeContexts);
+    }
+
+    [Fact]
+    public void Conflicting_release_replay_is_rejected()
+    {
+        var operation = ReleasedOperation();
+
+        Assert.Throws<InvalidOperationException>(() => operation.ApplyRelease(
+            "SKU-FG-OTHER",
+            operationSequence: 10,
+            "WC-001",
+            ReleasedAtUtc,
+            [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]));
+    }
+
+    [Fact]
+    public void Identical_completion_replay_is_a_noop_but_conflicting_completion_is_rejected()
+    {
+        var operation = ReleasedOperation();
+        var completedAtUtc = ReleasedAtUtc.AddHours(3);
+
+        Assert.True(operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", completedAtUtc));
+        Assert.False(operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", completedAtUtc));
+        Assert.Throws<InvalidOperationException>(() =>
+            operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", completedAtUtc.AddMinutes(1)));
+    }
+
+    [Theory]
+    [InlineData(false, -1, null)]
+    [InlineData(true, 1, "RPT-ORIGINAL")]
+    public void Production_report_quantity_sign_must_match_reversal_semantics(
+        bool isReversal,
+        decimal goodQuantity,
+        string? reversedReportNo)
+    {
+        var operation = ReleasedOperation();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => operation.RecordProductionReport(
+            "RPT-INVALID", "WC-001", goodQuantity, "EA", ReleasedAtUtc.AddMinutes(10), isReversal, reversedReportNo));
+    }
+
+    [Theory]
+    [InlineData(true, -1, null)]
+    [InlineData(false, 1, "RPT-ORIGINAL")]
+    public void Reversal_lineage_must_be_present_only_for_reversal_reports(
+        bool isReversal,
+        decimal goodQuantity,
+        string? reversedReportNo)
+    {
+        var operation = ReleasedOperation();
+
+        Assert.Throws<ArgumentException>(() => operation.RecordProductionReport(
+            "RPT-INVALID", "WC-001", goodQuantity, "EA", ReleasedAtUtc.AddMinutes(10), isReversal, reversedReportNo));
     }
 
     [Fact]

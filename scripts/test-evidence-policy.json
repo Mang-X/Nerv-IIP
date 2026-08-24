@@ -935,6 +935,7 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_migration_enforces_all_periodic_inspection_unique_and_check_constraints",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_operation_scope_lock_serializes_concurrent_duplicate_source_creation",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_out_of_order_reversal_duplicate_close_and_restart_converge_without_tasks",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres",
@@ -947,7 +948,7 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
         "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
       ],
-      "expectedRuntimeTestCount": 11
+      "expectedRuntimeTestCount": 12
     },
     {
       "id": "masterdata-postgres",
