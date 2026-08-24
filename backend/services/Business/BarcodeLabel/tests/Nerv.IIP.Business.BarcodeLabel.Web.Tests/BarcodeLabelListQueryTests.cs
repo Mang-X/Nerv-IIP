@@ -50,6 +50,12 @@ public sealed class BarcodeLabelListQueryTests
         Assert.Contains("\"printJobId\"", json, StringComparison.Ordinal);
         Assert.Contains("\"failureReason\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("latestTransport", json, StringComparison.OrdinalIgnoreCase);
+
+        var detailJson = JsonSerializer.Serialize(detail);
+        Assert.Contains("\"printerId\"", detailJson, StringComparison.Ordinal);
+        Assert.Contains("\"printJobId\"", detailJson, StringComparison.Ordinal);
+        Assert.Contains("\"failureReason\"", detailJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("latestTransport", detailJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

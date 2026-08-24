@@ -20,7 +20,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     [
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs"), "ApplicationDbContext", "TryMapUniqueConflict", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/BarcodeRules/CreateOrUpdateBarcodeRuleCommand.cs"), "CreateOrUpdateBarcodeRuleCommandHandler", "Handle", 4),
-        Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs"), "CreateOrUpdateLabelTemplateCommandHandler", "Handle", 0, "仅编排模板创建或更新，输入由 validator 与领域值对象校验"),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs"), "CreateOrUpdateLabelTemplateCommandHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs"), "CreateLabelPrintBatchCommandHandler", "Handle", 4),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "DispatchLabelPrintBatchCommandHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "ReprintLabelCommandHandler", "Handle", 5),
@@ -51,7 +51,12 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(27, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
+        Assert.Equal(2, ExpectedSites.Count(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded));
+        Assert.DoesNotContain(
+            ExpectedSites,
+            site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded
+                && site.TypeName.EndsWith("Handler", StringComparison.Ordinal));
+        Assert.Equal(29, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(2, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
@@ -64,17 +69,15 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             .ToArray();
         Assert.Empty(duplicateDiscoveredKeys);
 
-        var expectedKeySet = expectedKeys.ToHashSet(StringComparer.Ordinal);
-        var unclassified = discovered
-            .Where(site => !expectedKeySet.Contains(site.Key))
-            .Select(site => site.Key)
-            .ToArray();
+        var ledgerViolations = BarcodeLabelUserMessageSourceAnalyzer.ValidateLedger(
+            discovered,
+            ExpectedSites,
+            expectedExclusionCount: 2);
         Assert.True(
-            unclassified.Length == 0,
-            "BarcodeLabel KnownException 位点未被 target/exclusion ledger 分类："
+            ledgerViolations.Count == 0,
+            "BarcodeLabel KnownException 位点台账未闭合："
             + Environment.NewLine
-            + string.Join(Environment.NewLine, unclassified));
-        Assert.Equal(expectedKeySet.Count, discovered.Count);
+            + string.Join(Environment.NewLine, ledgerViolations));
 
         foreach (var expected in ExpectedSites)
         {
@@ -83,12 +86,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             Assert.Equal(expected.DirectKnownExceptionCount, matches[0].DirectKnownExceptionCount);
         }
 
-        var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(
-            documents,
-            ExpectedSites
-                .Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
-                .Select(site => new BarcodeLabelExcludedSite(site.Path, site.TypeName, site.MethodName, site.Reason))
-                .ToArray());
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(documents);
 
         Assert.True(
             violations.Count == 0,
@@ -98,39 +96,35 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
-    public void Analyzer_reports_dynamic_messages_unsafe_messages_and_honors_exclusion()
+    public void Analyzer_reports_dynamic_unsafe_and_excluded_site_messages()
     {
         const string englishSource =
             "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"Barcode failed.\"); } }";
         Assert.Equal(
             ["Probe.cs:1: 用户消息必须包含中文。"],
             BarcodeLabelUserMessageSourceAnalyzer.Analyze(
-                [new BarcodeLabelSourceDocument("Probe.cs", englishSource)],
-                []));
+                [new BarcodeLabelSourceDocument("Probe.cs", englishSource)]));
 
         const string dynamicSource =
             "using NetCorePal.Extensions.Primitives; class Probe { void Handle(string message) { throw new KnownException(message); } }";
         Assert.Equal(
             ["Probe.cs:1: 用户消息必须是可静态分析的字符串字面量或插值字符串。"],
             BarcodeLabelUserMessageSourceAnalyzer.Analyze(
-                [new BarcodeLabelSourceDocument("Probe.cs", dynamicSource)],
-                []));
+                [new BarcodeLabelSourceDocument("Probe.cs", dynamicSource)]));
 
         const string unsafeSource =
             "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"无法保存 <内容>。\"); } }";
         Assert.Equal(
             ["Probe.cs:1: 用户消息不能包含不安全字符。"],
             BarcodeLabelUserMessageSourceAnalyzer.Analyze(
-                [new BarcodeLabelSourceDocument("Probe.cs", unsafeSource)],
-                []));
+                [new BarcodeLabelSourceDocument("Probe.cs", unsafeSource)]));
 
         var excluded = BarcodeLabelUserMessageSourceAnalyzer.Analyze(
             [new BarcodeLabelSourceDocument(
                 "Internal.cs",
-                "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"internal-code\"); } }")],
-            [new BarcodeLabelExcludedSite("Internal.cs", "Probe", "Handle", "internal/no-facade")]);
+                "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"internal-code\"); } }")]);
 
-        Assert.Empty(excluded);
+        Assert.Equal(["Internal.cs:1: 用户消息必须包含中文。"], excluded);
     }
 
     [Fact]
@@ -151,6 +145,111 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Assert.Equal("ProbeHandler", handler.TypeName);
         Assert.Equal("Handle", handler.MethodName);
         Assert.Equal(0, handler.DirectKnownExceptionCount);
+    }
+
+    [Fact]
+    public void Discovery_recognizes_difficult_command_handler_shapes()
+    {
+        const string source = """
+            interface ICommandHandler<TCommand, TResult> { }
+            partial class Outer
+            {
+                public partial class NestedHandler<TCommand>(int seed)
+                    : ICommandHandler<TCommand, string>
+                {
+                    public string Handle(TCommand command) => $"{seed}:{command}";
+                }
+            }
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [new BarcodeLabelSourceDocument("Probe.cs", source)]);
+
+        var handler = Assert.Single(discovered);
+        Assert.Equal("NestedHandler", handler.TypeName);
+        Assert.Equal("Handle", handler.MethodName);
+        Assert.Equal(0, handler.DirectKnownExceptionCount);
+    }
+
+    [Fact]
+    public void Ledger_rejects_command_handler_exclusion_for_a_difficult_handler_shape()
+    {
+        const string source = """
+            interface ICommandHandler<TCommand, TResult> { }
+            partial class Outer
+            {
+                public partial class NestedHandler<TCommand>(int seed)
+                    : ICommandHandler<TCommand, string>
+                {
+                    public string Handle(TCommand command) => $"{seed}:{command}";
+                }
+            }
+            """;
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [new BarcodeLabelSourceDocument("Probe.cs", source)]);
+        var handler = Assert.Single(discovered);
+        var expected = new BarcodeLabelKnownExceptionSite(
+            handler.Path,
+            handler.TypeName,
+            handler.MethodName,
+            0,
+            BarcodeLabelKnownExceptionSiteKind.Excluded,
+            "探针豁免");
+
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.ValidateLedger(
+            discovered,
+            [expected],
+            expectedExclusionCount: 1);
+
+        Assert.Contains(violations, violation => violation.Contains("ICommandHandler 不得豁免", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Discovery_owns_known_exception_creations_by_their_member_declaration()
+    {
+        const string source = """
+            using NetCorePal.Extensions.Primitives;
+            class Probe(string value = "default")
+            {
+                private readonly Exception field = new KnownException("字段失败。");
+                public Probe() : this("value") { throw new KnownException("构造失败。"); }
+                public string Property => throw new KnownException("属性失败。");
+                public string this[int index] => throw new KnownException("索引失败。");
+                public static Probe operator +(Probe left, Probe right) =>
+                    throw new KnownException("运算失败。");
+                public event Action Changed
+                {
+                    add => throw new KnownException("订阅失败。");
+                    remove => throw new KnownException("退订失败。");
+                }
+                public void Method()
+                {
+                    Func<string> nested = () => throw new KnownException("局部失败。");
+                    _ = nested();
+                }
+            }
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [new BarcodeLabelSourceDocument("Members.cs", source)]);
+
+        Assert.Equal(7, discovered.Count);
+        Assert.Equal(8, discovered.Sum(site => site.DirectKnownExceptionCount));
+    }
+
+    [Fact]
+    public void Discovery_fails_closed_when_a_known_exception_has_no_member_owner()
+    {
+        const string source = """
+            using NetCorePal.Extensions.Primitives;
+            throw new KnownException("顶层失败。");
+            """;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            BarcodeLabelUserMessageSourceAnalyzer.Discover(
+                [new BarcodeLabelSourceDocument("Global.cs", source)]));
+
+        Assert.Contains("无法归属到成员", exception.Message, StringComparison.Ordinal);
     }
 
     private static string SourcePath(string relativePath) => $"{BarcodeLabelSourceRoot}/{relativePath}";

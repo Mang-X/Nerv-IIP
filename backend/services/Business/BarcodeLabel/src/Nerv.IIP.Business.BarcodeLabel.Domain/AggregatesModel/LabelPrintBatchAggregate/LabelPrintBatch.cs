@@ -282,7 +282,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void EnsureItemCanBeReprinted(int sequenceNo)
     {
-        if (Status is not (SentToPrinter or Failed or Printed))
+        if (Status is not (SentToPrinter or Printed))
         {
             throw Reject(
                 Status == DeliveryUnknown
@@ -320,7 +320,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     private void EnsureCanRecordReprintResult()
     {
-        if (Status is not (SentToPrinter or Failed or Printed))
+        if (Status is not (SentToPrinter or Printed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot record a reprint result.");
         }

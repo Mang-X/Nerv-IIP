@@ -335,8 +335,10 @@ GS1 CSET 82 合法 `>` 当前仍被 Code 128 数据上下文硬拒；以 ZPL 上
 dispatch/reprint 也不把 item 改为 `printed` / `reprinted`。
 
 本层的 reprint 是对单个冻结文档再次执行 transport，不是物理打印确认：批次处于
-`sent-to-printer`、明确首字节前失败的 `failed`，或兼容既有数据的 `printed` 时可发起；`pending`
-尚未完成首次整批下发，整批 `delivery-unknown` 则因可能已经出纸而拒绝 reprint。单项 reprint 的
+`sent-to-printer` 或兼容既有数据的 `printed` 时可发起；`pending` 尚未完成首次整批下发，`failed`
+表示整批首字节前失败且只允许通过整批 dispatch 恢复，不能用单项 reprint 打开一条随后仍可整批下发的
+重复出纸路径。整批 `delivery-unknown` 因可能已经出纸而同时拒绝 dispatch 与 reprint；当前唯一出路是
+创建新批次。单项 reprint 的
 `sent-to-printer` / `failed` / `delivery-unknown` 结果只更新批次行上的最近一次 transport
 `printer_id` / `print_job_id` / `failure_reason`，不改变整批 `status` 或 `completed_at_utc`；这些最近尝试
 字段可能覆盖原始 dispatch job，查询和控制台不得仅凭 `failure_reason` 把整批解释为失败。单项

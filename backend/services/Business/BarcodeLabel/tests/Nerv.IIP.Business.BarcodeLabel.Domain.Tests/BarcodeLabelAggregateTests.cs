@@ -283,6 +283,17 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
+    public void Created_item_cannot_be_marked_reprinted()
+    {
+        var batch = NewPrintBatch(ActiveRule(), "idem-created-reprint", "ASN-001", 1);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => batch.ReprintItem(1));
+
+        Assert.Equal("Label in status 'created' cannot be reprinted.", exception.Message);
+        Assert.Equal("created", batch.Items.Single().Status);
+    }
+
+    [Fact]
     public void Initial_delivery_unknown_is_allowed_only_from_pending_or_failed()
     {
         var pending = NewPrintBatch(ActiveRule(), "idem-unknown-pending", "ASN-001", 1);
@@ -338,6 +349,8 @@ public sealed class BarcodeLabelAggregateTests
     public void Reprint_result_methods_reject_pending_and_delivery_unknown_batches()
     {
         var pending = NewPrintBatch(ActiveRule(), "idem-reprint-result-pending", "ASN-001", 1);
+        var failed = NewPrintBatch(ActiveRule(), "idem-reprint-result-failed", "ASN-001", 1);
+        failed.RecordPrintFailed("pre-write failure");
         var unknown = NewPrintBatch(ActiveRule(), "idem-reprint-result-unknown", "ASN-001", 1);
         unknown.RecordDeliveryUnknown("printer-initial", "job-unknown", "partial write");
 
@@ -347,6 +360,12 @@ public sealed class BarcodeLabelAggregateTests
             pending.RecordReprintDeliveryUnknown("printer-reprint", "job-reprint", "partial write"));
         Assert.Throws<InvalidOperationException>(() =>
             pending.RecordReprintFailed("printer-reprint", "pre-write failure"));
+        Assert.Throws<InvalidOperationException>(() =>
+            failed.RecordReprintSentToPrinter("printer-reprint", "job-reprint"));
+        Assert.Throws<InvalidOperationException>(() =>
+            failed.RecordReprintDeliveryUnknown("printer-reprint", "job-reprint", "partial write"));
+        Assert.Throws<InvalidOperationException>(() =>
+            failed.RecordReprintFailed("printer-reprint", "pre-write failure"));
         Assert.Throws<InvalidOperationException>(() =>
             unknown.RecordReprintSentToPrinter("printer-reprint", "job-reprint"));
         Assert.Throws<InvalidOperationException>(() =>

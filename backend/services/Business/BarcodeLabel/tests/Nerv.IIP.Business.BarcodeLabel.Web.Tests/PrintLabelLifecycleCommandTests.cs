@@ -95,6 +95,34 @@ public sealed class PrintLabelLifecycleCommandTests
     }
 
     [Fact]
+    public async Task Failed_batch_rejects_single_item_reprint_before_asset_or_transport_and_recovers_by_batch_dispatch()
+    {
+        await using var dbContext = CreateDbContext();
+        var (batch, _) = AddReplayableBatch(dbContext, 1);
+        batch.RecordPrintFailed("整批连接前失败。");
+        await dbContext.SaveChangesAsync();
+        var reprintAssetPort = ValidAssetPort();
+        var reprintPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReprintLabelCommandHandler(dbContext, reprintAssetPort, reprintPrinter).Handle(
+                new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
+                CancellationToken.None));
+
+        Assert.Equal("当前打印批次状态不允许单项再次传输。", exception.Message);
+        Assert.Empty(reprintAssetPort.Requests);
+        Assert.Empty(reprintPrinter.Calls);
+
+        var dispatchPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("dispatch-retry-job"));
+        await new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), dispatchPrinter).Handle(
+            new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
+            CancellationToken.None);
+
+        Assert.Equal("sent-to-printer", batch.Status);
+        Assert.Single(dispatchPrinter.Calls);
+    }
+
+    [Fact]
     public async Task Reprint_can_retry_a_known_pre_write_failure()
     {
         await using var dbContext = CreateDbContext();

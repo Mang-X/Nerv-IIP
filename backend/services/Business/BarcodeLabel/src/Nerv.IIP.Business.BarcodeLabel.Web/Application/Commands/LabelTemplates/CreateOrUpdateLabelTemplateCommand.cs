@@ -41,18 +41,35 @@ public sealed class CreateOrUpdateLabelTemplateCommandHandler(ApplicationDbConte
             cancellationToken);
         if (existing is not null)
         {
-            existing.Update(request.TemplateName, request.TemplateFileId, request.VariableSchemaJson, request.Status);
+            try
+            {
+                existing.Update(request.TemplateName, request.TemplateFileId, request.VariableSchemaJson, request.Status);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new KnownException("标签模板参数无效，请检查后重试。", ex);
+            }
+
             return existing.Id;
         }
 
-        var template = LabelTemplate.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.TemplateCode,
-            request.TemplateName,
-            request.TemplateFileId,
-            request.VariableSchemaJson,
-            request.Status);
+        LabelTemplate template;
+        try
+        {
+            template = LabelTemplate.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.TemplateCode,
+                request.TemplateName,
+                request.TemplateFileId,
+                request.VariableSchemaJson,
+                request.Status);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new KnownException("标签模板参数无效，请检查后重试。", ex);
+        }
+
         dbContext.LabelTemplates.Add(template);
         return template.Id;
     }
