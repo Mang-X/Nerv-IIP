@@ -43,6 +43,12 @@ public sealed class MesRoutingSnapshotTests
                 "org-001", "env-dev", "WO-2095", "OP-010", 10, "WC-MIX", [], releasedAtUtc,
                 TimeSpan.FromMinutes(45)),
             OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-015-B", 15, "WC-TIE-B", [], releasedAtUtc,
+                TimeSpan.FromMinutes(20)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-015-A", 15, "WC-TIE-A", [], releasedAtUtc,
+                TimeSpan.FromMinutes(20)),
+            OperationTask.Queue(
                 "org-other", "env-dev", "WO-2095", "OP-OTHER-ORG", 5, "WC-OTHER", [], releasedAtUtc,
                 TimeSpan.FromMinutes(10)),
             OperationTask.Queue(
@@ -68,6 +74,18 @@ public sealed class MesRoutingSnapshotTests
             },
             operation =>
             {
+                Assert.Equal("OP-015-A", operation.OperationTaskId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-A", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-B", operation.OperationTaskId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-B", operation.WorkCenterId);
+            },
+            operation =>
+            {
                 Assert.Equal("OP-020", operation.OperationTaskId);
                 Assert.Equal(20, operation.OperationSequence);
                 Assert.Equal("WC-PACK", operation.WorkCenterId);
@@ -81,6 +99,18 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal("OP-010", operation.OperationId);
                 Assert.Equal(10, operation.OperationSequence);
                 Assert.Equal("WC-MIX", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-A", operation.OperationId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-A", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-B", operation.OperationId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-B", operation.WorkCenterId);
             },
             operation =>
             {
