@@ -20,7 +20,7 @@ jobs:
   # “保护证据”仅适用于有证据可保护的地方：
   #
   #   A) 带 `if: always()` 证据 step 的 job——四个 backend 分片，以及
-  #      erp-sales-order-demand-acceptance、connector-host-tests 和
+  #      connector-host-tests 和
   #      frontend-unit-test-shards：
   #          sum(step timeout-minutes) < job timeout-minutes.
   #      job 级超时会取消*整个* job，包括 `if: always()` step，并会
@@ -104,9 +104,9 @@ jobs:
   #     就比任何单个分片自身的 restore+build 成本更高，因此将它置于 critical path
   #     即使尚未在 job 间传输数 GB 输出，也得不偿失。把一个分片拆分为
   #     restore / build --no-restore / test 也更慢。
-  #   * 对三个专业 job（erp-sales-order-demand-acceptance、connector-host-tests、
-  #     openapi-client-drift）也按相同的重复问题做了清点，其 build
-  #     命令均未改变：没有一个会 build 整个 solution，且三者都远低于 critical
+  #   * 对两个专业 job（connector-host-tests、openapi-client-drift）也按相同的
+  #     重复问题做了清点，其 build 命令均未改变：两者都不会 build 整个 solution，
+  #     且都远低于 critical
   #     path，因此即使将它们的 build 时间降为零，也不会缩短 CI wall clock。
   #
   # 仅在该文档列出的可执行条件出现时重新开启任一决定（最慢
@@ -120,7 +120,7 @@ jobs:
   # run 的 wall clock。
   impact-plan:
     name: CI Impact Plan
-    # NERV-668 拆解③让 Backend Tests、Script Governance、OpenAPI Drift、Connector Host Tests 与 ERP acceptance 消费这些 outputs；
+    # NERV-668 拆解③让 Backend Tests、Script Governance、OpenAPI Drift 与 Connector Host Tests 消费这些 outputs；
     # NERV-688 的 PostgreSQL Provider Tests 消费 postgresql，NERV-685 PR②让 frontend jobs 消费 workspace 选择。
     # 计划失败时受管条件 job 保守运行，frontend 聚合则失败关闭。
     # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
@@ -148,7 +148,6 @@ jobs:
       postgresql: ${{ steps.plan.outputs.postgresql }}
       redis_cap: ${{ steps.plan.outputs.redis_cap }}
       full_chain: ${{ steps.plan.outputs.full_chain }}
-      erp_sales_order_demand: ${{ steps.plan.outputs.erp_sales_order_demand }}
       business_services: ${{ steps.plan.outputs.business_services }}
       plan_path: ${{ steps.plan.outputs.plan_path }}
       frontend_selected: ${{ steps.frontend-plan.outputs.frontend_selected }}
@@ -1560,7 +1559,6 @@ jobs:
       - acceptance-scenario-matrix-planning
       - business-full-chain-acceptance-v1
       - acceptance-scenario-matrix-runtime
-      - erp-sales-order-demand-acceptance
       - acceptance-scenario-matrix-equivalence
     if: ${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
     steps:
@@ -1572,7 +1570,6 @@ jobs:
           v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
           sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
           shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
-          legacy_erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
           equivalence_result="${{ needs.acceptance-scenario-matrix-equivalence.result }}"
 
           test "$planning_result" = "success"
@@ -1580,7 +1577,6 @@ jobs:
           case "$sales_order_demand_selected" in
             true)
               test "$shadow_result" = "success"
-              test "$legacy_erp_result" = "success"
               test "$equivalence_result" = "success"
               ;;
             false)
@@ -1593,113 +1589,6 @@ jobs:
               ;;
           esac
 
-  erp-sales-order-demand-acceptance:
-    name: ERP Sales Order Demand Acceptance
-    # 层级 A（证据 step）。观测最大值为 4.2m / 平均值为 3.9m；为 Docker image
-    # 拉取预留额外余量。step 预算合计为 47m，为隐式 setup/post step 留下 8m 余量。
-    timeout-minutes: 55
-    runs-on: ubuntu-latest
-    needs: impact-plan
-    outputs:
-      artifact-name: ${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}
-      producer-run-attempt: ${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}
-    if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}
-    env:
-      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
-      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
-    steps:
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        timeout-minutes: 8
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Prepare PostgreSQL and Redis images
-        timeout-minutes: 10
-        run: |
-          # NERV-1701：docker pull 既没有单次尝试超时也没有重试，registry 侧限流或连接挂死都会
-          # 卡满 step 预算，因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
-          # 与 apt 的失败语义有两点差异，实现上据此调整：
-          # 1) 常见成因是 registry 限流（HTTP 429）而不是纯粹挂死，退避需要更长，故重试间隔取
-          #    15s（apt 那处是 5s）。
-          # 2) 先用 docker image inspect 探测本地是否已有该镜像，已有则跳过拉取；这样上一次尝试
-          #    里已经拉成功的镜像不会在重试时被重复拉，重试代价只落在真正失败的那一个上。
-          # 两条 pull 属于同一逻辑单元，放在同一次尝试内（任一条失败即整体重试），避免每次尝试的
-          # 最坏耗时翻倍。
-          # 预算算术：单次尝试 = 2 × 75s（各自外加最多 10s 的 SIGKILL 兜底）= 170s；×最多 3 次
-          # + 2 次重试间隔 15s = 最坏 540s，严格小于本 step 既有的 timeout-minutes 预算 10 分钟
-          # （600s），因此本次不改动任何超时预算。
-          docker_attempt=1
-          while true; do
-            if { docker image inspect postgres:18 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:18; } \
-              && { docker image inspect redis:8 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull redis:8; }; then
-              echo "依赖镜像准备成功（第 ${docker_attempt} 次尝试）。"
-              break
-            fi
-            if [ "${docker_attempt}" -ge 3 ]; then
-              echo "依赖镜像拉取失败：已连续尝试 3 次仍未成功（多为 registry 限流或网络挂死），失败退出。" >&2
-              exit 1
-            fi
-            echo "依赖镜像拉取第 ${docker_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
-            docker_attempt=$((docker_attempt + 1))
-            sleep 15
-          done
-
-      - name: Verify ERP sales-order demand bridge
-        timeout-minutes: 15
-        shell: pwsh
-        run: |
-          $testedSha = (git rev-parse HEAD).Trim()
-          $manifestBytes = [IO.File]::ReadAllBytes('scripts/acceptance-scenario-matrix.json')
-          $sha256 = [Security.Cryptography.SHA256]::Create()
-          try { $manifestDigest = ([Convert]::ToHexString($sha256.ComputeHash($manifestBytes))).ToLowerInvariant() }
-          finally { $sha256.Dispose() }
-          $legacyErpCanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance/man517/legacy-erp-canonical-result.json')
-          ./scripts/verify-erp-sales-order-demand-planning.ps1 `
-            -CanonicalResultPath $legacyErpCanonicalResultPath `
-            -TrackIdentifier 'legacy-erp' `
-            -Repository '${{ github.repository }}' `
-            -RunId '${{ github.run_id }}' `
-            -RunAttempt '${{ github.run_attempt }}' `
-            -TestedSha $testedSha `
-            -ManifestDigest $manifestDigest `
-            -ScenarioId 'sales-order-demand'
-
-      - name: Resolve legacy ERP artifact identity
-        timeout-minutes: 1
-        id: legacy-erp-artifact-identity
-        if: always()
-        shell: pwsh
-        run: |
-          "artifact-name=erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-          "producer-run-attempt=${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-
-      - name: Upload ERP sales-order demand diagnostics
-        timeout-minutes: 5
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}
-          path: |
-            artifacts/acceptance/man517
-            artifacts/script-logs/man517-*
-          if-no-files-found: error
-          retention-days: 14
-
   acceptance-scenario-matrix-equivalence:
     name: Business FullChain Acceptance / sales-order-demand equivalence (internal)
     timeout-minutes: 35
@@ -1708,10 +1597,9 @@ jobs:
       - acceptance-scenario-matrix-planning
       - business-full-chain-acceptance-v1
       - acceptance-scenario-matrix-runtime
-      - erp-sales-order-demand-acceptance
     if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
     steps:
-      - name: Require successful three-track prerequisites
+      - name: Require successful two-track prerequisites
         timeout-minutes: 3
         shell: bash --noprofile --norc -euo pipefail {0}
         env:
@@ -1721,12 +1609,9 @@ jobs:
           V1_ATTEMPT: ${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}
           SHADOW_ARTIFACT_NAME: ${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}
           SHADOW_ATTEMPT: ${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}
-          LEGACY_ERP_ARTIFACT_NAME: ${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}
-          LEGACY_ERP_ATTEMPT: ${{ needs.erp-sales-order-demand-acceptance.outputs.producer-run-attempt }}
         run: |
           test "${{ needs.business-full-chain-acceptance-v1.result }}" = "success"
           test "${{ needs.acceptance-scenario-matrix-runtime.result }}" = "success"
-          test "${{ needs.erp-sales-order-demand-acceptance.result }}" = "success"
           validate_artifact_identity() {
             artifact_name="$1"
             producer_attempt="$2"
@@ -1739,7 +1624,6 @@ jobs:
           validate_artifact_identity "$PLANNING_ARTIFACT_NAME" "$PLANNING_ATTEMPT" "acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PLANNING_ATTEMPT}"
           validate_artifact_identity "$V1_ARTIFACT_NAME" "$V1_ATTEMPT" "acceptance-scenario-matrix-result-v1-${GITHUB_RUN_ID}-${V1_ATTEMPT}"
           validate_artifact_identity "$SHADOW_ARTIFACT_NAME" "$SHADOW_ATTEMPT" "acceptance-scenario-matrix-result-shadow-${GITHUB_RUN_ID}-${SHADOW_ATTEMPT}"
-          validate_artifact_identity "$LEGACY_ERP_ARTIFACT_NAME" "$LEGACY_ERP_ATTEMPT" "erp-sales-order-demand-${GITHUB_RUN_ID}-${LEGACY_ERP_ATTEMPT}"
 
       - name: Checkout
         timeout-minutes: 3
@@ -1765,13 +1649,6 @@ jobs:
         with:
           name: ${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}
           path: artifacts/equivalence/shadow
-
-      - name: Download legacy ERP canonical result
-        timeout-minutes: 3
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}
-          path: artifacts/equivalence/legacy
 
       - name: Compare sales-order-demand tracks
         timeout-minutes: 5
@@ -1799,8 +1676,6 @@ jobs:
             -V1RunAttempt '${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}' `
             -ShadowResultPath artifacts/equivalence/shadow/sales-order-demand-result.json `
             -ShadowRunAttempt '${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}' `
-            -LegacyErpResultPath artifacts/equivalence/legacy/acceptance/man517/legacy-erp-canonical-result.json `
-            -LegacyErpRunAttempt '${{ needs.erp-sales-order-demand-acceptance.outputs.producer-run-attempt }}' `
             -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json
 
       - name: Upload sales-order-demand equivalence report
@@ -2422,7 +2297,6 @@ jobs:
       - postgres-provider-tests
       - redis-cap-transport-tests
       - business-full-chain-acceptance
-      - erp-sales-order-demand-acceptance
       - connector-host-tests
       - frontend-unit-tests
       - frontend
@@ -2435,7 +2309,6 @@ jobs:
         run: |
           impact_result="${{ needs.impact-plan.result }}"
           backend_result="${{ needs.backend-tests.result }}"
-          erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
           connector_result="${{ needs.connector-host-tests.result }}"
           script_governance_result="${{ needs.script-governance.result }}"
           openapi_result="${{ needs.openapi-client-drift.result }}"
@@ -2443,7 +2316,6 @@ jobs:
           redis_cap_result="${{ needs.redis-cap-transport-tests.result }}"
           full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
           backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
-          erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
           script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
@@ -2455,11 +2327,6 @@ jobs:
             backend_policy="selected"
           else
             backend_policy="skipped by design"
-          fi
-          if [[ "$erp_selected" = "true" ]]; then
-            erp_policy="selected"
-          else
-            erp_policy="skipped by design"
           fi
           if [[ "$connector_selected" = "true" ]]; then
             connector_policy="selected"
@@ -2498,7 +2365,6 @@ jobs:
             echo "| Lane | Policy | Result |"
             echo "| --- | --- | --- |"
             echo "| Backend Tests | $backend_policy | $backend_result |"
-            echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
             echo "| Connector Host Tests | $connector_policy | $connector_result |"
             echo "| Script Governance | $script_governance_policy | $script_governance_result |"
             echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
@@ -2511,11 +2377,6 @@ jobs:
           test "$backend_result" = "success"
           test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
-          if [[ "$erp_selected" = "true" ]]; then
-            test "$erp_result" = "success"
-          else
-            test "$erp_result" = "skipped"
-          fi
           if [[ "$connector_selected" = "true" ]]; then
             test "$connector_result" = "success"
           else

@@ -16,7 +16,11 @@ public sealed record InspectionPlanResponse(
     string? DocumentType,
     int Version,
     string Status,
-    IReadOnlyCollection<InspectionPlanCharacteristicResponse> Characteristics);
+    IReadOnlyCollection<InspectionPlanCharacteristicResponse> Characteristics,
+    decimal? TimeIntervalHours = null,
+    decimal? QuantityInterval = null,
+    string? AssignedInspectorUserId = null,
+    string? AssignedTeamId = null);
 
 public sealed record InspectionPlanCharacteristicResponse(
     string CharacteristicCode,
@@ -147,7 +151,11 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
                             c.SamplingPlan.Aql,
                             c.SamplingPlan.SampleSize,
                             c.SamplingPlan.AcceptanceNumber,
-                            c.SamplingPlan.RejectionNumber))).ToArray()))
+                            c.SamplingPlan.RejectionNumber))).ToArray(),
+                x.TimeIntervalHours,
+                x.QuantityInterval,
+                x.AssignedInspectorUserId,
+                x.AssignedTeamId))
             .ToListAsync(cancellationToken);
 
         return new ListInspectionPlansResponse(items, total);

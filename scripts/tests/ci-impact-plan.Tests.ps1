@@ -74,7 +74,6 @@ function Assert-ConditionalRoutingWorkflow {
         'backend-tests-platform' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
         'backend-tests-business-core-a' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
         'backend-tests-business-core-b' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
-        'erp-sales-order-demand-acceptance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
         'connector-host-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
@@ -83,12 +82,14 @@ function Assert-ConditionalRoutingWorkflow {
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'erp_sales_order_demand')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
         Assert-Contract ([string]::Equals([string]$outputProperty.Value, $expectedOutput, [StringComparison]::Ordinal)) "Impact plan output '$outputName' must map directly to the plan step."
     }
+    Assert-Contract ($null -eq $impactPlan.outputs.PSObject.Properties['erp_sales_order_demand']) 'Impact plan must not expose the retired erp_sales_order_demand output.'
+    Assert-Contract ($null -eq $parsedWorkflow.jobs.PSObject.Properties['erp-sales-order-demand-acceptance']) 'CI must not define the retired ERP Sales Order Demand Acceptance job.'
 
     foreach ($jobName in $routingPolicies.Keys) {
         $jobProperty = $parsedWorkflow.jobs.PSObject.Properties[$jobName]
@@ -108,7 +109,7 @@ function Assert-ConditionalRoutingWorkflow {
         [string[]]@(
             'backend-test-shard-governance', 'backend-tests-business-gateway', 'backend-tests-platform',
             'backend-tests-business-core-a', 'backend-tests-business-core-b', 'backend-tests',
-            'erp-sales-order-demand-acceptance', 'connector-host-tests', 'openapi-client-drift',
+            'connector-host-tests', 'openapi-client-drift',
             'postgres-provider-tests', 'redis-cap-transport-tests', 'acceptance-scenario-matrix-planning',
             'business-full-chain-acceptance', 'script-governance', 'ci-summary'
         ),
@@ -373,11 +374,11 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ($shadowCanonicalUploads.Count -eq 1 -and [string]::Equals([string]$shadowCanonicalUploads[0].with.name, '${{ steps.shadow-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and $null -eq $shadowCanonicalUploads[0].with.PSObject.Properties['overwrite']) 'Shadow canonical upload must use immutable per-producer identity.'
 
     $equivalenceJobProperty = $parsedWorkflow.jobs.PSObject.Properties['acceptance-scenario-matrix-equivalence']
-    Assert-Contract ($null -ne $equivalenceJobProperty) 'CI must define the internal three-track equivalence job.'
+    Assert-Contract ($null -ne $equivalenceJobProperty) 'CI must define the internal two-track equivalence job.'
     $equivalenceJob = $equivalenceJobProperty.Value
     $equivalenceNeeds = @($equivalenceJob.needs | ForEach-Object { [string]$_ })
-    Assert-Contract ([string]::Equals(($equivalenceNeeds -join '|'), 'acceptance-scenario-matrix-planning|business-full-chain-acceptance-v1|acceptance-scenario-matrix-runtime|erp-sales-order-demand-acceptance', [StringComparison]::Ordinal)) 'Three-track equivalence must inspect planning, v1, shadow, and legacy ERP prerequisites.'
-    Assert-Contract ([string]::Equals([string]$equivalenceJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'Three-track equivalence must still run to inspect prerequisite failures without treating them as green.'
+    Assert-Contract ([string]::Equals(($equivalenceNeeds -join '|'), 'acceptance-scenario-matrix-planning|business-full-chain-acceptance-v1|acceptance-scenario-matrix-runtime', [StringComparison]::Ordinal)) 'Two-track equivalence must inspect planning, v1, and shadow prerequisites.'
+    Assert-Contract ([string]::Equals([string]$equivalenceJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'Two-track equivalence must still run to inspect prerequisite failures without treating them as green.'
     $equivalenceSurface = (@($equivalenceJob.steps | ForEach-Object {
                 foreach ($propertyName in @('run', 'with')) {
                     $property = $_.PSObject.Properties[$propertyName]
@@ -387,24 +388,22 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
                     }
                 }
             }) -join "`n")
-    foreach ($requiredEquivalenceFragment in @('verify-acceptance-scenario-matrix-equivalence.ps1', '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', '${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}', '${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}', '${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}', "-PlanningRunAttempt '`${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}'", "-V1RunAttempt '`${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}'", "-ShadowRunAttempt '`${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}'", "-LegacyErpRunAttempt '`${{ needs.erp-sales-order-demand-acceptance.outputs.producer-run-attempt }}'")) {
-        Assert-Contract ($equivalenceSurface.Contains($requiredEquivalenceFragment, [StringComparison]::Ordinal)) "Three-track equivalence workflow is missing '$requiredEquivalenceFragment'."
+    foreach ($requiredEquivalenceFragment in @('verify-acceptance-scenario-matrix-equivalence.ps1', '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', '${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}', '${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}', "-PlanningRunAttempt '`${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}'", "-V1RunAttempt '`${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}'", "-ShadowRunAttempt '`${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}'")) {
+        Assert-Contract ($equivalenceSurface.Contains($requiredEquivalenceFragment, [StringComparison]::Ordinal)) "Two-track equivalence workflow is missing '$requiredEquivalenceFragment'."
     }
-    $equivalencePrerequisite = @($equivalenceJob.steps | Where-Object { [string]::Equals([string]$_.name, 'Require successful three-track prerequisites', [StringComparison]::Ordinal) })
+    Assert-Contract (-not $equivalenceSurface.Contains('erp-sales-order-demand-acceptance', [StringComparison]::Ordinal) -and -not $equivalenceSurface.Contains('LegacyErp', [StringComparison]::Ordinal)) 'Two-track equivalence must not consume legacy ERP artifacts or parameters.'
+    $equivalencePrerequisite = @($equivalenceJob.steps | Where-Object { [string]::Equals([string]$_.name, 'Require successful two-track prerequisites', [StringComparison]::Ordinal) })
     Assert-Contract ($equivalencePrerequisite.Count -eq 1 -and
         ([string]$equivalencePrerequisite[0].run).Contains('*[!0-9]*|0|0*', [StringComparison]::Ordinal) -and
         ([string]$equivalencePrerequisite[0].run).Contains('acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PLANNING_ATTEMPT}', [StringComparison]::Ordinal) -and
         ([string]$equivalencePrerequisite[0].run).Contains('acceptance-scenario-matrix-result-v1-${GITHUB_RUN_ID}-${V1_ATTEMPT}', [StringComparison]::Ordinal) -and
         ([string]$equivalencePrerequisite[0].run).Contains('acceptance-scenario-matrix-result-shadow-${GITHUB_RUN_ID}-${SHADOW_ATTEMPT}', [StringComparison]::Ordinal) -and
-        ([string]$equivalencePrerequisite[0].run).Contains('erp-sales-order-demand-${GITHUB_RUN_ID}-${LEGACY_ERP_ATTEMPT}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$equivalencePrerequisite[0].env.PLANNING_ARTIFACT_NAME, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$equivalencePrerequisite[0].env.PLANNING_ATTEMPT, '${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$equivalencePrerequisite[0].env.V1_ARTIFACT_NAME, '${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$equivalencePrerequisite[0].env.V1_ATTEMPT, '${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$equivalencePrerequisite[0].env.SHADOW_ARTIFACT_NAME, '${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$equivalencePrerequisite[0].env.SHADOW_ATTEMPT, '${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$equivalencePrerequisite[0].env.LEGACY_ERP_ARTIFACT_NAME, '${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$equivalencePrerequisite[0].env.LEGACY_ERP_ATTEMPT, '${{ needs.erp-sales-order-demand-acceptance.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Equivalence must fail closed on every reused producer artifact identity before downloads.'
+        [string]::Equals([string]$equivalencePrerequisite[0].env.SHADOW_ATTEMPT, '${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Equivalence must fail closed on every reused producer artifact identity before downloads.'
 
     $plannerInvocations = @(
         foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
@@ -539,7 +538,7 @@ function Assert-AcceptanceScenarioMatrixOwningPathsRoute {
 
 function Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute {
     $expectedSelectedFlags = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@('scripts', 'backend', 'full_chain', 'erp_sales_order_demand'),
+        [string[]]@('scripts', 'backend', 'full_chain'),
         [StringComparer]::Ordinal)
 
     foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
@@ -575,7 +574,7 @@ Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI imp
 . $libraryPath
 
 Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/context-map.md') -Flags @{
-    docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false; erp_sales_order_demand = $false
+    docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 
 Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture/script-automation-governance.md') -Flags @{
@@ -583,7 +582,7 @@ Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture
 }
 
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
-    docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false; erp_sales_order_demand = $false
+    docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 
 Assert-ImpactCase -Name 'frontend-package-markdown' -Paths @('frontend/packages/scheduling/README.md') -Flags @{
@@ -595,21 +594,21 @@ Assert-ImpactCase -Name 'frontend-guidance-markdown' -Paths @('frontend/AGENTS.m
 }
 
 Assert-ImpactCase -Name 'single-business-service' -Paths @('backend/services/Business/Erp/src/Orders.cs') -Flags @{
-    backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; connector_hosts = $false; postgresql = $true; redis_cap = $false; full_chain = $false; erp_sales_order_demand = $true
+    backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; connector_hosts = $false; postgresql = $true; redis_cap = $false; full_chain = $true
 } -Services @('erp')
 
 Assert-ImpactCase -Name 'product-engineering-service-name' -Paths @('backend/services/Business/ProductEngineering/src/Release.cs') -Flags @{
-    backend = $true; business_gateway = $true; erp_sales_order_demand = $false
+    backend = $true; business_gateway = $true; full_chain = $false
 } -Services @('product-engineering')
 
 foreach ($erpService in @('Erp', 'DemandPlanning', 'MasterData')) {
-    Assert-ImpactCase -Name "erp-acceptance-service-$erpService" -Paths @("backend/services/Business/$erpService/src/ObservedChange.cs") -Flags @{
-        backend = $true; erp_sales_order_demand = $true
+    Assert-ImpactCase -Name "sales-order-demand-full-chain-service-$erpService" -Paths @("backend/services/Business/$erpService/src/ObservedChange.cs") -Flags @{
+        backend = $true; full_chain = $true
     }
 }
 
 Assert-ImpactCase -Name 'common-contract-expansion' -Paths @('backend/common/Contracts/IntegrationEvents.cs') -Flags @{
-    backend = $true; backend_contracts = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true; erp_sales_order_demand = $true
+    backend = $true; backend_contracts = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 }
 
 foreach ($sharedCase in @(
@@ -630,7 +629,6 @@ foreach ($commonDirectory in $backendCommonDirectories) {
     Assert-ImpactFlag -Plan $plan -Name 'business_gateway' -Expected $true
     Assert-ImpactFlag -Plan $plan -Name 'connector_hosts' -Expected $true
     Assert-ImpactFlag -Plan $plan -Name 'full_chain' -Expected $true
-    Assert-ImpactFlag -Plan $plan -Name 'erp_sales_order_demand' -Expected $true
     Assert-Contract (@($plan.business_services).Count -gt 10) "Shared backend directory '$commonDirectory' must conservatively expand to every known business service."
 }
 
@@ -640,17 +638,17 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
 
 foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
     Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
-        backend = $true; openapi_codegen = $true; connector_hosts = $true; erp_sales_order_demand = $true
+        backend = $true; openapi_codegen = $true; connector_hosts = $true; full_chain = $true
     }
 }
 
-foreach ($erpAcceptanceInput in @(
+foreach ($salesOrderDemandFullChainInput in @(
         'scripts/verify-erp-sales-order-demand-planning.ps1',
         'backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs',
         'infra/docker-compose.dev.yml'
     )) {
-    Assert-ImpactCase -Name "erp-acceptance-input-$([IO.Path]::GetFileName($erpAcceptanceInput))" -Paths @($erpAcceptanceInput) -Flags @{
-        erp_sales_order_demand = $true
+    Assert-ImpactCase -Name "sales-order-demand-full-chain-input-$([IO.Path]::GetFileName($salesOrderDemandFullChainInput))" -Paths @($salesOrderDemandFullChainInput) -Flags @{
+        full_chain = $true
     }
 }
 
@@ -679,7 +677,7 @@ Assert-ImpactCase -Name 'agent-harness-configuration' -Paths @(
     docs = $true
     backend = $false; frontend = $false; scripts = $false; workflows = $false; infra = $false
     connector_hosts = $false; business_gateway = $false; openapi_codegen = $false
-    postgresql = $false; redis_cap = $false; full_chain = $false; erp_sales_order_demand = $false
+    postgresql = $false; redis_cap = $false; full_chain = $false
 } -Services @()
 
 Assert-ImpactCase -Name 'github-issue-templates' -Paths @(
@@ -687,14 +685,14 @@ Assert-ImpactCase -Name 'github-issue-templates' -Paths @(
     '.github/ISSUE_TEMPLATE/config.yml') -Flags @{
     docs = $true
     backend = $false; frontend = $false; scripts = $false; workflows = $false
-    postgresql = $false; redis_cap = $false; full_chain = $false; erp_sales_order_demand = $false
+    postgresql = $false; redis_cap = $false; full_chain = $false
 } -Services @()
 
 # Routing an agent-tooling path must not weaken workflow routing: '.github/workflows/**'
 # still fails open even though a sibling '.github/' prefix is now classified.
 Assert-ImpactCase -Name 'workflow-still-fails-open-beside-issue-templates' -Paths @('.github/workflows/nightly.yml') -Flags @{
     docs = $true; backend = $true; frontend = $true; scripts = $true; workflows = $true
-    postgresql = $true; redis_cap = $true; full_chain = $true; erp_sales_order_demand = $true
+    postgresql = $true; redis_cap = $true; full_chain = $true
 }
 
 # Root-level runtime and build inputs must keep failing open. Anything moved out of this
@@ -774,7 +772,7 @@ Assert-ImpactCase -Name 'frontend-design-system' -Paths @('frontend/DESIGN/compo
 }
 
 Assert-ImpactCase -Name 'connector-hosts' -Paths @('connector-hosts/src/Host.cs') -Flags @{
-    connector_hosts = $true; backend = $false; frontend = $false; erp_sales_order_demand = $false
+    connector_hosts = $true; backend = $false; frontend = $false; full_chain = $false
 }
 
 Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gateway-openapi.ps1') -Flags @{
@@ -860,7 +858,7 @@ Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Busines
 } -Services @('scheduling')
 
 Assert-ImpactCase -Name 'full-chain-test' -Paths @('backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs') -Flags @{
-    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true; erp_sales_order_demand = $true
+    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 }
 
 Assert-ImpactCase -Name 'postgres-infra' -Paths @('infra/postgres/init.sql') -Flags @{
@@ -877,8 +875,7 @@ foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpa
             'backend', 'frontend', 'scripts', 'docs', 'connector_hosts', 'workflows', 'infra',
             'backend_contracts', 'backend_testing', 'backend_persistence', 'backend_messaging',
             'business_gateway', 'openapi_codegen', 'frontend_apps', 'frontend_packages',
-            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain',
-            'erp_sales_order_demand'
+            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain'
         )) {
         Assert-ImpactFlag -Plan $plan -Name $requiredFlag -Expected $true
     }
@@ -1008,14 +1005,17 @@ try {
         -StepSummaryPath $fixtureSummary | Out-Null
     $writtenPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
     Assert-ImpactFlag -Plan $writtenPlan -Name 'backend' -Expected $true
-    Assert-ImpactFlag -Plan $writtenPlan -Name 'erp_sales_order_demand' -Expected $true
+    Assert-ImpactFlag -Plan $writtenPlan -Name 'full_chain' -Expected $true
+    Assert-Contract ($null -eq $writtenPlan.PSObject.Properties['erp_sales_order_demand']) 'Serialized impact plan must omit the retired ERP acceptance signal.'
     $writtenOutputs = @(Get-Content -LiteralPath $fixtureOutputs)
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'backend=true') 'GitHub output must serialize selected booleans as lowercase true.'
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
-    Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'erp_sales_order_demand=true') 'GitHub output must serialize the selected ERP acceptance signal.'
+    Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'full_chain=true') 'GitHub output must serialize the conservatively selected FullChain signal.'
+    Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('erp_sales_order_demand=', [StringComparison]::Ordinal) }).Count -eq 0) 'GitHub output must omit the retired ERP acceptance signal.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Backend Tests, ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests and Redis/CAP Transport Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Backend Tests, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests and Redis/CAP Transport Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
+    Assert-Contract (-not $writtenSummary.Contains('erp_sales_order_demand', [StringComparison]::Ordinal) -and -not $writtenSummary.Contains('ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal)) 'Actions Summary must omit the retired ERP job and signal.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
@@ -1079,11 +1079,6 @@ try {
                 Name = 'shadow-download-uses-consumer-attempt'
                 Original = 'name: ${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}'
                 Replacement = 'name: acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}'
-            },
-            @{
-                Name = 'legacy-download-uses-consumer-attempt'
-                Original = 'name: ${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}'
-                Replacement = 'name: erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}'
             }
         )) {
         $mutatedArtifactDownloadWorkflow = $workflow.Replace([string]$artifactDownloadMutation.Original, [string]$artifactDownloadMutation.Replacement)
@@ -1224,31 +1219,6 @@ try {
                 Name = 'backend-shard-treats-missing-output-as-unselected'
                 Original = "needs.impact-plan.outputs.backend != 'false'"
                 Replacement = "needs.impact-plan.outputs.backend == 'true'"
-            },
-            @{
-                Name = 'erp-drops-impact-dependency'
-                Original = "    needs: impact-plan`n    outputs:`n      artifact-name: `${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}`n      producer-run-attempt: `${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
-                Replacement = "    outputs:`n      artifact-name: `${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}`n      producer-run-attempt: `${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
-            },
-            @{
-                Name = 'erp-drops-plan-failure-fail-open'
-                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
-                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
-            },
-            @{
-                Name = 'erp-drops-cancellation-guard'
-                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
-                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false' }}"
-            },
-            @{
-                Name = 'erp-uses-wrong-signal'
-                Original = "needs.impact-plan.outputs.erp_sales_order_demand != 'false'"
-                Replacement = "needs.impact-plan.outputs.full_chain != 'false'"
-            },
-            @{
-                Name = 'erp-treats-missing-output-as-unselected'
-                Original = "needs.impact-plan.outputs.erp_sales_order_demand != 'false'"
-                Replacement = "needs.impact-plan.outputs.erp_sales_order_demand == 'true'"
             },
             @{
                 Name = 'connector-drops-impact-dependency'

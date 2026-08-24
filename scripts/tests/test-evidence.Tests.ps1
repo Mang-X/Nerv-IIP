@@ -2772,7 +2772,8 @@ $ciViolations = Test-NervCiWorkflowBudgets -Jobs $ciJobs
 Assert-Equal 0 $ciViolations.Count "CI timeout-budget violations: $([string]::Join('; ', @($ciViolations | ForEach-Object { "$($_.code): $($_.message)" })))"
 
 $evidenceJobs = @($ciJobs | Where-Object { @($_.Steps | Where-Object { $_.AlwaysRuns }).Count -gt 0 })
-Assert-True ($evidenceJobs.Count -ge 7) "Expected at least seven evidence-publishing CI jobs; found $($evidenceJobs.Count)."
+Assert-True ($evidenceJobs.Count -ge 6) "Expected at least six evidence-publishing CI jobs; found $($evidenceJobs.Count)."
+Assert-True (@($ciJobs | Where-Object { [string]::Equals([string]$_.Name, 'erp-sales-order-demand-acceptance', [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) 'The retired ERP Sales Order Demand Acceptance job must not remain in the CI budget/evidence inventory.'
 # MAN-669 moved the backend evidence face off the single `backend-tests` job onto the four fast
 # shards; `backend-tests` is now the test-free aggregate and publishes nothing. Naming the shards
 # individually is deliberate — a count-only assertion would stay green if a shard silently stopped
@@ -2783,7 +2784,6 @@ foreach ($expectedEvidenceJob in @(
         'backend-tests-business-core-a',
         'backend-tests-business-core-b',
         'connector-host-tests',
-        'erp-sales-order-demand-acceptance',
         'frontend-unit-test-shards')) {
     Assert-True (@($evidenceJobs | Where-Object { [string]::Equals([string]$_.Name, [string]($expectedEvidenceJob), [StringComparison]::OrdinalIgnoreCase) }).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
 }

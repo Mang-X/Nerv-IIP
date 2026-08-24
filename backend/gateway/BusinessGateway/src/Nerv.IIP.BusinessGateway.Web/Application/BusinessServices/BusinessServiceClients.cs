@@ -3780,7 +3780,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             null,
             null,
-            null);
+            null,
+            TimeIntervalHours: item.TimeIntervalHours,
+            QuantityInterval: item.QuantityInterval,
+            AssignedInspectorUserId: item.AssignedInspectorUserId,
+            AssignedTeamId: item.AssignedTeamId);
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamNcrItem item) =>
         new(
@@ -4012,7 +4016,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? DocumentType,
         int Version,
         string Status,
-        IReadOnlyCollection<DownstreamInspectionPlanCharacteristic>? Characteristics);
+        IReadOnlyCollection<DownstreamInspectionPlanCharacteristic>? Characteristics,
+        decimal? TimeIntervalHours = null,
+        decimal? QuantityInterval = null,
+        string? AssignedInspectorUserId = null,
+        string? AssignedTeamId = null);
 
     private sealed record DownstreamInspectionPlanCharacteristic(
         string CharacteristicCode,
