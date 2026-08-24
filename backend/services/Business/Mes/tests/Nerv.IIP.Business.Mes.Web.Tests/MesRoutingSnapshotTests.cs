@@ -4,8 +4,11 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using NetCorePal.Extensions.Primitives;
 
@@ -13,6 +16,80 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesRoutingSnapshotTests
 {
+    [Fact]
+    public async Task Release_work_order_publishes_existing_operation_snapshots_in_public_event()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var releasedAtUtc = DateTimeOffset.Parse("2026-08-24T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            releasedAtUtc.AddDays(1),
+            "PCS");
+        workOrder.ClearDomainEvents();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-020", 20, "WC-PACK", [], releasedAtUtc,
+                TimeSpan.FromMinutes(15)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-010", 10, "WC-MIX", [], releasedAtUtc,
+                TimeSpan.FromMinutes(45)),
+            OperationTask.Queue(
+                "org-other", "env-dev", "WO-2095", "OP-OTHER-ORG", 5, "WC-OTHER", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)),
+            OperationTask.Queue(
+                "org-001", "env-other", "WO-2095", "OP-OTHER-ENV", 5, "WC-OTHER", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ReleaseWorkOrderCommandHandler(
+            dbContext,
+            NoMaterialRequirementsProvider.Instance).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-2095", releasedAtUtc),
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", response.Status);
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Collection(
+            domainEvent.OperationTasks,
+            operation =>
+            {
+                Assert.Equal("OP-010", operation.OperationTaskId);
+                Assert.Equal(10, operation.OperationSequence);
+                Assert.Equal("WC-MIX", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-020", operation.OperationTaskId);
+                Assert.Equal(20, operation.OperationSequence);
+                Assert.Equal("WC-PACK", operation.WorkCenterId);
+            });
+
+        var integrationEvent = new WorkOrderReleasedIntegrationEventConverter().Convert(domainEvent);
+        Assert.Collection(
+            integrationEvent.Payload.Operations,
+            operation =>
+            {
+                Assert.Equal("OP-010", operation.OperationId);
+                Assert.Equal(10, operation.OperationSequence);
+                Assert.Equal("WC-MIX", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-020", operation.OperationId);
+                Assert.Equal(20, operation.OperationSequence);
+                Assert.Equal("WC-PACK", operation.WorkCenterId);
+            });
+    }
+
     [Fact]
     public async Task Convert_plan_without_explicit_work_center_freezes_published_routing_and_is_releasable()
     {
