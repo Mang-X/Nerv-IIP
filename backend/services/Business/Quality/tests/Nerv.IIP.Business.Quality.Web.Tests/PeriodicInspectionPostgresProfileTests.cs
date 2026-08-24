@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
@@ -13,6 +14,7 @@ using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using Npgsql;
+using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -37,7 +39,8 @@ public sealed class PeriodicInspectionPostgresProfileTests
                 INSERT INTO quality.periodic_inspection_operations
                     (id, organization_id, environment_id, work_order_id, operation_id)
                 VALUES
-                    ('00000000-0000-0000-0000-000000000001', 'org-001', 'env-dev', 'WO-BASE', 'OP-BASE');
+                    ('00000000-0000-0000-0000-000000000001', 'org-001', 'env-dev', 'WO-BASE', 'OP-BASE'),
+                    ('00000000-0000-0000-0000-000000000002', 'org-001', 'env-dev', 'WO-CLOSED', 'OP-CLOSED');
 
                 INSERT INTO quality.periodic_inspection_runtime_contexts
                     (id, operation_context_id, organization_id, environment_id, work_order_id, operation_id,
@@ -50,7 +53,12 @@ public sealed class PeriodicInspectionPostgresProfileTests
                      '00000000-0000-0000-0000-000000000001', 'org-001', 'env-dev', 'WO-BASE', 'OP-BASE',
                      'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z',
                      '00000000-0000-0000-0000-000000000301', 1, 2.5, 100, NULL, 'team-quality-001',
-                     '2026-08-24T01:10:00Z', 'EA', 10, 10, 'active', NULL);
+                     '2026-08-24T01:10:00Z', 'EA', 10, 10, 'active', NULL),
+                    ('00000000-0000-0000-0000-000000000202',
+                     '00000000-0000-0000-0000-000000000002', 'org-001', 'env-dev', 'WO-CLOSED', 'OP-CLOSED',
+                     'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z',
+                     '00000000-0000-0000-0000-000000000302', 1, 2.5, 100, NULL, 'team-quality-001',
+                     '2026-08-24T01:10:00Z', 'EA', 10, 10, 'closed', '2026-08-24T02:00:00Z');
                 """);
         }
 
@@ -67,6 +75,10 @@ public sealed class PeriodicInspectionPostgresProfileTests
         Assert.Equal(
             DateTimeOffset.Parse("2026-08-24T03:40:00Z").UtcDateTime,
             await command.ExecuteScalarAsync());
+        await using var closedCommand = new NpgsqlCommand(
+            "SELECT next_time_window_at_utc FROM quality.periodic_inspection_runtime_contexts WHERE id = '00000000-0000-0000-0000-000000000202'",
+            assertion);
+        Assert.Equal(DBNull.Value, await closedCommand.ExecuteScalarAsync());
     }
 
     [QualityPostgresFact]
@@ -192,16 +204,24 @@ public sealed class PeriodicInspectionPostgresProfileTests
 
         await using var firstContext = CreateContext(options);
         await using var secondContext = CreateContext(options);
-        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-24T03:30:00Z"));
-        var command = new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100);
-        var first = new GeneratePeriodicInspectionTimeTasksCommandHandler(
+        var runtimeContextId = await firstContext.PeriodicInspectionRuntimeContexts
+            .AsNoTracking()
+            .Select(x => x.Id)
+            .SingleAsync();
+        var command = new GeneratePeriodicInspectionTimeTaskForContextCommand(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-001",
+            runtimeContextId,
+            DateTimeOffset.Parse("2026-08-24T03:30:00Z").UtcDateTime,
+            24);
+        var first = new GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
             firstContext,
-            new PeriodicInspectionOperationScopeCoordinator(firstContext),
-            clock).Handle(command, CancellationToken.None);
-        var second = new GeneratePeriodicInspectionTimeTasksCommandHandler(
+            new PeriodicInspectionOperationScopeCoordinator(firstContext)).Handle(command, CancellationToken.None);
+        var second = new GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
             secondContext,
-            new PeriodicInspectionOperationScopeCoordinator(secondContext),
-            clock).Handle(command, CancellationToken.None);
+            new PeriodicInspectionOperationScopeCoordinator(secondContext)).Handle(command, CancellationToken.None);
 
         await WaitForAdvisoryWaitersAsync(expected: 2, competingTasks: [first, second]);
         Assert.False(first.IsCompleted);
@@ -214,11 +234,60 @@ public sealed class PeriodicInspectionPostgresProfileTests
         await using var assertion = CreateContext(options);
         var task = await assertion.InspectionTasks.AsNoTracking().SingleAsync();
         var runtimeContext = await assertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
-        Assert.Equal("OP-001:periodic-time:1", task.SourceDocumentLineId);
-        Assert.Equal($"quality:periodic-time:{runtimeContext.Id}:1", task.TriggerIdempotencyKey);
+        Assert.Equal($"OP-001:periodic-time:{runtimeContext.Id.Id:D}:1", task.SourceDocumentLineId);
+        Assert.Equal($"quality:periodic-time:{runtimeContext.Id.Id:D}:1", task.TriggerIdempotencyKey);
         Assert.Equal(1, runtimeContext.LastGeneratedTimeWindowSequence);
         Assert.Equal(DateTimeOffset.Parse("2026-08-24T01:30:00Z").UtcDateTime, runtimeContext.TimeScheduleAnchorAtUtc);
         Assert.Equal(DateTimeOffset.Parse("2026-08-24T05:30:00Z").UtcDateTime, runtimeContext.NextTimeWindowAtUtc);
+    }
+
+    [QualityPostgresFact]
+    public async Task Production_mediator_uow_dispatches_one_context_command_and_commits_its_task()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan());
+            await setup.SaveChangesAsync();
+        }
+        await HandleReleaseAsync(options);
+        await HandleReportAsync(options, ProductionReport("RPT-UOW-001", 25m, false, null, "2026-08-24T01:30:00Z"));
+
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration =>
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
+                .AddUnitOfWorkBehaviors());
+        services.AddQualityPostgreSqlPersistence(QualityPostgresLaneDatabase.ConnectionString);
+        services.AddIntegrationEvents(typeof(Program));
+        await using var provider = services.BuildServiceProvider();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var context = await dbContext.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+            var generated = await scope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new GeneratePeriodicInspectionTimeTaskForContextCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-001",
+                    "OP-001",
+                    context.Id,
+                    DateTimeOffset.Parse("2026-08-24T03:30:00Z").UtcDateTime,
+                    24),
+                CancellationToken.None);
+            Assert.Equal(1, generated);
+        }
+
+        await using var assertion = CreateContext(options);
+        Assert.Single(await assertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+        Assert.Equal(
+            1,
+            await assertion.PeriodicInspectionRuntimeContexts.AsNoTracking()
+                .Select(x => x.LastGeneratedTimeWindowSequence)
+                .SingleAsync());
     }
 
     [QualityPostgresFact]

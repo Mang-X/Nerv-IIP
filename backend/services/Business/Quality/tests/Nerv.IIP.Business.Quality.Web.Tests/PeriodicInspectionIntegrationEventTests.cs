@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 
@@ -27,14 +28,8 @@ public sealed class PeriodicInspectionIntegrationEventTests
         await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
             dbContext, coordinator, deadLetters).HandleAsync(ProductionReport(), CancellationToken.None);
         var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-24T03:30:00Z"));
-        var handler = new GeneratePeriodicInspectionTimeTasksCommandHandler(dbContext, coordinator, clock);
-
-        var generated = await handler.Handle(
-            new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
-            CancellationToken.None);
-        var replayed = await handler.Handle(
-            new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
-            CancellationToken.None);
+        var generated = await GenerateDueAsync(dbContext, coordinator, clock.GetUtcNow().UtcDateTime, 100);
+        var replayed = await GenerateDueAsync(dbContext, coordinator, clock.GetUtcNow().UtcDateTime, 100);
 
         Assert.Equal(1, generated);
         Assert.Equal(0, replayed);
@@ -43,14 +38,14 @@ public sealed class PeriodicInspectionIntegrationEventTests
         Assert.Equal("operation", task.SourceType);
         Assert.Equal("mes", task.SourceService);
         Assert.Equal("WO-001", task.SourceDocumentId);
-        Assert.Equal("OP-001:periodic-time:1", task.SourceDocumentLineId);
         Assert.Equal("SKU-FG-1000", task.SkuCode);
         Assert.Equal(25m, task.Quantity);
         Assert.Equal("EA", task.UomCode);
         Assert.Equal("team-quality-001", task.AssignedTeamId);
         var operation = await dbContext.PeriodicInspectionOperations.Include(x => x.RuntimeContexts).SingleAsync();
         var runtimeContext = Assert.Single(operation.RuntimeContexts);
-        Assert.Equal($"quality:periodic-time:{runtimeContext.Id}:1", task.TriggerIdempotencyKey);
+        Assert.Equal($"OP-001:periodic-time:{runtimeContext.Id.Id:D}:1", task.SourceDocumentLineId);
+        Assert.Equal($"quality:periodic-time:{runtimeContext.Id.Id:D}:1", task.TriggerIdempotencyKey);
         Assert.Equal(1, runtimeContext.LastGeneratedTimeWindowSequence);
         Assert.Equal(DateTime.Parse("2026-08-24T05:30:00Z").ToUniversalTime(), runtimeContext.NextTimeWindowAtUtc);
 
@@ -85,12 +80,11 @@ public sealed class PeriodicInspectionIntegrationEventTests
         await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
             dbContext, scopeCoordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
 
-        var generated = await new GeneratePeriodicInspectionTimeTasksCommandHandler(
+        var generated = await GenerateDueAsync(
             dbContext,
             scopeCoordinator,
-            new FakeTimeProvider(DateTimeOffset.Parse("2026-08-25T01:00:00Z"))).Handle(
-                new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
-                CancellationToken.None);
+            DateTime.Parse("2026-08-25T01:00:00Z").ToUniversalTime(),
+            100);
 
         var operation = await dbContext.PeriodicInspectionOperations
             .Include(x => x.ProductionReports)
@@ -120,12 +114,11 @@ public sealed class PeriodicInspectionIntegrationEventTests
             coordinator,
             new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(WorkOrderReleased(), CancellationToken.None);
 
-        var generated = await new GeneratePeriodicInspectionTimeTasksCommandHandler(
+        var generated = await GenerateDueAsync(
             dbContext,
             coordinator,
-            new FakeTimeProvider(DateTimeOffset.Parse("2026-08-25T01:00:00Z"))).Handle(
-                new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 100),
-                CancellationToken.None);
+            DateTime.Parse("2026-08-25T01:00:00Z").ToUniversalTime(),
+            100);
 
         Assert.Equal(0, generated);
         Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
@@ -153,15 +146,74 @@ public sealed class PeriodicInspectionIntegrationEventTests
             ProductionReport("RPT-002", "WO-002", "OP-002", "2026-08-24T01:00:00Z"),
             CancellationToken.None);
 
-        var generated = await new GeneratePeriodicInspectionTimeTasksCommandHandler(
+        var generated = await GenerateDueAsync(
             dbContext,
             coordinator,
-            new FakeTimeProvider(DateTimeOffset.Parse("2026-08-24T03:30:00Z"))).Handle(
-                new GeneratePeriodicInspectionTimeTasksCommand("org-001", "env-dev", 24, 1),
-                CancellationToken.None);
+            DateTime.Parse("2026-08-24T03:30:00Z").ToUniversalTime(),
+            1);
 
         Assert.Equal(1, generated);
         Assert.Equal("WO-002", (await dbContext.InspectionTasks.SingleAsync()).SourceDocumentId);
+    }
+
+    [Fact]
+    public async Task Two_matching_plans_generate_two_tasks_with_distinct_context_scoped_source_lines()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.AddRange(
+            NewPeriodicPlan("IQP-PERIODIC-001"),
+            NewPeriodicPlan("IQP-PERIODIC-002"));
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(ProductionReport(), CancellationToken.None);
+
+        var generated = await GenerateDueAsync(
+            dbContext,
+            coordinator,
+            DateTimeOffset.Parse("2026-08-24T03:30:00Z").UtcDateTime,
+            100);
+
+        Assert.Equal(2, generated);
+        var contexts = await dbContext.PeriodicInspectionRuntimeContexts.ToArrayAsync();
+        var tasks = await dbContext.InspectionTasks.ToArrayAsync();
+        Assert.Equal(2, contexts.Length);
+        Assert.Equal(2, tasks.Length);
+        Assert.Equal(
+            contexts.Select(x => $"OP-001:periodic-time:{x.Id.Id:D}:1").Order().ToArray(),
+            tasks.Select(x => x.SourceDocumentLineId).Order().ToArray());
+    }
+
+    [Fact]
+    public async Task Zero_quantity_context_is_not_selected_for_time_generation()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ProductionReport() with
+                {
+                    Payload = ProductionReport().Payload with { GoodQuantity = 0m },
+                },
+                CancellationToken.None);
+
+        var candidates = await new ListDuePeriodicInspectionTimeContextsQueryHandler(dbContext).Handle(
+            new ListDuePeriodicInspectionTimeContextsQuery(
+                "org-001",
+                "env-dev",
+                DateTimeOffset.Parse("2026-08-25T03:30:00Z").UtcDateTime,
+                100),
+            CancellationToken.None);
+
+        Assert.Empty(candidates);
     }
 
     [Fact]
@@ -238,10 +290,39 @@ public sealed class PeriodicInspectionIntegrationEventTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static InspectionPlan NewPeriodicPlan()
+    private static async Task<int> GenerateDueAsync(
+        ApplicationDbContext dbContext,
+        IPeriodicInspectionOperationScopeCoordinator coordinator,
+        DateTime nowUtc,
+        int batchSize)
+    {
+        var candidates = await new ListDuePeriodicInspectionTimeContextsQueryHandler(dbContext).Handle(
+            new ListDuePeriodicInspectionTimeContextsQuery("org-001", "env-dev", nowUtc, batchSize),
+            CancellationToken.None);
+        var generated = 0;
+        foreach (var candidate in candidates)
+        {
+            generated += await new GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
+                dbContext,
+                coordinator).Handle(
+                    new GeneratePeriodicInspectionTimeTaskForContextCommand(
+                        "org-001",
+                        "env-dev",
+                        candidate.WorkOrderId,
+                        candidate.OperationId,
+                        candidate.RuntimeContextId,
+                        nowUtc,
+                        24),
+                    CancellationToken.None);
+        }
+
+        return generated;
+    }
+
+    private static InspectionPlan NewPeriodicPlan(string planCode = "IQP-PERIODIC-001")
     {
         var plan = InspectionPlan.Create(
-            "org-001", "env-dev", "IQP-PERIODIC-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
+            "org-001", "env-dev", planCode, "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
             timeIntervalHours: 2m,
             quantityInterval: 100m,
             assignedTeamId: "team-quality-001");

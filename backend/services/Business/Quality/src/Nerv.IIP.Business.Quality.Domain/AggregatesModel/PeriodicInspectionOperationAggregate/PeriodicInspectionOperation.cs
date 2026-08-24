@@ -6,7 +6,11 @@ public partial record PeriodicInspectionOperationId : IGuidStronglyTypedId;
 
 public partial record PeriodicInspectionProductionReportId : IGuidStronglyTypedId;
 
-public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId;
+public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId, IComparable<PeriodicInspectionRuntimeContextId>
+{
+    public int CompareTo(PeriodicInspectionRuntimeContextId? other)
+        => Id.CompareTo(other?.Id ?? Guid.Empty);
+}
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
 
@@ -483,6 +487,8 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
             throw new ArgumentOutOfRangeException(nameof(maxWindows), "Maximum windows must be positive.");
         }
 
+        // Reconcile closes a context by clearing the watermark. Keep the status check as a
+        // fail-closed depth defense for malformed or legacy persisted rows that violate that invariant.
         if (Status != "active"
             || !TimeIntervalHours.HasValue
             || !FirstActivityAtUtc.HasValue

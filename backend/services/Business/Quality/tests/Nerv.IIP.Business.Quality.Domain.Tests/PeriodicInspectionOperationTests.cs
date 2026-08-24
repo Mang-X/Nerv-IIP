@@ -120,6 +120,20 @@ public sealed class PeriodicInspectionOperationTests
     }
 
     [Fact]
+    public void Closed_status_fails_closed_even_if_a_malformed_persisted_row_retains_a_due_watermark()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 40m, "EA", ReleasedAtUtc.AddMinutes(15), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        typeof(PeriodicInspectionRuntimeContext)
+            .GetProperty(nameof(PeriodicInspectionRuntimeContext.Status))!
+            .SetValue(context, "closed");
+
+        Assert.NotNull(context.NextTimeWindowAtUtc);
+        Assert.Empty(context.TakeDueTimeWindows(ReleasedAtUtc.AddDays(1), maxWindows: 24));
+    }
+
+    [Fact]
     public void Completion_before_release_closes_the_context_after_release_arrives()
     {
         var operation = PeriodicInspectionOperation.CreatePending("org-001", "env-dev", "WO-001", "OP-001");

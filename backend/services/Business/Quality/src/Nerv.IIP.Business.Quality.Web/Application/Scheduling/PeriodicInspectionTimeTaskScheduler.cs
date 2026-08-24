@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Scheduling;
 
@@ -45,10 +46,20 @@ public sealed class PeriodicInspectionTimeTaskScheduler(
             DefaultContextBatchSize);
 
         using var timer = new PeriodicTimer(interval, timeProvider);
-        await TryGenerateAllScopesAsync(scopes, maxWindowsPerContext, contextBatchSize, stoppingToken);
+        await TryGenerateAllScopesAsync(
+            scopes,
+            maxWindowsPerContext,
+            contextBatchSize,
+            Guid.CreateVersion7().ToString(),
+            stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await TryGenerateAllScopesAsync(scopes, maxWindowsPerContext, contextBatchSize, stoppingToken);
+            await TryGenerateAllScopesAsync(
+                scopes,
+                maxWindowsPerContext,
+                contextBatchSize,
+                Guid.CreateVersion7().ToString(),
+                stoppingToken);
         }
     }
 
@@ -92,28 +103,68 @@ public sealed class PeriodicInspectionTimeTaskScheduler(
         IReadOnlyCollection<PeriodicInspectionTimeScope> scopes,
         int maxWindowsPerContext,
         int contextBatchSize,
+        string correlationId,
         CancellationToken cancellationToken)
     {
+        using var scanLogScope = logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["correlationId"] = correlationId,
+        });
+        var generatedCount = 0;
+        var failedCount = 0;
+        var scanNowUtc = timeProvider.GetUtcNow().UtcDateTime;
         foreach (var scope in scopes)
         {
             try
             {
-                using var serviceScope = scopeFactory.CreateScope();
-                var sender = serviceScope.ServiceProvider.GetRequiredService<ISender>();
-                var generated = await sender.Send(
-                    new GeneratePeriodicInspectionTimeTasksCommand(
-                        scope.OrganizationId,
-                        scope.EnvironmentId,
-                        maxWindowsPerContext,
-                        contextBatchSize),
-                    cancellationToken);
-                if (generated > 0)
+                IReadOnlyList<DuePeriodicInspectionTimeContext> candidates;
+                using (var queryScope = scopeFactory.CreateScope())
                 {
-                    logger.LogInformation(
-                        "Generated {GeneratedCount} periodic inspection time tasks for {OrganizationId}/{EnvironmentId}.",
-                        generated,
-                        scope.OrganizationId,
-                        scope.EnvironmentId);
+                    var querySender = queryScope.ServiceProvider.GetRequiredService<ISender>();
+                    candidates = await querySender.Send(
+                        new ListDuePeriodicInspectionTimeContextsQuery(
+                            scope.OrganizationId,
+                            scope.EnvironmentId,
+                            scanNowUtc,
+                            contextBatchSize),
+                        cancellationToken);
+                }
+
+                foreach (var candidate in candidates)
+                {
+                    try
+                    {
+                        // Deliberately serial: every candidate gets a fresh scoped DbContext/UoW without
+                        // converting the configured batch size into connection-pool concurrency.
+                        using var candidateScope = scopeFactory.CreateScope();
+                        var commandSender = candidateScope.ServiceProvider.GetRequiredService<ISender>();
+                        generatedCount += await commandSender.Send(
+                            new GeneratePeriodicInspectionTimeTaskForContextCommand(
+                                scope.OrganizationId,
+                                scope.EnvironmentId,
+                                candidate.WorkOrderId,
+                                candidate.OperationId,
+                                candidate.RuntimeContextId,
+                                scanNowUtc,
+                                maxWindowsPerContext),
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        failedCount++;
+                        logger.LogError(
+                            exception,
+                            "Periodic inspection time candidate generation failed for {OrganizationId}/{EnvironmentId}/{WorkOrderId}/{OperationId}/{RuntimeContextId}; remaining candidates will continue.",
+                            scope.OrganizationId,
+                            scope.EnvironmentId,
+                            candidate.WorkOrderId,
+                            candidate.OperationId,
+                            candidate.RuntimeContextId);
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -129,6 +180,11 @@ public sealed class PeriodicInspectionTimeTaskScheduler(
                     scope.EnvironmentId);
             }
         }
+
+        logger.LogInformation(
+            "Periodic inspection time scan completed with {GeneratedCount} generated tasks and {FailedCount} failed candidates.",
+            generatedCount,
+            failedCount);
     }
 
     private sealed record PeriodicInspectionTimeScope(string OrganizationId, string EnvironmentId);
