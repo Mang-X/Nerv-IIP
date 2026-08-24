@@ -442,37 +442,71 @@ function Assert-NervAcceptanceRuntimeBudgetFits {
     return $requiredSeconds
 }
 
-function Get-NervAcceptanceSalesOrderRuntimeScenario {
-    param([Parameter(Mandatory)] [object] $Manifest)
+function Get-NervAcceptanceRuntimeScenarioAdapter {
+    param([Parameter(Mandatory)] [string] $ScenarioId)
 
+    if ([string]::Equals($ScenarioId, 'sales-order-demand', [StringComparison]::Ordinal)) {
+        return [pscustomobject][ordered]@{
+            scenarioId = 'sales-order-demand'
+            v1Alias = 'sales-order-demand-planning'
+            entrypoint = 'scripts/verify-erp-sales-order-demand-planning.ps1'
+            identity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events'
+            businessFactFields = @('sourceStateCommittedBeforeMutation', 'changeV2Converged', 'changeV3Converged', 'duplicateConverged', 'outOfOrderConverged', 'cancellationConverged')
+            portFields = @('masterData', 'erp', 'demandPlanning')
+        }
+    }
+    if ([string]::Equals($ScenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) {
+        return [pscustomobject][ordered]@{
+            scenarioId = 'wms-delivery-erp'
+            v1Alias = 'erp-wms-delivery-completion'
+            entrypoint = 'scripts/verify-erp-wms-delivery-completion.ps1'
+            identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'
+            businessFactFields = @('outboundAssigned', 'pickingLifecycleCompleted', 'deliveryCompleted', 'receivableCreated', 'completionReplayConverged', 'repeatedEventConverged')
+            portFields = @('erp', 'wms', 'inventory')
+        }
+    }
+    throw "Runtime scenarioId is not supported by an explicit canonical adapter."
+}
+
+function Get-NervAcceptanceRuntimeScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $ScenarioId
+    )
+
+    $adapter = Get-NervAcceptanceRuntimeScenarioAdapter -ScenarioId $ScenarioId
     $matches = @($Manifest.scenarios | Where-Object {
-        [string]::Equals([string]$_.id, 'sales-order-demand', [StringComparison]::Ordinal)
+        [string]::Equals([string]$_.id, $ScenarioId, [StringComparison]::Ordinal)
     })
-    if ($matches.Count -ne 1) { throw "Runtime manifest must contain exactly one 'sales-order-demand' scenario." }
+    if ($matches.Count -ne 1) { throw "Runtime manifest must contain exactly one '$ScenarioId' scenario." }
     $scenario = $matches[0]
     if (-not [string]::Equals([string]$scenario.status, 'active', [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$scenario.tier, 'core', [StringComparison]::Ordinal)) {
-        throw "Runtime scenario 'sales-order-demand' must be active/core."
+        throw "Runtime scenario '$ScenarioId' must be active/core."
     }
-    if (-not [string]::Equals([string]$scenario.v1Alias, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
-        throw "Runtime scenario 'sales-order-demand' v1Alias drifted from 'sales-order-demand-planning'."
+    if (-not [string]::Equals([string]$scenario.v1Alias, [string]$adapter.v1Alias, [StringComparison]::Ordinal)) {
+        throw "Runtime scenario '$ScenarioId' v1Alias drifted from '$($adapter.v1Alias)'."
     }
     if ($scenario.entrypoint -isnot [pscustomobject] -or
         -not [string]::Equals([string]$scenario.entrypoint.kind, 'script', [StringComparison]::Ordinal) -or
-        -not [string]::Equals([string]$scenario.entrypoint.path, 'scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) {
-        throw "Runtime scenario 'sales-order-demand' entrypoint drifted from the governed v1 script."
+        -not [string]::Equals([string]$scenario.entrypoint.path, [string]$adapter.entrypoint, [StringComparison]::Ordinal)) {
+        throw "Runtime scenario '$ScenarioId' entrypoint drifted from the governed v1 script."
     }
     $projects = @($scenario.testProjects)
     if ($projects.Count -ne 1 -or
         -not [string]::Equals([string]$projects[0].path, 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj', [StringComparison]::Ordinal)) {
-        throw "Runtime scenario 'sales-order-demand' project drifted from the governed FullChain project."
+        throw "Runtime scenario '$ScenarioId' project drifted from the governed FullChain project."
     }
     $identities = @($projects[0].frozenTestIdentities)
-    $expectedIdentity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events'
-    if ($identities.Count -ne 1 -or -not [string]::Equals([string]$identities[0], $expectedIdentity, [StringComparison]::Ordinal)) {
-        throw "Runtime scenario 'sales-order-demand' frozen identity drifted from the governed v1 identity."
+    if ($identities.Count -ne 1 -or -not [string]::Equals([string]$identities[0], [string]$adapter.identity, [StringComparison]::Ordinal)) {
+        throw "Runtime scenario '$ScenarioId' frozen identity drifted from the governed v1 identity."
     }
     return $scenario
+}
+
+function Get-NervAcceptanceSalesOrderRuntimeScenario {
+    param([Parameter(Mandatory)] [object] $Manifest)
+    return Get-NervAcceptanceRuntimeScenario -Manifest $Manifest -ScenarioId 'sales-order-demand'
 }
 
 function Get-NervAcceptanceRuntimeArtifactSelection {
@@ -589,6 +623,7 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $WorkflowJobName,
         [Parameter(Mandatory)] [string] $WorkflowStepName,
+        [string] $ScenarioId = 'sales-order-demand',
         [scriptblock] $ReadFileBytesAction
     )
 
@@ -613,10 +648,11 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
         -Event $Event | Out-Null
 
     $workflowBudget = Get-NervAcceptanceRuntimeWorkflowBudget -WorkflowPath $WorkflowPath -JobName $WorkflowJobName -StepName $WorkflowStepName
-    $salesMatches = @($selection.scenarios | Where-Object { [string]::Equals([string]$_.id, 'sales-order-demand', [StringComparison]::Ordinal) })
-    if ($salesMatches.Count -gt 1) { throw "Runtime planning artifact must contain at most one selected 'sales-order-demand' scenario." }
-    $selected = $salesMatches.Count -eq 1
-    $scenario = if ($selected) { Get-NervAcceptanceSalesOrderRuntimeScenario -Manifest $manifest } else { $null }
+    $adapter = Get-NervAcceptanceRuntimeScenarioAdapter -ScenarioId $ScenarioId
+    $scenarioMatches = @($selection.scenarios | Where-Object { [string]::Equals([string]$_.id, [string]$adapter.scenarioId, [StringComparison]::Ordinal) })
+    if ($scenarioMatches.Count -gt 1) { throw "Runtime planning artifact must contain at most one selected '$ScenarioId' scenario." }
+    $selected = $scenarioMatches.Count -eq 1
+    $scenario = if ($selected) { Get-NervAcceptanceRuntimeScenario -Manifest $manifest -ScenarioId $ScenarioId } else { $null }
     $requiredSeconds = if ($selected) {
         Assert-NervAcceptanceRuntimeBudgetFits -ExecutionBudget $scenario.executionBudget -StepTimeoutSeconds $workflowBudget.stepTimeoutSeconds -ScenarioId ([string]$scenario.id)
     }
@@ -631,7 +667,7 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
             runAttempt = $RunAttempt
             testedSha = $TestedSha
             manifestDigest = $ExpectedManifestDigest
-            scenarioId = 'sales-order-demand'
+            scenarioId = $ScenarioId
         }
         artifactDigest = $artifactSnapshot.digest
         requiredSeconds = $requiredSeconds
@@ -640,9 +676,10 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
 }
 
 function New-NervAcceptanceScenarioRuntimeSummary {
+    param([string] $ScenarioId = 'sales-order-demand')
     return [pscustomobject][ordered]@{
         schemaVersion = 1
-        scenarioId = 'sales-order-demand'
+        scenarioId = $ScenarioId
         repository = $null
         testedSha = $null
         runId = $null
@@ -855,10 +892,11 @@ function Invoke-NervAcceptanceScenarioRuntime {
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $WorkflowStepName,
         [Parameter(Mandatory)] [string] $SummaryPath,
         [Parameter(Mandatory)] [scriptblock] $RuntimeAction,
+        [string] $ScenarioId = 'sales-order-demand',
         [scriptblock] $ReadFileBytesAction
     )
 
-    $summary = New-NervAcceptanceScenarioRuntimeSummary
+    $summary = New-NervAcceptanceScenarioRuntimeSummary -ScenarioId $ScenarioId
     Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
     try {
         $validatedInputs = Assert-NervAcceptanceScenarioRuntimeRawInputs `
@@ -895,6 +933,7 @@ function Invoke-NervAcceptanceScenarioRuntime {
             -WorkflowPath $validatedInputs.workflowPath `
             -WorkflowJobName $validatedInputs.workflowJobName `
             -WorkflowStepName $validatedInputs.workflowStepName `
+            -ScenarioId $ScenarioId `
             -ReadFileBytesAction $ReadFileBytesAction
         $summary.repository = $validatedInputs.repository
         $summary.testedSha = $validatedInputs.testedSha
@@ -968,6 +1007,63 @@ function Assert-NervAcceptanceRuntimeIntegerField {
     return [int64]$value
 }
 
+function New-NervAcceptanceWmsDeliveryCanonicalResult {
+    param(
+        [Parameter(Mandatory)] [object] $Provenance,
+        [Parameter(Mandatory)] [string] $Track,
+        [Parameter(Mandatory)] [object] $BusinessEvidence,
+        [Parameter(Mandatory)] [object] $TestCounters,
+        [Parameter(Mandatory)] [object] $CleanupEvidence,
+        [Parameter(Mandatory)] [object] $Volatile
+    )
+
+    Assert-NervAcceptanceObjectSchema -Object $Provenance -AllowedFields @('repository', 'runId', 'runAttempt', 'testedSha', 'manifestDigest', 'scenarioId') -RequiredFields @('repository', 'runId', 'runAttempt', 'testedSha', 'manifestDigest', 'scenarioId') -Context 'MAN-527 canonical provenance'
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository ([string]$Provenance.repository))) { throw 'MAN-527 canonical repository must be a canonical owner/name identifier.' }
+    if ([string]$Provenance.runId -cnotmatch '^[1-9][0-9]*$') { throw 'MAN-527 canonical runId must be a positive decimal identifier.' }
+    if (-not (Test-NervAcceptanceInteger -Value $Provenance.runAttempt) -or [int64]$Provenance.runAttempt -le 0) { throw 'MAN-527 canonical runAttempt must be positive.' }
+    if ([string]$Provenance.testedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'MAN-527 canonical testedSha must be a lowercase 40-character Git SHA.' }
+    if ([string]$Provenance.manifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'MAN-527 canonical manifestDigest must be a lowercase SHA-256 digest.' }
+    if (-not [string]::Equals([string]$Provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) { throw "MAN-527 canonical scenarioId must be 'wms-delivery-erp'." }
+    if ($Track -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'MAN-527 canonical track identifier must be canonical.' }
+
+    Assert-NervAcceptanceObjectSchema -Object $BusinessEvidence -AllowedFields @('verifiedAtUtc', 'scenarioStatus', 'deliveryOrderNo', 'transport', 'persistence', 'wmsOutboundOrder', 'erpDelivery', 'accountReceivable', 'repeatedEvent', 'cleanup') -RequiredFields @('scenarioStatus', 'deliveryOrderNo', 'wmsOutboundOrder', 'erpDelivery', 'accountReceivable', 'repeatedEvent') -Context 'MAN-527 business evidence'
+    if (-not [string]::Equals([string]$BusinessEvidence.scenarioStatus, 'passed', [StringComparison]::Ordinal)) { throw 'MAN-527 canonical success requires passed business evidence.' }
+    Assert-NervAcceptanceObjectSchema -Object $TestCounters -AllowedFields @('total', 'executed', 'passed', 'failed', 'skipped') -RequiredFields @('total', 'executed', 'passed', 'failed', 'skipped') -Context 'MAN-527 canonical TRX counters'
+    foreach ($name in @('total', 'executed', 'passed', 'failed', 'skipped')) { [void](Assert-NervAcceptanceRuntimeIntegerField -Object $TestCounters -Name $name -Context 'MAN-527 canonical TRX counters') }
+    if ([int64]$TestCounters.total -ne 1 -or [int64]$TestCounters.executed -ne 1 -or [int64]$TestCounters.passed -ne 1 -or [int64]$TestCounters.failed -ne 0 -or [int64]$TestCounters.skipped -ne 0) {
+        throw 'MAN-527 canonical success requires exact TRX counts expected=1 discovered=1 passed=1 failed=0 skipped=0.'
+    }
+    Assert-NervAcceptanceObjectSchema -Object $CleanupEvidence -AllowedFields @('managedProcessIds', 'managedProcessRemaining', 'databaseName', 'exactDatabaseRemaining', 'postgres', 'redis', 'errors') -RequiredFields @('managedProcessRemaining', 'exactDatabaseRemaining', 'postgres', 'redis', 'errors') -Context 'MAN-527 canonical cleanup evidence'
+    foreach ($name in @('managedProcessRemaining', 'exactDatabaseRemaining')) { [void](Assert-NervAcceptanceRuntimeIntegerField -Object $CleanupEvidence -Name $name -Context 'MAN-527 canonical cleanup evidence') }
+    if ($CleanupEvidence.errors -isnot [array]) { throw 'MAN-527 canonical cleanup errors must be an array.' }
+    if ([int64]$CleanupEvidence.managedProcessRemaining -ne 0 -or [int64]$CleanupEvidence.exactDatabaseRemaining -ne 0 -or @($CleanupEvidence.errors).Count -ne 0 -or
+        [string]::Equals([string]$CleanupEvidence.postgres, 'owned-pending-cleanup', [StringComparison]::Ordinal) -or
+        [string]::Equals([string]$CleanupEvidence.redis, 'owned-pending-cleanup', [StringComparison]::Ordinal)) {
+        throw 'MAN-527 canonical success requires zero cleanup remaining counts and no pending owned resources.'
+    }
+
+    $outboundAssigned = -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.wmsOutboundOrder.firstAssignment.poolCode) -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.wmsOutboundOrder.firstAssignment.operatorPrincipalId)
+    $pickingLifecycleCompleted = [string]::Equals([string]$BusinessEvidence.wmsOutboundOrder.pickingLifecycle, 'public create/read/assign/start/progress/complete for every outbound line', [StringComparison]::Ordinal)
+    $deliveryCompleted = [string]::Equals([string]$BusinessEvidence.erpDelivery.status, 'completed', [StringComparison]::OrdinalIgnoreCase) -and [decimal]$BusinessEvidence.erpDelivery.shippedQuantity -eq 2 -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.erpDelivery.shippedAtUtc) -and -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.erpDelivery.completedAtUtc)
+    $receivableCreated = -not [string]::IsNullOrWhiteSpace([string]$BusinessEvidence.accountReceivable.receivableNo) -and [string]::Equals([string]$BusinessEvidence.accountReceivable.sourceDocumentNo, [string]$BusinessEvidence.deliveryOrderNo, [StringComparison]::Ordinal)
+    $completionReplayConverged = [string]::Equals([string]$BusinessEvidence.wmsOutboundOrder.completionHttpReplay, 'same idempotency key accepted twice', [StringComparison]::Ordinal)
+    $repeatedEventConverged = [string]::Equals([string]$BusinessEvidence.repeatedEvent, 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter', [StringComparison]::Ordinal)
+    if (-not $outboundAssigned -or -not $pickingLifecycleCompleted -or -not $deliveryCompleted -or -not $receivableCreated -or -not $completionReplayConverged -or -not $repeatedEventConverged) { throw 'MAN-527 canonical success requires every business checkpoint to have converged.' }
+
+    Assert-NervAcceptanceObjectSchema -Object $Volatile -AllowedFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'ports', 'paths') -RequiredFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'ports', 'paths') -Context 'MAN-527 canonical volatile evidence'
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        provenance = $Provenance
+        track = $Track
+        conclusion = 'passed'
+        test = [pscustomobject][ordered]@{ identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'; expected = 1; discovered = [int]$TestCounters.total; passed = [int]$TestCounters.passed; failed = [int]$TestCounters.failed; skipped = [int]$TestCounters.skipped }
+        businessFacts = [pscustomobject][ordered]@{ outboundAssigned = $outboundAssigned; pickingLifecycleCompleted = $pickingLifecycleCompleted; deliveryCompleted = $deliveryCompleted; receivableCreated = $receivableCreated; completionReplayConverged = $completionReplayConverged; repeatedEventConverged = $repeatedEventConverged }
+        diagnostics = [pscustomobject][ordered]@{ schemas = @('erp', 'inventory', 'wms'); failureCaptureSupported = $true; failureDiagnosticsCaptured = $false; secretsRedacted = $true }
+        cleanup = [pscustomobject][ordered]@{ managedProcessesRemaining = [int]$CleanupEvidence.managedProcessRemaining; disposableDatabasesRemaining = [int]$CleanupEvidence.exactDatabaseRemaining; ownedResourcesRemaining = 0; errorCodes = @() }
+        volatile = [pscustomobject][ordered]@{ databaseName = [string]$Volatile.databaseName; processIds = @($Volatile.processIds); capSuffix = [string]$Volatile.capSuffix; startedAtUtc = [string]$Volatile.startedAtUtc; completedAtUtc = [string]$Volatile.completedAtUtc; cleanupErrors = @(); ports = $Volatile.ports; paths = $Volatile.paths }
+    }
+}
+
 function New-NervAcceptanceScenarioEquivalenceVector {
     param(
         [Parameter(Mandatory)] [object] $Result,
@@ -975,7 +1071,8 @@ function New-NervAcceptanceScenarioEquivalenceVector {
         [Parameter(Mandatory)] [object] $ExpectedProvenance
     )
 
-    $scenario = Get-NervAcceptanceSalesOrderRuntimeScenario -Manifest ([pscustomobject]@{ scenarios = @($ValidatedScenario) })
+    $adapter = Get-NervAcceptanceRuntimeScenarioAdapter -ScenarioId ([string]$ExpectedProvenance.scenarioId)
+    $scenario = Get-NervAcceptanceRuntimeScenario -Manifest ([pscustomobject]@{ scenarios = @($ValidatedScenario) }) -ScenarioId ([string]$adapter.scenarioId)
     $expectedIdentity = [string]$scenario.testProjects[0].frozenTestIdentities[0]
     Assert-NervAcceptanceStringArray -Value $scenario.diagnosticProtocol.schemas -Context 'validated runtime scenario diagnostic schemas'
     $expectedSchemas = [string[]]@($scenario.diagnosticProtocol.schemas)
@@ -1020,7 +1117,7 @@ function New-NervAcceptanceScenarioEquivalenceVector {
         $testCounts[$name] = Assert-NervAcceptanceRuntimeIntegerField -Object $Result.test -Name $name -Context 'runtime equivalence test'
     }
 
-    $businessFactFields = @('sourceStateCommittedBeforeMutation', 'changeV2Converged', 'changeV3Converged', 'duplicateConverged', 'outOfOrderConverged', 'cancellationConverged')
+    $businessFactFields = [string[]]@($adapter.businessFactFields)
     Assert-NervAcceptanceObjectSchema -Object $Result.businessFacts -AllowedFields $businessFactFields -RequiredFields $businessFactFields -Context 'runtime equivalence business facts'
     $businessFacts = [ordered]@{}
     foreach ($name in $businessFactFields) {
@@ -1096,8 +1193,9 @@ function New-NervAcceptanceScenarioEquivalenceVector {
             throw 'Runtime equivalence volatile processIds must contain unique integer values.'
         }
     }
-    Assert-NervAcceptanceObjectSchema -Object $Result.volatile.ports -AllowedFields @('masterData', 'erp', 'demandPlanning') -RequiredFields @('masterData', 'erp', 'demandPlanning') -Context 'runtime equivalence volatile ports'
-    foreach ($name in @('masterData', 'erp', 'demandPlanning')) {
+    $portFields = [string[]]@($adapter.portFields)
+    Assert-NervAcceptanceObjectSchema -Object $Result.volatile.ports -AllowedFields $portFields -RequiredFields $portFields -Context 'runtime equivalence volatile ports'
+    foreach ($name in $portFields) {
         $port = Assert-NervAcceptanceRuntimeIntegerField -Object $Result.volatile.ports -Name $name -Context 'runtime equivalence volatile ports'
         if ($port -le 0 -or $port -gt 65535) { throw "Runtime equivalence volatile port $name must be between 1 and 65535." }
     }
@@ -1195,7 +1293,8 @@ function Assert-NervAcceptanceScenarioRuntimeResult {
             throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'test-evidence-failed' -Message "Runtime equivalence test $name must be $required; observed $observed.")
         }
     }
-    foreach ($name in @('sourceStateCommittedBeforeMutation', 'changeV2Converged', 'changeV3Converged', 'duplicateConverged', 'outOfOrderConverged', 'cancellationConverged')) {
+    $adapter = Get-NervAcceptanceRuntimeScenarioAdapter -ScenarioId ([string]$ResultSnapshot.provenance.scenarioId)
+    foreach ($name in [string[]]@($adapter.businessFactFields)) {
         if (-not [bool]$ResultSnapshot.businessFacts.PSObject.Properties[$name].Value) {
             throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'checkpoint-failed' -Message "Runtime equivalence business fact '$name' must be true.")
         }

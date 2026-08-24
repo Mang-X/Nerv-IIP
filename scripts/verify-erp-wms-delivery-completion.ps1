@@ -8,6 +8,7 @@
 #     - bin/ and obj/ outputs for ERP, WMS, Inventory, and the full-chain replay probe
 #     - artifacts/script-logs/**
 #     - artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
+#     - A caller-selected canonical acceptance result when requested
 #   Cleanup:
 #     - Stops every managed service process in finally
 #     - Drops the disposable PostgreSQL database in finally
@@ -21,7 +22,15 @@
 param(
     [string]$PostgresAdminConnectionString = $env:NERV_IIP_TEST_POSTGRES,
     [string]$RedisConnectionString = $env:NERV_IIP_TEST_REDIS,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$CanonicalResultPath,
+    [string]$TrackIdentifier,
+    [string]$Repository,
+    [string]$RunId,
+    [int]$RunAttempt,
+    [string]$TestedSha,
+    [string]$ManifestDigest,
+    [string]$ScenarioId = 'wms-delivery-erp'
 )
 
 Set-StrictMode -Version Latest
@@ -30,6 +39,21 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1')
+
+$canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
+$canonicalResultFullPath = $null
+if ($canonicalResultEnabled) {
+    $canonicalResultFullPath = Resolve-NervAcceptanceCanonicalOutputPath -Path $CanonicalResultPath -RepositoryRoot $root.Path -Context 'MAN-527 canonical result path'
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository $Repository)) { throw 'MAN-527 canonical repository must be a canonical owner/name identifier.' }
+    if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'MAN-527 canonical runId must be a positive decimal identifier.' }
+    if ($RunAttempt -le 0) { throw 'MAN-527 canonical runAttempt must be positive.' }
+    if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'MAN-527 canonical testedSha must be a lowercase 40-character Git SHA.' }
+    if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'MAN-527 canonical manifestDigest must be a lowercase SHA-256 digest.' }
+    if (-not [string]::Equals($ScenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) { throw "MAN-527 canonical scenarioId must be 'wms-delivery-erp'." }
+    if ($TrackIdentifier -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'MAN-527 canonical track identifier must be canonical.' }
+    if (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf) { Remove-Item -LiteralPath $canonicalResultFullPath -Force }
+}
 
 if ([string]::IsNullOrWhiteSpace($PostgresAdminConnectionString) -or [string]::IsNullOrWhiteSpace($RedisConnectionString)) {
     throw 'Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS; credentials are never embedded in this verification script.'
@@ -40,6 +64,20 @@ function Get-FreeTcpPort {
     $listener.Start()
     try { return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port }
     finally { $listener.Stop() }
+}
+
+function Get-Man527TrxCounter {
+    param(
+        [Parameter(Mandatory)] [Xml.XmlElement] $Counters,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $raw = $Counters.GetAttribute($Name)
+    $parsed = 0
+    if ([string]::IsNullOrWhiteSpace($raw) -or -not [int]::TryParse($raw, [ref]$parsed) -or $parsed -lt 0) {
+        throw "MAN-527 replay probe TRX counter '$Name' must be a non-negative integer."
+    }
+    return $parsed
 }
 
 function Wait-PostgresReady {
@@ -314,9 +352,12 @@ $wmsActorPrincipalId = "man527-operator-$([Guid]::NewGuid().ToString('N').Substr
 $wmsSupervisorPrincipalId = "man527-supervisor-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
 $wmsSiteCode = 'SITE-001'
 $wmsShippingPoolCode = "POOL-MAN527-SHIPPING-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
-$erpUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
-$wmsUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
-$inventoryUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
+$erpPort = Get-FreeTcpPort
+$wmsPort = Get-FreeTcpPort
+$inventoryPort = Get-FreeTcpPort
+$erpUrl = "http://127.0.0.1:$erpPort"
+$wmsUrl = "http://127.0.0.1:$wmsPort"
+$inventoryUrl = "http://127.0.0.1:$inventoryPort"
 $erpProcess = $null
 $wmsProcess = $null
 $inventoryProcess = $null
@@ -330,6 +371,9 @@ $managedProcessIds = [System.Collections.Generic.List[int]]::new()
 $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $scenarioError = $null
 $businessEvidence = $null
+$probeResultsPath = $null
+$fullChainProbeCounters = $null
+$acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
 $evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
 $injectedEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
 $evidencePath = if ([string]::IsNullOrWhiteSpace($injectedEvidencePath)) { Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json' } else { [IO.Path]::GetFullPath($injectedEvidencePath) }
@@ -577,14 +621,34 @@ try {
         [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "replay-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
+        $script:probeResultsPath = [IO.Path]::GetFullPath($probeResults)
         Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man527-replay-probe' | Out-Null
         if (-not (Test-Path -LiteralPath $probeResults)) {
             throw 'MAN-527 replay probe produced no TRX result; the selected test may be absent from a stale build.'
         }
         [xml]$probeTrx = Get-Content -LiteralPath $probeResults -Raw
-        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', [StringComparison]::Ordinal) })
+        $frozenTestIdentity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'
+        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { [string]::Equals([string]$_.GetAttribute('testName'), $frozenTestIdentity, [StringComparison]::Ordinal) })
         if ($probeExecutions.Count -ne 1 -or (-not [string]::Equals([string]($probeExecutions[0].GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase))) {
             throw 'MAN-527 repeated-event probe did not execute exactly once and pass.'
+        }
+        $probeCounters = $probeTrx.SelectSingleNode("//*[local-name()='Counters']")
+        if ($null -eq $probeCounters) { throw 'MAN-527 replay probe TRX has no Counters element.' }
+        $probeTotal = Get-Man527TrxCounter -Counters $probeCounters -Name total
+        $probeExecuted = Get-Man527TrxCounter -Counters $probeCounters -Name executed
+        $script:fullChainProbeCounters = [ordered]@{
+            total = $probeTotal
+            executed = $probeExecuted
+            passed = Get-Man527TrxCounter -Counters $probeCounters -Name passed
+            failed = Get-Man527TrxCounter -Counters $probeCounters -Name failed
+            skipped = $probeTotal - $probeExecuted
+        }
+        if ($script:fullChainProbeCounters.total -ne 1 -or
+            $script:fullChainProbeCounters.executed -ne 1 -or
+            $script:fullChainProbeCounters.passed -ne 1 -or
+            $script:fullChainProbeCounters.failed -ne 0 -or
+            $script:fullChainProbeCounters.skipped -ne 0) {
+            throw 'MAN-527 replay probe must report expected=1 discovered=1 passed=1 failed=0 skipped=0.'
         }
     }
 
@@ -776,4 +840,36 @@ if ($null -ne $scenarioError -or $cleanupErrors.Count -ne 0) {
         [void]$failureParts.Add("cleanup: $cleanupError")
     }
     throw "MAN-527 verification failed. $($failureParts -join ' | ')"
+}
+
+if ($canonicalResultEnabled) {
+    $canonicalCompletedAtUtc = [DateTimeOffset]::UtcNow
+    $canonicalResult = New-NervAcceptanceWmsDeliveryCanonicalResult `
+        -Provenance ([pscustomobject][ordered]@{
+            repository = $Repository
+            runId = $RunId
+            runAttempt = $RunAttempt
+            testedSha = $TestedSha
+            manifestDigest = $ManifestDigest
+            scenarioId = $ScenarioId
+        }) `
+        -Track $TrackIdentifier `
+        -BusinessEvidence ([pscustomobject]$businessEvidence) `
+        -TestCounters ([pscustomobject]$fullChainProbeCounters) `
+        -CleanupEvidence ([pscustomobject]$cleanupEvidence) `
+        -Volatile ([pscustomobject][ordered]@{
+            databaseName = $databaseName
+            processIds = @($managedProcessIds | ForEach-Object { [int64]$_ })
+            capSuffix = $capVersion
+            startedAtUtc = $acceptanceStartedAtUtc.ToString('O')
+            completedAtUtc = $canonicalCompletedAtUtc.ToString('O')
+            ports = [pscustomobject][ordered]@{ erp = $erpPort; wms = $wmsPort; inventory = $inventoryPort }
+            paths = [pscustomobject][ordered]@{
+                businessEvidence = [IO.Path]::GetFullPath($evidencePath)
+                probeTrx = [IO.Path]::GetFullPath($probeResultsPath)
+                cleanupEvidence = [IO.Path]::GetFullPath($evidencePath)
+                canonicalResult = $canonicalResultFullPath
+            }
+        })
+    Write-NervAcceptanceCanonicalJson -Value $canonicalResult -Path $canonicalResultFullPath -RepositoryRoot $root.Path -Context 'MAN-527 canonical result' | Out-Null
 }

@@ -215,7 +215,8 @@ function Get-RuntimeArguments {
         [string] $V1ManifestPath = $v1ManifestPath,
         [string] $RunAttempt = '2',
         [string] $PlanningRunAttempt = $RunAttempt,
-        [scriptblock] $ReadFileBytesAction
+        [scriptblock] $ReadFileBytesAction,
+        [string] $ScenarioId = 'sales-order-demand'
     )
 
     $arguments = @{
@@ -235,6 +236,7 @@ function Get-RuntimeArguments {
         WorkflowPath = $WorkflowPath
         WorkflowJobName = 'acceptance-scenario-matrix-runtime'
         WorkflowStepName = 'Run acceptance scenario matrix'
+        ScenarioId = $ScenarioId
         SummaryPath = $SummaryPath
         RuntimeAction = $Action
     }
@@ -253,7 +255,8 @@ function Get-RunnerArguments {
         [Parameter(Mandatory)] [scriptblock] $Action,
         [string] $Event = 'workflow_dispatch',
         [string] $RunAttempt = '2',
-        [string] $PlanningRunAttempt = $RunAttempt
+        [string] $PlanningRunAttempt = $RunAttempt,
+        [string] $ScenarioId = 'sales-order-demand'
     )
 
     return @{
@@ -273,6 +276,7 @@ function Get-RunnerArguments {
         WorkflowPath = $WorkflowPath
         WorkflowJobName = 'acceptance-scenario-matrix-runtime'
         WorkflowStepName = 'Run acceptance scenario matrix'
+        ScenarioId = $ScenarioId
         SummaryPath = $SummaryPath
         RuntimeAction = $Action
     }
@@ -498,6 +502,67 @@ function New-EquivalenceFixture {
     }
 }
 
+function New-WmsEquivalenceFixture {
+    param([string] $Track, [string] $VolatileMarker)
+
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        provenance = [pscustomobject][ordered]@{
+            repository = 'Mang-X/Nerv-IIP'
+            runId = '123456789'
+            runAttempt = 2
+            testedSha = '0123456789abcdef0123456789abcdef01234567'
+            manifestDigest = $manifestDigest
+            scenarioId = 'wms-delivery-erp'
+        }
+        track = $Track
+        conclusion = 'passed'
+        test = [pscustomobject][ordered]@{
+            identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'
+            expected = 1
+            discovered = 1
+            passed = 1
+            failed = 0
+            skipped = 0
+        }
+        businessFacts = [pscustomobject][ordered]@{
+            outboundAssigned = $true
+            pickingLifecycleCompleted = $true
+            deliveryCompleted = $true
+            receivableCreated = $true
+            completionReplayConverged = $true
+            repeatedEventConverged = $true
+        }
+        diagnostics = [pscustomobject][ordered]@{
+            schemas = @('erp', 'inventory', 'wms')
+            failureCaptureSupported = $true
+            failureDiagnosticsCaptured = $false
+            secretsRedacted = $true
+        }
+        cleanup = [pscustomobject][ordered]@{
+            managedProcessesRemaining = 0
+            disposableDatabasesRemaining = 0
+            ownedResourcesRemaining = 0
+            errorCodes = @()
+        }
+        volatile = [pscustomobject][ordered]@{
+            databaseName = "db-$VolatileMarker"
+            processIds = @(701, 702, 703)
+            capSuffix = "cap-$VolatileMarker"
+            startedAtUtc = '2026-08-24T00:00:00.0000000+00:00'
+            completedAtUtc = '2026-08-24T00:01:00.0000000+00:00'
+            cleanupErrors = @()
+            ports = [pscustomobject][ordered]@{ erp = 42001; wms = 42002; inventory = 42003 }
+            paths = [pscustomobject][ordered]@{
+                businessEvidence = "/tmp/$VolatileMarker/evidence.json"
+                probeTrx = "/tmp/$VolatileMarker/probe.trx"
+                cleanupEvidence = "/tmp/$VolatileMarker/evidence.json"
+                canonicalResult = "/tmp/$VolatileMarker/result.json"
+            }
+        }
+    }
+}
+
 function Assert-ResultRejected {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -506,7 +571,8 @@ function Assert-ResultRejected {
         [Parameter(Mandatory)] [string] $ArtifactPath,
         [Parameter(Mandatory)] [string] $ArtifactDigest,
         [Parameter(Mandatory)] [string] $ManifestDigest,
-        [Parameter(Mandatory)] [string] $WorkflowPath
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [string] $ScenarioId = 'sales-order-demand'
     )
 
     $summaryPath = Join-Path $fixtureRoot "result-$Name-summary.json"
@@ -519,7 +585,8 @@ function Assert-ResultRejected {
         -ExpectedManifestDigest $ManifestDigest `
         -WorkflowPath $WorkflowPath `
         -SummaryPath $summaryPath `
-        -Action $action
+        -Action $action `
+        -ScenarioId $ScenarioId
     $observedMessage = '<no exception>'
     try { & $runnerPath @arguments | Out-Null }
     catch { $observedMessage = $_.Exception.Message }
@@ -544,6 +611,66 @@ try {
 
     $firstEquivalenceInput = New-EquivalenceFixture -Track 'shadow' -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
     $secondEquivalenceInput = New-EquivalenceFixture -Track 'v1' -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
+
+    $wmsArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds @('wms-delivery-erp') -Event 'workflow_dispatch' -SelectionMode 'workflow-dispatch-scenario' -SelectionReasons @('dispatch:wms-delivery-erp')
+    $wmsArtifactPath = Join-Path $fixtureRoot 'wms/planning-artifact.json'
+    Write-JsonFixture -Path $wmsArtifactPath -Value $wmsArtifact
+    $wmsSummaryPath = Join-Path $fixtureRoot 'wms/runtime-summary.json'
+    $wmsActionContracts = [Collections.Generic.List[object]]::new()
+    $wmsCanonicalResult = New-WmsEquivalenceFixture -Track shadow -VolatileMarker wms-shadow
+    $wmsBusinessEvidence = [pscustomobject][ordered]@{
+        scenarioStatus = 'passed'
+        deliveryOrderNo = 'DO-MAN527-1234ABCD'
+        wmsOutboundOrder = [pscustomobject][ordered]@{
+            firstAssignment = [pscustomobject][ordered]@{ poolCode = 'POOL-MAN527-SHIPPING-1234ABCD'; operatorPrincipalId = 'man527-operator-1234abcd' }
+            pickingLifecycle = 'public create/read/assign/start/progress/complete for every outbound line'
+            completionHttpReplay = 'same idempotency key accepted twice'
+        }
+        erpDelivery = [pscustomobject][ordered]@{ status = 'completed'; shippedQuantity = 2; shippedAtUtc = '2026-08-24T00:00:00Z'; completedAtUtc = '2026-08-24T00:01:00Z' }
+        accountReceivable = [pscustomobject][ordered]@{ receivableNo = 'AR-001'; sourceDocumentNo = 'DO-MAN527-1234ABCD' }
+        repeatedEvent = 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter'
+    }
+    $wmsCounters = [pscustomobject][ordered]@{ total = 1; executed = 1; passed = 1; failed = 0; skipped = 0 }
+    $wmsCleanup = [pscustomobject][ordered]@{ managedProcessRemaining = 0; exactDatabaseRemaining = 0; postgres = 'owned-stopped'; redis = 'owned-stopped'; errors = @() }
+    $wmsVolatile = [pscustomobject][ordered]@{
+        databaseName = 'man527_1234567890abcdef1234567890abcdef'
+        processIds = @(701, 702, 703)
+        capSuffix = 'man527-123456789abc'
+        startedAtUtc = '2026-08-24T00:00:00Z'
+        completedAtUtc = '2026-08-24T00:01:00Z'
+        ports = [pscustomobject][ordered]@{ erp = 42001; wms = 42002; inventory = 42003 }
+        paths = [pscustomobject][ordered]@{ businessEvidence = '/tmp/evidence.json'; probeTrx = '/tmp/probe.trx'; cleanupEvidence = '/tmp/evidence.json'; canonicalResult = '/tmp/result.json' }
+    }
+    $wmsBuiltCanonical = New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $wmsCanonicalResult.provenance -Track shadow -BusinessEvidence $wmsBusinessEvidence -TestCounters $wmsCounters -CleanupEvidence $wmsCleanup -Volatile $wmsVolatile
+    Assert-Contract ([string]::Equals([string]$wmsBuiltCanonical.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal) -and $wmsBuiltCanonical.businessFacts.repeatedEventConverged) 'The MAN-527 adapter must construct the WMS canonical result from business evidence, exact TRX counters, and cleanup readback.'
+    foreach ($wmsInputMutation in @(
+        @{ Name = 'bad-provenance'; Message = 'runId must be a positive'; Provenance = { param($value) $value.runId = '01' } },
+        @{ Name = 'missing-business-evidence'; Message = 'missing required field'; Business = { param($value) $value.PSObject.Properties.Remove('accountReceivable') } },
+        @{ Name = 'extra-test-identity'; Message = 'exact TRX counts'; Counters = { param($value) $value.total = 2; $value.executed = 2; $value.passed = 2 } },
+        @{ Name = 'cleanup-residue'; Message = 'zero cleanup remaining'; Cleanup = { param($value) $value.exactDatabaseRemaining = 1 } }
+    )) {
+        $mutatedProvenance = Copy-JsonObject $wmsCanonicalResult.provenance
+        $mutatedBusiness = Copy-JsonObject $wmsBusinessEvidence
+        $mutatedCounters = Copy-JsonObject $wmsCounters
+        $mutatedCleanup = Copy-JsonObject $wmsCleanup
+        if ($null -ne $wmsInputMutation['Provenance']) { & $wmsInputMutation['Provenance'] $mutatedProvenance }
+        if ($null -ne $wmsInputMutation['Business']) { & $wmsInputMutation['Business'] $mutatedBusiness }
+        if ($null -ne $wmsInputMutation['Counters']) { & $wmsInputMutation['Counters'] $mutatedCounters }
+        if ($null -ne $wmsInputMutation['Cleanup']) { & $wmsInputMutation['Cleanup'] $mutatedCleanup }
+        $mutationMessage = '<no exception>'
+        try { New-NervAcceptanceWmsDeliveryCanonicalResult -Provenance $mutatedProvenance -Track shadow -BusinessEvidence $mutatedBusiness -TestCounters $mutatedCounters -CleanupEvidence $mutatedCleanup -Volatile $wmsVolatile | Out-Null }
+        catch { $mutationMessage = $_.Exception.Message }
+        Assert-Contract ($mutationMessage.Contains([string]$wmsInputMutation.Message, [StringComparison]::Ordinal)) "WMS canonical input mutation '$($wmsInputMutation.Name)' must fail closed; observed '$mutationMessage'."
+    }
+    $wmsAction = { param([object] $Contract) $wmsActionContracts.Add($Contract); return $wmsCanonicalResult }.GetNewClosure()
+    $wmsArguments = Get-RuntimeArguments -ArtifactPath $wmsArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $wmsSummaryPath -Action $wmsAction -ScenarioId 'wms-delivery-erp'
+    $wmsRuntimeResult = Invoke-NervAcceptanceScenarioRuntime @wmsArguments
+    Assert-Contract ($wmsActionContracts.Count -eq 1 -and [string]::Equals([string]$wmsActionContracts[0].scenario.id, 'wms-delivery-erp', [StringComparison]::Ordinal)) 'The WMS runtime adapter must dispatch exactly one validated wms-delivery-erp contract.'
+    Assert-Contract ([string]::Equals([string]$wmsRuntimeResult.summary.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal) -and [string]::Equals([string]$wmsRuntimeResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The WMS runtime adapter must persist a passing scenario-specific summary.'
+    $wmsBusinessMutation = Copy-JsonObject $wmsCanonicalResult
+    $wmsBusinessMutation.businessFacts.repeatedEventConverged = $false
+    Assert-ResultRejected -Name 'wms-business-mutation' -Results @($wmsBusinessMutation) -ExpectedMessage "business fact 'repeatedEventConverged' must be true" -ArtifactPath $wmsArtifactPath -ArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestDigest $manifestDigest -WorkflowPath $workflowPath -ScenarioId 'wms-delivery-erp'
+    Assert-RunnerBoundaryRejected -Name 'unsupported-scenario-adapter' -ExpectedMessage 'Runtime scenarioId is not supported' -ArtifactPath $wmsArtifactPath -ArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestDigest $manifestDigest -WorkflowPath $workflowPath -Overrides @{ ScenarioId = 'unknown-scenario' }
 
     $defaultRunnerRoot = Join-Path $fixtureRoot 'default-path-runner'
     $defaultRunnerScriptsRoot = Join-Path $defaultRunnerRoot 'scripts'
@@ -636,6 +763,31 @@ function Invoke-PwshScript {
     Assert-Contract ($defaultActionCanonicalIndex -ge 0 -and [string]::Equals([string]$defaultActionCapturedArguments[$defaultActionCanonicalIndex + 1], $defaultActionCanonicalPath, [StringComparison]::Ordinal)) 'The production runner default action must pass the canonical result path to the governed verifier.'
     Assert-Contract ($defaultActionTrackIndex -ge 0 -and [string]::Equals([string]$defaultActionCapturedArguments[$defaultActionTrackIndex + 1], 'shadow', [StringComparison]::Ordinal)) 'The production runner default action must pass the shadow track identifier to the governed verifier.'
     Assert-Contract ([string]::Equals([string]$defaultActionCapture.name, 'acceptance-scenario-matrix-sales-order-demand', [StringComparison]::Ordinal)) 'The production runner default action must retain the governed verifier invocation identity.'
+
+    $defaultWmsActionResultFixturePath = Join-Path $fixtureRoot 'default-wms-action/canonical-result-fixture.json'
+    Write-JsonFixture -Path $defaultWmsActionResultFixturePath -Value $wmsCanonicalResult
+    $defaultWmsActionCapturePath = Join-Path $fixtureRoot 'default-wms-action/invoke-pwsh-capture.jsonl'
+    $defaultWmsSummaryPath = Join-Path $fixtureRoot 'default-wms-action/runtime-summary.json'
+    $defaultWmsCanonicalPath = [IO.Path]::GetFullPath((Join-Path $fixtureRoot 'default-wms-action/canonical-result.json'))
+    $defaultWmsArguments = Get-RunnerArguments -ArtifactPath $wmsArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $wmsArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $defaultWmsSummaryPath -Action { throw 'The injected RuntimeAction seam must be absent from this fixture.' } -ScenarioId 'wms-delivery-erp'
+    [void]$defaultWmsArguments.Remove('RuntimeAction')
+    $defaultWmsArguments.CanonicalResultPath = $defaultWmsCanonicalPath
+    $defaultWmsArguments.TrackIdentifier = 'shadow'
+    $previousRuntimeActionResultFixture = $env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE
+    $previousRuntimeActionCapture = $env:NERV_IIP_RUNTIME_ACTION_CAPTURE
+    try {
+        $env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE = $defaultWmsActionResultFixturePath
+        $env:NERV_IIP_RUNTIME_ACTION_CAPTURE = $defaultWmsActionCapturePath
+        $defaultWmsResult = & $defaultRunnerPath @defaultWmsArguments
+    }
+    finally {
+        $env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE = $previousRuntimeActionResultFixture
+        $env:NERV_IIP_RUNTIME_ACTION_CAPTURE = $previousRuntimeActionCapture
+    }
+    Assert-Contract ([string]::Equals([string]$defaultWmsResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The production runner default WMS action must return a validated canonical result.'
+    $defaultWmsCapture = @(Get-Content -LiteralPath $defaultWmsActionCapturePath)[0] | ConvertFrom-Json -Depth 10
+    Assert-Contract ([string]::Equals([IO.Path]::GetFullPath([string]$defaultWmsCapture.scriptPath), [IO.Path]::GetFullPath((Join-Path $defaultRunnerScriptsRoot 'verify-erp-wms-delivery-completion.ps1')), [StringComparison]::Ordinal)) 'The explicit WMS adapter must invoke only the governed MAN-527 verifier.'
+    Assert-Contract ([string]::Equals([string]$defaultWmsCapture.name, 'acceptance-scenario-matrix-wms-delivery-erp', [StringComparison]::Ordinal)) 'The explicit WMS adapter must retain its governed invocation identity.'
 
     $productionWorkflowSummaryPath = Join-Path $fixtureRoot 'production-workflow/runtime-summary.json'
     $productionWorkflowActionContracts = [Collections.Generic.List[object]]::new()

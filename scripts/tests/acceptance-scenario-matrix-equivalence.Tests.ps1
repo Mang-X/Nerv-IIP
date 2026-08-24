@@ -95,6 +95,65 @@ function New-CanonicalResult([string] $Track, [string] $ManifestDigest, [string]
     }
 }
 
+function New-WmsCanonicalResult([string] $Track, [string] $ManifestDigest, [string] $VolatileMarker, [int] $RunAttempt = 2) {
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        provenance = [pscustomobject][ordered]@{
+            repository = 'Mang-X/Nerv-IIP'
+            runId = '123456789'
+            runAttempt = $RunAttempt
+            testedSha = '0123456789abcdef0123456789abcdef01234567'
+            manifestDigest = $ManifestDigest
+            scenarioId = 'wms-delivery-erp'
+        }
+        track = $Track
+        conclusion = 'passed'
+        test = [pscustomobject][ordered]@{
+            identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'
+            expected = 1
+            discovered = 1
+            passed = 1
+            failed = 0
+            skipped = 0
+        }
+        businessFacts = [pscustomobject][ordered]@{
+            outboundAssigned = $true
+            pickingLifecycleCompleted = $true
+            deliveryCompleted = $true
+            receivableCreated = $true
+            completionReplayConverged = $true
+            repeatedEventConverged = $true
+        }
+        diagnostics = [pscustomobject][ordered]@{
+            schemas = @('erp', 'inventory', 'wms')
+            failureCaptureSupported = $true
+            failureDiagnosticsCaptured = $false
+            secretsRedacted = $true
+        }
+        cleanup = [pscustomobject][ordered]@{
+            managedProcessesRemaining = 0
+            disposableDatabasesRemaining = 0
+            ownedResourcesRemaining = 0
+            errorCodes = @()
+        }
+        volatile = [pscustomobject][ordered]@{
+            databaseName = "db-$VolatileMarker"
+            processIds = @(701, 702, 703)
+            capSuffix = "cap-$VolatileMarker"
+            startedAtUtc = '2026-08-24T00:00:00.0000000+00:00'
+            completedAtUtc = '2026-08-24T00:01:00.0000000+00:00'
+            cleanupErrors = @()
+            ports = [pscustomobject][ordered]@{ erp = 42001; wms = 42002; inventory = 42003 }
+            paths = [pscustomobject][ordered]@{
+                businessEvidence = "/tmp/$VolatileMarker/evidence.json"
+                probeTrx = "/tmp/$VolatileMarker/probe.trx"
+                cleanupEvidence = "/tmp/$VolatileMarker/evidence.json"
+                canonicalResult = "/tmp/$VolatileMarker/result.json"
+            }
+        }
+    }
+}
+
 function Invoke-ComparatorFixture {
     param(
         [Parameter(Mandatory)] [string[]] $ResultPaths,
@@ -105,7 +164,8 @@ function Invoke-ComparatorFixture {
         [int] $PlanningRunAttempt = 2,
         [int] $V1RunAttempt = 2,
         [int] $ShadowRunAttempt = 2,
-        [int] $RunAttempt = 2
+        [int] $RunAttempt = 2,
+        [string] $ScenarioId = 'sales-order-demand'
     )
 
     return Invoke-NervAcceptanceScenarioMatrixEquivalence `
@@ -122,6 +182,7 @@ function Invoke-ComparatorFixture {
         -PlanningRunAttempt $PlanningRunAttempt `
         -ManifestRepositoryPath 'scripts/acceptance-scenario-matrix.json' `
         -Event 'push' `
+        -ScenarioId $ScenarioId `
         -V1ResultPath $ResultPaths[0] `
         -V1RunAttempt $V1RunAttempt `
         -ShadowResultPath $ResultPaths[1] `
@@ -215,6 +276,24 @@ try {
     $successReportText = [IO.File]::ReadAllText($successReportPath)
     Assert-Contract (-not $successReportText.Contains('business-secret-value', [StringComparison]::Ordinal)) 'The report must not retain volatile path values.'
     Assert-Contract (-not $successReportText.Contains('databaseName', [StringComparison]::Ordinal)) 'The report must not serialize the volatile object.'
+
+    $wmsResultPaths = @()
+    foreach ($track in @('v1', 'shadow')) {
+        $path = Join-Path $fixtureRoot "wms-$track.json"
+        Write-JsonFixture -Path $path -Value (New-WmsCanonicalResult -Track $track -ManifestDigest $script:manifestDigest -VolatileMarker "wms-$track")
+        $wmsResultPaths += $path
+    }
+    $wmsReportPath = Join-Path $fixtureRoot 'wms-success-report.json'
+    $wmsSuccess = Invoke-ComparatorFixture -ScenarioId 'wms-delivery-erp' -ResultPaths $wmsResultPaths -ReportPath $wmsReportPath
+    Assert-Contract ([string]::Equals([string]$wmsSuccess.status, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$wmsSuccess.provenance.scenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) 'Two valid WMS canonical tracks must pass the explicit WMS adapter.'
+    $wmsDrift = Get-Content -LiteralPath $wmsResultPaths[1] -Raw | ConvertFrom-Json -Depth 50 -DateKind String
+    $wmsDrift.businessFacts.repeatedEventConverged = $false
+    Write-JsonFixture -Path $wmsResultPaths[1] -Value $wmsDrift
+    $wmsDriftReportPath = Join-Path $fixtureRoot 'wms-drift-report.json'
+    $wmsDriftFailure = $null
+    try { Invoke-ComparatorFixture -ScenarioId 'wms-delivery-erp' -ResultPaths $wmsResultPaths -ReportPath $wmsDriftReportPath | Out-Null }
+    catch { $wmsDriftFailure = $_ }
+    Assert-Contract ($null -ne $wmsDriftFailure -and $wmsDriftFailure.Exception.Message.Contains('stable equivalence vector', [StringComparison]::Ordinal)) 'A WMS business-vector drift must fail equivalence.'
 
     $mixedPlanning = Copy-JsonObject $planning
     $mixedPlanning.runAttempt = 1

@@ -69,6 +69,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         [int] $PlanningRunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ManifestRepositoryPath,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Event,
+        [string] $ScenarioId = 'sales-order-demand',
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $V1ResultPath,
         [int] $V1RunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ShadowResultPath,
@@ -123,20 +124,21 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             -ManifestPath $ManifestRepositoryPath `
             -ManifestDigest $ExpectedManifestDigest `
             -Event $Event)
-        $salesSelections = @($selection.scenarios | Where-Object {
-                [string]::Equals([string]$_.id, 'sales-order-demand', [StringComparison]::Ordinal) -and
+        $adapter = Get-NervAcceptanceRuntimeScenarioAdapter -ScenarioId $ScenarioId
+        $scenarioSelections = @($selection.scenarios | Where-Object {
+                [string]::Equals([string]$_.id, [string]$adapter.scenarioId, [StringComparison]::Ordinal) -and
                 [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and
                 [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
             })
-        if ($salesSelections.Count -ne 1) { throw "Acceptance equivalence planning must select exactly one active/core 'sales-order-demand' scenario." }
-        $scenario = Get-NervAcceptanceSalesOrderRuntimeScenario -Manifest $manifest
+        if ($scenarioSelections.Count -ne 1) { throw "Acceptance equivalence planning must select exactly one active/core '$ScenarioId' scenario." }
+        $scenario = Get-NervAcceptanceRuntimeScenario -Manifest $manifest -ScenarioId $ScenarioId
         $provenance = [pscustomobject][ordered]@{
             repository = $Repository
             runId = $RunId
             runAttempt = $RunAttempt
             testedSha = $TestedSha
             manifestDigest = $ExpectedManifestDigest
-            scenarioId = 'sales-order-demand'
+            scenarioId = $ScenarioId
         }
 
         $vectorsByTrack = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
@@ -156,7 +158,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
                 runAttempt = [int]$descriptor.sourceRunAttempt
                 testedSha = $TestedSha
                 manifestDigest = $ExpectedManifestDigest
-                scenarioId = 'sales-order-demand'
+                scenarioId = $ScenarioId
             }
             $vector = New-NervAcceptanceScenarioEquivalenceVector -Result $resultSnapshot.value -ValidatedScenario $scenario -ExpectedProvenance $expectedTrackProvenance
             $track = [string]$descriptor.track
