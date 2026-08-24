@@ -109,7 +109,7 @@ public sealed class PrintLabelLifecycleCommandTests
                 new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
                 CancellationToken.None));
 
-        Assert.Equal("当前打印批次状态不允许单项再次传输。", exception.Message);
+        Assert.Equal("整批打印失败后不能单项再次传输，请改用整批下发。", exception.Message);
         Assert.Empty(reprintAssetPort.Requests);
         Assert.Empty(reprintPrinter.Calls);
 

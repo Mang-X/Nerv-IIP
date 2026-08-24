@@ -28,6 +28,8 @@ public enum BarcodeLabelKnownExceptionSiteKind
 public static class BarcodeLabelUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
+    private const string CommandHandlerTypeName = "NetCorePal.Extensions.Primitives.ICommandHandler`1";
+    private const string CommandHandlerWithResultTypeName = "NetCorePal.Extensions.Primitives.ICommandHandler`2";
     private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
@@ -41,75 +43,81 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
         var sourceTrees = ParseTrees(documents);
         var compilation = CreateCompilation(sourceTrees);
-        var discovered = new List<BarcodeLabelKnownExceptionSite>();
+        var sites = new Dictionary<string, BarcodeLabelKnownExceptionSite>(StringComparer.Ordinal);
 
         foreach (var syntaxTree in sourceTrees)
         {
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
             var root = syntaxTree.GetRoot();
-            var sites = new Dictionary<MemberDeclarationSyntax, DiscoveredMember>();
-            foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
+            foreach (var invocation in FindKnownExceptionInvocations(root, semanticModel))
             {
-                if (!IsKnownException(semanticModel, creation))
+                var member = invocation.AncestorsAndSelf().OfType<MemberDeclarationSyntax>().First();
+                var identity = GetMemberIdentity(semanticModel, member, invocation, syntaxTree);
+                var path = NormalizePath(syntaxTree.FilePath);
+                var key = $"{path}|{identity.TypeName}|{identity.MemberName}";
+                if (sites.TryGetValue(key, out var existing))
                 {
-                    continue;
-                }
-
-                var member = creation.AncestorsAndSelf().OfType<MemberDeclarationSyntax>().FirstOrDefault()
-                    ?? throw new InvalidOperationException(
-                        $"{NormalizePath(syntaxTree.FilePath)}:{GetLine(syntaxTree, creation)}: KnownException 无法归属到成员。");
-                var identity = GetMemberIdentity(semanticModel, member, syntaxTree);
-                if (sites.TryGetValue(member, out var existing))
-                {
-                    sites[member] = existing with { DirectKnownExceptionCount = existing.DirectKnownExceptionCount + 1 };
+                    sites[key] = existing with { DirectKnownExceptionCount = existing.DirectKnownExceptionCount + 1 };
                 }
                 else
                 {
-                    sites.Add(member, new DiscoveredMember(identity.TypeName, identity.MemberName, 1, false));
+                    sites.Add(key, new BarcodeLabelKnownExceptionSite(
+                        path,
+                        identity.TypeName,
+                        identity.MemberName,
+                        1,
+                        BarcodeLabelKnownExceptionSiteKind.Target,
+                        "discovered BarcodeLabel KnownException site"));
                 }
             }
-
-            foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
-            {
-                var containingType = method.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
-                if (containingType is null)
-                {
-                    continue;
-                }
-
-                var typeSymbol = semanticModel.GetDeclaredSymbol(containingType) as INamedTypeSymbol;
-                var isCommandHandlerHandle = method.Identifier.ValueText == "Handle"
-                    && typeSymbol is not null
-                    && typeSymbol.AllInterfaces.Any(@interface =>
-                        @interface.Name == "ICommandHandler"
-                        && @interface.Arity is 1 or 2);
-                if (!isCommandHandlerHandle)
-                {
-                    continue;
-                }
-
-                var identity = GetMemberIdentity(semanticModel, method, syntaxTree);
-                if (sites.TryGetValue(method, out var existing))
-                {
-                    sites[method] = existing with { IsCommandHandler = true };
-                }
-                else
-                {
-                    sites.Add(method, new DiscoveredMember(identity.TypeName, identity.MemberName, 0, true));
-                }
-            }
-
-            discovered.AddRange(sites.Values.Select(site => new BarcodeLabelKnownExceptionSite(
-                NormalizePath(syntaxTree.FilePath),
-                site.TypeName,
-                site.MemberName,
-                site.DirectKnownExceptionCount,
-                BarcodeLabelKnownExceptionSiteKind.Excluded,
-                "discovered BarcodeLabel KnownException site",
-                site.IsCommandHandler)));
         }
 
-        return discovered
+        var commandHandlerDefinitions = new[]
+        {
+            compilation.GetTypeByMetadataName(CommandHandlerTypeName),
+            compilation.GetTypeByMetadataName(CommandHandlerWithResultTypeName),
+        }.Where(symbol => symbol is not null).Cast<INamedTypeSymbol>().ToArray();
+        if (commandHandlerDefinitions.Length != 2)
+        {
+            throw new InvalidOperationException("BarcodeLabel ICommandHandler 合同类型无法完整解析。");
+        }
+
+        var declaredTypes = sourceTrees
+            .SelectMany(syntaxTree => syntaxTree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>())
+            .Select(type => (Syntax: type, Symbol: compilation.GetSemanticModel(type.SyntaxTree).GetDeclaredSymbol(type) as INamedTypeSymbol))
+            .Where(pair => pair.Symbol is not null)
+            .GroupBy(pair => pair.Symbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
+            .Select(group => group.OrderBy(pair => NormalizePath(pair.Syntax.SyntaxTree.FilePath), StringComparer.Ordinal).First());
+        foreach (var (syntax, typeSymbol) in declaredTypes)
+        {
+            var isCommandHandler = typeSymbol!.AllInterfaces.Any(@interface =>
+                commandHandlerDefinitions.Any(definition =>
+                    SymbolEqualityComparer.Default.Equals(@interface.OriginalDefinition, definition)));
+            if (!isCommandHandler)
+            {
+                continue;
+            }
+
+            var path = NormalizePath(syntax.SyntaxTree.FilePath);
+            var key = $"{path}|{typeSymbol.Name}|Handle";
+            if (sites.TryGetValue(key, out var existing))
+            {
+                sites[key] = existing with { IsCommandHandler = true };
+            }
+            else
+            {
+                sites.Add(key, new BarcodeLabelKnownExceptionSite(
+                    path,
+                    typeSymbol.Name,
+                    "Handle",
+                    0,
+                    BarcodeLabelKnownExceptionSiteKind.Target,
+                    "discovered BarcodeLabel command handler",
+                    true));
+            }
+        }
+
+        return sites.Values
             .OrderBy(site => site.Path, StringComparer.Ordinal)
             .ThenBy(site => site.TypeName, StringComparer.Ordinal)
             .ThenBy(site => site.MethodName, StringComparer.Ordinal)
@@ -136,6 +144,8 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         {
             violations.Add($"豁免数量必须为 {expectedExclusionCount}，实际为 {exclusions.Length}。");
         }
+
+        violations.AddRange(exclusions.Select(exclusion => $"BarcodeLabel KnownException 台账不允许豁免：{exclusion.Key}。"));
 
         var discoveredByKey = discoveredGroups
             .Where(group => group.Count() == 1)
@@ -172,18 +182,20 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         foreach (var syntaxTree in sourceTrees)
         {
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            foreach (var creation in syntaxTree.GetRoot().DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
+            foreach (var invocation in FindKnownExceptionInvocations(syntaxTree.GetRoot(), semanticModel))
             {
-                if (!IsKnownException(semanticModel, creation))
+                var firstArgument = GetFirstArgument(invocation);
+                if (firstArgument is null)
                 {
+                    violations.Add(new Violation(
+                        syntaxTree.FilePath,
+                        GetLine(syntaxTree, invocation),
+                        invocation.SpanStart,
+                        "用户消息必须提供可静态分析的首个参数。"));
                     continue;
                 }
 
-                var firstArgument = creation.ArgumentList?.Arguments.FirstOrDefault()?.Expression;
-                if (firstArgument is not null)
-                {
-                    AddViolations(syntaxTree, firstArgument, violations);
-                }
+                AddViolations(syntaxTree, firstArgument, violations);
             }
         }
 
@@ -214,14 +226,63 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             CreateMetadataReferences());
     }
 
-    private static bool IsKnownException(
-        SemanticModel semanticModel,
-        BaseObjectCreationExpressionSyntax creation) =>
-        semanticModel.GetTypeInfo(creation).Type?.ToDisplayString() == KnownExceptionTypeName;
+    private static IEnumerable<SyntaxNode> FindKnownExceptionInvocations(
+        SyntaxNode root,
+        SemanticModel semanticModel)
+    {
+        foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
+        {
+            if (IsKnownExceptionType(semanticModel.GetTypeInfo(creation).Type))
+            {
+                yield return creation;
+            }
+        }
+
+        foreach (var constructor in root.DescendantNodes().OfType<ConstructorDeclarationSyntax>())
+        {
+            if (constructor.Initializer is { } initializer
+                && semanticModel.GetSymbolInfo(initializer).Symbol is IMethodSymbol symbol
+                && IsKnownExceptionType(symbol.ContainingType))
+            {
+                yield return initializer;
+            }
+        }
+
+        foreach (var baseType in root.DescendantNodes().OfType<PrimaryConstructorBaseTypeSyntax>())
+        {
+            if (semanticModel.GetSymbolInfo(baseType).Symbol is IMethodSymbol symbol
+                && IsKnownExceptionType(symbol.ContainingType))
+            {
+                yield return baseType;
+            }
+        }
+    }
+
+    private static bool IsKnownExceptionType(ITypeSymbol? type)
+    {
+        for (var current = type as INamedTypeSymbol; current is not null; current = current.BaseType)
+        {
+            if (current.ToDisplayString() == KnownExceptionTypeName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static ExpressionSyntax? GetFirstArgument(SyntaxNode invocation) => invocation switch
+    {
+        BaseObjectCreationExpressionSyntax creation => creation.ArgumentList?.Arguments.FirstOrDefault()?.Expression,
+        ConstructorInitializerSyntax initializer => initializer.ArgumentList.Arguments.FirstOrDefault()?.Expression,
+        PrimaryConstructorBaseTypeSyntax baseType => baseType.ArgumentList.Arguments.FirstOrDefault()?.Expression,
+        _ => null,
+    };
 
     private static MemberIdentity GetMemberIdentity(
         SemanticModel semanticModel,
         MemberDeclarationSyntax member,
+        SyntaxNode invocation,
         SyntaxTree syntaxTree)
     {
         var symbol = semanticModel.GetDeclaredSymbol(member)
@@ -236,7 +297,9 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
         if (symbol is INamedTypeSymbol namedType)
         {
-            return new MemberIdentity(namedType.Name, ".type");
+            return new MemberIdentity(
+                namedType.Name,
+                invocation is PrimaryConstructorBaseTypeSyntax ? ".ctor" : ".type");
         }
 
         var containingType = symbol.ContainingType
@@ -358,11 +421,6 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
     private static string NormalizePath(string path) => path.Replace('\\', '/');
 
-    private sealed record DiscoveredMember(
-        string TypeName,
-        string MemberName,
-        int DirectKnownExceptionCount,
-        bool IsCommandHandler);
     private sealed record MemberIdentity(string TypeName, string MemberName);
     private sealed record Violation(string Path, int Line, int Position, string Reason);
 }

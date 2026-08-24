@@ -76,7 +76,7 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             cancellationToken);
         if (existing is not null)
         {
-            var idempotencyCandidate = CreateCandidate(request, request.Result, request.RejectionReason);
+            var idempotencyCandidate = CreateCandidateOrThrow(request, request.Result, request.RejectionReason);
             try
             {
                 existing.EnsureSameIdempotencyPayload(idempotencyCandidate);
@@ -96,23 +96,7 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             cancellationToken);
         var result = isVoidedLabel ? "rejected" : request.Result;
         var rejectionReason = isVoidedLabel ? "label-voided" : request.RejectionReason;
-        ScanRecord candidate;
-        try
-        {
-            candidate = CreateCandidate(request, result, rejectionReason);
-        }
-        catch (ArgumentOutOfRangeException ex)
-        {
-            throw new KnownException("扫描数据无效，请检查数量和条码内容。", ex);
-        }
-        catch (ArgumentException ex)
-        {
-            throw new KnownException("扫描数据无效，请检查必填字段。", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new KnownException("扫描状态不允许当前操作，请检查后重试。", ex);
-        }
+        var candidate = CreateCandidateOrThrow(request, result, rejectionReason);
 
         if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
         {
@@ -186,25 +170,43 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
         return candidate.Id;
     }
 
-    private static ScanRecord CreateCandidate(RecordScanCommand request, string result, string? rejectionReason)
+    private static ScanRecord CreateCandidateOrThrow(
+        RecordScanCommand request,
+        string result,
+        string? rejectionReason)
     {
-        return ScanRecord.Record(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.DeviceCode,
-            request.ScannedValue,
-            request.SourceWorkflow,
-            request.SourceDocumentId,
-            request.IdempotencyKey,
-            result,
-            rejectionReason,
-            request.SkuCode,
-            request.UomCode,
-            request.SiteCode,
-            request.LocationCode,
-            request.QualityStatus,
-            request.OwnerType,
-            request.OwnerId,
-            request.Quantity);
+        try
+        {
+            return ScanRecord.Record(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceCode,
+                request.ScannedValue,
+                request.SourceWorkflow,
+                request.SourceDocumentId,
+                request.IdempotencyKey,
+                result,
+                rejectionReason,
+                request.SkuCode,
+                request.UomCode,
+                request.SiteCode,
+                request.LocationCode,
+                request.QualityStatus,
+                request.OwnerType,
+                request.OwnerId,
+                request.Quantity);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new KnownException("扫描数据无效，请检查数量和条码内容。", ex);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new KnownException("扫描数据无效，请检查必填字段。", ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException("扫描状态不允许当前操作，请检查后重试。", ex);
+        }
     }
 }

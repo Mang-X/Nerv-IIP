@@ -129,6 +129,8 @@ public sealed class ReprintLabelCommandHandler(
                     throw new KnownException("已作废标签不允许再次传输。", exception);
                 case LabelPrintLifecycleRejectionReason.PrintItemConsumed:
                     throw new KnownException("已消费标签不允许再次传输。", exception);
+                case LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch:
+                    throw new KnownException("整批打印失败后不能单项再次传输，请改用整批下发。", exception);
                 default:
                     throw new KnownException("当前打印批次状态不允许单项再次传输。", exception);
             }

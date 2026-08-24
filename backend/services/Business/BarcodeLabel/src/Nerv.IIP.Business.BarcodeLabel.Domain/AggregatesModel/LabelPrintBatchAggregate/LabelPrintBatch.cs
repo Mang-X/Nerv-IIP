@@ -285,9 +285,12 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         if (Status is not (SentToPrinter or Printed))
         {
             throw Reject(
-                Status == DeliveryUnknown
-                    ? LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted
-                    : LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted,
+                Status switch
+                {
+                    DeliveryUnknown => LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted,
+                    Failed => LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch,
+                    _ => LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted,
+                },
                 $"Print batch in status '{Status}' cannot dispatch a reprint.");
         }
 
@@ -472,6 +475,7 @@ public enum LabelPrintLifecycleRejectionReason
     BatchDeliveryUnknownCannotBeDispatched,
     BatchCannotBeReprinted,
     BatchDeliveryUnknownCannotBeReprinted,
+    FailedBatchRequiresDispatch,
     PrintItemNotFound,
     PrintItemVoided,
     PrintItemConsumed,

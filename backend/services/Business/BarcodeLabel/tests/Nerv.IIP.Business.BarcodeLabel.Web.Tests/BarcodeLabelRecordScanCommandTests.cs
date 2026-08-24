@@ -55,6 +55,24 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
+    public async Task Record_scan_idempotency_replay_maps_an_invalid_result_before_payload_comparison()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new RecordScanCommandHandler(dbContext);
+        var command = NewInventoryScanCommand("idem-scan-invalid-replay-001");
+
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(command with { Result = "bogus" }, CancellationToken.None));
+
+        Assert.Equal("扫描数据无效，请检查必填字段。", exception.Message);
+        Assert.IsType<ArgumentException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task Record_scan_invalid_workflow_returns_safe_message_and_preserves_cause()
     {
         await using var dbContext = CreateDbContext();
