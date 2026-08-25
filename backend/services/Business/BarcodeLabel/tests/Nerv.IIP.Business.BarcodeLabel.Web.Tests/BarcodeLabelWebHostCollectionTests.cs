@@ -21,7 +21,7 @@ public sealed class BarcodeLabelWebHostCollectionTests
     }
 
     [Fact]
-    public void Type_system_discovery_covers_target_typed_alias_global_derived_and_fixture_shapes()
+    public void Type_system_discovery_covers_construction_inheritance_fixture_and_helper_call_shapes()
     {
         var violations = BarcodeLabelWebHostCollectionAnalyzer.FindViolations(
         [
@@ -34,8 +34,10 @@ public sealed class BarcodeLabelWebHostCollectionTests
             "BypassMatrix.cs:DerivedTests",
             "BypassMatrix.cs:FixtureTests",
             "BypassMatrix.cs:GlobalProgramTests",
+            "BypassMatrix.cs:HelperInvocationTests",
             "BypassMatrix.cs:RecordTests",
             "BypassMatrix.cs:TargetTypedTests",
+            "BypassMatrix.cs:VoidHelperInvocationTests",
         ],
             violations);
     }
@@ -96,6 +98,28 @@ public sealed class BarcodeLabelWebHostCollectionTests
 
             [Fact]
             public void UsesHost() => _ = fixture.Factory;
+        }
+
+        public static class StaticHostFactoryHelper
+        {
+            public static WebApplicationFactory<Program> Create() => new();
+        }
+
+        public sealed class HelperInvocationTests
+        {
+            [Fact]
+            public void StartsHost() => _ = StaticHostFactoryHelper.Create();
+        }
+
+        public static class StaticHostStarter
+        {
+            public static void Start() => _ = new WebApplicationFactory<Program>();
+        }
+
+        public sealed class VoidHelperInvocationTests
+        {
+            [Fact]
+            public void StartsHost() => StaticHostStarter.Start();
         }
 
         namespace Microsoft.AspNetCore.Mvc.Testing

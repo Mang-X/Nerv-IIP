@@ -138,6 +138,21 @@ public static class BarcodeLabelWebHostCollectionAnalyzer
             {
                 AddType(semanticModel.GetTypeInfo(creation).Type, referenced);
             }
+
+            foreach (var invocation in declaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (semanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method)
+                {
+                    continue;
+                }
+
+                AddType(method.ContainingType, referenced);
+                AddType(method.ReturnType, referenced);
+                foreach (var typeArgument in method.TypeArguments)
+                {
+                    AddType(typeArgument, referenced);
+                }
+            }
         }
 
         return referenced;
