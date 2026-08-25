@@ -1244,9 +1244,15 @@ public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<Assig
 {
     public AssignDispatchTaskCommandValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId)
+            .NotEmpty().WithMessage("组织 ID 不能为空。")
+            .MaximumLength(100).WithMessage("组织 ID 长度不能超过 100 个字符。");
+        RuleFor(x => x.EnvironmentId)
+            .NotEmpty().WithMessage("环境 ID 不能为空。")
+            .MaximumLength(100).WithMessage("环境 ID 长度不能超过 100 个字符。");
+        RuleFor(x => x.OperationTaskId)
+            .NotEmpty().WithMessage("工序任务 ID 不能为空。")
+            .MaximumLength(100).WithMessage("工序任务 ID 长度不能超过 100 个字符。");
         RuleFor(x => x.Participants).Must(participants => participants is null || participants.Count is > 0 and <= 20)
             .WithMessage("提供参与者时，工序任务必须登记 1 至 20 名参与者。");
         RuleForEach(x => x.Participants).ChildRules(participant =>

@@ -48,7 +48,7 @@ public sealed class MesCollaborationValidationTests
     }
 
     [Fact]
-    public void Dispatch_participant_rejections_use_simplified_chinese_messages()
+    public void Dispatch_participant_collection_rejections_have_exact_simplified_chinese_error_sets()
     {
         var validator = new AssignDispatchTaskCommandValidator();
         var duplicate = validator.Validate(CreateCommand(
@@ -64,32 +64,97 @@ public sealed class MesCollaborationValidationTests
                 index == 21 ? 10m : 4.5m))
             .ToArray();
 
-        Assert.Contains("工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。", duplicate.Errors.Select(x => x.ErrorMessage));
-        Assert.Contains("参与者工时占比最多保留四位小数。", excessivePrecision.Errors.Select(x => x.ErrorMessage));
-        Assert.Contains("提供参与者时，工序任务必须登记 1 至 20 名参与者。", validator.Validate(CreateCommand(twentyOne)).Errors.Select(x => x.ErrorMessage));
+        AssertExactMessages(
+            duplicate.Errors.Select(x => x.ErrorMessage),
+            "工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。");
+        AssertExactMessages(
+            excessivePrecision.Errors.Select(x => x.ErrorMessage),
+            "参与者工时占比最多保留四位小数。",
+            "参与者工时占比最多保留四位小数。");
+        AssertExactMessages(
+            validator.Validate(CreateCommand(twentyOne)).Errors.Select(x => x.ErrorMessage),
+            "提供参与者时，工序任务必须登记 1 至 20 名参与者。");
     }
 
     [Fact]
-    public void Every_dispatch_participant_field_rejection_uses_simplified_chinese()
+    public void Every_dispatch_scope_rejection_has_the_exact_simplified_chinese_message()
     {
         var validator = new AssignDispatchTaskCommandValidator();
         var cases = new[]
         {
-            (CreateCommand(new DispatchParticipantInput("", "Alice", 100m)), "参与者人员 ID 不能为空。"),
-            (CreateCommand(new DispatchParticipantInput(new string('W', 101), "Alice", 100m)), "参与者人员 ID 长度不能超过 100 个字符。"),
-            (CreateCommand(new DispatchParticipantInput("worker-a", new string('名', 201), 100m)), "参与者姓名长度不能超过 200 个字符。"),
-            (CreateCommand(new DispatchParticipantInput("worker-a", "Alice", 0m)), "参与者工时占比必须大于 0。"),
-            (CreateCommand(new DispatchParticipantInput("worker-a", "Alice", 101m)), "参与者工时占比不能超过 100。")
+            (CreateCommand("", "env-dev", "OP-10"), "组织 ID 不能为空。"),
+            (CreateCommand(new string('O', 101), "env-dev", "OP-10"), "组织 ID 长度不能超过 100 个字符。"),
+            (CreateCommand("org-001", "", "OP-10"), "环境 ID 不能为空。"),
+            (CreateCommand("org-001", new string('E', 101), "OP-10"), "环境 ID 长度不能超过 100 个字符。"),
+            (CreateCommand("org-001", "env-dev", ""), "工序任务 ID 不能为空。"),
+            (CreateCommand("org-001", "env-dev", new string('T', 101)), "工序任务 ID 长度不能超过 100 个字符。")
         };
 
         foreach (var (command, expectedMessage) in cases)
         {
             var result = validator.Validate(command);
 
-            Assert.Contains(expectedMessage, result.Errors.Select(x => x.ErrorMessage));
-            Assert.All(result.Errors, error => Assert.Matches("[\u4e00-\u9fff]", error.ErrorMessage));
+            AssertExactMessages(result.Errors.Select(x => x.ErrorMessage), expectedMessage);
         }
     }
+
+    [Fact]
+    public void Every_dispatch_participant_field_rejection_has_the_exact_simplified_chinese_error_set()
+    {
+        var validator = new AssignDispatchTaskCommandValidator();
+        var cases = new[]
+        {
+            (CreateCommand(new DispatchParticipantInput("", "Alice", 100m)), new[]
+            {
+                "参与者人员 ID 不能为空。",
+                "工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。"
+            }),
+            (CreateCommand(new DispatchParticipantInput(new string('W', 101), "Alice", 100m)), new[]
+            {
+                "参与者人员 ID 长度不能超过 100 个字符。"
+            }),
+            (CreateCommand(new DispatchParticipantInput("worker-a", new string('名', 201), 100m)), new[]
+            {
+                "参与者姓名长度不能超过 200 个字符。"
+            }),
+            (CreateCommand(new DispatchParticipantInput("worker-a", "Alice", 0m)), new[]
+            {
+                "参与者工时占比必须大于 0。",
+                "工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。"
+            }),
+            (CreateCommand(new DispatchParticipantInput("worker-a", "Alice", 101m)), new[]
+            {
+                "参与者工时占比不能超过 100。",
+                "工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。"
+            })
+        };
+
+        foreach (var (command, expectedMessages) in cases)
+        {
+            var result = validator.Validate(command);
+
+            AssertExactMessages(result.Errors.Select(x => x.ErrorMessage), expectedMessages);
+        }
+    }
+
+    private static void AssertExactMessages(IEnumerable<string> actualMessages, params string[] expectedMessages) =>
+        Assert.Equal(
+            expectedMessages.Order(StringComparer.Ordinal),
+            actualMessages.Order(StringComparer.Ordinal));
+
+    private static AssignDispatchTaskCommand CreateCommand(
+        string organizationId,
+        string environmentId,
+        string operationTaskId) =>
+        new(
+            organizationId,
+            environmentId,
+            operationTaskId,
+            "worker-a",
+            null,
+            "shift-a",
+            DateTimeOffset.Parse("2026-08-25T08:00:00Z"),
+            Participants: null);
 
     private static AssignDispatchTaskCommand CreateCommand(params DispatchParticipantInput[] participants) =>
         new(
