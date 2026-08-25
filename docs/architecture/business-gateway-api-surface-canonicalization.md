@@ -44,6 +44,16 @@ manifest 的 item 集合必须与加入 `CSharpCompilation` 的 syntax tree 集�
 | `Microsoft.CodeAnalysis.CSharp` / `Microsoft.CodeAnalysis` | NuGet `5.0.0`，版本由 `backend/Directory.Packages.props` 锁定 |
 | 输出 | `CSharpCompilation`，`OutputKind.DynamicallyLinkedLibrary` |
 
+### 可重放 restore inputs 与 lock
+
+Roslyn/reference closure 的 authority 还包括一套提交到仓库、可复核的 restore inputs；运行时自报本次下载得到的 hash 不能替代预期 lock。后续 baseline PR 在生成任何 snapshot 前必须提交并校验：
+
+- 根 `NuGet.config`（清空默认 sources，只允许 `https://api.nuget.org/v3/index.json` 及其 `nuget.org/*` mapping）、`backend/Directory.Packages.props`、`backend/Directory.Build.props` 和 `Nerv.IIP.BusinessGateway.Web.csproj` 的 exact bytes/SHA-256；
+- `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json`，NuGet lock schema `version=1`，target 仅为 `net10.0`，每个 direct/transitive package 都必须有 requested/resolved/version/contentHash；禁止 floating version、无 content hash 的 entry 或未登记 transitive dependency；
+- 与该 lock 配套的 `project.assets.json` target graph：每个 package identity/version/contentHash、project reference 和 compile asset 必须逐项等于 lock，不能只比较本次生成的 assets 自身 hash。
+
+固定 restore 流程是使用空的 isolated package/cache staging（staging 路径不进入 identity），并以 `dotnet restore Nerv.IIP.BusinessGateway.Web.csproj --configfile NuGet.config --locked-mode --packages <isolated-package-cache>` 配合 `RestorePackagesWithLockFile=true`、`RestoreLockedMode=true`、`RestoreForceEvaluate=false`、`RestoreIgnoreFailedSources=false`；禁止隐式搜索其他 `NuGet.config`、用户 cache、runtime TPA 或未锁定的 restore。lock 缺失、NuGet source/config/props/project hash 漂移、lock 与 assets graph 不一致、package contentHash 不匹配、额外 package/source 或 restore diagnostic 非空，都必须 fail closed；不得通过刷新 lock 或记录新的运行时 hash 自动接受漂移。SDK、TFM、reference pack 和 Roslyn 版本仍按上表固定，任何升级必须先修订本合同和 lock。
+
 实现必须使用显式而非默认的 Roslyn 选项：
 
 - `CSharpParseOptions(LanguageVersion.CSharp14, DocumentationMode.Parse, SourceCodeKind.Regular, preprocessorSymbols: empty)`；不得使用 `Preview`、机器环境变量、`DEBUG`、`TRACE` 或调用方临时 symbols；
@@ -51,7 +61,7 @@ manifest 的 item 集合必须与加入 `CSharpCompilation` 的 syntax tree 集�
 - 每个 syntax tree 只能由该 compilation 创建一个 `SemanticModel`；symbol、base/interface 和成员关系必须来自这个 model/compilation，不得回退到文本或反射；
 - references 只来自固定 `net10.0` reference pack，以及 `Nerv.IIP.BusinessGateway.Web.csproj` 在该 SDK、TFM 和 restore graph 下的 evaluated compile-time closure：`project.assets.json` 的 `net10.0/compile` assets、`ReferencePath`/显式 `ProjectReference` 的编译输出和 central-version package assets；不得加入 runtime-only assets。不得使用当前进程的 `TRUSTED_PLATFORM_ASSEMBLIES`、运行时加载程序集、机器上任意版本的 DLL 或 provider 的运行时 reflection 结果；
 - reference 清单必须按稳定的 project/package identity、规范化路径和 SHA-256 排序，并在运行记录 TFM、assembly identity、包版本、文件名和 SHA-256。缺少、重复、版本不符、restore graph 与 evaluated project 不一致或无法读取 reference 都是 fatal error；
-- source bytes、parse options、compilation options、reference 清单和 Roslyn assembly version 必须作为运行诊断打印；这些诊断不属于 snapshot 内容。
+- source bytes、parse options、compilation options、restore lock/asset graph、reference 清单和 Roslyn assembly version 必须作为运行诊断打印；这些诊断不属于 snapshot 内容，且诊断 hash 只能用于核对已批准 lock，不能自行成为批准来源。
 
 ### 诊断与覆盖的 fail-closed 规则
 
