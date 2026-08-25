@@ -65,6 +65,11 @@ public sealed class MasterDataResourceListHttpTests
         using var document = JsonDocument.Parse(body);
         Assert.False(document.RootElement.GetProperty("success").GetBoolean());
         Assert.Contains("组织标识不能为空", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+        var errorData = document.RootElement.GetProperty("errorData");
+        Assert.Equal(JsonValueKind.Array, errorData.ValueKind);
+        Assert.NotEmpty(errorData.EnumerateArray());
+        Assert.False(document.RootElement.TryGetProperty("data", out _), body);
     }
 
     private sealed class MasterDataResourceListHttpTestFactory : WebApplicationFactory<Program>
