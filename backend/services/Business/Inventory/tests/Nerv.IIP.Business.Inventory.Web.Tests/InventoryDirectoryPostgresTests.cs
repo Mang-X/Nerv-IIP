@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
@@ -136,7 +137,7 @@ public sealed class InventoryDirectoryPostgresTests
         }
     }
 
-    [InventoryDirectoryExternalPostgresFact]
+    [LineSideInventoryBalanceExternalPostgresFact]
     public async Task Line_side_balance_grouping_and_age_completeness_execute_on_postgres()
     {
         await using var postgres = await DirectoryPostgresScope.CreateExternalAsync();
@@ -170,16 +171,27 @@ public sealed class InventoryDirectoryPostgresTests
                     "warehouse",
                     "SITE-01",
                     null,
+                    "active"),
+                StockLocation.CreateOrUpdate(
+                    null,
+                    "org-line-side-pg",
+                    "env-line-side-pg",
+                    "LINE-SITE-OTHER",
+                    "line-side",
+                    "SITE-02",
+                    null,
                     "active"));
             AddLineSideLedger(db, "LINE-01", "LOT-DATED", 8m, 2m, new DateOnly(2026, 8, 1));
             AddLineSideLedger(db, "LINE-01", "LOT-UNKNOWN", 4m, 1m, null);
             AddLineSideLedger(db, "WH-01", "LOT-WAREHOUSE", 99m, 0m, new DateOnly(2026, 7, 1));
+            AddLineSideLedger(db, "LINE-SITE-OTHER", "LOT-SITE-OTHER", 13m, 0m, new DateOnly(2026, 7, 1), "SITE-02");
             await db.SaveChangesAsync();
 
             var result = await new ListLineSideInventoryBalancesQueryHandler(db, TimeProvider.System).Handle(
                 new ListLineSideInventoryBalancesQuery(
                     "org-line-side-pg",
                     "env-line-side-pg",
+                    SiteCode: "SITE-01",
                     AsOfDate: new DateOnly(2026, 8, 25)),
                 CancellationToken.None);
 
@@ -191,7 +203,7 @@ public sealed class InventoryDirectoryPostgresTests
             Assert.Equal(2, item.LotCount);
             Assert.Equal(new DateOnly(2026, 8, 1), item.OldestProductionDate);
             Assert.Equal(24, item.AgeDays);
-            Assert.Equal("partial", item.AgeCompleteness);
+            Assert.Equal(LineSideInventoryAgeCompleteness.Partial, item.AgeCompleteness);
         }
         finally
         {
@@ -407,14 +419,15 @@ public sealed class InventoryDirectoryPostgresTests
         string lotNo,
         decimal onHandQuantity,
         decimal reservedQuantity,
-        DateOnly? productionDate)
+        DateOnly? productionDate,
+        string siteCode = "SITE-01")
     {
         var ledger = StockLedger.Create(
             "org-line-side-pg",
             "env-line-side-pg",
             "RM-001",
             "EA",
-            "SITE-01",
+            siteCode,
             locationCode,
             lotNo,
             null,
@@ -432,7 +445,7 @@ public sealed class InventoryDirectoryPostgresTests
             $"IDEM-{locationCode}-{lotNo}",
             "RM-001",
             "EA",
-            "SITE-01",
+            siteCode,
             locationCode,
             lotNo,
             null,
@@ -558,6 +571,17 @@ public sealed class InventoryDirectoryExternalPostgresFactAttribute : FactAttrib
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
         {
             Skip = "Set NERV_IIP_TEST_POSTGRES to run the Inventory directory external PostgreSQL test.";
+        }
+    }
+}
+
+public sealed class LineSideInventoryBalanceExternalPostgresFactAttribute : FactAttribute
+{
+    public LineSideInventoryBalanceExternalPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run the Inventory line-side balance external PostgreSQL test.";
         }
     }
 }

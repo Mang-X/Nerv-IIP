@@ -1314,10 +1314,17 @@ try {
     Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
 
     $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
-    # #1561 之后该类的两条身份分属两条规则（Docker 夹具 → inventory-directory-postgres，
-    # external → inventory-directory-external）。只删其一，类选择器仍能经另一条解析成功，
-    # 变异就失去鉴别力；因此这里把覆盖该类的两条规则一并删掉，验证"选择器无处解析"这条不变量。
-    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-postgres'), [StringComparison]::Ordinal) -and -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-external'), [StringComparison]::Ordinal) })
+    # #1561 之后目录类的身份拆为 Docker 夹具 / directory external，#2228 再拆出 line-side external。
+    # 只删其中一条，类选择器仍能经其余规则解析成功，变异就失去鉴别力；因此把覆盖该类的三条规则
+    # 一并删掉，验证"选择器无处解析"这条不变量。
+    $directoryPolicyRuleIds = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            'inventory-directory-postgres',
+            'inventory-directory-external',
+            'inventory-line-side-balance-external'
+        ),
+        [StringComparer]::Ordinal)
+    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not $directoryPolicyRuleIds.Contains([string] $_.id) })
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($directoryPolicy | ConvertTo-Json -Depth 100) -NoNewline
     $missingDirectoryPolicy = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-policy-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
     Assert-Contract (-not $missingDirectoryPolicy.Passed) 'Removing the Inventory directory PostgreSQL policy rule must fail shard governance.'

@@ -8310,7 +8310,7 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
-        Assert.Equal("partial", item.AgeCompleteness);
+        Assert.Equal(LineSideInventoryAgeCompleteness.Partial, item.AgeCompleteness);
         Assert.Equal(24, item.AgeDays);
         Assert.Equal(26, response.TotalCount);
         var request = handler.Requests.Single();

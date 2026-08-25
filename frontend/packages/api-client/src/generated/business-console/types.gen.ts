@@ -4849,8 +4849,10 @@ export type NervIipContractsInventoryLineSideInventoryBalanceItem = {
     lotCount?: number;
     oldestProductionDate?: string | null;
     ageDays?: number | null;
-    ageCompleteness?: string;
+    ageCompleteness?: NervIipContractsInventoryLineSideInventoryAgeCompleteness;
 };
+
+export type NervIipContractsInventoryLineSideInventoryAgeCompleteness = 'complete' | 'partial' | 'unavailable';
 
 export type NervIipContractsInventoryLineSideInventoryBalancesRequest = {
     [key: string]: never;

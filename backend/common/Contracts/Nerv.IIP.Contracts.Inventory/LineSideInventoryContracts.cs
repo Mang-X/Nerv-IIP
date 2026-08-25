@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Nerv.IIP.Contracts.Inventory;
 
 public sealed record LineSideInventoryBalancesRequest(
@@ -28,11 +31,15 @@ public sealed record LineSideInventoryBalanceItem(
     int LotCount,
     DateOnly? OldestProductionDate,
     int? AgeDays,
-    string AgeCompleteness);
+    [property: JsonConverter(typeof(LineSideInventoryAgeCompletenessJsonConverter))]
+    LineSideInventoryAgeCompleteness AgeCompleteness);
 
-public static class LineSideInventoryAgeCompleteness
+public enum LineSideInventoryAgeCompleteness
 {
-    public const string Complete = "complete";
-    public const string Partial = "partial";
-    public const string Unavailable = "unavailable";
+    Complete,
+    Partial,
+    Unavailable,
 }
+
+public sealed class LineSideInventoryAgeCompletenessJsonConverter()
+    : JsonStringEnumConverter<LineSideInventoryAgeCompleteness>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);

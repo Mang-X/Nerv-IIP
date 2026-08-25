@@ -47913,9 +47913,23 @@
             "nullable": true
           },
           "ageCompleteness": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPContractsInventoryLineSideInventoryAgeCompleteness"
           }
         }
+      },
+      "NervIIPContractsInventoryLineSideInventoryAgeCompleteness": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Complete",
+          "Partial",
+          "Unavailable"
+        ],
+        "enum": [
+          "complete",
+          "partial",
+          "unavailable"
+        ]
       },
       "NervIIPContractsInventoryLineSideInventoryBalancesRequest": {
         "type": "object",
