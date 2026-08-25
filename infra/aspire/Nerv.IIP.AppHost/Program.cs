@@ -453,15 +453,18 @@ var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
+    .WithReference(businessQuality)
     .WaitFor(businessMesDatabase)
     .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
-    .WaitFor(businessInventory);
+    .WaitFor(businessInventory)
+    .WaitFor(businessQuality);
 // 站点/库位必须与主线产品配置事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
 // NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到主线种子事实（SITE-001 + loc-*），其他环境
 // 只下发部署方显式配置的真实值，未配置就不下发（#2008）。
