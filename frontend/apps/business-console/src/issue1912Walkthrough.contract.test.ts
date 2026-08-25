@@ -7,6 +7,12 @@ import {
   createSessionCredentialTracker,
   withSessionCredentialCleanup,
 } from '../e2e/session-credential-tracker'
+import {
+  extractPublicError,
+  runWithActorContext,
+  runWithAuthorizedScope,
+  selectAuthorizedWorkScope,
+} from '../e2e/issue1912-walkthrough-runtime'
 
 const scenarioSource = readFileSync(
   resolve(
@@ -317,5 +323,103 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('sideEffect: false')
     expect(scenarioSource).toContain('expectedVersion')
     expect(scenarioSource).toContain('scope catalog')
+  })
+
+  it('runs an actor-aware scope fixture against public payloads and blocks missing-scope mutations', async () => {
+    const calls: Array<{
+      actor: string
+      principalId: string
+      authorization: string
+      scopeId: string
+    }> = []
+    const workerContext = {
+      actor: 'wms-worker' as const,
+      principalId: 'user-emp-049',
+      authorization: 'Bearer worker-fixture-token',
+    }
+    const adminContext = {
+      actor: 'erp-admin' as const,
+      principalId: 'user-admin',
+      authorization: 'Bearer admin-fixture-token',
+    }
+    const catalogPayload = {
+      data: {
+        actorPrincipalId: workerContext.principalId,
+        items: [
+          {
+            displayName: '收货作业池',
+            poolCode: 'POOL-WMS-RECEIVING',
+            scopeId: 'pool-receiving-001',
+            scopeKind: 'work-pool',
+            siteCode: 'SITE-001',
+          },
+        ],
+      },
+    }
+    const scope = selectAuthorizedWorkScope(catalogPayload)
+    expect(scope).toEqual({
+      displayName: '收货作业池',
+      poolCode: 'POOL-WMS-RECEIVING',
+      scopeId: 'pool-receiving-001',
+      scopeKind: 'work-pool',
+      siteCode: 'SITE-001',
+    })
+    expect(
+      selectAuthorizedWorkScope({
+        data: {
+          items: [{ scopeKind: 'work-pool', scopeId: '', displayName: '不完整作业池' }],
+        },
+      }),
+    ).toBeUndefined()
+
+    const scopedCall = await runWithActorContext(workerContext, async (context) => {
+      calls.push({
+        actor: context.actor,
+        principalId: context.principalId,
+        authorization: context.authorization,
+        scopeId: scope!.scopeId,
+      })
+      return { status: 200 }
+    })
+    expect(scopedCall).toEqual({ status: 200 })
+    expect(calls).toEqual([
+      {
+        actor: 'wms-worker',
+        principalId: 'user-emp-049',
+        authorization: 'Bearer worker-fixture-token',
+        scopeId: 'pool-receiving-001',
+      },
+    ])
+    expect(calls).not.toContainEqual(
+      expect.objectContaining({ authorization: adminContext.authorization }),
+    )
+
+    let mutationCalls = 0
+    const missingScope = await runWithAuthorizedScope(undefined, async () => {
+      mutationCalls += 1
+      return { status: 200 }
+    })
+    expect(missingScope).toEqual({ called: false, reason: 'missing-authorized-scope' })
+    expect(mutationCalls).toBe(0)
+
+    expect(
+      extractPublicError({
+        success: false,
+        message: 'work-scope-not-authorized',
+        statusCode: 403,
+        errors: [],
+      }),
+    ).toEqual({ code: 'work-scope-not-authorized', message: 'work-scope-not-authorized' })
+    expect(
+      extractPublicError({
+        success: false,
+        message: 'missing-work-pool-assignment',
+        statusCode: 403,
+        errors: [],
+      }),
+    ).toEqual({ code: 'missing-work-pool-assignment', message: 'missing-work-pool-assignment' })
+    expect(
+      extractPublicError({ success: false, message: 'missing-work-pool-assignment' }),
+    ).not.toEqual(extractPublicError({ success: false, message: 'work-scope-not-authorized' }))
   })
 })
