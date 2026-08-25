@@ -12,9 +12,9 @@ public static class InventoryUnitCostAuthorityStatuses
     // NotRequired is retained only for legacy non-MES movement producers that do not
     // participate in the MES finished-goods authority protocol.
     public const string NotRequired = "not-required";
-    public const string Available = "available";
-    public const string Pending = "pending";
-    public const string Rejected = "rejected";
+    public const string Available = MesFinishedGoodsCostAuthorityStatuses.Available;
+    public const string Pending = MesFinishedGoodsCostAuthorityStatuses.Pending;
+    public const string Rejected = MesFinishedGoodsCostAuthorityStatuses.Rejected;
 }
 
 public sealed record InventoryUnitCostAuthorityResolution(
