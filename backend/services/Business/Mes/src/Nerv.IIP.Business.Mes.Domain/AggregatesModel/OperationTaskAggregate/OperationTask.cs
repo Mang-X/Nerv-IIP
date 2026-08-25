@@ -37,7 +37,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? uomCode,
         decimal plannedQuantity,
         bool requiresQualityInspection,
-        string? operationCode)
+        string? operationCode,
+        string? requiredSkillCode)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -58,6 +59,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
         RequiresQualityInspection = requiresQualityInspection;
         OperationCode = NormalizeOptional(operationCode);
+        RequiredSkillCode = NormalizeOptional(requiredSkillCode);
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -113,6 +115,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public decimal PlannedQuantity { get; private set; }
     public bool RequiresQualityInspection { get; private set; }
     public string? OperationCode { get; private set; }
+    public string? RequiredSkillCode { get; private set; }
     public string? ScheduleInvalidationReasonCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
@@ -144,7 +147,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? requiredSkillCode = null)
     {
         return Create(
             organizationId,
@@ -163,7 +167,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             uomCode,
             plannedQuantity,
             requiresQualityInspection,
-            operationCode);
+            operationCode,
+            requiredSkillCode);
     }
 
     public static OperationTask Create(
@@ -183,7 +188,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? requiredSkillCode = null)
     {
         return new OperationTask(
             organizationId,
@@ -202,7 +208,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             uomCode,
             plannedQuantity,
             requiresQualityInspection,
-            operationCode);
+            operationCode,
+            requiredSkillCode);
     }
 
     public void Start(DateTimeOffset startedAtUtc)
