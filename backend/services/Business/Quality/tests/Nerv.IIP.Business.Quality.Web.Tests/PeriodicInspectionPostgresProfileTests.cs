@@ -1,20 +1,92 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using Npgsql;
+using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 [Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class PeriodicInspectionPostgresProfileTests
 {
+    [QualityPostgresFact]
+    public async Task Time_watermark_migration_backfills_the_next_due_window_for_existing_active_contexts()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.GetService<IMigrator>().MigrateAsync("20260824075912_AddPeriodicInspectionOperationContexts");
+        }
+
+        await using (var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await ExecuteSqlAsync(connection, """
+                INSERT INTO quality.periodic_inspection_operations
+                    (id, organization_id, environment_id, work_order_id, operation_id)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000001', 'org-001', 'env-dev', 'WO-BASE', 'OP-BASE'),
+                    ('00000000-0000-0000-0000-000000000002', 'org-001', 'env-dev', 'WO-CLOSED', 'OP-CLOSED');
+
+                INSERT INTO quality.periodic_inspection_runtime_contexts
+                    (id, operation_context_id, organization_id, environment_id, work_order_id, operation_id,
+                     sku_code, operation_sequence, work_center_id, released_at_utc, inspection_plan_id,
+                     inspection_plan_version, time_interval_hours, quantity_interval, assigned_inspector_user_id,
+                     assigned_team_id, first_activity_at_utc, uom_code, cumulative_good_quantity,
+                     quantity_high_water, status, completed_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000201',
+                     '00000000-0000-0000-0000-000000000001', 'org-001', 'env-dev', 'WO-BASE', 'OP-BASE',
+                     'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z',
+                     '00000000-0000-0000-0000-000000000301', 1, 2.5, 100, NULL, 'team-quality-001',
+                     '2026-08-24T01:10:00Z', 'EA', 10, 10, 'active', NULL),
+                    ('00000000-0000-0000-0000-000000000202',
+                     '00000000-0000-0000-0000-000000000002', 'org-001', 'env-dev', 'WO-CLOSED', 'OP-CLOSED',
+                     'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z',
+                     '00000000-0000-0000-0000-000000000302', 1, 2.5, 100, NULL, 'team-quality-001',
+                     '2026-08-24T01:10:00Z', 'EA', 10, 10, 'closed', '2026-08-24T02:00:00Z');
+                """);
+        }
+
+        await using (var migrate = CreateContext(options))
+        {
+            await migrate.Database.MigrateAsync();
+        }
+
+        await using var assertion = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString);
+        await assertion.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT next_time_window_at_utc FROM quality.periodic_inspection_runtime_contexts WHERE id = '00000000-0000-0000-0000-000000000201'",
+            assertion);
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-08-24T03:40:00Z").UtcDateTime,
+            await command.ExecuteScalarAsync());
+        await using var closedCommand = new NpgsqlCommand(
+            "SELECT next_time_window_at_utc FROM quality.periodic_inspection_runtime_contexts WHERE id = '00000000-0000-0000-0000-000000000202'",
+            assertion);
+        Assert.Equal(DBNull.Value, await closedCommand.ExecuteScalarAsync());
+        await using var commentCommand = new NpgsqlCommand(
+            "SELECT obj_description('quality.periodic_inspection_runtime_contexts'::regclass)",
+            assertion);
+        Assert.Equal(
+            "Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.",
+            await commentCommand.ExecuteScalarAsync());
+    }
+
     [QualityPostgresFact]
     public async Task Postgres_out_of_order_reversal_duplicate_close_and_restart_converge_without_tasks()
     {
@@ -97,13 +169,131 @@ public sealed class PeriodicInspectionPostgresProfileTests
             },
             CancellationToken.None);
 
-        await WaitForAdvisoryWaiterAsync();
+        await WaitForAdvisoryWaitersAsync();
         Assert.False(second.IsCompleted, "The competing operation must be observably parked on the advisory lock.");
         allowFirstCommit.SetResult();
         await Task.WhenAll(first, second);
 
         await using var assertion = CreateContext(options);
         Assert.Equal(1, await assertion.PeriodicInspectionOperations.CountAsync());
+    }
+
+    [QualityPostgresFact]
+    public async Task Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan());
+            await setup.SaveChangesAsync();
+        }
+
+        await HandleReleaseAsync(options);
+        await HandleReportAsync(options, ProductionReport("RPT-TIME-001", 25m, false, null, "2026-08-24T01:30:00Z"));
+
+        await using var gateConnection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString);
+        await gateConnection.OpenAsync();
+        await using var gateTransaction = await gateConnection.BeginTransactionAsync();
+        await using (var gateCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))",
+            gateConnection,
+            gateTransaction))
+        {
+            gateCommand.Parameters.AddWithValue(
+                "key",
+                "quality-periodic-inspection:org-001:env-dev:WO-001:OP-001");
+            await gateCommand.ExecuteNonQueryAsync();
+        }
+
+        await using var firstContext = CreateContext(options);
+        await using var secondContext = CreateContext(options);
+        var runtimeContextId = await firstContext.PeriodicInspectionRuntimeContexts
+            .AsNoTracking()
+            .Select(x => x.Id)
+            .SingleAsync();
+        var command = new GeneratePeriodicInspectionTimeTaskForContextCommand(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-001",
+            runtimeContextId,
+            DateTimeOffset.Parse("2026-08-24T03:30:00Z").UtcDateTime,
+            24);
+        var first = new GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
+            firstContext,
+            new PeriodicInspectionOperationScopeCoordinator(firstContext)).Handle(command, CancellationToken.None);
+        var second = new GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
+            secondContext,
+            new PeriodicInspectionOperationScopeCoordinator(secondContext)).Handle(command, CancellationToken.None);
+
+        await WaitForAdvisoryWaitersAsync(expected: 2, competingTasks: [first, second]);
+        Assert.False(first.IsCompleted);
+        Assert.False(second.IsCompleted);
+        await gateTransaction.CommitAsync();
+
+        var generatedCounts = await Task.WhenAll(first, second);
+        Assert.Equal([0, 1], generatedCounts.Order().ToArray());
+
+        await using var assertion = CreateContext(options);
+        var task = await assertion.InspectionTasks.AsNoTracking().SingleAsync();
+        var runtimeContext = await assertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+        Assert.Equal($"OP-001:periodic-time:{runtimeContext.Id.Id:D}:1", task.SourceDocumentLineId);
+        Assert.Equal($"quality:periodic-time:{runtimeContext.Id.Id:D}:1", task.TriggerIdempotencyKey);
+        Assert.Equal(1, runtimeContext.LastGeneratedTimeWindowSequence);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-24T01:30:00Z").UtcDateTime, runtimeContext.TimeScheduleAnchorAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-24T05:30:00Z").UtcDateTime, runtimeContext.NextTimeWindowAtUtc);
+    }
+
+    [QualityPostgresFact]
+    public async Task Production_mediator_uow_dispatches_one_context_command_and_commits_its_task()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan());
+            await setup.SaveChangesAsync();
+        }
+        await HandleReleaseAsync(options);
+        await HandleReportAsync(options, ProductionReport("RPT-UOW-001", 25m, false, null, "2026-08-24T01:30:00Z"));
+
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration =>
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
+                .AddUnitOfWorkBehaviors());
+        services.AddQualityPostgreSqlPersistence(QualityPostgresLaneDatabase.ConnectionString);
+        services.AddIntegrationEvents(typeof(Program));
+        await using var provider = services.BuildServiceProvider();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var context = await dbContext.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+            var generated = await scope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new GeneratePeriodicInspectionTimeTaskForContextCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-001",
+                    "OP-001",
+                    context.Id,
+                    DateTimeOffset.Parse("2026-08-24T03:30:00Z").UtcDateTime,
+                    24),
+                CancellationToken.None);
+            Assert.Equal(1, generated);
+        }
+
+        await using var assertion = CreateContext(options);
+        Assert.Single(await assertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+        Assert.Equal(
+            1,
+            await assertion.PeriodicInspectionRuntimeContexts.AsNoTracking()
+                .Select(x => x.LastGeneratedTimeWindowSequence)
+                .SingleAsync());
     }
 
     [QualityPostgresFact]
@@ -275,7 +465,17 @@ public sealed class PeriodicInspectionPostgresProfileTests
                     "00000000-0000-0000-0000-000000000206",
                     "00000000-0000-0000-0000-000000000305",
                     "WO-HIGH-WATER-INVALID",
-                    "2", "100", "NULL", "NULL", "-1", "'active'", "NULL"))
+                    "2", "100", "NULL", "NULL", "-1", "'active'", "NULL")),
+            new ConstraintViolationCase(
+                "runtime time watermark",
+                PostgresErrorCodes.CheckViolation,
+                "ck_periodic_inspection_runtime_time_watermark",
+                """
+                UPDATE quality.periodic_inspection_runtime_contexts
+                SET last_generated_time_window_sequence = 1,
+                    time_schedule_anchor_at_utc = NULL
+                WHERE id = '00000000-0000-0000-0000-000000000201';
+                """)
         };
 
         var failures = new List<string>();
@@ -424,7 +624,9 @@ public sealed class PeriodicInspectionPostgresProfileTests
             "WO-001", "OP-001", "SKU-FG-1000", 10, "WC-001", 1000m, "EA", false,
             DateTimeOffset.Parse("2026-08-24T04:00:00Z")));
 
-    private static async Task WaitForAdvisoryWaiterAsync()
+    private static async Task WaitForAdvisoryWaitersAsync(
+        int expected = 1,
+        IReadOnlyCollection<Task>? competingTasks = null)
     {
         const string sql = """
             SELECT count(*)
@@ -435,7 +637,7 @@ public sealed class PeriodicInspectionPostgresProfileTests
               AND wait_event = 'advisory'
             """;
         await Eventually.WaitAsync(
-            condition: "one PostgreSQL advisory-lock waiter for the Quality periodic-inspection operation scope",
+            condition: $"{expected} PostgreSQL advisory-lock waiter(s) for the Quality periodic-inspection operation scope",
             observe: async cancellationToken =>
             {
                 await using var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString);
@@ -448,12 +650,19 @@ public sealed class PeriodicInspectionPostgresProfileTests
                 await using var command = new NpgsqlCommand(sql, connection);
                 return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
             },
-            isSatisfied: waiters => waiters >= 1,
-            describe: waiters => $"advisoryLockWaiters={waiters}; expected>=1",
+            isSatisfied: waiters => waiters >= expected || (competingTasks?.Any(task => task.IsCompleted) ?? false),
+            describe: waiters => $"advisoryLockWaiters={waiters}; expected>={expected}; "
+                + $"taskStatuses={string.Join(',', competingTasks?.Select(task => task.Status) ?? [])}",
             options: new EventuallyOptions(
                 TimeSpan.FromSeconds(15),
                 TimeSpan.FromMilliseconds(50),
                 [QualityPostgresLaneDatabase.ConnectionString]));
+
+        if (competingTasks?.Any(task => task.IsCompleted) ?? false)
+        {
+            await Task.WhenAll(competingTasks);
+            throw new InvalidOperationException("A competing generator completed before reaching the controlled advisory-lock boundary.");
+        }
     }
 
     private sealed record ConstraintViolationCase(
