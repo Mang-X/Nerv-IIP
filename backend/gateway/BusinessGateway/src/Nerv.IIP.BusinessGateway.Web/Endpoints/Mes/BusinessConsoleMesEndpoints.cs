@@ -1014,12 +1014,16 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
 
         // Every assignee/participant must be a registered, on-duty worker. Resolving all names here keeps
         // collaboration snapshots trustworthy and stops arbitrary caller-provided identities from reaching MES.
-        var workers = new Dictionary<string, BusinessConsoleWorkerDirectoryItem>(StringComparer.OrdinalIgnoreCase);
         var workerIds = new[] { request.AssignedUserId }
             .Concat(request.Participants?.Select(x => x.WorkerId) ?? [])
             .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-        foreach (var workerId in workerIds)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(x => x!)
+            .ToArray();
+        var resolvedWorkers = await Task.WhenAll(workerIds.Select(ResolveWorkerAsync));
+        var workers = resolvedWorkers.ToDictionary(x => x.WorkerId, x => x.Worker, StringComparer.OrdinalIgnoreCase);
+
+        async Task<(string WorkerId, BusinessConsoleWorkerDirectoryItem Worker)> ResolveWorkerAsync(string workerId)
         {
             var directory = await masterData.ListWorkersAsync(
                 tokenProvider.BearerToken,
@@ -1041,7 +1045,7 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
                 throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"员工 {worker.DisplayName} 当前不在岗，无法派工。");
             }
 
-            workers.Add(workerId!, worker);
+            return (workerId, worker);
         }
 
         string? assignedUserName = null;

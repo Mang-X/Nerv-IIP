@@ -29,6 +29,24 @@ public sealed class MesCollaborationValidationTests
         Assert.True(validator.Validate(valid).IsValid);
     }
 
+    [Fact]
+    public void Dispatch_participants_accept_twenty_workers_but_reject_twenty_one()
+    {
+        var validator = new AssignDispatchTaskCommandValidator();
+        var twenty = Enumerable.Range(1, 20)
+            .Select(index => new DispatchParticipantInput($"worker-{index:00}", $"Worker {index:00}", 5m))
+            .ToArray();
+        var twentyOne = Enumerable.Range(1, 21)
+            .Select(index => new DispatchParticipantInput(
+                $"worker-{index:00}",
+                $"Worker {index:00}",
+                index == 21 ? 10m : 4.5m))
+            .ToArray();
+
+        Assert.True(validator.Validate(CreateCommand(twenty)).IsValid);
+        Assert.False(validator.Validate(CreateCommand(twentyOne)).IsValid);
+    }
+
     private static AssignDispatchTaskCommand CreateCommand(params DispatchParticipantInput[] participants) =>
         new(
             "org-001",

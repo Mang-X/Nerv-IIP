@@ -5638,6 +5638,84 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_dispatch_facade_resolves_independent_workers_concurrently()
+    {
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseDispatchAssignHost(mes, out var masterData);
+        masterData.WorkerDirectory =
+        [
+            .. masterData.WorkerDirectory,
+            WorkerDirectoryItem("user-op-002", "王敏"),
+            WorkerDirectoryItem("user-op-003", "赵伟"),
+        ];
+        var enteredCalls = 0;
+        var twoCallsEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCalls = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        masterData.ListWorkersHandler = async (request, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref enteredCalls) >= 2)
+            {
+                twoCallsEntered.TrySetResult();
+            }
+
+            await releaseCalls.Task.WaitAsync(cancellationToken);
+            var worker = Assert.Single(masterData.WorkerDirectory, item => item.UserId == request.UserId);
+            return new BusinessConsoleWorkerDirectoryResponse(1, 1, 1, [worker]);
+        };
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var responseTask = client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                assignedUserId = "user-op-001",
+                idempotencyKey = "dispatch-collab-concurrent",
+                participants = new[]
+                {
+                    new { workerId = "user-op-002", sharePercent = 50m },
+                    new { workerId = "user-op-003", sharePercent = 50m },
+                },
+            });
+        var resolvedConcurrently = false;
+        try
+        {
+            await Nerv.IIP.Testing.TestTimeout.RunAsync(
+                "two independent MasterData worker resolutions enter before either completes",
+                async cancellationToken => await twoCallsEntered.Task.WaitAsync(cancellationToken),
+                TimeSpan.FromSeconds(1));
+            resolvedConcurrently = true;
+        }
+        catch (Nerv.IIP.Testing.TestTimeoutException)
+        {
+            // Assertion below reports the concurrency contract after releasing a sequential implementation.
+        }
+        finally
+        {
+            releaseCalls.TrySetResult();
+        }
+
+        var response = await responseTask;
+        Assert.True(resolvedConcurrently, "Independent worker lookups were serialized.");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private static BusinessConsoleWorkerDirectoryItem WorkerDirectoryItem(string userId, string displayName) =>
+        new(
+            userId,
+            userId,
+            displayName,
+            "DEPT-PROD",
+            "生产部",
+            "装配操作工",
+            "active",
+            null,
+            true,
+            [],
+            [],
+            "2026-01-01T00:00:00.0000000Z");
+
+    [Fact]
     public async Task Mes_dispatch_facade_rejects_collaboration_share_that_exceeds_persisted_precision()
     {
         var mes = new RecordingMesClient();
@@ -11692,6 +11770,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             "2026-01-01T00:00:00.0000000Z"),
     ];
 
+    public Func<BusinessConsoleWorkerDirectoryRequest, CancellationToken, Task<BusinessConsoleWorkerDirectoryResponse>>?
+        ListWorkersHandler { get; set; }
+
     public IReadOnlyCollection<BusinessConsoleTeamMemberItem> TeamMembers { get; set; } =
     [
         new BusinessConsoleTeamMemberItem("team-001", "user-001", true, new DateOnly(2026, 1, 1), null, true, "v1"),
@@ -11714,6 +11795,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CancellationToken cancellationToken)
     {
         LastListWorkersRequest = request;
+        if (ListWorkersHandler is not null)
+        {
+            return ListWorkersHandler(request, cancellationToken);
+        }
+
         IEnumerable<BusinessConsoleWorkerDirectoryItem> query = WorkerDirectory;
         if (!string.IsNullOrWhiteSpace(request.UserId))
         {
