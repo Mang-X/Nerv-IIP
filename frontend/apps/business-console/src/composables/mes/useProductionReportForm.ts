@@ -3,6 +3,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 import {
   makeIdempotencyKey,
+  useMesProductionMaterialLots,
   useMesProductionReporting,
   type MesProductionReportInput,
 } from '@/composables/useBusinessMes'
@@ -58,6 +59,18 @@ export function useProductionReportForm(
     reportScopeReady,
     refreshProductionReportState,
   } = useMesProductionReporting()
+  const {
+    materialsReadPermission,
+    materialLotsPending,
+    materialLotsError,
+    availableMaterialLots,
+    refreshMaterialLots,
+  } = useMesProductionMaterialLots(() => {
+    const ctx = context()
+    return ctx
+      ? { workOrderId: ctx.workOrderId, operationTaskId: ctx.operationTaskId }
+      : null
+  })
 
   const canCompleteOperation = computed(() => {
     const ctx = context()
@@ -74,6 +87,7 @@ export function useProductionReportForm(
   const form = reactive({
     goodQuantity: '1',
     scrapQuantity: '0',
+    reworkQuantity: '0',
     completesOperation: canCompleteOperation.value,
     idempotencyKey: makeIdempotencyKey('production-report'),
   })
@@ -91,6 +105,9 @@ export function useProductionReportForm(
   const quantityValidationMessage = ref('')
   const overproductionConfirmationRequired = ref(false)
   const confirmedOverproductionFingerprint = ref('')
+  const materialSelections = reactive(
+    new Map<string, { selected: boolean; consumedQuantity: string }>(),
+  )
   let resetting = false
 
   function resetForm() {
@@ -98,11 +115,13 @@ export function useProductionReportForm(
     intentAttempted.value = false
     intentLocked.value = false
     frozenPayload.value = undefined
+    materialSelections.clear()
     quantityValidationMessage.value = ''
     overproductionConfirmationRequired.value = false
     confirmedOverproductionFingerprint.value = ''
     form.goodQuantity = '1'
     form.scrapQuantity = '0'
+    form.reworkQuantity = '0'
     form.completesOperation = canCompleteOperation.value
     form.idempotencyKey = makeIdempotencyKey('production-report')
     showErrors.value = false
@@ -110,7 +129,8 @@ export function useProductionReportForm(
   }
 
   watch(
-    () => `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.completesOperation}`,
+    () =>
+      `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.reworkQuantity}\u0000${form.completesOperation}\u0000${JSON.stringify([...materialSelections])}`,
     () => {
       quantityValidationMessage.value = ''
       overproductionConfirmationRequired.value = false
@@ -120,6 +140,22 @@ export function useProductionReportForm(
       intentAttempted.value = false
       frozenPayload.value = undefined
     },
+  )
+
+  watch(
+    availableMaterialLots,
+    (rows) => {
+      const knownRequestIds = new Set(rows.map((row) => row.requestId))
+      for (const row of rows) {
+        if (!materialSelections.has(row.requestId)) {
+          materialSelections.set(row.requestId, { selected: false, consumedQuantity: '' })
+        }
+      }
+      for (const requestId of materialSelections.keys()) {
+        if (!knownRequestIds.has(requestId)) materialSelections.delete(requestId)
+      }
+    },
+    { immediate: true },
   )
 
   // 切换报工对象（从工单 A 的工序切到 B）时整表重置，避免把 A 的数量与登记会话幂等键提交到 B。
@@ -136,14 +172,57 @@ export function useProductionReportForm(
 
   const goodQuantity = computed(() => toOptionalNumber(form.goodQuantity))
   const scrapQuantity = computed(() => toOptionalNumber(form.scrapQuantity))
+  const reworkQuantity = computed(() => toOptionalNumber(form.reworkQuantity))
+  const consumedMaterialLots = computed(() =>
+    availableMaterialLots.value.flatMap((row) => {
+      const selection = materialSelections.get(row.requestId)
+      const materialLotId = row.materialLotId?.trim()
+      if (!selection?.selected || !materialLotId) return []
+      return [
+        {
+          materialId: row.materialId,
+          materialLotId,
+          consumedQuantity: toOptionalNumber(selection.consumedQuantity) ?? 0,
+          materialIssueRequestNo: row.requestId,
+        },
+      ]
+    }),
+  )
+  const invalidMaterialLots = computed(() => {
+    const scrap = scrapQuantity.value ?? 0
+    if (scrap > 0 && consumedMaterialLots.value.length === 0) return true
+    return availableMaterialLots.value.some((row) => {
+      const selection = materialSelections.get(row.requestId)
+      if (!selection?.selected) return false
+      const consumedQuantity = toOptionalNumber(selection.consumedQuantity)
+      return (
+        consumedQuantity === undefined ||
+        consumedQuantity <= 0 ||
+        consumedQuantity > row.receivedQuantity - row.consumedQuantity
+      )
+    })
+  })
+  const materialValidationMessage = computed(() => {
+    if (!materialsReadPermission.value && (scrapQuantity.value ?? 0) > 0) {
+      return '当前账号没有材料读取权限，无法为报废报工选择耗料批次。'
+    }
+    if ((scrapQuantity.value ?? 0) > 0 && consumedMaterialLots.value.length === 0) {
+      return '报废报工至少选择一个已收料批次。'
+    }
+    if (invalidMaterialLots.value) return '耗料数量必须大于 0，且不能超过该批次可用数量。'
+    return ''
+  })
 
   const invalid = computed(() => {
     const good = goodQuantity.value
     const scrap = scrapQuantity.value
-    const totalPositive = good !== undefined && scrap !== undefined && good + scrap > 0
+    const rework = reworkQuantity.value
+    const totalPositive =
+      good !== undefined && scrap !== undefined && rework !== undefined && good + scrap + rework > 0
     return {
       goodQuantity: good === undefined || good < 0 || !totalPositive,
       scrapQuantity: scrap === undefined || scrap < 0 || !totalPositive,
+      reworkQuantity: reworkQuantity.value === undefined || reworkQuantity.value < 0,
     }
   })
 
@@ -161,7 +240,12 @@ export function useProductionReportForm(
     ) {
       return false
     }
-    return !invalid.value.goodQuantity && !invalid.value.scrapQuantity
+    return (
+      !invalid.value.goodQuantity &&
+      !invalid.value.scrapQuantity &&
+      !invalid.value.reworkQuantity &&
+      !invalidMaterialLots.value
+    )
   })
 
   async function ensureQuantitySnapshot(ctx: ProductionReportContext) {
@@ -236,6 +320,8 @@ export function useProductionReportForm(
         operationTaskId: ctx.operationTaskId.trim(),
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
+        reworkQuantity: reworkQuantity.value,
+        consumedMaterialLots: consumedMaterialLots.value,
         completesOperation: form.completesOperation,
         reportedAtUtc: new Date().toISOString(),
         idempotencyKey: form.idempotencyKey,
@@ -286,6 +372,34 @@ export function useProductionReportForm(
     reportScopeMessage,
     reportScopePending,
     reportScopeReady,
+    materialsReadPermission,
+    materialLotsPending,
+    materialLotsError,
+    availableMaterialLots,
+    refreshMaterialLots,
+    materialSelections,
+    consumedMaterialLots,
+    invalidMaterialLots,
+    materialValidationMessage,
+    materialSelected: (requestId: string | undefined) =>
+      requestId ? (materialSelections.get(requestId)?.selected ?? false) : false,
+    materialQuantity: (requestId: string) =>
+      materialSelections.get(requestId)?.consumedQuantity ?? '',
+    setMaterialSelected: (
+      requestId: string | undefined,
+      selected: boolean | 'indeterminate' | undefined,
+    ) => {
+      if (!requestId) return
+      const current = materialSelections.get(requestId) ?? { selected: false, consumedQuantity: '' }
+      current.selected = selected === true
+      materialSelections.set(requestId, current)
+    },
+    setMaterialQuantity: (requestId: string | undefined, quantity: string | number | undefined) => {
+      if (!requestId) return
+      const current = materialSelections.get(requestId) ?? { selected: false, consumedQuantity: '' }
+      current.consumedQuantity = quantity === undefined ? '' : String(quantity)
+      materialSelections.set(requestId, current)
+    },
     intentLocked,
     recordProductionReportPending,
     quantitySnapshotPending,

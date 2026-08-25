@@ -71,6 +71,30 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useTaskListPagination } from './useTaskListPagination'
 
+type AvailableMaterialLot = Omit<
+  BusinessConsoleMesMaterialIssueRequestRow,
+  'requestId' | 'materialId' | 'materialLotId' | 'receivedQuantity' | 'consumedQuantity'
+> & {
+  requestId: string
+  materialId: string
+  materialLotId: string
+  receivedQuantity: number
+  consumedQuantity: number
+}
+
+function isAvailableMaterialLot(
+  row: BusinessConsoleMesMaterialIssueRequestRow,
+): row is AvailableMaterialLot {
+  return (
+    typeof row.requestId === 'string' &&
+    typeof row.materialId === 'string' &&
+    typeof row.materialLotId === 'string' &&
+    typeof row.receivedQuantity === 'number' &&
+    typeof row.consumedQuantity === 'number' &&
+    row.receivedQuantity > row.consumedQuantity
+  )
+}
+
 const DEFAULT_TAKE = 100
 const TASK_LIST_PAGE_SIZE = 20
 const MES_OPERATIONS_READ_PERMISSION = 'business.mes.operations.read'
@@ -1308,6 +1332,56 @@ export type RecordReportInput = Omit<
   BusinessConsoleRecordProductionReportRequest,
   'organizationId' | 'environmentId' | 'reportedAtUtc' | 'scopeKind' | 'scopeId'
 >
+
+export function useMesProductionMaterialLots(
+  context: () => { workOrderId?: string | null; operationTaskId?: string | null } | null,
+) {
+  const auth = useAuthStore()
+  const filters = defaultFilters()
+  const materialsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.mes.materials.read'),
+  )
+
+  watch(
+    () => {
+      const current = context()
+      return [current?.workOrderId?.trim() ?? '', current?.operationTaskId?.trim() ?? '']
+    },
+    ([workOrderId, operationTaskId]) => {
+      filters.workOrderId = workOrderId
+      filters.operationTaskId = operationTaskId
+    },
+    { immediate: true },
+  )
+
+  const enabled = computed(
+    () =>
+      hasScope(filters) &&
+      materialsReadPermission.value &&
+      Boolean(filters.workOrderId && filters.operationTaskId),
+  )
+  const materialLotsQuery = useQuery(() => ({
+    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+      query: {
+        ...toListQuery(filters),
+        skip: 0,
+        take: 500,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    materialsReadPermission,
+    materialLotsPending: materialLotsQuery.isLoading,
+    materialLotsError: materialLotsQuery.error,
+    availableMaterialLots: computed<AvailableMaterialLot[]>(() => {
+      if (!materialLotsQuery.data.value?.success) return []
+      return (materialLotsQuery.data.value.data?.items ?? []).filter(isAvailableMaterialLot)
+    }),
+    refreshMaterialLots: () => (enabled.value ? materialLotsQuery.refetch() : Promise.resolve()),
+  }
+}
 
 export function useMesProductionReports() {
   const auth = useAuthStore()

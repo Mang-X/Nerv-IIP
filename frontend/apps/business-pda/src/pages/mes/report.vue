@@ -26,6 +26,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   useMesExactOperationTask,
+  useMesProductionMaterialLots,
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
@@ -117,6 +118,18 @@ const {
 
 const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
   useMesProductionReports()
+const productionMaterialLots = useMesProductionMaterialLots(() =>
+  pair.value
+    ? { workOrderId: pair.value.workOrderId, operationTaskId: pair.value.operationTaskId }
+    : null,
+)
+const {
+  materialsReadPermission,
+  materialLotsPending,
+  materialLotsError,
+  availableMaterialLots,
+  refreshMaterialLots,
+} = productionMaterialLots
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
@@ -167,13 +180,92 @@ const progress = computed(() => productionReportFlow.progress(ctx))
 // --- 数量录入 ---
 const goodQuantity = ref(0)
 const scrapQuantity = ref(0)
+const reworkQuantity = ref(0)
 const completesOperation = ref(false)
+
+const materialSelections = reactive(
+  new Map<string, { selected: boolean; consumedQuantity: string }>(),
+)
+watch(
+  productionMaterialLots.availableMaterialLots,
+  (rows) => {
+    const knownRequestIds = new Set(rows.map((row) => row.requestId))
+    for (const row of rows) {
+      if (!materialSelections.has(row.requestId)) {
+        materialSelections.set(row.requestId, { selected: false, consumedQuantity: '' })
+      }
+    }
+    for (const requestId of materialSelections.keys()) {
+      if (!knownRequestIds.has(requestId)) materialSelections.delete(requestId)
+    }
+  },
+  { immediate: true },
+)
+const consumedMaterialLots = computed(() =>
+  productionMaterialLots.availableMaterialLots.value.flatMap((row) => {
+    const selection = materialSelections.get(row.requestId)
+    const materialLotId = row.materialLotId?.trim()
+    if (!selection?.selected || !materialLotId) return []
+    return [
+      {
+        materialId: row.materialId,
+        materialLotId,
+        consumedQuantity: Number(selection.consumedQuantity),
+        materialIssueRequestNo: row.requestId,
+      },
+    ]
+  }),
+)
+const invalidMaterialLots = computed(() =>
+  (scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0) ||
+  productionMaterialLots.availableMaterialLots.value.some((row) => {
+    const selection = materialSelections.get(row.requestId)
+    if (!selection?.selected) return false
+    const quantity = Number(selection.consumedQuantity)
+    return (
+      !Number.isFinite(quantity) ||
+      quantity <= 0 ||
+      quantity > row.receivedQuantity - row.consumedQuantity
+    )
+  }),
+)
+const materialValidationMessage = computed(() =>
+  scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0
+    ? '报废报工至少选择一个已收料批次。'
+    : invalidMaterialLots.value
+      ? '耗料数量必须大于 0，且不能超过该批次可用数量。'
+      : '',
+)
+function materialSelected(requestId: string | undefined) {
+  return requestId ? (materialSelections.get(requestId)?.selected ?? false) : false
+}
+function materialQuantity(requestId: string | undefined) {
+  return requestId ? (materialSelections.get(requestId)?.consumedQuantity ?? '') : ''
+}
+function setMaterialSelected(requestId: string | undefined, selected: boolean | undefined) {
+  if (!requestId) return
+  const current = materialSelections.get(requestId) ?? { selected: false, consumedQuantity: '' }
+  current.selected = selected ?? false
+  materialSelections.set(requestId, current)
+}
+function setMaterialQuantity(requestId: string | undefined, quantity: string | undefined) {
+  if (!requestId) return
+  const current = materialSelections.get(requestId) ?? { selected: false, consumedQuantity: '' }
+  current.consumedQuantity = quantity ?? ''
+  materialSelections.set(requestId, current)
+}
+function materialRemaining(row: { receivedQuantity?: number; consumedQuantity?: number }) {
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(
+    (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0),
+  )
+}
 
 const quantityValid = computed(
   () =>
     goodQuantity.value >= 0 &&
     scrapQuantity.value >= 0 &&
-    goodQuantity.value + scrapQuantity.value > 0,
+    reworkQuantity.value >= 0 &&
+    goodQuantity.value + scrapQuantity.value + reworkQuantity.value > 0,
 )
 
 // 录数量面板：选中工序后打开
@@ -194,6 +286,13 @@ interface ReportIntent {
   payload: {
     goodQuantity: number
     scrapQuantity: number
+    reworkQuantity: number
+    consumedMaterialLots: Array<{
+      materialId: string
+      materialLotId: string
+      consumedQuantity: number
+      materialIssueRequestNo: string
+    }>
     completesOperation: boolean
   }
   status: 'pending' | 'success' | 'error'
@@ -225,7 +324,9 @@ watch(
     if (workOrderId !== previousWorkOrderId || operationTaskId !== previousOperationTaskId) {
       goodQuantity.value = 0
       scrapQuantity.value = 0
+      reworkQuantity.value = 0
       completesOperation.value = false
+      materialSelections.clear()
       ctx.quantityEntered = false
       ctx.recorded = currentIntent.value?.status === 'success'
     }
@@ -317,6 +418,8 @@ function resetReportIntent() {
   if (pairKey.value) intents.delete(pairKey.value)
   goodQuantity.value = 0
   scrapQuantity.value = 0
+  reworkQuantity.value = 0
+  materialSelections.clear()
   completesOperation.value = false
   ctx.quantityEntered = false
   ctx.recorded = false
@@ -358,6 +461,8 @@ async function submit() {
       payload: {
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
+        reworkQuantity: reworkQuantity.value,
+        consumedMaterialLots: consumedMaterialLots.value,
         completesOperation: completesOperation.value,
       },
       status: 'pending',
@@ -371,6 +476,7 @@ async function submit() {
     intent.result = null
   }
   ctx.quantityEntered = true
+  if (!intent) return
   const attempt = intent.attempt
   try {
     const receiptEnvelope = await recordReport({
@@ -722,6 +828,18 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">返修数</span>
+          <input
+            v-model.number="reworkQuantity"
+            data-testid="rework-quantity"
+            type="number"
+            inputmode="numeric"
+            min="0"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
+          />
+        </label>
+
         <label
           class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-3"
         >
@@ -739,14 +857,90 @@ function onScanWorkOrder(value: string) {
           当前工序可报数量；仅执行中的工序可同时完工。
         </p>
 
+        <section
+          v-if="materialsReadPermission"
+          data-testid="production-material-lots"
+          class="space-y-2 rounded-lg border border-border bg-card p-3"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="text-sm font-medium text-foreground">耗料批次</h3>
+            <button
+              type="button"
+              class="text-sm text-primary"
+              :disabled="materialLotsPending || submitting"
+              @click="refreshMaterialLots"
+            >
+              刷新
+            </button>
+          </div>
+          <p v-if="materialLotsError" class="text-sm text-destructive">
+            已收料批次读取失败，请刷新后重试。
+          </p>
+          <p
+            v-else-if="materialLotsPending"
+            class="text-sm text-muted-foreground"
+          >
+            正在读取已收料批次…
+          </p>
+          <p
+            v-else-if="availableMaterialLots.length === 0"
+            class="text-sm text-muted-foreground"
+          >
+            当前工序暂无可用已收料批次。
+          </p>
+          <div
+            v-for="row in availableMaterialLots"
+            :key="row.requestId"
+            class="space-y-2"
+          >
+            <label class="flex items-center gap-2 text-sm text-foreground">
+              <input
+                :checked="materialSelected(row.requestId)"
+                :data-testid="`material-lot-${row.requestId}`"
+                type="checkbox"
+                class="size-5"
+                :disabled="submitting"
+                @change="setMaterialSelected(row.requestId, ($event.target as HTMLInputElement).checked)"
+              />
+              <span>
+                {{ row.materialId }} · {{ row.materialLotId }}
+                <span class="text-muted-foreground">
+                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用 {{ materialRemaining(row) }}
+                  {{ row.uomCode }}）
+                </span>
+              </span>
+            </label>
+            <input
+              :value="materialQuantity(row.requestId)"
+              :data-testid="`material-quantity-${row.requestId}`"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              step="any"
+              placeholder="耗用数量"
+              class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base outline-none focus:border-primary disabled:opacity-60"
+              :disabled="!materialSelected(row.requestId) || submitting"
+              @input="setMaterialQuantity(row.requestId, ($event.target as HTMLInputElement).value)"
+            />
+          </div>
+          <p v-if="materialValidationMessage" class="text-sm text-destructive" role="alert">
+            {{ materialValidationMessage }}
+          </p>
+        </section>
+        <p v-else data-testid="material-permission-message" class="text-sm text-muted-foreground">
+          当前账号没有材料读取权限，耗料批次选择已禁用。
+        </p>
+
         <p v-if="!quantityValid" class="text-sm text-muted-foreground">
-          良品数与次品数须为非负数，且合计大于 0。
+          良品数、次品数与返修数须为非负数，且合计大于 0。
         </p>
 
         <button
           type="button"
           data-testid="submit-report"
-          :disabled="!quantityValid || submitting || reportScopePending || !reportScopeReady"
+          :disabled="
+            !quantityValid || invalidMaterialLots || submitting || reportScopePending || !reportScopeReady
+          "
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submit"
         >

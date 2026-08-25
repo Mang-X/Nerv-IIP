@@ -15945,6 +15945,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "operationTaskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -45189,7 +45197,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -45651,6 +45659,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportListResponse": {
         "allOf": [

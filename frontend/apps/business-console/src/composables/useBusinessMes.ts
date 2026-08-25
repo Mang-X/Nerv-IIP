@@ -765,6 +765,92 @@ export interface MesProductionQuantitySnapshot {
   reportedGoodQuantity: number
 }
 
+type AvailableMaterialLot = Omit<
+  BusinessConsoleMesMaterialIssueRequestRow,
+  'requestId' | 'materialId' | 'materialLotId' | 'receivedQuantity' | 'consumedQuantity'
+> & {
+  requestId: string
+  materialId: string
+  materialLotId: string
+  receivedQuantity: number
+  consumedQuantity: number
+}
+
+function isAvailableMaterialLot(
+  row: BusinessConsoleMesMaterialIssueRequestRow,
+): row is AvailableMaterialLot {
+  return (
+    typeof row.requestId === 'string' &&
+    typeof row.materialId === 'string' &&
+    typeof row.materialLotId === 'string' &&
+    typeof row.receivedQuantity === 'number' &&
+    typeof row.consumedQuantity === 'number' &&
+    row.receivedQuantity > row.consumedQuantity
+  )
+}
+
+export function useMesProductionMaterialLots(
+  context: () => { workOrderId?: string | null; operationTaskId?: string | null } | null,
+) {
+  const auth = useAuthStore()
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      workOrderId: '',
+      operationTaskId: '',
+      skip: 0,
+      take: 500,
+    }),
+  )
+  const materialsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.mes.materials.read'),
+  )
+
+  watch(
+    () => {
+      const current = context()
+      return [current?.workOrderId?.trim() ?? '', current?.operationTaskId?.trim() ?? '']
+    },
+    ([workOrderId, operationTaskId]) => {
+      filters.workOrderId = workOrderId
+      filters.operationTaskId = operationTaskId
+    },
+    { immediate: true },
+  )
+
+  const enabled = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      materialsReadPermission.value &&
+      Boolean(filters.workOrderId && filters.operationTaskId),
+  )
+  const materialLotsQuery = useQuery(() => ({
+    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        workOrderId: filters.workOrderId,
+        operationTaskId: filters.operationTaskId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    materialsReadPermission,
+    materialLotsPending: materialLotsQuery.isLoading,
+    materialLotsError: materialLotsQuery.error,
+    availableMaterialLots: computed<AvailableMaterialLot[]>(() => {
+      if (!materialLotsQuery.data.value?.success) return []
+      return (materialLotsQuery.data.value.data?.items ?? []).filter(isAvailableMaterialLot)
+    }),
+    refreshMaterialLots: () => (enabled.value ? materialLotsQuery.refetch() : Promise.resolve()),
+  }
+}
+
 export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()

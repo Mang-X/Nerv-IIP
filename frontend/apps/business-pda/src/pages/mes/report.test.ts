@@ -106,6 +106,10 @@ const exactTaskPendingRef = ref(false)
 const exactTaskErrorRef = ref<unknown>(null)
 const exactTaskScopeReadyRef = ref(true)
 const exactTaskScopeMessageRef = ref('')
+const materialLotsRef = ref<Array<Record<string, unknown>>>([])
+const materialsReadPermissionRef = ref(true)
+const materialLotsPendingRef = ref(false)
+const materialLotsErrorRef = ref<unknown>(null)
 const workScopeOptionsRef = ref([
   { label: '精加工一线（工作中心）', value: 'work-center:WC-A' },
   { label: '精加工二线（工作中心）', value: 'work-center:WC-B' },
@@ -214,6 +218,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     reportScopePending: reportScopePendingRef,
     reportScopeReady: reportScopeReadyRef,
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: materialsReadPermissionRef,
+    materialLotsPending: materialLotsPendingRef,
+    materialLotsError: materialLotsErrorRef,
+    availableMaterialLots: materialLotsRef,
+    refreshMaterialLots: vi.fn(async () => undefined),
+  }),
   useMesTelemetryProductionReportCandidates: () => ({
     candidates: computed(() => []),
     total: computed(() => 0),
@@ -282,6 +293,10 @@ describe('PDA MES production reporting page', () => {
     exactTaskErrorRef.value = null
     exactTaskScopeReadyRef.value = true
     exactTaskScopeMessageRef.value = ''
+    materialLotsRef.value = []
+    materialsReadPermissionRef.value = true
+    materialLotsPendingRef.value = false
+    materialLotsErrorRef.value = null
     operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
@@ -893,6 +908,61 @@ describe('PDA MES production reporting page', () => {
     // 成功后 Result 成功态
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('报工成功')
+    wrapper.unmount()
+  })
+
+  it('submits rework quantity and the selected received material lot consumption', async () => {
+    materialLotsRef.value = [
+      {
+        requestId: 'MIR-PDA-001',
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+        materialId: 'MAT-OIL',
+        uomCode: 'L',
+        materialLotId: 'LOT-OIL-001',
+        requestedQuantity: 5,
+        receivedQuantity: 5,
+        consumedQuantity: 1,
+        status: 'received',
+      },
+    ]
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await selectWorkOrder(wrapper, 0)
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+
+    const reworkInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="rework-quantity"]',
+    )!
+    reworkInput.value = '2'
+    reworkInput.dispatchEvent(new Event('input'))
+    const materialCheckbox = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="material-lot-MIR-PDA-001"]',
+    )!
+    materialCheckbox.click()
+    const materialQuantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="material-quantity-MIR-PDA-001"]',
+    )!
+    materialQuantity.value = '3'
+    materialQuantity.dispatchEvent(new Event('input'))
+    const goodInput = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    goodInput.value = '8'
+    goodInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+
+    expect(recordReport.mock.calls[0][0]).toMatchObject({
+      reworkQuantity: 2,
+      consumedMaterialLots: [
+        {
+          materialId: 'MAT-OIL',
+          materialLotId: 'LOT-OIL-001',
+          consumedQuantity: 3,
+          materialIssueRequestNo: 'MIR-PDA-001',
+        },
+      ],
+    })
     wrapper.unmount()
   })
 
