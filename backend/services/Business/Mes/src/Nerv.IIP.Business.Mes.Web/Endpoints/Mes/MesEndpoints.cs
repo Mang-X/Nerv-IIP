@@ -978,7 +978,9 @@ public sealed class ConfirmLineSideMaterialReceiptEndpoint(ISender sender, TimeP
 public sealed class ReturnLineSideMaterialEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<LineSideMaterialReturnRequest, MesAcceptedResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ReturnLineSideMaterialEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<ReturnLineSideMaterialEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(LineSideMaterialReturnRequest req, CancellationToken ct)
     {

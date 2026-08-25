@@ -1147,16 +1147,29 @@ public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class ReturnLineSideMaterialCommandLock : ICommandLock<ReturnLineSideMaterialCommand>
+public sealed class ReturnLineSideMaterialCommandLock(ApplicationDbContext dbContext)
+    : ICommandLock<ReturnLineSideMaterialCommand>
 {
-    public Task<CommandLockSettings> GetLockKeysAsync(
+    public async Task<CommandLockSettings> GetLockKeysAsync(
         ReturnLineSideMaterialCommand command,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new CommandLockSettings(
-            $"business-mes:material-issue-return:{command.OrganizationId.Trim()}:{command.EnvironmentId.Trim()}:{command.RequestId.Trim()}",
-            30));
+        var scopedQuery = dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == command.OrganizationId &&
+                x.EnvironmentId == command.EnvironmentId);
+        var materialRequest = Guid.TryParse(command.RequestId, out var requestGuid)
+            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
+            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == command.RequestId, cancellationToken);
+        if (materialRequest is null)
+        {
+            throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
+        }
+
+        return new CommandLockSettings(
+            $"business-mes:material-issue-return:{materialRequest.OrganizationId}:{materialRequest.EnvironmentId}:{materialRequest.Id.Id:D}",
+            30);
     }
 }
 
