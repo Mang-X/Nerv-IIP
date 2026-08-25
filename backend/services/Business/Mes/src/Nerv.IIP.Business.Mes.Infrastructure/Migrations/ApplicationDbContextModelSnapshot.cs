@@ -2500,7 +2500,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("material_requirement_snapshot_production_version_id")
-                        .HasComment("Production version id whose material requirement snapshot outcome was proved; it must match the current work order version.");
+                        .HasComment("Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.");
 
                     b.Property<string>("MaterialRequirementSnapshotStatus")
                         .HasMaxLength(30)
