@@ -10,7 +10,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 public static class OeeAggregateDimensions
 {
     public const string Device = "device";
-    public const string WorkCenter = "work-center";
+    public const string WorkCenter = "workCenter";
     public const string Line = "line";
     public const string Workshop = "workshop";
     public const string Shift = "shift";
@@ -52,7 +52,8 @@ internal static class OeeAggregateQueryPlan
         QueryOeeAggregateBucketsQuery request,
         IReadOnlyCollection<string> deviceIds,
         DateTimeOffset earliestStart,
-        DateTimeOffset latestEnd) =>
+        DateTimeOffset latestEnd,
+        int maximumRows) =>
         dbContext.DeviceStateSnapshots
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
@@ -61,6 +62,21 @@ internal static class OeeAggregateQueryPlan
             .Where(x => x.OccurredAtUtc >= earliestStart)
             .Where(x => x.OccurredAtUtc < latestEnd)
             .OrderBy(x => x.OccurredAtUtc)
+            .Take(maximumRows + 1);
+
+    internal static IQueryable<DeviceStateSnapshot> BuildCarryInStates(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request,
+        IReadOnlyCollection<string> deviceIds,
+        DateTimeOffset earliestStart) =>
+        dbContext.DeviceStateSnapshots
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => deviceIds.Contains(x.DeviceAssetId))
+            .Where(x => x.OccurredAtUtc < earliestStart)
+            .GroupBy(x => x.DeviceAssetId)
+            .Select(group => group.OrderByDescending(x => x.OccurredAtUtc).First())
             .Take(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1);
 }
 
@@ -167,23 +183,15 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         var deviceIds = facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
         var earliestStart = groups.Min(x => x.StartUtc);
         var latestEnd = groups.Max(x => x.EndUtc);
-        var carryIns = await dbContext.DeviceStateSnapshots
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => deviceIds.Contains(x.DeviceAssetId))
-            .Where(x => x.OccurredAtUtc < earliestStart)
-            .GroupBy(x => x.DeviceAssetId)
-            .Select(group => group.OrderByDescending(x => x.OccurredAtUtc).First())
+        var carryIns = await OeeAggregateQueryPlan
+            .BuildCarryInStates(dbContext, request, deviceIds, earliestStart)
             .ToArrayAsync(cancellationToken);
+        EnsureStateMaterializationLimit(carryIns.Length);
+        var remainingStateCapacity = OeeAggregateMaterializationLimits.MaximumStateSampleCount - carryIns.Length;
         var inWindowStates = await OeeAggregateQueryPlan
-            .BuildInWindowStates(dbContext, request, deviceIds, earliestStart, latestEnd)
+            .BuildInWindowStates(dbContext, request, deviceIds, earliestStart, latestEnd, remainingStateCapacity)
             .ToArrayAsync(cancellationToken);
-        if (inWindowStates.Length > OeeAggregateMaterializationLimits.MaximumStateSampleCount)
-        {
-            throw new KnownException(
-                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumStateSampleCount} device-state materialization limit; narrow the window or add dimension filters.");
-        }
+        EnsureStateMaterializationLimit(carryIns.Length + inWindowStates.Length);
         var statesByDevice = carryIns
             .Concat(inWindowStates)
             .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
@@ -201,6 +209,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         IReadOnlyDictionary<string, IReadOnlyList<DeviceStateSnapshot>> statesByDevice)
     {
         var degradedReasons = new HashSet<string>(StringComparer.Ordinal);
+        var hasCompleteRuntimeCoverage = group.Facts.All(x => !string.IsNullOrWhiteSpace(x.DeviceAssetId));
         var deviceIds = group.Facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
         long loadingTicks = 0;
         long productiveTicks = 0;
@@ -216,6 +225,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             productiveHoursByDevice[deviceId] = decimal.Divide(runtime.ProductiveTicks, TimeSpan.TicksPerHour);
             if (!runtime.HasState)
             {
+                hasCompleteRuntimeCoverage = false;
                 degradedReasons.Add("runtime-state-facts-missing");
             }
         }
@@ -273,6 +283,13 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             degradedReasons.Add("loading-runtime-missing");
         }
 
+        if (!hasCompleteRuntimeCoverage)
+        {
+            availabilityRate = null;
+            performanceRate = null;
+            qualityRate = null;
+        }
+
         AddHistoricalDimensionDegradation(group.Facts, dimension, degradedReasons);
         var siteCode = SingleValue(group.Facts.Select(x => x.SiteCode));
         var workshopCode = SingleValue(group.Facts.Select(x => x.WorkshopCode));
@@ -311,6 +328,15 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             performanceRate is null ? null : Math.Round(expectedOutputQuantity, 6),
             degradedReasons.Count > 0,
             degradedReasons.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+    }
+
+    private static void EnsureStateMaterializationLimit(int materializedStateCount)
+    {
+        if (materializedStateCount > OeeAggregateMaterializationLimits.MaximumStateSampleCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumStateSampleCount} device-state materialization limit; narrow the window or add dimension filters.");
+        }
     }
 
     private static RuntimeTotals CalculateRuntime(

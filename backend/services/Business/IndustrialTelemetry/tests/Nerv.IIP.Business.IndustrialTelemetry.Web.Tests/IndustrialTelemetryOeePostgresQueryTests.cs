@@ -1,5 +1,8 @@
+using System.Data.Common;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
@@ -13,6 +16,67 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 [Collection(IndustrialTelemetryPostgresLaneDatabase.CollectionName)]
 public sealed class IndustrialTelemetryOeePostgresQueryTests
 {
+    [RealPostgresFact]
+    public async Task Combined_carry_in_and_window_state_limit_executes_exact_boundary_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var migrationContext = CreateLaneDbContext())
+        {
+            IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(migrationContext);
+            await migrationContext.Database.MigrateAsync();
+            var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+            migrationContext.OeeProductionFacts.Add(Fact(
+                "PRPT-STATE-BOUNDARY", start.AddMinutes(1), "DEV-STATE-BOUNDARY", "WC-STATE-BOUNDARY",
+                10m, 0m, "PCS", 10m));
+            await migrationContext.SaveChangesAsync();
+            await migrationContext.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO industrial_telemetry.device_state_snapshots
+                    ("Id", organization_id, environment_id, device_asset_id, state, occurred_at_utc,
+                     occurred_at_unix_time_milliseconds, source_sequence, source_system, source_connector,
+                     recorded_at_utc, recorded_at_unix_time_milliseconds)
+                SELECT (md5('state-boundary-' || sample::text))::uuid,
+                       'org-001', 'env-dev', 'DEV-STATE-BOUNDARY', 'running',
+                       TIMESTAMPTZ '2026-07-01T00:00:00Z' + sample * INTERVAL '1 second',
+                       (EXTRACT(EPOCH FROM (TIMESTAMPTZ '2026-07-01T00:00:00Z' + sample * INTERVAL '1 second')) * 1000)::bigint,
+                       'state-boundary-' || sample::text, NULL, NULL,
+                       TIMESTAMPTZ '2026-07-02T00:00:00Z', 1782864000000
+                FROM generate_series(-1, 9998) AS sample;
+                """);
+        }
+
+        var interceptor = new StateQueryLimitCaptureInterceptor();
+        await using var dbContext = CreateLaneDbContext(interceptor);
+        var windowStart = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        var request = new QueryOeeAggregateBucketsQuery(
+            "org-001", "env-dev", OeeAggregateDimensions.WorkCenter,
+            windowStart, windowStart.AddDays(1), WorkCenterId: "WC-STATE-BOUNDARY");
+
+        var accepted = await new QueryOeeAggregateBucketsQueryHandler(dbContext)
+            .Handle(request, CancellationToken.None);
+
+        Assert.Equal(OeeAggregateMaterializationLimits.MaximumStateSampleCount, Assert.Single(accepted.Buckets).StateSampleCount);
+        Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1, interceptor.ExecutedLimits);
+        Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount, interceptor.ExecutedLimits);
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO industrial_telemetry.device_state_snapshots
+                ("Id", organization_id, environment_id, device_asset_id, state, occurred_at_utc,
+                 occurred_at_unix_time_milliseconds, source_sequence, source_system, source_connector,
+                 recorded_at_utc, recorded_at_unix_time_milliseconds)
+            VALUES ((md5('state-boundary-9999'))::uuid,
+                    'org-001', 'env-dev', 'DEV-STATE-BOUNDARY', 'running',
+                    TIMESTAMPTZ '2026-07-01T02:46:39Z', 1782873999000,
+                    'state-boundary-9999', NULL, NULL,
+                    TIMESTAMPTZ '2026-07-02T00:00:00Z', 1782864000000);
+            """);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(request, CancellationToken.None));
+        Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount.ToString(), exception.Message, StringComparison.Ordinal);
+    }
+
     [RealPostgresFact]
     public async Task V1_optional_snapshot_projection_resolves_site_day_and_cross_midnight_shift_windows_on_postgres()
     {
@@ -290,14 +354,37 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         Assert.Equal(10m, result.GoodQuantity);
     }
 
-    private static ApplicationDbContext CreateLaneDbContext()
+    private static ApplicationDbContext CreateLaneDbContext(DbCommandInterceptor? interceptor = null)
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+        var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(
                 IndustrialTelemetryPostgresLaneDatabase.ConnectionString,
-                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
-            .Options;
-        return new ApplicationDbContext(options, new NoopMediator());
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"));
+        if (interceptor is not null)
+        {
+            optionsBuilder.AddInterceptors(interceptor);
+        }
+        return new ApplicationDbContext(optionsBuilder.Options, new NoopMediator());
+    }
+
+    private sealed class StateQueryLimitCaptureInterceptor : DbCommandInterceptor
+    {
+        public List<int> ExecutedLimits { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("device_state_snapshots", StringComparison.Ordinal))
+            {
+                ExecutedLimits.AddRange(command.Parameters.Cast<DbParameter>()
+                    .Where(parameter => parameter.Value is int)
+                    .Select(parameter => (int)parameter.Value!));
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     private static OeeProductionFact Fact(string reportNo, string reportedAtUtc) =>

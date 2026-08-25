@@ -155,6 +155,58 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Oee_aggregate_http_contract_accepts_canonical_work_center_dimension_only()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        const string query = "organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-07-01T00:00:00Z&windowEndUtc=2026-07-02T00:00:00Z";
+
+        using var canonical = await client.GetAsync($"/api/business/v1/iiot/oee/aggregates?{query}&dimension=workCenter");
+        using var legacy = await client.GetAsync($"/api/business/v1/iiot/oee/aggregates?{query}&dimension=work-center");
+
+        Assert.Equal(HttpStatusCode.OK, canonical.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, legacy.StatusCode);
+    }
+
+    [Fact]
+    public async Task Oee_aggregate_nulls_all_factors_when_fact_devices_lack_complete_runtime_coverage()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        dbContext.DeviceStateSnapshots.AddRange(
+            DeviceStateSnapshot.Record("org-runtime-coverage", "env-dev", "DEV-A", "running", start, "state-a", raiseChangedEvent: false),
+            DeviceStateSnapshot.Record("org-runtime-coverage", "env-dev", "DEV-C", "running", start, "state-c", raiseChangedEvent: false));
+        dbContext.OeeProductionFacts.AddRange(
+            OeeProductionFact.Project("org-runtime-coverage", "env-dev", "PRPT-A", "WC-MISSING-DEVICE", "DEV-A", 5m, 0m, 0m, "PCS", 10m, start.AddMinutes(1)),
+            OeeProductionFact.Project("org-runtime-coverage", "env-dev", "PRPT-NO-DEVICE", "WC-MISSING-DEVICE", null, 5m, 0m, 0m, "PCS", 10m, start.AddMinutes(2)),
+            OeeProductionFact.Project("org-runtime-coverage", "env-dev", "PRPT-C", "WC-PARTIAL-STATE", "DEV-C", 5m, 0m, 0m, "PCS", 10m, start.AddMinutes(3)),
+            OeeProductionFact.Project("org-runtime-coverage", "env-dev", "PRPT-D", "WC-PARTIAL-STATE", "DEV-D", 5m, 0m, 0m, "PCS", 10m, start.AddMinutes(4)));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-runtime-coverage", "env-dev", OeeAggregateDimensions.WorkCenter, start, start.AddHours(1)),
+            CancellationToken.None);
+
+        Assert.Equal(2, response.Buckets.Count);
+        var missingDevice = Assert.Single(response.Buckets, x => x.DimensionValue == "WC-MISSING-DEVICE");
+        Assert.Null(missingDevice.AvailabilityRate);
+        Assert.Null(missingDevice.PerformanceRate);
+        Assert.Null(missingDevice.QualityRate);
+        Assert.Null(missingDevice.OeeRate);
+        Assert.Contains("device-dimension-missing", missingDevice.DegradedReasons);
+        var partialState = Assert.Single(response.Buckets, x => x.DimensionValue == "WC-PARTIAL-STATE");
+        Assert.Null(partialState.AvailabilityRate);
+        Assert.Null(partialState.PerformanceRate);
+        Assert.Null(partialState.QualityRate);
+        Assert.Null(partialState.OeeRate);
+        Assert.Contains("runtime-state-facts-missing", partialState.DegradedReasons);
+    }
+
+    [Fact]
     public async Task Oee_aggregate_query_rejects_fact_cardinality_above_the_materialization_limit()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
@@ -199,25 +251,6 @@ public sealed class IndustrialTelemetryEndpointContractTests
                 CancellationToken.None));
 
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount.ToString(), exception.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Oee_aggregate_npgsql_plan_limits_fact_and_state_rows_before_materialization()
-    {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql("Host=translation-only.invalid;Port=5432;Database=translation_only;Username=nerv;Password=nerv")
-            .Options;
-        using var dbContext = new ApplicationDbContext(options, new NoopMediator());
-        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
-        var request = new QueryOeeAggregateBucketsQuery(
-            "org-001", "env-dev", OeeAggregateDimensions.WorkCenter, start, start.AddDays(31));
-
-        var factSql = OeeAggregateQueryPlan.BuildFacts(dbContext, request).ToQueryString();
-        var stateSql = OeeAggregateQueryPlan.BuildInWindowStates(
-            dbContext, request, ["DEV-01"], start, start.AddDays(31)).ToQueryString();
-
-        Assert.Contains("LIMIT", factSql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("LIMIT", stateSql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
