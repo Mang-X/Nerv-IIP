@@ -17,18 +17,18 @@ public sealed record RegisterToolingAssetCommand(
     IReadOnlyCollection<string> SkuCodes,
     long? MaintenanceLifeCount,
     string? IdempotencyKey,
-    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
+    ToolingOperationAuditContext AuditContext) : ICommand<MasterDataResourceResult>;
 
 public sealed class RegisterToolingAssetCommandHandler(
     IToolingAssetRepository repository,
     MasterDataCodingService codingService,
     ApplicationDbContext dbContext,
-    IToolingAuditOperationCoordinator? operationCoordinator = null) : ICommandHandler<RegisterToolingAssetCommand, MasterDataResourceResult>
+    IToolingAuditOperationCoordinator operationCoordinator) : ICommandHandler<RegisterToolingAssetCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(RegisterToolingAssetCommand request, CancellationToken cancellationToken)
     {
-        var context = ToolingAuditCommand.RequireContext(request.AuditContext);
-        var operationId = context.IdempotencyKey!.Trim();
+        var context = request.AuditContext;
+        var operationId = context.OperationId;
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey) &&
             !string.Equals(request.IdempotencyKey.Trim(), operationId, StringComparison.Ordinal))
         {
@@ -38,25 +38,20 @@ public sealed class RegisterToolingAssetCommandHandler(
         var fingerprint = ToolingAuditCommand.Fingerprint(
             ToolingAuditEntry.RegisterOperation,
             ToolingAuditCommand.NormalizeOptionalCode(request.Code),
-            request.Name.Trim(),
-            request.ToolingType.Trim(),
-            ToolingAuditCommand.NormalizeCodes(request.WorkCenterCodes),
-            ToolingAuditCommand.NormalizeCodes(request.SkuCodes),
-            request.MaintenanceLifeCount);
-        return operationCoordinator is null
-            ? await HandleCoreAsync(request, context, operationId, fingerprint, cancellationToken)
-            : await operationCoordinator.ExecuteAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                operationId,
-                request.Code,
-                token => HandleCoreAsync(request, context, operationId, fingerprint, token),
-                cancellationToken);
+            ToolingAssetStatus.Available,
+            0L);
+        return await operationCoordinator.ExecuteAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            operationId,
+            request.Code,
+            token => HandleCoreAsync(request, context, operationId, fingerprint, token),
+            cancellationToken);
     }
 
     private async Task<MasterDataResourceResult> HandleCoreAsync(
         RegisterToolingAssetCommand request,
-        MasterDataIntegrationEventContext context,
+        ToolingOperationAuditContext context,
         string operationId,
         string fingerprint,
         CancellationToken cancellationToken)
@@ -71,7 +66,13 @@ public sealed class RegisterToolingAssetCommandHandler(
             cancellationToken);
         if (replay is not null)
         {
-            return new MasterDataResourceResult("tooling-asset", replay.ToolingCode, request.Name);
+            var replayedAsset = await repository.FindAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                replay.ToolingCode,
+                cancellationToken)
+                ?? throw new KnownException($"工装操作 '{operationId}' 指向的工装资产不存在。");
+            return new MasterDataResourceResult("tooling-asset", replayedAsset.Code, replayedAsset.Name);
         }
 
         var codingFingerprint = MasterDataCodingService.Fingerprint(
@@ -86,24 +87,7 @@ public sealed class RegisterToolingAssetCommandHandler(
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            var existingAsset = await repository.FindAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                allocation.Code,
-                cancellationToken)
-                ?? throw new KnownException($"工装注册操作 '{operationId}' 指向的工装资产不存在。");
-            dbContext.ToolingAuditEntries.Add(ToolingAuditEntry.Register(
-                request.OrganizationId,
-                request.EnvironmentId,
-                existingAsset.Id.ToString(),
-                existingAsset.Code,
-                context.Actor,
-                context.CorrelationId,
-                context.CausationId,
-                operationId,
-                fingerprint,
-                DateTimeOffset.UtcNow));
-            return new MasterDataResourceResult("tooling-asset", existingAsset.Code, existingAsset.Name);
+            throw new KnownException($"工装注册操作 '{operationId}' 缺少可归因的审计事实，禁止将历史操作归因给当前请求。");
         }
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
             throw new KnownException($"工装资产 '{allocation.Code}' 已存在。");
@@ -132,29 +116,23 @@ public sealed record ChangeToolingStatusCommand(
     string Code,
     ToolingAssetStatus Status,
     string Reason,
-    MasterDataIntegrationEventContext? AuditContext = null) : ICommand;
+    ToolingOperationAuditContext AuditContext) : ICommand;
 
 public sealed class ChangeToolingStatusCommandHandler(
     IToolingAssetRepository repository,
     ApplicationDbContext dbContext,
-    IToolingAuditOperationCoordinator? operationCoordinator = null) : ICommandHandler<ChangeToolingStatusCommand>
+    IToolingAuditOperationCoordinator operationCoordinator) : ICommandHandler<ChangeToolingStatusCommand>
 {
     public async Task Handle(ChangeToolingStatusCommand request, CancellationToken cancellationToken)
     {
-        var context = ToolingAuditCommand.RequireContext(request.AuditContext);
-        var operationId = context.IdempotencyKey!.Trim();
+        var context = request.AuditContext;
+        var operationId = context.OperationId;
         var reason = ToolingAuditCommand.NormalizeReason(request.Reason);
         var fingerprint = ToolingAuditCommand.Fingerprint(
             ToolingAuditEntry.StatusOperation,
             ToolingAuditCommand.NormalizeRequiredCode(request.Code),
             request.Status,
             reason);
-        if (operationCoordinator is null)
-        {
-            await HandleCoreAsync(request, context, operationId, reason, fingerprint, cancellationToken);
-            return;
-        }
-
         await operationCoordinator.ExecuteAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -170,7 +148,7 @@ public sealed class ChangeToolingStatusCommandHandler(
 
     private async Task HandleCoreAsync(
         ChangeToolingStatusCommand request,
-        MasterDataIntegrationEventContext context,
+        ToolingOperationAuditContext context,
         string operationId,
         string reason,
         string fingerprint,
@@ -214,26 +192,20 @@ public sealed record RecordToolingUsageCommand(
     string EnvironmentId,
     string Code,
     long Count,
-    MasterDataIntegrationEventContext? AuditContext = null) : ICommand;
+    ToolingOperationAuditContext AuditContext) : ICommand;
 public sealed class RecordToolingUsageCommandHandler(
     IToolingAssetRepository repository,
     ApplicationDbContext dbContext,
-    IToolingAuditOperationCoordinator? operationCoordinator = null) : ICommandHandler<RecordToolingUsageCommand>
+    IToolingAuditOperationCoordinator operationCoordinator) : ICommandHandler<RecordToolingUsageCommand>
 {
     public async Task Handle(RecordToolingUsageCommand request, CancellationToken cancellationToken)
     {
-        var context = ToolingAuditCommand.RequireContext(request.AuditContext);
-        var operationId = context.IdempotencyKey!.Trim();
+        var context = request.AuditContext;
+        var operationId = context.OperationId;
         var fingerprint = ToolingAuditCommand.Fingerprint(
             ToolingAuditEntry.UsageOperation,
             ToolingAuditCommand.NormalizeRequiredCode(request.Code),
             request.Count);
-        if (operationCoordinator is null)
-        {
-            await HandleCoreAsync(request, context, operationId, fingerprint, cancellationToken);
-            return;
-        }
-
         await operationCoordinator.ExecuteAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -249,7 +221,7 @@ public sealed class RecordToolingUsageCommandHandler(
 
     private async Task HandleCoreAsync(
         RecordToolingUsageCommand request,
-        MasterDataIntegrationEventContext context,
+        ToolingOperationAuditContext context,
         string operationId,
         string fingerprint,
         CancellationToken cancellationToken)
@@ -289,24 +261,6 @@ public sealed class RecordToolingUsageCommandHandler(
 
 internal static class ToolingAuditCommand
 {
-    public static MasterDataIntegrationEventContext RequireContext(MasterDataIntegrationEventContext? context)
-    {
-        if (context is null || !context.HasTrustedActor || string.IsNullOrWhiteSpace(context.Actor))
-        {
-            throw new KnownException("工装写操作需要可信的认证主体审计上下文。");
-        }
-        if (string.IsNullOrWhiteSpace(context.CorrelationId) || string.IsNullOrWhiteSpace(context.CausationId))
-        {
-            throw new KnownException("工装写操作需要完整的关联与因果标识。");
-        }
-        if (string.IsNullOrWhiteSpace(context.IdempotencyKey))
-        {
-            throw new KnownException("工装写操作需要稳定的幂等标识。");
-        }
-
-        return context;
-    }
-
     public static string NormalizeReason(string reason) =>
         string.IsNullOrWhiteSpace(reason)
             ? throw new KnownException("工装状态变更原因不能为空。")
@@ -319,13 +273,6 @@ internal static class ToolingAuditCommand
 
     public static string NormalizeOptionalCode(string? code) =>
         string.IsNullOrWhiteSpace(code) ? "<allocated>" : code.Trim().ToUpperInvariant();
-
-    public static string[] NormalizeCodes(IEnumerable<string> codes) => codes
-        .Where(code => !string.IsNullOrWhiteSpace(code))
-        .Select(code => code.Trim().ToUpperInvariant())
-        .Distinct(StringComparer.Ordinal)
-        .Order(StringComparer.Ordinal)
-        .ToArray();
 
     public static string Fingerprint(params object?[] parts)
     {

@@ -34,10 +34,10 @@ public sealed class ToolingAuditEntry : Entity<ToolingAuditEntryId>
         OperationKind = Required(operationKind);
         ToolingAssetId = Required(toolingAssetId);
         ToolingCode = Required(toolingCode);
-        ActorId = Required(actorId);
-        CorrelationId = Required(correlationId);
-        CausationId = Required(causationId);
-        OperationId = Required(operationId);
+        ActorId = RequiredActor(actorId);
+        CorrelationId = RequiredOpaqueIdentity(correlationId, nameof(correlationId));
+        CausationId = RequiredOpaqueIdentity(causationId, nameof(causationId));
+        OperationId = RequiredOpaqueIdentity(operationId, nameof(operationId));
         RequestFingerprint = Required(requestFingerprint);
         BeforeStatus = beforeStatus;
         AfterStatus = afterStatus;
@@ -167,6 +167,16 @@ public sealed class ToolingAuditEntry : Entity<ToolingAuditEntryId>
         string.IsNullOrWhiteSpace(value)
             ? throw new ArgumentException("Value cannot be blank.", nameof(value))
             : value.Trim();
+
+    private static string RequiredActor(string value) =>
+        ToolingAuditIdentityPolicy.IsValidActor(value)
+            ? value
+            : throw new ArgumentException("Actor must be a canonical, non-sensitive user identity.", nameof(value));
+
+    private static string RequiredOpaqueIdentity(string value, string parameterName) =>
+        ToolingAuditIdentityPolicy.IsValidOpaqueIdentity(value)
+            ? value
+            : throw new ArgumentException("Audit identity must be canonical and non-sensitive.", parameterName);
 
     private static string? Optional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

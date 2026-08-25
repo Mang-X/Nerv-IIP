@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using System.Diagnostics;
 using System.Security.Claims;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
@@ -93,14 +94,12 @@ public sealed class MasterDataIntegrationEventContextTests
                 ],
                 "test"))
         };
-        var accessor = new HttpMasterDataIntegrationEventContextAccessor(new HttpContextAccessor
+        var accessor = new HttpToolingOperationAuditContextAccessor(new HttpContextAccessor
         {
             HttpContext = httpContext
         });
 
-        var context = accessor.GetContext();
-
-        Assert.False(context.HasTrustedActor);
+        Assert.Throws<KnownException>(() => accessor.GetRequiredContext());
     }
 
     [Fact]
@@ -119,6 +118,35 @@ public sealed class MasterDataIntegrationEventContextTests
         var context = accessor.GetContext();
 
         Assert.Equal("system:business-masterdata", context.Actor);
-        Assert.False(context.HasTrustedActor);
+    }
+
+    [Theory]
+    [InlineData("actor", "bearer:SENTINEL-TOKEN")]
+    [InlineData("actor", "user:valid\u0001suffix")]
+    [InlineData("correlation", "password=SENTINEL")]
+    [InlineData("causation", "connection-string-SENTINEL")]
+    [InlineData("operation", "authorization-SENTINEL")]
+    public void Tooling_context_rejects_unapproved_actor_or_sensitive_identity(string field, string invalidValue)
+    {
+        var actor = field == "actor" ? invalidValue : "user:operator-001";
+        var correlation = field == "correlation" ? invalidValue : "corr-001";
+        var causation = field == "causation" ? invalidValue : "cause-001";
+        var operation = field == "operation" ? invalidValue : "operation-001";
+
+        Assert.Throws<KnownException>(() => ToolingOperationAuditContext.CreateFromTrustedBoundary(
+            actor,
+            correlation,
+            causation,
+            operation));
+    }
+
+    [Fact]
+    public void Tooling_context_rejects_overlong_identity()
+    {
+        Assert.Throws<KnownException>(() => ToolingOperationAuditContext.CreateFromTrustedBoundary(
+            "user:operator-001",
+            new string('x', 201),
+            "cause-001",
+            "operation-001"));
     }
 }

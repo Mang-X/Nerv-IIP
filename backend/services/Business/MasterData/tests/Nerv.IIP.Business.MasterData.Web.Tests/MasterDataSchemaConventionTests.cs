@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Domain;
@@ -113,7 +114,34 @@ public sealed class MasterDataSchemaConventionTests
             candidate.Properties.Select(property => property.Name)
                 .SequenceEqual(["OrganizationId", "EnvironmentId", "ToolingCode", "OccurredAtUtc"]));
         Assert.Equal("ix_tooling_audit_target_time", targetIndex.GetDatabaseName());
-        Assert.Equal(2, entityType.GetCheckConstraints().Count());
+        var constraints = entityType.GetCheckConstraints().ToDictionary(constraint => constraint.Name!);
+        Assert.Equal(
+            "\"OperationKind\" IN ('tooling-register', 'tooling-status', 'tooling-usage')",
+            constraints["ck_tooling_audit_operation_kind"].Sql);
+        var summaryShape = constraints["ck_tooling_audit_summary_shape"].Sql;
+        Assert.Contains("\"OperationKind\" = 'tooling-register'", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"AfterStatus\" = 'Available'", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"AfterUsageCount\" = 0", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"OperationKind\" = 'tooling-status'", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"Reason\" IS NOT NULL", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"OperationKind\" = 'tooling-usage'", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"AfterUsageCount\" = \"BeforeUsageCount\" + \"UsageDelta\"", summaryShape, StringComparison.Ordinal);
+        Assert.Contains("\"UsageDelta\" > 0", summaryShape, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Tooling_audit_migration_installs_database_append_only_trigger()
+    {
+        using var fixture = CreateFixture();
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260728232043_AddPrincipalScopeContextAudit",
+            "20260825081539_AddToolingOperationAudit");
+
+        Assert.Contains("CREATE TRIGGER trg_tooling_audit_append_only", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "BEFORE UPDATE OR DELETE ON business_masterdata.tooling_audit_entries",
+            script,
+            StringComparison.Ordinal);
     }
 
     [Fact]

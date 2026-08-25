@@ -43,6 +43,23 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                 },
                 comment: "Append-only audit facts for governed tooling register, status, and usage operations.");
 
+            migrationBuilder.Sql(
+                """
+                CREATE FUNCTION business_masterdata.reject_tooling_audit_mutation()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $$
+                BEGIN
+                    RAISE EXCEPTION 'business_masterdata.tooling_audit_entries is append-only';
+                END;
+                $$;
+
+                CREATE TRIGGER trg_tooling_audit_append_only
+                BEFORE UPDATE OR DELETE ON business_masterdata.tooling_audit_entries
+                FOR EACH ROW
+                EXECUTE FUNCTION business_masterdata.reject_tooling_audit_mutation();
+                """);
+
             migrationBuilder.CreateIndex(
                 name: "ix_tooling_audit_target_time",
                 schema: "business_masterdata",
@@ -77,6 +94,11 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "tooling_audit_entries",
                 schema: "business_masterdata");
+
+            migrationBuilder.Sql(
+                """
+                DROP FUNCTION IF EXISTS business_masterdata.reject_tooling_audit_mutation();
+                """);
         }
     }
 }

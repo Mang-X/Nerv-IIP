@@ -9,8 +9,7 @@ public sealed record MasterDataIntegrationEventContext(
     string CorrelationId,
     string CausationId,
     string Actor,
-    string? IdempotencyKey = null,
-    bool HasTrustedActor = false);
+    string? IdempotencyKey = null);
 
 public interface IMasterDataIntegrationEventContextAccessor
 {
@@ -25,22 +24,20 @@ public sealed class HttpMasterDataIntegrationEventContextAccessor(IHttpContextAc
         var httpContext = httpContextAccessor.HttpContext;
         var headers = httpContext?.Request.Headers;
 
-        var actor = ResolveActor(httpContext?.User, headers);
         return new MasterDataIntegrationEventContext(
             ReadHeader(headers, "X-Correlation-Id")
                 ?? Activity.Current?.GetTagItem("correlationId")?.ToString()
                 ?? Guid.NewGuid().ToString("n"),
             ReadHeader(headers, "X-Causation-Id") ?? Guid.NewGuid().ToString("n"),
-            actor.Value,
-            ReadHeader(headers, "X-Idempotency-Key"),
-            actor.IsTrusted);
+            ResolveActor(httpContext?.User, headers),
+            ReadHeader(headers, "X-Idempotency-Key"));
     }
 
-    private static (string Value, bool IsTrusted) ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
+    private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
     {
         if (user?.Identity?.IsAuthenticated != true)
         {
-            return ($"system:{MasterDataIntegrationEventSources.BusinessMasterData}", false);
+            return $"system:{MasterDataIntegrationEventSources.BusinessMasterData}";
         }
 
         var forwardedActor = ReadHeader(headers, "X-Authenticated-Actor");
@@ -48,21 +45,21 @@ public sealed class HttpMasterDataIntegrationEventContextAccessor(IHttpContextAc
         if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal))
         {
             return IsCanonicalActor(forwardedActor)
-                ? (forwardedActor!, true)
-                : ($"system:{MasterDataIntegrationEventSources.BusinessMasterData}", false);
+                ? forwardedActor!
+                : $"system:{MasterDataIntegrationEventSources.BusinessMasterData}";
         }
 
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user?.FindFirstValue("sub");
         if (!string.IsNullOrWhiteSpace(subject))
         {
-            return ($"user:{subject}", true);
+            return $"user:{subject}";
         }
 
         var name = user?.Identity?.Name;
         return string.IsNullOrWhiteSpace(name)
-            ? ($"system:{MasterDataIntegrationEventSources.BusinessMasterData}", false)
-            : ($"user:{name}", true);
+            ? $"system:{MasterDataIntegrationEventSources.BusinessMasterData}"
+            : $"user:{name}";
     }
 
     private static bool IsCanonicalActor(string? actor)

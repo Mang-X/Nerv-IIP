@@ -76,7 +76,7 @@ public sealed class ToolingAuditHttpTests
     [Fact]
     public async Task Internal_service_without_forwarded_actor_fails_closed_without_business_or_audit_rows()
     {
-        await using var factory = new ToolingAuditHttpTestFactory(forceUntrustedContext: true);
+        await using var factory = new ToolingAuditHttpTestFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "tooling-audit-test-token");
         SetOperationHeaders(client, "corr-missing-actor", "cause-missing-actor", "tooling-register-missing-actor");
@@ -97,7 +97,50 @@ public sealed class ToolingAuditHttpTests
         using var responseBody = await response.Content.ReadFromJsonAsync<JsonDocument>();
         Assert.NotNull(responseBody);
         Assert.False(responseBody.RootElement.GetProperty("success").GetBoolean());
-        Assert.Contains("可信的认证主体", responseBody.RootElement.GetProperty("message").GetString());
+        Assert.Contains("X-Authenticated-Actor", responseBody.RootElement.GetProperty("message").GetString());
+        using var observerScope = factory.Services.CreateScope();
+        var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await observer.ToolingAssets.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await observer.ToolingAuditEntries.AsNoTracking().ToArrayAsync());
+    }
+
+    [Theory]
+    [InlineData("actor", "bearer:SENTINEL-TOKEN")]
+    [InlineData("correlation", "password=SENTINEL")]
+    [InlineData("causation", "connection-string-SENTINEL")]
+    [InlineData("operation", "authorization-SENTINEL")]
+    public async Task Sensitive_audit_context_fails_closed_without_business_or_audit_rows(
+        string field,
+        string invalidValue)
+    {
+        await using var factory = new ToolingAuditHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "tooling-audit-test-token");
+        client.DefaultRequestHeaders.Add(
+            "X-Authenticated-Actor",
+            field == "actor" ? invalidValue : "user:tooling-admin-001");
+        SetOperationHeaders(
+            client,
+            field == "correlation" ? invalidValue : "corr-register",
+            field == "causation" ? invalidValue : "cause-register",
+            field == "operation" ? invalidValue : "tooling-register-http");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/master-data/tooling-assets", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "TOOL-HTTP-SENSITIVE",
+            name = "Tool",
+            toolingType = "mould",
+            workCenterCodes = new[] { "WC-01" },
+            skuCodes = new[] { "SKU-A" },
+            maintenanceLifeCount = (long?)null,
+            idempotencyKey = field == "operation" ? invalidValue : "tooling-register-http",
+        });
+
+        using var responseBody = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        Assert.NotNull(responseBody);
+        Assert.False(responseBody.RootElement.GetProperty("success").GetBoolean());
         using var observerScope = factory.Services.CreateScope();
         var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Empty(await observer.ToolingAssets.AsNoTracking().ToArrayAsync());
@@ -127,16 +170,10 @@ public sealed class ToolingAuditHttpTests
 
     private sealed class ToolingAuditHttpTestFactory : WebApplicationFactory<Program>
     {
-        private readonly bool forceUntrustedContext;
         private readonly string databaseName = $"masterdata-tooling-audit-http-{Guid.NewGuid():N}";
         private readonly ServiceProvider efServices = new ServiceCollection()
             .AddEntityFrameworkInMemoryDatabase()
             .BuildServiceProvider();
-
-        public ToolingAuditHttpTestFactory(bool forceUntrustedContext = false)
-        {
-            this.forceUntrustedContext = forceUntrustedContext;
-        }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -149,12 +186,6 @@ public sealed class ToolingAuditHttpTests
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
                 services.RemoveAll<IIntegrationEventPublisher>();
                 services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
-                if (forceUntrustedContext)
-                {
-                    services.RemoveAll<IMasterDataIntegrationEventContextAccessor>();
-                    services.AddScoped<IMasterDataIntegrationEventContextAccessor, UntrustedContextAccessor>();
-                }
-
                 services.AddDbContext<ApplicationDbContext>(options => options
                     .UseInMemoryDatabase(databaseName)
                     .UseInternalServiceProvider(efServices)
@@ -170,16 +201,6 @@ public sealed class ToolingAuditHttpTests
                 efServices.Dispose();
             }
         }
-    }
-
-    private sealed class UntrustedContextAccessor : IMasterDataIntegrationEventContextAccessor
-    {
-        public MasterDataIntegrationEventContext GetContext() => new(
-            "corr-missing-actor",
-            "cause-missing-actor",
-            "system:business-masterdata",
-            "tooling-register-missing-actor",
-            HasTrustedActor: false);
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

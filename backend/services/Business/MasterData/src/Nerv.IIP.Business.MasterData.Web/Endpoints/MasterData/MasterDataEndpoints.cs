@@ -1801,13 +1801,13 @@ public sealed class ListToolingAssetsEndpoint(ISender sender)
 
 public sealed class RegisterToolingAssetEndpoint(
     ISender sender,
-    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
+    IToolingOperationAuditContextAccessor operationContextAccessor)
     : MasterDataEndpoint<RegisterToolingAssetRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<RegisterToolingAssetEndpoint>(); ConfigureMasterDataContract(contract); }
     public override async Task HandleAsync(RegisterToolingAssetRequest req, CancellationToken ct)
     {
-        var operation = operationContextAccessor.GetContext();
+        var operation = operationContextAccessor.GetRequiredContext();
         var result = await sender.Send(new RegisterToolingAssetCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Name, req.ToolingType, req.WorkCenterCodes, req.SkuCodes, req.MaintenanceLifeCount, req.IdempotencyKey, operation), ct);
         await Send.OkAsync(new MasterDataResourceResponse(result.ResourceType, result.Code, result.DisplayName).AsResponseData(), ct);
     }
@@ -1816,21 +1816,21 @@ public sealed class RegisterToolingAssetEndpoint(
 public sealed record ChangeToolingStatusRequest(string OrganizationId, string EnvironmentId, string Code, ToolingAssetStatus Status, string Reason);
 public sealed class ChangeToolingStatusEndpoint(
     ISender sender,
-    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
+    IToolingOperationAuditContextAccessor operationContextAccessor)
     : MasterDataEndpoint<ChangeToolingStatusRequest, EmptyResponse>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<ChangeToolingStatusEndpoint>(); ConfigureMasterDataContract(contract); }
-    public override async Task HandleAsync(ChangeToolingStatusRequest req, CancellationToken ct) { var operation = operationContextAccessor.GetContext(); await sender.Send(new ChangeToolingStatusCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Status, req.Reason, operation), ct); await Send.NoContentAsync(ct); }
+    public override async Task HandleAsync(ChangeToolingStatusRequest req, CancellationToken ct) { var operation = operationContextAccessor.GetRequiredContext(); await sender.Send(new ChangeToolingStatusCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Status, req.Reason, operation), ct); await Send.NoContentAsync(ct); }
 }
 
 public sealed record RecordToolingUsageRequest(string OrganizationId, string EnvironmentId, string Code, long Count);
 public sealed class RecordToolingUsageEndpoint(
     ISender sender,
-    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
+    IToolingOperationAuditContextAccessor operationContextAccessor)
     : MasterDataEndpoint<RecordToolingUsageRequest, EmptyResponse>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<RecordToolingUsageEndpoint>(); ConfigureMasterDataContract(contract); }
-    public override async Task HandleAsync(RecordToolingUsageRequest req, CancellationToken ct) { var operation = operationContextAccessor.GetContext(); await sender.Send(new RecordToolingUsageCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Count, operation), ct); await Send.NoContentAsync(ct); }
+    public override async Task HandleAsync(RecordToolingUsageRequest req, CancellationToken ct) { var operation = operationContextAccessor.GetRequiredContext(); await sender.Send(new RecordToolingUsageCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Count, operation), ct); await Send.NoContentAsync(ct); }
 }
 
 public sealed record ImportChangeoverMatrixRequest(string OrganizationId, string EnvironmentId, IReadOnlyCollection<ChangeoverMatrixEntryDraft> Entries);

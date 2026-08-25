@@ -91,6 +91,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        EnsureToolingAuditIsAppendOnly();
         try
         {
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -98,6 +99,21 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         catch (DbUpdateException exception) when (IsDuplicateLifecycleOperation(exception))
         {
             return await RecoverLifecycleOperationReplayAsync(cancellationToken);
+        }
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        EnsureToolingAuditIsAppendOnly();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    private void EnsureToolingAuditIsAppendOnly()
+    {
+        if (ChangeTracker.Entries<ToolingAuditEntry>().Any(entry =>
+                entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("工装审计事实只允许追加，禁止修改或删除。");
         }
     }
 
