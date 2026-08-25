@@ -936,6 +936,7 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Concurrent_quantity_reports_create_each_window_once_and_atomically_advance_watermark_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Concurrent_same_event_id_at_int32_boundary_uses_one_inbox_fact_and_resumes_bounded_batches_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Production_mediator_uow_dispatches_one_context_command_and_commits_its_task",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_migration_enforces_all_periodic_inspection_unique_and_check_constraints",
@@ -953,7 +954,7 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
         "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
       ],
-      "expectedRuntimeTestCount": 17
+      "expectedRuntimeTestCount": 18
     },
     {
       "id": "masterdata-postgres",

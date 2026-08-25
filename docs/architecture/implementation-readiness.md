@@ -20,9 +20,11 @@ BusinessQuality 已新增职责独立的时间巡检扫描器。`Quality:Periodi
 
 BusinessQuality 在现有 release/report 消费链路内，按运行上下文冻结的 `QuantityInterval` 和非冲销良品数量高水位逐桶生成 `operation/mes` 巡检任务。窗口序号从 1 开始，任务 `Quantity` 保存累计阈值，例如间隔 100 且一次报工跨到 250 时生成 100、200 两条任务；后续累计达到 300 时只补第 3 条。报工先于 release 时，release 创建并回放冻结上下文后立即补齐所有已跨窗口。只有 active、UOM 已知且冻结数量间隔为正的上下文参与生成；completion 关闭上下文后不再补发。冲销只降低净良品量，不推进、不回收已生成窗口，后续乱序的非冲销报工继续从单调高水位追加窗口。
 
-每个数量窗口使用运行上下文 ID 与窗口序号形成稳定身份：来源行是 `operationId:periodic-quantity:runtimeContextId:sequence`，触发幂等键是 `quality:periodic-quantity:runtimeContextId:sequence`。任务沿用冻结的工单、工序、SKU、UOM、方案版本和个人/班组投递目标；创建时间采用触发该次原子计算的 release/report 事件时间，期限为其后 24 小时。生成复用 #2070 的工序级 PostgreSQL transaction-scoped advisory lock，并在消费者同一 UoW 中原子写入 report、任务和 `last_generated_quantity_window_sequence`；重放、乱序及并发消费者只会留下每窗口一条任务。真实 PostgreSQL 故障注入验证任务写入失败时 report、任务、高水位和窗口水位全部回滚，重放后可正常生成。
+每个数量窗口使用运行上下文 ID 与窗口序号形成稳定身份：来源行是 `operationId:periodic-quantity:runtimeContextId:sequence`，触发幂等键是 `quality:periodic-quantity:runtimeContextId:sequence`。任务沿用冻结的工单、工序、SKU、UOM、方案版本和个人/班组投递目标；创建时间采用首次触发尚未追平 backlog 的 release/report 事件时间，期限为其后 24 小时，续批期间不会因后来事件改写该锚点。单事务每上下文最多生成 256 个窗口；未追平时持久化 `quantity_generation_anchor_at_utc`，常驻续批扫描器每分钟按稳定顺序最多选择 100 个上下文，并让每个候选以独立 scope、工序 advisory lock 和 UoW 再生成一批，不设累计丢弃上限。`numeric(18,6)` 可持久化的最大高水位除以最小合法间隔 `0.000001` 得到的窗口数仍小于 `long.MaxValue`，因此序号与目标计算不会经过 `int` 溢出或按总 backlog 预分配内存。
 
-迁移为运行上下文新增默认值 0 的非负数量窗口水位，不在迁移期间创建任务；既有 active 上下文会在下一次被接受的 release/report 消费时按当前数量高水位补齐窗口。开始生成数量任务后不建议执行该迁移的 `Down`：降级会丢失水位，再升级回到 0 后既有任务唯一键会阻止重复写入并使后续消费者事务失败，应使用前滚修复。该能力不新增 HTTP API、MES 事件、PDA/SPC 页面或独立扫描配置。真实 PostgreSQL profile 继续由 `quality-postgres-profile` lane 承载，登记 16 条冻结身份，其中新增数量并发唯一性和写失败回滚两条 provider 证据。
+release、report、completion 三个消费者按 ADR 0011 使用 `(eventId, consumerName)` 持久 inbox；schema/上下文校验后、业务副作用前登记，同一 event ID 即使携带不同合法载荷也 no-op。生成复用 #2070 的工序级 PostgreSQL transaction-scoped advisory lock，并在同一 UoW 中原子写入 inbox、report、任务、数量高水位、窗口水位与续批锚点；重放、乱序及并发消费者只会留下每窗口一条任务。真实 PostgreSQL 故障注入验证任务写入失败时 inbox、report、任务、高水位、窗口水位及续批锚点全部回滚，重放后可正常生成。
+
+两次迁移分别新增默认值 0 的非负数量窗口水位，以及 nullable 续批锚点、待续批索引、配对约束和 Quality inbox；迁移期间都不创建巡检任务。既有 active 上下文会在下一次被接受的 release/report 消费时按当前数量高水位启动有界补齐；没有新事件的既有 backlog 不会被无来源锚点的扫描器猜测触发。开始生成数量任务后不建议执行这些迁移的 `Down`：降级会丢失水位、恢复锚点或消费去重事实，应使用前滚修复。该能力不新增 HTTP API、MES 事件、PDA/SPC 页面或用户配置。真实 PostgreSQL profile 继续由 `quality-postgres-profile` lane 承载，登记 17 条冻结身份；测试 evidence policy 另计既有 world-history provider 身份后为 18 条。
 
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 

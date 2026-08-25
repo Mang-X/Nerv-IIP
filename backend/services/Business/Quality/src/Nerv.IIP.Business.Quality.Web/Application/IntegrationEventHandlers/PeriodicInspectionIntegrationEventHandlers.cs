@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Business.Quality.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
@@ -64,6 +65,15 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                 operations.Select(x => x.OperationId).ToArray(),
                 async ct =>
                 {
+                    if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
+                            dbContext,
+                            ConsumerName,
+                            integrationEvent,
+                            ct))
+                    {
+                        return;
+                    }
+
                     foreach (var operationPayload in operations)
                     {
                         var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
@@ -184,6 +194,15 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForTrackPerio
                 [payload.OperationTaskId],
                 async ct =>
                 {
+                    if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
+                            dbContext,
+                            ConsumerName,
+                            integrationEvent,
+                            ct))
+                    {
+                        return;
+                    }
+
                     var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
                         dbContext,
                         integrationEvent.OrganizationId,
@@ -268,6 +287,15 @@ public sealed class MesOperationTaskCompletedIntegrationEventHandlerForClosePeri
                 [payload.OperationTaskId],
                 async ct =>
                 {
+                    if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
+                            dbContext,
+                            ConsumerName,
+                            integrationEvent,
+                            ct))
+                    {
+                        return;
+                    }
+
                     var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
                         dbContext,
                         integrationEvent.OrganizationId,
@@ -299,15 +327,19 @@ public sealed class MesOperationTaskCompletedIntegrationEventHandlerForClosePeri
 
 internal static class PeriodicInspectionQuantityTaskGeneration
 {
+    public const int MaxWindowsPerTransaction = 256;
+
     public static void AddDueTasks(
         ApplicationDbContext dbContext,
         IReadOnlyCollection<PeriodicInspectionRuntimeContext> contexts,
-        DateTimeOffset occurredAtUtc)
+        DateTimeOffset occurredAtUtc,
+        int maxWindows = MaxWindowsPerTransaction)
     {
         foreach (var context in contexts.OrderBy(x => x.Id))
         {
-            foreach (var window in context.TakeDueQuantityWindows())
+            foreach (var window in context.TakeDueQuantityWindows(occurredAtUtc.UtcDateTime, maxWindows))
             {
+                var generatedAtUtc = new DateTimeOffset(window.GeneratedAtUtc);
                 var task = InspectionTask.CreatePending(
                     context.OrganizationId,
                     context.EnvironmentId,
@@ -321,8 +353,8 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                     uomCode: context.UomCode!,
                     batchNo: null,
                     serialNo: null,
-                    occurredAtUtc,
-                    dueAtUtc: occurredAtUtc.AddHours(24),
+                    generatedAtUtc,
+                    dueAtUtc: generatedAtUtc.AddHours(24),
                     triggerIdempotencyKey: $"quality:periodic-quantity:{context.Id.Id:D}:{window.Sequence}");
                 if (context.AssignedInspectorUserId is not null || context.AssignedTeamId is not null)
                 {
@@ -330,13 +362,54 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                         context.AssignedInspectorUserId,
                         context.AssignedTeamId,
                         task.Version,
-                        occurredAtUtc);
+                        generatedAtUtc);
                 }
 
                 dbContext.InspectionTasks.Add(task);
             }
         }
     }
+}
+
+internal static class QualityProcessedIntegrationEventInbox
+{
+    public static async Task<bool> TryRecordAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
+        if (dbContext.Database.IsNpgsql())
+        {
+            var lockKey = $"quality-integration-event-inbox:{consumerName}:{eventId}";
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
+                cancellationToken);
+        }
+
+        if (dbContext.ProcessedIntegrationEvents.Local.Any(
+                record => record.ConsumerName == consumerName && record.EventId == eventId)
+            || await dbContext.ProcessedIntegrationEvents.AnyAsync(
+                record => record.ConsumerName == consumerName && record.EventId == eventId,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+            consumerName,
+            eventId,
+            Required(integrationEvent.EventType, "Integration event type is required."),
+            integrationEvent.EventVersion,
+            Required(integrationEvent.SourceService, "Integration event source service is required."),
+            Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required."),
+            DateTimeOffset.UtcNow));
+        return true;
+    }
+
+    private static string Required(string? value, string message)
+        => string.IsNullOrWhiteSpace(value) ? throw new ArgumentException(message) : value;
 }
 
 internal static class PeriodicInspectionOperationEventProcessing

@@ -300,6 +300,87 @@ public sealed class PeriodicInspectionPostgresProfileTests
     }
 
     [QualityPostgresFact]
+    public async Task Concurrent_same_event_id_at_int32_boundary_uses_one_inbox_fact_and_resumes_bounded_batches_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan(quantityInterval: 0.000001m));
+            await setup.SaveChangesAsync();
+        }
+
+        await HandleReleaseAsync(options);
+        var first = ProductionReport(
+            "RPT-BOUNDARY-A",
+            2147.483648m,
+            false,
+            null,
+            "2026-08-24T01:30:00Z");
+        var second = ProductionReport(
+            "RPT-BOUNDARY-B",
+            2147.483648m,
+            false,
+            null,
+            "2026-08-24T01:31:00Z") with
+        {
+            EventId = first.EventId,
+        };
+
+        await Task.WhenAll(
+            HandleReportAsync(options, first),
+            HandleReportAsync(options, second));
+
+        PeriodicInspectionRuntimeContextId runtimeContextId;
+        await using (var firstAssertion = CreateContext(options))
+        {
+            var operation = await firstAssertion.PeriodicInspectionOperations
+                .AsNoTracking()
+                .Include(x => x.ProductionReports)
+                .Include(x => x.RuntimeContexts)
+                .SingleAsync();
+            Assert.Single(operation.ProductionReports);
+            var runtimeContext = Assert.Single(operation.RuntimeContexts);
+            runtimeContextId = runtimeContext.Id;
+            Assert.Equal(256, runtimeContext.LastGeneratedQuantityWindowSequence);
+            Assert.NotNull(runtimeContext.QuantityGenerationAnchorAtUtc);
+            Assert.Equal(256, await firstAssertion.InspectionTasks.CountAsync());
+            Assert.Equal(2, await firstAssertion.ProcessedIntegrationEvents.CountAsync());
+        }
+
+        await using (var continuation = CreateContext(options))
+        {
+            var generated = await new GeneratePeriodicInspectionQuantityTaskBatchForContextCommandHandler(
+                continuation,
+                new PeriodicInspectionOperationScopeCoordinator(continuation)).Handle(
+                    new GeneratePeriodicInspectionQuantityTaskBatchForContextCommand(
+                        "org-001",
+                        "env-dev",
+                        "WO-001",
+                        "OP-001",
+                        runtimeContextId,
+                        256),
+                    CancellationToken.None);
+            Assert.Equal(256, generated);
+        }
+
+        await using var finalAssertion = CreateContext(options);
+        var finalContext = await finalAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+        Assert.Equal(512, finalContext.LastGeneratedQuantityWindowSequence);
+        Assert.NotNull(finalContext.QuantityGenerationAnchorAtUtc);
+        Assert.Equal(512, await finalAssertion.InspectionTasks.CountAsync());
+        Assert.Equal(
+            [0.000001m, 0.000512m],
+            await finalAssertion.InspectionTasks
+                .OrderBy(x => x.Quantity)
+                .Select(x => x.Quantity)
+                .Where(x => x == 0.000001m || x == 0.000512m)
+                .ToArrayAsync());
+    }
+
+    [QualityPostgresFact]
     public async Task Quantity_task_write_failure_rolls_back_report_watermark_and_task_before_replay_on_postgres()
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();
@@ -313,6 +394,10 @@ public sealed class PeriodicInspectionPostgresProfileTests
         }
 
         await HandleReleaseAsync(options);
+        await using (var releaseAssertion = CreateContext(options))
+        {
+            Assert.Single(await releaseAssertion.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+        }
         await using (var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString))
         {
             await connection.OpenAsync();
@@ -343,6 +428,7 @@ public sealed class PeriodicInspectionPostgresProfileTests
             var context = await failedAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
             Assert.Empty(await failedAssertion.PeriodicInspectionProductionReports.AsNoTracking().ToArrayAsync());
             Assert.Empty(await failedAssertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+            Assert.Single(await failedAssertion.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
             Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
             Assert.Equal(0m, context.QuantityHighWater);
         }
@@ -360,6 +446,7 @@ public sealed class PeriodicInspectionPostgresProfileTests
         await using var replayAssertion = CreateContext(options);
         Assert.Single(await replayAssertion.PeriodicInspectionProductionReports.AsNoTracking().ToArrayAsync());
         Assert.Single(await replayAssertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+        Assert.Equal(2, await replayAssertion.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
         Assert.Equal(
             1,
             await replayAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking()
@@ -709,12 +796,12 @@ public sealed class PeriodicInspectionPostgresProfileTests
              {{quantityHighWater}}, {{status}}, {{completedAtUtc}});
         """;
 
-    private static InspectionPlan NewPeriodicPlan()
+    private static InspectionPlan NewPeriodicPlan(decimal quantityInterval = 100m)
     {
         var plan = InspectionPlan.Create(
             "org-001", "env-dev", "IQP-PERIODIC-PG-001", "operation", "SKU-FG-1000", null, "WC-001", null, "mes-operation",
             timeIntervalHours: 2m,
-            quantityInterval: 100m,
+            quantityInterval,
             assignedTeamId: "team-quality-001");
         plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
         plan.Activate();

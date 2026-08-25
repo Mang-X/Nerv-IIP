@@ -58,7 +58,7 @@ public sealed class PeriodicInspectionOperationTests
         operation.RecordProductionReport("RPT-001", "WC-001", 99.999999m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
         var context = Assert.Single(operation.RuntimeContexts);
 
-        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256));
         Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
     }
 
@@ -69,7 +69,7 @@ public sealed class PeriodicInspectionOperationTests
         operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
         var context = Assert.Single(operation.RuntimeContexts);
 
-        var windows = context.TakeDueQuantityWindows();
+        var windows = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256);
 
         Assert.Collection(
             windows,
@@ -79,18 +79,68 @@ public sealed class PeriodicInspectionOperationTests
     }
 
     [Fact]
+    public void Quantity_window_generation_is_bounded_and_resumable_at_the_int32_overflow_boundary()
+    {
+        var operation = ReleasedOperation(quantityInterval: 0.000001m);
+        operation.RecordProductionReport(
+            "RPT-BOUNDARY",
+            "WC-001",
+            2147.483648m,
+            "EA",
+            ReleasedAtUtc.AddMinutes(10),
+            false,
+            null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        var firstBatch = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256);
+        var secondBatch = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(20), maxWindows: 256);
+
+        Assert.Equal(256, firstBatch.Count);
+        Assert.Equal((1L, 0.000001m), (firstBatch[0].Sequence, firstBatch[0].ThresholdQuantity));
+        Assert.Equal((256L, 0.000256m), (firstBatch[^1].Sequence, firstBatch[^1].ThresholdQuantity));
+        Assert.Equal(256, secondBatch.Count);
+        Assert.Equal((257L, 0.000257m), (secondBatch[0].Sequence, secondBatch[0].ThresholdQuantity));
+        Assert.Equal((512L, 0.000512m), (secondBatch[^1].Sequence, secondBatch[^1].ThresholdQuantity));
+        Assert.Equal(512, context.LastGeneratedQuantityWindowSequence);
+        Assert.NotNull(context.QuantityGenerationAnchorAtUtc);
+    }
+
+    [Fact]
+    public void Quantity_window_generation_is_bounded_at_the_maximum_numeric_18_6_high_water()
+    {
+        var operation = ReleasedOperation(quantityInterval: 0.000001m);
+        operation.RecordProductionReport(
+            "RPT-MAX-NUMERIC",
+            "WC-001",
+            999_999_999_999.999999m,
+            "EA",
+            ReleasedAtUtc.AddMinutes(10),
+            false,
+            null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        var batch = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256);
+
+        Assert.Equal(256, batch.Count);
+        Assert.Equal((1L, 0.000001m), (batch[0].Sequence, batch[0].ThresholdQuantity));
+        Assert.Equal((256L, 0.000256m), (batch[^1].Sequence, batch[^1].ThresholdQuantity));
+        Assert.Equal(256, context.LastGeneratedQuantityWindowSequence);
+        Assert.NotNull(context.QuantityGenerationAnchorAtUtc);
+    }
+
+    [Fact]
     public void Quantity_remainder_continues_from_the_persisted_window_sequence()
     {
         var operation = ReleasedOperation();
         operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
         var context = Assert.Single(operation.RuntimeContexts);
-        Assert.Equal(2, context.TakeDueQuantityWindows().Count);
+        Assert.Equal(2, context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256).Count);
 
         operation.RecordProductionReport("RPT-002", "WC-001", 49.999999m, "EA", ReleasedAtUtc.AddMinutes(20), false, null);
-        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(20), maxWindows: 256));
 
         operation.RecordProductionReport("RPT-003", "WC-001", 0.000001m, "EA", ReleasedAtUtc.AddMinutes(30), false, null);
-        var next = Assert.Single(context.TakeDueQuantityWindows());
+        var next = Assert.Single(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(30), maxWindows: 256));
 
         Assert.Equal((3L, 300m), (next.Sequence, next.ThresholdQuantity));
     }
@@ -101,11 +151,11 @@ public sealed class PeriodicInspectionOperationTests
         var operation = ReleasedOperation();
         operation.RecordProductionReport("RPT-001", "WC-001", 200m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
         var context = Assert.Single(operation.RuntimeContexts);
-        Assert.Equal(2, context.TakeDueQuantityWindows().Count);
+        Assert.Equal(2, context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256).Count);
 
         operation.RecordProductionReport("RPT-REV", "WC-001", -150m, "EA", ReleasedAtUtc.AddMinutes(20), true, "RPT-001");
 
-        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(20), maxWindows: 256));
         Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
         Assert.Equal(50m, context.CumulativeGoodQuantity);
         Assert.Equal(200m, context.QuantityHighWater);
@@ -119,7 +169,7 @@ public sealed class PeriodicInspectionOperationTests
         operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", ReleasedAtUtc.AddHours(3));
         var context = Assert.Single(operation.RuntimeContexts);
 
-        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddHours(3), maxWindows: 256));
         Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
     }
 
@@ -318,7 +368,7 @@ public sealed class PeriodicInspectionOperationTests
             [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]));
     }
 
-    private static PeriodicInspectionOperation ReleasedOperation()
+    private static PeriodicInspectionOperation ReleasedOperation(decimal quantityInterval = 100m)
     {
         var operation = PeriodicInspectionOperation.CreatePending("org-001", "env-dev", "WO-001", "OP-001");
         operation.ApplyRelease(
@@ -326,11 +376,11 @@ public sealed class PeriodicInspectionOperationTests
             operationSequence: 10,
             "WC-001",
             ReleasedAtUtc,
-            [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]);
+            [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan(quantityInterval))]);
         return operation;
     }
 
-    private static InspectionPlan NewPeriodicPlan()
+    private static InspectionPlan NewPeriodicPlan(decimal quantityInterval = 100m)
     {
         var plan = InspectionPlan.Create(
             "org-001",
@@ -343,7 +393,7 @@ public sealed class PeriodicInspectionOperationTests
             null,
             "mes-operation",
             timeIntervalHours: 2m,
-            quantityInterval: 100m,
+            quantityInterval,
             assignedTeamId: "team-quality-001");
         plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
         plan.Activate();

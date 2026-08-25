@@ -14,7 +14,10 @@ public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId,
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
 
-public sealed record PeriodicInspectionQuantityWindow(long Sequence, decimal ThresholdQuantity);
+public sealed record PeriodicInspectionQuantityWindow(
+    long Sequence,
+    decimal ThresholdQuantity,
+    DateTime GeneratedAtUtc);
 
 public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOperationId>, IAggregateRoot
 {
@@ -429,6 +432,7 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     public decimal CumulativeGoodQuantity { get; private set; }
     public decimal QuantityHighWater { get; private set; }
     public long LastGeneratedQuantityWindowSequence { get; private set; }
+    public DateTime? QuantityGenerationAnchorAtUtc { get; private set; }
     public DateTime? TimeScheduleAnchorAtUtc { get; private set; }
     public long LastGeneratedTimeWindowSequence { get; private set; }
     public DateTime? NextTimeWindowAtUtc { get; private set; }
@@ -470,6 +474,7 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         Status = completedAtUtc.HasValue ? "closed" : "active";
         if (completedAtUtc.HasValue)
         {
+            QuantityGenerationAnchorAtUtc = null;
             NextTimeWindowAtUtc = null;
         }
         else if (LastGeneratedTimeWindowSequence == 0 && TimeIntervalHours.HasValue && FirstActivityAtUtc.HasValue)
@@ -529,8 +534,20 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         return windows;
     }
 
-    public IReadOnlyList<PeriodicInspectionQuantityWindow> TakeDueQuantityWindows()
+    public IReadOnlyList<PeriodicInspectionQuantityWindow> TakeDueQuantityWindows(
+        DateTime occurredAtUtc,
+        int maxWindows)
     {
+        if (occurredAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Quantity generation trigger time must be UTC.", nameof(occurredAtUtc));
+        }
+
+        if (maxWindows <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWindows), "Maximum windows must be positive.");
+        }
+
         if (Status != "active"
             || !QuantityInterval.HasValue
             || UomCode is null
@@ -539,24 +556,39 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
             return [];
         }
 
-        var targetSequence = decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
+        var targetSequenceValue = decimal.Floor(QuantityHighWater / QuantityInterval.Value);
+        if (targetSequenceValue > long.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Quantity window target {targetSequenceValue} exceeds the supported sequence limit {long.MaxValue}.");
+        }
+
+        var targetSequence = decimal.ToInt64(targetSequenceValue);
         if (targetSequence <= LastGeneratedQuantityWindowSequence)
         {
+            QuantityGenerationAnchorAtUtc = null;
             return [];
         }
 
+        QuantityGenerationAnchorAtUtc ??= occurredAtUtc;
         var windows = new List<PeriodicInspectionQuantityWindow>(
-            checked((int)(targetSequence - LastGeneratedQuantityWindowSequence)));
+            (int)Math.Min(maxWindows, targetSequence - LastGeneratedQuantityWindowSequence));
         for (var sequence = checked(LastGeneratedQuantityWindowSequence + 1);
-             sequence <= targetSequence;
+             sequence <= targetSequence && windows.Count < maxWindows;
              sequence = checked(sequence + 1))
         {
             windows.Add(new PeriodicInspectionQuantityWindow(
                 sequence,
-                checked(sequence * QuantityInterval.Value)));
+                checked(sequence * QuantityInterval.Value),
+                QuantityGenerationAnchorAtUtc.Value));
         }
 
-        LastGeneratedQuantityWindowSequence = targetSequence;
+        LastGeneratedQuantityWindowSequence = windows[^1].Sequence;
+        if (LastGeneratedQuantityWindowSequence == targetSequence)
+        {
+            QuantityGenerationAnchorAtUtc = null;
+        }
+
         return windows;
     }
 

@@ -48,6 +48,63 @@ public sealed class PeriodicInspectionIntegrationEventTests
     }
 
     [Fact]
+    public async Task Same_report_event_id_with_a_different_valid_payload_is_an_inbox_noop()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+        var handler = new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters);
+        var first = ProductionReport() with
+        {
+            Payload = ProductionReport().Payload with { GoodQuantity = 100m },
+        };
+        var conflictingPayload = ProductionReport("RPT-CHANGED") with
+        {
+            EventId = first.EventId,
+            Payload = ProductionReport("RPT-CHANGED").Payload with { GoodQuantity = 100m },
+        };
+
+        await handler.HandleAsync(first, CancellationToken.None);
+        await handler.HandleAsync(conflictingPayload, CancellationToken.None);
+
+        var operation = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.ProductionReports)
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync();
+        Assert.Single(operation.ProductionReports);
+        Assert.Equal(100m, Assert.Single(operation.RuntimeContexts).QuantityHighWater);
+        Assert.Single(await dbContext.InspectionTasks.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Same_release_event_id_with_a_different_valid_payload_is_an_inbox_noop()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var handler = new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters);
+        var first = WorkOrderReleased();
+        var conflictingPayload = WorkOrderReleased("WO-CHANGED", "OP-CHANGED") with
+        {
+            EventId = first.EventId,
+        };
+
+        await handler.HandleAsync(first, CancellationToken.None);
+        await handler.HandleAsync(conflictingPayload, CancellationToken.None);
+
+        Assert.Single(await dbContext.PeriodicInspectionOperations.ToListAsync());
+        Assert.Single(await dbContext.PeriodicInspectionRuntimeContexts.ToListAsync());
+    }
+
+    [Fact]
     public async Task Report_before_release_backfills_quantity_windows_from_the_frozen_context()
     {
         await using var dbContext = CreateDbContext();
@@ -392,7 +449,7 @@ public sealed class PeriodicInspectionIntegrationEventTests
     }
 
     [Fact]
-    public async Task Conflicting_report_identity_is_dead_lettered_and_preserves_the_first_fact()
+    public async Task Same_event_id_changed_report_payload_is_an_inbox_noop_before_domain_identity_checks()
     {
         await using var dbContext = CreateDbContext();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
@@ -412,9 +469,7 @@ public sealed class PeriodicInspectionIntegrationEventTests
             .Include(x => x.ProductionReports)
             .SingleAsync();
         Assert.Equal(25m, Assert.Single(operation.ProductionReports).GoodQuantity);
-        Assert.Equal(
-            "invalid-business-facts",
-            Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None)).FailureCode);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
     }
 
     private static ApplicationDbContext CreateDbContext()
