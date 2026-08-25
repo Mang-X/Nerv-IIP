@@ -54,7 +54,13 @@ public sealed record BusinessConsoleResourceItem(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? Timezone = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    bool? CrossesMidnight = null,
+    int? PaidMinutes = null,
+    int? BreakMinutes = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,

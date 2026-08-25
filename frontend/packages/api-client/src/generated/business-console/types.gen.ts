@@ -4852,6 +4852,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     jobTitle?: string | null;
     employmentStatus?: string | null;
     phone?: string | null;
+    timezone?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    crossesMidnight?: boolean | null;
+    paidMinutes?: number | null;
+    breakMinutes?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
