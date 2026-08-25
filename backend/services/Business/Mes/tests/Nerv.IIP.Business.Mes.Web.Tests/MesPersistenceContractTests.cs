@@ -33,6 +33,36 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesPersistenceContractTests
 {
     [Fact]
+    public async Task Material_substitute_snapshot_and_nullable_issue_audit_survive_persistence_scope_recreation()
+    {
+        var services = CreateServices(nameof(Material_substitute_snapshot_and_nullable_issue_audit_survive_persistence_scope_recreation));
+        var now = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001", "env-dev", "WO-SUBSTITUTE-001", "FG-001", "PV-001", 10m, 10, now));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-SUBSTITUTE-001", null, "MAT-PRIMARY", null,
+                10m, 2m, 0m, "product-engineering-http", "MBOM-001:A:MAT-PRIMARY", now,
+                ["MAT-ALT-A", "MAT-ALT-B"]));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001", "env-dev", "MIR-SUBSTITUTE-001", "WO-SUBSTITUTE-001", null,
+                "MAT-PRIMARY", "PCS", 1m, now));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var requirement = await recreatedDbContext.MaterialRequirements.SingleAsync();
+        var issue = await recreatedDbContext.MaterialIssueRequests.SingleAsync();
+
+        Assert.Equal(["MAT-ALT-A", "MAT-ALT-B"], requirement.GetSubstituteMaterialIds());
+        Assert.Null(issue.SubstitutedMaterialId);
+    }
+
+    [Fact]
     public async Task Supplementary_material_issue_semantics_survive_persistence_scope_recreation()
     {
         var services = CreateServices(nameof(Supplementary_material_issue_semantics_survive_persistence_scope_recreation));

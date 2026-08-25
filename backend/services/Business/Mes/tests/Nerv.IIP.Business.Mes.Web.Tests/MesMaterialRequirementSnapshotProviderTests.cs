@@ -10,6 +10,33 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
     [Fact]
+    public async Task Http_provider_freezes_normalized_mbom_substitute_candidates_without_counting_their_inventory_yet()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
+            "MAT-PRIMARY",
+            "PCS",
+            " MAT-ALT-B ; MAT-PRIMARY ; mat-alt-a ; MAT-ALT-B ; ; ");
+        var inventoryRequests = new List<string>();
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+        {
+            inventoryRequests.Add(request.RequestUri!.PathAndQuery);
+            return JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 3m));
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var result = await provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
+
+        var line = Assert.Single(result.Lines);
+        Assert.Equal(["mat-alt-a", "MAT-ALT-B"], line.SubstituteMaterialIds);
+        Assert.Equal(3m, line.AvailableQuantity);
+        Assert.Single(inventoryRequests);
+        Assert.Contains("skuCode=MAT-PRIMARY", inventoryRequests[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Http_provider_floors_converted_availability_for_material_readiness()
     {
         var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-BOXED", "ea");
@@ -509,7 +536,10 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
             DateTimeOffset.Parse("2026-06-19T08:00:00Z"));
     }
 
-    private static StubHttpMessageHandler SingleMaterialProductEngineeringHandler(string materialId, string uomCode)
+    private static StubHttpMessageHandler SingleMaterialProductEngineeringHandler(
+        string materialId,
+        string uomCode,
+        string? substituteSkuCodes = null)
     {
         return new StubHttpMessageHandler(request =>
         {
@@ -552,7 +582,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                             isPhantom = false,
                             alternateGroup = (string?)null,
                             alternatePriority = (int?)null,
-                            substituteSkuCodes = (string?)null,
+                            substituteSkuCodes,
                             referenceDesignators = (string?)null,
                             yieldRate = 1m,
                             backflush = false,

@@ -306,6 +306,12 @@
 1. MES 当前已有物料需求快照、领料/线边接收、报工消耗批次、产出批次/序列号、质量 hold 投影和工单进度追溯事实；仍需后续把 WMS 作业状态和 ERP/采购到货通过正式 adapter/event 持续刷新执行快照。
 2. MES durable source plan reference 只保存来源计划/需求的稳定业务标识和快照字段；DemandPlanning 仍拥有需求来源、MRP 运行、pegging 和计划建议事实，MES 不读取 `demand_planning` Schema，也不对来源表建外键。
 
+### MES 替代料快照地基（#1961 子项 #2222）
+
+`material_requirements.substitute_material_ids_json` 是非空 `text` JSON 数组，默认 `[]`；MES 在工单 release 捕获 ProductEngineering 已发布 MBOM 时，按大小写不敏感规则去除空值、自引用和重复项并稳定排序后冻结。生产者是 MES MBOM snapshot adapter，后续消费者是 MES 齐套与领料流程；兼容策略只允许候选列表追加语义，不回查当前 MBOM 改写历史工单快照。
+
+`material_issue_requests.substituted_material_id` 是可空、最长 100 字符的主料 SKU 审计字段。本子项只建立可迁移、可回读的持久列，不写入该字段、不改变领料行为；替代领料启用及实际 SKU/被替代主料双重审计由 #2224 承接。替代料可用量合并与公开读面由 #2223 承接，不能把本次 schema 交付解释为齐套已支持替代料。
+
 ## BusinessDemandPlanning 数据库 Schema
 
 数据库 Schema：`demand_planning`

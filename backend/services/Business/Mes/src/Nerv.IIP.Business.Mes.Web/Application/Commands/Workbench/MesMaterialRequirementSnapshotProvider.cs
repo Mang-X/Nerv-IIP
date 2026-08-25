@@ -27,7 +27,8 @@ public sealed record MesMaterialRequirementSnapshotLine(
     string UomCode,
     decimal AvailableQuantity,
     decimal StagedQuantity,
-    string SourceSnapshotId);
+    string SourceSnapshotId,
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
 
 public enum MesMaterialRequirementSnapshotStatus
 {
@@ -169,13 +170,21 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             {
                 var yieldRate = x.YieldRate <= 0m ? 1m : x.YieldRate;
                 var requiredQuantity = request.WorkOrderQuantity * x.Quantity * (1m + x.ScrapRate) / yieldRate;
-                return new MaterialRequirementLineDraft(x.SkuCode, x.UnitOfMeasureCode, requiredQuantity);
+                return new MaterialRequirementLineDraft(
+                    x.SkuCode,
+                    x.UnitOfMeasureCode,
+                    requiredQuantity,
+                    NormalizeSubstituteMaterialIds(x.SkuCode, x.SubstituteSkuCodes));
             })
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.UomCode.ToUpperInvariant()}", StringComparer.Ordinal)
             .Select(x => new MaterialRequirementLineDraft(
                 x.First().MaterialId,
                 x.First().UomCode,
-                x.Sum(y => y.RequiredQuantity)))
+                x.Sum(y => y.RequiredQuantity),
+                x.SelectMany(y => y.SubstituteMaterialIds)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()))
             .ToArray();
         if (requiredLines.Length == 0)
         {
@@ -200,7 +209,8 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 line.UomCode,
                 availableQuantity,
                 0m,
-                $"{selectedVersion.MbomVersionId}:{line.MaterialId}"));
+                $"{selectedVersion.MbomVersionId}:{line.MaterialId}",
+                line.SubstituteMaterialIds));
         }
 
         return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}", lines);
@@ -464,6 +474,16 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         return standalone.Concat(selectedAlternates).ToArray();
     }
 
+    private static IReadOnlyCollection<string> NormalizeSubstituteMaterialIds(
+        string materialId,
+        string? substituteSkuCodes) =>
+        (substituteSkuCodes ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.Equals(x, materialId, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
     private static bool TryParseVersionReference(string versionId, out string code, out string revision)
     {
         code = string.Empty;
@@ -542,7 +562,11 @@ internal sealed record ManufacturingBomRecipeLineItem(string ParameterCode, stri
 
 internal sealed record StockAvailabilityResponse(decimal AvailableQuantity);
 
-internal sealed record MaterialRequirementLineDraft(string MaterialId, string UomCode, decimal RequiredQuantity);
+internal sealed record MaterialRequirementLineDraft(
+    string MaterialId,
+    string UomCode,
+    decimal RequiredQuantity,
+    IReadOnlyCollection<string> SubstituteMaterialIds);
 
 internal sealed record MasterDataResourceListResponse(
     IReadOnlyCollection<MasterDataResourceListItem> Resources,

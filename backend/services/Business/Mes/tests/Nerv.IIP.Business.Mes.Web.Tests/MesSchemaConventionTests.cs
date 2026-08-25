@@ -83,6 +83,22 @@ public sealed class MesSchemaConventionTests
     }
 
     [Fact]
+    public void Material_substitute_snapshot_and_issue_audit_columns_are_explicit()
+    {
+        using var fixture = CreateFixture();
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var requirement = model.FindEntityType(typeof(MaterialRequirement))!;
+        var issue = model.FindEntityType(typeof(MaterialIssueRequest))!;
+
+        Assert.Equal(
+            "substitute_material_ids_json",
+            requirement.FindProperty(nameof(MaterialRequirement.SubstituteMaterialIdsJson))!.GetColumnName());
+        Assert.Equal(
+            "substituted_material_id",
+            issue.FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId))!.GetColumnName());
+    }
+
+    [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {
         using var fixture = CreateFixture();
@@ -121,6 +137,7 @@ public sealed class MesSchemaConventionTests
             [
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AssignmentsJson)),
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AffectedWorkOrderIdsJson)),
+                new JsonColumnRule(typeof(MaterialRequirement), nameof(MaterialRequirement.SubstituteMaterialIdsJson)),
             ]));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MesFacts.ServiceName, MesFacts.Schema));
         failures.AddRange(ForeignKeysAreConfigured(fixture.DbContext));
