@@ -90,6 +90,50 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Authorize_start_endpoint_forwards_scoped_request_and_ignores_caller_supplied_audit_fields()
+    {
+        var sender = new CapturingAuthorizeStartSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "principal:forged-header");
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-authorize-start-http");
+        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-authorize-start-http");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-HTTP/authorize-start",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                approvalChainId = " approval-1960-http ",
+                reason = "  HTTP route evidence  ",
+                authorizedBy = "principal:forged",
+                changedAtUtc = "2000-01-01T00:00:00Z",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var command = Assert.IsType<AuthorizeAndStartOperationTaskCommand>(sender.Command);
+        Assert.Equal("org-001", command.OrganizationId);
+        Assert.Equal("env-dev", command.EnvironmentId);
+        Assert.Equal("OP-HTTP", command.OperationTaskId);
+        Assert.Equal(" approval-1960-http ", command.ApprovalChainId);
+        Assert.Equal("  HTTP route evidence  ", command.Reason);
+        Assert.Equal("corr-authorize-start-http", command.CorrelationId);
+        Assert.Equal("idem-authorize-start-http", command.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Line_side_return_endpoint_declares_and_returns_409_for_a_domain_conflict()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -468,7 +512,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(55, MesEndpointContracts.All.Count);
+        Assert.Equal(56, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -600,6 +644,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/start"
             && x.PermissionCode == MesPermissionCodes.OperationsManage
             && x.OperationId == "startBusinessMesOperationTask");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start"
+            && x.PermissionCode == MesPermissionCodes.OperationsManage
+            && x.OperationId == "authorizeAndStartBusinessMesOperationTask");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/pause"
@@ -2267,6 +2316,41 @@ public sealed class MesEndpointContractTests
             throw new NotSupportedException();
 
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class CapturingAuthorizeStartSender : ISender
+    {
+        public AuthorizeAndStartOperationTaskCommand? Command { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Command = Assert.IsType<AuthorizeAndStartOperationTaskCommand>(request);
+            var response = new MesOperationActionResponse(
+                Command.OperationTaskId,
+                "InProgress",
+                DateTimeOffset.Parse("2026-08-25T01:00:00Z"));
+            return Task.FromResult((TResponse)(object)response);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 
