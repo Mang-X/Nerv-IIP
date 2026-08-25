@@ -470,6 +470,8 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
+        Assert.False(request.IsSupplementary);
+        Assert.Null(request.OriginalMaterialIssueRequestNo);
         // 创建只发「领料已申请」（仓库据此建出库/拣货，#1324）；库存移动仍然只在收料/退料时发生。
         Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());

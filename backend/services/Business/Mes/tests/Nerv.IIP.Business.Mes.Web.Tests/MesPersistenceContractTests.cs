@@ -51,8 +51,11 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var original = await recreatedDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-ORIGINAL-001");
         var supplementary = await recreatedDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-SUPPLEMENTARY-001");
 
+        Assert.False(original.IsSupplementary);
+        Assert.Null(original.OriginalMaterialIssueRequestNo);
         Assert.True(supplementary.IsSupplementary);
         Assert.Equal("MIR-ORIGINAL-001", supplementary.OriginalMaterialIssueRequestNo);
     }
