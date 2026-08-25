@@ -126,6 +126,14 @@ BusinessGateway `resolveBusinessConsoleBarcode` 将来源映射为稳定 `object
 `source` 与 `observedAtUtc`，不返回前端 route。MES 工序候选必须通过 MES 权威读面补齐成对的
 `workOrderId` 与 `operationTaskId`；无法唯一配对时失效关闭。
 
+对于 #2219 实际工时读取契约，MES `GET /api/business/v1/mes/operation-tasks`、
+`GET /api/business/v1/mes/production-reports` 与
+`GET /api/business/v1/mes/production-reports/{reportNo}` 继续分类为 `exposed`，分别由
+BusinessGateway `listBusinessConsoleMesOperationTasks`、`listBusinessConsoleMesProductionReports` 与
+`getBusinessConsoleMesProductionReport` 暴露。facade 保留工序的 `actualLaborHours` / `actualMachineHours`
+以及报工列表和详情的 `operationActualLaborHours` / `operationActualMachineHours`；尚无冻结
+实绩时字段必须存在且值为 `null`，不得以序列化省略替代。
+
 ### 延后 endpoint（facade 已跟踪，尚未暴露）
 
 | 服务                | 方法   | 服务 route                                                                                      | 后续事项                                                                                                                                                                          |

@@ -1667,8 +1667,8 @@ public sealed class BusinessGatewayProxyTests
                         plannedStartUtc = (DateTimeOffset?)null,
                         startedAtUtc = (DateTimeOffset?)null,
                         qualityStatus = "Ready",
-                        actualLaborHours = 1.25m,
-                        actualMachineHours = 0.5m,
+                        actualLaborHours = (decimal?)1.25m,
+                        actualMachineHours = (decimal?)0.5m,
                     },
                     new
                     {
@@ -1684,11 +1684,28 @@ public sealed class BusinessGatewayProxyTests
                         plannedStartUtc = (DateTimeOffset?)null,
                         startedAtUtc = (DateTimeOffset?)null,
                         qualityStatus = "Ready",
-                        actualLaborHours = 0m,
-                        actualMachineHours = 0m,
+                        actualLaborHours = (decimal?)0m,
+                        actualMachineHours = (decimal?)0m,
+                    },
+                    new
+                    {
+                        operationTaskId = "OP-NULL",
+                        workOrderId = "WO-NULL",
+                        status = "Queued",
+                        operationSequence = 30,
+                        workCenterId = "WC-001",
+                        deviceAssetId = (string?)null,
+                        shiftId = (string?)null,
+                        assignedUserId = (string?)null,
+                        assignedUserName = (string?)null,
+                        plannedStartUtc = (DateTimeOffset?)null,
+                        startedAtUtc = (DateTimeOffset?)null,
+                        qualityStatus = "Ready",
+                        actualLaborHours = (decimal?)null,
+                        actualMachineHours = (decimal?)null,
                     },
                 },
-                total = 2,
+                total = 3,
             }),
             "/api/business/v1/mes/production-reports" => JsonResponse(HttpStatusCode.OK, new
             {
@@ -1704,11 +1721,24 @@ public sealed class BusinessGatewayProxyTests
                         scrapQuantity = 0m,
                         reworkQuantity = 0m,
                         reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
-                        operationActualLaborHours = 2.75m,
-                        operationActualMachineHours = 0.25m,
+                        operationActualLaborHours = (decimal?)2.75m,
+                        operationActualMachineHours = (decimal?)0.25m,
+                    },
+                    new
+                    {
+                        productionReportId = "report-null",
+                        reportNo = "PRPT-NULL",
+                        workOrderId = "WO-NULL",
+                        operationTaskId = "OP-NULL",
+                        goodQuantity = 0m,
+                        scrapQuantity = 0m,
+                        reworkQuantity = 0m,
+                        reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:20:00Z"),
+                        operationActualLaborHours = (decimal?)null,
+                        operationActualMachineHours = (decimal?)null,
                     },
                 },
-                total = 1,
+                total = 2,
             }),
             "/api/business/v1/mes/production-reports/PRPT-ACTUAL" => JsonResponse(HttpStatusCode.OK, new
             {
@@ -1724,6 +1754,24 @@ public sealed class BusinessGatewayProxyTests
                     reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
                     operationActualLaborHours = 3.5m,
                     operationActualMachineHours = 0.75m,
+                },
+                consumedMaterialLots = Array.Empty<object>(),
+                laborAllocations = Array.Empty<object>(),
+            }),
+            "/api/business/v1/mes/production-reports/PRPT-NULL" => JsonResponse(HttpStatusCode.OK, new
+            {
+                report = new
+                {
+                    productionReportId = "report-null",
+                    reportNo = "PRPT-NULL",
+                    workOrderId = "WO-NULL",
+                    operationTaskId = "OP-NULL",
+                    goodQuantity = 0m,
+                    scrapQuantity = 0m,
+                    reworkQuantity = 0m,
+                    reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:20:00Z"),
+                    operationActualLaborHours = (decimal?)null,
+                    operationActualMachineHours = (decimal?)null,
                 },
                 consumedMaterialLots = Array.Empty<object>(),
                 laborAllocations = Array.Empty<object>(),
@@ -1768,27 +1816,39 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/production-reports?organizationId=org-001&environmentId=env-dev");
         var reportResponse = await client.GetAsync(
             "/api/business-console/v1/mes/production-reports/PRPT-ACTUAL?organizationId=org-001&environmentId=env-dev");
+        var nullReportResponse = await client.GetAsync(
+            "/api/business-console/v1/mes/production-reports/PRPT-NULL?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, operationsResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, reportsResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, reportResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, nullReportResponse.StatusCode);
         using var operationsJson = JsonDocument.Parse(await operationsResponse.Content.ReadAsStringAsync());
         using var reportsJson = JsonDocument.Parse(await reportsResponse.Content.ReadAsStringAsync());
         using var reportJson = JsonDocument.Parse(await reportResponse.Content.ReadAsStringAsync());
+        using var nullReportJson = JsonDocument.Parse(await nullReportResponse.Content.ReadAsStringAsync());
         var operations = operationsJson.RootElement.GetProperty("data").GetProperty("items");
         Assert.Equal(1.25m, operations[0].GetProperty("actualLaborHours").GetDecimal());
         Assert.Equal(0.5m, operations[0].GetProperty("actualMachineHours").GetDecimal());
         Assert.Equal(0m, operations[1].GetProperty("actualLaborHours").GetDecimal());
         Assert.Equal(0m, operations[1].GetProperty("actualMachineHours").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, operations[2].GetProperty("actualLaborHours").ValueKind);
+        Assert.Equal(JsonValueKind.Null, operations[2].GetProperty("actualMachineHours").ValueKind);
         Assert.False(operations[0].TryGetProperty("actualHours", out _));
         var reportRow = reportsJson.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal(2.75m, reportRow.GetProperty("operationActualLaborHours").GetDecimal());
         Assert.Equal(0.25m, reportRow.GetProperty("operationActualMachineHours").GetDecimal());
         Assert.False(reportRow.TryGetProperty("operationActualHours", out _));
+        var nullReportRow = reportsJson.RootElement.GetProperty("data").GetProperty("items")[1];
+        Assert.Equal(JsonValueKind.Null, nullReportRow.GetProperty("operationActualLaborHours").ValueKind);
+        Assert.Equal(JsonValueKind.Null, nullReportRow.GetProperty("operationActualMachineHours").ValueKind);
         var report = reportJson.RootElement.GetProperty("data").GetProperty("report");
         Assert.Equal(3.5m, report.GetProperty("operationActualLaborHours").GetDecimal());
         Assert.Equal(0.75m, report.GetProperty("operationActualMachineHours").GetDecimal());
         Assert.False(report.TryGetProperty("operationActualHours", out _));
+        var nullReport = nullReportJson.RootElement.GetProperty("data").GetProperty("report");
+        Assert.Equal(JsonValueKind.Null, nullReport.GetProperty("operationActualLaborHours").ValueKind);
+        Assert.Equal(JsonValueKind.Null, nullReport.GetProperty("operationActualMachineHours").ValueKind);
         Assert.All(handler.Requests, request => Assert.Equal("internal-test-token", request.Headers.Authorization!.Parameter));
     }
 
