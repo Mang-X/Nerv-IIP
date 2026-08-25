@@ -2,6 +2,10 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## ProductEngineering 工序所需技能发布快照（#1955 子项 A / #2225）
+
+ProductEngineering 的路线发布契约允许发布方为工序显式提供可选 `requiredSkillCode`，并将规范化后的 code 作为不可变发布快照持久化到 `routing_operations.required_skill_code`，同时在路线详情和生产版本路线快照中返回。既有路线保持 `null`，本切片不跨服务校验 MasterData 技能目录，也不实施 MES 派工资格拦截；MES 冻结所需技能与人员实时资格拦截分别由串行子项 #2226、#2227 承接。
+
 ## Quality 周期巡检工序上下文（#1973 子项② / #2070）
 
 BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。
