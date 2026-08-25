@@ -152,10 +152,11 @@ public sealed class ReprintLabelCommandHandler(
         catch (LabelPrinterDispatchCanceledException exception) when (cancellationToken.IsCancellationRequested)
         {
             var canceledResult = LabelPrintLifecycle.AddReprintOperatorGuidance(exception.AttemptResult);
-            await attemptRecorder.RecordReprintCanceledAsync(
+            await attemptRecorder.TryRecordReprintCanceledAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.PrintBatchId,
+                request.SequenceNo,
                 request.PrinterId,
                 canceledResult);
             throw;
@@ -176,10 +177,11 @@ public interface ILabelPrintAttemptRecorder
         string printerId,
         LabelPrinterDispatchResult result);
 
-    Task RecordReprintCanceledAsync(
+    Task<bool> TryRecordReprintCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
+        int sequenceNo,
         string printerId,
         LabelPrinterDispatchResult result);
 }
@@ -193,23 +195,15 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
         LabelPrintBatchId printBatchId,
         string printerId,
         LabelPrinterDispatchResult result) =>
-        RecordAsync(organizationId, environmentId, printBatchId, printerId, result, isReprint: false);
+        RecordAsync(organizationId, environmentId, printBatchId, printerId, result);
 
-    public Task RecordReprintCanceledAsync(
+    public async Task<bool> TryRecordReprintCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
+        int sequenceNo,
         string printerId,
-        LabelPrinterDispatchResult result) =>
-        RecordAsync(organizationId, environmentId, printBatchId, printerId, result, isReprint: true);
-
-    private async Task RecordAsync(
-        string organizationId,
-        string environmentId,
-        LabelPrintBatchId printBatchId,
-        string printerId,
-        LabelPrinterDispatchResult result,
-        bool isReprint)
+        LabelPrinterDispatchResult result)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var independentDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -219,14 +213,36 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
             environmentId,
             printBatchId,
             CancellationToken.None);
-        if (isReprint)
+        try
         {
-            LabelPrintLifecycle.ApplyReprintResult(batch, printerId, result);
+            batch.EnsureItemCanBeReprinted(sequenceNo);
         }
-        else
+        catch (LabelPrintLifecycleRejectedException)
         {
-            LabelPrintLifecycle.ApplyResult(batch, printerId, result);
+            return false;
         }
+
+        LabelPrintLifecycle.ApplyReprintResult(batch, printerId, result);
+        await independentDbContext.SaveChangesAsync(CancellationToken.None);
+        return true;
+    }
+
+    private async Task RecordAsync(
+        string organizationId,
+        string environmentId,
+        LabelPrintBatchId printBatchId,
+        string printerId,
+        LabelPrinterDispatchResult result)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var independentDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            independentDbContext,
+            organizationId,
+            environmentId,
+            printBatchId,
+            CancellationToken.None);
+        LabelPrintLifecycle.ApplyResult(batch, printerId, result);
 
         await independentDbContext.SaveChangesAsync(CancellationToken.None);
     }

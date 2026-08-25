@@ -290,6 +290,7 @@ public sealed class PrintLabelLifecycleCommandTests
 
         var attempt = Assert.Single(attemptRecorder.ReprintAttempts);
         Assert.Equal(("org-001", "env-dev", batch.Id, "printer-canceled"), attempt.Scope);
+        Assert.Equal(1, attempt.SequenceNo);
         var failed = Assert.IsType<LabelPrinterFailedResult>(attempt.Result);
         Assert.Equal("TCP 传输在首字节写入前失败。", failed.FailureReason);
         Assert.Equal("printer-original", batch.PrinterId);
@@ -873,10 +874,11 @@ public sealed class PrintLabelLifecycleCommandTests
             LabelPrinterDispatchResult result) =>
             throw new InvalidOperationException("This test did not expect a canceled dispatch attempt.");
 
-        public Task RecordReprintCanceledAsync(
+        public Task<bool> TryRecordReprintCanceledAsync(
             string organizationId,
             string environmentId,
             LabelPrintBatchId printBatchId,
+            int sequenceNo,
             string printerId,
             LabelPrinterDispatchResult result) =>
             throw new InvalidOperationException("This test did not expect a canceled reprint attempt.");
@@ -899,21 +901,23 @@ public sealed class PrintLabelLifecycleCommandTests
             return Task.CompletedTask;
         }
 
-        public Task RecordReprintCanceledAsync(
+        public Task<bool> TryRecordReprintCanceledAsync(
             string organizationId,
             string environmentId,
             LabelPrintBatchId printBatchId,
+            int sequenceNo,
             string printerId,
             LabelPrinterDispatchResult result)
         {
-            ReprintAttempts.Add(new((organizationId, environmentId, printBatchId, printerId), result));
-            return Task.CompletedTask;
+            ReprintAttempts.Add(new((organizationId, environmentId, printBatchId, printerId), result, sequenceNo));
+            return Task.FromResult(true);
         }
     }
 
     private sealed record RecordedAttempt(
         (string OrganizationId, string EnvironmentId, LabelPrintBatchId PrintBatchId, string PrinterId) Scope,
-        LabelPrinterDispatchResult Result);
+        LabelPrinterDispatchResult Result,
+        int? SequenceNo = null);
 
     private sealed class NoopMediator : IMediator
     {
