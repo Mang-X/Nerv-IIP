@@ -246,6 +246,145 @@ public sealed class MesIssue557ExecutionTests
     }
 
     [Fact]
+    public async Task Authorized_operation_start_bypasses_previous_operation_only_with_reason_authorizer_and_persistent_fact()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_bypasses_previous_operation_only_with_reason_authorizer_and_persistent_fact));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new AuthorizeAndStartOperationTaskCommandHandler(dbContext).Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-20",
+                Utc("2026-06-29T09:00:00Z"),
+                "设备临时故障，先行处理后续工序",
+                "principal:supervisor-001",
+                "correlation-1960-001",
+                "skip-start-1960-001"),
+            CancellationToken.None);
+
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress.ToString(), result.Status);
+        await dbContext.SaveChangesAsync();
+        var authorization = await dbContext.OperationTaskStartAuthorizations.SingleAsync();
+        Assert.Equal("org-001", authorization.OrganizationId);
+        Assert.Equal("env-dev", authorization.EnvironmentId);
+        Assert.Equal("OP-20", authorization.OperationTaskId);
+        Assert.Equal("设备临时故障，先行处理后续工序", authorization.Reason);
+        Assert.Equal("principal:supervisor-001", authorization.AuthorizedBy);
+        Assert.Equal("correlation-1960-001", authorization.CorrelationId);
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_rejects_missing_reason_or_authorizer_without_changing_task()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_rejects_missing_reason_or_authorizer_without_changing_task));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext).Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-20",
+                Utc("2026-06-29T09:00:00Z"),
+                " ",
+                "",
+                "correlation-1960-002",
+                "skip-start-1960-002"),
+            CancellationToken.None));
+
+        var task = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20");
+        Assert.Equal(OperationTaskLifecycleStatus.Queued, task.Status);
+        Assert.Empty(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_replays_same_intent_and_rejects_different_payload()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_replays_same_intent_and_rejects_different_payload));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+        var handler = new AuthorizeAndStartOperationTaskCommandHandler(dbContext);
+        var command = new AuthorizeAndStartOperationTaskCommand(
+            "org-001",
+            "env-dev",
+            "OP-20",
+            Utc("2026-06-29T09:00:00Z"),
+            "设备临时故障，先行处理后续工序",
+            "principal:supervisor-001",
+            "correlation-1960-003",
+            "skip-start-1960-003");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        var replay = await handler.Handle(command with { ChangedAtUtc = Utc("2026-06-29T09:01:00Z") }, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(first, replay);
+        Assert.Single(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { Reason = "不同原因" }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_does_not_use_a_previous_operation_from_another_tenant()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_does_not_use_a_previous_operation_from_another_tenant));
+        foreach (var (organizationId, sequence, operationTaskId) in new[]
+        {
+            ("org-001", 20, "OP-20"),
+            ("org-002", 10, "OP-10"),
+        })
+        {
+            var workOrder = WorkOrder.Create(
+                organizationId,
+                "env-dev",
+                "WO-SCOPE",
+                "SKU-FG",
+                "PV-001",
+                10m,
+                1,
+                Utc("2026-06-30T08:00:00Z"),
+                "PCS");
+            workOrder.MarkReleased();
+            workOrder.RecordMaterialRequirementSnapshot(
+                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                Utc("2026-06-29T08:00:00Z"));
+            dbContext.WorkOrders.Add(workOrder);
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                organizationId,
+                "env-dev",
+                "WO-SCOPE",
+                operationTaskId,
+                OperationTaskLifecycleStatus.Queued,
+                sequence,
+                "WC-10",
+                [],
+                Utc("2026-06-29T08:00:00Z"),
+                TimeSpan.FromHours(1),
+                null,
+                null));
+        }
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext).Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-20",
+                Utc("2026-06-29T09:00:00Z"),
+                "跨租户前序不应作为本工序依据",
+                "principal:supervisor-001",
+                "correlation-1960-scope",
+                "skip-start-1960-scope"),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Operation_pause_on_queued_task_surfaces_lifecycle_conflict()
     {
         await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_lifecycle_conflict));

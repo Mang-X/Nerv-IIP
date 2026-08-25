@@ -117,6 +117,9 @@ builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,
     ChangeOperationTaskStateCommandLock>();
 builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<AuthorizeAndStartOperationTaskCommand>,
+    AuthorizeAndStartOperationTaskCommandLock>();
+builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ReturnLineSideMaterialCommand>,
     ReturnLineSideMaterialCommandLock>();
 // Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
