@@ -45,6 +45,20 @@ public sealed class InventoryMesCostAuthorityTests
     }
 
     [Fact]
+    public async Task Mes_finished_goods_event_without_authority_marker_does_not_post_payload_unit_cost()
+    {
+        var sender = new CapturingSender();
+        var handler = CreateHandler(sender, new UnavailableInventoryUnitCostAuthorityResolver());
+
+        await Assert.ThrowsAsync<InventoryUnitCostAuthorityPendingException>(
+            () => handler.HandleAsync(
+                CreateMesFinishedGoodsEvent(99.99m, authorityReference: null),
+                CancellationToken.None));
+
+        Assert.Null(sender.Request);
+    }
+
+    [Fact]
     public async Task Http_authority_resolver_forwards_exact_mes_scope_and_reads_erp_cost()
     {
         var httpHandler = new CapturingHttpMessageHandler
@@ -94,7 +108,9 @@ public sealed class InventoryMesCostAuthorityTests
             authorityResolver);
     }
 
-    private static InventoryMovementRequestedIntegrationEvent CreateMesFinishedGoodsEvent(decimal unitCost)
+    private static InventoryMovementRequestedIntegrationEvent CreateMesFinishedGoodsEvent(
+        decimal unitCost,
+        string? authorityReference = InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt)
     {
         return new InventoryMovementRequestedIntegrationEvent(
             "evt-mes-authority-001",
@@ -126,7 +142,7 @@ public sealed class InventoryMesCostAuthorityTests
                 5m,
                 DateTimeOffset.UtcNow,
                 UnitCost: unitCost,
-                UnitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt));
+                UnitCostAuthorityReference: authorityReference));
     }
 
     private sealed class FixedAuthorityResolver(InventoryUnitCostAuthorityResolution resolution)

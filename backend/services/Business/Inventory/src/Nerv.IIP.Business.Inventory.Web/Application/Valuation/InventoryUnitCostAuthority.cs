@@ -9,6 +9,8 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 
 public static class InventoryUnitCostAuthorityStatuses
 {
+    // NotRequired is retained only for legacy non-MES movement producers that do not
+    // participate in the MES finished-goods authority protocol.
     public const string NotRequired = "not-required";
     public const string Available = "available";
     public const string Pending = "pending";
@@ -49,8 +51,22 @@ public sealed class UnavailableInventoryUnitCostAuthorityResolver : IInventoryUn
         var reference = integrationEvent.Payload.UnitCostAuthorityReference;
         return Task.FromResult(
             string.IsNullOrWhiteSpace(reference)
-                ? InventoryUnitCostAuthorityResolution.NotRequired()
+                ? RequiresMesFinishedGoodsAuthority(integrationEvent)
+                    ? InventoryUnitCostAuthorityResolution.Pending("authority-reference-missing")
+                    : InventoryUnitCostAuthorityResolution.NotRequired()
                 : InventoryUnitCostAuthorityResolution.Rejected("authority-resolver-not-configured"));
+    }
+
+    internal static bool RequiresMesFinishedGoodsAuthority(
+        InventoryMovementRequestedIntegrationEvent integrationEvent)
+    {
+        return string.Equals(
+                integrationEvent.SourceService,
+                InventoryIntegrationEventSources.BusinessMes,
+                StringComparison.Ordinal)
+            && integrationEvent.Payload.IdempotencyKey.StartsWith(
+                "mes:finished-goods-receipt:",
+                StringComparison.Ordinal);
     }
 }
 
@@ -65,7 +81,9 @@ public sealed class HttpInventoryUnitCostAuthorityResolver(
         var payload = integrationEvent.Payload;
         if (string.IsNullOrWhiteSpace(payload.UnitCostAuthorityReference))
         {
-            return InventoryUnitCostAuthorityResolution.NotRequired();
+            return UnavailableInventoryUnitCostAuthorityResolver.RequiresMesFinishedGoodsAuthority(integrationEvent)
+                ? InventoryUnitCostAuthorityResolution.Pending("authority-reference-missing")
+                : InventoryUnitCostAuthorityResolution.NotRequired();
         }
 
         if (!string.Equals(

@@ -58,6 +58,8 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
             var authority = await authorityResolver.ResolveAsync(integrationEvent, cancellationToken);
             var unitCost = authority.Status switch
             {
+                // V1 UnitCost remains deserializable for non-MES legacy producers only;
+                // MES finished-goods events are forced through the authority resolver.
                 InventoryUnitCostAuthorityStatuses.NotRequired => payload.UnitCost,
                 InventoryUnitCostAuthorityStatuses.Available when authority.UnitCost is > 0m => authority.UnitCost,
                 InventoryUnitCostAuthorityStatuses.Pending => throw new InventoryUnitCostAuthorityPendingException(
