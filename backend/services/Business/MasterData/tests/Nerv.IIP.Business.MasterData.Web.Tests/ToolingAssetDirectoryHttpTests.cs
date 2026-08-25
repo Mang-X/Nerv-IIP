@@ -31,6 +31,7 @@ public sealed class ToolingAssetDirectoryHttpTests
                 CreateTooling("org-001", "env-dev", "TOOL-030", "precision-jig", ToolingAssetStatus.Maintenance),
                 CreateTooling("org-001", "env-dev", "TOOL-005", "other-type", ToolingAssetStatus.Maintenance),
                 CreateTooling("org-001", "env-dev", "TOOL-015", "precision-jig", ToolingAssetStatus.Available),
+                CreateTooling("org-001", "env-dev", "TOOL-025", "precision-jig", ToolingAssetStatus.Retired),
                 CreateTooling("org-002", "env-dev", "TOOL-001", "precision-jig", ToolingAssetStatus.Maintenance),
                 CreateTooling("org-001", "env-prod", "TOOL-002", "precision-jig", ToolingAssetStatus.Maintenance));
             await dbContext.SaveChangesAsync();
@@ -42,17 +43,41 @@ public sealed class ToolingAssetDirectoryHttpTests
         var response = await client.GetAsync(
             "/api/business/v1/master-data/tooling-assets" +
             "?organizationId=org-001&environmentId=env-dev" +
-            "&keyword=precision-jig&status=maintenance&skip=1&take=1");
+            "&keyword=precision-jig&status=maintenance&skip=1&take=2");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(3, data.GetProperty("total").GetInt32());
-        var item = Assert.Single(data.GetProperty("items").EnumerateArray());
-        Assert.Equal("TOOL-020", item.GetProperty("code").GetString());
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(["TOOL-020", "TOOL-030"], items.Select(item => item.GetProperty("code").GetString()));
+        Assert.All(items, item =>
+        {
+            Assert.Equal(JsonValueKind.String, item.GetProperty("status").ValueKind);
+            Assert.Equal("maintenance", item.GetProperty("status").GetString());
+            Assert.False(item.GetProperty("isSchedulable").GetBoolean());
+        });
+
+        await AssertStatusWireValueAsync(client, ToolingAssetStatus.Available, "available");
+        await AssertStatusWireValueAsync(client, ToolingAssetStatus.Retired, "retired");
+    }
+
+    private static async Task AssertStatusWireValueAsync(
+        HttpClient client,
+        ToolingAssetStatus status,
+        string expectedWireValue)
+    {
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/tooling-assets" +
+            "?organizationId=org-001&environmentId=env-dev" +
+            $"&keyword=precision-jig&status={expectedWireValue}&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
         Assert.Equal(JsonValueKind.String, item.GetProperty("status").ValueKind);
-        Assert.Equal("maintenance", item.GetProperty("status").GetString());
-        Assert.False(item.GetProperty("isSchedulable").GetBoolean());
+        Assert.Equal(expectedWireValue, item.GetProperty("status").GetString());
+        Assert.Equal(status == ToolingAssetStatus.Available, item.GetProperty("isSchedulable").GetBoolean());
     }
 
     private static ToolingAsset CreateTooling(

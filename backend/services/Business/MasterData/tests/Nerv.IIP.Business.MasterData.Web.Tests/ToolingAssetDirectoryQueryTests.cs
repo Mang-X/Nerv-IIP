@@ -26,6 +26,12 @@ public sealed class ToolingAssetDirectoryQueryTests
         var response = await new ListToolingAssetsQueryHandler(dbContext).Handle(
             new ListToolingAssetsQuery("org-001", "env-dev", "mould", ToolingAssetStatus.Available, 0, 100),
             CancellationToken.None);
+        var nameResponse = await new ListToolingAssetsQueryHandler(dbContext).Handle(
+            new ListToolingAssetsQuery("org-001", "env-dev", "冲压", ToolingAssetStatus.Available, 0, 100),
+            CancellationToken.None);
+        var codeResponse = await new ListToolingAssetsQueryHandler(dbContext).Handle(
+            new ListToolingAssetsQuery("org-001", "env-dev", "tool-002", ToolingAssetStatus.Available, 0, 100),
+            CancellationToken.None);
 
         var item = Assert.Single(response.Items);
         Assert.Equal("TOOL-002", item.Code);
@@ -38,6 +44,8 @@ public sealed class ToolingAssetDirectoryQueryTests
         Assert.Equal(["WC-01", "WC-02"], item.WorkCenterCodes);
         Assert.Equal(["SKU-A", "SKU-B"], item.SkuCodes);
         Assert.Equal(1, response.Total);
+        Assert.Equal("TOOL-002", Assert.Single(nameResponse.Items).Code);
+        Assert.Equal("TOOL-002", Assert.Single(codeResponse.Items).Code);
     }
 
     [Fact]
