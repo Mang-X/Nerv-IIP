@@ -160,6 +160,36 @@ foreach ($excludedPath in @(
     Assert-True (-not (Test-NervGovernedSourcePath -Path $excludedPath -GovernedExtension @('.cs', '.js', '.ts'))) "Generated or vendored source path must be excluded: $excludedPath"
 }
 
+function Assert-SourceSizeWorkflowContract {
+    param([Parameter(Mandatory)] [string] $WorkflowPath)
+
+    $workflowText = [IO.File]::ReadAllText($WorkflowPath)
+    $match = [regex]::Match($workflowText, '(?ms)^  script-governance:\r?\n.*?(?=^  [a-z0-9-]+:\r?\n|\z)')
+    Assert-True $match.Success 'CI must define the script-governance job'
+    $job = $match.Value
+
+    # Mutation killed: returning checkout to a shallow clone makes the selected base unreadable.
+    Assert-True ([regex]::IsMatch($job, '(?ms)- name: Checkout\s+timeout-minutes: 3\s+uses: actions/checkout@v4\s+with:\s+fetch-depth: 0')) 'Script Governance checkout must fetch full history'
+    # Mutation killed: combining the policy tests and live checker into one shell line hides ownership and failures.
+    Assert-True ([regex]::IsMatch($job, '(?ms)- name: Test source size governance\s+timeout-minutes: 5\s+shell: pwsh\s+run: ./scripts/tests/source-size-governance.Tests.ps1')) 'Script Governance must run source-size contract tests in an independent step'
+    Assert-True ([regex]::IsMatch($job, '(?ms)- name: Run source size governance check\s+timeout-minutes: 5\s+shell: pwsh\s+env:\s+BASE_SHA: \$\{\{ github.event_name == ''pull_request'' && github.event.pull_request.base.sha \|\| github.event.before \}\}\s+run: ./scripts/check-source-size-governance.ps1 -BaseCommit \$env:BASE_SHA')) 'Script Governance must run the live checker against the event base in an independent step'
+    # Mutation killed: omitting frontend would let a frontend-only oversized source bypass the owner job.
+    Assert-True $job.Contains("needs.impact-plan.outputs.frontend != 'false'", [StringComparison]::Ordinal) 'Script Governance routing must include frontend impact'
+    Assert-True $job.Contains('33 个 step', [StringComparison]::Ordinal) 'Script Governance budget must record 33 steps'
+    Assert-True $job.Contains('3m checkout', [StringComparison]::Ordinal) 'Script Governance budget must retain the checkout component'
+    Assert-True $job.Contains('32 × 5m', [StringComparison]::Ordinal) 'Script Governance budget must record 32 five-minute steps'
+    Assert-True $job.Contains('163m', [StringComparison]::Ordinal) 'Script Governance budget must record the 163m step ceiling'
+
+    foreach ($stepName in @('Test source size governance', 'Run source size governance check')) {
+        $stepMatch = [regex]::Match($job, "(?ms)- name: $([regex]::Escape($stepName)).*?(?=\n      - name:|\z)")
+        Assert-True $stepMatch.Success "Workflow step must exist: $stepName"
+        Assert-True (-not $stepMatch.Value.Contains('continue-on-error', [StringComparison]::Ordinal)) "Workflow step must not continue on error: $stepName"
+        Assert-True (-not $stepMatch.Value.Contains('|| true', [StringComparison]::Ordinal)) "Workflow step must not swallow failure: $stepName"
+    }
+}
+
+Assert-SourceSizeWorkflowContract -WorkflowPath (Join-Path $repoRoot '.github/workflows/ci.yml')
+
 $fixtures = [Collections.Generic.List[string]]::new()
 try {
     $newOversized = New-SourceSizeGitFixture -BaseLineCount $null -HeadLineCount 1001
