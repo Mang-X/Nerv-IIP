@@ -1,3 +1,4 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain;
@@ -15,6 +16,8 @@ public sealed class QualityReasonPostgresProfileTests
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();
         var services = new ServiceCollection();
+        services.AddMediatR(configuration =>
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddQualityPostgreSqlPersistence(QualityPostgresLaneDatabase.ConnectionString);
 
         await using var provider = services.BuildServiceProvider();
