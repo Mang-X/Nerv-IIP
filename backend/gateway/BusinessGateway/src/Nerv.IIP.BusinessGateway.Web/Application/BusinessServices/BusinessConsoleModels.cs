@@ -4782,6 +4782,14 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
 
+public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ReturnedAtUtc,
+    decimal ReturnedQuantity,
+    [property: JsonRequired, Required] string IdempotencyKey);
+
 public sealed record BusinessConsoleMesDispatchTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items,
     int Total);

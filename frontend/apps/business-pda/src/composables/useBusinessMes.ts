@@ -2,6 +2,7 @@ import {
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  returnBusinessConsoleMesLineSideMaterialMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
@@ -29,6 +30,7 @@ import {
   type BusinessConsoleSopFileDownloadGrantEnvelope,
   type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesConfirmLineSideReceiptRequest,
+  type BusinessConsoleMesReturnLineSideMaterialRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
@@ -1502,6 +1504,7 @@ export function useMesTelemetryProductionReportCandidates() {
 export type CreateIssueInput = BusinessConsoleMesCreateMaterialIssueRequest
 
 export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideReceiptRequest
+export type ReturnLineSideMaterialInput = BusinessConsoleMesReturnLineSideMaterialRequest
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
@@ -1531,10 +1534,8 @@ export function useMesMaterialIssue() {
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
-        ignoreBackgroundError,
-      )
+    async onSuccess() {
+      await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
 
@@ -1544,6 +1545,13 @@ export function useMesMaterialIssue() {
       void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
         ignoreBackgroundError,
       )
+    },
+  })
+
+  const returnMutation = useMutation({
+    ...returnBusinessConsoleMesLineSideMaterialMutationOptions(),
+    async onSuccess() {
+      await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
 
@@ -1606,6 +1614,43 @@ export function useMesMaterialIssue() {
         path: { requestId },
         query: scopeQuery(filters),
         body: { ...body } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
+      })
+    },
+    returnLineSideMaterial: async (
+      requestId: string,
+      body: ReturnLineSideMaterialInput,
+      context: { workOrderId?: string } = {},
+    ) => {
+      let skip = 0
+      let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
+      while (!authoritative) {
+        const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+          query: {
+            ...scopeQuery(filters),
+            ...(context.workOrderId?.trim() ? { workOrderId: context.workOrderId.trim() } : {}),
+            skip,
+            take: DEFAULT_TAKE,
+          },
+          throwOnError: true,
+        })
+        const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
+        authoritative = exactItem(
+          envelope,
+          (item: BusinessConsoleMesMaterialIssueRequestRow) => item.requestId === requestId,
+        )
+        if (authoritative) break
+        const items = envelope?.success ? (envelope.data?.items ?? []) : []
+        const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
+        if (items.length === 0 || skip + items.length >= total) break
+        skip += items.length
+      }
+      if (!authoritative) {
+        throw new Error('当前领料单没有可退回的线边物料。')
+      }
+      return returnMutation.mutateAsync({
+        path: { requestId },
+        query: scopeQuery(filters),
+        body,
       })
     },
   }

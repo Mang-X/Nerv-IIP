@@ -945,6 +945,29 @@ public sealed class ConfirmBusinessConsoleMesLineSideMaterialReceiptEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns")]
+[BusinessGatewayOperationId("returnBusinessConsoleMesLineSideMaterial")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+public sealed class ReturnBusinessConsoleMesLineSideMaterialEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesReturnLineSideMaterialRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsManage)
+{
+    protected override string OrganizationId(BusinessConsoleMesReturnLineSideMaterialRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesReturnLineSideMaterialRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesReturnLineSideMaterialRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.ReturnLineSideMaterialAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/dispatch-tasks")]
 [BusinessGatewayOperationId("listBusinessConsoleMesDispatchTasks")]
 public sealed class ListBusinessConsoleMesDispatchTasksEndpoint(
