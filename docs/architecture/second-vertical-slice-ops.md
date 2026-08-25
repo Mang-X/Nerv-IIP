@@ -29,7 +29,7 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 4. PlatformGateway 提供 restart facade 和 operation task detail facade。
 5. Connector Host 增加 operation loop，按组织、环境和 connectorHostId claim task lease。
 6. Docker Connector 通过 Docker CLI 发现真实容器并执行 `lifecycle.restart`；单元测试只在测试项目内使用 `IDockerCli` fake，生产路径不注入内存容器描述符。
-7. 本地验证脚本 `scripts/verify-second-slice-ops.ps1` 会启动 AppHub、Ops、PlatformGateway 和 Connector Host，走通一次 restart 闭环。
+7. 历史验收曾使用 `scripts/verify-second-slice-ops.ps1` 启动 AppHub、Ops、PlatformGateway 和 Connector Host，走通一次 restart 闭环；该脚本现已退役，不是当前入口。
 
 ## 公开接口
 
@@ -98,7 +98,7 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 1. PlatformGateway 使用 `Ops:BaseUrl` 调用 Ops。
 2. Connector Host 使用 `Platform:OpsBaseUrl` 调用 Ops。
 3. Connector Host 使用 `ConnectorHost:ConnectorHostId`、`ConnectorHost:ConnectorSecret`、`ConnectorHost:OrganizationId` 和 `ConnectorHost:EnvironmentId` 作为本地 Connector Host 凭证与范围。
-4. Docker Connector 运行环境必须安装 Docker CLI，并能访问本机 Docker daemon；`scripts/verify-second-slice-ops.ps1` 会创建临时 `nerv-iip-local-demo-001` 容器用于真实 restart 验证。
+4. Docker Connector 运行环境必须安装 Docker CLI，并能访问本机 Docker daemon；历史验收中的 `scripts/verify-second-slice-ops.ps1` 曾创建临时 `nerv-iip-local-demo-001` 容器用于真实 restart 验证，脚本现已退役，不再创建容器。
 
 ## 可靠性边界
 
@@ -107,9 +107,9 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 3. Ops claim 在 PostgreSQL profile 下使用 `FOR UPDATE SKIP LOCKED` 锁定 claimable rows；并发 claim 不应重复返回同一 OperationTask。
 4. lease timeout requeue 策略：claim 前扫描已 dispatched 且 active attempt 的 leasedUntilUtc 已过期的任务，将该 attempt 标记为 abandoned，abandonReason=lease-timeout；attemptNo 小于 maxAttempts 时任务回到 queued，否则转 failed。
 
-## 验证
+## 历史验证记录
 
-第二阶段验收命令：
+以下命令仅用于复现历史验收记录；脚本现已退役并会明确失败，不得作为当前门禁：
 
 ```powershell
 pwsh scripts/verify-second-slice-ops.ps1

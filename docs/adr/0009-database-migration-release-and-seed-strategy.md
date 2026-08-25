@@ -36,7 +36,7 @@
 ## 后果
 
 1. 第五阶段已经为 AppHub/Ops 建立 migrations 与 migrator 入口；后续新增持久化服务继续沿用同一迁移、seed 和验证口径。
-2. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 已按 #2157 退役；当前本地门禁使用 AppHost/fullstack 与专用 provider lane，且不能被解释为生产部署流程。
+2. `scripts/verify-fourth-slice-real-infra.ps1` 可以继续作为本地门禁，但不能被解释为生产部署流程。
 3. 部署脚本会变复杂，需要管理连接串、迁移执行顺序、备份提示、失败日志和重试语义。
 4. 服务启动路径会更安全，但开发者需要显式运行迁移或使用验证脚本准备数据库。
 5. 引入新的持久化服务时，必须同时补迁移、seed 和 profile 验证计划，不能只提交 DbContext 和实体。
