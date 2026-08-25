@@ -332,6 +332,8 @@ FileStorage 消费 adapter 对 metadata 的 fileId、organization/environment、
 `barcode-label-template` purpose、专用 content type、`.json`、`available`、64 KiB 上限和非空
 SHA-256 全部失败关闭；download grant 只接受以单个 `/` 开头的相对路径，不接受绝对或跨 origin URL，
 并拒绝 redirect、非 2xx、超时、空 body、超限、size 不一致、BOM、非法 UTF-8 与实际字节摘要不一致。
+metadata 与 download-grant typed client 通过 `FileStorage:ConnectTimeout` 和 `FileStorage:RequestTimeout`
+分别配置正数连接预算与单次 HTTP 请求总预算；下载字节 adapter 另有独立的 10 秒连接/下载预算，三段真实传输均有界。
 失败诊断不记录 grant URL、header、token、模板字节或变量值。
 
 `zpl-v1` 只接受声明式 JSON 的 `text` / `barcode` fields，经冻结变量 Schema 完整校验后，确定性输出
@@ -347,8 +349,9 @@ GS1 CSET 82 合法 `>` 当前仍被 Code 128 数据上下文硬拒；以 ZPL 上
 避免已经发布的完成事实被降级。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，
 dispatch/reprint 也不把 item 改为 `printed` / `reprinted`。
 TCP adapter 分别使用显式连接预算和覆盖全部文档及所有短写的单一传输总预算；传输总预算不会在每次
-socket write 后重新开始。loopback 测试本身也以显式总测试预算和贯穿 accept/read 的取消 token 收口，
-半关闭回归会有界失败而不是无限等待。
+socket write 后重新开始。loopback 测试本身也以包含 connect/accept/read 的显式总测试预算收口；
+取消传播探针另用独立 watchdog 观察 read 任务，移除读取 token 会在固定时间内以目标断言失败，
+半关闭回归不会无限等待。
 
 本层的 reprint 是对单个冻结文档再次执行 transport，不是物理打印确认：批次处于
 `sent-to-printer` 或兼容既有数据的 `printed` 时可发起；`pending` 尚未完成首次整批下发，`failed`

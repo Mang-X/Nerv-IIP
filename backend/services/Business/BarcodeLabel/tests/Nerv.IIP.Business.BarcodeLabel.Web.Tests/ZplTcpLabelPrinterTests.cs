@@ -64,19 +64,31 @@ public sealed class ZplTcpLabelPrinterTests
     }
 
     [Fact]
-    public async Task Loopback_receive_is_bounded_when_the_peer_does_not_half_close()
+    public async Task Loopback_receive_observes_cancellation_before_an_independent_watchdog()
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        using var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, port);
+        await TestTimeout.RunAsync(
+            "ZPL loopback cancellation probe including connect, accept, and read",
+            async testCancellationToken =>
+            {
+                using var listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                using var client = new TcpClient();
+                var accept = listener.AcceptTcpClientAsync(testCancellationToken).AsTask();
+                await client.ConnectAsync(IPAddress.Loopback, port, testCancellationToken);
+                using var serverPeer = await accept;
 
-        await Assert.ThrowsAsync<TestTimeoutException>(async () =>
-            await TestTimeout.RunAsync(
-                "ZPL loopback missing half-close probe",
-                cancellationToken => new ValueTask(ReceiveUntilEofAsync(listener, cancellationToken)),
-                TimeSpan.FromMilliseconds(250)));
+                using var receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(testCancellationToken);
+                var receive = ReadUntilEofAsync(serverPeer, receiveCancellation.Token);
+                receiveCancellation.Cancel();
+                var watchdog = Task.Delay(TimeSpan.FromSeconds(1), testCancellationToken);
+
+                var completed = await Task.WhenAny(receive, watchdog);
+
+                Assert.Same(receive, completed);
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receive);
+            },
+            TimeSpan.FromSeconds(3));
     }
 
     [Fact]
@@ -194,6 +206,11 @@ public sealed class ZplTcpLabelPrinterTests
     private static async Task<byte[]> ReceiveUntilEofAsync(TcpListener listener, CancellationToken cancellationToken)
     {
         using var client = await listener.AcceptTcpClientAsync(cancellationToken);
+        return await ReadUntilEofAsync(client, cancellationToken);
+    }
+
+    private static async Task<byte[]> ReadUntilEofAsync(TcpClient client, CancellationToken cancellationToken)
+    {
         await using var stream = client.GetStream();
         using var buffer = new MemoryStream();
         var bytes = new byte[1024];

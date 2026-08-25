@@ -72,12 +72,30 @@ try
         throw new InvalidOperationException("FileStorage:BaseUrl must be an absolute HTTP(S) URI for BarcodeLabel template assets.");
     }
 
-    builder.Services.AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
-    {
-        client.BaseAddress = fileStorageBaseAddress;
-        var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-    }).UseHttpClientMetrics();
+    builder.Services
+        .AddOptions<FileStorageClientOptions>()
+        .Bind(builder.Configuration.GetSection(FileStorageClientOptions.SectionName))
+        .Validate(
+            options => options.ConnectTimeout > TimeSpan.Zero,
+            "FileStorage:ConnectTimeout must be positive.")
+        .Validate(
+            options => options.RequestTimeout > TimeSpan.Zero,
+            "FileStorage:RequestTimeout must be positive.")
+        .ValidateOnStart();
+    builder.Services
+        .AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
+        {
+            var options = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value;
+            client.BaseAddress = fileStorageBaseAddress;
+            client.Timeout = options.RequestTimeout;
+            var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        })
+        .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+        {
+            ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
+        })
+        .UseHttpClientMetrics();
     builder.Services.AddScoped<ILabelTemplateAssetPort>(services =>
         new HttpFileStorageLabelTemplateAssetAdapter(
             services.GetRequiredService<IFileStorageClient>(),
