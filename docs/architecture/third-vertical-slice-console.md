@@ -1,6 +1,6 @@
 # 第三阶段控制台纵切说明
 
-本文档记录第三阶段已经落地的控制台纵切。它不是完整管理后台，而是验证 Nerv-IIP 能否从 Gateway 暴露稳定控制台契约，生成类型安全前端客户端，并在 Vue 控制台里完成实例查看、低风险 restart 动作和 OperationTask 状态查看。
+本文档记录第三阶段已经落地的控制台纵切。它不是完整管理后台，而是验证 Nerv-IIP 能否从 Gateway 暴露稳定控制台契约，生成类型安全前端客户端，并在 Vue 控制台里完成实例查看、低风险 restart 动作和 OperationTask 状态查看。`scripts/verify-third-slice-console.ps1` 已按 #2157 退役并保留为明确失败的兼容墓碑；当前 OpenAPI、api-client 和前端质量门禁分别执行，或使用 `scripts/verify-openapi-client-drift.ps1`。
 
 ## 目标
 
@@ -27,7 +27,7 @@ PlatformGateway /swagger/v1/swagger.json
 4. `frontend/packages/api-client` 使用 Hey API 生成 TypeScript DTO、fetch SDK 和 Pinia Colada query/mutation options。
 5. `frontend/apps/console` 使用 Vue Router 官方文件路由插件、Pinia、Pinia Colada 和生成客户端展示实例列表、实例详情、restart 动作入口和 OperationTask 状态页。
 6. `frontend/packages/ui` 和 `frontend/packages/app-shell` 已提供第三阶段所需的最小 UI primitive 与应用壳层。
-7. `scripts/verify-third-slice-console.ps1` 串起第二阶段验证、OpenAPI 导出、api-client 生成、前端 typecheck/test/build。
+7. 历史验收曾由 `scripts/verify-third-slice-console.ps1` 串起第二阶段验证、OpenAPI 导出、api-client 生成、前端 typecheck/test/build；该脚本现已退役，不是当前入口。
 
 ## 公开契约
 
@@ -60,9 +60,9 @@ PlatformGateway /swagger/v1/swagger.json
 5. Vue 页面保持薄，实例表格、详情面板和任务时间线分别落到 `frontend/apps/console/src/components/console`。
 6. `typed-router.d.ts` 由 Vue Router 官方文件路由插件生成并纳入 TypeScript 检查。
 
-## 质量门禁
+## 历史质量门禁记录
 
-第三阶段总验收命令：
+以下命令仅用于复现历史验收记录；脚本现已退役并会明确失败，不得作为当前门禁：
 
 ```powershell
 pwsh scripts/verify-third-slice-console.ps1
