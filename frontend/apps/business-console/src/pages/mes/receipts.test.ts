@@ -345,9 +345,9 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(visibleText).not.toContain('user-emp-')
   })
 
-  // 工单/成品经 query 带入（工单详情发起），补齐必填单位成本后提交登记。
-  async function fillCostAndSubmit(wrapper: ReturnType<typeof mountPage>, unitCost = '3.5') {
-    await wrapper.get('#receipt-unit-cost').setValue(unitCost)
+  // 工单/成品经 query 带入（工单详情发起），成本由服务端权威回填。
+  async function submitReceipt(wrapper: ReturnType<typeof mountPage>) {
+    expect(wrapper.find('#receipt-unit-cost').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
   }
@@ -357,9 +357,9 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper, '3.5')
-    // 成功后重置清空单位成本；连录第二笔需重新填。
-    await fillCostAndSubmit(wrapper, '4')
+    await submitReceipt(wrapper)
+    // 成功后轮换幂等键，连录第二笔成为独立申请。
+    await submitReceipt(wrapper)
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(2)
     const key1 = (
@@ -381,7 +381,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     const body = receiptState.createReceiptRequest.mock.calls[0]![0] as { producedLotNo?: string }
@@ -395,7 +395,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     // 无产出批次 → canCreate 为假，提交被拦截，且给出「先报工产出」引导而非盲提交后 500。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
@@ -410,7 +410,6 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('#receipt-unit-cost').setValue('3.5')
     await wrapper.get('#receipt-quantity').setValue('4') // 超过剩余 3
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -428,7 +427,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     // 加载失败区别于真实空态：给重试出口、不误报「暂无」，提交仍被拦截（未选批次）。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
@@ -445,7 +444,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     expect(notifySpies.success).toHaveBeenCalledTimes(1)
@@ -465,7 +464,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     expect(notifySpies.operationFailure).toHaveBeenCalledTimes(1)
     const [, arg] = notifySpies.operationFailure.mock.calls[0]!

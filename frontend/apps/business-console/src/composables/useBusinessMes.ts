@@ -2193,8 +2193,12 @@ export function useMesFinishedGoodsReceipts() {
   const retryingRequestNos = reactive(new Set<string>())
 
   return {
-    createReceiptRequest: (body: BusinessConsoleMesCreateReceiptRequest) =>
-      createReceiptMutation.mutateAsync({ body }),
+    createReceiptRequest: (body: Omit<BusinessConsoleMesCreateReceiptRequest, 'unitCost'>) => {
+      // 兼容旧调用方的运行时对象：即使仍携带 client unitCost，也在 facade 调用边界丢弃。
+      const { unitCost: _clientUnitCost, ...safeBody } =
+        body as BusinessConsoleMesCreateReceiptRequest
+      return createReceiptMutation.mutateAsync({ body: safeBody })
+    },
     createReceiptRequestError: createReceiptMutation.error,
     createReceiptRequestPending: createReceiptMutation.isLoading,
     retryInventoryPosting: async (requestNo: string) => {
