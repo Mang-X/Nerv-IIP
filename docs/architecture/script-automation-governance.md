@@ -331,8 +331,8 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | 层级 | 目的 | 典型命令 |
 | --- | --- | --- |
 | fast | 快速发现脚本解析、治理和无外部依赖测试问题 | `pwsh scripts/check-script-governance.ps1`、`git diff --check` |
-| infra | 验证 Docker、本地依赖、真实 PostgreSQL profile、disposable database、现场连接断连和 opt-in 发布演练 | `pwsh scripts/verify-fourth-slice-real-infra.ps1`、`pwsh scripts/verify-fifth-slice-persistence-foundation.ps1`、`pwsh scripts/verify-iam-persistent-auth-foundation.ps1`、`pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`、`pwsh scripts/verify-production-release-rehearsal.ps1 -Profile dependencies` |
-| full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归；真实浏览器全栈使用一次性 session | `.\nerv.ps1 fullstack run -Scenario smoke`、`.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`、`pwsh scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2`、`pwsh scripts/verify-third-slice-console.ps1` |
+| infra | 验证 Docker、本地依赖、真实 PostgreSQL profile、disposable database、现场连接断连和 opt-in 发布演练 | `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1`、`pwsh scripts/verify-iam-persistent-auth-foundation.ps1`、`pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`、`pwsh scripts/verify-production-release-rehearsal.ps1 -Profile dependencies` |
+| full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归；真实浏览器全栈使用一次性 session | `.\nerv.ps1 fullstack run -Scenario smoke`、`.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`、`pwsh scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2`、`pwsh scripts/verify-openapi-client-drift.ps1` |
 | leader-demo | 重建隔离 PostgreSQL/Redis 演示 session，验证固定前置事实、公开 HTTP 查询、连续遥测、证据与精确清理 | `.\nerv.ps1 demo reset`、`.\nerv.ps1 demo health-check`、`pwsh scripts/verify-leader-demo-telemetry-simulator.ps1 -DurationMinutes 10 -HistoricalBackfill`、`.\nerv.ps1 demo stop`；停止后对同一 ID 执行 `.\nerv.ps1 fullstack stop -SessionId <sessionId>` 确认 `state=Stopped remaining=0`，再用 `fullstack status` 确认 `state=Stopped containers=0` |
 
 ## 跨平台兼容门禁
@@ -388,10 +388,10 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | `scripts/tests/test-evidence.Tests.ps1` | `check` | 已受治理/CI 接线 | fixture 证明三项硬门禁、双 SHA、baseline authority、selected-lane/shard 语义、脱敏与 normalized roundtrip，并锁定无 raw-path writer 参数、Ubuntu major normalization、quarantine 到期边界与两调用点错误契约；另以 AST 契约钉住 `scripts/lib/TestEvidence.ps1` 的序数比较边界（扫描面见「标识符比较的序数收口」；豁免表按「函数名 + 表达式原文精确相等」匹配，不按行号也不按子串，现为 1 条，且必须恰好命中一处），并用合成源码对扫描面本身做正反鉴别：每条覆盖轴必须报出、每条已登记盲区必须沉默、命名豁免不得吞掉同函数里另一处 `Group-Object`；由 Script Governance job 和 `compat-fast` 执行并保留真实退出码。 |
 | `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；Ubuntu 22.04.3 `compat-core-verify` 已通过，证据路径为 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`。 |
 | `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、dotnet、solution tests 和 scoped PostgreSQL test environment；baseline exemption 已移除。 |
-| `verify-fourth-slice-real-infra.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、PostgreSQL reset、AppHub/Ops profile tests 和嵌套第三阶段脚本；baseline exemption 已移除。 |
-| `verify-third-slice-console.ps1` | `verify` + `generate` | 已受治理 | 允许调用已声明的 OpenAPI export/api-client generate step；继续把写入 OpenAPI 快照和 api-client 的副作用归到 generate 分类说明中。 |
+| `verify-fourth-slice-real-infra.ps1` | `verify` | 第一批已退役 | 保留无副作用、明确失败的路径占位；真实基础设施责任由当前 AppHost/fullstack 与专用 provider lane 承接。 |
+| `verify-third-slice-console.ps1` | `verify` + `generate` | 第一批已退役 | 保留无副作用、明确失败的路径占位；OpenAPI 导出、api-client 生成和前端质量门禁使用各自的当前入口。 |
 | `verify-openapi-client-drift.ps1` | `verify` + `generate` | 已受治理 | CI 契约漂移门禁；使用 helper 调用 OpenAPI 导出、frontend install/api-client generation 和 git diff/status 检查，失败时输出 OpenAPI 快照与 generated api-client 差异。 |
-| `verify-first-slice.ps1` | `verify` | 已迁移 | 管理本地服务进程和端口 preflight；baseline exemption 已移除。 |
+| `verify-first-slice.ps1` | `verify` | 第一批已退役 | 保留无副作用、明确失败的路径占位；本地服务生命周期使用 `nerv.ps1`，仓库回归使用当前 CI lane。 |
 | `verify-production-release-rehearsal.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose disposable project、依赖 smoke、平台 health smoke 和默认清理；`platform-smoke` profile 明确使用 Development-only auto-migration 作为发布演练 smoke，不替代生产 migration bundle。 |
 | `verify-business-performance-baseline.ps1` | `verify` | 已迁移 | 使用 helper 执行 .NET performance tests，写 machine-readable metrics JSONL/summary JSON，并支持全局或分场景阈值失败门禁。 |
 | `verify-business-scheduling-scale-benchmark.ps1` | `verify` | 已受治理/真实 PostgreSQL | 固定生成 100/500/1000 张 APS Lite 订单并各运行三次，记录输入组装、约束检查、算法、PostgreSQL 持久化、总耗时、峰值内存、KPI、未排原因和稳定输出哈希；证据写入 `artifacts/script-logs/business-scheduling-scale-benchmark/<timestamp>/aps-lite-scale-benchmark.{json,md}`，仅声明确定性有限产能启发式能力，不声明全局最优。 |
@@ -423,9 +423,9 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | `bootstrap-online.ps1` | `release-install` | 已迁移 | 有网空白机器入口；使用 helper 执行 winget、Aspire install script、dotnet restore、pnpm install、AppHost build 和可选 dev 启动；只初始化本地 Development user-secrets，不承担离线包制作或客户现场服务注册。 |
 | `install/migrate-file-storage.ps1` | `release-install` | 已受治理 | 只从当前进程的 `NERV_IIP_FILE_STORAGE_DB` 读取目标连接，默认校验目标库精确匹配 `nerv_iip_filestorage`（受控自定义名称必须显式传 `-ExpectedDatabase`），输出脱敏 release/service/profile/target/migration/correlation/log 状态并应用 FileStorage EF migrations；不负责备份、删库或 seed，PoC/production 调用前必须完成 database release runbook preflight。 |
 | `export-gateway-openapi.ps1` | `generate` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免 `MissingHelper`、`ForbiddenCommand`、`DynamicInvocation` 和 `ForbiddenProcessStart`；迁移时需声明写入 OpenAPI 快照和服务启动副作用。 |
-| `verify-second-slice-ops.ps1` | `verify` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免直接命令/进程调用；迁移时需收敛 Gateway/Ops/Connector Host 进程树、日志和端口清理。 |
+| `verify-second-slice-ops.ps1` | `verify` | 第一批已退役 | 保留无副作用、明确失败的路径占位；Gateway/Ops/Connector Host 回归使用当前测试项目与专用 CI lane，baseline exemption 已删除。 |
 
-当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption；新增脚本不得复用该例外口径。`scripts/tests/**` 目前不在目录扫描范围内（这些 harness 故意以动态调用和直接进程验证治理规则本身）；把它们纳入治理需要 baseline 先支持 owner issue 与到期日，与 `backend/test-determinism-baseline.json` 同等纪律，属独立跟进项，不在 MAN-669 范围内。
+当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 一个 legacy exemption；新增脚本不得复用该例外口径。第一批四个历史纵切路径保留为无副作用、明确失败的兼容墓碑，不再被视为当前验证入口。`scripts/tests/**` 目前不在目录扫描范围内（这些 harness 故意以动态调用和直接进程验证治理规则本身）；把它们纳入治理需要 baseline 先支持 owner issue 与到期日，与 `backend/test-determinism-baseline.json` 同等纪律，属独立跟进项，不在 MAN-669 范围内。
 
 后端测试确定性两个脚本共用 `artifacts/test-determinism/man-662/**`：`check` 侧只读、`verify` 侧只追加新的 invocation 目录。`backend/test-determinism-baseline.json` schema 3 的每一条 `expiring-debt` 行都以 `registeredByIssue` 记录登记变更，并用不同的 `ownerIssue` 指向一个**在本变更之外仍然存在**的责任 issue；两者均只接受 `MAN-\d+` 或 `#\d+`，按命名空间与去前导零后的数字比较身份，相同即按自担保拒绝。`registeredOn` 与 `expiresOn` 使用 `yyyy-MM-dd`，登记日不得在未来，expiry 不得早于登记日且最长 45 天（正好 45 天有效），同时保留早于 UTC 今日即过期硬失败。该上界完全由本地元数据计算，不访问 GitHub 或 Linear，避免网络与权限把政策门禁变成非确定性外部依赖。`permanent` 行是唯一没有到期日的分类，代价是它的 `路径=pattern=maxRows` 白名单与容量写在脚本里而不是 baseline 里：新增常设例外或提高容量要改脚本、过脚本治理与评审，baseline 无法自我豁免；白名单只对 ordinal 精确匹配的 pair 生效，容量统计合法 permanent baseline 行而不是 occurrence，一个文件拿到 `StaticSetter` 常设位不等于它以后的 `Thread.Sleep` 也能登记成 permanent。删除 permanent 行无需先降低 cap。
 
