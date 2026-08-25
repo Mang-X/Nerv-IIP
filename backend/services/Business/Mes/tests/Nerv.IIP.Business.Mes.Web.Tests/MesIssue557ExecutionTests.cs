@@ -729,7 +729,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Scrap_report_requires_material_consumption_lots_to_drive_inventory_writeoff));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new RecordProductionReportCommand(
@@ -781,7 +781,7 @@ public sealed class MesIssue557ExecutionTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider()).Handle(
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-OVER-001", "OP-10",
                     GoodQuantity: 20.000001m,
@@ -803,7 +803,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_auto_generates_output_lot_and_persists_genealogy_breakpoint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider());
 
         var result = await handler.Handle(
             new RecordProductionReportCommand(
@@ -834,7 +834,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_rejects_duplicate_explicit_output_lot_before_database_unique_constraint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider());
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",

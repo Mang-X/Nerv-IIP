@@ -1086,6 +1086,9 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "ReportedAtUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_device_reported_at");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "LineCode", "ReportedAtUtc")
+                        .HasDatabaseName("ix_oee_production_facts_scope_line_reported_at");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "ShiftCode", "ShiftBucketStartUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_shift_bucket");
 
@@ -1094,6 +1097,9 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "ReportedAtUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_work_center_reported_at");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkshopCode", "ReportedAtUtc")
+                        .HasDatabaseName("ix_oee_production_facts_scope_workshop_reported_at");
 
                     b.ToTable("oee_production_facts", "industrial_telemetry", t =>
                         {

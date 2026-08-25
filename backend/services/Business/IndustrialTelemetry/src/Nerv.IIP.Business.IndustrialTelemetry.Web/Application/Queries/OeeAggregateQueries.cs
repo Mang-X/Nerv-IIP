@@ -11,11 +11,14 @@ public static class OeeAggregateDimensions
 {
     public const string Device = "device";
     public const string WorkCenter = "work-center";
+    public const string Line = "line";
+    public const string Workshop = "workshop";
     public const string Shift = "shift";
     public const string Day = "day";
+    public static readonly TimeSpan MaximumWindow = TimeSpan.FromDays(31);
 
     public static bool IsSupported(string value) =>
-        value is Device or WorkCenter or Shift or Day;
+        value is Device or WorkCenter or Line or Workshop or Shift or Day;
 }
 
 public sealed record QueryOeeAggregateBucketsQuery(
@@ -26,7 +29,9 @@ public sealed record QueryOeeAggregateBucketsQuery(
     DateTimeOffset WindowEndUtc,
     string? DeviceAssetId = null,
     string? WorkCenterId = null,
-    string? ShiftCode = null) : IQuery<OeeAggregateBucketsResponse>;
+    string? ShiftCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null) : IQuery<OeeAggregateBucketsResponse>;
 
 public sealed record OeeAggregateBucketsResponse(
     string OrganizationId,
@@ -71,9 +76,14 @@ public sealed class QueryOeeAggregateBucketsQueryValidator : AbstractValidator<Q
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Dimension).Must(OeeAggregateDimensions.IsSupported);
         RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+        RuleFor(x => x.WindowEndUtc)
+            .Must((query, endUtc) => endUtc - query.WindowStartUtc <= OeeAggregateDimensions.MaximumWindow)
+            .WithMessage("OEE aggregate window cannot exceed 31 days.");
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.WorkCenterId).MaximumLength(100);
         RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.LineCode).MaximumLength(100);
+        RuleFor(x => x.WorkshopCode).MaximumLength(100);
     }
 }
 
@@ -93,6 +103,8 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => request.WorkCenterId == null || x.WorkCenterId == request.WorkCenterId)
             .Where(x => request.ShiftCode == null || x.ShiftCode == request.ShiftCode)
+            .Where(x => request.LineCode == null || x.LineCode == request.LineCode)
+            .Where(x => request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode)
             .ToArrayAsync(cancellationToken);
         if (facts.Length == 0)
         {
@@ -351,6 +363,8 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             {
                 OeeAggregateDimensions.Device => new(fact.DeviceAssetId, null, request.WindowStartUtc, request.WindowEndUtc),
                 OeeAggregateDimensions.WorkCenter => new(fact.WorkCenterId, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimensions.Line => new(fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimensions.Workshop => new(fact.WorkshopCode, null, request.WindowStartUtc, request.WindowEndUtc),
                 OeeAggregateDimensions.Shift when fact.ShiftBucketStartUtc is not null && fact.ShiftBucketEndUtc is not null =>
                     new(fact.ShiftCode, fact.ShiftBusinessDate, fact.ShiftBucketStartUtc.Value, fact.ShiftBucketEndUtc.Value),
                 OeeAggregateDimensions.Day when fact.DayBucketStartUtc is not null && fact.DayBucketEndUtc is not null =>

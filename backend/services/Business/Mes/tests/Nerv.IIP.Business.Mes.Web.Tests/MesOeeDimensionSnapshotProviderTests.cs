@@ -13,6 +13,17 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesOeeDimensionSnapshotProviderTests
 {
     [Fact]
+    public void Production_report_handler_requires_an_explicit_dimension_snapshot_provider()
+    {
+        var constructor = Assert.Single(typeof(RecordProductionReportCommandHandler).GetConstructors());
+        var parameter = Assert.Single(
+            constructor.GetParameters(),
+            candidate => candidate.ParameterType == typeof(IMesOeeDimensionSnapshotProvider));
+
+        Assert.False(parameter.HasDefaultValue);
+    }
+
+    [Fact]
     public async Task Production_report_persists_captured_dimensions_for_event_and_reversal_history()
     {
         await using var services = MesTestProvider.CreateInMemoryProvider();

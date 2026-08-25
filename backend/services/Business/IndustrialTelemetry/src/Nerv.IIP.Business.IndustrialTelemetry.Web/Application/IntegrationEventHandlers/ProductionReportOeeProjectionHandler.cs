@@ -21,18 +21,8 @@ public sealed class ProductionReportOeeProjectionHandler(
         deadLetterStore,
         new IntegrationEventConsumerOptions(ConsumerName, MesIntegrationEventTypes.ProductionReportRecorded, MesIntegrationEventVersions.V1));
 
-    private readonly IntegrationEventConsumerGuard<ProductionReportRecordedIntegrationEvent> v2ConsumerGuard = new(
-        new IntegrationEventEnvelopeValidator(),
-        deadLetterStore,
-        new IntegrationEventConsumerOptions(ConsumerName, MesIntegrationEventTypes.ProductionReportRecorded, MesIntegrationEventVersions.V2));
-
-    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
-    {
-        var guard = integrationEvent.EventVersion == MesIntegrationEventVersions.V1
-            ? v1ConsumerGuard
-            : v2ConsumerGuard;
-        return guard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
-    }
+    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        v1ConsumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
     [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -63,6 +53,26 @@ public sealed class ProductionReportOeeProjectionHandler(
             return;
         }
 
+        var historicalDimensionSnapshot = OeeHistoricalBucketResolver.Resolve(payload);
+        if (payload.IsReversal)
+        {
+            if (string.IsNullOrWhiteSpace(payload.ReversedReportNo))
+            {
+                throw new InvalidOperationException("OEE reversal requires the original production report number.");
+            }
+
+            var originalFact = await dbContext.OeeProductionFacts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.OrganizationId == integrationEvent.OrganizationId &&
+                        x.EnvironmentId == integrationEvent.EnvironmentId &&
+                        x.SourceReportNo == payload.ReversedReportNo,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"OEE reversal cannot resolve original production report '{payload.ReversedReportNo}'.");
+            historicalDimensionSnapshot = originalFact.HistoricalDimensionSnapshot();
+        }
+
         dbContext.OeeProductionFacts.Add(OeeProductionFact.Project(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -75,7 +85,7 @@ public sealed class ProductionReportOeeProjectionHandler(
             payload.UomCode,
             payload.TheoreticalRatePerHour,
             payload.ReportedAtUtc,
-            OeeHistoricalBucketResolver.Resolve(payload)));
+            historicalDimensionSnapshot));
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

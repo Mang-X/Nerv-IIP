@@ -204,7 +204,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, new NullMesOeeDimensionSnapshotProvider()).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -360,7 +360,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, new NullMesOeeDimensionSnapshotProvider()).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -452,7 +452,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb, mesCodingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, new NullMesOeeDimensionSnapshotProvider(), mesCodingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -749,7 +749,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, new NullMesOeeDimensionSnapshotProvider()).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -1167,7 +1167,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         decimal quantity,
         DateTimeOffset reportedAtUtc)
     {
-        await new RecordProductionReportCommandHandler(mesDb).Handle(
+        await new RecordProductionReportCommandHandler(mesDb, new NullMesOeeDimensionSnapshotProvider()).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",

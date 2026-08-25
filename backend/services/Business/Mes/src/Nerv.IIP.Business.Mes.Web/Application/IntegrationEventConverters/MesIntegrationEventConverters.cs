@@ -26,7 +26,7 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
         return new ProductionReportRecordedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.ProductionReportRecorded,
-            MesIntegrationEventVersions.V2,
+            MesIntegrationEventVersions.V1,
             report.ReportedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             report.ReportNo,

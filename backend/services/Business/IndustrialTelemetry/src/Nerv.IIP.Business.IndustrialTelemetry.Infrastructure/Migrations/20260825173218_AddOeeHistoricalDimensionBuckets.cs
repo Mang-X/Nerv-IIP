@@ -157,6 +157,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "site_code", "day_bucket_start_utc" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_oee_production_facts_scope_line_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                columns: new[] { "organization_id", "environment_id", "line_code", "reported_at_utc" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_oee_production_facts_scope_shift_bucket",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts",
@@ -167,11 +173,22 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 schema: "industrial_telemetry",
                 table: "oee_production_facts",
                 columns: new[] { "organization_id", "environment_id", "work_center_id", "reported_at_utc" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_oee_production_facts_scope_workshop_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                columns: new[] { "organization_id", "environment_id", "workshop_code", "reported_at_utc" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "ix_oee_production_facts_scope_line_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts");
+
             migrationBuilder.DropIndex(
                 name: "ix_oee_production_facts_scope_day_bucket",
                 schema: "industrial_telemetry",
@@ -184,6 +201,11 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
             migrationBuilder.DropIndex(
                 name: "ix_oee_production_facts_scope_work_center_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts");
+
+            migrationBuilder.DropIndex(
+                name: "ix_oee_production_facts_scope_workshop_reported_at",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts");
 

@@ -44,6 +44,10 @@ public sealed class OeeProductionFactEntityTypeConfiguration : IEntityTypeConfig
             .HasDatabaseName("ix_oee_production_facts_scope_device_reported_at");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.ReportedAtUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_work_center_reported_at");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.LineCode, x.ReportedAtUtc })
+            .HasDatabaseName("ix_oee_production_facts_scope_line_reported_at");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkshopCode, x.ReportedAtUtc })
+            .HasDatabaseName("ix_oee_production_facts_scope_workshop_reported_at");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ShiftCode, x.ShiftBucketStartUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_shift_bucket");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SiteCode, x.DayBucketStartUtc })

@@ -14,7 +14,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 public sealed class IndustrialTelemetryOeePostgresQueryTests
 {
     [RealPostgresFact]
-    public async Task V2_projection_resolves_site_day_and_cross_midnight_shift_windows_on_postgres()
+    public async Task V1_optional_snapshot_projection_resolves_site_day_and_cross_midnight_shift_windows_on_postgres()
     {
         await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = CreateLaneDbContext();
@@ -24,7 +24,7 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         var integrationEvent = new ProductionReportRecordedIntegrationEvent(
             "evt-oee-v2-pg-001",
             MesIntegrationEventTypes.ProductionReportRecorded,
-            MesIntegrationEventVersions.V2,
+            MesIntegrationEventVersions.V1,
             reportedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             "PRPT-OEE-V2-PG-001",
@@ -184,6 +184,16 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         var day = await handler.Handle(
             new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimensions.Day, start, end),
             CancellationToken.None);
+        var line = await handler.Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Line, start, end,
+                LineCode: "LINE-01"),
+            CancellationToken.None);
+        var workshop = await handler.Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Workshop, start, end,
+                WorkshopCode: "WORKSHOP-01"),
+            CancellationToken.None);
 
         Assert.Equal(
             ["DEV-BUCKET", "DEV-LEGACY"],
@@ -200,6 +210,48 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         Assert.Equal(DateTimeOffset.Parse("2026-07-11T00:00:00Z"), resolvedDay.BucketEndUtc);
         var unresolvedDay = Assert.Single(day.Buckets, x => x.DimensionValue is null);
         Assert.Contains("site-timezone-or-day-boundary-missing", unresolvedDay.DegradedReasons);
+        Assert.Equal("LINE-01", Assert.Single(line.Buckets).DimensionValue);
+        Assert.Equal("WORKSHOP-01", Assert.Single(workshop.Buckets).DimensionValue);
+    }
+
+    [RealPostgresFact]
+    public async Task Cross_day_reversal_reuses_original_historical_buckets_and_nets_original_bucket_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var originalAtUtc = DateTimeOffset.Parse("2026-07-10T17:30:00Z");
+        var reversalAtUtc = DateTimeOffset.Parse("2026-07-11T17:30:00Z");
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(ProductionReportEvent(
+            "PRPT-ORIGINAL", originalAtUtc, 10m, false, null), CancellationToken.None);
+        await handler.HandleAsync(ProductionReportEvent(
+            "PRPT-REVERSAL", reversalAtUtc, -10m, true, "PRPT-ORIGINAL"), CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var facts = await dbContext.OeeProductionFacts.AsNoTracking()
+            .OrderBy(x => x.SourceReportNo)
+            .ToArrayAsync();
+        Assert.Equal(2, facts.Length);
+        Assert.All(facts, fact =>
+        {
+            Assert.Equal(new DateOnly(2026, 7, 11), fact.BusinessDate);
+            Assert.Equal(DateTimeOffset.Parse("2026-07-10T16:00:00Z"), fact.DayBucketStartUtc);
+            Assert.Equal(new DateOnly(2026, 7, 10), fact.ShiftBusinessDate);
+            Assert.Equal(DateTimeOffset.Parse("2026-07-10T12:00:00Z"), fact.ShiftBucketStartUtc);
+        });
+
+        var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Day,
+                DateTimeOffset.Parse("2026-07-10T16:00:00Z"),
+                DateTimeOffset.Parse("2026-07-12T16:00:00Z")),
+            CancellationToken.None);
+        var bucket = Assert.Single(result.Buckets);
+        Assert.Equal(2, bucket.ProductionFactCount);
+        Assert.Equal(0m, bucket.GoodQuantity);
     }
 
     [RealPostgresFact]
@@ -280,6 +332,49 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
                 DateOnly.FromDateTime(reportedAtUtc.UtcDateTime),
                 new DateTimeOffset(reportedAtUtc.UtcDateTime.Date.AddHours(8), TimeSpan.Zero),
                 new DateTimeOffset(reportedAtUtc.UtcDateTime.Date.AddHours(16), TimeSpan.Zero)));
+
+    private static ProductionReportRecordedIntegrationEvent ProductionReportEvent(
+        string reportNo,
+        DateTimeOffset reportedAtUtc,
+        decimal goodQuantity,
+        bool isReversal,
+        string? reversedReportNo) =>
+        new(
+            $"evt-{reportNo}",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            reportNo,
+            reportNo,
+            "org-001",
+            "env-dev",
+            "system:mes",
+            $"production-report-recorded:org-001:env-dev:{reportNo}",
+            new ProductionReportRecordedPayload(
+                reportNo,
+                "WO-001",
+                "OP-10",
+                "WC-01",
+                "DEV-01",
+                goodQuantity,
+                0m,
+                0m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                isReversal,
+                reversedReportNo,
+                SiteCode: "SITE-SH",
+                WorkshopCode: "WS-01",
+                LineCode: "LINE-01",
+                ShiftCode: "NIGHT",
+                SiteTimezone: "Asia/Shanghai",
+                ShiftStartsAt: new TimeOnly(20, 0),
+                ShiftEndsAt: new TimeOnly(4, 0),
+                ShiftCrossesMidnight: true,
+                ShiftPaidMinutes: 450,
+                ShiftBreakMinutes: 30));
 
     private static DeviceStateSnapshot State(
         string organizationId,

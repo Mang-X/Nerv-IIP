@@ -439,7 +439,7 @@ public sealed class MesIntegrationEventTests
     }
 
     [Fact]
-    public void Production_report_converter_emits_v2_historical_dimension_and_shift_window_snapshot()
+    public void Production_report_converter_keeps_v1_while_extending_historical_dimension_snapshot()
     {
         var reportedAtUtc = DateTimeOffset.Parse("2026-07-10T17:30:00Z");
         var report = ProductionReport.Record(
@@ -472,7 +472,7 @@ public sealed class MesIntegrationEventTests
         var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
         var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);
 
-        Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
+        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Equal("SITE-SH", integrationEvent.Payload.SiteCode);
         Assert.Equal("WS-ASSEMBLY", integrationEvent.Payload.WorkshopCode);
         Assert.Equal("LINE-A", integrationEvent.Payload.LineCode);

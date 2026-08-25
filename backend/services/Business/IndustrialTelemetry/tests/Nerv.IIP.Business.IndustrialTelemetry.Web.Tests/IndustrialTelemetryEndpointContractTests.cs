@@ -85,16 +85,69 @@ public sealed class IndustrialTelemetryEndpointContractTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
+        await PostSampleAsync(client, "DEV-OEE-AGG-01", "running", DateTimeOffset.Parse("2026-07-10T16:00:00Z"), "SCADA-A", "opc-ua-cell-01", "agg-state-001");
+        await PostSampleAsync(client, "DEV-OEE-AGG-01", "stopped", DateTimeOffset.Parse("2026-07-10T20:00:00Z"), "SCADA-A", "opc-ua-cell-01", "agg-state-002");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.OeeProductionFacts.AddRange(
+                OeeProductionFact.Project(
+                    "org-001", "env-dev", "PRPT-OEE-AGG-001", "WC-AGG-01", "DEV-OEE-AGG-01",
+                    8m, 2m, 0m, "PCS", 10m, DateTimeOffset.Parse("2026-07-10T17:00:00Z"),
+                    new OeeHistoricalDimensionSnapshot(
+                        "SITE-SH", "WS-01", "LINE-01", "NIGHT", "Asia/Shanghai",
+                        new TimeOnly(20, 0), new TimeOnly(4, 0), true, 450, 30,
+                        new DateOnly(2026, 7, 11),
+                        DateTimeOffset.Parse("2026-07-10T16:00:00Z"),
+                        DateTimeOffset.Parse("2026-07-11T16:00:00Z"),
+                        new DateOnly(2026, 7, 10),
+                        DateTimeOffset.Parse("2026-07-10T12:00:00Z"),
+                        DateTimeOffset.Parse("2026-07-10T20:00:00Z"))),
+                OeeProductionFact.Project(
+                    "org-001", "env-dev", "PRPT-OEE-AGG-OTHER", "WC-OTHER", "DEV-OEE-AGG-01",
+                    100m, 0m, 0m, "PCS", 10m, DateTimeOffset.Parse("2026-07-10T18:00:00Z"),
+                    new OeeHistoricalDimensionSnapshot("SITE-SH", "WS-OTHER", "LINE-OTHER", "NIGHT", "Asia/Shanghai")));
+            await dbContext.SaveChangesAsync();
+        }
+
         using var response = await client.GetAsync(
-            "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=day&windowStartUtc=2026-07-10T16:00:00Z&windowEndUtc=2026-07-11T16:00:00Z");
+            "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=line&lineCode=LINE-01&workshopCode=WS-01&windowStartUtc=2026-07-10T16:00:00Z&windowEndUtc=2026-07-11T16:00:00Z");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var payload = await response.Content.ReadFromJsonAsync<ResponseData<OeeAggregateBucketsResponse>>();
-        Assert.NotNull(payload?.Data);
-        Assert.Equal(OeeAggregateDimensions.Day, payload.Data.Dimension);
-        Assert.Equal(DateTimeOffset.Parse("2026-07-10T16:00:00Z"), payload.Data.WindowStartUtc);
-        Assert.Equal(DateTimeOffset.Parse("2026-07-11T16:00:00Z"), payload.Data.WindowEndUtc);
-        Assert.Empty(payload.Data.Buckets);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(OeeAggregateDimensions.Line, data.GetProperty("dimension").GetString());
+        Assert.Equal("2026-07-10T16:00:00+00:00", data.GetProperty("windowStartUtc").GetString());
+        Assert.Equal("2026-07-11T16:00:00+00:00", data.GetProperty("windowEndUtc").GetString());
+        var bucket = Assert.Single(data.GetProperty("buckets").EnumerateArray());
+        Assert.Equal("LINE-01", bucket.GetProperty("dimensionValue").GetString());
+        Assert.Equal("WS-01", bucket.GetProperty("workshopCode").GetString());
+        Assert.Equal("LINE-01", bucket.GetProperty("lineCode").GetString());
+        Assert.Equal(1, bucket.GetProperty("deviceCount").GetInt32());
+        Assert.Equal(2, bucket.GetProperty("stateSampleCount").GetInt32());
+        Assert.Equal(1, bucket.GetProperty("productionFactCount").GetInt32());
+        Assert.Equal(0.166667m, bucket.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(0.25m, bucket.GetProperty("performanceRate").GetDecimal());
+        Assert.Equal(0.8m, bucket.GetProperty("qualityRate").GetDecimal());
+        Assert.Equal(0.033333m, bucket.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(8m, bucket.GetProperty("goodQuantity").GetDecimal());
+        Assert.Equal(2m, bucket.GetProperty("scrapQuantity").GetDecimal());
+        Assert.Equal(0m, bucket.GetProperty("reworkQuantity").GetDecimal());
+        Assert.Equal("PCS", bucket.GetProperty("outputUomCode").GetString());
+        Assert.False(bucket.GetProperty("isDegraded").GetBoolean());
+        Assert.Empty(bucket.GetProperty("degradedReasons").EnumerateArray());
+    }
+
+    [Fact]
+    public void Oee_aggregate_validator_limits_materialized_history_to_thirty_one_days()
+    {
+        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        var validator = new QueryOeeAggregateBucketsQueryValidator();
+
+        Assert.True(validator.Validate(new QueryOeeAggregateBucketsQuery(
+            "org-001", "env-dev", OeeAggregateDimensions.Day, start, start.AddDays(31))).IsValid);
+        Assert.False(validator.Validate(new QueryOeeAggregateBucketsQuery(
+            "org-001", "env-dev", OeeAggregateDimensions.Day, start, start.AddDays(31).AddTicks(1))).IsValid);
     }
 
     [Theory]

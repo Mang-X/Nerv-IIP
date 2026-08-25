@@ -126,4 +126,23 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
             reportedAtUtc,
             dimensionSnapshot);
     }
+
+    public OeeHistoricalDimensionSnapshot HistoricalDimensionSnapshot() =>
+        new(
+            SiteCode,
+            WorkshopCode,
+            LineCode,
+            ShiftCode,
+            SiteTimezone,
+            ShiftStartsAt,
+            ShiftEndsAt,
+            ShiftCrossesMidnight,
+            ShiftPaidMinutes,
+            ShiftBreakMinutes,
+            BusinessDate,
+            DayBucketStartUtc,
+            DayBucketEndUtc,
+            ShiftBusinessDate,
+            ShiftBucketStartUtc,
+            ShiftBucketEndUtc);
 }

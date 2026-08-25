@@ -205,7 +205,7 @@ public sealed class TelemetryProductionReportAutomationTests
         {
             if (request is RecordProductionReportCommand command)
             {
-                var response = await new RecordProductionReportCommandHandler(dbContext, CodingService).Handle(command, cancellationToken);
+                var response = await new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider(), CodingService).Handle(command, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)response;
             }

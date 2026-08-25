@@ -134,13 +134,12 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
 
 public sealed class RecordProductionReportCommandHandler(
     ApplicationDbContext dbContext,
-    MesCodingService? codingService = null,
-    IMesOeeDimensionSnapshotProvider? oeeDimensionSnapshotProvider = null)
+    IMesOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
-    private readonly IMesOeeDimensionSnapshotProvider _oeeDimensionSnapshotProvider =
-        oeeDimensionSnapshotProvider ?? new NullMesOeeDimensionSnapshotProvider();
+    private readonly IMesOeeDimensionSnapshotProvider _oeeDimensionSnapshotProvider = oeeDimensionSnapshotProvider;
 
     public async Task<ProductionReportCommandResult> Handle(RecordProductionReportCommand request, CancellationToken cancellationToken)
     {

@@ -25,7 +25,6 @@ public static class MesSourceDocumentTypes
 public static class MesIntegrationEventVersions
 {
     public const int V1 = 1;
-    public const int V2 = 2;
 }
 
 public static class MesIntegrationEventSources
