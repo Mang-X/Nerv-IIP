@@ -906,16 +906,16 @@ public sealed class ListBusinessConsoleMesMaterialIssueRequestsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesMaterialIssueRequestListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesMaterialIssueRequestListRequest, BusinessConsoleMesMaterialIssueRequestListResponse>(
         auth,
         BusinessGatewayPermissions.MesMaterialsRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesMaterialIssueRequestListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesMaterialIssueRequestListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesMaterialIssueRequestListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesMaterialIssueRequestListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListMaterialIssueRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);

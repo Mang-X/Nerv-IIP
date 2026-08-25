@@ -68,7 +68,7 @@ public sealed class BusinessMesMaterialIssueClientTests
 
         var response = await client.ListMaterialIssueRequestsAsync(
             "token",
-            new BusinessConsoleMesListRequest("org", "env"),
+            new BusinessConsoleMesMaterialIssueRequestListRequest("org", "env"),
             CancellationToken.None);
 
         Assert.Equal(1, response.SupplementaryCount);
