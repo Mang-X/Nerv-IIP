@@ -18,6 +18,8 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").HasMaxLength(100).HasComment("Optional MES operation task id requesting materials.");
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("Material SKU id requested for staging or line-side receipt.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasDefaultValue(MaterialIssueRequest.UnspecifiedUomCode).HasComment("Unit of measure code captured for the material issue quantity.");
+        builder.Property(x => x.IsSupplementary).HasColumnName("is_supplementary").IsRequired().HasDefaultValue(false).HasComment("Whether this material issue request supplements an earlier request.");
+        builder.Property(x => x.OriginalMaterialIssueRequestNo).HasColumnName("original_material_issue_request_no").HasMaxLength(100).HasComment("Business number of the original material issue request in the same organization, environment, work order and material scope.");
         builder.Property(x => x.MaterialLotId).HasColumnName("material_lot_id").HasMaxLength(100).HasComment("Actual material lot id received line-side, when known.");
         builder.Property(x => x.RequestedQuantity).HasColumnName("requested_quantity").HasPrecision(18, 6).IsRequired().HasComment("Requested material issue quantity.");
         builder.Property(x => x.ReceivedQuantity).HasColumnName("received_quantity").HasPrecision(18, 6).IsRequired().HasComment("Confirmed line-side received quantity.");
@@ -49,6 +51,23 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
             .HasForeignKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
             .HasConstraintName("fk_material_issue_requests_work_orders")
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.RequestNo, x.WorkOrderId, x.MaterialId })
+            .HasName("ak_material_issue_requests_scope_request_work_order_material");
+        builder.HasOne<MaterialIssueRequest>()
+            .WithMany()
+            .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.RequestNo, x.WorkOrderId, x.MaterialId })
+            .HasForeignKey(x => new { x.OrganizationId, x.EnvironmentId, x.OriginalMaterialIssueRequestNo, x.WorkOrderId, x.MaterialId })
+            .HasConstraintName("fk_material_issue_requests_original_request")
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.ToTable(tableBuilder =>
+        {
+            tableBuilder.HasCheckConstraint(
+                "ck_material_issue_requests_supplementary_source",
+                "(is_supplementary = TRUE AND original_material_issue_request_no IS NOT NULL) OR (is_supplementary = FALSE AND original_material_issue_request_no IS NULL)");
+            tableBuilder.HasCheckConstraint(
+                "ck_material_issue_requests_not_self_referential",
+                "original_material_issue_request_no IS NULL OR original_material_issue_request_no <> request_no");
+        });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.RequestNo })
             .IsUnique()
             .HasDatabaseName("ux_material_issue_requests_scope_request_no");
@@ -56,5 +75,7 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
             .HasDatabaseName("ix_material_issue_requests_scope_work_order_material");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskId })
             .HasDatabaseName("ix_material_issue_requests_scope_operation");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OriginalMaterialIssueRequestNo, x.WorkOrderId, x.MaterialId })
+            .HasDatabaseName("ix_material_issue_requests_scope_original_request");
     }
 }
