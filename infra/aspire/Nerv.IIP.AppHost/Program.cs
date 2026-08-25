@@ -503,6 +503,12 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+// Inventory 的成品入库权威成本读取回查 MES；MES 已等待 Inventory，反向只回填服务发现，
+// 不加 WaitFor，避免 Aspire 资源依赖成环并避免 ephemeral 会话回落到固定端口 5111。
+businessInventory = businessInventory
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
+    .WithReference(businessMes);
+
 var businessDemandPlanning = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5112, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")

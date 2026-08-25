@@ -105,7 +105,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         DateTimeOffset requestedAtUtc,
         decimal? unitCost = null,
         DateOnly? productionDate = null,
-        DateOnly? expiryDate = null)
+        DateOnly? expiryDate = null,
+        string? unitCostAuthorityReference = null)
     {
         var movementType = quantity < 0 ? InventoryMovementTypes.Outbound : InventoryMovementTypes.Inbound;
         return new InventoryMovementRequestedIntegrationEvent(
@@ -139,7 +140,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
                 requestedAtUtc,
                 UnitCost: unitCost,
                 ProductionDate: productionDate,
-                ExpiryDate: expiryDate));
+                ExpiryDate: expiryDate,
+                UnitCostAuthorityReference: unitCostAuthorityReference));
     }
 }
 
@@ -170,7 +172,8 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter(
             occurredAtUtc,
             request.UnitCost,
             request.ProductionDate,
-            request.ExpiryDate);
+            request.ExpiryDate,
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt);
     }
 }
 
