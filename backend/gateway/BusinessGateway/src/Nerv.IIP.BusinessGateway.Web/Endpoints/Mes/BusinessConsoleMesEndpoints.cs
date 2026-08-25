@@ -611,6 +611,89 @@ public sealed class CancelBusinessConsoleMesWorkOrderEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/close")]
+[BusinessGatewayOperationId("closeBusinessConsoleMesWorkOrder")]
+public sealed class CloseBusinessConsoleMesWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesCloseWorkOrderRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesCloseWorkOrderRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesCloseWorkOrderRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesCloseWorkOrderRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.CloseWorkOrderAsync(tokenProvider.BearerToken, request.WorkOrderId, request, cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions")]
+[BusinessGatewayOperationId("recordBusinessConsoleMesEngineeringChangeDecision")]
+public sealed class RecordBusinessConsoleMesEngineeringChangeDecisionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesEngineeringChangeDecisionRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesEngineeringChangeDecisionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesEngineeringChangeDecisionRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesEngineeringChangeDecisionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.RecordEngineeringChangeDecisionAsync(
+            tokenProvider.BearerToken,
+            request.WorkOrderId,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release")]
 [BusinessGatewayOperationId("forceReleaseBusinessConsoleMesQualityHold")]
 public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(

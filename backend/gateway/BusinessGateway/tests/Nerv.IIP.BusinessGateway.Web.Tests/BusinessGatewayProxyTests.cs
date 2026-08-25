@@ -14664,6 +14664,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesWorkOrderReasonRequest? LastCancelWorkOrderRequest { get; private set; }
 
+    public int CloseWorkOrderCallCount { get; private set; }
+
+    public BusinessConsoleMesCloseWorkOrderRequest? LastCloseWorkOrderRequest { get; private set; }
+
+    public int EngineeringChangeDecisionCallCount { get; private set; }
+
+    public BusinessConsoleMesEngineeringChangeDecisionRequest? LastEngineeringChangeDecisionRequest { get; private set; }
+
+    public string? LastEngineeringChangeDecisionActor { get; private set; }
+
     public int ForceReleaseQualityHoldCallCount { get; private set; }
 
     public BusinessConsoleMesForceReleaseQualityHoldRequest? LastForceReleaseQualityHoldRequest { get; private set; }
@@ -14860,6 +14870,32 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         CancelWorkOrderCallCount++;
         LastCancelWorkOrderRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> CloseWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesCloseWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        CloseWorkOrderCallCount++;
+        LastCloseWorkOrderRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> RecordEngineeringChangeDecisionAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesEngineeringChangeDecisionRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        EngineeringChangeDecisionCallCount++;
+        LastEngineeringChangeDecisionRequest = request;
+        LastEngineeringChangeDecisionActor = actor;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
