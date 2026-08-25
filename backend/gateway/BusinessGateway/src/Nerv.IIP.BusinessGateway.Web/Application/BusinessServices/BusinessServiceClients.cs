@@ -1616,7 +1616,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
-        BusinessConsoleMesRecordDefectRequest request,
+        BusinessMesRecordDefectRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
@@ -7963,12 +7963,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
-        BusinessConsoleMesRecordDefectRequest request,
+        BusinessMesRecordDefectRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
             "/api/business/v1/mes/defects",
-            request,
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.DefectCode,
+                request.Quantity,
+                request.RecordedAtUtc,
+                request.IdempotencyKey,
+            },
             MesDefectDocumentType,
             cancellationToken);
 

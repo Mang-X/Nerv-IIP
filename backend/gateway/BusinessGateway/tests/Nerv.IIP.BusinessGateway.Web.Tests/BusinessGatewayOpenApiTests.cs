@@ -835,6 +835,28 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeKind", 50);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeId", 200);
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesRecordDefectRequest",
+            "defectQuantity",
+            "materialLotId",
+            "batchOrSerial");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleMesRecordDefectRequest",
+            "quantity",
+            "recordedAtUtc",
+            "scopeKind",
+            "scopeId");
+        AssertOperationId(paths, "/api/business-console/v2/mes/defects", "post", "recordBusinessConsoleMesDefectV2");
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "quantity");
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "recordedAtUtc");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "workOrderId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "defectCode", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "scopeKind", 50);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "operationTaskId");
         AssertOperationId(paths, "/api/business-console/v1/mes/related-quality-items", "get", "listBusinessConsoleMesRelatedQualityItems");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "get", "listBusinessConsoleMesFinishedGoodsReceiptRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "post", "createBusinessConsoleMesFinishedGoodsReceiptRequest");
@@ -1098,6 +1120,25 @@ public sealed class BusinessGatewayOpenApiTests
         var schemaName = schemaRef.Split('/')[^1];
         var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
         Assert.Contains(propertyName, schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    private static void AssertOptionalBodyProperty(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string method,
+        string propertyName)
+    {
+        var operation = paths.GetProperty(path).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schemaName = schemaRef.Split('/')[^1];
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
+        Assert.True(schema.GetProperty("properties").TryGetProperty(propertyName, out _));
+        if (schema.TryGetProperty("required", out var required))
+        {
+            Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(x => x.GetString()));
+        }
     }
 
     [Fact]

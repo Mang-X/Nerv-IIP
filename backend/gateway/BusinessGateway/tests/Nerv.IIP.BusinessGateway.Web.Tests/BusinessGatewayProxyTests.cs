@@ -2249,6 +2249,278 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_defect_write_revalidates_the_selected_quality_scope_before_forwarding()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "quality-lead",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesQualityWrite]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "quality-assignment",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            operationTaskId = "OP-10",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            recordedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "defect-scope-001",
+            scopeKind = "work-center",
+            scopeId = "WC-A",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, mes.WorkOrderListCallCount);
+        Assert.Equal("WO-QUALITY", mes.LastWorkOrderListRequest!.WorkOrderId);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest.WorkCenterIds);
+        Assert.Equal(1, mes.RecordDefectCallCount);
+        Assert.Equal(2.5m, mes.LastRecordDefectRequest!.Quantity);
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z"),
+            mes.LastRecordDefectRequest.RecordedAtUtc);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_defect_v1_keeps_the_legacy_request_shape_and_adapts_it_to_the_mes_wire_contract()
+    {
+        var recordedAtUtc = DateTimeOffset.Parse("2026-08-26T08:15:00Z");
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(recordedAtUtc));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-LEGACY",
+            operationTaskId = "OP-LEGACY",
+            defectCode = "SCRATCH",
+            defectQuantity = 1.5m,
+            materialLotId = "LOT-001",
+            batchOrSerial = "BATCH-001",
+            idempotencyKey = "defect-v1-legacy-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, mes.RecordDefectCallCount);
+        Assert.Equal("WO-LEGACY", mes.LastRecordDefectRequest!.WorkOrderId);
+        Assert.Equal("OP-LEGACY", mes.LastRecordDefectRequest.OperationTaskId);
+        Assert.Equal(1.5m, mes.LastRecordDefectRequest.Quantity);
+        Assert.Equal(recordedAtUtc, mes.LastRecordDefectRequest.RecordedAtUtc);
+        Assert.Equal("defect-v1-legacy-001", mes.LastRecordDefectRequest.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Mes_defect_v2_allows_a_work_order_level_defect_without_an_operation_task()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "quality-lead",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesQualityWrite]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "quality-assignment",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            defectCode = "SCRATCH",
+            quantity = 1m,
+            recordedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "defect-work-order-001",
+            scopeKind = "work-center",
+            scopeId = "WC-A",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, mes.RecordDefectCallCount);
+        Assert.Null(mes.LastRecordDefectRequest!.OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Mes_defect_write_rejects_a_revoked_selected_quality_scope_without_forwarding()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "quality-lead",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesQualityWrite]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "quality-assignment",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            operationTaskId = "OP-10",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            recordedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "defect-scope-revoked-001",
+            scopeKind = "work-center",
+            scopeId = "WC-REVOKED",
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.WorkOrderListCallCount);
+        Assert.Equal(0, mes.RecordDefectCallCount);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_defect_write_rejects_a_work_order_outside_the_selected_quality_scope_without_forwarding()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "quality-lead",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesQualityWrite]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-OTHER",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-08-25T00:00:00Z"),
+                    "released",
+                    []),
+            ],
+            EmulateMesListPaging = true,
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "quality-assignment",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-FOREIGN",
+            operationTaskId = "OP-FOREIGN",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            recordedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "defect-scope-foreign-001",
+            scopeKind = "work-center",
+            scopeId = "WC-A",
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, mes.WorkOrderListCallCount);
+        Assert.Equal("WO-FOREIGN", mes.LastWorkOrderListRequest!.WorkOrderId);
+        Assert.Equal(0, mes.RecordDefectCallCount);
+    }
+
+    [Fact]
     public async Task Mes_operation_action_rejects_a_known_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -9805,6 +10077,11 @@ public sealed class BusinessGatewayProxyTests
         Action<IServiceCollection>? configureServices = null) =>
         BusinessGatewayTestHost.Lease(auth, configureServices);
 
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
     private static HttpResponseMessage EquipmentHealthJsonResponse(
         string organizationId = "org-001",
         string environmentId = "env-dev",
@@ -15204,6 +15481,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public int ReleaseWorkOrderCallCount { get; private set; }
     public int StartOperationCallCount { get; private set; }
     public int RecordProductionReportCallCount { get; private set; }
+    public int RecordDefectCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
 
@@ -15212,6 +15490,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public BusinessMesOperationTaskListRequest? LastOperationTaskListRequest { get; private set; }
 
     public BusinessMesOperationTaskListRequest? LastReportableOperationTaskListRequest { get; private set; }
+
+    public BusinessMesRecordDefectRequest? LastRecordDefectRequest { get; private set; }
 
     public Exception? FoundationReadinessFailure { get; init; }
 
@@ -15866,9 +16146,14 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
-        BusinessConsoleMesRecordDefectRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        BusinessMesRecordDefectRequest request,
+        CancellationToken cancellationToken)
+    {
+        RecordDefectCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastRecordDefectRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true, "BusinessMes", "Defect", "DEF-001"));
+    }
 
     public Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
         string internalBearerToken,

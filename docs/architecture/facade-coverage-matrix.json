@@ -2704,7 +2704,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "recordBusinessConsoleMesDefect"
+        "recordBusinessConsoleMesDefect",
+        "recordBusinessConsoleMesDefectV2"
       ]
     },
     {
