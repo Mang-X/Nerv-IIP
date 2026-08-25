@@ -293,6 +293,7 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.NotNull(integrationEvent);
         Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Null(integrationEvent.Payload.UnitCost);
+        Assert.Null(integrationEvent.Payload.UnitCostAuthorityReference);
     }
 
     [Fact]
