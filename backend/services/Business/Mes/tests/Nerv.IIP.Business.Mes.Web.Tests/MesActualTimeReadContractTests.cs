@@ -124,7 +124,19 @@ public sealed class MesActualTimeReadContractTests
             TimeSpan.FromMinutes(30));
         otherScope.Start(startedAtUtc);
         otherScope.Complete(startedAtUtc.AddHours(2));
-        dbContext.OperationTasks.AddRange(completed, completedWithZero, running, otherScope);
+        var otherEnvironment = OperationTask.Queue(
+            "org-001",
+            "env-other",
+            "WO-OTHER-ENVIRONMENT",
+            "OP-OTHER-ENVIRONMENT",
+            10,
+            "WC-OTHER",
+            [],
+            startedAtUtc,
+            TimeSpan.FromMinutes(30));
+        otherEnvironment.Start(startedAtUtc);
+        otherEnvironment.Complete(startedAtUtc.AddHours(2));
+        dbContext.OperationTasks.AddRange(completed, completedWithZero, running, otherScope, otherEnvironment);
         dbContext.ProductionReports.AddRange(
             ProductionReport.Record(
                 "org-001", "env-dev", "PRPT-ACTUAL", "WO-REPORT", "OP-REPORT", 2m, 0m, false, startedAtUtc.AddMinutes(80)),
@@ -133,7 +145,9 @@ public sealed class MesActualTimeReadContractTests
             ProductionReport.Record(
                 "org-001", "env-dev", "PRPT-RUNNING", "WO-RUNNING-REPORT", "OP-RUNNING-REPORT", 1m, 0m, false, startedAtUtc.AddMinutes(10)),
             ProductionReport.Record(
-                "org-001", "env-dev", "PRPT-NO-SAME-SCOPE", "WO-LOCAL", "OP-OTHER-SCOPE", 1m, 0m, false, startedAtUtc.AddMinutes(90)));
+                "org-001", "env-dev", "PRPT-NO-SAME-SCOPE", "WO-LOCAL", "OP-OTHER-SCOPE", 1m, 0m, false, startedAtUtc.AddMinutes(90)),
+            ProductionReport.Record(
+                "org-001", "env-dev", "PRPT-NO-SAME-ENVIRONMENT", "WO-LOCAL", "OP-OTHER-ENVIRONMENT", 1m, 0m, false, startedAtUtc.AddMinutes(90)));
         await dbContext.SaveChangesAsync();
 
         var list = await new ListProductionReportsQueryHandler(dbContext).Handle(
@@ -145,14 +159,19 @@ public sealed class MesActualTimeReadContractTests
         var zeroDetail = await new GetProductionReportQueryHandler(dbContext).Handle(
             new GetProductionReportQuery("org-001", "env-dev", "PRPT-ZERO"),
             CancellationToken.None);
+        var otherEnvironmentDetail = await new GetProductionReportQueryHandler(dbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-NO-SAME-ENVIRONMENT"),
+            CancellationToken.None);
 
         var rows = list.Items.ToDictionary(x => x.ReportNo, StringComparer.Ordinal);
         Assert.Equal(new MesActualHours(1.25m, 0.5m), rows["PRPT-ACTUAL"].OperationActualHours);
         Assert.Equal(new MesActualHours(0m, 0m), rows["PRPT-ZERO"].OperationActualHours);
         Assert.Null(rows["PRPT-RUNNING"].OperationActualHours);
         Assert.Null(rows["PRPT-NO-SAME-SCOPE"].OperationActualHours);
+        Assert.Null(rows["PRPT-NO-SAME-ENVIRONMENT"].OperationActualHours);
         Assert.Equal(new MesActualHours(1.25m, 0.5m), detail.Report.OperationActualHours);
         Assert.Equal(new MesActualHours(0m, 0m), zeroDetail.Report.OperationActualHours);
+        Assert.Null(otherEnvironmentDetail.Report.OperationActualHours);
     }
 
     [Fact]
