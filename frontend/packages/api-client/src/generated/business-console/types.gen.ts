@@ -4233,6 +4233,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetId?: string | null;
     shiftId?: string | null;
     idempotencyKey?: string;
+    participants?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest = {
+    workerId?: string;
+    sharePercent?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4335,6 +4341,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionRep
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse = {
     report?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail;
     consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot>;
+    laborAllocations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail = {
@@ -4367,6 +4374,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     consumedQuantity?: number;
     uomCode?: string;
     materialIssueRequestNo?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation = {
+    workerId?: string;
+    workerName?: string | null;
+    sharePercent?: number;
+    allocatedLaborTicks?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailRequest = {
@@ -15065,6 +15079,10 @@ export type AssignBusinessConsoleMesDispatchTaskData = {
 
 export type AssignBusinessConsoleMesDispatchTaskErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15073,6 +15091,8 @@ export type AssignBusinessConsoleMesDispatchTaskErrors = {
      */
     403: unknown;
 };
+
+export type AssignBusinessConsoleMesDispatchTaskError = AssignBusinessConsoleMesDispatchTaskErrors[keyof AssignBusinessConsoleMesDispatchTaskErrors];
 
 export type AssignBusinessConsoleMesDispatchTaskResponses = {
     /**

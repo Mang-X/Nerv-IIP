@@ -362,7 +362,8 @@ public sealed record AssignDispatchTaskRequest(
     string? ShiftId,
     DateTimeOffset? AssignedAtUtc,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<DispatchParticipantInput>? Participants = null);
 
 public sealed record OperationTaskActionRequest(
     string OrganizationId,
@@ -1059,7 +1060,8 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
             MesAuthenticatedActor.Resolve(HttpContext),
             req.AssignedUserName,
             req.TeamId,
-            req.TeamName), ct);
+            req.TeamName,
+            req.Participants), ct);
         await Send.OkAsync(response, ct);
     }
 }
