@@ -1251,11 +1251,14 @@ public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<Assig
             .WithMessage("提供参与者时，工序任务必须登记 1 至 20 名参与者。");
         RuleForEach(x => x.Participants).ChildRules(participant =>
         {
-            participant.RuleFor(x => x.WorkerId).NotEmpty().MaximumLength(100);
-            participant.RuleFor(x => x.WorkerName).MaximumLength(200);
+            participant.RuleFor(x => x.WorkerId)
+                .NotEmpty().WithMessage("参与者人员 ID 不能为空。")
+                .MaximumLength(100).WithMessage("参与者人员 ID 长度不能超过 100 个字符。");
+            participant.RuleFor(x => x.WorkerName)
+                .MaximumLength(200).WithMessage("参与者姓名长度不能超过 200 个字符。");
             participant.RuleFor(x => x.SharePercent)
-                .GreaterThan(0m)
-                .LessThanOrEqualTo(100m)
+                .GreaterThan(0m).WithMessage("参与者工时占比必须大于 0。")
+                .LessThanOrEqualTo(100m).WithMessage("参与者工时占比不能超过 100。")
                 .Must(HasPersistableSharePrecision)
                 .WithMessage("参与者工时占比最多保留四位小数。");
         });

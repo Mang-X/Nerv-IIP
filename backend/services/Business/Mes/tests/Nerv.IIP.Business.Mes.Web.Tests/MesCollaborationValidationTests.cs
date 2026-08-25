@@ -69,6 +69,28 @@ public sealed class MesCollaborationValidationTests
         Assert.Contains("提供参与者时，工序任务必须登记 1 至 20 名参与者。", validator.Validate(CreateCommand(twentyOne)).Errors.Select(x => x.ErrorMessage));
     }
 
+    [Fact]
+    public void Every_dispatch_participant_field_rejection_uses_simplified_chinese()
+    {
+        var validator = new AssignDispatchTaskCommandValidator();
+        var cases = new[]
+        {
+            (CreateCommand(new DispatchParticipantInput("", "Alice", 100m)), "参与者人员 ID 不能为空。"),
+            (CreateCommand(new DispatchParticipantInput(new string('W', 101), "Alice", 100m)), "参与者人员 ID 长度不能超过 100 个字符。"),
+            (CreateCommand(new DispatchParticipantInput("worker-a", new string('名', 201), 100m)), "参与者姓名长度不能超过 200 个字符。"),
+            (CreateCommand(new DispatchParticipantInput("worker-a", "Alice", 0m)), "参与者工时占比必须大于 0。"),
+            (CreateCommand(new DispatchParticipantInput("worker-a", "Alice", 101m)), "参与者工时占比不能超过 100。")
+        };
+
+        foreach (var (command, expectedMessage) in cases)
+        {
+            var result = validator.Validate(command);
+
+            Assert.Contains(expectedMessage, result.Errors.Select(x => x.ErrorMessage));
+            Assert.All(result.Errors, error => Assert.Matches("[\u4e00-\u9fff]", error.ErrorMessage));
+        }
+    }
+
     private static AssignDispatchTaskCommand CreateCommand(params DispatchParticipantInput[] participants) =>
         new(
             "org-001",

@@ -1096,10 +1096,12 @@ public sealed class BusinessConsoleMesAssignDispatchTaskRequestValidator
             .WithMessage("提供参与者列表时必须包含 1 至 20 人。");
         RuleForEach(x => x.Participants).ChildRules(participant =>
         {
-            participant.RuleFor(x => x.WorkerId).NotEmpty().MaximumLength(100);
+            participant.RuleFor(x => x.WorkerId)
+                .NotEmpty().WithMessage("参与者人员 ID 不能为空。")
+                .MaximumLength(100).WithMessage("参与者人员 ID 长度不能超过 100 个字符。");
             participant.RuleFor(x => x.SharePercent)
-                .GreaterThan(0m)
-                .LessThanOrEqualTo(100m)
+                .GreaterThan(0m).WithMessage("工时占比必须大于 0。")
+                .LessThanOrEqualTo(100m).WithMessage("工时占比不能超过 100。")
                 .Must(HasPersistableSharePrecision)
                 .WithMessage("工时占比最多保留四位小数。");
         });
