@@ -13,7 +13,7 @@ public sealed class MasterDataListQueryCompositionTests
             "sku",
             Skip: 2,
             Take: 25,
-            Keyword: "  pump ");
+            Keyword: "  PuMp ");
 
         var criteria = query.ToCriteria();
 
@@ -23,7 +23,7 @@ public sealed class MasterDataListQueryCompositionTests
         Assert.Equal(25, criteria.Page.Take);
         Assert.Equal("pump", criteria.Keyword.Value);
         Assert.Equal(" org-001 ", query.OrganizationId);
-        Assert.Equal("  pump ", query.Keyword);
+        Assert.Equal("  PuMp ", query.Keyword);
     }
 
     [Fact]

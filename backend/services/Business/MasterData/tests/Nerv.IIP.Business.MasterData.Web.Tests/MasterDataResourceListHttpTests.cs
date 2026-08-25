@@ -9,6 +9,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -18,6 +20,66 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataResourceListHttpTests
 {
+    [Fact]
+    public async Task Get_product_categories_uses_composed_criteria_for_tenant_keyword_and_page()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.ProductCategories.AddRange(
+                ProductCategory.Create("org-001", "env-dev", "CAT-PUMP-A", "Pump A", null, null),
+                ProductCategory.Create("org-001", "env-dev", "CAT-PUMP-B", "Pump B", null, null),
+                ProductCategory.Create("org-001", "env-dev", "CAT-OTHER", "Other", null, null));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/product-categories" +
+            "?organizationId=%20org-001%20&environmentId=%20env-dev%20&search=%20PuMp%20&skip=1&take=1");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(2, data.GetProperty("total").GetInt32());
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal("CAT-PUMP-B", items[0].GetProperty("categoryCode").GetString());
+    }
+
+    [Fact]
+    public async Task Get_skills_uses_composed_criteria_for_tenant_keyword_and_page()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.Skills.AddRange(
+                Skill.Create("org-001", "env-dev", "SK-PUMP-A", "Pump A", "Manufacturing", false, null, null),
+                Skill.Create("org-001", "env-dev", "SK-PUMP-B", "Pump B", "Manufacturing", false, null, null),
+                Skill.Create("org-001", "env-dev", "SK-OTHER", "Other", "Manufacturing", false, null, null));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/skills" +
+            "?organizationId=%20org-001%20&environmentId=%20env-dev%20&search=%20PuMp%20&skip=1&take=1");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(2, data.GetProperty("total").GetInt32());
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal("SK-PUMP-B", items[0].GetProperty("skillCode").GetString());
+    }
+
     [Fact]
     public async Task Get_resources_normalizes_tenant_and_keyword_and_keeps_legacy_page_clamping()
     {
@@ -47,7 +109,7 @@ public sealed class MasterDataResourceListHttpTests
             var response = await client.GetAsync(
                 "/api/business/v1/master-data/resources" +
                 "?organizationId=%20org-001%20&environmentId=%20env-dev%20&resourceType=sku" +
-                "&keyword=%20%20pump%20%20&" + paging.Paging);
+                "&keyword=%20%20PuMp%20%20&" + paging.Paging);
 
             var body = await response.Content.ReadAsStringAsync();
             Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
@@ -144,6 +206,13 @@ public sealed class MasterDataResourceListHttpTests
                 efServices.Dispose();
             }
         }
+    }
+
+    private static HttpClient CreateAuthenticatedClient(WebApplicationFactory<Program> factory)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "master-data-resource-list-http-test-token");
+        return client;
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
