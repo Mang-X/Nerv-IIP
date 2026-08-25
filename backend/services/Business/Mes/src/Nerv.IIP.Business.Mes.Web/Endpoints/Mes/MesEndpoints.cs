@@ -389,8 +389,17 @@ public sealed record RecordDefectRequest(
     string? OperationTaskId,
     string DefectCode,
     decimal Quantity,
-    DateTimeOffset? RecordedAtUtc,
-    string? IdempotencyKey = null);
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey);
+
+public sealed class RecordDefectRequestValidator : Validator<RecordDefectRequest>
+{
+    public RecordDefectRequestValidator()
+    {
+        RuleFor(x => x.RecordedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
 
 public sealed record ListRelatedQualityItemsRequest(
     string OrganizationId,
@@ -1353,7 +1362,7 @@ public sealed class DismissTelemetryProductionReportCandidateEndpoint(ISender se
     }
 }
 
-public sealed class RecordDefectEndpoint(ISender sender, TimeProvider timeProvider)
+public sealed class RecordDefectEndpoint(ISender sender)
     : MesEndpoint<RecordDefectRequest, MesAcceptedResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<RecordDefectEndpoint>());
@@ -1367,7 +1376,7 @@ public sealed class RecordDefectEndpoint(ISender sender, TimeProvider timeProvid
             req.OperationTaskId,
             req.DefectCode,
             req.Quantity,
-            req.RecordedAtUtc ?? timeProvider.GetUtcNow(),
+            req.RecordedAtUtc,
             req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
