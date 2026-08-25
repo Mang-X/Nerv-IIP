@@ -76,12 +76,16 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: state.principal }),
 }))
 
-vi.mock('@/utils/notify', () => ({
-  inlineErrorMessage: () => '',
-  notifyError: mutations.notifyError,
-  notifyOperationFailure: mutations.notifyOperationFailure,
-  notifySuccess: mutations.notifySuccess,
-}))
+vi.mock('@/utils/notify', async () => {
+  const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
+  return {
+    ...actual,
+    inlineErrorMessage: () => '',
+    notifyError: mutations.notifyError,
+    notifyOperationFailure: mutations.notifyOperationFailure,
+    notifySuccess: mutations.notifySuccess,
+  }
+})
 
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref(20) }),
@@ -330,11 +334,52 @@ describe('MES handovers read-face guard', () => {
       expect.any(Error),
       '接班结果尚未确认，请刷新页面核实；本页已阻止重复提交。',
     )
+    expect(wrapper.text()).toContain('接班结果尚未确认，请刷新列表核实；本页已阻止重复提交。')
+    expect(
+      wrapper
+        .get('[data-testid="accept-handover-form"]')
+        .get('button[type="submit"]')
+        .attributes('disabled'),
+    ).toBe('')
 
     await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
     await flushPromises()
     expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
   })
+
+  it.each([403, 404, 409, 422])(
+    'keeps the stable accept key retryable after deterministic HTTP %s rejection',
+    async (status) => {
+      const error = { response: { status } }
+      mutations.acceptShiftHandover
+        .mockRejectedValueOnce(error)
+        .mockResolvedValueOnce(acceptedResponse())
+      const wrapper = mountPage()
+
+      await wrapper.get('[data-testid="accept-handover"]').trigger('click')
+      await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+      await flushPromises()
+
+      expect(mutations.notifyOperationFailure).toHaveBeenCalledWith(
+        '接班失败',
+        error,
+        '接班失败，请检查权限或交接单状态后重试。',
+      )
+      expect(mutations.refreshHandovers).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="accept-handover-form"]').exists()).toBe(true)
+
+      await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+      await flushPromises()
+
+      expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(2)
+      expect(mutations.acceptShiftHandover.mock.calls[0]?.[1].idempotencyKey).toBe(
+        'mes-handover-accept-stable',
+      )
+      expect(mutations.acceptShiftHandover.mock.calls[1]?.[1].idempotencyKey).toBe(
+        'mes-handover-accept-stable',
+      )
+    },
+  )
 
   it.each([
     ['已接班状态', () => (state.row.handoverStatus = 'accepted')],

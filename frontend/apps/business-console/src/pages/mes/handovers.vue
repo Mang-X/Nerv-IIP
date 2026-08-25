@@ -42,6 +42,7 @@ import { labelFor, MES_HANDOVER_STATUS_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
+  errorStatusCode,
   inlineErrorMessage,
   notifyError,
   notifyOperationFailure,
@@ -235,6 +236,11 @@ async function refreshAfterWrite() {
   }
 }
 
+function isDeterministicAcceptFailure(error: unknown) {
+  const status = errorStatusCode(error)
+  return status !== undefined && status >= 400 && status < 500
+}
+
 async function submitCreate() {
   createShowErrors.value = true
   if (!createFormReady.value || createPending.value) return
@@ -270,7 +276,7 @@ const acceptTarget = ref<HandoverRow | null>(null)
 const acceptPendingId = ref<string | null>(null)
 const acceptIdempotencyKeys = new Map<string, string>()
 // accept 当前没有服务端 replay 回执；网络结果不确定时锁住该行，避免再次触发状态机。
-const acceptOutcomeUnknownIds = new Set<string>()
+const acceptOutcomeUnknownIds = reactive(new Set<string>())
 
 function isOpenHandover(row: HandoverRow) {
   return (row.handoverStatus ?? '').toLowerCase() === 'open'
@@ -287,6 +293,11 @@ function canAcceptRow(row: HandoverRow) {
     !acceptOutcomeUnknownIds.has(handoverId ?? '')
   )
 }
+
+const acceptOutcomeUnknown = computed(() => {
+  const handoverId = acceptTarget.value?.handoverId?.trim()
+  return Boolean(handoverId && acceptOutcomeUnknownIds.has(handoverId))
+})
 
 function openAcceptDialog(row: HandoverRow) {
   if (!canAcceptRow(row)) return
@@ -331,6 +342,12 @@ async function submitAccept() {
     notifySuccess(receiptMessage('accept', outcome))
     await refreshAfterWrite()
   } catch (error) {
+    if (isDeterministicAcceptFailure(error)) {
+      acceptOutcomeUnknownIds.delete(handoverId)
+      notifyOperationFailure('接班失败', error, '接班失败，请检查权限或交接单状态后重试。')
+      return
+    }
+
     acceptOutcomeUnknownIds.add(handoverId)
     const refreshed = await refreshAfterWrite()
     const refreshedTarget = handovers.value.find((row) => row.handoverId?.trim() === handoverId)
@@ -598,7 +615,10 @@ function formatError(error: unknown) {
               <dd class="font-medium">{{ acceptTargetTeamLabel }}</dd>
             </div>
           </dl>
-          <p class="text-sm text-muted-foreground">
+          <p v-if="acceptOutcomeUnknown" class="text-sm text-destructive" role="alert">
+            接班结果尚未确认，请刷新列表核实；本页已阻止重复提交。
+          </p>
+          <p v-else class="text-sm text-muted-foreground">
             确认接收当前待接班交接单；服务端将按当前权限核验状态。
           </p>
           <NvDialogFooter>
@@ -610,10 +630,10 @@ function formatError(error: unknown) {
             >
               取消
             </NvButton>
-            <NvButton type="submit" :disabled="acceptPendingId !== null">
+            <NvButton type="submit" :disabled="acceptPendingId !== null || acceptOutcomeUnknown">
               <Spinner v-if="acceptPendingId !== null" aria-hidden="true" />
-              <CheckCircle2Icon v-else aria-hidden="true" />
-              确认接班
+              <CheckCircle2Icon v-else-if="!acceptOutcomeUnknown" aria-hidden="true" />
+              {{ acceptOutcomeUnknown ? '结果待确认' : '确认接班' }}
             </NvButton>
           </NvDialogFooter>
         </form>
