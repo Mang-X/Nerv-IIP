@@ -76,6 +76,7 @@ const coladaState = vi.hoisted(() => ({
 const receiptState = vi.hoisted(() => ({
   confirm: vi.fn(),
 }))
+const workOrderDetailQuery = vi.hoisted(() => vi.fn())
 const authState = vi.hoisted(() => ({
   principal: {
     principalId: 'user-001',
@@ -245,22 +246,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
-    query: vi.fn(async () => ({
-      success: true,
-      data: {
-        workOrderId: 'WO-RELEASE',
-        status: 'Created',
-        productionVersionId: 'PV-1',
-        operationTasks: [
-          {
-            status: 'queued',
-            blockReasons: [],
-            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
-          },
-        ],
-        qualityHolds: [],
-      },
-    })),
+    query: workOrderDetailQuery,
   })),
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
@@ -456,6 +442,23 @@ describe('business MES composables', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
+    workOrderDetailQuery.mockReset().mockResolvedValue({
+      success: true,
+      data: {
+        workOrderId: 'WO-RELEASE',
+        status: 'Created',
+        productionVersionId: 'PV-1',
+        operationTasks: [
+          {
+            status: 'queued',
+            workCenterId: 'WC-READ',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+        qualityHolds: [],
+      },
+    })
     vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
       data: {
         success: true,
@@ -1611,7 +1614,15 @@ describe('business MES composables', () => {
       'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
       {
         success: true,
-        data: { selectedScope: { kind: 'workshop', id: 'WS-MANAGE' } },
+        data: {
+          principal: { id: 'user-001' },
+          selectedScope: { kind: 'workshop', id: 'WS-MANAGE' },
+          authorizedScopes: [
+            { kind: 'workshop', id: 'WS-MANAGE' },
+            { kind: 'work-center', id: 'WC-READ' },
+          ],
+          coveredWorkCenters: [{ id: 'WC-READ', workshopId: 'WS-MANAGE' }],
+        },
       },
     )
     const workOrders = useMesWorkOrders()
@@ -1627,8 +1638,8 @@ describe('business MES composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        scopeKind: 'workshop',
-        scopeId: 'WS-MANAGE',
+        scopeKind: 'work-center',
+        scopeId: 'WC-READ',
       },
     })
 
@@ -1654,6 +1665,110 @@ describe('business MES composables', () => {
       }),
     )
     expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not release when the submit-time detail becomes blocked', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: {
+          principal: { id: 'user-001' },
+          selectedScope: { kind: 'workshop', id: 'WS-MANAGE' },
+          authorizedScopes: [
+            { kind: 'workshop', id: 'WS-MANAGE' },
+            { kind: 'work-center', id: 'WC-READ' },
+          ],
+          coveredWorkCenters: [{ id: 'WC-READ', workshopId: 'WS-MANAGE' }],
+        },
+      },
+    )
+    const ready = {
+      success: true,
+      data: {
+        workOrderId: 'WO-RELEASE',
+        status: 'Created',
+        productionVersionId: 'PV-1',
+        operationTasks: [
+          {
+            status: 'queued',
+            workCenterId: 'WC-READ',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+        qualityHolds: [],
+      },
+    }
+    const blocked = {
+      success: true,
+      data: {
+        ...ready.data,
+        operationTasks: [
+          {
+            ...ready.data.operationTasks[0],
+            blockReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
+          },
+        ],
+      },
+    }
+    workOrderDetailQuery.mockResolvedValueOnce(ready).mockResolvedValueOnce(blocked)
+    const workOrders = useMesWorkOrders()
+
+    await expect(workOrders.readWorkOrderForRelease('WO-RELEASE')).resolves.toBeTruthy()
+    await expect(
+      workOrders.releaseWorkOrder('WO-RELEASE', {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        confirmWarnings: true,
+        idempotencyKey: 'release-key',
+      }),
+    ).rejects.toThrow('齐套快照缺失')
+
+    const mutation = vi
+      .mocked(releaseBusinessConsoleMesWorkOrderMutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(workOrderDetailQuery).toHaveBeenCalledTimes(2)
+    expect(mutation).not.toHaveBeenCalled()
+  })
+
+  it('rejects a target outside the selected manage scope before release', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: {
+          principal: { id: 'user-001' },
+          selectedScope: { kind: 'work-center', id: 'WC-OTHER' },
+          authorizedScopes: [{ kind: 'work-center', id: 'WC-OTHER' }],
+          coveredWorkCenters: [{ id: 'WC-OTHER', workshopId: 'WS-OTHER' }],
+        },
+      },
+    )
+    const workOrders = useMesWorkOrders()
+
+    await expect(workOrders.readWorkOrderForRelease('WO-RELEASE')).rejects.toThrow(
+      '不在所选管理范围',
+    )
+
+    const mutation = vi
+      .mocked(releaseBusinessConsoleMesWorkOrderMutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).not.toHaveBeenCalled()
   })
 
   it('closes a work order and records an engineering decision through the manage scope', async () => {

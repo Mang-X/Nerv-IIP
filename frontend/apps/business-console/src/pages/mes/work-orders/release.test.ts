@@ -14,6 +14,7 @@ const releaseState = vi.hoisted(() => ({
   scopeReady: true,
 }))
 const releaseWorkOrder = vi.hoisted(() => vi.fn())
+const releaseWorkOrderErrorState = vi.hoisted(() => ({ value: undefined as unknown }))
 const readWorkOrderForRelease = vi.hoisted(() => vi.fn())
 const refreshWorkOrders = vi.hoisted(() => vi.fn())
 const refreshOperationTasks = vi.hoisted(() => vi.fn())
@@ -96,7 +97,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshWorkOrders,
     readWorkOrderForRelease,
     releaseWorkOrder,
-    releaseWorkOrderError: ref(undefined),
+    releaseWorkOrderError: releaseWorkOrderErrorState,
     releaseWorkOrderPending: ref(false),
     workOrders: ref(releaseState.items),
     workOrdersError: ref(undefined),
@@ -235,6 +236,7 @@ describe('work-order list — release entry', () => {
     releaseState.scopeMessage = ''
     releaseState.scopeReady = true
     releaseWorkOrder.mockReset()
+    releaseWorkOrderErrorState.value = undefined
     releaseWorkOrder.mockResolvedValue({
       data: { accepted: true, downstreamDocumentId: 'WO-1' },
     })
@@ -519,6 +521,32 @@ describe('work-order list — release entry', () => {
     expect(releaseWorkOrder).toHaveBeenCalledTimes(2)
     expect(releaseWorkOrder.mock.calls[1]?.[1]?.idempotencyKey).toBe(
       releaseWorkOrder.mock.calls[0]?.[1]?.idempotencyKey,
+    )
+  })
+
+  it('reports the current preflight failure instead of a previous mutation error', async () => {
+    const previousMutationError = new Error('上一次 POST 失败')
+    const currentPreflightError = new Error('当前管理范围已失效')
+    releaseWorkOrderErrorState.value = previousMutationError
+    releaseWorkOrder
+      .mockRejectedValueOnce(previousMutationError)
+      .mockRejectedValueOnce(currentPreflightError)
+    const wrapper = mountPage()
+
+    await button(wrapper, '下达工单').trigger('click')
+    await flushPromises()
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    notifyOperationFailure.mockClear()
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(notifyOperationFailure).toHaveBeenCalledWith(
+      '工单下达失败',
+      currentPreflightError,
+      expect.any(String),
     )
   })
 })

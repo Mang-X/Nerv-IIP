@@ -90,7 +90,6 @@ const {
   filters,
   refreshWorkOrders,
   releaseWorkOrder,
-  releaseWorkOrderError,
   releaseWorkOrderPending,
   workOrders,
   workOrdersError,
@@ -300,7 +299,7 @@ async function submitReleaseWorkOrder() {
   } catch (error) {
     notifyOperationFailure(
       '工单下达失败',
-      releaseWorkOrderError.value ?? error,
+      error,
       '工单下达失败，请根据服务端原因检查就绪条件后重试。',
     )
   }

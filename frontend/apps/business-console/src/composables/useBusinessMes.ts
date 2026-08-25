@@ -268,6 +268,14 @@ interface MesSelectedWorkScope {
   displayName?: string
 }
 
+interface MesWorkOrderScopeCandidate {
+  operationTasks?: Array<{
+    assignedUserId?: string | null
+    teamId?: string | null
+    workCenterId?: string | null
+  }> | null
+}
+
 export interface MesWorkScopeOption {
   label: string
   value: string
@@ -435,7 +443,65 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
     return selection
   }
 
+  function coversWorkOrder(
+    candidate: MesWorkOrderScopeCandidate,
+    expectedSelection: MesSelectedWorkScope,
+  ) {
+    // 与 Gateway PrincipalWorkScopeResolver 的范围投影及工单 Any(task) 命中语义保持一致；
+    // 只使用 permission-aware work-context 返回的主体/授权子范围，不在客户端自行扩张授权。
+    const envelope = workContextQuery.data.value
+    const data = envelope?.success ? envelope.data : undefined
+    const currentSelection = data?.selectedScope
+    if (
+      !currentSelection ||
+      currentSelection.kind?.trim() !== expectedSelection.kind ||
+      currentSelection.id?.trim() !== expectedSelection.id
+    ) {
+      return false
+    }
+
+    const tasks = candidate.operationTasks ?? []
+    switch (expectedSelection.kind) {
+      case 'organization':
+        return expectedSelection.id === context.organizationId.trim()
+      case 'self': {
+        const principalId = data?.principal?.id?.trim()
+        return (
+          !!principalId &&
+          principalId === expectedSelection.id &&
+          tasks.some((task) => task.assignedUserId?.trim() === principalId)
+        )
+      }
+      case 'team':
+        return tasks.some((task) => task.teamId?.trim() === expectedSelection.id)
+      case 'work-center':
+        return tasks.some((task) => task.workCenterId?.trim() === expectedSelection.id)
+      case 'workshop': {
+        const authorizedWorkCenterIds = new Set(
+          (data?.authorizedScopes ?? [])
+            .filter((scope) => scope.kind?.trim() === 'work-center')
+            .map((scope) => scope.id?.trim())
+            .filter((id): id is string => !!id),
+        )
+        const coveredWorkCenterIds = new Set(
+          (data?.coveredWorkCenters ?? [])
+            .filter(
+              (workCenter) =>
+                workCenter.workshopId?.trim() === expectedSelection.id &&
+                authorizedWorkCenterIds.has(workCenter.id?.trim() ?? ''),
+            )
+            .map((workCenter) => workCenter.id?.trim())
+            .filter((id): id is string => !!id),
+        )
+        return tasks.some((task) => coveredWorkCenterIds.has(task.workCenterId?.trim() ?? ''))
+      }
+      default:
+        return false
+    }
+  }
+
   return {
+    coversWorkOrder,
     principalIdentity,
     requireSelectedScope,
     selectedScope,
@@ -943,21 +1009,28 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     },
   })
 
-  async function readReleaseCandidate(workOrderId: string, selectedScope: MesSelectedWorkScope) {
+  async function readReleaseCandidate(
+    workOrderId: string,
+    selectedReadScope: MesSelectedWorkScope,
+    selectedManageScope: MesSelectedWorkScope,
+  ) {
     const query = getBusinessConsoleMesWorkOrderDetailQueryOptions({
       path: { workOrderId },
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
-        scopeKind: selectedScope.kind,
-        scopeId: selectedScope.id,
+        scopeKind: selectedReadScope.kind,
+        scopeId: selectedReadScope.id,
       },
     })
     const response = await query.query({
       signal: new AbortController().signal,
     } as Parameters<typeof query.query>[0])
     if (response?.success !== true || !response.data) {
-      throw new Error(response?.message ?? '未取得当前管理范围内的工单详情')
+      throw new Error(response?.message ?? '未取得当前读取范围内的工单详情')
+    }
+    if (!workOrderManageScope.coversWorkOrder(response.data, selectedManageScope)) {
+      throw new Error('当前工单不在所选管理范围内，不能下达')
     }
     return response.data
   }
@@ -974,8 +1047,9 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     refreshWorkOrders: () =>
       workOrdersScopeReady.value ? workOrdersQuery.refetch() : Promise.resolve(),
     readWorkOrderForRelease: async (workOrderId: string) => {
-      const selectedScope = workOrderManageScope.requireSelectedScope()
-      return readReleaseCandidate(workOrderId, selectedScope)
+      const selectedReadScope = workOrderReadScope.requireSelectedScope()
+      const selectedManageScope = workOrderManageScope.requireSelectedScope()
+      return readReleaseCandidate(workOrderId, selectedReadScope, selectedManageScope)
     },
     releaseWorkOrder: async (
       workOrderId: string,
@@ -986,8 +1060,9 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
         idempotencyKey: string
       },
     ) => {
-      const selectedScope = workOrderManageScope.requireSelectedScope()
-      const latest = await readReleaseCandidate(workOrderId, selectedScope)
+      const selectedReadScope = workOrderReadScope.requireSelectedScope()
+      const selectedManageScope = workOrderManageScope.requireSelectedScope()
+      const latest = await readReleaseCandidate(workOrderId, selectedReadScope, selectedManageScope)
       const blocker = mesWorkOrderReleaseBlocker(latest)
       if (blocker) throw new Error(blocker)
       return releaseMutation.mutateAsync({
@@ -995,8 +1070,8 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
         query: {
           organizationId: body.organizationId,
           environmentId: body.environmentId,
-          scopeKind: selectedScope.kind,
-          scopeId: selectedScope.id,
+          scopeKind: selectedManageScope.kind,
+          scopeId: selectedManageScope.id,
         },
         body,
       })
