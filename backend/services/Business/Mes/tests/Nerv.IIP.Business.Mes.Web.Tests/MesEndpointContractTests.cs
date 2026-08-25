@@ -1517,6 +1517,81 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Material_issue_creation_validates_supplementary_source_scope_and_chain()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
+        dbContext.WorkOrders.AddRange(
+            WorkOrder.Create("org-001", "env-dev", "WO-SUP-001", "SKU-001", "PV-001", 10m, 10, now),
+            WorkOrder.Create("org-001", "env-dev", "WO-SUP-002", "SKU-002", "PV-002", 10m, 10, now),
+            WorkOrder.Create("org-002", "env-dev", "WO-SUP-001", "SKU-001", "PV-001", 10m, 10, now));
+        dbContext.MaterialIssueRequests.AddRange(
+            MaterialIssueRequest.Create("org-001", "env-dev", "MIR-ORIGINAL-001", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 2m, now),
+            MaterialIssueRequest.Create("org-001", "env-dev", "MIR-SUPPLEMENTARY-001", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now.AddMinutes(1), true, "MIR-ORIGINAL-001"),
+            MaterialIssueRequest.Create("org-002", "env-dev", "MIR-OTHER-SCOPE", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 2m, now));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateMaterialIssueRequestCommandHandler(dbContext);
+        var normal = await handler.Handle(
+            new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now.AddMinutes(2)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var normalRow = await dbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == normal.ReferenceId);
+        Assert.False(normalRow.IsSupplementary);
+        Assert.Null(normalRow.OriginalMaterialIssueRequestNo);
+
+        var supplementary = await handler.Handle(
+            new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now.AddMinutes(3), null, true, "MIR-ORIGINAL-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var supplementaryRow = await dbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == supplementary.ReferenceId);
+        Assert.True(supplementaryRow.IsSupplementary);
+        Assert.Equal("MIR-ORIGINAL-001", supplementaryRow.OriginalMaterialIssueRequestNo);
+
+        var rejectedCases = new (string Name, CreateMaterialIssueRequestCommand Command, string Message)[]
+        {
+            ("missing source", new("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now, null, true, null), "必须指定原领料单"),
+            ("cross scope", new("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now, null, true, "MIR-OTHER-SCOPE"), "不存在或不在当前组织"),
+            ("cross work order", new("org-001", "env-dev", "WO-SUP-002", "OP-10", "MAT-001", "PCS", 1m, now, null, true, "MIR-ORIGINAL-001"), "不存在或不在当前组织"),
+            ("cross material", new("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-002", "PCS", 1m, now, null, true, "MIR-ORIGINAL-001"), "不存在或不在当前组织"),
+            ("supplementary chain", new("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now, null, true, "MIR-SUPPLEMENTARY-001"), "不能再次关联补料单"),
+            ("ordinary with source", new("org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now, null, false, "MIR-ORIGINAL-001"), "普通领料申请不能指定")
+        };
+        foreach (var rejected in rejectedCases)
+        {
+            var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(rejected.Command, CancellationToken.None));
+            Assert.Contains(rejected.Message, exception.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Material_issue_list_exposes_supplementary_fields_and_unpaged_filtered_count()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
+        dbContext.MaterialIssueRequests.AddRange(
+            MaterialIssueRequest.Create("org-001", "env-dev", "MIR-LIST-ORIGINAL", "WO-LIST", "OP-10", "MAT-LIST", "PCS", 2m, now),
+            MaterialIssueRequest.Create("org-001", "env-dev", "MIR-LIST-SUP-1", "WO-LIST", "OP-10", "MAT-LIST", "PCS", 1m, now.AddMinutes(1), true, "MIR-LIST-ORIGINAL"),
+            MaterialIssueRequest.Create("org-001", "env-dev", "MIR-LIST-SUP-2", "WO-LIST", "OP-20", "MAT-LIST", "PCS", 1m, now.AddMinutes(2), true, "MIR-LIST-ORIGINAL"),
+            MaterialIssueRequest.Create("org-002", "env-dev", "MIR-LIST-OTHER-SCOPE", "WO-LIST", "OP-10", "MAT-LIST", "PCS", 1m, now, true, "MIR-LIST-ORIGINAL"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery("org-001", "env-dev", "WO-LIST", Skip: 1, Take: 1, Keyword: "MAT-LIST"),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Equal(2, response.SupplementaryCount);
+        var row = Assert.Single(response.Items);
+        Assert.True(row.IsSupplementary);
+        Assert.Equal("MIR-LIST-ORIGINAL", row.OriginalMaterialIssueRequestNo);
+    }
+
+    [Fact]
     public async Task Mes_list_queries_apply_server_filters_before_count_and_page()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
