@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Nerv.IIP.Business.Mes.Domain;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
@@ -151,7 +152,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 null,
                 5m,
                 now,
-                inventoryReservationId));
+                inventoryReservationId,
+                UnitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt));
     }
 
     private static async Task WaitForConsumerGroupsAsync(string redisConnectionString, string capVersion)
@@ -229,10 +231,10 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             INSERT INTO mes.work_orders
                 (id, organization_id, environment_id, work_order_id, sku_id, uom_code, quantity, priority,
                  due_utc, status, created_at_utc, completed_quantity, scrap_quantity, cost_report_count,
-                 material_movement_count, over_receipt_tolerance_percent)
+                 material_movement_count, over_receipt_tolerance_percent, capitalized_unit_cost)
             VALUES
                 (@work_order_row_id, @organization_id, @environment_id, @work_order_id, @sku_id, @uom_code, 10, 10,
-                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0);
+                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0, @capitalized_unit_cost);
 
             INSERT INTO mes.finished_goods_receipt_requests
                 (id, organization_id, environment_id, request_no, work_order_id, sku_id, quantity, uom_code,
@@ -242,6 +244,12 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                  @requested_at_utc, @success_lot_no, 'Requested', 0),
                 (@failure_id, @organization_id, @environment_id, @failure_request_no, @work_order_id, @sku_id, 5, @uom_code,
                  @requested_at_utc, @failure_lot_no, 'Requested', 0);
+
+            INSERT INTO mes.processed_integration_events
+                ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
+            VALUES
+                (@cost_event_row_id, @cost_consumer_name, @cost_event_id, @cost_event_type, @cost_event_version,
+                 @cost_source_service, @cost_idempotency_key, @requested_at_utc);
             """;
         insert.Parameters.AddWithValue("work_order_row_id", Guid.CreateVersion7());
         insert.Parameters.AddWithValue("success_id", Guid.CreateVersion7());
@@ -257,6 +265,16 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         insert.Parameters.AddWithValue("due_utc", DateTimeOffset.UtcNow.AddHours(8));
         insert.Parameters.AddWithValue("success_lot_no", source.SuccessLotNo);
         insert.Parameters.AddWithValue("failure_lot_no", source.FailureLotNo);
+        insert.Parameters.AddWithValue("capitalized_unit_cost", 12.34m);
+        insert.Parameters.AddWithValue("cost_event_row_id", Guid.CreateVersion7());
+        insert.Parameters.AddWithValue("cost_consumer_name", "business-mes.work-order-cost-capitalized");
+        insert.Parameters.AddWithValue("cost_event_id", $"evt-man528-cost-{suffix}");
+        insert.Parameters.AddWithValue("cost_event_type", ErpIntegrationEventTypes.WorkOrderCostCapitalized);
+        insert.Parameters.AddWithValue("cost_event_version", ErpIntegrationEventVersions.V1);
+        insert.Parameters.AddWithValue("cost_source_service", ErpIntegrationEventSources.BusinessErp);
+        insert.Parameters.AddWithValue(
+            "cost_idempotency_key",
+            $"work-order-cost-capitalized:{source.OrganizationId}:{source.EnvironmentId}:{source.WorkOrderId}");
         await insert.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
         return source;
