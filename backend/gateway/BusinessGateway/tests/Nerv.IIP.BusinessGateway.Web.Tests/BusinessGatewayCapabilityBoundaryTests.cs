@@ -15,13 +15,51 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             ["BusinessServiceProxyException"] = "BusinessServiceProxyException.cs",
             ["BusinessServiceHttpClient"] = "BusinessServiceHttpClient.cs",
         };
+    private static readonly IReadOnlySet<string> ExpectedLegacyTopLevelTypeNames =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "BusinessGatewayInventoryForwardedPermissionOptions",
+            "HttpBusinessApprovalClient",
+            "HttpBusinessBarcodeLabelClient",
+            "HttpBusinessErpClient",
+            "HttpBusinessFileStorageClient",
+            "HttpBusinessIndustrialTelemetryClient",
+            "HttpBusinessInventoryClient",
+            "HttpBusinessMaintenanceClient",
+            "HttpBusinessMasterDataClient",
+            "HttpBusinessMesClient",
+            "HttpBusinessNotificationClient",
+            "HttpBusinessPlanningClient",
+            "HttpBusinessProductEngineeringClient",
+            "HttpBusinessQualityClient",
+            "HttpBusinessSchedulingClient",
+            "IBusinessApprovalClient",
+            "IBusinessBarcodeLabelClient",
+            "IBusinessErpClient",
+            "IBusinessFileStorageClient",
+            "IBusinessIndustrialTelemetryClient",
+            "IBusinessInventoryClient",
+            "IBusinessMaintenanceClient",
+            "IBusinessMasterDataClient",
+            "IBusinessMesClient",
+            "IBusinessNotificationClient",
+            "IBusinessPlanningClient",
+            "IBusinessProductEngineeringClient",
+            "IBusinessQualityClient",
+            "IBusinessSchedulingClient",
+        };
+    private static readonly IReadOnlySet<string> NoLegacyTopLevelTypes =
+        new HashSet<string>(StringComparer.Ordinal);
 
     [Fact]
     public void Shared_client_infrastructure_has_one_real_declaration_in_each_expected_file()
     {
         var businessServicesDirectory = LocateBusinessServicesDirectory();
 
-        var violations = AnalyzeBoundary(businessServicesDirectory, ExpectedSharedTypeFiles);
+        var violations = AnalyzeBoundary(
+            businessServicesDirectory,
+            ExpectedSharedTypeFiles,
+            ExpectedLegacyTopLevelTypeNames);
 
         Assert.Empty(violations);
     }
@@ -41,7 +79,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "public abstract class BusinessServiceHttpClient {}"),
         };
 
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles);
+        var violations = AnalyzeBoundary(
+            documents,
+            ExpectedSharedTypeFiles,
+            NoLegacyTopLevelTypes);
 
         Assert.Contains(violations, violation => violation.Contains("BusinessServiceAuditContext.cs", StringComparison.Ordinal));
         Assert.Contains(violations, violation => violation.Contains("RenamedBusinessServiceClients.cs", StringComparison.Ordinal));
@@ -67,7 +108,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "public interface IBusinessQualityClient {} public sealed class HttpBusinessQualityClient {}"),
         };
 
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles);
+        var violations = AnalyzeBoundary(
+            documents,
+            ExpectedSharedTypeFiles,
+            NoLegacyTopLevelTypes);
 
         Assert.Contains(violations, violation =>
             violation.Contains("ReplacementClients.cs", StringComparison.Ordinal) &&
@@ -75,19 +119,55 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             violation.Contains("Quality", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Boundary_analyzer_rejects_new_client_declarations_in_the_legacy_monolith()
+    {
+        var documents = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceAuditContext.cs",
+                "public sealed record BusinessServiceAuditContext {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceProxyException.cs",
+                "public sealed class BusinessServiceProxyException {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                LegacyClientMonolithFileName,
+                "public interface IBusinessInventoryClient {} public sealed class HttpBusinessInventoryClient {} " +
+                "public interface IBusinessBoundaryMutationClient {} public sealed class HttpBusinessBoundaryMutationClient {}"),
+        };
+        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "IBusinessInventoryClient",
+            "HttpBusinessInventoryClient",
+        };
+
+        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains(LegacyClientMonolithFileName, StringComparison.Ordinal) &&
+            violation.Contains("HttpBusinessBoundaryMutationClient", StringComparison.Ordinal) &&
+            violation.Contains("IBusinessBoundaryMutationClient", StringComparison.Ordinal));
+    }
+
     private static IReadOnlyList<string> AnalyzeBoundary(
         string businessServicesDirectory,
-        IReadOnlyDictionary<string, string> expectedFiles) =>
+        IReadOnlyDictionary<string, string> expectedFiles,
+        IReadOnlySet<string> expectedLegacyTopLevelTypeNames) =>
         AnalyzeBoundary(
             Directory.EnumerateFiles(businessServicesDirectory, "*.cs", SearchOption.AllDirectories)
                 .Select(path => new SourceDocument(
                     Path.GetRelativePath(businessServicesDirectory, path).Replace('\\', '/'),
                     File.ReadAllText(path))),
-            expectedFiles);
+            expectedFiles,
+            expectedLegacyTopLevelTypeNames);
 
     private static IReadOnlyList<string> AnalyzeBoundary(
         IEnumerable<SourceDocument> documents,
-        IReadOnlyDictionary<string, string> expectedFiles)
+        IReadOnlyDictionary<string, string> expectedFiles,
+        IReadOnlySet<string> expectedLegacyTopLevelTypeNames)
     {
         var declarations = documents
             .SelectMany(document => CSharpSyntaxTree
@@ -95,7 +175,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 .GetRoot()
                 .DescendantNodes()
                 .OfType<BaseTypeDeclarationSyntax>()
-                .Select(declaration => new TypeDeclaration(document.RelativePath, declaration.Identifier.ValueText)))
+                .Select(declaration => new TypeDeclaration(
+                    document.RelativePath,
+                    declaration.Identifier.ValueText,
+                    declaration.Parent is BaseNamespaceDeclarationSyntax or CompilationUnitSyntax)))
             .ToArray();
         var violations = new List<string>();
 
@@ -112,6 +195,26 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     $"Expected exactly one real declaration of {typeName} in {expectedPath}; found: " +
                     (owners.Length == 0 ? "none" : string.Join(", ", owners)));
             }
+        }
+
+        var actualLegacyTopLevelTypeNames = declarations
+            .Where(declaration =>
+                declaration.RelativePath == LegacyClientMonolithFileName && declaration.IsTopLevel)
+            .Select(declaration => declaration.TypeName)
+            .ToHashSet(StringComparer.Ordinal);
+        var unexpectedLegacyTypes = actualLegacyTopLevelTypeNames
+            .Except(expectedLegacyTopLevelTypeNames, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var missingLegacyTypes = expectedLegacyTopLevelTypeNames
+            .Except(actualLegacyTopLevelTypeNames, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (unexpectedLegacyTypes.Length > 0 || missingLegacyTypes.Length > 0)
+        {
+            violations.Add(
+                $"{LegacyClientMonolithFileName} top-level declarations differ from the managed migration allowlist; " +
+                $"unexpected: {ListOrNone(unexpectedLegacyTypes)}; missing: {ListOrNone(missingLegacyTypes)}.");
         }
 
         foreach (var file in declarations
@@ -134,6 +237,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
 
         return violations;
     }
+
+    private static string ListOrNone(IReadOnlyCollection<string> values) =>
+        values.Count == 0 ? "none" : string.Join(", ", values);
 
     private static string? CapabilityClientName(string typeName)
     {
@@ -162,5 +268,5 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
 
     private sealed record SourceDocument(string RelativePath, string Source);
 
-    private sealed record TypeDeclaration(string RelativePath, string TypeName);
+    private sealed record TypeDeclaration(string RelativePath, string TypeName, bool IsTopLevel);
 }
