@@ -3,6 +3,8 @@ import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type {
   CreateBusinessConsoleCodeRuleVersionData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
@@ -538,6 +540,21 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
+  })
+
+  it('types the MES supplementary material issue contract from OpenAPI', () => {
+    const request: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
+      isSupplementary: true,
+      originalMaterialIssueRequestNo: 'MIR-000123',
+    }
+    const response: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse = {
+      supplementaryCount: 1,
+      items: [request],
+    }
+
+    expect(request.isSupplementary).toBe(true)
+    expect(request.originalMaterialIssueRequestNo).toBe('MIR-000123')
+    expect(response.supplementaryCount).toBe(1)
   })
 
   it('exports lifecycle-conflict SDK operations and mutation options through the stable boundary', () => {
