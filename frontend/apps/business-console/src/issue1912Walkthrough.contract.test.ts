@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { createSessionCredentialTracker } from '../e2e/session-credential-tracker'
+import {
+  callWithSessionCredential,
+  createSessionCredentialTracker,
+  withSessionCredentialCleanup,
+} from '../e2e/session-credential-tracker'
 
 const scenarioSource = readFileSync(
   resolve(
@@ -12,16 +16,129 @@ const scenarioSource = readFileSync(
   'utf8',
 )
 
+const trackerScope = (page: object) => ({
+  origin: 'https://console.fixture',
+  page,
+  businessPathPrefix: '/api/business-console/',
+  refreshPath: '/api/console/v1/auth/refresh',
+})
+
+const requestSource = (
+  page: object,
+  path: string,
+  authorization: string,
+  origin = 'https://console.fixture',
+) => ({
+  page,
+  request: {
+    url: () => `${origin}${path}`,
+    headers: () => ({ authorization }),
+  },
+})
+
 describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
-  it('uses the credential observed after a refresh rotation for subsequent calls', () => {
-    const tracker = createSessionCredentialTracker()
+  it('uses the access token from a successful refresh response for the next call', async () => {
+    const page = {}
+    const tracker = createSessionCredentialTracker(trackerScope(page))
 
-    tracker.observe({ headers: () => ({ authorization: 'fixture-before-refresh' }) })
-    tracker.observe({ headers: () => ({ authorization: 'fixture-after-refresh' }) })
+    tracker.observeRequest(
+      requestSource(page, '/api/business-console/v1/master-data/skus', 'fixture-before-refresh'),
+    )
+    let resolveRefreshBody: (body: unknown) => void = () => undefined
+    const refreshBody = new Promise<unknown>((resolve) => {
+      resolveRefreshBody = resolve
+    })
+    const refreshCapture = tracker.observeRefreshResponse({
+      page,
+      response: {
+        url: () => 'https://console.fixture/api/console/v1/auth/refresh',
+        status: () => 200,
+        json: () => refreshBody,
+      },
+    })
+    const nextCall = callWithSessionCredential(tracker, async (headers) => headers)
+    resolveRefreshBody({ data: { accessToken: 'fixture-after-refresh' } })
 
-    expect(tracker.headers()).toEqual({ authorization: 'fixture-after-refresh' })
-    expect(scenarioSource).toContain('sessionCredentialTracker.observe(request)')
-    expect(scenarioSource).toContain('headers: sessionCredentialTracker.headers()')
+    await refreshCapture
+    await expect(nextCall).resolves.toEqual({
+      authorization: 'Bearer fixture-after-refresh',
+    })
+    expect(scenarioSource).toContain('sessionCredentialTracker.observeRequest')
+    expect(scenarioSource).toContain('observeRefreshResponse')
+    expect(scenarioSource).toContain('callWithSessionCredential')
+  })
+
+  it('clears the credential when evidence writing fails', async () => {
+    const page = {}
+    const tracker = createSessionCredentialTracker(trackerScope(page))
+
+    tracker.observeRequest(
+      requestSource(page, '/api/business-console/v1/master-data/skus', 'fixture-current'),
+    )
+
+    await expect(
+      withSessionCredentialCleanup(
+        () => Promise.reject(new Error('fixture evidence write failed')),
+        () => tracker.clear(),
+      ),
+    ).rejects.toThrow('fixture evidence write failed')
+    await expect(tracker.headers()).resolves.toBeUndefined()
+    expect(scenarioSource).toContain('withSessionCredentialCleanup')
+  })
+
+  it('ignores credentials from another page, origin, or path', async () => {
+    const page = {}
+    const otherPage = {}
+    const tracker = createSessionCredentialTracker(trackerScope(page))
+
+    tracker.observeRequest(
+      requestSource(otherPage, '/api/business-console/v1/master-data/skus', 'fixture-other-page'),
+    )
+    tracker.observeRequest(
+      requestSource(
+        page,
+        '/api/business-console/v1/master-data/skus',
+        'fixture-other-origin',
+        'https://other.fixture',
+      ),
+    )
+    tracker.observeRequest(
+      requestSource(page, '/api/console/v1/auth/refresh', 'fixture-wrong-path'),
+    )
+    await tracker.observeRefreshResponse({
+      page,
+      response: {
+        url: () => 'https://other.fixture/api/console/v1/auth/refresh',
+        status: () => 200,
+        json: async () => ({ data: { accessToken: 'fixture-other-origin-refresh' } }),
+      },
+    })
+    await tracker.observeRefreshResponse({
+      page,
+      response: {
+        url: () => 'https://console.fixture/api/business-console/v1/master-data/skus',
+        status: () => 200,
+        json: async () => ({ data: { accessToken: 'fixture-wrong-path-refresh' } }),
+      },
+    })
+    await expect(tracker.headers()).resolves.toBeUndefined()
+
+    tracker.observeRequest(
+      requestSource(page, '/api/business-console/v1/master-data/skus', 'fixture-current'),
+    )
+    await tracker.observeRefreshResponse({
+      page: otherPage,
+      response: {
+        url: () => 'https://console.fixture/api/console/v1/auth/refresh',
+        status: () => 200,
+        json: async () => ({ data: { accessToken: 'fixture-other-page-refresh' } }),
+      },
+    })
+    tracker.observeRequest(
+      requestSource(otherPage, '/api/business-console/v1/master-data/skus', 'fixture-other-page-2'),
+    )
+
+    await expect(tracker.headers()).resolves.toEqual({ authorization: 'fixture-current' })
   })
 
   it('starts only from the reserved walkthrough facts and keeps downstream numbers stable', () => {
