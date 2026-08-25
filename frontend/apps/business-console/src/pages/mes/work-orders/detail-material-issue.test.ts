@@ -108,6 +108,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     materialReadiness: ref(state.materialReadiness),
     materialReadinessError: ref(undefined),
     materialReadinessPending: ref(false),
+    returnLineSideMaterial: state.returnLineSideMaterial,
+    returnLineSideMaterialPending: ref(false),
     refreshDetail: vi.fn(),
     refreshMaterialIssueRequests: vi.fn(),
     refreshMaterialReadiness: vi.fn(),
@@ -201,6 +203,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     routeState.params.workOrderId = 'WO-1'
     state.createMaterialIssueRequest.mockReset()
     state.confirmLineSideReceipt.mockReset()
+    state.returnLineSideMaterial.mockReset()
     state.recordEngineeringChangeDecision.mockReset()
     state.materialIssueRequests.length = 0
     state.baseUomBySku.clear()
