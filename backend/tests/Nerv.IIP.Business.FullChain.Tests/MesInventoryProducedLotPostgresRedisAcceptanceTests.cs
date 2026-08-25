@@ -6,6 +6,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Nerv.IIP.Business.Mes.Domain;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
@@ -53,35 +59,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
         await WaitForConsumerGroupsAsync(redis, capVersion);
+        await SeedProducedLotsAsync(provider, source);
+        var receiptBoundary = await CreateReceiptRequestsAsync(provider, source);
+        source = receiptBoundary.Source;
         var publisher = provider.GetRequiredService<ICapPublisher>();
-        var successEvent = MovementRequested(
-            source,
-            source.SuccessRequestNo,
-            source.SuccessLotNo,
-            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.SuccessRequestNo}",
-            source.ClientSuppliedUnitCost,
-            inventoryReservationId: null);
-        var successReplayEvent = MovementRequested(
-            source,
-            source.SuccessRequestNo,
-            source.SuccessLotNo,
-            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.SuccessRequestNo}",
-            source.ClientSuppliedUnitCost,
-            inventoryReservationId: null);
-        var failureEvent = MovementRequested(
-            source,
-            source.FailureRequestNo,
-            source.FailureLotNo,
-            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.FailureRequestNo}",
-            source.ClientSuppliedUnitCost,
-            inventoryReservationId: "not-a-guid");
-        var failureReplayEvent = MovementRequested(
-            source,
-            source.FailureRequestNo,
-            source.FailureLotNo,
-            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.FailureRequestNo}",
-            source.ClientSuppliedUnitCost,
-            inventoryReservationId: "not-a-guid");
+        var successEvent = receiptBoundary.SuccessEvent;
+        var successReplayEvent = receiptBoundary.SuccessReplayEvent;
+        var failureEvent = receiptBoundary.FailureEvent;
+        var failureReplayEvent = receiptBoundary.FailureReplayEvent;
         Assert.NotEqual(successEvent.EventId, successReplayEvent.EventId);
         Assert.Equal(successEvent.IdempotencyKey, successReplayEvent.IdempotencyKey);
         Assert.NotEqual(failureEvent.EventId, failureReplayEvent.EventId);
@@ -89,6 +74,10 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.NotEqual(source.ClientSuppliedUnitCost, source.ErpCapitalizedUnitCost);
         Assert.Equal(source.ErpCapitalizedUnitCost, successEvent.Payload.UnitCost);
         Assert.NotEqual(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, receiptBoundary.SuccessCommandUnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, receiptBoundary.PendingCommandUnitCost);
+        Assert.Null(receiptBoundary.PendingUnitCost);
+        Assert.Equal(0, receiptBoundary.PendingDomainEventCount);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
@@ -187,51 +176,153 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
     }
 
-    private static InventoryMovementRequestedIntegrationEvent MovementRequested(
-        ProbeSource source,
-        string requestNo,
-        string lotNo,
-        string idempotencyKey,
-        decimal clientSuppliedUnitCost,
-        string? inventoryReservationId)
+    private static async Task<ReceiptBoundaryFacts> CreateReceiptRequestsAsync(
+        IServiceProvider provider,
+        ProbeSource source)
     {
-        var now = DateTimeOffset.UtcNow;
-        if (clientSuppliedUnitCost == source.ErpCapitalizedUnitCost)
-        {
-            throw new InvalidOperationException("MAN-528 conflict fixture must keep client and ERP unit costs different.");
-        }
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        var handler = new CreateFinishedGoodsReceiptRequestCommandHandler(dbContext);
+        var requestedAtUtc = DateTimeOffset.UtcNow;
 
-        return new InventoryMovementRequestedIntegrationEvent(
-            $"evt-man528-{Guid.CreateVersion7():N}",
-            InventoryIntegrationEventTypes.InventoryMovementRequested,
-            InventoryIntegrationEventVersions.V1,
-            now,
-            InventoryIntegrationEventSources.BusinessMes,
-            $"corr-man528-{source.ProbeRunId}",
-            requestNo,
+        var successCommand = new CreateFinishedGoodsReceiptRequestCommand(
             source.OrganizationId,
             source.EnvironmentId,
-            "system:acceptance-probe",
-            idempotencyKey,
-            new InventoryMovementRequestedPayload(
-                MovementType: "inbound",
-                SourceService: InventoryIntegrationEventSources.BusinessMes,
-                SourceDocumentId: requestNo,
-                SourceDocumentLineId: source.WorkOrderId,
-                IdempotencyKey: idempotencyKey,
-                SkuCode: source.SkuId,
-                UomCode: source.UomCode,
-                SiteCode: "finished-goods",
-                LocationCode: "receiving",
-                LotNo: lotNo,
-                SerialNo: null,
-                QualityStatus: InventoryQualityStatuses.Unrestricted,
-                OwnerType: "production",
-                OwnerId: null,
-                Quantity: ReceiptQuantity,
-                RequestedAtUtc: now,
-                InventoryReservationId: inventoryReservationId,
-                UnitCost: source.ErpCapitalizedUnitCost));
+            source.WorkOrderId,
+            source.SkuId,
+            ReceiptQuantity,
+            source.UomCode,
+            requestedAtUtc,
+            source.ClientSuppliedUnitCost,
+            IdempotencyKey: $"man528-client-cost-success-{source.ProbeRunId}",
+            ProducedLotNo: source.SuccessLotNo);
+        var successResult = await handler.Handle(successCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var failureCommand = successCommand with
+        {
+            IdempotencyKey = $"man528-client-cost-failure-{source.ProbeRunId}",
+            ProducedLotNo = source.FailureLotNo,
+        };
+        var failureResult = await handler.Handle(failureCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var pendingCommand = successCommand with
+        {
+            WorkOrderId = source.PendingWorkOrderId,
+            IdempotencyKey = $"man528-missing-cost-pending-{source.ProbeRunId}",
+            ProducedLotNo = source.PendingLotNo,
+        };
+        var pendingResult = await handler.Handle(pendingCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var successReceipt = await dbContext.FinishedGoodsReceiptRequests
+            .SingleAsync(x => x.RequestNo == successResult.RequestNo);
+        var failureReceipt = await dbContext.FinishedGoodsReceiptRequests
+            .SingleAsync(x => x.RequestNo == failureResult.RequestNo);
+        var pendingReceipt = await dbContext.FinishedGoodsReceiptRequests
+            .SingleAsync(x => x.RequestNo == pendingResult.RequestNo);
+        var locationResolver = new ConfiguredMesFinishedGoodsReceiptLocationResolver(
+            new MesFinishedGoodsReceiptLocationOptions
+            {
+                SiteCode = "finished-goods",
+                LocationCode = "receiving",
+            });
+        var converter = new FinishedGoodsReceiptRequestedIntegrationEventConverter(locationResolver);
+        var successDomainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(
+            Assert.Single(successReceipt.GetDomainEvents()));
+        var failureDomainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(
+            Assert.Single(failureReceipt.GetDomainEvents()));
+        var successEvent = converter.Convert(successDomainEvent);
+        var successReplayEvent = converter.Convert(successDomainEvent);
+        var failureEvent = converter.Convert(failureDomainEvent) with
+        {
+            Payload = converter.Convert(failureDomainEvent).Payload with
+            {
+                InventoryReservationId = "not-a-guid",
+            },
+        };
+        var failureReplayEvent = converter.Convert(failureDomainEvent) with
+        {
+            Payload = converter.Convert(failureDomainEvent).Payload with
+            {
+                InventoryReservationId = "not-a-guid",
+            },
+        };
+
+        Assert.Equal(source.ErpCapitalizedUnitCost, successReceipt.UnitCost);
+        Assert.Equal(source.ErpCapitalizedUnitCost, failureReceipt.UnitCost);
+        Assert.Null(pendingReceipt.UnitCost);
+        Assert.Empty(pendingReceipt.GetDomainEvents());
+        Assert.NotEqual(source.ClientSuppliedUnitCost, successReceipt.UnitCost);
+
+        return new ReceiptBoundaryFacts(
+            source with
+            {
+                SuccessRequestNo = successResult.RequestNo,
+                FailureRequestNo = failureResult.RequestNo,
+                PendingRequestNo = pendingResult.RequestNo,
+            },
+            successEvent,
+            successReplayEvent,
+            failureEvent,
+            failureReplayEvent,
+            successCommand.UnitCost,
+            pendingCommand.UnitCost,
+            pendingReceipt.UnitCost,
+            pendingReceipt.GetDomainEvents().Count);
+    }
+
+    private static async Task SeedProducedLotsAsync(IServiceProvider provider, ProbeSource source)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var lots = new[]
+        {
+            (source.WorkOrderId, source.SuccessLotNo, "OP-MAN528-S", "RPT-MAN528-S"),
+            (source.WorkOrderId, source.FailureLotNo, "OP-MAN528-F", "RPT-MAN528-F"),
+            (source.PendingWorkOrderId, source.PendingLotNo, "OP-MAN528-P", "RPT-MAN528-P"),
+        };
+        foreach (var (workOrderId, lotNo, operationTaskId, reportNo) in lots)
+        {
+            dbContext.OperationTasks.Add(OperationTask.Queue(
+                source.OrganizationId,
+                source.EnvironmentId,
+                workOrderId,
+                operationTaskId,
+                10,
+                "WC-MAN528",
+                [],
+                now,
+                TimeSpan.FromHours(1),
+                source.SkuId,
+                source.UomCode,
+                ReceiptQuantity));
+            dbContext.ProductionReports.Add(ProductionReport.Record(
+                source.OrganizationId,
+                source.EnvironmentId,
+                reportNo,
+                workOrderId,
+                operationTaskId,
+                ReceiptQuantity,
+                0m,
+                completesOperation: true,
+                now,
+                producedLotNo: lotNo));
+            dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create(
+                source.OrganizationId,
+                source.EnvironmentId,
+                workOrderId,
+                operationTaskId,
+                reportNo,
+                lotNo,
+                null,
+                ReceiptQuantity,
+                now));
+        }
+
+        await dbContext.SaveChangesAsync();
     }
 
     private static async Task WaitForConsumerGroupsAsync(string redisConnectionString, string capVersion)
@@ -317,40 +408,20 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                  material_movement_count, over_receipt_tolerance_percent, capitalized_unit_cost)
             VALUES
                 (@work_order_row_id, @organization_id, @environment_id, @work_order_id, @sku_id, @uom_code, 10, 10,
-                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0, @erp_capitalized_unit_cost),
+                 @due_utc, 'created', @requested_at_utc, 10, 0, 0, 0, 0, @erp_capitalized_unit_cost),
                 (@pending_work_order_row_id, @organization_id, @environment_id, @pending_work_order_id, @sku_id, @uom_code, 10, 10,
-                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0, NULL);
-
-            INSERT INTO mes.finished_goods_receipt_requests
-                (id, organization_id, environment_id, request_no, work_order_id, sku_id, quantity, uom_code,
-                 requested_at_utc, produced_lot_no, status, posted_quantity)
-            VALUES
-                (@success_id, @organization_id, @environment_id, @success_request_no, @work_order_id, @sku_id, 5, @uom_code,
-                 @requested_at_utc, @success_lot_no, 'Requested', 0),
-                (@failure_id, @organization_id, @environment_id, @failure_request_no, @work_order_id, @sku_id, 5, @uom_code,
-                 @requested_at_utc, @failure_lot_no, 'Requested', 0),
-                (@pending_id, @organization_id, @environment_id, @pending_request_no, @pending_work_order_id, @sku_id, 5, @uom_code,
-                 @requested_at_utc, @pending_lot_no, 'Requested', 0);
+                 @due_utc, 'created', @requested_at_utc, 10, 0, 0, 0, 0, NULL);
             """;
         insert.Parameters.AddWithValue("work_order_row_id", Guid.CreateVersion7());
         insert.Parameters.AddWithValue("pending_work_order_row_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("success_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("failure_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("pending_id", Guid.CreateVersion7());
         insert.Parameters.AddWithValue("organization_id", source.OrganizationId);
         insert.Parameters.AddWithValue("environment_id", source.EnvironmentId);
-        insert.Parameters.AddWithValue("success_request_no", source.SuccessRequestNo);
-        insert.Parameters.AddWithValue("failure_request_no", source.FailureRequestNo);
-        insert.Parameters.AddWithValue("pending_request_no", source.PendingRequestNo);
         insert.Parameters.AddWithValue("work_order_id", source.WorkOrderId);
         insert.Parameters.AddWithValue("pending_work_order_id", source.PendingWorkOrderId);
         insert.Parameters.AddWithValue("sku_id", source.SkuId);
         insert.Parameters.AddWithValue("uom_code", source.UomCode);
         insert.Parameters.AddWithValue("requested_at_utc", DateTimeOffset.UtcNow);
         insert.Parameters.AddWithValue("due_utc", DateTimeOffset.UtcNow.AddHours(8));
-        insert.Parameters.AddWithValue("success_lot_no", source.SuccessLotNo);
-        insert.Parameters.AddWithValue("failure_lot_no", source.FailureLotNo);
-        insert.Parameters.AddWithValue("pending_lot_no", source.PendingLotNo);
         insert.Parameters.AddWithValue("erp_capitalized_unit_cost", ErpCapitalizedUnitCost);
         await insert.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -647,6 +718,17 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         decimal ClientSuppliedUnitCost,
         decimal ErpCapitalizedUnitCost,
         string ProbeRunId);
+
+    private sealed record ReceiptBoundaryFacts(
+        ProbeSource Source,
+        InventoryMovementRequestedIntegrationEvent SuccessEvent,
+        InventoryMovementRequestedIntegrationEvent SuccessReplayEvent,
+        InventoryMovementRequestedIntegrationEvent FailureEvent,
+        InventoryMovementRequestedIntegrationEvent FailureReplayEvent,
+        decimal? SuccessCommandUnitCost,
+        decimal? PendingCommandUnitCost,
+        decimal? PendingUnitCost,
+        int PendingDomainEventCount);
 
     private sealed record ReceiptFacts(
         string? SuccessStatus,
