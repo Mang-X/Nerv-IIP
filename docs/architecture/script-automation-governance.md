@@ -19,6 +19,8 @@
 13. 受管进程被信号终止必须在失败信息里成文，不得只留一个裸退出码。真实故障（#1664）里 FullChain 的 `man-440` 场景内层是被 SIGKILL 的 `dotnet test`（137 = 128 + 9），而 lane 只报 `Command 'pwsh' exited with 1`，两次都被读成场景断言失败或抖动。结论必须能跨进程边界继承：受管入口在子进程捕获输出里发现 `NERV-SIGNAL-EXIT` 标记时，要把内层的信号与退出码带进自己的失败信息。这一条由 `scripts/tests/script-automation-signal-exit.Tests.ps1` 在 Script Governance job 中守住，并自带变异对照。**它只让下一次信号死亡可被识别，不构成 #1664 根因（疑似 OOM）已被证实或已被修复的证据。**
 14. FullChain lane 必须为每个场景留下内存维度证据：`scripts/lib/RuntimeMemoryEvidence.ps1` 在每个 entrypoint 的**前后**各采一次快照（`/proc/meminfo`、cgroup v2 的 `memory.current`/`max`/`peak` 与 `memory.events`，以及 `/proc/vmstat` 的全局 `oom_kill` 计数），场景失败时追加一次内核 ring buffer 的 OOM 取证，全部写进 `artifacts/full-chain-test-lane/**/summary.json`（`schemaVersion` 3）。采集一律 best-effort：读不到只记 `unavailable` 和原因，**绝不改变 lane 的成败**——采证脚本把被测 lane 弄红，等于用一个新的假红换一个旧的真红。快照点必须贴着 entrypoint 前后，取在 lane 首尾会把冷启动峰值平均掉。全局 `oom_kill` 不是 cgroup 计数的重复项：hosted runner 的 slice 上 `memory.max` 是 `max`，真发生的是全局 OOM，`memory.events.oom_kill` 因此恒为 0；`/proc/vmstat` 是 world-readable 的，不依赖 `dmesg` 权限（hosted runner 通常 `kernel.dmesg_restrict=1`）。两项计数一律看前后快照的差值，不看绝对值。本条由 `scripts/tests/full-chain-memory-evidence.Tests.ps1` 在 Script Governance job 中守住。**它只补齐证据维度，不构成 #1664 根因（疑似 OOM）已被证实的结论。**
 
+受控 FullStack session 如需开通独立的 WMS 演示工人账号，必须显式使用 `.\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker`（或等价的 `fullstack start` 参数）。脚本为该次受控进程生成与 admin password 不同的短生命周期 seed，仅注入 Aspire 子进程和后续 Playwright 子进程环境；默认不生成、不注入 worker seed。worker password 不得写入 manifest、artifact、报告或日志。
+
 ## 分类矩阵
 
 | 分类 | 允许行为 | 禁止行为 | 示例 |
