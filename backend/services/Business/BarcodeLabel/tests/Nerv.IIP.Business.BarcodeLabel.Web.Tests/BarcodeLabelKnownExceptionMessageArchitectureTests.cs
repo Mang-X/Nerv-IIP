@@ -38,9 +38,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var sourceRoot = Path.Combine(repositoryRoot, BarcodeLabelSourceRoot.Replace('/', Path.DirectorySeparatorChar));
-        var sourceFiles = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-            .OrderBy(file => file, StringComparer.Ordinal)
-            .ToArray();
+        var sourceFiles = BarcodeLabelUserMessageSourceAnalyzer.EnumerateSourceFiles(sourceRoot);
         var documents = sourceFiles
             .Select(file => new BarcodeLabelSourceDocument(
                 Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'),
@@ -60,7 +58,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             .Sum(site => site.DirectKnownExceptionCount));
 
         // 原始项目源码不包含 source-generator 输出，完整项目编译由同一测试项目的 build 门禁负责。
-        // 内联语义夹具保持默认 fail-closed，防止 error symbol 静默走回退分支。
+        // 只有项目源码扫描与故意不可编译的负向夹具关闭此项；其他内联语义夹具保持默认 fail-closed。
         var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
             documents,
             requireSuccessfulCompilation: false);
@@ -129,6 +127,32 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
                 "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"internal-code\"); } }")]);
 
         Assert.Equal(["Internal.cs:1: 用户消息必须包含中文。"], internalHelperViolations);
+    }
+
+    [Fact]
+    public void Source_enumeration_excludes_bin_and_obj_build_outputs()
+    {
+        var temporaryRoot = Directory.CreateTempSubdirectory("barcode-label-source-scan-");
+        try
+        {
+            var sourcePath = Path.Combine(temporaryRoot.FullName, "Feature", "Handler.cs");
+            var objPath = Path.Combine(temporaryRoot.FullName, "Feature", "obj", "Debug", "Generated.g.cs");
+            var binPath = Path.Combine(temporaryRoot.FullName, "Feature", "bin", "Debug", "Copied.cs");
+            Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(objPath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(binPath)!);
+            File.WriteAllText(sourcePath, "sealed class Handler;");
+            File.WriteAllText(objPath, "sealed class Generated;");
+            File.WriteAllText(binPath, "sealed class Copied;");
+
+            var files = BarcodeLabelUserMessageSourceAnalyzer.EnumerateSourceFiles(temporaryRoot.FullName);
+
+            Assert.Equal([sourcePath], files);
+        }
+        finally
+        {
+            temporaryRoot.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -485,6 +509,20 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Analyze_fails_closed_when_source_documents_have_compilation_errors()
+    {
+        const string source = "sealed class Probe { MissingType Value { get; } }";
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            BarcodeLabelUserMessageSourceAnalyzer.Analyze(
+                [new BarcodeLabelSourceDocument("InvalidAnalyze.cs", source)]));
+
+        Assert.Contains("BarcodeLabel 用户消息源码无法编译", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("InvalidAnalyze.cs", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CS0246", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Discovery_fails_closed_when_a_handler_contract_has_no_resolvable_handle_declaration()
     {
         const string source = """
@@ -496,6 +534,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             BarcodeLabelUserMessageSourceAnalyzer.Discover(
                 [new BarcodeLabelSourceDocument("InvalidHandler.cs", source)],
+                // 此夹具故意缺失 Handle；允许编译错误后才能断言下游合同解析必须失败关闭。
                 requireSuccessfulCompilation: false));
 
         Assert.Equal(
@@ -548,6 +587,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             BarcodeLabelUserMessageSourceAnalyzer.Discover(
                 [new BarcodeLabelSourceDocument("Global.cs", source)],
+                // 此夹具故意把 KnownException 放在成员之外；允许编译错误后才能断言归属失败必须判红。
                 requireSuccessfulCompilation: false));
 
         Assert.Contains("无法归属到成员", exception.Message, StringComparison.Ordinal);

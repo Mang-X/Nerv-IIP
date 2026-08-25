@@ -33,6 +33,16 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
     private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
+    public static IReadOnlyList<string> EnumerateSourceFiles(string sourceRoot)
+    {
+        return Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(file => !Path.GetRelativePath(sourceRoot, file)
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(segment => segment is "bin" or "obj"))
+            .OrderBy(file => file, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public static IReadOnlyList<BarcodeLabelKnownExceptionSite> Discover(
         IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
         IReadOnlyCollection<string>? commandHandlerTypeNames = null,
@@ -246,7 +256,25 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
     {
         var syntaxTrees = sourceTrees
             .Append(CSharpSyntaxTree.ParseText(
-                "global using NetCorePal.Extensions.Primitives;",
+                """
+                global using Microsoft.AspNetCore.Builder;
+                global using Microsoft.AspNetCore.Hosting;
+                global using Microsoft.AspNetCore.Http;
+                global using Microsoft.AspNetCore.Routing;
+                global using Microsoft.Extensions.Configuration;
+                global using Microsoft.Extensions.DependencyInjection;
+                global using Microsoft.Extensions.Hosting;
+                global using Microsoft.Extensions.Logging;
+                global using NetCorePal.Extensions.Primitives;
+                global using System;
+                global using System.Collections.Generic;
+                global using System.IO;
+                global using System.Linq;
+                global using System.Net.Http;
+                global using System.Net.Http.Json;
+                global using System.Threading;
+                global using System.Threading.Tasks;
+                """,
                 path: "__BarcodeLabelGlobalUsings.g.cs"))
             .ToArray();
         var compilation = CSharpCompilation.Create(
