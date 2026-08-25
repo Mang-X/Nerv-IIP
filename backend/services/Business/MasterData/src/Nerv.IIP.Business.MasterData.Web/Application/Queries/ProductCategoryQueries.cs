@@ -28,14 +28,22 @@ public sealed record GetProductCategoryQuery(
     string EnvironmentId,
     string CategoryCode) : IQuery<ProductCategoryItem>;
 
+public sealed class ListProductCategoriesQueryValidator : AbstractValidator<ListProductCategoriesQuery>
+{
+    public ListProductCategoriesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
+
 public sealed class ListProductCategoriesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductCategoriesQuery, ProductCategoryListResponse>
 {
     public async Task<ProductCategoryListResponse> Handle(ListProductCategoriesQuery request, CancellationToken cancellationToken)
     {
-        var tenant = ListQueryNormalizationExtensions.ToTenantScope(request.OrganizationId, request.EnvironmentId);
-        var page = ListQueryNormalizationExtensions.ToPage(request.Skip, request.Take);
-        var keyword = ListQueryNormalizationExtensions.ToKeyword(request.Search).Value;
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Search).Value;
         var query = dbContext.ProductCategories
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)

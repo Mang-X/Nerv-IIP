@@ -29,14 +29,22 @@ public sealed record GetSkillQuery(
     string EnvironmentId,
     string SkillCode) : IQuery<SkillItem>;
 
+public sealed class ListSkillsQueryValidator : AbstractValidator<ListSkillsQuery>
+{
+    public ListSkillsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
+
 public sealed class ListSkillsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListSkillsQuery, SkillListResponse>
 {
     public async Task<SkillListResponse> Handle(ListSkillsQuery request, CancellationToken cancellationToken)
     {
-        var tenant = ListQueryNormalizationExtensions.ToTenantScope(request.OrganizationId, request.EnvironmentId);
-        var page = ListQueryNormalizationExtensions.ToPage(request.Skip, request.Take);
-        var keyword = ListQueryNormalizationExtensions.ToKeyword(request.Search).Value;
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Search).Value;
         var query = dbContext.Skills
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)

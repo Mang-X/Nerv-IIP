@@ -57,38 +57,6 @@ public sealed record SearchTerm
         new(string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant());
 }
 
-public static class ListQueryNormalizationExtensions
-{
-    public static TenantScope ToTenantScope(
-        string organizationId,
-        string environmentId) => TenantScope.From(organizationId, environmentId);
-
-    public static TenantScope ToTenantScope(this ListMasterDataResourcesQuery query)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-
-        return ToTenantScope(query.OrganizationId, query.EnvironmentId);
-    }
-
-    public static OffsetPage ToPage(int skip, int take) => OffsetPage.From(skip, take);
-
-    public static OffsetPage ToPage(this ListMasterDataResourcesQuery query)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-
-        return ToPage(query.Skip, query.Take);
-    }
-
-    public static SearchTerm ToKeyword(string? keyword) => SearchTerm.From(keyword);
-
-    public static SearchTerm ToKeyword(this ListMasterDataResourcesQuery query)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-
-        return ToKeyword(query.Keyword);
-    }
-}
-
 public static class ListQueryValidationExtensions
 {
     public static void AddTenantRules<T>(

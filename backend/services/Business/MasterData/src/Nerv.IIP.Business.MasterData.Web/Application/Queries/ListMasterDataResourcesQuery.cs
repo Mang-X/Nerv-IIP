@@ -99,9 +99,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
 {
     public async Task<ListMasterDataResourcesResponse> Handle(ListMasterDataResourcesQuery request, CancellationToken cancellationToken)
     {
-        var tenant = request.ToTenantScope();
-        var page = request.ToPage();
-        var keyword = request.ToKeyword();
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         var type = request.ResourceType.Trim().ToLowerInvariant();
         var query = type switch
         {

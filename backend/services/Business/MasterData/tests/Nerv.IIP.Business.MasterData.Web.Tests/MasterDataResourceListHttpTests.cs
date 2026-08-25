@@ -188,6 +188,33 @@ public sealed class MasterDataResourceListHttpTests
         Assert.False(document.RootElement.TryGetProperty("data", out _), body);
     }
 
+    [Theory]
+    [InlineData("product-categories", "?environmentId=env-dev", "组织标识不能为空")]
+    [InlineData("product-categories", "?organizationId=org-001", "环境标识不能为空")]
+    [InlineData("skills", "?environmentId=env-dev", "组织标识不能为空")]
+    [InlineData("skills", "?organizationId=org-001", "环境标识不能为空")]
+    public async Task Get_product_categories_and_skills_without_tenant_value_returns_response_data_error(
+        string resource,
+        string query,
+        string expectedMessage)
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using var client = CreateAuthenticatedClient(factory);
+
+        var response = await client.GetAsync($"/api/business/v1/master-data/{resource}{query}");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Contains(expectedMessage, document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+        var errorData = document.RootElement.GetProperty("errorData");
+        Assert.Equal(JsonValueKind.Array, errorData.ValueKind);
+        Assert.NotEmpty(errorData.EnumerateArray());
+        Assert.False(document.RootElement.TryGetProperty("data", out _), body);
+    }
+
     private sealed class MasterDataResourceListHttpTestFactory : WebApplicationFactory<Program>
     {
         private readonly string databaseName = $"master-data-resource-list-http-{Guid.CreateVersion7():N}";

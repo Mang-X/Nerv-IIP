@@ -15,9 +15,9 @@ public sealed class MasterDataListQueryCompositionTests
             Take: 25,
             Keyword: "  PuMp ");
 
-        var tenant = query.ToTenantScope();
-        var page = query.ToPage();
-        var keyword = query.ToKeyword();
+        var tenant = TenantScope.From(query.OrganizationId, query.EnvironmentId);
+        var page = OffsetPage.From(query.Skip, query.Take);
+        var keyword = SearchTerm.From(query.Keyword);
 
         Assert.Equal("org-001", tenant.OrganizationId);
         Assert.Equal("env-dev", tenant.EnvironmentId);
@@ -31,10 +31,10 @@ public sealed class MasterDataListQueryCompositionTests
     [Fact]
     public void List_query_criteria_preserves_legacy_page_clamping()
     {
-        Assert.Equal(OffsetPage.From(0, 100), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku").ToPage());
-        Assert.Equal(OffsetPage.From(0, 500), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: 0, Take: 500).ToPage());
-        Assert.Equal(OffsetPage.From(0, 1), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: -1, Take: 0).ToPage());
-        Assert.Equal(OffsetPage.From(0, 500), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Take: 501).ToPage());
+        Assert.Equal(100, OffsetPage.From(0, 100).Take);
+        Assert.Equal(500, OffsetPage.From(0, 500).Take);
+        Assert.Equal((0, 1), (OffsetPage.From(-1, 0).Skip, OffsetPage.From(-1, 0).Take));
+        Assert.Equal(500, OffsetPage.From(0, 501).Take);
     }
 
     [Theory]
@@ -43,7 +43,7 @@ public sealed class MasterDataListQueryCompositionTests
     [InlineData(null, "")]
     public void List_query_rules_treat_blank_keyword_as_absent(string? keyword, string expected)
     {
-        var normalized = new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Keyword: keyword).ToKeyword();
+        var normalized = SearchTerm.From(keyword);
 
         Assert.Equal(expected, normalized.Value ?? string.Empty);
     }
