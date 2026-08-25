@@ -2892,6 +2892,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             failClosedOnFailureEnvelope: true);
         if (response.Items is null ||
             response.Total < 0 ||
+            response.Items.Count > request.Take ||
             (response.Items.Count > 0 &&
                 (long)response.Total < (long)request.Skip + response.Items.Count) ||
             response.Items.Any(item =>
