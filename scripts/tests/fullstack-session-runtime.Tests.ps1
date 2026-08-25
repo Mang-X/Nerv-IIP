@@ -64,9 +64,40 @@ $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Ra
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 Assert-True ($fullStackSessionText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
 Assert-True ($nervEntrypointText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
 Assert-True ($fullStackSessionText -match '(?m)^function Invoke-NervMan440RuntimeHoursAcceptance\s*\{') 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
+Assert-True ($fullStackSessionText -match "'issue-1912-real-machine-walkthrough'") 'Full-stack scenarios must expose the governed GitHub #1912 browser walkthrough.'
+Assert-True ($nervEntrypointText -match "'issue-1912-real-machine-walkthrough'") 'The governed root entrypoint must accept the GitHub #1912 browser walkthrough.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_WALKTHROUGH_SEED'] = 'true'", [StringComparison]::Ordinal)) 'GitHub #1912 must retain only the walkthrough seed in its isolated session.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_LEADER_DEMO_WORLD'] = 'false'", [StringComparison]::Ordinal)) 'GitHub #1912 must disable the legacy full-world seed.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_LEADER_DEMO_HISTORY'] = 'false'", [StringComparison]::Ordinal)) 'GitHub #1912 must disable legacy history in its isolated session.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_LEADER_DEMO_SCALE_ORDERS'] = '0'", [StringComparison]::Ordinal)) 'GitHub #1912 must disable legacy scale orders in its isolated session.'
+Assert-True ($runtimeSource.Contains('function Assert-NervIssue1912WalkthroughEvidence', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must validate a machine-readable evidence artifact.'
+Assert-True ($runtimeSource.Contains('function Invoke-NervIssue1912WalkthroughBrowserCheck', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must invoke the real Playwright browser scenario.'
+Assert-True ($runtimeSource.Contains('playwright-issue1912-real-machine-walkthrough.json', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must persist a Playwright JSON report.'
+Assert-True ($runtimeSource.Contains('issue1912-real-machine-walkthrough.json', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must persist the walkthrough evidence artifact.'
+foreach ($requiredIssue1912Node in @(
+    'rfq-supplier-quotation',
+    'supplier-quotation-purchase-order',
+    'purchase-order-approval',
+    'purchase-order-receipt',
+    'receipt-inbound-inventory',
+    'sales-quotation-sales-order',
+    'sales-order-demand',
+    'demand-mrp-suggestion',
+    'mrp-suggestion-mes-work-order',
+    'mes-work-order-production',
+    'production-finished-goods-receipt',
+    'finished-goods-inventory',
+    'sales-order-delivery',
+    'delivery-wms-outbound',
+    'wms-completed-erp-delivery',
+    'erp-account-receivable'
+)) {
+    Assert-True ($runtimeSource.Contains("'$requiredIssue1912Node'", [StringComparison]::Ordinal)) "GitHub #1912 runner is missing required node '$requiredIssue1912Node'."
+}
 Assert-True ($fullStackSessionText.Contains("['Maintenance__PmGeneration__Enabled'] = 'true'", [StringComparison]::Ordinal)) 'MAN-440 must enable the real Maintenance PM scheduler for its acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvider)"', [StringComparison]::Ordinal)) 'MAN-440 must verify the Redis profile recorded in the authoritative session manifest.'
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'

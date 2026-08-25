@@ -608,6 +608,209 @@ function Invoke-NervLeaderDemoMainChainBrowserCheck {
     return Assert-NervLeaderDemoMainChainEvidence -EvidencePath $evidencePath
 }
 
+function Assert-NervIssue1912WalkthroughEvidence {
+    param([Parameter(Mandatory)] [string] $EvidencePath)
+
+    if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
+        throw "Issue #1912 walkthrough evidence was not created at '$EvidencePath'."
+    }
+    $evidence = Get-Content -LiteralPath $EvidencePath -Raw | ConvertFrom-Json -Depth 100
+    if (-not [string]::Equals([string]$evidence.issue, 'GitHub #1912 / NERV-1127', [StringComparison]::Ordinal)) {
+        throw 'Issue #1912 walkthrough evidence must identify GitHub #1912 / NERV-1127.'
+    }
+    $requiredProfile = [ordered]@{
+        runtimeProfileSource = 'session-manifest'
+        transport = 'redis-cross-process'
+        persistence = 'postgresql'
+        worldEnabled = 'false'
+        historyEnabled = 'false'
+        scaleOrderCount = '0'
+    }
+    foreach ($profile in $requiredProfile.GetEnumerator()) {
+        if (-not [string]::Equals([string]$evidence.($profile.Key), [string]$profile.Value, [StringComparison]::Ordinal)) {
+            throw "Issue #1912 walkthrough evidence must declare $($profile.Key)=$($profile.Value)."
+        }
+    }
+    $requiredIdentity = [ordered]@{
+        rfqNo = 'RFQ-WALK-001'
+        supplierQuotationNo = 'SQ-WALK-001'
+        salesQuotationNo = 'QUO-WALK-001'
+        purchaseOrderNo = 'PO-WALK-001'
+        purchaseReceiptNo = 'PR-WALK-001'
+        salesOrderNo = 'SO-WALK-001'
+        deliveryOrderNo = 'DO-WALK-001'
+    }
+    foreach ($identity in $requiredIdentity.GetEnumerator()) {
+        if (-not [string]::Equals([string]$evidence.($identity.Key), [string]$identity.Value, [StringComparison]::Ordinal)) {
+            throw "Issue #1912 walkthrough evidence must identify $($identity.Key)=$($identity.Value)."
+        }
+    }
+
+    $requiredNodes = @(
+        'rfq-supplier-quotation',
+        'supplier-quotation-purchase-order',
+        'purchase-order-approval',
+        'purchase-order-receipt',
+        'receipt-inbound-inventory',
+        'sales-quotation-sales-order',
+        'sales-order-demand',
+        'demand-mrp-suggestion',
+        'mrp-suggestion-mes-work-order',
+        'mes-work-order-production',
+        'production-finished-goods-receipt',
+        'finished-goods-inventory',
+        'sales-order-delivery',
+        'delivery-wms-outbound',
+        'wms-completed-erp-delivery',
+        'erp-account-receivable'
+    )
+    $entries = @($evidence.entries)
+    if ($entries.Count -ne $requiredNodes.Count) {
+        throw "Issue #1912 walkthrough evidence must contain exactly $($requiredNodes.Count) entries; found $($entries.Count)."
+    }
+    foreach ($node in $requiredNodes) {
+        $nodeEntries = @($entries | Where-Object { [string]::Equals([string]$_.node, $node, [StringComparison]::Ordinal) })
+        if ($nodeEntries.Count -ne 1) {
+            throw "Issue #1912 walkthrough evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)."
+        }
+    }
+    foreach ($entry in $entries) {
+        if (-not [string]::Equals([string]$entry.conclusion, 'runtime-confirmed', [StringComparison]::Ordinal)) {
+            throw "Issue #1912 walkthrough evidence cannot pass with node '$($entry.node)' conclusion '$($entry.conclusion)'."
+        }
+        foreach ($field in @('sourceObject', 'downstreamObject', 'stableKey', 'demoWording')) {
+            if ([string]::IsNullOrWhiteSpace([string]$entry.$field)) {
+                throw "Issue #1912 walkthrough evidence node '$($entry.node)' is missing '$field'."
+            }
+        }
+    }
+
+    $uiProofs = @($evidence.uiEvidence)
+    if ($uiProofs.Count -lt $requiredNodes.Count) {
+        throw "Issue #1912 walkthrough evidence must contain at least one UI proof per walkthrough node; found $($uiProofs.Count)."
+    }
+    foreach ($proof in $uiProofs) {
+        if ([int]$proof.pageHttpStatus -ne 200 -or [int]$proof.listHttpStatus -ne 200) {
+            throw "Issue #1912 UI proof for '$($proof.page)' must record page/list HTTP 200."
+        }
+        foreach ($field in @('page', 'listPath', 'stableKey', 'renderedRowText', 'emptyText', 'screenshot')) {
+            if ([string]::IsNullOrWhiteSpace([string]$proof.$field)) {
+                throw "Issue #1912 UI proof is missing '$field'."
+            }
+        }
+        if (-not (Test-Path -LiteralPath ([string]$proof.screenshot) -PathType Leaf)) {
+            throw "Issue #1912 UI proof screenshot was not created at '$($proof.screenshot)'."
+        }
+    }
+    if (@($evidence.failedRequests).Count -ne 0) { throw 'Issue #1912 walkthrough evidence contains failed browser requests.' }
+    if (@($evidence.pageErrors).Count -ne 0) { throw 'Issue #1912 walkthrough evidence contains browser page errors.' }
+    if (-not [string]::Equals([string]$evidence.conclusion, 'runtime-confirmed', [StringComparison]::Ordinal)) {
+        throw 'Issue #1912 walkthrough evidence conclusion is not runtime-confirmed.'
+    }
+    if ([int]$evidence.summary.'runtime-confirmed' -ne $requiredNodes.Count -or [int]$evidence.summary.gap -ne 0 -or [int]$evidence.summary.'not-verified' -ne 0) {
+        throw 'Issue #1912 walkthrough evidence summary is not a complete runtime-confirmed set.'
+    }
+    $raw = Get-Content -LiteralPath $EvidencePath -Raw
+    foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token')) {
+        if ($raw -match $forbiddenPattern) { throw "Issue #1912 walkthrough evidence contains forbidden secret-shaped text matching '$forbiddenPattern'." }
+    }
+    return $evidence
+}
+
+function Invoke-NervIssue1912WalkthroughBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest
+    )
+
+    [void] [System.IO.Directory]::CreateDirectory("$($Manifest.artifactPath)")
+    $reportPath = Join-Path "$($Manifest.artifactPath)" 'playwright-issue1912-real-machine-walkthrough.json'
+    $evidencePath = Join-Path "$($Manifest.artifactPath)" 'issue1912-real-machine-walkthrough.json'
+    Remove-Item -LiteralPath $reportPath, $evidencePath -Force -ErrorAction SilentlyContinue
+    $browserEnvironment = @{}
+    foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
+    $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
+    $browserEnvironment.NERV_IIP_ISSUE_1912_EVIDENCE_PATH = $evidencePath
+    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
+        Invoke-Pnpm `
+            -Arguments @(
+                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+                'e2e/issue1912-real-machine-walkthrough.spec.ts', '--project=desktop', '--reporter=json',
+                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+            ) `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 1800 `
+            -Name "fullstack-$($Manifest.sessionId)-issue1912-real-machine-walkthrough" | Out-Null
+    }
+    Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
+    return Assert-NervIssue1912WalkthroughEvidence -EvidencePath $evidencePath
+}
+
+function Invoke-NervIssue1912WalkthroughScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [scriptblock] $WaitAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    if ($null -eq $WaitAction) {
+        $WaitAction = {
+            param($Name, $InputManifest)
+            Wait-NervAspireResource `
+                -AppHostProject "$($InputManifest.appHostProject)" `
+                -ResourceName $Name `
+                -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $AspireSnapshotAction) {
+        $AspireSnapshotAction = {
+            param($InputManifest)
+            Get-NervAspireDescribeObject -AppHostProject "$($InputManifest.appHostProject)" -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $BrowserAction) {
+        $BrowserAction = {
+            param($Environment, $InputManifest)
+            Invoke-NervIssue1912WalkthroughBrowserCheck -Environment $Environment -Manifest $InputManifest | Out-Null
+        }
+    }
+    if (-not [string]::Equals([string]$Manifest.runtime.messagingProvider, 'Redis', [StringComparison]::Ordinal)) {
+        throw "Issue #1912 walkthrough requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
+    }
+    if (-not [string]::Equals([string]$Manifest.runtime.persistenceProvider, 'PostgreSQL', [StringComparison]::Ordinal)) {
+        throw "Issue #1912 walkthrough requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
+    }
+    $resourceNames = @(
+        'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
+        'business-master-data', 'business-product-engineering', 'business-inventory',
+        'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
+        'business-erp', 'business-approval'
+    )
+    foreach ($resourceName in $resourceNames) { & $WaitAction $resourceName $Manifest | Out-Null }
+    $snapshot = & $AspireSnapshotAction $Manifest
+    $finishedProjects = @($snapshot.resources | Where-Object {
+        "$($_.resourceType)" -like 'Project*' -and [string]::Equals([string]$_.state, 'Finished', [StringComparison]::OrdinalIgnoreCase) -and
+        [Collections.Generic.HashSet[string]]::new([string[]]@($resourceNames), [StringComparer]::Ordinal).Contains([string]$_.displayName)
+    })
+    if ($finishedProjects.Count -gt 0) {
+        throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
+    }
+    $childEnvironment = @{
+        NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
+        NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+        NERV_IIP_ISSUE_1912_RUNTIME_PROFILE_SOURCE = 'session-manifest'
+        NERV_IIP_ISSUE_1912_TRANSPORT = 'redis-cross-process'
+        NERV_IIP_ISSUE_1912_PERSISTENCE = 'postgresql'
+        NERV_IIP_ISSUE_1912_WORLD_ENABLED = 'false'
+        NERV_IIP_ISSUE_1912_HISTORY_ENABLED = 'false'
+        NERV_IIP_ISSUE_1912_SCALE_ORDER_COUNT = '0'
+    }
+    & $BrowserAction $childEnvironment $Manifest | Out-Null
+    return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
+}
+
 function Invoke-NervLeaderDemoMainChainScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
