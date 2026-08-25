@@ -74,7 +74,7 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     }
 
     [Fact]
-    public async Task EngineeringChangeReleasedHandler_RebindsNotStartedOrdersAndMarksStartedWipForDecision()
+    public async Task EngineeringChangeReleasedHandler_RebindsNotStartedOrdersWithoutDiscardingReleasedMaterialSnapshots()
     {
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -104,9 +104,23 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
             var released = WorkOrder.Create("org-001", "env-dev", "WO-RELEASED", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
             released.MarkReleased();
             released.RecordMaterialRequirementSnapshot(
-                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                WorkOrder.MaterialRequirementSnapshotCapturedStatus,
                 DateTimeOffset.Parse("2026-07-06T07:00:00Z"));
             dbContext.WorkOrders.Add(released);
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-RELEASED",
+                null,
+                "MAT-RELEASED",
+                null,
+                10m,
+                10m,
+                0m,
+                "test",
+                "PV-OLD:MAT-RELEASED",
+                DateTimeOffset.Parse("2026-07-06T07:00:00Z"),
+                ["MAT-ALT-A"]));
             var started = WorkOrder.Create("org-001", "env-dev", "WO-STARTED", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
             started.MarkReleased();
             started.Start(DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
@@ -134,12 +148,14 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         Assert.Equal("PV-NEW", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-CREATED")).ProductionVersionId);
         var reboundReleased = await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-RELEASED");
         Assert.Equal("PV-NEW", reboundReleased.ProductionVersionId);
-        Assert.Null(reboundReleased.MaterialRequirementSnapshotStatus);
-        Assert.Null(reboundReleased.MaterialRequirementSnapshotEvaluatedAtUtc);
-        Assert.Null(reboundReleased.MaterialRequirementSnapshotProductionVersionId);
+        Assert.Equal(WorkOrder.MaterialRequirementSnapshotCapturedStatus, reboundReleased.MaterialRequirementSnapshotStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-06T07:00:00Z"), reboundReleased.MaterialRequirementSnapshotEvaluatedAtUtc);
+        Assert.Equal("PV-OLD", reboundReleased.MaterialRequirementSnapshotProductionVersionId);
         var reboundCaptured = await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-CREATED");
         Assert.Null(reboundCaptured.MaterialRequirementSnapshotStatus);
-        Assert.Empty(await assertionDbContext.MaterialRequirements.ToListAsync());
+        var frozenRequirement = Assert.Single(await assertionDbContext.MaterialRequirements.ToListAsync());
+        Assert.Equal("WO-RELEASED", frozenRequirement.WorkOrderId);
+        Assert.Equal(["MAT-ALT-A"], frozenRequirement.GetSubstituteMaterialIds());
         Assert.Equal("PV-OLD", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-STARTED")).ProductionVersionId);
         Assert.Equal("PV-OLD", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-COMPLETE")).ProductionVersionId);
 

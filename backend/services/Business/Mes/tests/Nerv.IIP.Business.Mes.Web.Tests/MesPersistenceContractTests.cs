@@ -706,9 +706,9 @@ public sealed class MesPersistenceContractTests
 
     // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 1; the released MES snapshot remains frozen after the upstream snapshot changes.
     [Fact]
-    public async Task Convert_then_release_keeps_the_original_snapshot_after_engineering_changes()
+    public async Task Convert_then_upstream_change_then_release_keeps_the_conversion_snapshot_without_refetching()
     {
-        var services = CreateServices(nameof(Convert_then_release_keeps_the_original_snapshot_after_engineering_changes));
+        var services = CreateServices(nameof(Convert_then_upstream_change_then_release_keeps_the_conversion_snapshot_without_refetching));
         var now = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
         var snapshotProvider = new FakeMesMaterialRequirementSnapshotProvider(
             MesMaterialRequirementSnapshotResult.Captured(

@@ -274,9 +274,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         ProductionVersionId = normalizedProductionVersionId;
-        MaterialRequirementSnapshotStatus = null;
-        MaterialRequirementSnapshotEvaluatedAtUtc = null;
-        MaterialRequirementSnapshotProductionVersionId = null;
+        if (Status == CreatedStatus)
+        {
+            MaterialRequirementSnapshotStatus = null;
+            MaterialRequirementSnapshotEvaluatedAtUtc = null;
+            MaterialRequirementSnapshotProductionVersionId = null;
+        }
     }
 
     private void ThrowIfCannotRelease()
