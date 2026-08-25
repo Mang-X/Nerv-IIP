@@ -2450,6 +2450,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonItem = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonItem | null;
 };
@@ -4475,6 +4479,19 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request = {
+    organizationId?: string;
+    environmentId?: string;
+    workOrderId: string;
+    operationTaskId?: string | null;
+    defectCode: string;
+    quantity: number;
+    recordedAtUtc: string;
+    idempotencyKey: string;
+    scopeKind: string;
+    scopeId: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesRelatedQualityItemListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemListResponse | null;
 };
@@ -4835,6 +4852,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     jobTitle?: string | null;
     employmentStatus?: string | null;
     phone?: string | null;
+    timezone?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    crossesMidnight?: boolean | null;
+    paidMinutes?: number | null;
+    breakMinutes?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
@@ -11718,6 +11741,45 @@ export type CreateBusinessConsoleQualityReasonCodeResponses = {
 
 export type CreateBusinessConsoleQualityReasonCodeResponse = CreateBusinessConsoleQualityReasonCodeResponses[keyof CreateBusinessConsoleQualityReasonCodeResponses];
 
+export type ListBusinessConsoleQualityScrapReasonCodesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        search?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/scrap-reason-codes';
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesError = ListBusinessConsoleQualityScrapReasonCodesErrors[keyof ListBusinessConsoleQualityScrapReasonCodesErrors];
+
+export type ListBusinessConsoleQualityScrapReasonCodesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse;
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesResponse = ListBusinessConsoleQualityScrapReasonCodesResponses[keyof ListBusinessConsoleQualityScrapReasonCodesResponses];
+
 export type GetBusinessConsoleQualityReasonCodeData = {
     body?: never;
     path: {
@@ -15596,6 +15658,39 @@ export type RecordBusinessConsoleMesDefectResponses = {
 };
 
 export type RecordBusinessConsoleMesDefectResponse = RecordBusinessConsoleMesDefectResponses[keyof RecordBusinessConsoleMesDefectResponses];
+
+export type RecordBusinessConsoleMesDefectV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/mes/defects';
+};
+
+export type RecordBusinessConsoleMesDefectV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesDefectV2Error = RecordBusinessConsoleMesDefectV2Errors[keyof RecordBusinessConsoleMesDefectV2Errors];
+
+export type RecordBusinessConsoleMesDefectV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesDefectV2Response = RecordBusinessConsoleMesDefectV2Responses[keyof RecordBusinessConsoleMesDefectV2Responses];
 
 export type ListBusinessConsoleMesRelatedQualityItemsData = {
     body?: never;

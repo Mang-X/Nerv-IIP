@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -792,6 +793,47 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("quality-reason:scratch", resource.Code);
         Assert.Equal("Scratch", resource.DisplayName);
         Assert.True(resource.Active);
+    }
+
+    [Fact]
+    public async Task List_resources_exposes_site_timezone_and_shift_window_for_reporting_consumers()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Sites.Add(Domain.AggregatesModel.SiteAggregate.Site.Create(
+            "org-001",
+            "env-dev",
+            "SITE-001",
+            "上海工厂",
+            "Asia/Shanghai"));
+        dbContext.Shifts.Add(Domain.AggregatesModel.ShiftAggregate.Shift.Create(
+            "org-001",
+            "env-dev",
+            "SHIFT-NIGHT",
+            "夜班",
+            new TimeOnly(20, 0),
+            new TimeOnly(4, 0),
+            420,
+            60));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
+        var site = Assert.Single((await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "site"),
+            CancellationToken.None)).Resources);
+        var shift = Assert.Single((await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "shift"),
+            CancellationToken.None)).Resources);
+
+        var siteJson = JsonSerializer.SerializeToElement(site, JsonSerializerOptions.Web);
+        Assert.Equal("Asia/Shanghai", siteJson.GetProperty("timezone").GetString());
+        var shiftJson = JsonSerializer.SerializeToElement(shift, JsonSerializerOptions.Web);
+        Assert.Equal("20:00:00", shiftJson.GetProperty("startsAt").GetString());
+        Assert.Equal("04:00:00", shiftJson.GetProperty("endsAt").GetString());
+        Assert.True(shiftJson.GetProperty("crossesMidnight").GetBoolean());
+        Assert.Equal(420, shiftJson.GetProperty("paidMinutes").GetInt32());
+        Assert.Equal(60, shiftJson.GetProperty("breakMinutes").GetInt32());
     }
 
     [Fact]

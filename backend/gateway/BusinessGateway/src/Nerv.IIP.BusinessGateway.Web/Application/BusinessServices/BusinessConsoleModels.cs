@@ -54,7 +54,13 @@ public sealed record BusinessConsoleResourceItem(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? Timezone = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    bool? CrossesMidnight = null,
+    int? PaidMinutes = null,
+    int? BreakMinutes = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -1770,6 +1776,13 @@ public sealed record BusinessConsoleQualityReasonListRequest(
     int Skip = 0,
     int Take = 100,
     string? DefaultDisposition = null);
+
+public sealed record BusinessConsoleScrapQualityReasonCodeListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
@@ -5001,6 +5014,28 @@ public sealed record BusinessConsoleMesRecordDefectRequest(
     decimal DefectQuantity,
     string? MaterialLotId,
     string? BatchOrSerial,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRecordDefectV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId);
+
+public sealed record BusinessMesRecordDefectRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
     string IdempotencyKey);
 
 public sealed record BusinessConsoleMesRelatedQualityItemListResponse(

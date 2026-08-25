@@ -21,6 +21,19 @@ public sealed class BusinessConsoleQualityReasonListRequestValidator : Validator
     }
 }
 
+public sealed class BusinessConsoleScrapQualityReasonCodeListRequestValidator
+    : Validator<BusinessConsoleScrapQualityReasonCodeListRequest>
+{
+    public BusinessConsoleScrapQualityReasonCodeListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Search).MaximumLength(200);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
 public sealed class BusinessConsoleQualityReasonRequestValidator : Validator<BusinessConsoleQualityReasonRequest>
 {
     public BusinessConsoleQualityReasonRequestValidator()
@@ -1289,6 +1302,28 @@ public sealed class ListBusinessConsoleQualityReasonCodesEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListQualityReasonsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/scrap-reason-codes")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityScrapReasonCodes")]
+public sealed class ListBusinessConsoleQualityScrapReasonCodesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityScrapReasonCodeClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleScrapQualityReasonCodeListRequest, BusinessConsoleQualityReasonListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleScrapQualityReasonCodeListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleScrapQualityReasonCodeListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityReasonListResponse> ForwardAsync(
+        BusinessConsoleScrapQualityReasonCodeListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListScrapQualityReasonCodesAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Quality")]

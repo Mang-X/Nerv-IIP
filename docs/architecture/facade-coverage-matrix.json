@@ -2691,7 +2691,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "recordBusinessConsoleMesDefect"
+        "recordBusinessConsoleMesDefect",
+        "recordBusinessConsoleMesDefectV2"
       ]
     },
     {
@@ -4245,6 +4246,19 @@
       "gatewayOperationIds": [
         "listBusinessConsoleQualityReasonCodes",
         "listBusinessConsoleSearchableDirectory"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/scrap-reason-codes",
+      "operationId": "listBusinessQualityScrapReasonCodes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityScrapReasonCodes"
       ]
     },
     {

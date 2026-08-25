@@ -2,6 +2,20 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## OEE 报表维度只读契约（#1965 子项① / #2230）
+
+BusinessMasterData 通用资源目录现已向后兼容地公开 OEE 多维报表所需的权威只读字段：Site 返回
+`timezone`，Shift 返回 `startsAt`、`endsAt`、`crossesMidnight`、`paidMinutes` 与
+`breakMinutes`，DeviceAsset 继续返回既有 `siteCode/workshopCode/lineCode/workCenterCode`
+层级。BusinessGateway 原样转发这些字段并纳入 Console OpenAPI 与生成客户端；字段均为可选，避免破坏
+既有资源目录消费者。本子项只交付维度来源契约，不计算 OEE、不新增数据库结构，也不把查询时的当前层级
+冒充历史快照；MES 报工事件、IndustrialTelemetry 历史投影与 PostgreSQL 聚合核心由 #2231 交付，
+授权门面和趋势/横比页面由 #2232 交付。
+
+## ProductEngineering 工序所需技能发布快照（#1955 子项 A / #2225）
+
+ProductEngineering 的路线发布契约允许发布方为工序显式提供可选 `requiredSkillCode`，并将规范化后的 code 作为不可变发布快照持久化到 `routing_operations.required_skill_code`，同时在路线详情和生产版本路线快照中返回。既有路线保持 `null`，本切片不跨服务校验 MasterData 技能目录，也不实施 MES 派工资格拦截；MES 冻结所需技能与人员实时资格拦截分别由串行子项 #2226、#2227 承接。
+
 ## Quality 周期巡检工序上下文（#1973 子项② / #2070）
 
 BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。
@@ -14,7 +28,7 @@ BusinessQuality 已新增职责独立的时间巡检扫描器。`Quality:Periodi
 
 发布迁移会把 `inspection_tasks.source_document_line_id` 从 150 扩到 250，属于向前兼容扩容，并把既有 active 上下文的 `next_time_window_at_utc` 回填为“历史首次报工时间 + 冻结间隔”；closed 上下文不回填。由于该特性默认关闭且本 PR 合并前不存在已生成的旧格式周期时间任务，因此无需迁移旧来源行身份。上线后首次开启前，运维必须按各 scope 评估从历史首次报工锚点到当前时间的预期重放窗口数；开启后扫描器会按每上下文每轮最多 24 个持续追赶全部漏发窗口，不能把 24 误读为累计总量上限。迁移应用并开始生成超过 150 字符的来源行身份后，`Down` 收窄列宽可能失败，因此该迁移按前滚修复处理，不把数据库回滚作为恢复手段。
 
-同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。真实 PostgreSQL profile 由同一 `quality-postgres-profile` lane 承载，当前登记 14 条冻结身份；单候选生成经正式容器与 `ISender` 执行并提交，不能据此单独证明 `AddUnitOfWorkBehaviors()` 是提交的唯一原因。数量间隔触发仍属于 #2072。
+同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。真实 PostgreSQL profile 由同一 `quality-postgres-profile` lane 承载，当前登记 15 条冻结身份；单候选生成经正式容器与 `ISender` 执行并提交，不能据此单独证明 `AddUnitOfWorkBehaviors()` 是提交的唯一原因。数量间隔触发仍属于 #2072。
 
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 

@@ -322,6 +322,76 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Record_defect_endpoint_preserves_the_caller_recorded_time_in_the_command()
+    {
+        var sender = new CapturingRecordDefectSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        var recordedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            recordedAtUtc,
+            idempotencyKey = "defect-recorded-time-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, sender.CallCount);
+        Assert.NotNull(sender.LastCommand);
+        Assert.Equal(recordedAtUtc, sender.LastCommand.RecordedAtUtc);
+        Assert.Null(sender.LastCommand.OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Record_defect_endpoint_rejects_a_missing_recorded_time_before_dispatch()
+    {
+        var sender = new CapturingRecordDefectSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            operationTaskId = "OP-10",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            idempotencyKey = "defect-missing-time-001",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, sender.CallCount);
+    }
+
+    [Fact]
     public async Task Record_production_report_endpoint_returns_strong_id_wire_shape()
     {
         var productionReportId = Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689");
@@ -1910,6 +1980,10 @@ public sealed class MesEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
         dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QUALITY", "SKU-001", "PV-001", 1m, 10, now));
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-10", OperationTaskLifecycleStatus.Queued, 10, "WC-10", [], now, TimeSpan.FromHours(1), null, null),
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-20", OperationTaskLifecycleStatus.Queued, 20, "WC-10", [], now, TimeSpan.FromHours(1), null, null),
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-30", OperationTaskLifecycleStatus.Queued, 30, "WC-10", [], now, TimeSpan.FromHours(1), null, null));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new RecordDefectCommandHandler(dbContext).Handle(
@@ -1976,7 +2050,7 @@ public sealed class MesEndpointContractTests
             "org-001",
             "env-dev",
             "WO-QUALITY",
-            "OP-10",
+            null,
             "DEF-SURFACE",
             1m,
             now.AddMinutes(1),
@@ -1986,6 +2060,9 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var secondResult = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { RecordedAtUtc = now.AddMinutes(2) },
+            CancellationToken.None));
 
         Assert.Equal(firstResult, secondResult);
         Assert.Equal(1, await dbContext.DefectRecords.CountAsync(
@@ -1993,6 +2070,51 @@ public sealed class MesEndpointContractTests
                 x.EnvironmentId == "env-dev" &&
                 x.WorkOrderId == "WO-QUALITY",
             CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("OP-OTHER")]
+    [InlineData("OP-MISSING")]
+    public async Task Record_defect_rejects_an_operation_that_is_not_under_the_target_work_order(
+        string operationTaskId)
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.WorkOrders.AddRange(
+            WorkOrder.Create("org-001", "env-dev", "WO-TARGET", "SKU-001", "PV-001", 1m, 10, now),
+            WorkOrder.Create("org-001", "env-dev", "WO-OTHER", "SKU-002", "PV-001", 1m, 10, now));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-OTHER",
+            "OP-OTHER",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            now,
+            TimeSpan.FromHours(1),
+            null,
+            null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordDefectCommandHandler(dbContext);
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new RecordDefectCommand(
+                "org-001",
+                "env-dev",
+                "WO-TARGET",
+                operationTaskId,
+                "DEF-SURFACE",
+                1m,
+                now.AddMinutes(1),
+                $"defect-invalid-operation-{operationTaskId}"),
+            CancellationToken.None));
+
+        Assert.Equal(0, await dbContext.DefectRecords.CountAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -2631,6 +2753,43 @@ public sealed class MesEndpointContractTests
                 null,
             ]));
     }
+}
+
+internal sealed class CapturingRecordDefectSender : ISender
+{
+    public int CallCount { get; private set; }
+
+    public RecordDefectCommand? LastCommand { get; private set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        LastCommand = Assert.IsType<RecordDefectCommand>(request);
+        return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+            "Accepted",
+            "DEF-001",
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z")));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        CallCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }
 
 internal static class MesTestProvider
