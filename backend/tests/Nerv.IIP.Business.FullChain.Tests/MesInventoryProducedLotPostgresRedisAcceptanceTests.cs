@@ -179,6 +179,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal(pendingEvent.EventId, transport.PendingEventRedisFact.EventId);
             Assert.Equal(pendingEvent.IdempotencyKey, transport.PendingEventRedisFact.IdempotencyKey);
             Assert.True(transport.PendingEventRedisFact.DeliveryCount >= 1);
+            Assert.Equal("Pending", transport.PendingAuthorityStatus);
+            Assert.Equal("capitalized-unit-cost-not-ready", transport.PendingAuthorityReason);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
@@ -777,6 +779,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         long inventoryReceivedEventCount;
         long inventoryDeadLetterCount;
+        string? pendingAuthorityStatus;
+        string? pendingAuthorityReason;
         await using (var inventoryConnection = new NpgsqlConnection(inventoryConnectionString))
         {
             await inventoryConnection.OpenAsync();
@@ -786,24 +790,35 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     (SELECT COUNT(*) FROM inventory.cap_received_messages
                      WHERE {contentPredicate}),
                     (SELECT COUNT(*) FROM inventory.integration_event_dead_letters
-                     WHERE event_id IN ({eventPredicate}));
+                     WHERE event_id IN ({eventPredicate})),
+                    (SELECT status FROM inventory.authority_resolution_pending
+                     WHERE event_id = @pending_event_id
+                     LIMIT 1),
+                    (SELECT reason_code FROM inventory.authority_resolution_pending
+                     WHERE event_id = @pending_event_id
+                     LIMIT 1);
                 """;
             for (var index = 0; index < eventIds.Length; index++)
             {
                 consumed.Parameters.AddWithValue(eventParameters[index], eventIds[index]);
                 consumed.Parameters.AddWithValue(patternParameters[index], $"%{eventIds[index]}%");
             }
+            consumed.Parameters.AddWithValue("pending_event_id", pendingEventId);
 
             await using var reader = await consumed.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
                 inventoryReceivedEventCount = reader.GetInt64(0);
                 inventoryDeadLetterCount = reader.GetInt64(1);
+                pendingAuthorityStatus = reader.IsDBNull(2) ? null : reader.GetString(2);
+                pendingAuthorityReason = reader.IsDBNull(3) ? null : reader.GetString(3);
             }
             else
             {
                 inventoryReceivedEventCount = 0;
                 inventoryDeadLetterCount = 0;
+                pendingAuthorityStatus = null;
+                pendingAuthorityReason = null;
             }
         }
 
@@ -821,6 +836,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             publishedEventCount,
             inventoryReceivedEventCount,
             pendingEventRedisFact,
+            pendingAuthorityStatus,
+            pendingAuthorityReason,
             inventoryDeadLetterCount);
     }
 
@@ -929,6 +946,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         long PublishedEventCount,
         long InventoryReceivedEventCount,
         PendingRedisFact PendingEventRedisFact,
+        string? PendingAuthorityStatus,
+        string? PendingAuthorityReason,
         long InventoryDeadLetterCount);
 
     private sealed record PendingRedisFact(
