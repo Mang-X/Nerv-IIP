@@ -72,7 +72,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | 服务                |   总数 | exposed | deferred | internal |
 | ------------------- | ------: | ------: | -------: | -------: |
 | Approval            |      16 |      11 |        4 |        1 |
-| BarcodeLabel        |      12 |       9 |        0 |        3 |
+| BarcodeLabel        |      13 |      10 |        0 |        3 |
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
@@ -84,11 +84,11 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **421** | **349** |   **46** |   **26** |
+| **Total**           | **422** | **350** |   **46** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（349）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（350）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和
@@ -120,6 +120,11 @@ principal、scope 和已授权 site 事实前检查各自 receipts、shipments �
 `sourceKind`、`asOfUtc`、nullable `freshnessUtc` 与 `truncated`；它是 WMS 作业事实的有界视图，而不是
 MasterData/Inventory 库位目录或完整批次目录。本行是这三个公开 operation 的两跳证据；服务 endpoint 不是三份
 独立的公开契约。
+
+对于 #1179 条码解析，BarcodeLabel `resolveBusinessBarcode` 只从自身生成且未作废的标签事实解析来源单据；
+BusinessGateway `resolveBusinessConsoleBarcode` 将来源映射为稳定 `objectType`、`strongIds`、`authority`、
+`source` 与 `observedAtUtc`，不返回前端 route。MES 工序候选必须通过 MES 权威读面补齐成对的
+`workOrderId` 与 `operationTaskId`；无法唯一配对时失效关闭。
 
 ### 延后 endpoint（facade 已跟踪，尚未暴露）
 
