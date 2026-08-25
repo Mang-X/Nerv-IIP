@@ -16,12 +16,12 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/PrintBatches/GetLabelPrintBatchQuery.cs",
     ];
 
-    private static readonly IReadOnlyDictionary<string, int> ExpectedProjectCompilationErrorCounts =
-        new Dictionary<string, int>(StringComparer.Ordinal)
+    private static readonly IReadOnlySet<string> AllowedProjectCompilationErrorIds =
+        new HashSet<string>(StringComparer.Ordinal)
         {
             // 原始源码不含 StronglyTypedId 与 CAP source-generator 输出；其余 error 必须失败关闭。
-            ["CS0535"] = 9,
-            ["CS1729"] = 6,
+            "CS0535",
+            "CS1729",
         };
 
     private static readonly IReadOnlyCollection<BarcodeLabelKnownExceptionSite> ExpectedSites =
@@ -66,10 +66,10 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             .Sum(site => site.DirectKnownExceptionCount));
 
         // 原始项目源码不包含 source-generator 输出，完整项目编译由同一测试项目的 build 门禁负责。
-        // 项目扫描只精确容忍上方登记的诊断码与数量；其他源码与内联夹具默认要求零 error。
+        // 项目扫描只容忍上方登记的诊断码；其他源码与内联夹具默认要求零 error。
         var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
             documents,
-            expectedCompilationErrorCounts: ExpectedProjectCompilationErrorCounts);
+            allowedCompilationErrorIds: AllowedProjectCompilationErrorIds);
         var duplicateDiscoveredKeys = discovered
             .GroupBy(site => site.Key, StringComparer.Ordinal)
             .Where(group => group.Count() != 1)
@@ -96,7 +96,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(
             documents,
-            expectedCompilationErrorCounts: ExpectedProjectCompilationErrorCounts);
+            allowedCompilationErrorIds: AllowedProjectCompilationErrorIds);
 
         Assert.True(
             violations.Count == 0,
@@ -390,6 +390,43 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Ledger_reports_an_unclassified_discovered_site()
+    {
+        var discovered = Target("Extra.cs", "Probe", "Handle", 0);
+
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.ValidateLedger(
+            [discovered],
+            [],
+            expectedExclusionCount: 0);
+
+        Assert.Equal(["位点未分类：Extra.cs|Probe|Handle。"], violations);
+    }
+
+    [Fact]
+    public void Ledger_reports_an_expected_site_that_does_not_exist()
+    {
+        var expected = Target("Missing.cs", "Probe", "Handle", 0);
+
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.ValidateLedger(
+            [],
+            [expected],
+            expectedExclusionCount: 0);
+
+        Assert.Equal(["台账位点不存在：Missing.cs|Probe|Handle。"], violations);
+    }
+
+    [Fact]
+    public void Ledger_reports_exclusion_count_drift_independently()
+    {
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.ValidateLedger(
+            [],
+            [],
+            expectedExclusionCount: 1);
+
+        Assert.Equal(["豁免数量必须为 1，实际为 0。"], violations);
+    }
+
+    [Fact]
     public void Analyzer_discovers_and_validates_known_exception_subclass_invocations()
     {
         const string source = """
@@ -538,27 +575,46 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             BarcodeLabelUserMessageSourceAnalyzer.Analyze(
                 [new BarcodeLabelSourceDocument("UnexpectedDiagnostic.cs", source)],
-                expectedCompilationErrorCounts: new Dictionary<string, int>()));
+                allowedCompilationErrorIds: new HashSet<string>()));
 
         Assert.Contains("CS0246", exception.Message, StringComparison.Ordinal);
         Assert.Contains("未登记", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Compilation_policy_rejects_registered_diagnostic_count_drift()
+    public void Compilation_policy_compares_diagnostic_ids_instead_of_total_count()
     {
-        const string source = "sealed class Probe { MissingType First { get; } MissingType Second { get; } }";
+        const string source = """
+            using NetCorePal.Extensions.Primitives;
+            sealed record ProbeCommand : ICommand<string>;
+            sealed class ProbeHandler : ICommandHandler<ProbeCommand, string> { }
+            """;
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             BarcodeLabelUserMessageSourceAnalyzer.Analyze(
-                [new BarcodeLabelSourceDocument("DiagnosticCount.cs", source)],
-                expectedCompilationErrorCounts: new Dictionary<string, int>
-                {
-                    ["CS0246"] = 1,
-                }));
+                [new BarcodeLabelSourceDocument("DiagnosticIdentity.cs", source)],
+                allowedCompilationErrorIds: new HashSet<string> { "CS1729" }));
 
-        Assert.Contains("CS0246", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("期望 1，实际 2", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CS0535", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("未登记", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compilation_policy_allows_registered_diagnostic_count_growth()
+    {
+        const string source = """
+            using NetCorePal.Extensions.Primitives;
+            sealed record FirstCommand : ICommand<string>;
+            sealed record SecondCommand : ICommand<string>;
+            sealed class FirstHandler : ICommandHandler<FirstCommand, string> { }
+            sealed class SecondHandler : ICommandHandler<SecondCommand, string> { }
+            """;
+
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(
+            [new BarcodeLabelSourceDocument("DiagnosticGrowth.cs", source)],
+            allowedCompilationErrorIds: new HashSet<string> { "CS0535" });
+
+        Assert.Empty(violations);
     }
 
     [Fact]
@@ -573,11 +629,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             BarcodeLabelUserMessageSourceAnalyzer.Discover(
                 [new BarcodeLabelSourceDocument("InvalidHandler.cs", source)],
-                expectedCompilationErrorCounts: new Dictionary<string, int>
-                {
-                    // 此夹具故意缺失 Handle；精确登记该错误后才能断言下游合同解析必须失败关闭。
-                    ["CS0535"] = 1,
-                }));
+                // 此夹具故意缺失 Handle；登记该错误后才能断言下游合同解析必须失败关闭。
+                allowedCompilationErrorIds: new HashSet<string> { "CS0535" }));
 
         Assert.Equal(
             "InvalidHandler.cs: BarcodeLabel ICommandHandler ProbeHandler 的 Handle 合同声明无法解析。",

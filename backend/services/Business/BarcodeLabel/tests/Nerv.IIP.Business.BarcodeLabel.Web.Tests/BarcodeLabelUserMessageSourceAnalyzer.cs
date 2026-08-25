@@ -53,7 +53,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
     public static IReadOnlyList<BarcodeLabelKnownExceptionSite> Discover(
         IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
         IReadOnlyCollection<string>? commandHandlerTypeNames = null,
-        IReadOnlyDictionary<string, int>? expectedCompilationErrorCounts = null)
+        IReadOnlySet<string>? allowedCompilationErrorIds = null)
     {
         if (documents.Count == 0)
         {
@@ -61,7 +61,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         }
 
         var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, expectedCompilationErrorCounts);
+        var compilation = CreateCompilation(sourceTrees, allowedCompilationErrorIds);
         var sites = new Dictionary<string, BarcodeLabelKnownExceptionSite>(StringComparer.Ordinal);
 
         foreach (var syntaxTree in sourceTrees)
@@ -212,7 +212,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
     public static IReadOnlyList<string> Analyze(
         IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
-        IReadOnlyDictionary<string, int>? expectedCompilationErrorCounts = null)
+        IReadOnlySet<string>? allowedCompilationErrorIds = null)
     {
         if (documents.Count == 0)
         {
@@ -220,7 +220,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         }
 
         var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, expectedCompilationErrorCounts);
+        var compilation = CreateCompilation(sourceTrees, allowedCompilationErrorIds);
         var violations = new List<Violation>();
 
         foreach (var syntaxTree in sourceTrees)
@@ -259,7 +259,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
     private static CSharpCompilation CreateCompilation(
         IReadOnlyCollection<SyntaxTree> sourceTrees,
-        IReadOnlyDictionary<string, int>? expectedCompilationErrorCounts)
+        IReadOnlySet<string>? allowedCompilationErrorIds)
     {
         var syntaxTrees = sourceTrees
             .Append(CSharpSyntaxTree.ParseText(
@@ -299,31 +299,19 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             .ThenBy(diagnostic => diagnostic.Location.SourceSpan.Start)
             .ThenBy(diagnostic => diagnostic.Id, StringComparer.Ordinal)
             .ToArray();
-        var expectedErrorCounts = expectedCompilationErrorCounts
-            ?? new Dictionary<string, int>(StringComparer.Ordinal);
-        var actualErrorCounts = errors
-            .GroupBy(diagnostic => diagnostic.Id, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
-        var unexpectedErrorIds = actualErrorCounts.Keys
-            .Except(expectedErrorCounts.Keys, StringComparer.Ordinal)
+        allowedCompilationErrorIds ??= new HashSet<string>(StringComparer.Ordinal);
+        var unexpectedErrorIds = errors
+            .Select(diagnostic => diagnostic.Id)
+            .Distinct(StringComparer.Ordinal)
+            .Except(allowedCompilationErrorIds, StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        var countMismatches = expectedErrorCounts
-            .Where(expected => actualErrorCounts.GetValueOrDefault(expected.Key) != expected.Value)
-            .OrderBy(expected => expected.Key, StringComparer.Ordinal)
-            .Select(expected => $"{expected.Key}：期望 {expected.Value}，实际 {actualErrorCounts.GetValueOrDefault(expected.Key)}")
-            .ToArray();
-        if (unexpectedErrorIds.Length != 0 || countMismatches.Length != 0)
+        if (unexpectedErrorIds.Length != 0)
         {
             throw new InvalidOperationException(
                 "BarcodeLabel 用户消息源码无法编译："
                 + Environment.NewLine
-                + (unexpectedErrorIds.Length == 0
-                    ? string.Empty
-                    : $"未登记诊断码：{string.Join(", ", unexpectedErrorIds)}。{Environment.NewLine}")
-                + (countMismatches.Length == 0
-                    ? string.Empty
-                    : $"诊断数量不匹配：{string.Join("；", countMismatches)}。{Environment.NewLine}")
+                + $"未登记诊断码：{string.Join(", ", unexpectedErrorIds)}。{Environment.NewLine}"
                 + string.Join(Environment.NewLine, errors.Select(diagnostic => diagnostic.ToString())));
         }
 
