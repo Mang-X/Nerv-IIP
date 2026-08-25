@@ -40,6 +40,7 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/InspectionTaskTriggerIntegrationEventHandlers.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/PeriodicInspectionIntegrationEventHandlers.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionTasks/ListDuePeriodicInspectionTimeContextsQuery.cs",
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionTasks/ListPendingPeriodicInspectionQuantityContextsQuery.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/Spc/SpcAnalysisQueries.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/LeaderDemoSeedService.cs",
             "services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs"),
