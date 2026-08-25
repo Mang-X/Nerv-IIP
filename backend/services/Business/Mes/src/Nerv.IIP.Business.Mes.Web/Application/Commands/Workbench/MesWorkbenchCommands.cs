@@ -1248,7 +1248,7 @@ public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<Assig
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Participants).Must(participants => participants is null || participants.Count is > 0 and <= 20)
-            .WithMessage("When supplied, an operation task must register between 1 and 20 participants.");
+            .WithMessage("提供参与者时，工序任务必须登记 1 至 20 名参与者。");
         RuleForEach(x => x.Participants).ChildRules(participant =>
         {
             participant.RuleFor(x => x.WorkerId).NotEmpty().MaximumLength(100);
@@ -1257,10 +1257,10 @@ public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<Assig
                 .GreaterThan(0m)
                 .LessThanOrEqualTo(100m)
                 .Must(HasPersistableSharePrecision)
-                .WithMessage("Participant share must use at most four decimal places.");
+                .WithMessage("参与者工时占比最多保留四位小数。");
         });
         RuleFor(x => x.Participants).Must(HaveUniqueWorkersAndBalancedShares)
-            .WithMessage("Operation task participants must have unique worker ids and shares totaling 100 percent.");
+            .WithMessage("工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。");
     }
 
     private static bool HaveUniqueWorkersAndBalancedShares(IReadOnlyCollection<DispatchParticipantInput>? participants)
