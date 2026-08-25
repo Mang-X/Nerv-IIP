@@ -1658,7 +1658,7 @@ export function useMesMaterialIssue() {
 
 export type CreateReceiptInput = Omit<
   BusinessConsoleMesCreateReceiptRequest,
-  'organizationId' | 'environmentId' | 'requestedAtUtc' | 'unitCost'
+  'organizationId' | 'environmentId' | 'requestedAtUtc'
 >
 
 export function useMesReceipts() {
@@ -1713,9 +1713,16 @@ export function useMesReceipts() {
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),
     createReceipt: (input: CreateReceiptInput) => {
-      // 兼容旧调用方的运行时对象：即使仍携带 client unitCost，也在 facade 调用边界丢弃。
-      const { unitCost: _clientUnitCost, ...safeInput } =
-        input as BusinessConsoleMesCreateReceiptRequest
+      // 只组装公共写契约字段，旧运行时对象中的未知字段不会进入请求体。
+      const safeInput: CreateReceiptInput = {
+        workOrderId: input.workOrderId,
+        skuId: input.skuId,
+        quantity: input.quantity,
+        uomCode: input.uomCode,
+        idempotencyKey: input.idempotencyKey,
+        producedLotNo: input.producedLotNo,
+        serialNo: input.serialNo,
+      }
       return createMutation.mutateAsync({
         body: {
           ...safeInput,

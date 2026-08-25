@@ -5133,7 +5133,6 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    decimal? UnitCost,
     string IdempotencyKey,
     string? ProducedLotNo = null,
     string? SerialNo = null);

@@ -820,6 +820,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/related-quality-items", "get", "listBusinessConsoleMesRelatedQualityItems");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "get", "listBusinessConsoleMesFinishedGoodsReceiptRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "post", "createBusinessConsoleMesFinishedGoodsReceiptRequest");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleMesCreateReceiptRequest",
+            "unitCost");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesReceiptRequestRow",
+            "unitCost");
         foreach (var path in new[]
                  {
                      "/api/business-console/v1/mes/work-orders",

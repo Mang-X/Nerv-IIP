@@ -323,6 +323,7 @@ public sealed class MesEndpointContractTests
     public async Task Create_finished_goods_receipt_endpoint_returns_strong_id_wire_shape()
     {
         var receiptRequestId = Guid.Parse("019f88b9-1d59-7cb3-b4a0-37b88e78422e");
+        var sender = new FinishedGoodsReceiptWireShapeSender(receiptRequestId);
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -330,7 +331,7 @@ public sealed class MesEndpointContractTests
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<ISender>();
-                    services.AddSingleton<ISender>(new FinishedGoodsReceiptWireShapeSender(receiptRequestId));
+                    services.AddSingleton<ISender>(sender);
                 });
             });
         var client = factory.CreateClient();
@@ -346,6 +347,7 @@ public sealed class MesEndpointContractTests
             quantity = 1m,
             uomCode = "PCS",
             requestedAtUtc = "2026-07-22T07:00:00Z",
+            unitCost = 99.99m,
             idempotencyKey = "wire-shape-001",
             producedLotNo = "LOT-FG-WIRE-001",
         });
@@ -359,6 +361,8 @@ public sealed class MesEndpointContractTests
         Assert.True(wireId.TryGetProperty("id", out var id), rawBody);
         Assert.Equal(receiptRequestId, id.GetGuid());
         Assert.Equal("FGR-WIRE-001", root.GetProperty("requestNo").GetString());
+        Assert.NotNull(sender.Command);
+        Assert.Null(sender.Command!.UnitCost);
     }
 
     [Fact]
@@ -2461,10 +2465,12 @@ public sealed class MesEndpointContractTests
 
     private sealed class FinishedGoodsReceiptWireShapeSender(Guid receiptRequestId) : ISender
     {
+        public CreateFinishedGoodsReceiptRequestCommand? Command { get; private set; }
+
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             _ = cancellationToken;
-            Assert.IsType<CreateFinishedGoodsReceiptRequestCommand>(request);
+            Command = Assert.IsType<CreateFinishedGoodsReceiptRequestCommand>(request);
             return Task.FromResult((TResponse)(object)new FinishedGoodsReceiptRequestCommandResult(
                 new FinishedGoodsReceiptRequestId(receiptRequestId),
                 "FGR-WIRE-001"));
