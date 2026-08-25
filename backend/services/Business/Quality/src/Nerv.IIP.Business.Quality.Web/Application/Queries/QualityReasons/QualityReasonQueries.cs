@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.QualityReasons;
 
@@ -24,6 +25,13 @@ public sealed record ListQualityReasonsQuery(
     int Take = 100,
     string? DefaultDisposition = null) : IQuery<QualityReasonListResponse>;
 
+public sealed record ListScrapQualityReasonCodesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<QualityReasonListResponse>;
+
 public sealed record GetQualityReasonQuery(
     string OrganizationId,
     string EnvironmentId,
@@ -38,6 +46,18 @@ public sealed class ListQualityReasonsQueryValidator : AbstractValidator<ListQua
         RuleFor(x => x.Search).MaximumLength(200);
         RuleFor(x => x.GroupName).MaximumLength(100);
         RuleFor(x => x.DefaultDisposition).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class ListScrapQualityReasonCodesQueryValidator : AbstractValidator<ListScrapQualityReasonCodesQuery>
+{
+    public ListScrapQualityReasonCodesQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Search).MaximumLength(200);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
@@ -80,6 +100,33 @@ public sealed class ListQualityReasonsQueryHandler(ApplicationDbContext dbContex
     private static string? NormalizeKeyword(string? keyword)
     {
         return string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
+    }
+}
+
+public sealed class ListScrapQualityReasonCodesQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListScrapQualityReasonCodesQuery, QualityReasonListResponse>
+{
+    public async Task<QualityReasonListResponse> Handle(
+        ListScrapQualityReasonCodesQuery request,
+        CancellationToken cancellationToken)
+    {
+        var keyword = string.IsNullOrWhiteSpace(request.Search)
+            ? null
+            : request.Search.Trim().ToLowerInvariant();
+        var query = dbContext.QualityReasons
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.Enabled && x.DefaultDisposition == QualityNcrDispositionTypes.Scrap)
+            .Where(x => keyword == null || x.ReasonCode.ToLower().Contains(keyword) || x.ReasonName.ToLower().Contains(keyword));
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(x => x.GroupName)
+            .ThenBy(x => x.ReasonCode)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .ToListAsync(cancellationToken);
+
+        return new QualityReasonListResponse(items.Select(QualityReasonMapper.ToItem).ToArray(), total);
     }
 }
 

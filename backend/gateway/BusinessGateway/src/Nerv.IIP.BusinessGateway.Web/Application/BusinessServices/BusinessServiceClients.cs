@@ -437,6 +437,11 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityReasonListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleQualityReasonListResponse> ListScrapQualityReasonCodesAsync(
+        string internalBearerToken,
+        BusinessConsoleScrapQualityReasonCodeListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(
         string internalBearerToken,
         string reasonCode,
@@ -3386,6 +3391,23 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("skip", request.Skip),
                 ("take", request.Take),
                 ("defaultDisposition", request.DefaultDisposition)),
+            null,
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+
+    public Task<BusinessConsoleQualityReasonListResponse> ListScrapQualityReasonCodesAsync(
+        string internalBearerToken,
+        BusinessConsoleScrapQualityReasonCodeListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityReasonListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/scrap-reason-codes?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("search", request.Search),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);
