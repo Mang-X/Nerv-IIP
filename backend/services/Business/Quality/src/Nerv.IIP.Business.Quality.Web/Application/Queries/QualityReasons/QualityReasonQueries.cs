@@ -78,28 +78,17 @@ public sealed class ListQualityReasonsQueryHandler(ApplicationDbContext dbContex
 {
     public async Task<QualityReasonListResponse> Handle(ListQualityReasonsQuery request, CancellationToken cancellationToken)
     {
-        var keyword = NormalizeKeyword(request.Search);
-        var query = dbContext.QualityReasons
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .Where(x => !request.Enabled.HasValue || x.Enabled == request.Enabled.Value)
-            .Where(x => string.IsNullOrWhiteSpace(request.GroupName) || x.GroupName == request.GroupName)
-            .Where(x => string.IsNullOrWhiteSpace(request.DefaultDisposition) || x.DefaultDisposition == request.DefaultDisposition)
-            .Where(x => keyword == null || x.ReasonCode.ToLower().Contains(keyword) || x.ReasonName.ToLower().Contains(keyword));
-        var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderBy(x => x.GroupName)
-            .ThenBy(x => x.ReasonCode)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
-            .ToListAsync(cancellationToken);
-
-        return new QualityReasonListResponse(items.Select(QualityReasonMapper.ToItem).ToArray(), total);
-    }
-
-    private static string? NormalizeKeyword(string? keyword)
-    {
-        return string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
+        return await QualityReasonCatalogQuery.ListAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Enabled,
+            request.Search,
+            request.GroupName,
+            request.DefaultDisposition,
+            request.Skip,
+            request.Take,
+            cancellationToken);
     }
 }
 
@@ -110,24 +99,55 @@ public sealed class ListScrapQualityReasonCodesQueryHandler(ApplicationDbContext
         ListScrapQualityReasonCodesQuery request,
         CancellationToken cancellationToken)
     {
-        var keyword = string.IsNullOrWhiteSpace(request.Search)
-            ? null
-            : request.Search.Trim().ToLowerInvariant();
+        return await QualityReasonCatalogQuery.ListAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            enabled: true,
+            search: request.Search,
+            groupName: null,
+            defaultDisposition: QualityNcrDispositionTypes.Scrap,
+            skip: request.Skip,
+            take: request.Take,
+            cancellationToken: cancellationToken);
+    }
+}
+
+internal static class QualityReasonCatalogQuery
+{
+    public static async Task<QualityReasonListResponse> ListAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        bool? enabled,
+        string? search,
+        string? groupName,
+        string? defaultDisposition,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var keyword = NormalizeKeyword(search);
         var query = dbContext.QualityReasons
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.Enabled && x.DefaultDisposition == QualityNcrDispositionTypes.Scrap)
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Where(x => !enabled.HasValue || x.Enabled == enabled.Value)
+            .Where(x => string.IsNullOrWhiteSpace(groupName) || x.GroupName == groupName)
+            .Where(x => string.IsNullOrWhiteSpace(defaultDisposition) || x.DefaultDisposition == defaultDisposition)
             .Where(x => keyword == null || x.ReasonCode.ToLower().Contains(keyword) || x.ReasonName.ToLower().Contains(keyword));
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.GroupName)
             .ThenBy(x => x.ReasonCode)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(Math.Max(0, skip))
+            .Take(Math.Clamp(take, 1, 500))
             .ToListAsync(cancellationToken);
 
         return new QualityReasonListResponse(items.Select(QualityReasonMapper.ToItem).ToArray(), total);
     }
+
+    private static string? NormalizeKeyword(string? keyword) =>
+        string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
 }
 
 public sealed class GetQualityReasonQueryHandler(ApplicationDbContext dbContext)

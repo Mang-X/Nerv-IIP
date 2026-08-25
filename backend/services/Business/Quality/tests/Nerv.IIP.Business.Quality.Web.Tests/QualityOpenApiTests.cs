@@ -45,6 +45,16 @@ public sealed class QualityOpenApiTests
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
 
+        var scrapReasonOperation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v1/quality/scrap-reason-codes")
+            .GetProperty("get");
+        AssertQueryParameter(scrapReasonOperation, "organizationId", required: true);
+        AssertQueryParameter(scrapReasonOperation, "environmentId", required: true);
+        AssertQueryParameter(scrapReasonOperation, "search", required: false);
+        AssertQueryParameter(scrapReasonOperation, "skip", required: false);
+        AssertQueryParameter(scrapReasonOperation, "take", required: false);
+
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
         AssertSchemaProperties(
             document,
@@ -82,6 +92,19 @@ public sealed class QualityOpenApiTests
             .GetProperty(schemaRef.Split('/')[^1]);
         Assert.Contains("reason", schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertQueryParameter(JsonElement operation, string name, bool required)
+    {
+        var parameter = operation.GetProperty("parameters")
+            .EnumerateArray()
+            .SingleOrDefault(item => item.GetProperty("name").GetString() == name);
+
+        Assert.False(parameter.ValueKind == JsonValueKind.Undefined, $"Missing query parameter '{name}'.");
+        var actualRequired = parameter.TryGetProperty("required", out var requiredProperty)
+            && requiredProperty.ValueKind != JsonValueKind.Null
+            && requiredProperty.GetBoolean();
+        Assert.Equal(required, actualRequired);
     }
 
     private static async Task<JsonDocument> GetOpenApiDocumentAsync(HttpClient client)

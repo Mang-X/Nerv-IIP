@@ -163,6 +163,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/spc/control-charts", "get", "listBusinessConsoleQualitySpcControlCharts");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "get", "listBusinessConsoleQualityReasonCodes");
         AssertOperationId(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "listBusinessConsoleQualityScrapReasonCodes");
+        AssertQueryParameters(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "organizationId", "environmentId", "search", "skip", "take");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "environmentId");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "get", "getBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "post", "createBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "put", "updateBusinessConsoleQualityReasonCode");

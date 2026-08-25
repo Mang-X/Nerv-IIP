@@ -107,26 +107,35 @@ public sealed class QualityEndpointContractTests
     }
 
     [Fact]
-    public async Task Scrap_reason_query_returns_only_enabled_scrap_reasons_in_the_requested_scope()
+    public async Task Scrap_reason_query_applies_fixed_filter_search_paging_and_scope()
     {
         await using var provider = CreateInMemoryProvider();
         await using var dbContext = provider.GetRequiredService<ApplicationDbContext>();
         dbContext.QualityReasons.AddRange(
-            QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE", "外观报废", "外观", "major", "scrap", true),
-            QualityReason.Create("org-001", "env-dev", "REWORK-SURFACE", "外观返修", "外观", "minor", "rework", true),
-            QualityReason.Create("org-001", "env-dev", "SCRAP-ARCHIVED", "已归档报废", "外观", "major", "scrap", false),
-            QualityReason.Create("org-002", "env-dev", "SCRAP-OTHER", "其他租户报废", "外观", "major", "scrap", true));
+            QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-A", "Surface A", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-B", "Surface B", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-001", "env-dev", "REWORK-SURFACE", "Surface Rework", "Appearance", "minor", "rework", true),
+            QualityReason.Create("org-001", "env-dev", "SCRAP-DISABLED", "Surface Disabled", "Appearance", "major", "scrap", false),
+            QualityReason.Create("org-001", "env-test", "SCRAP-SURFACE-ENV", "Surface Other Environment", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-002", "env-dev", "SCRAP-SURFACE-ORG", "Surface Other Organization", "Appearance", "major", "scrap", true));
         await dbContext.SaveChangesAsync();
 
-        var response = await new ListScrapQualityReasonCodesQueryHandler(dbContext).Handle(
-            new ListScrapQualityReasonCodesQuery("org-001", "env-dev"),
+        var paged = await new ListScrapQualityReasonCodesQueryHandler(dbContext).Handle(
+            new ListScrapQualityReasonCodesQuery("org-001", "env-dev", "surface", Skip: 1, Take: 1),
             CancellationToken.None);
 
-        var item = Assert.Single(response.Items);
-        Assert.Equal("SCRAP-SURFACE", item.ReasonCode);
+        var item = Assert.Single(paged.Items);
+        Assert.Equal("SCRAP-SURFACE-B", item.ReasonCode);
         Assert.Equal("scrap", item.DefaultDisposition);
         Assert.True(item.Enabled);
-        Assert.Equal(1, response.Total);
+        Assert.Equal(2, paged.Total);
+
+        var empty = await new ListScrapQualityReasonCodesQueryHandler(dbContext).Handle(
+            new ListScrapQualityReasonCodesQuery("org-001", "env-dev", "not-present"),
+            CancellationToken.None);
+
+        Assert.Empty(empty.Items);
+        Assert.Equal(0, empty.Total);
     }
 
     [Fact]
