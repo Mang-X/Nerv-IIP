@@ -101,6 +101,10 @@ builder.Services.AddHttpClient<IBusinessQualityClient, HttpBusinessQualityClient
 {
     client.BaseAddress = qualityBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessQualityScrapReasonCodeClient, HttpBusinessQualityScrapReasonCodeClient>(client =>
+{
+    client.BaseAddress = qualityBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessProductEngineeringClient, HttpBusinessProductEngineeringClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;

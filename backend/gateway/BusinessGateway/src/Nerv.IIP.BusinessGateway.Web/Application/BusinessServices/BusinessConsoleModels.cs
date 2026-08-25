@@ -1771,6 +1771,13 @@ public sealed record BusinessConsoleQualityReasonListRequest(
     int Take = 100,
     string? DefaultDisposition = null);
 
+public sealed record BusinessConsoleScrapQualityReasonCodeListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
     [property: QueryParam] string OrganizationId,

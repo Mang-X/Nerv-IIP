@@ -8941,6 +8941,94 @@
         ]
       }
     },
+    "/api/business-console/v1/quality/scrap-reason-codes": {
+      "get": {
+        "tags": [
+          "Business Console Quality",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleQualityScrapReasonCodes",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/quality/reason-codes/{reasonCode}": {
       "get": {
         "tags": [
@@ -38767,6 +38855,10 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest": {
         "type": "object",
         "additionalProperties": false
       },

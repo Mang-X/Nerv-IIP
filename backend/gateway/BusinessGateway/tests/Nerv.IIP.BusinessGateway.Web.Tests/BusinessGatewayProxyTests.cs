@@ -1383,6 +1383,8 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessQualityClient>();
             services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessQualityScrapReasonCodeClient>();
+            services.AddSingleton<IBusinessQualityScrapReasonCodeClient>(quality);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1390,6 +1392,7 @@ public sealed class BusinessGatewayProxyTests
         BusinessGatewayTestHost.Authenticated(client);
 
         var list = await client.GetAsync("/api/business-console/v1/quality/reason-codes?organizationId=org-001&environmentId=env-dev&enabled=true&search=scr&groupName=Appearance&skip=3&take=15");
+        var scrap = await client.GetAsync("/api/business-console/v1/quality/scrap-reason-codes?organizationId=org-001&environmentId=env-dev&search=surface&skip=2&take=10");
         var detail = await client.GetAsync("/api/business-console/v1/quality/reason-codes/QR-SCRATCH?organizationId=org-001&environmentId=env-dev");
         var create = await client.PostAsJsonAsync("/api/business-console/v1/quality/reason-codes", new
         {
@@ -1419,12 +1422,14 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, scrap.StatusCode);
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, create.StatusCode);
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         Assert.Equal(HttpStatusCode.OK, archive.StatusCode);
         Assert.Equal("internal-test-token", quality.LastInternalToken);
         Assert.Equal(new BusinessConsoleQualityReasonListRequest("org-001", "env-dev", true, "scr", "Appearance", 3, 15), quality.LastQualityReasonListRequest);
+        Assert.Equal(new BusinessConsoleScrapQualityReasonCodeListRequest("org-001", "env-dev", "surface", 2, 10), quality.LastScrapQualityReasonCodeListRequest);
         Assert.Equal(new BusinessConsoleQualityReasonRequest("QR-SCRATCH", "org-001", "env-dev"), quality.LastQualityReasonRequest);
         Assert.Null(quality.LastCreateQualityReasonRequest!.ReasonCode);
         Assert.Equal("quality-reason-create-001", quality.LastCreateQualityReasonRequest.IdempotencyKey);
@@ -7481,6 +7486,50 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_forwards_scrap_reason_code_query_to_downstream_with_internal_token()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                total = 1,
+                items = new[]
+                {
+                    new
+                    {
+                        reasonCode = "SCRAP-SURFACE",
+                        reasonName = "Surface scrap",
+                        groupName = "Appearance",
+                        severity = "major",
+                        defaultDisposition = "scrap",
+                        enabled = true,
+                        snapshotVersion = "v1",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityScrapReasonCodeClient(httpClient);
+
+        var response = await client.ListScrapQualityReasonCodesAsync(
+            "internal-token-001",
+            new BusinessConsoleScrapQualityReasonCodeListRequest("org-001", "env-dev", "surface", 2, 10),
+            CancellationToken.None);
+
+        Assert.Equal("SCRAP-SURFACE", response.Items.Single().ReasonCode);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(
+            "/api/business/v1/quality/scrap-reason-codes?organizationId=org-001&environmentId=env-dev&search=surface&skip=2&take=10",
+            request.RequestUri!.PathAndQuery);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("internal-token-001", request.Headers.Authorization.Parameter);
+    }
+
+    [Fact]
     public void Activate_quality_inspection_plan_validator_rejects_non_guid_route_id()
     {
         var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleActivateInspectionPlanRequestValidator();
@@ -11348,7 +11397,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     }
 }
 
-internal sealed class RecordingQualityClient : IBusinessQualityClient
+internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusinessQualityScrapReasonCodeClient
 {
     public BusinessConsoleNcrCloseRequest? LastCloseNcrRequest { get; private set; }
     public string? LastCloseNcrActor { get; private set; }
@@ -11389,6 +11438,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
     public BusinessQualityCreateInspectionRecordFromTaskRequest? LastCreateInspectionRecordFromTaskRequest { get; private set; }
 
     public BusinessConsoleQualityReasonListRequest? LastQualityReasonListRequest { get; private set; }
+
+    public BusinessConsoleScrapQualityReasonCodeListRequest? LastScrapQualityReasonCodeListRequest { get; private set; }
 
     public BusinessConsoleQualitySpcControlChartListRequest? LastSpcControlChartListRequest { get; private set; }
 
@@ -11918,6 +11969,16 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastInternalToken = internalBearerToken;
         LastQualityReasonListRequest = request;
         return Task.FromResult(new BusinessConsoleQualityReasonListResponse([QualityReasonItem("QR-SCRATCH")], 1));
+    }
+
+    public Task<BusinessConsoleQualityReasonListResponse> ListScrapQualityReasonCodesAsync(
+        string internalBearerToken,
+        BusinessConsoleScrapQualityReasonCodeListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastScrapQualityReasonCodeListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityReasonListResponse([QualityReasonItem("SCRAP-SURFACE", defaultDisposition: "scrap")], 1));
     }
 
     public Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(

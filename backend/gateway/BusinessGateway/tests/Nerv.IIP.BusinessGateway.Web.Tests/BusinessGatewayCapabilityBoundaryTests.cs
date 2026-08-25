@@ -610,6 +610,13 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 sourcePath);
         }
 
+        seedCapabilities.Add(
+            Identity("Interface", "IBusinessQualityScrapReasonCodeClient"),
+            "Quality");
+        seedCapabilities.Add(
+            Identity("Class", "HttpBusinessQualityScrapReasonCodeClient"),
+            "Quality");
+
         AddManagedType(
             seedCapabilities,
             legacyDeclarations,
