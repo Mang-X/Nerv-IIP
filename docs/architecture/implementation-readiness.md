@@ -14,7 +14,7 @@ BusinessQuality 已新增职责独立的时间巡检扫描器。`Quality:Periodi
 
 发布迁移会把 `inspection_tasks.source_document_line_id` 从 150 扩到 250，属于向前兼容扩容，并把既有 active 上下文的 `next_time_window_at_utc` 回填为“历史首次报工时间 + 冻结间隔”；closed 上下文不回填。由于该特性默认关闭且本 PR 合并前不存在已生成的旧格式周期时间任务，因此无需迁移旧来源行身份。上线后首次开启前，运维必须按各 scope 评估从历史首次报工锚点到当前时间的预期重放窗口数；开启后扫描器会按每上下文每轮最多 24 个持续追赶全部漏发窗口，不能把 24 误读为累计总量上限。迁移应用并开始生成超过 150 字符的来源行身份后，`Down` 收窄列宽可能失败，因此该迁移按前滚修复处理，不把数据库回滚作为恢复手段。
 
-同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。真实 PostgreSQL profile 由同一 `quality-postgres-profile` lane 承载，当前登记 14 条冻结身份；单候选生成经正式容器与 `ISender` 执行并提交，不能据此单独证明 `AddUnitOfWorkBehaviors()` 是提交的唯一原因。数量间隔触发仍属于 #2072。
+同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。真实 PostgreSQL profile 由同一 `quality-postgres-profile` lane 承载，当前登记 15 条冻结身份；单候选生成经正式容器与 `ISender` 执行并提交，不能据此单独证明 `AddUnitOfWorkBehaviors()` 是提交的唯一原因。数量间隔触发仍属于 #2072。
 
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 
