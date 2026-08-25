@@ -322,6 +322,39 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Record_defect_endpoint_rejects_a_missing_recorded_time_before_dispatch()
+    {
+        var sender = new CapturingRecordDefectSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            operationTaskId = "OP-10",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            idempotencyKey = "defect-missing-time-001",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, sender.CallCount);
+    }
+
+    [Fact]
     public async Task Record_production_report_endpoint_returns_strong_id_wire_shape()
     {
         var productionReportId = Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689");
@@ -1986,6 +2019,9 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var secondResult = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { RecordedAtUtc = now.AddMinutes(2) },
+            CancellationToken.None));
 
         Assert.Equal(firstResult, secondResult);
         Assert.Equal(1, await dbContext.DefectRecords.CountAsync(
@@ -2631,6 +2667,40 @@ public sealed class MesEndpointContractTests
                 null,
             ]));
     }
+}
+
+internal sealed class CapturingRecordDefectSender : ISender
+{
+    public int CallCount { get; private set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+            "Accepted",
+            "DEF-001",
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z")));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        CallCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }
 
 internal static class MesTestProvider

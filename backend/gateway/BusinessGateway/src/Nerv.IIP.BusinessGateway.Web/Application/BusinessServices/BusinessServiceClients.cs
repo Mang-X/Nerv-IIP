@@ -8305,7 +8305,17 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         SendAcceptedAsync(
             internalBearerToken,
             "/api/business/v1/mes/defects",
-            request,
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.DefectCode,
+                request.Quantity,
+                request.RecordedAtUtc,
+                request.IdempotencyKey,
+            },
             MesDefectDocumentType,
             cancellationToken);
 
