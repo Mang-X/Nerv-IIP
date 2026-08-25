@@ -67,15 +67,9 @@ public sealed class InventoryMesCostAuthorityTests
             {
                 Content = JsonContent.Create(new
                 {
-                    data = new
-                    {
-                        status = "available",
-                        capitalizedUnitCost = 12.34m,
-                        provenanceEventId = "erp-cost-event-001",
-                    },
-                    success = true,
-                    message = "OK",
-                    code = 200,
+                    status = "available",
+                    capitalizedUnitCost = 12.34m,
+                    provenanceEventId = "erp-cost-event-001",
                 }, options: new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             },
         };
@@ -94,6 +88,38 @@ public sealed class InventoryMesCostAuthorityTests
         Assert.Equal(
             "mes:finished-goods-receipt:org-001:env-dev:FGR-001",
             body.RootElement.GetProperty("idempotencyKey").GetString());
+    }
+
+    [Fact]
+    public async Task Http_authority_resolver_does_not_treat_response_data_envelope_as_direct_authority()
+    {
+        var httpHandler = new CapturingHttpMessageHandler
+        {
+            Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    data = new
+                    {
+                        status = "available",
+                        capitalizedUnitCost = 99.99m,
+                        provenanceEventId = "untrusted-envelope-event",
+                    },
+                    success = true,
+                    message = "OK",
+                    code = 200,
+                }, options: new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+        };
+        var resolver = new HttpInventoryUnitCostAuthorityResolver(
+            new HttpClient(httpHandler) { BaseAddress = new Uri("http://mes.local") },
+            new FixedInternalServiceTokenProvider());
+
+        var result = await resolver.ResolveAsync(CreateMesFinishedGoodsEvent(99.99m), CancellationToken.None);
+
+        Assert.Equal(InventoryUnitCostAuthorityStatuses.Rejected, result.Status);
+        Assert.Equal("authority-rejected", result.ReasonCode);
+        Assert.Null(result.UnitCost);
     }
 
     private static InventoryMovementRequestedIntegrationEventHandlerForPostingMovement CreateHandler(

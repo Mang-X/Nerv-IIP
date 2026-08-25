@@ -126,9 +126,8 @@ public sealed class HttpInventoryUnitCostAuthorityResolver(
                 return InventoryUnitCostAuthorityResolution.Pending("authority-service-unavailable");
             }
 
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<MesFinishedGoodsReceiptCostAuthorityResponse>>(
+            var authority = await response.Content.ReadFromJsonAsync<MesFinishedGoodsReceiptCostAuthorityResponse>(
                 cancellationToken);
-            var authority = envelope?.Data;
             if (authority is null)
             {
                 return InventoryUnitCostAuthorityResolution.Pending("authority-response-empty");
@@ -157,8 +156,6 @@ public sealed class HttpInventoryUnitCostAuthorityResolver(
             return InventoryUnitCostAuthorityResolution.Pending("authority-service-unavailable");
         }
     }
-
-    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
 
 public sealed class InventoryUnitCostAuthorityPendingException(string reasonCode)
