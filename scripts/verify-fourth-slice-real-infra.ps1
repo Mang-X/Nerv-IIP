@@ -23,5 +23,5 @@ The fourth vertical-slice real-infrastructure verifier was a May 2026 milestone 
 
 It no longer starts shared development infrastructure, recreates historical verification databases, or nests the retired console verifier. Use `.\nerv.ps1 help` for current local-development and isolated full-stack entry points, and use the dedicated real-provider CI lanes for repository acceptance.
 
-This fail-fast compatibility tombstone remains only because the current script-governance fixture names this path explicitly. It must be deleted together with that stale fixture and the fifth-slice harness in the next cleanup batch.
+This fail-fast compatibility tombstone remains as the explicit path-preserving boundary for the first cleanup batch. The governance test checks its declaration; a later cleanup batch may remove this path together with the fifth-slice harness and its dedicated fixture.
 '@

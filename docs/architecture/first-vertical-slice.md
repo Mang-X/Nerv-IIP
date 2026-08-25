@@ -179,7 +179,7 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 
 ## 当前实现状态
 
-截至 2026-05-17，第一迭代接入查询纵切已经通过 `scripts/verify-first-slice.ps1` 验证，第二迭代低风险动作闭环已经通过 `scripts/verify-second-slice-ops.ps1` 验证，第三迭代控制台纵切已经通过 `scripts/verify-third-slice-console.ps1` 验证。当前可用范围：
+截至 2026-05-17，第一迭代接入查询纵切已经通过 `scripts/verify-first-slice.ps1` 验证，第二迭代低风险动作闭环已经通过 `scripts/verify-second-slice-ops.ps1` 验证，第三迭代控制台纵切已经通过 `scripts/verify-third-slice-console.ps1` 验证；这些脚本随后按 #2157 退役，命令仅保留为历史证据。当前可用范围：
 
 1. backend 与 connector-hosts 两套 solution 已创建，并可 restore、build、test。
 2. 平台 HTTP 服务已统一使用 FastEndpoints，路由实现放在各 Web 项目的 `Endpoints/` 目录。

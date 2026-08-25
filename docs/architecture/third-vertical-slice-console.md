@@ -1,6 +1,6 @@
 # 第三阶段控制台纵切说明
 
-本文档记录第三阶段已经落地的控制台纵切。它不是完整管理后台，而是验证 Nerv-IIP 能否从 Gateway 暴露稳定控制台契约，生成类型安全前端客户端，并在 Vue 控制台里完成实例查看、低风险 restart 动作和 OperationTask 状态查看。
+本文档记录第三阶段已经落地的控制台纵切。它不是完整管理后台，而是验证 Nerv-IIP 能否从 Gateway 暴露稳定控制台契约，生成类型安全前端客户端，并在 Vue 控制台里完成实例查看、低风险 restart 动作和 OperationTask 状态查看。`scripts/verify-third-slice-console.ps1` 已按 #2157 退役并保留为明确失败的兼容墓碑；当前 OpenAPI、api-client 和前端质量门禁分别执行，或使用 `scripts/verify-openapi-client-drift.ps1`。
 
 ## 目标
 
