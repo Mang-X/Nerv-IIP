@@ -79,6 +79,30 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         }
     }
 
+    public async Task EnsureWorkCenterAccessAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? requestedScopeKind,
+        string? requestedScopeId,
+        string workCenterId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveAsync(
+            authorization,
+            organizationId,
+            environmentId,
+            permissionCode,
+            requestedScopeKind,
+            requestedScopeId,
+            cancellationToken);
+        if (!scope.WorkCenterIds.Any(x => string.Equals(x, workCenterId, StringComparison.Ordinal)))
+        {
+            throw Forbidden();
+        }
+    }
+
     private static string? Join(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
 

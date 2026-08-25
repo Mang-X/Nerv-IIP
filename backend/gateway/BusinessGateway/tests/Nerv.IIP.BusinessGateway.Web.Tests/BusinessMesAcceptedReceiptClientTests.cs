@@ -140,6 +140,42 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 CancellationToken.None));
 
     [Fact]
+    public async Task Record_downtime_v2_maps_real_context_and_recorded_time_to_the_exact_mes_wire_payload()
+    {
+        string? capturedBody = null;
+        var capturedHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var client = ClientReturning(
+            AcceptedJson("DTE-000008"),
+            capturedHeaders,
+            body => capturedBody = body);
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+        var request = new BusinessMesRecordDowntimeEventRequest(
+            "org",
+            "env",
+            "WO-20260731-001",
+            "OP-000210",
+            "WC-CNC-01",
+            "DEV-1",
+            "MECH-FAULT",
+            startedAtUtc,
+            "idem-downtime-v2",
+            DateTimeOffset.Parse("2026-08-25T15:00:00Z"));
+
+        await client.RecordDowntimeEventAsync("token", request, CancellationToken.None);
+
+        using var document = JsonDocument.Parse(capturedBody!);
+        var body = document.RootElement;
+        Assert.Equal("WC-CNC-01", body.GetProperty("workCenterId").GetString());
+        Assert.Equal("MECH-FAULT", body.GetProperty("reasonCode").GetString());
+        Assert.Equal("2026-08-25T14:30:00+00:00", body.GetProperty("startedAtUtc").GetString());
+        Assert.Equal("2026-08-25T15:00:00+00:00", body.GetProperty("toUtc").GetString());
+        Assert.Equal("idem-downtime-v2", body.GetProperty("idempotencyKey").GetString());
+        Assert.False(body.TryGetProperty("reason", out _));
+        Assert.False(body.TryGetProperty("fromUtc", out _));
+        Assert.Equal("idem-downtime-v2", capturedHeaders["Idempotency-Key"]);
+    }
+
+    [Fact]
     public async Task Confirm_downtime_recovery_returns_an_accepted_receipt_carrying_the_downtime_no() =>
         await AssertAcceptedReceiptAsync(
             "DTE-000007",

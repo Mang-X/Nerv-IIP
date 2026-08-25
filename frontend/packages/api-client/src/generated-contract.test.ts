@@ -3,9 +3,11 @@ import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type {
   CreateBusinessConsoleCodeRuleVersionData,
+  NetCorePalExtensionsDtoResponseData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
+  RecordBusinessConsoleMesDowntimeEventErrors,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
@@ -44,6 +46,8 @@ import type {
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
   BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope,
   BusinessConsoleMesFinishedGoodsInventoryLinkResponse,
+  BusinessConsoleMesRecordDowntimeEventRequest,
+  BusinessConsoleMesRecordDowntimeEventV2Request,
   BusinessConsoleMesQualityHoldTimelineItem,
   BusinessConsoleMesQualityHoldTimelineRequest,
   BusinessConsoleMesQualityHoldTimelineResponse,
@@ -177,6 +181,7 @@ import {
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
@@ -217,6 +222,43 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleArchiveSkillRequest>().toEqualTypeOf<{
       reason: string
     }>()
+  })
+
+  it('keeps the legacy downtime request shape separate from the strict v2 context contract', () => {
+    expectTypeOf<BusinessConsoleMesRecordDowntimeEventRequest>().toEqualTypeOf<{
+      organizationId?: string
+      environmentId?: string
+      workOrderId?: string
+      operationTaskId?: string | null
+      deviceAssetId?: string | null
+      reasonCode?: string
+      startedAtUtc?: string
+      idempotencyKey?: string
+    }>()
+    expectTypeOf<BusinessConsoleMesRecordDowntimeEventV2Request>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      workOrderId: string
+      operationTaskId?: string | null
+      workCenterId: string
+      deviceAssetId?: string | null
+      reasonCode: string
+      startedAtUtc: string
+      idempotencyKey: string
+      scopeKind: string
+      scopeId: string
+      toUtc?: string | null
+    }>()
+  })
+
+  it('exposes the v1 downtime fail-closed 400 response in generated contracts', () => {
+    type HasV1DowntimeBadRequest = RecordBusinessConsoleMesDowntimeEventErrors extends {
+      400: NetCorePalExtensionsDtoResponseData
+    }
+      ? true
+      : false
+
+    expectTypeOf<HasV1DowntimeBadRequest>().toEqualTypeOf<true>()
   })
 
   it('requires a non-null change reason for code-rule versions through the stable boundary', () => {
@@ -530,6 +572,7 @@ describe('generated API client contract', () => {
     )
     expect(listBusinessConsoleMesDowntimeEventsQueryOptions).toBeTypeOf('function')
     expect(recordBusinessConsoleMesDowntimeEventMutationOptions).toBeTypeOf('function')
+    expect(recordBusinessConsoleMesDowntimeEventV2MutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesShiftHandoversQueryOptions).toBeTypeOf('function')
     expect(createBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')
     expect(acceptBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')

@@ -32,6 +32,81 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesEndpointContractTests
 {
     [Fact]
+    public async Task Record_downtime_rejects_missing_real_context_before_sending_command()
+    {
+        var sender = new CapturingRecordDowntimeSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/downtime-events",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-001",
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, sender.CallCount);
+    }
+
+    [Fact]
+    public async Task Record_downtime_endpoint_preserves_work_center_reason_time_and_idempotency_in_the_command()
+    {
+        var sender = new CapturingRecordDowntimeSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/downtime-events",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+                workCenterId = "WC-CNC-01",
+                deviceAssetId = "DEV-01",
+                reasonCode = "MECH-FAULT",
+                startedAtUtc,
+                idempotencyKey = "downtime-http-001",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, sender.CallCount);
+        Assert.NotNull(sender.LastCommand);
+        var command = sender.LastCommand!;
+        Assert.Equal("WC-CNC-01", command.WorkCenterId);
+        Assert.Equal("MECH-FAULT", command.Reason);
+        Assert.Equal(startedAtUtc, command.FromUtc);
+        Assert.Equal("downtime-http-001", command.IdempotencyKey);
+    }
+
+    [Fact]
     public void Production_report_internal_compatibility_constructor_cannot_mint_a_caller_intent_receipt()
     {
         var internalCommand = new RecordProductionReportCommand(
@@ -2157,6 +2232,44 @@ public sealed class MesEndpointContractTests
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Record_downtime_is_idempotent_for_the_same_full_payload_and_conflicts_on_a_changed_work_center()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+        var handler = new RecordDowntimeEventCommandHandler(dbContext);
+        var command = new RecordDowntimeEventCommand(
+            "org-001",
+            "env-dev",
+            "WO-DOWNTIME",
+            "OP-10",
+            "WC-CNC-01",
+            "DEV-01",
+            "MECH-FAULT",
+            startedAtUtc,
+            null,
+            "downtime-idem-001");
+
+        var firstResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var secondResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { WorkCenterId = "WC-CNC-02" },
+            CancellationToken.None));
+
+        Assert.Equal(firstResult, secondResult);
+        Assert.Equal(startedAtUtc, firstResult.AcceptedAtUtc);
+        Assert.Equal(1, await dbContext.WorkCenterUnavailabilities.CountAsync(
+            x => x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.WorkCenterId == "WC-CNC-01",
+            CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("OP-OTHER")]
     [InlineData("OP-MISSING")]
@@ -2888,6 +3001,43 @@ internal sealed class CapturingRecordDefectSender : ISender
             "Accepted",
             "DEF-001",
             DateTimeOffset.Parse("2026-08-25T14:30:00Z")));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        CallCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+}
+
+internal sealed class CapturingRecordDowntimeSender : ISender
+{
+    public int CallCount { get; private set; }
+
+    public RecordDowntimeEventCommand? LastCommand { get; private set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        LastCommand = Assert.IsType<RecordDowntimeEventCommand>(request);
+        return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+            "Accepted",
+            "DOWNTIME-001",
+            DateTimeOffset.Parse("2026-08-26T00:00:00Z")));
     }
 
     public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
