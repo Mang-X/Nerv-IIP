@@ -432,14 +432,28 @@ public sealed record RecordDowntimeEventRequest(
     string EnvironmentId,
     string? WorkOrderId,
     string? OperationTaskId,
-    string? WorkCenterId,
+    string WorkCenterId,
     string? DeviceAssetId,
-    string? ReasonCode,
-    string? Reason,
-    DateTimeOffset? StartedAtUtc,
-    DateTimeOffset? FromUtc,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
     DateTimeOffset? ToUtc,
-    string? IdempotencyKey = null);
+    string IdempotencyKey);
+
+public sealed class RecordDowntimeEventRequestValidator : Validator<RecordDowntimeEventRequest>
+{
+    public RecordDowntimeEventRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ToUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc)
+            .When(x => x.ToUtc.HasValue);
+    }
+}
 
 public sealed record RecoverDowntimeRequest(
     string OrganizationId,
@@ -1521,10 +1535,10 @@ public sealed class RecordDowntimeEventEndpoint(ISender sender)
             req.EnvironmentId,
             req.WorkOrderId,
             req.OperationTaskId,
-            req.WorkCenterId ?? req.WorkOrderId ?? "unknown-work-center",
+            req.WorkCenterId,
             req.DeviceAssetId,
-            req.Reason ?? req.ReasonCode ?? "manual-downtime",
-            req.FromUtc ?? req.StartedAtUtc ?? DateTimeOffset.UtcNow,
+            req.ReasonCode,
+            req.StartedAtUtc,
             req.ToUtc,
             req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);

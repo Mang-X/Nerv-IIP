@@ -1645,6 +1645,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesRecordDowntimeEventRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
+        string internalBearerToken,
+        BusinessMesRecordDowntimeEventRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> ConfirmDowntimeRecoveryAsync(
         string internalBearerToken,
         string downtimeEventId,
@@ -8050,6 +8055,29 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             "/api/business/v1/mes/downtime-events",
             request,
+            MesDowntimeEventDocumentType,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
+        string internalBearerToken,
+        BusinessMesRecordDowntimeEventRequest request,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            "/api/business/v1/mes/downtime-events",
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.WorkCenterId,
+                request.DeviceAssetId,
+                request.ReasonCode,
+                request.StartedAtUtc,
+                request.IdempotencyKey,
+                request.ToUtc,
+            },
             MesDowntimeEventDocumentType,
             cancellationToken);
 
