@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
@@ -1139,13 +1140,47 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
-    public void Inventory_registers_cap_failed_threshold_dead_letter_callback()
+    public async Task Inventory_cap_failed_threshold_callback_resolves_dead_letterer_and_dead_letters_subscribe_failure()
     {
-        using var factory = new WebApplicationFactory<Program>();
-        using var scope = factory.Services.CreateScope();
-        var options = scope.ServiceProvider.GetRequiredService<IOptions<CapOptions>>();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Development");
+                builder.UseSetting("Messaging:Provider", "InMemory");
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IIntegrationEventDeadLetterStore>(deadLetterStore));
+            });
 
-        Assert.NotNull(options.Value.FailedThresholdCallback);
+        using var scope = factory.Services.CreateScope();
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IntegrationEventCapFailureDeadLetterer>());
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<CapOptions>>();
+        var callback = options.Value.FailedThresholdCallback;
+        Assert.NotNull(callback);
+
+        var integrationEvent = CreateCapDeadLetterTestEvent();
+        callback!(new DotNetCore.CAP.Messages.FailedInfo
+        {
+            ServiceProvider = factory.Services,
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = new DotNetCore.CAP.Messages.Message(
+                new Dictionary<string, string?>
+                {
+                    [DotNetCore.CAP.Messages.Headers.Group] = "business-inventory.movement-requested",
+                    [DotNetCore.CAP.Messages.Headers.MessageName] = nameof(InventoryMovementRequestedIntegrationEvent),
+                    [DotNetCore.CAP.Messages.Headers.Exception] = "InventoryUnitCostAuthorityPendingException"
+                },
+                integrationEvent)
+        });
+
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            "business-inventory.movement-requested",
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal(integrationEvent.EventId, deadLetter.EventId);
+        Assert.Equal(
+            IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode,
+            deadLetter.FailureCode);
     }
 
     [Fact]
@@ -1499,6 +1534,39 @@ public sealed class InventoryEndpointContractTests
             "company",
             "owner-001",
             idempotencyKey);
+    }
+
+    private static InventoryMovementRequestedIntegrationEvent CreateCapDeadLetterTestEvent()
+    {
+        return new InventoryMovementRequestedIntegrationEvent(
+            "inventory-cap-dead-letter-001",
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-08-26T00:00:00Z", CultureInfo.InvariantCulture),
+            InventoryIntegrationEventSources.BusinessWms,
+            "corr-inventory-cap-dead-letter-001",
+            "cause-inventory-cap-dead-letter-001",
+            "org-001",
+            "env-dev",
+            "system:wms",
+            "wms:inventory-movement-requested:org-001:env-dev:IN-CAP-001:idem-cap-001",
+            new InventoryMovementRequestedPayload(
+                "inbound",
+                "wms",
+                "IN-CAP-001",
+                "LINE-001",
+                "idem-cap-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001",
+                5m,
+                DateTimeOffset.Parse("2026-08-26T00:00:00Z", CultureInfo.InvariantCulture)));
     }
 
     [Fact]
