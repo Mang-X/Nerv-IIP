@@ -59,7 +59,11 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Assert.Equal(0, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
 
-        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(documents);
+        // 原始项目源码不包含 source-generator 输出，完整项目编译由同一测试项目的 build 门禁负责。
+        // 内联语义夹具保持默认 fail-closed，防止 error symbol 静默走回退分支。
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            documents,
+            requireSuccessfulCompilation: false);
         var duplicateDiscoveredKeys = discovered
             .GroupBy(site => site.Key, StringComparer.Ordinal)
             .Where(group => group.Count() != 1)
@@ -84,7 +88,9 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             Assert.Equal(expected.DirectKnownExceptionCount, matches[0].DirectKnownExceptionCount);
         }
 
-        var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(documents);
+        var violations = BarcodeLabelUserMessageSourceAnalyzer.Analyze(
+            documents,
+            requireSuccessfulCompilation: false);
 
         Assert.True(
             violations.Count == 0,
@@ -129,6 +135,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     public void Discovery_includes_command_handlers_that_have_no_known_exception_site()
     {
         const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
             using NetCorePal.Extensions.Primitives;
             sealed record ProbeCommand : ICommand<string>;
             sealed class ProbeHandler : ICommandHandler<ProbeCommand, string>
@@ -151,6 +159,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     public void Discovery_recognizes_difficult_command_handler_shapes()
     {
         const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
             using NetCorePal.Extensions.Primitives;
             partial class Outer
             {
@@ -292,6 +302,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     public void Ledger_rejects_command_handler_exclusion_for_a_difficult_handler_shape()
     {
         const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
             using NetCorePal.Extensions.Primitives;
             partial class Outer
             {
@@ -383,6 +395,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     public void Discovery_uses_type_identity_for_a_known_exception_created_in_a_primary_base_argument()
     {
         const string source = """
+            using System;
             using NetCorePal.Extensions.Primitives;
             class Parent(Exception reason);
             sealed class Probe() : Parent(new KnownException("类型初始化失败。"));
@@ -400,6 +413,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     public void Discovery_recognizes_a_handler_whose_handle_method_is_inherited()
     {
         const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
             using NetCorePal.Extensions.Primitives;
             namespace ProbeNamespace
             {
@@ -456,9 +471,43 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Discovery_fails_closed_when_source_documents_have_compilation_errors()
+    {
+        const string source = "sealed class Probe { MissingType Value { get; } }";
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            BarcodeLabelUserMessageSourceAnalyzer.Discover(
+                [new BarcodeLabelSourceDocument("Invalid.cs", source)]));
+
+        Assert.Contains("BarcodeLabel 用户消息源码无法编译", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Invalid.cs", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("MissingType", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Discovery_fails_closed_when_a_handler_contract_has_no_resolvable_handle_declaration()
+    {
+        const string source = """
+            using NetCorePal.Extensions.Primitives;
+            sealed record ProbeCommand : ICommand<string>;
+            sealed class ProbeHandler : ICommandHandler<ProbeCommand, string> { }
+            """;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            BarcodeLabelUserMessageSourceAnalyzer.Discover(
+                [new BarcodeLabelSourceDocument("InvalidHandler.cs", source)],
+                requireSuccessfulCompilation: false));
+
+        Assert.Equal(
+            "InvalidHandler.cs: BarcodeLabel ICommandHandler ProbeHandler 的 Handle 合同声明无法解析。",
+            exception.Message);
+    }
+
+    [Fact]
     public void Discovery_owns_known_exception_creations_by_their_member_declaration()
     {
         const string source = """
+            using System;
             using NetCorePal.Extensions.Primitives;
             class Probe(string value = "default")
             {
@@ -498,7 +547,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             BarcodeLabelUserMessageSourceAnalyzer.Discover(
-                [new BarcodeLabelSourceDocument("Global.cs", source)]));
+                [new BarcodeLabelSourceDocument("Global.cs", source)],
+                requireSuccessfulCompilation: false));
 
         Assert.Contains("无法归属到成员", exception.Message, StringComparison.Ordinal);
     }

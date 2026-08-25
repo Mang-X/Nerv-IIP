@@ -35,7 +35,8 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
     public static IReadOnlyList<BarcodeLabelKnownExceptionSite> Discover(
         IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
-        IReadOnlyCollection<string>? commandHandlerTypeNames = null)
+        IReadOnlyCollection<string>? commandHandlerTypeNames = null,
+        bool requireSuccessfulCompilation = true)
     {
         if (documents.Count == 0)
         {
@@ -43,7 +44,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         }
 
         var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees);
+        var compilation = CreateCompilation(sourceTrees, requireSuccessfulCompilation);
         var sites = new Dictionary<string, BarcodeLabelKnownExceptionSite>(StringComparer.Ordinal);
 
         foreach (var syntaxTree in sourceTrees)
@@ -112,11 +113,14 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
                 .SelectMany(method => method.DeclaringSyntaxReferences)
                 .Select(reference => reference.GetSyntax())
                 .OfType<MethodDeclarationSyntax>()
-                .DistinctBy(node => (node.SyntaxTree.FilePath, node.SpanStart))
-                .OrderBy(node => NormalizePath(node.SyntaxTree.FilePath), StringComparer.Ordinal)
-                .ThenBy(node => node.SpanStart)
                 .Cast<SyntaxNode>()
-                .DefaultIfEmpty(syntax);
+                .ToArray();
+            if (handleDeclarations.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"{NormalizePath(syntax.SyntaxTree.FilePath)}: BarcodeLabel ICommandHandler {typeSymbol.Name} 的 Handle 合同声明无法解析。");
+            }
+
             foreach (var handleDeclaration in handleDeclarations)
             {
                 var path = NormalizePath(handleDeclaration.SyntaxTree.FilePath);
@@ -190,7 +194,8 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
     }
 
     public static IReadOnlyList<string> Analyze(
-        IReadOnlyCollection<BarcodeLabelSourceDocument> documents)
+        IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
+        bool requireSuccessfulCompilation = true)
     {
         if (documents.Count == 0)
         {
@@ -198,7 +203,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         }
 
         var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees);
+        var compilation = CreateCompilation(sourceTrees, requireSuccessfulCompilation);
         var violations = new List<Violation>();
 
         foreach (var syntaxTree in sourceTrees)
@@ -235,17 +240,35 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             .Select(document => CSharpSyntaxTree.ParseText(document.Text, path: NormalizePath(document.Path)))
             .ToArray();
 
-    private static CSharpCompilation CreateCompilation(IReadOnlyCollection<SyntaxTree> sourceTrees)
+    private static CSharpCompilation CreateCompilation(
+        IReadOnlyCollection<SyntaxTree> sourceTrees,
+        bool requireSuccessfulCompilation)
     {
         var syntaxTrees = sourceTrees
             .Append(CSharpSyntaxTree.ParseText(
                 "global using NetCorePal.Extensions.Primitives;",
                 path: "__BarcodeLabelGlobalUsings.g.cs"))
             .ToArray();
-        return CSharpCompilation.Create(
+        var compilation = CSharpCompilation.Create(
             "BarcodeLabelUserMessageArchitecture",
             syntaxTrees,
-            CreateMetadataReferences());
+            CreateMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var errors = compilation.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .OrderBy(diagnostic => NormalizePath(diagnostic.Location.SourceTree?.FilePath ?? string.Empty), StringComparer.Ordinal)
+            .ThenBy(diagnostic => diagnostic.Location.SourceSpan.Start)
+            .ThenBy(diagnostic => diagnostic.Id, StringComparer.Ordinal)
+            .ToArray();
+        if (requireSuccessfulCompilation && errors.Length != 0)
+        {
+            throw new InvalidOperationException(
+                "BarcodeLabel 用户消息源码无法编译："
+                + Environment.NewLine
+                + string.Join(Environment.NewLine, errors.Select(diagnostic => diagnostic.ToString())));
+        }
+
+        return compilation;
     }
 
     private static IEnumerable<SyntaxNode> FindKnownExceptionInvocations(
