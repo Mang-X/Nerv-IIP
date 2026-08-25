@@ -96,7 +96,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var assetPort = ValidAssetPort();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("dispatch-job"));
-        var handler = new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer);
+        var handler = CreateDispatchHandler(dbContext, assetPort, printer);
 
         var result = await handler.Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
@@ -117,7 +117,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.DeliveryUnknown("dispatch-job", "连接在写入后中断。"));
 
-        await new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+        await CreateDispatchHandler(dbContext, ValidAssetPort(), printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None);
 
@@ -134,7 +134,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Failed("连接前失败。"));
 
-        await new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+        await CreateDispatchHandler(dbContext, ValidAssetPort(), printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-retry"),
             CancellationToken.None);
 
@@ -155,18 +155,18 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new CancelingPrinter(
             cancellation,
             LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。"));
+        var attemptRecorder = new RecordingAttemptRecorder();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+            CreateDispatchHandler(dbContext, ValidAssetPort(), printer, attemptRecorder).Handle(
                 new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-canceled"),
                 cancellation.Token));
 
-        dbContext.ChangeTracker.Clear();
-        var persisted = await dbContext.LabelPrintBatches.SingleAsync(candidate => candidate.Id == batch.Id);
-        Assert.Equal("failed", persisted.Status);
-        Assert.Equal("printer-canceled", persisted.PrinterId);
-        Assert.Null(persisted.PrintJobId);
-        Assert.Equal("TCP 传输在首字节写入前失败。", persisted.FailureReason);
+        var attempt = Assert.Single(attemptRecorder.DispatchAttempts);
+        Assert.Equal(("org-001", "env-dev", batch.Id, "printer-canceled"), attempt.Scope);
+        var failed = Assert.IsType<LabelPrinterFailedResult>(attempt.Result);
+        Assert.Equal("TCP 传输在首字节写入前失败。", failed.FailureReason);
+        Assert.Equal("pending", batch.Status);
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class PrintLabelLifecycleCommandTests
         batch.VoidItem(1, "damaged");
         await dbContext.SaveChangesAsync();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));
-        var handler = new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), printer);
+        var handler = CreateReprintHandler(dbContext, ValidAssetPort(), printer);
 
         var result = await handler.Handle(
             new ReprintLabelCommand("org-001", "env-dev", batch.Id, 2, "printer-01"),
@@ -201,7 +201,7 @@ public sealed class PrintLabelLifecycleCommandTests
         batch.RecordSentToPrinter("printer-01", "initial-job");
         await dbContext.SaveChangesAsync();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));
-        var handler = new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), printer);
+        var handler = CreateReprintHandler(dbContext, ValidAssetPort(), printer);
         var command = new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01");
 
         await handler.Handle(command, CancellationToken.None);
@@ -223,7 +223,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var reprintPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ReprintLabelCommandHandler(dbContext, reprintAssetPort, reprintPrinter).Handle(
+            CreateReprintHandler(dbContext, reprintAssetPort, reprintPrinter).Handle(
                 new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
                 CancellationToken.None));
 
@@ -232,7 +232,7 @@ public sealed class PrintLabelLifecycleCommandTests
         Assert.Empty(reprintPrinter.Calls);
 
         var dispatchPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("dispatch-retry-job"));
-        await new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), dispatchPrinter).Handle(
+        await CreateDispatchHandler(dbContext, ValidAssetPort(), dispatchPrinter).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None);
 
@@ -249,7 +249,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var command = new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01");
 
-        await new ReprintLabelCommandHandler(
+        await CreateReprintHandler(
             dbContext,
             ValidAssetPort(),
             new RecordingPrinter(LabelPrinterDispatchResult.Failed("连接前失败。")))
@@ -260,7 +260,7 @@ public sealed class PrintLabelLifecycleCommandTests
         Assert.Equal("连接前失败。", batch.FailureReason);
 
         var retryPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("retry-job"));
-        await new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), retryPrinter)
+        await CreateReprintHandler(dbContext, ValidAssetPort(), retryPrinter)
             .Handle(command, CancellationToken.None);
 
         Assert.Equal("sent-to-printer", batch.Status);
@@ -281,18 +281,19 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new CancelingPrinter(
             cancellation,
             LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。"));
+        var attemptRecorder = new RecordingAttemptRecorder();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+            CreateReprintHandler(dbContext, ValidAssetPort(), printer, attemptRecorder).Handle(
                 new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-canceled"),
                 cancellation.Token));
 
-        dbContext.ChangeTracker.Clear();
-        var persisted = await dbContext.LabelPrintBatches.SingleAsync(candidate => candidate.Id == batch.Id);
-        Assert.Equal("sent-to-printer", persisted.Status);
-        Assert.Equal("printer-canceled", persisted.PrinterId);
-        Assert.Null(persisted.PrintJobId);
-        Assert.Equal("TCP 传输在首字节写入前失败。", persisted.FailureReason);
+        var attempt = Assert.Single(attemptRecorder.ReprintAttempts);
+        Assert.Equal(("org-001", "env-dev", batch.Id, "printer-canceled"), attempt.Scope);
+        var failed = Assert.IsType<LabelPrinterFailedResult>(attempt.Result);
+        Assert.Equal("TCP 传输在首字节写入前失败。", failed.FailureReason);
+        Assert.Equal("printer-original", batch.PrinterId);
+        Assert.Equal("initial-job", batch.PrintJobId);
     }
 
     [Fact]
@@ -304,7 +305,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.DeliveryUnknown("reprint-job", "连接在写入后中断。"));
 
-        var result = await new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+        var result = await CreateReprintHandler(dbContext, ValidAssetPort(), printer).Handle(
             new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
             CancellationToken.None);
 
@@ -326,7 +327,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Failed("连接前失败。"));
 
-        var result = await new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+        var result = await CreateReprintHandler(dbContext, ValidAssetPort(), printer).Handle(
             new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
             CancellationToken.None);
 
@@ -340,7 +341,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var assetPort = ValidAssetPort();
         var redispatchPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("duplicate-batch-job"));
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, redispatchPrinter).Handle(
+            CreateDispatchHandler(dbContext, assetPort, redispatchPrinter).Handle(
                 new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
                 CancellationToken.None));
 
@@ -359,7 +360,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var completedAtUtc = batch.CompletedAtUtc;
         await dbContext.SaveChangesAsync();
 
-        var result = await new ReprintLabelCommandHandler(
+        var result = await CreateReprintHandler(
             dbContext,
             ValidAssetPort(),
             new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"))).Handle(
@@ -386,7 +387,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ReprintLabelCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateReprintHandler(dbContext, assetPort, printer).Handle(
                 new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
                 CancellationToken.None));
 
@@ -419,7 +420,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ReprintLabelCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateReprintHandler(dbContext, assetPort, printer).Handle(
                 new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
                 CancellationToken.None));
 
@@ -437,10 +438,10 @@ public sealed class PrintLabelLifecycleCommandTests
         var assetPort = ValidAssetPort();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
 
-        await new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None);
-        await new ReprintLabelCommandHandler(dbContext, assetPort, printer).Handle(
+        await CreateReprintHandler(dbContext, assetPort, printer).Handle(
             new ReprintLabelCommand("org-001", "env-dev", batch.Id, 2, "printer-01"),
             CancellationToken.None);
 
@@ -479,7 +480,7 @@ public sealed class PrintLabelLifecycleCommandTests
             new VerifiedLabelTemplateAsset(reference.FileId, AssetSha256, epcTemplate));
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job-epc"));
 
-        await new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None);
 
@@ -523,7 +524,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job-frozen-gs1"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None));
 
@@ -542,7 +543,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var assetPort = ValidAssetPort();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
 
-        await new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None);
 
@@ -562,7 +563,7 @@ public sealed class PrintLabelLifecycleCommandTests
         await dbContext.SaveChangesAsync();
         var assetPort = ValidAssetPort();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
-        var handler = new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer);
+        var handler = CreateDispatchHandler(dbContext, assetPort, printer);
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new DispatchLabelPrintBatchCommand(organizationId, environmentId, batch.Id, "printer-01"),
@@ -585,7 +586,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var assetPort = ValidAssetPort();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
 
-        await Assert.ThrowsAsync<KnownException>(() => new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None));
 
@@ -604,7 +605,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("new-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateDispatchHandler(dbContext, assetPort, printer).Handle(
                 new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
                 CancellationToken.None));
 
@@ -626,7 +627,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("duplicate-batch-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateDispatchHandler(dbContext, assetPort, printer).Handle(
                 new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
                 CancellationToken.None));
 
@@ -673,7 +674,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("new-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ReprintLabelCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateReprintHandler(dbContext, assetPort, printer).Handle(
                 new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-01"),
                 CancellationToken.None));
 
@@ -693,7 +694,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("new-job"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+            CreateDispatchHandler(dbContext, assetPort, printer).Handle(
                 new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
                 CancellationToken.None));
 
@@ -712,7 +713,7 @@ public sealed class PrintLabelLifecycleCommandTests
             new VerifiedLabelTemplateAsset(reference.FileId, $"sha256:{new string('b', 64)}", TemplateJson));
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
 
-        await Assert.ThrowsAsync<KnownException>(() => new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None));
 
@@ -730,7 +731,7 @@ public sealed class PrintLabelLifecycleCommandTests
             new VerifiedLabelTemplateAsset(reference.FileId, AssetSha256, "{}"));
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
 
-        await Assert.ThrowsAsync<KnownException>(() => new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None));
 
@@ -753,7 +754,7 @@ public sealed class PrintLabelLifecycleCommandTests
         var assetPort = ValidAssetPort();
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("job"));
 
-        await Assert.ThrowsAsync<KnownException>(() => new DispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => CreateDispatchHandler(dbContext, assetPort, printer).Handle(
             new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-01"),
             CancellationToken.None));
 
@@ -841,6 +842,78 @@ public sealed class PrintLabelLifecycleCommandTests
                 cancellation.Token);
         }
     }
+
+    private static DispatchLabelPrintBatchCommandHandler CreateDispatchHandler(
+        ApplicationDbContext dbContext,
+        ILabelTemplateAssetPort assetPort,
+        ILabelPrinter printer,
+        ILabelPrintAttemptRecorder? attemptRecorder = null) =>
+        new(dbContext, assetPort, printer, attemptRecorder ?? UnexpectedAttemptRecorder.Instance);
+
+    private static ReprintLabelCommandHandler CreateReprintHandler(
+        ApplicationDbContext dbContext,
+        ILabelTemplateAssetPort assetPort,
+        ILabelPrinter printer,
+        ILabelPrintAttemptRecorder? attemptRecorder = null) =>
+        new(dbContext, assetPort, printer, attemptRecorder ?? UnexpectedAttemptRecorder.Instance);
+
+    private sealed class UnexpectedAttemptRecorder : ILabelPrintAttemptRecorder
+    {
+        public static UnexpectedAttemptRecorder Instance { get; } = new();
+
+        private UnexpectedAttemptRecorder()
+        {
+        }
+
+        public Task RecordDispatchCanceledAsync(
+            string organizationId,
+            string environmentId,
+            LabelPrintBatchId printBatchId,
+            string printerId,
+            LabelPrinterDispatchResult result) =>
+            throw new InvalidOperationException("This test did not expect a canceled dispatch attempt.");
+
+        public Task RecordReprintCanceledAsync(
+            string organizationId,
+            string environmentId,
+            LabelPrintBatchId printBatchId,
+            string printerId,
+            LabelPrinterDispatchResult result) =>
+            throw new InvalidOperationException("This test did not expect a canceled reprint attempt.");
+    }
+
+    private sealed class RecordingAttemptRecorder : ILabelPrintAttemptRecorder
+    {
+        public List<RecordedAttempt> DispatchAttempts { get; } = [];
+
+        public List<RecordedAttempt> ReprintAttempts { get; } = [];
+
+        public Task RecordDispatchCanceledAsync(
+            string organizationId,
+            string environmentId,
+            LabelPrintBatchId printBatchId,
+            string printerId,
+            LabelPrinterDispatchResult result)
+        {
+            DispatchAttempts.Add(new((organizationId, environmentId, printBatchId, printerId), result));
+            return Task.CompletedTask;
+        }
+
+        public Task RecordReprintCanceledAsync(
+            string organizationId,
+            string environmentId,
+            LabelPrintBatchId printBatchId,
+            string printerId,
+            LabelPrinterDispatchResult result)
+        {
+            ReprintAttempts.Add(new((organizationId, environmentId, printBatchId, printerId), result));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record RecordedAttempt(
+        (string OrganizationId, string EnvironmentId, LabelPrintBatchId PrintBatchId, string PrinterId) Scope,
+        LabelPrinterDispatchResult Result);
 
     private sealed class NoopMediator : IMediator
     {

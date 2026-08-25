@@ -1,10 +1,17 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Npgsql;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
@@ -12,6 +19,82 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed class BarcodeLabelPostgresProfileTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
+
+    [RealPostgresFact]
+    public async Task Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var migrationDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            AssertUsesGovernedDatabase(migrationDb);
+            await migrationDb.Database.MigrateAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(DispatchLabelPrintBatchCommand).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+            LaneConnectionString,
+            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", BarcodeLabelFacts.Schema)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<ILabelPrintAttemptRecorder, IndependentLabelPrintAttemptRecorder>();
+        services.AddSingleton<ILabelTemplateAssetPort>(new FixedTemplateAssetPort());
+        using var cancellation = new CancellationTokenSource();
+        services.AddSingleton<ILabelPrinter>(new CancelingLabelPrinter(cancellation));
+        await using var provider = services.BuildServiceProvider();
+
+        LabelPrintBatchId batchId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-001", "env-dev", "FG", "code128", "FG", 40, "none", ["wms.inbound"], "active");
+            var template = LabelTemplate.Create(
+                "org-001", "env-dev", "FG_BOX", "Finished goods box", "file-template-001",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""", "active");
+            var batch = LabelPrintBatch.Create(
+                "org-001",
+                "env-dev",
+                rule,
+                template.Id,
+                new LabelPrintBatchSnapshot(
+                    "file-template-001",
+                    $"sha256:{new string('a', 64)}",
+                    """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""",
+                    "code128",
+                    "zpl-v1"),
+                "wms.inbound",
+                "ASN-INDEPENDENT-ATTEMPT",
+                "idem-independent-attempt",
+                """{"skuCode":"SKU-FG-1000"}""",
+                1);
+            batchId = batch.Id;
+            setupDb.AddRange(template, batch);
+            await setupDb.SaveChangesAsync();
+        }
+
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sender.Send(
+                new DispatchLabelPrintBatchCommand(
+                    "org-001",
+                    "env-dev",
+                    batchId,
+                    "printer-independent"),
+                cancellation.Token));
+        }
+
+        await using var verificationScope = provider.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("failed", persisted.Status);
+        Assert.Equal("printer-independent", persisted.PrinterId);
+        Assert.Null(persisted.PrintJobId);
+        Assert.Equal("调用方取消前未写入首字节。", persisted.FailureReason);
+    }
 
     [RealPostgresFact]
     public async Task Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event()
@@ -68,6 +151,33 @@ public sealed class BarcodeLabelPostgresProfileTests
             .Options;
 
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class FixedTemplateAssetPort : ILabelTemplateAssetPort
+    {
+        public Task<VerifiedLabelTemplateAsset> GetVerifiedAsync(
+            LabelTemplateAssetReference reference,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new VerifiedLabelTemplateAsset(
+                reference.FileId,
+                $"sha256:{new string('a', 64)}",
+                """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}"""));
+    }
+
+    private sealed class CancelingLabelPrinter(CancellationTokenSource cancellation) : ILabelPrinter
+    {
+        public Task<LabelPrinterDispatchResult> PrintAsync(
+            string printerId,
+            IReadOnlyCollection<CompiledLabelDocument> documents,
+            CancellationToken cancellationToken)
+        {
+            cancellation.Cancel();
+            var inner = new OperationCanceledException(cancellation.Token);
+            throw new LabelPrinterDispatchCanceledException(
+                LabelPrinterDispatchResult.Failed("调用方取消前未写入首字节。"),
+                inner,
+                cancellation.Token);
+        }
     }
 
     private static ScanRecord NewPlainInventoryScan(string idempotencyKey)

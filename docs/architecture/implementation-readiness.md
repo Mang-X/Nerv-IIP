@@ -362,8 +362,10 @@ socket write 后重新开始。loopback 测试本身也以包含 connect/accept/
 打印尝试开始后，若调用方请求取消或宿主停止令牌触发，adapter 仍按已确认写入字节数形成
 `failed`（首字节前）或 `delivery-unknown`（首字节后）attempt result，并通过派生自
 `OperationCanceledException` 的 `LabelPrinterDispatchCanceledException` 携带该结果；命令 handler
-使用不复用已取消请求令牌的独立保存写入本次 `printer_id` / `print_job_id` / `failure_reason` facts，随后
-原样继续抛出取消，不能把取消改写成成功响应。连接/传输内部预算仍走普通 transport result，不伪装成
+通过独立依赖注入 scope 的新 `ApplicationDbContext` 按 organization/environment/batch 重新加载聚合，
+使用不复用已取消请求令牌的独立事务写入本次 `printer_id` / `print_job_id` / `failure_reason` facts；该提交
+不属于随后因异常回滚的命令 UnitOfWork。保存完成后 handler 原样继续抛出取消，不能把取消改写成成功响应。
+连接/传输内部预算仍走普通 transport result，不伪装成
 调用方取消；资产加载、模板编译等尚未调用 printer 的阶段若取消，则直接传播且不虚构打印尝试。
 
 本层的 reprint 是对单个冻结文档再次执行 transport，不是物理打印确认：批次处于
