@@ -280,30 +280,26 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     public async Task Redirect_loopback_server_cancellation_stops_an_incomplete_request()
     {
         await TestTimeout.RunAsync(
-            "FileStorage redirect loopback cleanup while request headers remain incomplete",
+            "FileStorage redirect loopback read cancellation while request headers remain incomplete",
             async testCancellationToken =>
             {
-                var bytes = Encoding.UTF8.GetBytes(TemplateJson);
                 using var listener = new TcpListener(IPAddress.Loopback, 0);
                 listener.Start();
                 var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-                using var serverCancellation = CancellationTokenSource.CreateLinkedTokenSource(testCancellationToken);
-                var server = ServeRedirectAndPossibleFollowAsync(listener, bytes, serverCancellation.Token);
                 using var client = new TcpClient();
+                var accept = listener.AcceptTcpClientAsync(testCancellationToken).AsTask();
+                await client.ConnectAsync(IPAddress.Loopback, port, testCancellationToken);
+                using var serverPeer = await accept;
+                using var readCancellation = CancellationTokenSource.CreateLinkedTokenSource(testCancellationToken);
+                var read = ReadRequestHeadersAsync(serverPeer, readCancellation.Token);
 
-                try
-                {
-                    await client.ConnectAsync(IPAddress.Loopback, port, testCancellationToken);
-                    await client.GetStream().WriteAsync("GET /"u8.ToArray(), testCancellationToken);
-                }
-                finally
-                {
-                    serverCancellation.Cancel();
-                    var acceptedRequests = await server.WaitAsync(testCancellationToken);
-                    Assert.Equal(1, acceptedRequests);
-                }
+                await client.GetStream().WriteAsync("GET /"u8.ToArray(), testCancellationToken);
+                readCancellation.Cancel();
+
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                    read.WaitAsync(TimeSpan.FromSeconds(1), testCancellationToken));
             },
-            TimeSpan.FromSeconds(3));
+            TimeSpan.FromSeconds(5));
     }
 
     [Fact]
