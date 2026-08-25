@@ -81,16 +81,16 @@ public sealed class InventoryPostgresProfileTests
         using (var firstScope = provider.CreateScope())
         using (var secondScope = provider.CreateScope())
         {
-            var barrier = new Barrier(2);
+            using var barrier = new Barrier(2);
             var outcomes = await Task.WhenAll(
-                TryInsertConcurrentPendingAsync(
+                Task.Run(() => TryInsertConcurrentPendingAsync(
                     firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                     barrier,
-                    "evt-postgres-authority-pending-concurrent-001"),
-                TryInsertConcurrentPendingAsync(
+                    "evt-postgres-authority-pending-concurrent-001")),
+                Task.Run(() => TryInsertConcurrentPendingAsync(
                     secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                     barrier,
-                    "evt-postgres-authority-pending-concurrent-001"));
+                    "evt-postgres-authority-pending-concurrent-001")));
 
             Assert.Contains(true, outcomes);
             Assert.Contains(false, outcomes);
@@ -290,7 +290,10 @@ public sealed class InventoryPostgresProfileTests
         Barrier barrier,
         string eventId)
     {
-        barrier.SignalAndWait();
+        if (!barrier.SignalAndWait(TimeSpan.FromSeconds(10)))
+        {
+            throw new TimeoutException("Concurrent pending-audit inserts did not reach the synchronization barrier.");
+        }
         db.AuthorityResolutionPendingAudits.Add(
             new InventoryAuthorityResolutionPendingAudit(
                 eventId,
