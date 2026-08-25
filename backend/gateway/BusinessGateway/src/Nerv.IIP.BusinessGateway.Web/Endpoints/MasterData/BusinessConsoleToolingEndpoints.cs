@@ -32,6 +32,7 @@ public sealed class ListBusinessConsoleToolingAssetsEndpoint(
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/tooling-assets")]
 [BusinessGatewayOperationId("registerBusinessConsoleToolingAsset")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
@@ -60,6 +61,7 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/tooling-assets/status")]
 [BusinessGatewayOperationId("changeBusinessConsoleToolingStatus")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
@@ -88,6 +90,7 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/tooling-assets/usage")]
 [BusinessGatewayOperationId("recordBusinessConsoleToolingUsage")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RecordBusinessConsoleToolingUsageEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,

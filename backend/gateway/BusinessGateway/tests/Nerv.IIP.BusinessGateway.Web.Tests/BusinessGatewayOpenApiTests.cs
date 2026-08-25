@@ -97,6 +97,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets", "post", "registerBusinessConsoleToolingAsset");
         AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets/status", "post", "changeBusinessConsoleToolingStatus");
         AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets/usage", "post", "recordBusinessConsoleToolingUsage");
+        AssertResponseStatuses(paths, "/api/business-console/v1/master-data/tooling-assets", "post", "409");
+        AssertResponseStatuses(paths, "/api/business-console/v1/master-data/tooling-assets/status", "post", "409");
+        AssertResponseStatuses(paths, "/api/business-console/v1/master-data/tooling-assets/usage", "post", "409");
         AssertToolingStatusParameterEnum(
             document,
             paths.GetProperty("/api/business-console/v1/master-data/tooling-assets").GetProperty("get"),
@@ -1601,6 +1604,12 @@ public sealed class BusinessGatewayOpenApiTests
             "changeBusinessConsoleToolingStatus",
             "recordBusinessConsoleToolingUsage",
         };
+        var toolingOperationIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "registerBusinessConsoleToolingAsset",
+            "changeBusinessConsoleToolingStatus",
+            "recordBusinessConsoleToolingUsage",
+        };
 
         var operations = paths.EnumerateObject()
             .SelectMany(path => path.Value.EnumerateObject())
@@ -1617,6 +1626,12 @@ public sealed class BusinessGatewayOpenApiTests
             Assert.True(
                 !header.TryGetProperty("required", out var required)
                 || !required.GetBoolean());
+            if (toolingOperationIds.Contains(operationId))
+            {
+                Assert.Equal(
+                    "At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.",
+                    header.GetProperty("description").GetString());
+            }
         }
     }
 
