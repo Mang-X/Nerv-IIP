@@ -53,7 +53,7 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
         masterData.RegisterToolingAssetAsync(
             tokenProvider.BearerToken,
             request,
-            RequireAuditContext(request, requireIdempotencyKey: true),
+            RequireIdempotentAuditContext(request),
             cancellationToken);
 }
 
@@ -81,7 +81,7 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
         masterData.ChangeToolingStatusAsync(
             tokenProvider.BearerToken,
             request,
-            RequireAuditContext(request, requireIdempotencyKey: true),
+            RequireIdempotentAuditContext(request),
             cancellationToken);
 }
 
@@ -109,7 +109,7 @@ public sealed class RecordBusinessConsoleToolingUsageEndpoint(
         masterData.RecordToolingUsageAsync(
             tokenProvider.BearerToken,
             request,
-            RequireAuditContext(request, requireIdempotencyKey: true),
+            RequireIdempotentAuditContext(request),
             cancellationToken);
 }
 
