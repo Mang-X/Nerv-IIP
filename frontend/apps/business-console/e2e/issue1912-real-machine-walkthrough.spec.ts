@@ -1,6 +1,7 @@
 import { expect, test, type APIResponse, type Request, type Response } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { createSessionCredentialTracker } from './session-credential-tracker'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -338,7 +339,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   let environmentId = ''
   let principalId = ''
   let principalType = ''
-  let sessionCredential = ''
+  const sessionCredentialTracker = createSessionCredentialTracker()
   const evidence = new Map<NodeName, EvidenceEntry>()
   const setup: JsonRecord[] = []
   const uiEvidence: UiProof[] = []
@@ -363,6 +364,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
   const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
 
+  page.on('request', (request) => sessionCredentialTracker.observe(request))
   page.on('requestfailed', (request) => {
     const classified = classifyRequestFailure(request)
     if (classified.expected) expectedRequestCancellations.push(classified.record)
@@ -386,7 +388,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     const response = await page.request.fetch(url.toString(), {
       method,
       data: body,
-      headers: sessionCredential ? { authorization: sessionCredential } : undefined,
+      headers: sessionCredentialTracker.headers(),
     })
     const payload = await jsonOf(response)
     const summary: JsonRecord = {
@@ -621,8 +623,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       { timeout: 120_000 },
     )
     await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-    sessionCredential = (await businessRequest).headers().authorization ?? ''
-    expect(sessionCredential).not.toBe('')
+    sessionCredentialTracker.observe(await businessRequest)
+    expect(sessionCredentialTracker.headers()).toBeDefined()
 
     // The seed is intentionally read-only here. The test proves the reserved facts exist and never
     // creates or overwrites an approval template; CreatePurchaseOrderCommand starts the seeded chain.
@@ -1785,7 +1787,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       ),
       'utf8',
     )
-    sessionCredential = ''
+    sessionCredentialTracker.clear()
   }
 
   const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
