@@ -123,6 +123,11 @@ public sealed class HttpMesWorkerSkillQualificationGate(
             throw new KnownException(SourceUnavailable, exception);
         }
 
+        if (response.PageIndex != 1 || response.PageSize != 2)
+        {
+            throw new KnownException(SourceUnavailable);
+        }
+
         if (response.TotalCount == 0 && response.Items is { Count: 0 })
         {
             throw Unqualified(userId, skillCode);
@@ -139,7 +144,12 @@ public sealed class HttpMesWorkerSkillQualificationGate(
             throw new KnownException(SourceUnavailable);
         }
 
-        if (!worker.Active)
+        if (worker.Active is null || string.IsNullOrWhiteSpace(worker.EmploymentStatus))
+        {
+            throw new KnownException(SourceUnavailable);
+        }
+
+        if (!worker.Active.Value)
         {
             throw new KnownException($"人员 '{userId}' 已停用，不能派工或开工。");
         }
@@ -149,7 +159,8 @@ public sealed class HttpMesWorkerSkillQualificationGate(
             throw new KnownException($"人员 '{userId}' 当前不是在职状态，不能派工或开工。");
         }
 
-        if (worker.Skills is null)
+        if (worker.Skills is null || worker.Skills.Any(x =>
+                string.IsNullOrWhiteSpace(x.SkillCode) || string.IsNullOrWhiteSpace(x.Level)))
         {
             throw new KnownException(SourceUnavailable);
         }
@@ -184,10 +195,10 @@ public sealed class HttpMesWorkerSkillQualificationGate(
         int PageSize);
 
     private sealed record WorkerDirectoryItem(
-        string UserId,
-        string EmploymentStatus,
-        bool Active,
+        string? UserId,
+        string? EmploymentStatus,
+        bool? Active,
         IReadOnlyCollection<WorkerSkillItem>? Skills);
 
-    private sealed record WorkerSkillItem(string SkillCode, string Level);
+    private sealed record WorkerSkillItem(string? SkillCode, string? Level);
 }
