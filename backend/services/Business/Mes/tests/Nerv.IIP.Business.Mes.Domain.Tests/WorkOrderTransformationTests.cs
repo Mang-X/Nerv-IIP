@@ -123,7 +123,7 @@ public sealed class WorkOrderTransformationTests
             "org-001",
             "env-dev",
             parent,
-            [Snapshot("WO-CHILD-1", 10m, uomCode: "KG")],
+            [Snapshot("WO-CHILD-1", 5m, uomCode: "KG"), Snapshot("WO-CHILD-2", 5m, uomCode: "KG")],
             "split-request-uom",
             "fingerprint-uom",
             "user:planner-001",

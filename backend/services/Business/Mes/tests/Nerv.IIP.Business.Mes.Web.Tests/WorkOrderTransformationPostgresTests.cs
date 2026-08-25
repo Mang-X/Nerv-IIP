@@ -190,26 +190,35 @@ public sealed class WorkOrderTransformationPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var options = MesPostgresLaneDatabase.CreateOptions();
+        const string idempotencyKey = "split-postgres-scoped";
         await using (var setup = CreateContext(options))
         {
             await setup.Database.MigrateAsync(CancellationToken.None);
-            setup.WorkOrders.AddRange(
-                WorkOrder.Create(
-                    "org-001", "env-dev", "WO-AUDIT-PARENT", "SKU-001", "PV-001", 10m, 10,
-                    DateTimeOffset.Parse("2026-08-25T10:00:00Z"), "PCS"),
-                WorkOrder.Create(
-                    "org-001", "env-dev", "WO-AUDIT-CHILD-1", "SKU-001", "PV-001", 5m, 10,
-                    DateTimeOffset.Parse("2026-08-25T10:00:00Z"), "PCS"),
-                WorkOrder.Create(
-                    "org-001", "env-dev", "WO-AUDIT-CHILD-2", "SKU-001", "PV-001", 5m, 10,
-                    DateTimeOffset.Parse("2026-08-25T10:00:00Z"), "PCS"));
+            setup.WorkOrders.AddRange(CreateAuditWorkOrders("org-001", "env-dev", "WO-AUDIT"));
+            setup.WorkOrders.AddRange(CreateAuditWorkOrders("org-002", "env-dev", "WO-AUDIT-ORG-2"));
+            setup.WorkOrders.AddRange(CreateAuditWorkOrders("org-001", "env-test", "WO-AUDIT-ENV-TEST"));
             await setup.SaveChangesAsync(CancellationToken.None);
-            setup.WorkOrderTransformations.Add(CreateSplitAudit("split-postgres-duplicate", "fingerprint-a"));
+            setup.WorkOrderTransformations.AddRange(
+                CreateSplitAudit(idempotencyKey, "fingerprint-a"),
+                CreateSplitAudit(idempotencyKey, "fingerprint-b", "org-002", "env-dev", "WO-AUDIT-ORG-2"),
+                CreateSplitAudit(idempotencyKey, "fingerprint-c", "org-001", "env-test", "WO-AUDIT-ENV-TEST"));
             await setup.SaveChangesAsync(CancellationToken.None);
         }
 
+        await using (var assertion = CreateContext(options))
+        {
+            var scopedTransformations = await assertion.WorkOrderTransformations
+                .Where(x => x.IdempotencyKey == idempotencyKey)
+                .ToListAsync();
+
+            Assert.Equal(3, scopedTransformations.Count);
+            Assert.Contains(scopedTransformations, x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev");
+            Assert.Contains(scopedTransformations, x => x.OrganizationId == "org-002" && x.EnvironmentId == "env-dev");
+            Assert.Contains(scopedTransformations, x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-test");
+        }
+
         await using var duplicate = CreateContext(options);
-        duplicate.WorkOrderTransformations.Add(CreateSplitAudit("split-postgres-duplicate", "fingerprint-b"));
+        duplicate.WorkOrderTransformations.Add(CreateSplitAudit(idempotencyKey, "fingerprint-conflict"));
 
         await Assert.ThrowsAsync<DbUpdateException>(() => duplicate.SaveChangesAsync(CancellationToken.None));
     }
@@ -240,19 +249,44 @@ public sealed class WorkOrderTransformationPostgresTests
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => stale.SaveChangesAsync(CancellationToken.None));
     }
 
-    private static WorkOrderTransformation CreateSplitAudit(string idempotencyKey, string requestFingerprint)
+    private static WorkOrderTransformation CreateSplitAudit(
+        string idempotencyKey,
+        string requestFingerprint,
+        string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string workOrderPrefix = "WO-AUDIT")
     {
-        var parent = Snapshot("WO-AUDIT-PARENT", 10m);
+        var parent = Snapshot($"{workOrderPrefix}-PARENT", 10m);
         return WorkOrderTransformation.CreateSplit(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             parent,
-            [Snapshot("WO-AUDIT-CHILD-1", 5m), Snapshot("WO-AUDIT-CHILD-2", 5m)],
+            [Snapshot($"{workOrderPrefix}-CHILD-1", 5m), Snapshot($"{workOrderPrefix}-CHILD-2", 5m)],
             idempotencyKey,
             requestFingerprint,
             "user:planner-001",
             "持久化审计",
             DateTimeOffset.Parse("2026-08-25T10:00:00Z"));
+    }
+
+    private static WorkOrder[] CreateAuditWorkOrders(
+        string organizationId,
+        string environmentId,
+        string workOrderPrefix)
+    {
+        var occurredAtUtc = DateTimeOffset.Parse("2026-08-25T10:00:00Z");
+        return
+        [
+            WorkOrder.Create(
+                organizationId, environmentId, $"{workOrderPrefix}-PARENT", "SKU-001", "PV-001", 10m, 10,
+                occurredAtUtc, "PCS"),
+            WorkOrder.Create(
+                organizationId, environmentId, $"{workOrderPrefix}-CHILD-1", "SKU-001", "PV-001", 5m, 10,
+                occurredAtUtc, "PCS"),
+            WorkOrder.Create(
+                organizationId, environmentId, $"{workOrderPrefix}-CHILD-2", "SKU-001", "PV-001", 5m, 10,
+                occurredAtUtc, "PCS"),
+        ];
     }
 
     private static WorkOrderTransformationWorkOrderSnapshot Snapshot(WorkOrder workOrder) =>
