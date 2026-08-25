@@ -2266,6 +2266,7 @@
       "route": "/api/business/v1/master-data/product-categories",
       "operationId": "listBusinessMasterDataProductCategories",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；保留 ProductCategory 专属筛选与响应契约。",
       "gateways": [
         "business"
       ],
@@ -2373,6 +2374,7 @@
       "route": "/api/business/v1/master-data/resources",
       "operationId": "listBusinessMasterDataResources",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；公开字段与既有分页默认值保持兼容。",
       "gateways": [
         "business"
       ],
@@ -2465,6 +2467,7 @@
       "route": "/api/business/v1/master-data/skills",
       "operationId": "listBusinessMasterDataSkills",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；保留 Skill 专属筛选与响应契约。",
       "gateways": [
         "business"
       ],
