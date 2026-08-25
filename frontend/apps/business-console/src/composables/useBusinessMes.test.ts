@@ -33,8 +33,10 @@ import {
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
+  listBusinessConsoleSearchableDirectoryQueryOptions,
   recordBusinessConsoleMesProductionReport,
   recordBusinessConsoleMesDefectV2MutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -72,6 +74,7 @@ const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
+  queryErrorById: new Map<string, unknown>(),
   queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
@@ -332,6 +335,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesWorkOrders' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleSearchableDirectoryQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleSearchableDirectory' }],
+    query: vi.fn(),
+  })),
   pauseBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -350,7 +357,7 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
-  recordBusinessConsoleMesDowntimeEventMutationOptions: vi.fn(() => ({
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -417,7 +424,7 @@ vi.mock('@pinia/colada', () => ({
     coladaState.queryDataRefById.set(id, data)
     return {
       data,
-      error: shallowRef(),
+      error: shallowRef(coladaState.queryErrorById.get(id)),
       isLoading: shallowRef(false),
       refetch,
     }
@@ -483,6 +490,7 @@ describe('business MES composables', () => {
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryErrorById.clear()
     coladaState.queryDataRefById.clear()
     coladaState.queryRefetchById.clear()
     reactiveAuthState.principal = {
@@ -542,6 +550,15 @@ describe('business MES composables', () => {
       {
         success: true,
         data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.downtime.manage',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
       },
     )
   })
@@ -1220,6 +1237,107 @@ describe('business MES composables', () => {
     expect(useMesProductionReports().productionReportsTotal.value).toBe(16)
     expect(useMesQualityContext().qualityItemsTotal.value).toBe(17)
     expect(useMesShiftHandovers().handoversTotal.value).toBe(18)
+  })
+
+  it('injects current business context and the selected scope into downtime v2 writes', async () => {
+    const downtime = useMesDowntimeEvents()
+
+    await downtime.recordDowntimeEvent({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+      workCenterId: 'WC-A',
+      deviceAssetId: 'DEVICE-1',
+      reasonCode: 'equipment-fault',
+      startedAtUtc: '2026-08-26T00:30:00.000Z',
+      idempotencyKey: 'downtime-key',
+      scopeKind: 'work-center',
+      scopeId: 'WC-A',
+    })
+
+    const mutation = vi
+      .mocked(recordBusinessConsoleMesDowntimeEventV2MutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'WO-1',
+        operationTaskId: 'OP-1',
+        workCenterId: 'WC-A',
+        deviceAssetId: 'DEVICE-1',
+        reasonCode: 'equipment-fault',
+        startedAtUtc: '2026-08-26T00:30:00.000Z',
+        idempotencyKey: 'downtime-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+    })
+  })
+
+  it('uses the searchable-directory 1-based page and server page-size bound for downtime reasons', () => {
+    useMesDowntimeEvents()
+
+    expect(listBusinessConsoleSearchableDirectoryQueryOptions).toHaveBeenCalledWith({
+      path: { directoryType: 'downtime-reason' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        pageIndex: 1,
+        pageSize: 100,
+        rankingMode: 'default',
+      },
+    })
+  })
+
+  it('maps an available downtime-reason directory response to selectable options', () => {
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: {
+        status: 'available',
+        items: [
+          {
+            id: 'reason-1',
+            code: 'equipment-fault',
+            displayName: '设备故障',
+            sourceService: 'BusinessMaintenance',
+            authorityDirectoryType: 'downtime-reason',
+          },
+        ],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([
+      { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
+    ])
+    expect(downtime.downtimeReasonsError.value).toBeUndefined()
+  })
+
+  it('keeps an unavailable downtime-reason directory fail closed without fabricated options', () => {
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: {
+        status: 'unavailable',
+        reasonCode: 'directory-authority-unconfigured',
+        items: [],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    expect(downtime.downtimeReasonsError.value).toBeUndefined()
+  })
+
+  it('exposes downtime-reason directory errors while keeping registration options empty', () => {
+    const directoryError = new Error('directory-page-invalid')
+    coladaState.queryErrorById.set('listBusinessConsoleSearchableDirectory', directoryError)
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    expect(downtime.downtimeReasonsError.value).toBe(directoryError)
   })
 
   it('injects the current business context into the defect wire body and rejects caller overrides', async () => {
