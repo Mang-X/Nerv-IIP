@@ -664,6 +664,7 @@ function Assert-NervIssue1912WalkthroughEvidence {
         'wms-completed-erp-delivery',
         'erp-account-receivable'
     )
+    $requiredNodeSet = [Collections.Generic.HashSet[string]]::new([string[]]@($requiredNodes), [StringComparer]::Ordinal)
     $entries = @($evidence.entries)
     if ($entries.Count -ne $requiredNodes.Count) {
         throw "Issue #1912 walkthrough evidence must contain exactly $($requiredNodes.Count) entries; found $($entries.Count)."
@@ -694,7 +695,7 @@ function Assert-NervIssue1912WalkthroughEvidence {
         if ([int]$proof.pageHttpStatus -ne 200 -or [int]$proof.listHttpStatus -ne 200) {
             throw "Issue #1912 UI proof for '$($proof.page)' must record page/list HTTP 200."
         }
-        if (-not ($requiredNodes -contains [string]$proof.node)) {
+        if (-not $requiredNodeSet.Contains([string]$proof.node)) {
             throw "Issue #1912 UI proof references unknown walkthrough node '$($proof.node)'."
         }
         [void] $uiProofNodeSet.Add([string]$proof.node)
