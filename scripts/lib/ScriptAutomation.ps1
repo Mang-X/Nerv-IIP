@@ -809,7 +809,9 @@ function Invoke-NativeCommandOutput {
 
         [switch] $AllowPartialOutput,
 
-        [scriptblock] $StreamReadTaskAction
+        [scriptblock] $StreamReadTaskAction,
+
+        [System.Collections.IDictionary] $Environment
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
@@ -824,6 +826,17 @@ function Invoke-NativeCommandOutput {
 
     foreach ($argument in $Arguments) {
         [void] $startInfo.ArgumentList.Add($argument)
+    }
+    if ($null -ne $Environment) {
+        foreach ($entry in $Environment.GetEnumerator()) {
+            $environmentName = "$($entry.Key)"
+            if ($null -eq $entry.Value) {
+                [void] $startInfo.Environment.Remove($environmentName)
+            }
+            else {
+                $startInfo.Environment[$environmentName] = "$($entry.Value)"
+            }
+        }
     }
 
     $process = [System.Diagnostics.Process]::new()
@@ -1088,10 +1101,19 @@ function Invoke-AspireOutput {
 
         [string] $Name = 'aspire',
 
-        [switch] $AllowPartialOutput
+        [switch] $AllowPartialOutput,
+
+        [System.Collections.IDictionary] $Environment
     )
 
-    Invoke-NativeCommandOutput -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -AllowPartialOutput:$AllowPartialOutput
+    Invoke-NativeCommandOutput `
+        -Command (Get-AspireCliCommand) `
+        -Arguments $Arguments `
+        -WorkingDirectory $WorkingDirectory `
+        -TimeoutSeconds $TimeoutSeconds `
+        -Name $Name `
+        -AllowPartialOutput:$AllowPartialOutput `
+        -Environment $Environment
 }
 
 function Invoke-AspireInteractive {
@@ -1279,7 +1301,9 @@ function Start-DetachedManagedProcess {
         [string[]] $Arguments = @(),
         [string] $WorkingDirectory = (Get-Location).Path,
         [Parameter(Mandatory)] [string] $StdoutPath,
-        [Parameter(Mandatory)] [string] $StderrPath
+        [Parameter(Mandatory)] [string] $StderrPath,
+
+        [System.Collections.IDictionary] $Environment
     )
 
     $resolvedWorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
@@ -1299,6 +1323,13 @@ function Start-DetachedManagedProcess {
         RedirectStandardOutput = $resolvedStdoutPath
         RedirectStandardError = $resolvedStderrPath
         PassThru = $true
+    }
+    if ($null -ne $Environment) {
+        $startEnvironment = @{}
+        foreach ($entry in $Environment.GetEnumerator()) {
+            $startEnvironment["$($entry.Key)"] = if ($null -eq $entry.Value) { '' } else { "$($entry.Value)" }
+        }
+        $startParameters['Environment'] = $startEnvironment
     }
     if ($IsWindows) { $startParameters['WindowStyle'] = 'Hidden' }
     $process = Start-Process @startParameters

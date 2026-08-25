@@ -324,12 +324,17 @@ function Start-NervFullStackGuardian {
     if ([string]::Equals([string]($Mode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments += @('-CoordinatorPid', "$CoordinatorPid", '-CoordinatorStartTimeUtc', $CoordinatorStartTimeUtc)
     }
+    $nonSeedEnvironment = @{
+        'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' = $null
+        'Parameters__iam-seed-demo-worker-password' = $null
+    }
     return (Start-DetachedManagedProcess `
         -Command (Get-Process -Id $PID).Path `
         -Arguments $arguments `
         -WorkingDirectory $repoRoot `
         -StdoutPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stdout.log') `
-        -StderrPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stderr.log'))
+        -StderrPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stderr.log') `
+        -Environment $nonSeedEnvironment)
 }
 
 function Start-NervFullStackSession {
@@ -421,20 +426,8 @@ function Start-NervFullStackSession {
         else {
             $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
         }
-        $childEnvironmentKeys = @(
-            Get-NervStringsSorted -Values @(@($sessionEnvironment.Keys) + @($secretSet.Environment.Keys) + @('NERV_IIP_FULLSTACK_ADMIN_PASSWORD')) -Comparer ([StringComparer]::Ordinal) -Unique
-        )
-        $originalEnvironment = @{}
-        foreach ($key in $childEnvironmentKeys) {
-            $originalEnvironment[$key] = [pscustomobject]@{
-                HadValue = Test-Path -LiteralPath "Env:$key"
-                Value = [Environment]::GetEnvironmentVariable($key, 'Process')
-            }
-        }
-        Remove-Item Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ErrorAction SilentlyContinue
-        if (-not [string]::IsNullOrWhiteSpace($suppliedAdminPassword)) {
-            $secretSet.Environment['Parameters__iam-seed-admin-password'] = $suppliedAdminPassword
-        }
+        $workerEnvironmentKey = 'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD'
+        $workerSeedEnvironmentKey = 'Parameters__iam-seed-demo-worker-password'
         $suppliedWorkerPassword = if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
             $SessionWorkerPassword
         }
@@ -444,22 +437,49 @@ function Start-NervFullStackSession {
         else {
             $secretSet.WorkerPassword
         }
-        # 仅在显式 WMS worker opt-in 或调用方已在当前进程提供 seed 时开通工人账号。
-        # 该值只进入本次 Aspire 子进程环境，不写入 manifest/artifact。
-        if (-not [string]::IsNullOrWhiteSpace($suppliedWorkerPassword)) {
-            $workerSeedEnvironmentKey = 'Parameters__iam-seed-demo-worker-password'
-            if (-not ($childEnvironmentKeys -contains $workerSeedEnvironmentKey)) {
-                $childEnvironmentKeys += $workerSeedEnvironmentKey
-                $originalEnvironment[$workerSeedEnvironmentKey] = [pscustomobject]@{
-                    HadValue = Test-Path -LiteralPath "Env:$workerSeedEnvironmentKey"
-                    Value = [Environment]::GetEnvironmentVariable($workerSeedEnvironmentKey, 'Process')
-                }
+        $childEnvironmentKeys = @(
+            Get-NervStringsSorted -Values @(
+                @($sessionEnvironment.Keys) +
+                @($secretSet.Environment.Keys) +
+                @('NERV_IIP_FULLSTACK_ADMIN_PASSWORD', $workerEnvironmentKey, $workerSeedEnvironmentKey)
+            ) -Comparer ([StringComparer]::Ordinal) -Unique
+        )
+        $originalEnvironment = @{}
+        foreach ($key in $childEnvironmentKeys) {
+            $originalEnvironment[$key] = [pscustomobject]@{
+                HadValue = Test-Path -LiteralPath "Env:$key"
+                Value = [Environment]::GetEnvironmentVariable($key, 'Process')
             }
-            $secretSet.Environment['Parameters__iam-seed-demo-worker-password'] = $suppliedWorkerPassword
         }
         try {
+            Remove-Item -LiteralPath 'Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD' -ErrorAction SilentlyContinue
+            if (-not [string]::IsNullOrWhiteSpace($suppliedAdminPassword)) {
+                $secretSet.Environment['Parameters__iam-seed-admin-password'] = $suppliedAdminPassword
+            }
+            # Never leave either worker secret name in the coordinator environment:
+            # wait/describe/guardian/cleanup children must not inherit the seed.
+            Remove-Item -LiteralPath "Env:$workerEnvironmentKey" -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "Env:$workerSeedEnvironmentKey" -ErrorAction SilentlyContinue
+            # 仅在显式 WMS worker opt-in 或调用方已在当前进程提供 seed 时开通工人账号。
+            # 该值只进入本次 Aspire 子进程环境，不写入 manifest/artifact。
+            if (-not [string]::IsNullOrWhiteSpace($suppliedWorkerPassword)) {
+                $secretSet.Environment[$workerSeedEnvironmentKey] = $suppliedWorkerPassword
+            }
             foreach ($entry in $sessionEnvironment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
-            foreach ($entry in $secretSet.Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
+            foreach ($entry in $secretSet.Environment.GetEnumerator()) {
+                if ([string]::Equals("$($entry.Key)", $workerSeedEnvironmentKey, [StringComparison]::Ordinal)) { continue }
+                Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value
+            }
+            $aspireEnvironment = @{}
+            foreach ($entry in $sessionEnvironment.GetEnumerator()) { $aspireEnvironment["$($entry.Key)"] = $entry.Value }
+            foreach ($entry in $secretSet.Environment.GetEnumerator()) { $aspireEnvironment["$($entry.Key)"] = $entry.Value }
+            $aspireEnvironment[$workerEnvironmentKey] = $null
+            $aspireEnvironment[$workerSeedEnvironmentKey] = if ([string]::IsNullOrWhiteSpace($suppliedWorkerPassword)) {
+                $null
+            }
+            else {
+                $suppliedWorkerPassword
+            }
             $arguments = @('start', '--isolated', '--format', 'Json', '--apphost', $appHostProject, '--non-interactive', '--nologo')
             if ($NoBuild) { $arguments += '--no-build' }
             $startResult = Invoke-NervAspireStartWithRetry `
@@ -468,7 +488,8 @@ function Start-NervFullStackSession {
                         -Arguments $arguments `
                         -WorkingDirectory $repoRoot `
                         -TimeoutSeconds 660 `
-                        -Name "fullstack-$newSessionId-aspire-start"
+                        -Name "fullstack-$newSessionId-aspire-start" `
+                        -Environment $aspireEnvironment
                 } `
                 -CleanupAction {
                     try {
@@ -610,6 +631,7 @@ function Start-NervFullStackSession {
                     Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
                 }
             }
+            if ($null -ne $aspireEnvironment) { $aspireEnvironment.Clear() }
             $secretSet.Environment.Clear()
             $suppliedAdminPassword = $null
             $suppliedWorkerPassword = $null
