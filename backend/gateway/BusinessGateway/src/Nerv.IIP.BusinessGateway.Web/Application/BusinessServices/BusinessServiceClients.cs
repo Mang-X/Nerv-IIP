@@ -2891,7 +2891,9 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             configureRequest: message => ConfigureCorrelationHeader(message, correlationId),
             failClosedOnFailureEnvelope: true);
         if (response.Items is null ||
-            response.Total < response.Items.Count ||
+            response.Total < 0 ||
+            (response.Items.Count > 0 &&
+                (long)response.Total < (long)request.Skip + response.Items.Count) ||
             response.Items.Any(item =>
                 item is null ||
                 string.IsNullOrWhiteSpace(item.Code) ||

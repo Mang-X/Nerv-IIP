@@ -6924,7 +6924,7 @@ public sealed class BusinessGatewayProxyTests
                                 skuCodes = new[] { "SKU-01" },
                             },
                         },
-                        total = 1,
+                        total = 3,
                     },
                     success = true,
                     message = string.Empty,
@@ -6960,6 +6960,7 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         Assert.Equal(BusinessConsoleToolingAssetStatus.Maintenance, Assert.Single(list.Items).Status);
+        Assert.Equal(3, list.Total);
         Assert.True(status.Accepted);
         Assert.True(usage.Accepted);
         AssertRequest(
@@ -7000,6 +7001,24 @@ public sealed class BusinessGatewayProxyTests
             "internal-tooling-token",
             new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
             "corr-tooling-invalid-list",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_items_is_explicitly_null()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":null,"total":0},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-null-items",
             CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
@@ -7073,6 +7092,24 @@ public sealed class BusinessGatewayProxyTests
             "internal-tooling-token",
             new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
             "corr-tooling-invalid-total",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_non_empty_tooling_page_exceeds_total()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":1},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev", Skip: 2),
+            "corr-tooling-invalid-page-total",
             CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
