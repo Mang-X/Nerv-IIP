@@ -124,6 +124,11 @@ foreach ($invalidCharacterCase in @(
     'function Test-RemoveVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Remove-Variable character; if ($character -eq ''{'') { return $true } } }',
     'function Test-SetItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
     'function Test-QualifiedSetItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Management\Set-Item variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemCommonParameterBeforePath { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item -ErrorAction Stop variable:character -Value ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemValueBeforePath { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item -Value ''{'' variable:character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemForceBeforePath { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item -Force variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemPassThruBeforePath { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item -PassThru variable:character ''{'' | Out-Null; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemWhatIfBeforePath { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item -WhatIf variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
     'function Test-ClearItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Clear-Item variable:character; if ($character -eq ''{'') { return $true } } }',
     'function Test-RemoveItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Remove-Item variable:character; if ($character -eq ''{'') { return $true } } }',
     'function Test-CopyItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Copy-Item variable:source variable:character; if ($character -eq ''{'') { return $true } } }',
@@ -177,7 +182,8 @@ foreach ($nonWriteCase in @(
     'function Test-NonCommonParameterName { param([string]$text) foreach ($character in $text.ToCharArray()) { Get-Thing -OutputVariable character; if ($character -eq ''{'') { return $true } } }',
     'function Test-OtherReferenceTarget { param([string]$text) foreach ($character in $text.ToCharArray()) { Get-Thing ([ref]$other); if ($character -eq ''{'') { return $true } } }',
     'function Test-NonVariableNewItem { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Item -Path ./character -ItemType File; if ($character -eq ''{'') { return $true } } }',
-    'function Test-CustomNewThing { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Thing variable:character; if ($character -eq ''{'') { return $true } } }'
+    'function Test-CustomNewThing { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Thing variable:character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemCommonParameterOtherTarget { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item -ErrorAction Stop variable:other -Value ''{''; if ($character -eq ''{'') { return $true } } }'
 )) {
     Assert-Layer (@(Get-LayerProbeFindings -Source $nonWriteCase).Count -eq 0) `
         "A syntactically similar write to another target or provider must preserve the character proof: $nonWriteCase"
