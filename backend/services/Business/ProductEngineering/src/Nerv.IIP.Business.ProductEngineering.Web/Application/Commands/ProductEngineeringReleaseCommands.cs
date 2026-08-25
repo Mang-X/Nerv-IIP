@@ -15,6 +15,9 @@ using Nerv.IIP.ServiceAuth;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 
@@ -553,11 +556,7 @@ public sealed class ReleaseRoutingCommandHandler(
             request.EnvironmentId, "routing",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(
-                request.Revision,
-                request.SkuCode,
-                request.EffectiveDate,
-                request.Operations.Select(x => $"{x.Sequence}:{x.OperationCode}:{x.RequiredSkillCode?.Trim()}")),
+            RoutingPayloadFingerprint(request),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -627,6 +626,38 @@ public sealed class ReleaseRoutingCommandHandler(
         }, "工艺路线发布失败，请检查工序和生效日期。");
         await repository.AddAsync(routing, cancellationToken);
         return ReleasedEngineeringVersionResult.Create(routing.RoutingCode, routing.Revision);
+    }
+
+    private static string RoutingPayloadFingerprint(ReleaseRoutingCommand request)
+    {
+        if (request.Operations.All(operation => string.IsNullOrWhiteSpace(operation.RequiredSkillCode)))
+        {
+            return ProductEngineeringCodingService.Fingerprint(
+                request.Revision,
+                request.SkuCode,
+                request.EffectiveDate,
+                request.Operations.Select(operation => $"{operation.Sequence}:{operation.OperationCode}"));
+        }
+
+        var canonicalPayload = JsonSerializer.Serialize(new
+        {
+            version = 2,
+            revision = request.Revision,
+            skuCode = request.SkuCode,
+            effectiveDate = request.EffectiveDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            operations = request.Operations
+                .OrderBy(operation => operation.Sequence)
+                .Select(operation => new
+                {
+                    sequence = operation.Sequence,
+                    operationCode = operation.OperationCode,
+                    requiredSkillCode = string.IsNullOrWhiteSpace(operation.RequiredSkillCode)
+                        ? null
+                        : operation.RequiredSkillCode.Trim(),
+                }),
+        });
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalPayload));
+        return $"routing:v2:sha256:{Convert.ToHexStringLower(digest)}";
     }
 }
 

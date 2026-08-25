@@ -33,6 +33,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
@@ -129,6 +130,107 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]
             },
             CancellationToken.None));
+        Assert.Contains("conflicts", conflict.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Release_routing_replays_pre_upgrade_fingerprint_when_all_skills_are_null()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var effectiveDate = new DateOnly(2026, 8, 25);
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-LEGACY", "A", "SKU-FG-LEGACY")
+            .AddOperation(10, "WC-CNC-01", "cnc-turning", "CNC 精车", 30);
+        routing.Release(effectiveDate);
+        dbContext.Routings.Add(routing);
+        dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            "org-001",
+            "env-dev",
+            "routing",
+            "routing-legacy-replay",
+            "ROUTE-LEGACY",
+            ProductEngineeringCodingService.Fingerprint(
+                "A",
+                "SKU-FG-LEGACY",
+                effectiveDate,
+                new[] { "10:cnc-turning" }),
+            new DateTimeOffset(2026, 8, 25, 0, 0, 0, TimeSpan.Zero)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext),
+            codingService: new ProductEngineeringCodingService(
+                dbContext,
+                provider.GetRequiredService<IServiceScopeFactory>()));
+
+        var result = await handler.Handle(
+            new ReleaseRoutingCommand(
+                "org-001",
+                "env-dev",
+                "ROUTE-LEGACY",
+                "A",
+                "SKU-FG-LEGACY",
+                effectiveDate,
+                [new RoutingOperationCommand(10, "WC-CNC-01", "cnc-turning", "CNC 精车", 30)],
+                "routing-legacy-replay"),
+            CancellationToken.None);
+
+        Assert.Equal("ROUTE-LEGACY", result.Id);
+    }
+
+    [Theory]
+    [InlineData("a:b", "c", "a", "b:c")]
+    [InlineData("a:", "b", "a", ":b")]
+    public async Task Release_routing_rejects_idempotency_reuse_for_delimiter_collision_payloads(
+        string firstOperationCode,
+        string firstSkillCode,
+        string secondOperationCode,
+        string secondSkillCode)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(NewStandardOperation(firstOperationCode, "WC-CNC-01"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext),
+            codingService: new ProductEngineeringCodingService());
+        var command = new ReleaseRoutingCommand(
+            "org-001",
+            "env-dev",
+            "ROUTE-COLLISION",
+            "A",
+            "SKU-FG-COLLISION",
+            new DateOnly(2026, 8, 25),
+            [new RoutingOperationCommand(
+                10,
+                "WC-IGNORED",
+                firstOperationCode,
+                "Ignored",
+                1,
+                firstSkillCode)],
+            "routing-delimiter-collision");
+        await handler.Handle(command, CancellationToken.None);
+
+        var conflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with
+            {
+                Operations =
+                [
+                    new RoutingOperationCommand(
+                        10,
+                        "WC-IGNORED",
+                        secondOperationCode,
+                        "Ignored",
+                        1,
+                        secondSkillCode)
+                ]
+            },
+            CancellationToken.None));
+
         Assert.Contains("conflicts", conflict.Message, StringComparison.OrdinalIgnoreCase);
     }
 
