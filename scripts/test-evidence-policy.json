@@ -924,7 +924,7 @@
       "id": "quality-postgres",
       "sourceId": "quality-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:PeriodicInspectionPostgresProfileTests|QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorldHistoryQualitySeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:PeriodicInspectionPostgresProfileTests|QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityReasonPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorldHistoryQualitySeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Quality PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -947,11 +947,12 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_persists_assignment_claim_and_audit_receipts",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests.Scrap_reason_query_filters_scope_search_and_paging_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests.Postgres_predecessor_conflict_reloads_the_committed_reinspection",
         "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
         "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
       ],
-      "expectedRuntimeTestCount": 15
+      "expectedRuntimeTestCount": 16
     },
     {
       "id": "masterdata-postgres",

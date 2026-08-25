@@ -139,6 +139,7 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests",
         "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests"

@@ -4249,6 +4249,19 @@
     },
     {
       "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/scrap-reason-codes",
+      "operationId": "listBusinessQualityScrapReasonCodes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityScrapReasonCodes"
+      ]
+    },
+    {
+      "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/reason-codes",
       "operationId": "createBusinessQualityReasonCode",
