@@ -1689,6 +1689,20 @@
     },
     {
       "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/line-side-balances",
+      "operationId": "listInventoryLineSideBalances",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "#1964/#2228：Inventory 提供线边库正库存余额与生产日期账龄权威读面，BusinessGateway 以 MES 物料读取权限暴露同源分页 facade。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesLineSideInventoryBalances"
+      ]
+    },
+    {
+      "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/locations",
       "operationId": "createOrUpdateInventoryLocation",
