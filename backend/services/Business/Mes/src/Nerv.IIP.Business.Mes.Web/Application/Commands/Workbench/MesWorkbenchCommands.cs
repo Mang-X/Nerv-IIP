@@ -1234,9 +1234,16 @@ public sealed record AssignDispatchTaskCommand(
     string? TeamId = null,
     string? TeamName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
-public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class AssignDispatchTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesWorkerSkillQualificationGate workerSkillQualificationGate)
     : ICommandHandler<AssignDispatchTaskCommand, MesAcceptedResponse>
 {
+    public AssignDispatchTaskCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, UnconfiguredMesWorkerSkillQualificationGate.Instance)
+    {
+    }
+
     public async Task<MesAcceptedResponse> Handle(AssignDispatchTaskCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
@@ -1274,6 +1281,13 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
         {
             throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
         }
+
+        await workerSkillQualificationGate.EnsureQualifiedAsync(
+            task.OrganizationId,
+            task.EnvironmentId,
+            request.AssignedUserId,
+            task.RequiredSkillCode,
+            cancellationToken);
 
         MesDomainRuleGuard.Enforce(() =>
             task.Assign(
@@ -1344,10 +1358,17 @@ public sealed class ChangeOperationTaskStateCommandLock
     }
 }
 
-public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext dbContext)
+public sealed class ChangeOperationTaskStateCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesWorkerSkillQualificationGate workerSkillQualificationGate)
     : ICommandHandler<ChangeOperationTaskStateCommand, MesOperationActionResponse>
 {
     private const string OperationActionRuleKey = "operation-task-action";
+
+    public ChangeOperationTaskStateCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, UnconfiguredMesWorkerSkillQualificationGate.Instance)
+    {
+    }
 
     public async Task<MesOperationActionResponse> Handle(ChangeOperationTaskStateCommand request, CancellationToken cancellationToken)
     {
@@ -1386,6 +1407,13 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
             {
                 throw new KnownException(MaterialReadinessGuards.DescribeForUser(readiness.BlockReasons));
             }
+
+            await workerSkillQualificationGate.EnsureQualifiedAsync(
+                task.OrganizationId,
+                task.EnvironmentId,
+                task.AssignedUserId,
+                task.RequiredSkillCode,
+                cancellationToken);
 
             var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
                 x => x.OrganizationId == request.OrganizationId &&
@@ -1572,10 +1600,23 @@ public sealed class AuthorizeAndStartOperationTaskCommandLock
 public sealed class AuthorizeAndStartOperationTaskCommandHandler(
     ApplicationDbContext dbContext,
     IMesOperationTaskStartApprovalClient approvalClient,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IMesWorkerSkillQualificationGate workerSkillQualificationGate)
     : ICommandHandler<AuthorizeAndStartOperationTaskCommand, MesOperationActionResponse>
 {
     private const string AuthorizedStartRuleKey = "operation-task-authorized-start";
+
+    public AuthorizeAndStartOperationTaskCommandHandler(
+        ApplicationDbContext dbContext,
+        IMesOperationTaskStartApprovalClient approvalClient,
+        TimeProvider timeProvider)
+        : this(
+            dbContext,
+            approvalClient,
+            timeProvider,
+            UnconfiguredMesWorkerSkillQualificationGate.Instance)
+    {
+    }
 
     public async Task<MesOperationActionResponse> Handle(
         AuthorizeAndStartOperationTaskCommand request,
@@ -1654,6 +1695,13 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
         {
             throw new KnownException(MaterialReadinessGuards.DescribeForUser(nonPreviousBlockReasons));
         }
+
+        await workerSkillQualificationGate.EnsureQualifiedAsync(
+            task.OrganizationId,
+            task.EnvironmentId,
+            task.AssignedUserId,
+            task.RequiredSkillCode,
+            cancellationToken);
 
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
             x => x.OrganizationId == canonical.OrganizationId &&
