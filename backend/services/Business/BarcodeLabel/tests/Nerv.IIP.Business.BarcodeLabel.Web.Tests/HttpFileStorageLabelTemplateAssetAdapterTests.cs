@@ -237,29 +237,73 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     [Fact]
     public async Task GetVerifiedAsync_ManagedDownloadClient_DoesNotFollowRedirectOnLoopback()
     {
-        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
-        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var baseAddress = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/");
-        using var serverCancellation = new CancellationTokenSource();
-        var server = ServeRedirectAndPossibleFollowAsync(listener, bytes, serverCancellation.Token);
-        using var adapter = CreateAdapter(
-            fileStorage,
-            new SocketsHttpHandler
+        await TestTimeout.RunAsync(
+            "FileStorage redirect loopback including client failure and server cleanup",
+            async testCancellationToken =>
             {
-                AllowAutoRedirect = false,
-                ConnectTimeout = TimeSpan.FromSeconds(2),
+                var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+                var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
+                using var listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                var baseAddress = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/");
+                using var serverCancellation = CancellationTokenSource.CreateLinkedTokenSource(testCancellationToken);
+                var server = ServeRedirectAndPossibleFollowAsync(listener, bytes, serverCancellation.Token);
+                using var adapter = CreateAdapter(
+                    fileStorage,
+                    new SocketsHttpHandler
+                    {
+                        AllowAutoRedirect = false,
+                        ConnectTimeout = TimeSpan.FromSeconds(2),
+                    },
+                    TimeSpan.FromSeconds(2),
+                    baseAddress);
+
+                var acceptedRequests = 0;
+                try
+                {
+                    await Assert.ThrowsAsync<InvalidDataException>(() =>
+                        adapter.GetVerifiedAsync(CreateReference(), testCancellationToken)
+                            .WaitAsync(testCancellationToken));
+                }
+                finally
+                {
+                    serverCancellation.Cancel();
+                    acceptedRequests = await server.WaitAsync(testCancellationToken);
+                }
+
+                Assert.Equal(1, acceptedRequests);
             },
-            TimeSpan.FromSeconds(2),
-            baseAddress);
+            TimeSpan.FromSeconds(5));
+    }
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
-            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+    [Fact]
+    public async Task Redirect_loopback_server_cancellation_stops_an_incomplete_request()
+    {
+        await TestTimeout.RunAsync(
+            "FileStorage redirect loopback cleanup while request headers remain incomplete",
+            async testCancellationToken =>
+            {
+                var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+                using var listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                using var serverCancellation = CancellationTokenSource.CreateLinkedTokenSource(testCancellationToken);
+                var server = ServeRedirectAndPossibleFollowAsync(listener, bytes, serverCancellation.Token);
+                using var client = new TcpClient();
 
-        serverCancellation.Cancel();
-        var acceptedRequests = await server;
-        Assert.Equal(1, acceptedRequests);
+                try
+                {
+                    await client.ConnectAsync(IPAddress.Loopback, port, testCancellationToken);
+                    await client.GetStream().WriteAsync("GET /"u8.ToArray(), testCancellationToken);
+                }
+                finally
+                {
+                    serverCancellation.Cancel();
+                    var acceptedRequests = await server.WaitAsync(testCancellationToken);
+                    Assert.Equal(1, acceptedRequests);
+                }
+            },
+            TimeSpan.FromSeconds(3));
     }
 
     [Fact]

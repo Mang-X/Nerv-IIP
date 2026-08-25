@@ -1,40 +1,112 @@
 using System.Runtime.CompilerServices;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed class BarcodeLabelWebHostCollectionTests
 {
     [Fact]
-    public void Every_test_class_that_starts_the_service_host_uses_the_canonical_collection()
+    public void Every_test_class_that_owns_or_consumes_the_service_host_uses_the_canonical_collection()
     {
         var sourceRoot = Path.GetDirectoryName(CurrentSourcePath())!;
-        var hostClasses = Directory
+        var documents = Directory
             .EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
             .Where(path => !path.Split(Path.DirectorySeparatorChar)
                 .Any(segment => segment is "bin" or "obj"))
-            .SelectMany(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path)
-                .GetRoot()
-                .DescendantNodes()
-                .OfType<ObjectCreationExpressionSyntax>()
-                .Where(creation => creation.Type.ToString()
-                    .EndsWith("WebApplicationFactory<Program>", StringComparison.Ordinal))
-                .Select(creation => creation.FirstAncestorOrSelf<ClassDeclarationSyntax>()!))
-            .Distinct()
+            .Select(path => new BarcodeLabelSourceDocument(path, File.ReadAllText(path)))
             .ToArray();
 
-        Assert.NotEmpty(hostClasses);
-        var violations = hostClasses
-            .Where(declaration => !declaration.AttributeLists
-                .SelectMany(list => list.Attributes)
-                .Any(attribute => attribute.Name.ToString().EndsWith("Collection", StringComparison.Ordinal)
-                    && attribute.ArgumentList?.Arguments.SingleOrDefault()?.Expression.ToString()
-                        == "BarcodeLabelWebApplicationFactoryCollection.Name"))
-            .Select(declaration => $"{Path.GetFileName(declaration.SyntaxTree.FilePath)}:{declaration.Identifier.ValueText}")
-            .ToArray();
+        var violations = BarcodeLabelWebHostCollectionAnalyzer.FindViolations(documents);
+
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void Type_system_discovery_covers_target_typed_alias_global_derived_and_fixture_shapes()
+    {
+        var violations = BarcodeLabelWebHostCollectionAnalyzer.FindViolations(
+        [
+            new BarcodeLabelSourceDocument("BypassMatrix.cs", BypassMatrixSource),
+        ]);
+
+        Assert.Equal(
+        [
+            "BypassMatrix.cs:AliasTests",
+            "BypassMatrix.cs:DerivedTests",
+            "BypassMatrix.cs:FixtureTests",
+            "BypassMatrix.cs:GlobalProgramTests",
+            "BypassMatrix.cs:RecordTests",
+            "BypassMatrix.cs:TargetTypedTests",
+        ],
+            violations);
+    }
+
     private static string CurrentSourcePath([CallerFilePath] string path = "") => path;
+
+    private const string BypassMatrixSource = """
+        using Microsoft.AspNetCore.Mvc.Testing;
+        using Xunit;
+        using AliasFactory = Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>;
+
+        public class Program { }
+
+        public sealed class TargetTypedTests
+        {
+            [Fact]
+            public void StartsHost()
+            {
+                WebApplicationFactory<Program> factory = new();
+            }
+        }
+
+        public sealed class GlobalProgramTests
+        {
+            [Fact]
+            public void StartsHost() => _ = new WebApplicationFactory<global::Program>();
+        }
+
+        public sealed class AliasTests
+        {
+            [Fact]
+            public void StartsHost() => _ = new AliasFactory();
+        }
+
+        public sealed record class RecordTests
+        {
+            [Fact]
+            public void StartsHost() => _ = new AliasFactory();
+        }
+
+        public sealed class DerivedFactory : WebApplicationFactory<Program> { }
+
+        public sealed class DerivedTests
+        {
+            [Fact]
+            public void StartsHost() => _ = new DerivedFactory();
+        }
+
+        public sealed class HostFixture
+        {
+            public WebApplicationFactory<Program> Factory { get; } = new();
+        }
+
+        public sealed class FixtureTests : IClassFixture<HostFixture>
+        {
+            private readonly HostFixture fixture;
+            public FixtureTests(HostFixture fixture) => this.fixture = fixture;
+
+            [Fact]
+            public void UsesHost() => _ = fixture.Factory;
+        }
+
+        namespace Microsoft.AspNetCore.Mvc.Testing
+        {
+            public class WebApplicationFactory<TEntryPoint> where TEntryPoint : class { }
+        }
+
+        namespace Xunit
+        {
+            public sealed class FactAttribute : System.Attribute { }
+            public interface IClassFixture<TFixture> where TFixture : class { }
+        }
+        """;
 }

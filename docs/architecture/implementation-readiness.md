@@ -337,6 +337,9 @@ metadata、download-grant 与字节下载共用一份 `FileStorage` client optio
 `DownloadTimeout`（默认 10 秒）覆盖下载响应头与 body 读取；三项都要求正数。字节下载使用受管 named client，
 禁用自动 redirect 且把 `HttpClient.Timeout` 设为无限，只由 adapter 的 `DownloadTimeout` linked token 承担下载总预算，
 不再自行创建第二套 handler/client 或硬编码 10 秒。
+redirect loopback 回归以 `TestTimeout` 覆盖 listener、client、SUT 与 server cleanup 的完整生命周期；测试 token 贯穿
+connect/accept/read/write，异常路径在 `finally` 中取消并等待 server。不完整请求不半关闭的探针证明移除 read token
+时会在测试总预算内以目标超时判红，而不是留下后台 server 或挂住测试进程。
 失败诊断不记录 grant URL、header、token、模板字节或变量值。
 
 `zpl-v1` 只接受声明式 JSON 的 `text` / `barcode` fields，经冻结变量 Schema 完整校验后，确定性输出
