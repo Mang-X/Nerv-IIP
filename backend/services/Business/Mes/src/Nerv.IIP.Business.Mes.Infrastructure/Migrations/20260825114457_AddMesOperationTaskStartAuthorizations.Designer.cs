@@ -927,7 +927,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("authorized_by")
-                        .HasComment("Canonical principal from the trusted internal caller.");
+                        .HasComment("Canonical principal from the approved BusinessApproval decision.");
 
                     b.Property<string>("CorrelationId")
                         .IsRequired()

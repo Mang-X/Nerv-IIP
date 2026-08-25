@@ -21,6 +21,7 @@ using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityA
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.DemandPlanning;
 using NetCorePal.Extensions.Primitives;
@@ -1550,7 +1551,7 @@ public sealed record AuthorizeAndStartOperationTaskCommand(
     string OperationTaskId,
     DateTimeOffset ChangedAtUtc,
     string Reason,
-    string AuthorizedBy,
+    string ApprovalChainId,
     string CorrelationId,
     string IdempotencyKey) : ICommand<MesOperationActionResponse>, IOperationTaskConcurrencyRetryCommand;
 
@@ -1568,13 +1569,9 @@ public sealed class AuthorizeAndStartOperationTaskCommandLock
     }
 }
 
-/// <summary>
-/// Internal-only command. The caller must derive AuthorizedBy from
-/// MesAuthenticatedActor.Resolve (or an equivalent trusted service boundary);
-/// this command is not a public DTO and does not make a caller-supplied string an
-/// external permission proof.
-/// </summary>
-public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class AuthorizeAndStartOperationTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesOperationTaskStartApprovalClient approvalClient)
     : ICommandHandler<AuthorizeAndStartOperationTaskCommand, MesOperationActionResponse>
 {
     private const string AuthorizedStartRuleKey = "operation-task-authorized-start";
@@ -1583,30 +1580,29 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbCo
         AuthorizeAndStartOperationTaskCommand request,
         CancellationToken cancellationToken)
     {
-        EnsureRequired(request);
+        var canonical = Canonicalize(request);
+        EnsureRequired(canonical);
 
         var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.OperationTaskIdValue == request.OperationTaskId,
+            x => x.OrganizationId == canonical.OrganizationId &&
+                x.EnvironmentId == canonical.EnvironmentId &&
+                x.OperationTaskIdValue == canonical.OperationTaskId,
             cancellationToken)
-            ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
-
-        var idempotencyKey = request.IdempotencyKey.Trim();
+            ?? throw new KnownException($"未找到工序任务，OperationTaskId = {canonical.OperationTaskId}");
         var existing = dbContext.OperationTaskStartAuthorizations.Local.FirstOrDefault(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.OperationTaskId == request.OperationTaskId &&
-                x.IdempotencyKey == idempotencyKey)
+                x.OrganizationId == canonical.OrganizationId &&
+                x.EnvironmentId == canonical.EnvironmentId &&
+                x.OperationTaskId == canonical.OperationTaskId &&
+                x.IdempotencyKey == canonical.IdempotencyKey)
             ?? await dbContext.OperationTaskStartAuthorizations.AsNoTracking().SingleOrDefaultAsync(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.OperationTaskId == request.OperationTaskId &&
-                x.IdempotencyKey == idempotencyKey,
+                x.OrganizationId == canonical.OrganizationId &&
+                x.EnvironmentId == canonical.EnvironmentId &&
+                x.OperationTaskId == canonical.OperationTaskId &&
+                x.IdempotencyKey == canonical.IdempotencyKey,
                 cancellationToken);
         if (existing is not null)
         {
-            if (!Matches(existing, request))
+            if (!Matches(existing, canonical))
             {
                 throw new MesIdempotencyConflictException();
             }
@@ -1621,6 +1617,15 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbCo
         {
             throw new MesLifecycleConflictException("authorized-start", task.Status.ToString());
         }
+
+        var approval = await approvalClient.GetApprovedAsync(
+            canonical.ApprovalChainId,
+            canonical.OrganizationId,
+            canonical.EnvironmentId,
+            task.OperationTaskIdValue,
+            task.WorkOrderId,
+            cancellationToken)
+            ?? throw new KnownException("授权跳站必须引用当前组织、环境和工序任务下已通过的审批链。");
 
         var blockingOperations = await dbContext.OperationTasks
             .AsNoTracking()
@@ -1638,7 +1643,7 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbCo
 
         var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext).EvaluateAsync(
             task,
-            request.ChangedAtUtc,
+            canonical.ChangedAtUtc,
             cancellationToken);
         var nonPreviousBlockReasons = readiness.BlockReasons
             .Where(x => !x.StartsWith("PREVIOUS_OPERATION_INCOMPLETE:", StringComparison.Ordinal))
@@ -1649,36 +1654,37 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbCo
         }
 
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+            x => x.OrganizationId == canonical.OrganizationId &&
+                x.EnvironmentId == canonical.EnvironmentId &&
                 x.WorkOrderIdValue == task.WorkOrderId,
             cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {task.WorkOrderId}");
 
         MesDomainRuleGuard.Enforce(() =>
         {
-            task.Start(request.ChangedAtUtc);
+            task.Start(canonical.ChangedAtUtc);
             if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
             {
-                workOrder.Start(request.ChangedAtUtc);
+                workOrder.Start(canonical.ChangedAtUtc);
             }
         });
 
         var result = new MesOperationActionResponse(
             task.OperationTaskIdValue,
             task.Status.ToString(),
-            request.ChangedAtUtc);
+            canonical.ChangedAtUtc);
         dbContext.OperationTaskStartAuthorizations.Add(OperationTaskStartAuthorization.Record(
-            request.OrganizationId,
-            request.EnvironmentId,
+            canonical.OrganizationId,
+            canonical.EnvironmentId,
             task.OperationTaskIdValue,
             task.WorkOrderId,
+            approval.ApprovalChainId,
             task.OperationSequence,
-            request.Reason,
-            request.AuthorizedBy,
-            request.CorrelationId,
-            idempotencyKey,
-            request.ChangedAtUtc,
+            canonical.Reason,
+            approval.AuthorizedBy,
+            canonical.CorrelationId,
+            canonical.IdempotencyKey,
+            canonical.ChangedAtUtc,
             result.Status));
         return result;
     }
@@ -1690,11 +1696,9 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbCo
             throw new KnownException("授权跳站必须填写原因。");
         }
 
-        var authorizedBy = request.AuthorizedBy.Trim();
-        var separator = authorizedBy.IndexOf(':', StringComparison.Ordinal);
-        if (separator <= 0 || separator == authorizedBy.Length - 1)
+        if (string.IsNullOrWhiteSpace(request.ApprovalChainId))
         {
-            throw new KnownException("授权跳站必须提供受信授权主体。");
+            throw new KnownException("授权跳站必须提供已通过的审批链 ID。");
         }
 
         if (string.IsNullOrWhiteSpace(request.CorrelationId))
@@ -1712,8 +1716,19 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(ApplicationDbCo
         OperationTaskStartAuthorization existing,
         AuthorizeAndStartOperationTaskCommand request) =>
         string.Equals(existing.Reason, request.Reason.Trim(), StringComparison.Ordinal) &&
-        string.Equals(existing.AuthorizedBy, request.AuthorizedBy.Trim(), StringComparison.Ordinal) &&
         string.Equals(existing.CorrelationId, request.CorrelationId.Trim(), StringComparison.Ordinal);
+
+    private static AuthorizeAndStartOperationTaskCommand Canonicalize(
+        AuthorizeAndStartOperationTaskCommand request) => request with
+    {
+        OrganizationId = request.OrganizationId.Trim(),
+        EnvironmentId = request.EnvironmentId.Trim(),
+        OperationTaskId = request.OperationTaskId.Trim(),
+        Reason = request.Reason.Trim(),
+        ApprovalChainId = request.ApprovalChainId.Trim(),
+        CorrelationId = request.CorrelationId.Trim(),
+        IdempotencyKey = request.IdempotencyKey.Trim(),
+    };
 }
 
 internal static class MaterialReadinessGuards

@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 
@@ -253,14 +254,14 @@ public sealed class MesIssue557ExecutionTests
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
         await dbContext.SaveChangesAsync();
 
-        var result = await new AuthorizeAndStartOperationTaskCommandHandler(dbContext).Handle(
+        var result = await new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance).Handle(
             new AuthorizeAndStartOperationTaskCommand(
                 "org-001",
                 "env-dev",
                 "OP-20",
                 Utc("2026-06-29T09:00:00Z"),
                 "设备临时故障，先行处理后续工序",
-                "principal:supervisor-001",
+                "approval-1960-001",
                 "correlation-1960-001",
                 "skip-start-1960-001"),
             CancellationToken.None);
@@ -271,8 +272,9 @@ public sealed class MesIssue557ExecutionTests
         Assert.Equal("org-001", authorization.OrganizationId);
         Assert.Equal("env-dev", authorization.EnvironmentId);
         Assert.Equal("OP-20", authorization.OperationTaskId);
+        Assert.Equal("approval-1960-001", authorization.ApprovalChainId);
         Assert.Equal("设备临时故障，先行处理后续工序", authorization.Reason);
-        Assert.Equal("principal:supervisor-001", authorization.AuthorizedBy);
+        Assert.Equal("user:supervisor-001", authorization.AuthorizedBy);
         Assert.Equal("correlation-1960-001", authorization.CorrelationId);
     }
 
@@ -284,14 +286,14 @@ public sealed class MesIssue557ExecutionTests
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
         await dbContext.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance).Handle(
             new AuthorizeAndStartOperationTaskCommand(
                 "org-001",
                 "env-dev",
                 "OP-20",
                 Utc("2026-06-29T09:00:00Z"),
                 " ",
-                "",
+                "approval-1960-002",
                 "correlation-1960-002",
                 "skip-start-1960-002"),
             CancellationToken.None));
@@ -308,14 +310,14 @@ public sealed class MesIssue557ExecutionTests
             nameof(Authorized_operation_start_replays_same_intent_and_rejects_different_payload));
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
         await dbContext.SaveChangesAsync();
-        var handler = new AuthorizeAndStartOperationTaskCommandHandler(dbContext);
+        var handler = new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance);
         var command = new AuthorizeAndStartOperationTaskCommand(
             "org-001",
             "env-dev",
             "OP-20",
             Utc("2026-06-29T09:00:00Z"),
             "设备临时故障，先行处理后续工序",
-            "principal:supervisor-001",
+            "approval-1960-003",
             "correlation-1960-003",
             "skip-start-1960-003");
 
@@ -327,6 +329,42 @@ public sealed class MesIssue557ExecutionTests
         Assert.Single(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
         await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
             command with { Reason = "不同原因" }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_canonicalizes_payload_before_persisting_and_replaying()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_canonicalizes_payload_before_persisting_and_replaying));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+        var handler = new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance);
+
+        var first = await handler.Handle(new AuthorizeAndStartOperationTaskCommand(
+            " org-001 ",
+            " env-dev ",
+            " OP-20 ",
+            Utc("2026-06-29T09:00:00Z"),
+            " 设备临时故障，先行处理后续工序 ",
+            " approval-1960-canonical ",
+            " correlation-1960-canonical ",
+            " skip-start-1960-canonical "), CancellationToken.None);
+        var replay = await handler.Handle(new AuthorizeAndStartOperationTaskCommand(
+            "org-001",
+            "env-dev",
+            "OP-20",
+            Utc("2026-06-29T09:01:00Z"),
+            "设备临时故障，先行处理后续工序",
+            "approval-1960-canonical",
+            "correlation-1960-canonical",
+            "skip-start-1960-canonical"), CancellationToken.None);
+
+        Assert.Equal(first, replay);
+        await dbContext.SaveChangesAsync();
+        var authorization = Assert.Single(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
+        Assert.Equal("设备临时故障，先行处理后续工序", authorization.Reason);
+        Assert.Equal("correlation-1960-canonical", authorization.CorrelationId);
+        Assert.Equal("skip-start-1960-canonical", authorization.IdempotencyKey);
     }
 
     [Fact]
@@ -371,14 +409,14 @@ public sealed class MesIssue557ExecutionTests
         }
         await dbContext.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance).Handle(
             new AuthorizeAndStartOperationTaskCommand(
                 "org-001",
                 "env-dev",
                 "OP-20",
                 Utc("2026-06-29T09:00:00Z"),
                 "跨租户前序不应作为本工序依据",
-                "principal:supervisor-001",
+                "approval-1960-scope",
                 "correlation-1960-scope",
                 "skip-start-1960-scope"),
             CancellationToken.None));
@@ -1108,6 +1146,21 @@ public sealed class MesIssue557ExecutionTests
             .UseSqlite(connection)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class ApprovedOperationTaskStartApprovalClient : IMesOperationTaskStartApprovalClient
+    {
+        public static ApprovedOperationTaskStartApprovalClient Instance { get; } = new();
+
+        public Task<MesOperationTaskStartApproval?> GetApprovedAsync(
+            string approvalChainId,
+            string organizationId,
+            string environmentId,
+            string operationTaskId,
+            string workOrderId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<MesOperationTaskStartApproval?>(
+                new MesOperationTaskStartApproval(approvalChainId, "user:supervisor-001"));
     }
 
     private sealed class NoopMediator : IMediator

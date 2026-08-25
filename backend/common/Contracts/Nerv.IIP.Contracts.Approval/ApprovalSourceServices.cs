@@ -17,6 +17,9 @@ namespace Nerv.IIP.Contracts.Approval;
 /// </summary>
 public static class ApprovalSourceServices
 {
+    /// <summary>MES 业务服务。</summary>
+    public const string BusinessMes = "business-mes";
+
     public const string ProductEngineering = "product-engineering";
 
     /// <summary>

@@ -17,6 +17,7 @@ public sealed class OperationTaskStartAuthorization : Entity<OperationTaskStartA
         string environmentId,
         string operationTaskId,
         string workOrderId,
+        string approvalChainId,
         int operationSequence,
         string reason,
         string authorizedBy,
@@ -29,6 +30,7 @@ public sealed class OperationTaskStartAuthorization : Entity<OperationTaskStartA
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
+        ApprovalChainId = DomainGuard.Required(approvalChainId, nameof(approvalChainId));
         Reason = DomainGuard.Required(reason, nameof(reason));
         AuthorizedBy = DomainGuard.Required(authorizedBy, nameof(authorizedBy));
         CorrelationId = DomainGuard.Required(correlationId, nameof(correlationId));
@@ -42,6 +44,7 @@ public sealed class OperationTaskStartAuthorization : Entity<OperationTaskStartA
     public string EnvironmentId { get; private set; } = string.Empty;
     public string OperationTaskId { get; private set; } = string.Empty;
     public string WorkOrderId { get; private set; } = string.Empty;
+    public string ApprovalChainId { get; private set; } = string.Empty;
     public int OperationSequence { get; private set; }
     public string Reason { get; private set; } = string.Empty;
     public string AuthorizedBy { get; private set; } = string.Empty;
@@ -55,6 +58,7 @@ public sealed class OperationTaskStartAuthorization : Entity<OperationTaskStartA
         string environmentId,
         string operationTaskId,
         string workOrderId,
+        string approvalChainId,
         int operationSequence,
         string reason,
         string authorizedBy,
@@ -67,6 +71,7 @@ public sealed class OperationTaskStartAuthorization : Entity<OperationTaskStartA
             environmentId,
             operationTaskId,
             workOrderId,
+            approvalChainId,
             operationSequence,
             reason,
             authorizedBy,

@@ -23,7 +23,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     work_order_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Work order containing the authorized operation."),
                     operation_sequence = table.Column<int>(type: "integer", nullable: false, comment: "Routing sequence captured at authorization time."),
                     reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false, comment: "Non-empty business reason for the authorized skip."),
-                    authorized_by = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false, comment: "Canonical principal from the trusted internal caller."),
+                    authorized_by = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false, comment: "Canonical principal from the approved BusinessApproval decision."),
                     correlation_id = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false, comment: "Request correlation identifier for traceability."),
                     idempotency_key = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false, comment: "Caller intent key for replay convergence."),
                     authorized_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when authorization and start succeeded."),
