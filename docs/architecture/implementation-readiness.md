@@ -757,7 +757,7 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 10. 第三阶段控制台纵切已经落地；历史 `scripts/verify-third-slice-console.ps1` 已按 #2157 退役并保留为明确失败的兼容墓碑，当前分别使用 OpenAPI 导出、api-client 生成和前端质量入口。
 11. 前端工作区使用 Vite+ 作为统一工具入口；`pnpm -C frontend check`、`lint`、`fmt` 需要 Node.js `>=22.18.0`，仓库根 `.node-version` 保留 22.22.3 作为保守复现基线；本地开发可以使用更新的 Current 版本（如 Node.js 26），只要前端质量门禁可复现通过。
 12. 技术栈官方文档与源码仓库链接统一维护在 docs/architecture/technology-stack-references.md；新增长期技术选型时必须同步更新，避免同名项目或社区分叉造成歧义。
-13. 第四阶段已经补齐 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint 和平台级 `infra/aspire/Nerv.IIP.AppHost`；历史 `scripts/verify-fourth-slice-real-infra.ps1` 已按 #2157 退役并保留为明确失败的兼容墓碑，当前真实基础设施验证由 AppHost/fullstack 与专用 provider lane 承接。
+13. 第四阶段已经补齐 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint 和平台级 `infra/aspire/Nerv.IIP.AppHost`；历史 `scripts/verify-fourth-slice-real-infra.ps1` 已按 #2157 退役并删除，当前真实基础设施验证由 AppHost/fullstack 与专用 provider lane 承接。
 14. 第四阶段历史验收口径见 docs/architecture/fourth-vertical-slice-real-infra.md；后续生产级迁移、初始化、seed 和回滚策略按 docs/adr/0009-database-migration-release-and-seed-strategy.md 执行。
 15. 第五阶段 Release-grade Persistence Foundation 已落地：AppHub/Ops 已有初始 migrations，PostgreSQL profile tests 已切换到 `MigrateAsync()`，第五阶段验证脚本已经通过。
 16. 阶段 8 已冻结 Console Calm Control Plane 蓝色设计系统基线；后续控制台页面、视觉组件、组件库迁移或样式体系决策必须沿用 shadcn 语义 token、`@nerv-iip/ui` 稳定导出和 docs/architecture/frontend-design-system-planning.md 的治理口径。
@@ -988,7 +988,7 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 1. AppHub 和 Ops 已作为 netcorepal/CleanDDD 迁移试点，落 Domain aggregate、Application command/query、Infrastructure repository/ApplicationDbContext 和 mediator-driven endpoint。
 2. PostgreSQL 使用服务级 database 与 schema：AppHub 默认连接 `nerv_iip_apphub` 并使用 `apphub` schema，Ops 默认连接 `nerv_iip_ops` 并使用 `ops` schema；provider 选择只留在 Infrastructure/profile/test/deployment 层。
 3. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
-4. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 曾作为第四阶段验收入口，通过 `infra/docker-compose.dev.yml` 拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector；该脚本已按 #2157 退役。RabbitMQ 是第四阶段历史验证资源，当前常规 PostgreSQL + 单机 messaging profile 可不依赖 RabbitMQ。
+4. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 曾作为第四阶段验收入口，通过 `infra/docker-compose.dev.yml` 拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector；该脚本已删除。RabbitMQ 是第四阶段历史验证资源，当前常规 PostgreSQL + 单机 messaging profile 可不依赖 RabbitMQ。
 5. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，覆盖 PlatformGateway、AppHub、IAM、Ops、FileStorage、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance、Connector Host、Console、PostgreSQL、Redis、MinIO、可选 OpenTelemetry Collector 和 Aspire Dashboard；RabbitMQ 仅在 `Messaging:Provider=RabbitMQ` 时加入拓扑，`Messaging:Provider=Redis` 时 CAP 服务统一引用并等待 Redis。本地开发默认由 Aspire 注入 Dashboard OTLP endpoint，只有显式 `Observability:UseCollector=true` 时才启用 AppHost Collector 转发路径。AppHost 当前 build 通过，并为 AppHub/IAM/Ops/Notification 与业务波次 1/波次 2/设备可靠性服务使用独立 database resource。
 6. PlatformGateway、Connector Host、Contracts/SDK 和 frontend console 不强行套完整 netcorepal 三项目模型；IAM 完整授权、FileStorage 上传下载、CAP outbox、通知和审批不进入本阶段实现范围。
 7. 历史 `pwsh scripts/verify-fourth-slice-real-infra.ps1` 曾在 Docker Desktop 环境下通过并输出 `Fourth vertical slice real infrastructure verified.`；该命令仅作为历史证据保留。
@@ -998,10 +998,10 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 1. AppHub 和 Ops 已增加 EF Core 初始迁移，并把 PostgreSQL profile 测试切换到 migration-based schema creation。
 2. AppHub.Web 和 Ops.Web 启动期迁移受 `Persistence:AutoMigrate=true` 显式控制，且只允许在 Development 环境执行；非 Development 环境必须使用显式 migrator、发布脚本或 migration bundle。
 3. 已增加 service-owned migration runner，供测试、脚本和后续安装流程复用。
-4. 已增加 `scripts/verify-fifth-slice-persistence-foundation.ps1`，覆盖迁移、后端 solution、connector-host solution 和 SDK/契约回归。
+4. 历史 `scripts/verify-fifth-slice-persistence-foundation.ps1` 曾覆盖迁移、后端 solution、connector-host solution 和 SDK/契约回归，现已删除。
 5. 前端只在后端 OpenAPI 变化时机械生成 api-client 并跑质量门禁；不新增页面、路由、组件皮肤或 Design System 决策。
 6. 前端 Design System 规划记录在 docs/architecture/frontend-design-system-planning.md，后续需要独立 Superpowers spec 后才能实施。
-7. `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 已通过，最终输出 `Fifth slice release-grade persistence foundation verified.`。
+7. 历史 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 曾通过并输出 `Fifth slice release-grade persistence foundation verified.`；该命令仅作为历史证据保留。
 
 ### 第六迭代已完成范围
 
@@ -1064,10 +1064,10 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 1. 根目录 `.\nerv.ps1 bootstrap` 已成为有网空白机器的预检/restore/本地 secrets 初始化入口；Windows 有网机器可用 `.\nerv.ps1 bootstrap -InstallMissing` 补齐缺失工具链，Docker Desktop 首次安装后仍需人工启动 daemon。根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出标准本地端口矩阵。
 2. 平台与业务开发端口收敛到 `5100-5126`，其中 PlatformGateway 使用 `5100`，Console 使用 `5105` 而不是 Vite 默认 `5173`；业务波次 1 服务使用 `5107-5111`，业务波次 2 服务使用 `5112-5115`：DemandPlanning `5112`、BarcodeLabel `5113`、BusinessApproval `5114`、WMS `5115`；设备可靠性服务使用 `5116-5117`：IndustrialTelemetry `5116`、Maintenance `5117`；BusinessERP 使用 `5118`；BusinessGateway 使用 `5119`；BusinessScheduling 使用 `5120`；BusinessConsole 使用 `5125`；BusinessPDA 使用 `5126`。DesignSystem 文档站使用 `5180`。移动端为独立实施轨，当前 PDA v1 已复用 BusinessGateway `/api/business-console/v1/**` facade；PDA 站内通知同样通过该边界暴露当前用户的消息列表、任务列表和单条已读操作，不跨包直接复用 PlatformGateway Console 通知契约。独立 `/api/mobile/v1/**`、mobile OpenAPI/api-client 稳定导出、扫码解释和离线 outbox/sync 仍属后续轨道。
 3. 本地 MinIO 运行镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`。
-4. 历史 `scripts/verify-first-slice.ps1`、`scripts/verify-second-slice-ops.ps1`、`scripts/verify-third-slice-console.ps1` 与 `scripts/verify-fourth-slice-real-infra.ps1` 已按 #2157 退役；四个路径仍保留为无副作用、明确失败的兼容墓碑，不再作为当前本地验收命令。
+4. 历史 `scripts/verify-first-slice.ps1`、`scripts/verify-second-slice-ops.ps1`、`scripts/verify-third-slice-console.ps1` 与 `scripts/verify-fourth-slice-real-infra.ps1` 已按 #2157 退役；前三个路径仍保留为无副作用、明确失败的兼容墓碑，第四个路径已删除，不再作为当前本地验收命令。
 5. 当前本地开发与一次性真实全栈验证使用 `.\nerv.ps1 dev`、`.\nerv.ps1 fullstack run -Scenario smoke` 及其 stop/status/wait/logs/describe 入口；仓库级 OpenAPI/api-client 漂移使用 `scripts/verify-openapi-client-drift.ps1`，前端质量门禁使用 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build`。既有 `docs/superpowers/plans/` 与 `docs/superpowers/specs/` 仅作为历史设计记录，不是当前门禁入口，具体边界见 `docs/adr/0028-retired-vertical-slice-script-entry-boundary.md`。
 6. 第四阶段历史真实基础设施责任由平台级 `infra/aspire/Nerv.IIP.AppHost`、当前 fullstack 场景和专用 provider CI lane 承接；本地持久化、messaging provider 和数据库连接要求以当前 AppHost/profile 文档为准。
-9. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
+9. AppHub/Ops 迁移发布底座和后端 SDK/契约回归由当前 PostgreSQL/provider lane、受控 migrator/release step 和对应测试项目承接；历史 `verify-fifth-slice-persistence-foundation.ps1` 已删除。
 10. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。
 11. 运行 `pwsh scripts/check-script-governance.ps1` 可验证脚本解析、分类声明、高风险命令 wrapper 和 legacy exemption 是否仍受控。
 12. 运行 `pwsh scripts/verify-openapi-client-drift.ps1` 可重跑 Gateway OpenAPI 导出和前端 api-client 生成，并对 `frontend/packages/api-client/openapi/*.v1.json` 与 `frontend/packages/api-client/src/generated/**` 做 drift 门禁；GitHub CI 的 `OpenAPI/api-client Drift` job 使用同一入口。
