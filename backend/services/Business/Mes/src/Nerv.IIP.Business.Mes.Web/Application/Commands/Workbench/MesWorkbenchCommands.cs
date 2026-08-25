@@ -931,7 +931,9 @@ public sealed record CreateMaterialIssueRequestCommand(
     string? UomCode,
     decimal? Quantity,
     DateTimeOffset RequestedAtUtc,
-    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
+    string? IdempotencyKey = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidator<CreateMaterialIssueRequestCommand>
 {
@@ -969,7 +971,15 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             request.EnvironmentId, "material-issue-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.UomCode, request.Quantity, request.RequestedAtUtc),
+            MesCodingService.Fingerprint(
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.MaterialId,
+                request.UomCode,
+                request.Quantity,
+                request.RequestedAtUtc,
+                request.IsSupplementary,
+                request.OriginalMaterialIssueRequestNo),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -1007,6 +1017,41 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             throw new KnownException($"领料申请数量必须大于 0，WorkOrderId = {request.WorkOrderId}");
         }
 
+        var originalRequestNo = string.IsNullOrWhiteSpace(request.OriginalMaterialIssueRequestNo)
+            ? null
+            : request.OriginalMaterialIssueRequestNo.Trim();
+        if (!request.IsSupplementary && originalRequestNo is not null)
+        {
+            throw new KnownException("普通领料申请不能指定原领料单。");
+        }
+
+        MaterialIssueRequest? originalRequest = null;
+        if (request.IsSupplementary)
+        {
+            if (string.IsNullOrWhiteSpace(originalRequestNo))
+            {
+                throw new KnownException("补料申请必须指定原领料单。");
+            }
+
+            originalRequest = await dbContext.MaterialIssueRequests
+                .SingleOrDefaultAsync(
+                    x => x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.RequestNo == originalRequestNo &&
+                        x.WorkOrderId == request.WorkOrderId &&
+                        x.MaterialId == materialId,
+                    cancellationToken);
+            if (originalRequest is null)
+            {
+                throw new KnownException("原领料单不存在或不在当前组织、环境、工单和物料范围内。");
+            }
+
+            if (originalRequest.IsSupplementary)
+            {
+                throw new KnownException("补料申请不能再次关联补料单，禁止形成补料链。");
+            }
+        }
+
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             request.OrganizationId,
             request.EnvironmentId,
@@ -1016,7 +1061,9 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             materialId,
             uomCode,
             requestedQuantity,
-            request.RequestedAtUtc));
+            request.RequestedAtUtc,
+            request.IsSupplementary,
+            originalRequestNo));
         return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
     }
 }
