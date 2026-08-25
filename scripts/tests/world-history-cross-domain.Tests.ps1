@@ -3,10 +3,11 @@
 #   Category: check
 #   SideEffects:
 #     - Runs the world-history cross-domain reconciliation library against in-memory fixtures
+#     - Creates and removes temporary WMS seed manifest mutation fixtures
 #   Writes:
-#     - None
+#     - Temporary files only under an owned operating-system temp directory
 #   Cleanup:
-#     - No process or external resource ownership
+#     - Removes the owned mutation fixture directory
 #   Requires:
 #     - PowerShell 7
 
@@ -35,6 +36,112 @@ $script:Failures = New-Object System.Collections.Generic.List[string]
 function Assert-Contract([bool] $Condition, [string] $Message) {
     if (-not $Condition) { $script:Failures.Add($Message) }
 }
+
+function Invoke-ManifestMutation {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [scriptblock] $Mutate,
+        [Parameter(Mandatory)] [string] $ExpectedFailure
+    )
+
+    $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-wms-seed-manifest-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
+        $manifestPath = Join-Path $repoRoot 'scripts/seed-test-layer-manifest.json'
+        $shardPath = Join-Path $repoRoot 'scripts/backend-test-shards.json'
+        $sourceRelativePath = 'backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WorldHistoryWarehouseOpsSeedServiceTests.cs'
+        $sourcePath = Join-Path $repoRoot $sourceRelativePath
+        $mutationManifestPath = Join-Path $mutationRoot 'seed-test-layer-manifest.json'
+        $mutationShardPath = Join-Path $mutationRoot 'backend-test-shards.json'
+        $mutationSourcePath = Join-Path $mutationRoot $sourceRelativePath
+
+        [IO.Directory]::CreateDirectory((Split-Path $mutationSourcePath -Parent)) | Out-Null
+        Copy-Item -LiteralPath $shardPath -Destination $mutationShardPath
+        Copy-Item -LiteralPath $sourcePath -Destination $mutationSourcePath
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 30
+        & $Mutate $manifest $mutationSourcePath
+        [IO.File]::WriteAllText(
+            $mutationManifestPath,
+            ($manifest | ConvertTo-Json -Depth 30),
+            [Text.UTF8Encoding]::new($false))
+
+        $output = (& pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts/verify-seed-test-layer-manifest.ps1') `
+                -ManifestPath $mutationManifestPath `
+                -ShardManifestPath $mutationShardPath `
+                -RepositoryRoot $mutationRoot 2>&1) -join "`n"
+        $exitCode = $LASTEXITCODE
+        Assert-Contract ($exitCode -ne 0) "Manifest mutation '$Name' must fail closed."
+        Assert-Contract ($output.Contains($ExpectedFailure, [StringComparison]::Ordinal)) `
+            "Manifest mutation '$Name' must report '$ExpectedFailure'. Actual: $output"
+    }
+    finally {
+        if (Test-Path -LiteralPath $mutationRoot) {
+            Remove-Item -LiteralPath $mutationRoot -Recurse -Force
+        }
+    }
+}
+
+$mutationDefinitions = @(
+    [ordered]@{
+        Name = 'identity'
+        ExpectedFailure = '未找到测试方法'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $manifest.entries[0].testIdentity += '.Missing'
+        }
+    }
+    [ordered]@{
+        Name = 'trait'
+        ExpectedFailure = '未声明 trait'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $source = Get-Content -LiteralPath $sourcePath -Raw
+            $mutated = $source.Replace(
+                '[Trait("SeedContract", "wms-world-history-warehouse-ops")]',
+                '[Trait("SeedContract", "mutated-trait")]')
+            [IO.File]::WriteAllText($sourcePath, $mutated, [Text.UTF8Encoding]::new($false))
+        }
+    }
+    [ordered]@{
+        Name = 'provider-lane'
+        ExpectedFailure = 'requiredLane'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $manifest.entries[0].requiredLane = 'backend-mutated'
+        }
+    }
+    [ordered]@{
+        Name = 'boundary-date'
+        ExpectedFailure = '日期边界'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $manifest.entries[0].asOfDateBoundaries[0] = '2026-01-07'
+        }
+    }
+    [ordered]@{
+        Name = 'setup-count'
+        ExpectedFailure = 'setupCountPerDate'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $manifest.entries[0].setupCountPerDate = 2
+        }
+    }
+    [ordered]@{
+        Name = 'contract-registration'
+        ExpectedFailure = 'contracts 集合'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $manifest.entries[0].contracts = @($manifest.entries[0].contracts | Where-Object {
+                    [string]::Equals([string] $_, 'reference-integrity', [StringComparison]::Ordinal) -eq $false
+                })
+        }
+    }
+)
+
+foreach ($mutation in $mutationDefinitions) {
+    Invoke-ManifestMutation -Name $mutation.Name -Mutate $mutation.Mutate -ExpectedFailure $mutation.ExpectedFailure
+}
+
 
 function Assert-Categories([object] $Report, [string[]] $Expected, [string] $Case) {
     # 发现类别是标识符，去重与排序必须走序数比较器：Sort-Object -Unique 会按 culture 折叠

@@ -13,12 +13,13 @@
 [CmdletBinding()]
 param(
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'seed-test-layer-manifest.json'),
-    [string] $ShardManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
+    [string] $ShardManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json'),
+    [string] $RepositoryRoot = (Split-Path $PSScriptRoot -Parent)
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$repoRoot = Split-Path $PSScriptRoot -Parent
+$repoRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
 
 $errors = New-Object System.Collections.Generic.List[string]
@@ -91,6 +92,55 @@ function Assert-Trait {
     }
 }
 
+$expectedContractsByIdentity = [System.Collections.Generic.Dictionary[string, string[]]]::new([StringComparer]::Ordinal)
+$expectedContractsByIdentity['wms-world-history-warehouse-ops-pr-boundary'] = @(
+    'idempotency',
+    'reference-integrity',
+    'terminal-state',
+    'number-segments',
+    'current-queue-shape')
+$expectedContractsByIdentity['wms-world-history-warehouse-ops-pr-fail-closed'] = @('fail-closed')
+
+$contractMarkers = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+$contractMarkers['idempotency'] = 'AssertWarehouseOpsSeedIsIdempotentAsync'
+$contractMarkers['reference-integrity'] = 'AssertReferencesRemainCompleteAsync'
+$contractMarkers['terminal-state'] = 'AssertNumberSegmentsAndStatusDistributionAsync'
+$contractMarkers['number-segments'] = 'AssertNumberSegmentsAndStatusDistributionAsync'
+$contractMarkers['current-queue-shape'] = 'AssertCurrentQueueShapeAsync'
+$contractMarkers['fail-closed'] = 'Assert.ThrowsAsync<WorldHistoryWarehouseOpsConsistencyException>'
+
+function Assert-ExactContractSet {
+    param(
+        [Parameter(Mandatory)] [object] $Entry,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    $expected = $null
+    if (-not $expectedContractsByIdentity.TryGetValue([string] $Entry.id, [ref] $expected)) {
+        Add-ManifestError "$Context identity 未登记合同闭合规则。"
+        return
+    }
+
+    $actualSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($contract in @($Entry.contracts)) {
+        if (-not $actualSet.Add([string] $contract)) {
+            Add-ManifestError "$Context contracts 不得重复登记 '$contract'。"
+        }
+    }
+    $expectedSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($contract in $expected) { [void] $expectedSet.Add($contract) }
+
+    if ($actualSet.Count -ne $expectedSet.Count) {
+        Add-ManifestError "$Context contracts 集合与 WMS 清单②预期不一致。"
+        return
+    }
+    foreach ($contract in $expectedSet) {
+        if (-not $actualSet.Contains($contract)) {
+            Add-ManifestError "$Context 缺少合同 '$contract'。"
+        }
+    }
+}
+
 if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
     Add-ManifestError "找不到 seed-test manifest '$ManifestPath'。"
 }
@@ -110,8 +160,8 @@ if ($errors.Count -eq 0) {
 
 if ($errors.Count -eq 0) {
     if ([int] $manifest.schemaVersion -ne 1) { Add-ManifestError 'seed-test manifest schemaVersion 必须为 1。' }
-    if ([string] $manifest.issue -ne '#1244') { Add-ManifestError 'seed-test manifest issue 必须为 #1244。' }
-    if ([string] $manifest.linear -ne 'NERV-677') { Add-ManifestError 'seed-test manifest linear 必须为 NERV-677。' }
+    if (-not [string]::Equals([string] $manifest.issue, '#1244', [StringComparison]::Ordinal)) { Add-ManifestError 'seed-test manifest issue 必须为 #1244。' }
+    if (-not [string]::Equals([string] $manifest.linear, 'NERV-677', [StringComparison]::Ordinal)) { Add-ManifestError 'seed-test manifest linear 必须为 NERV-677。' }
 
     $entries = @($manifest.entries)
     if ($entries.Count -ne 2) { Add-ManifestError "WMS 第一批必须登记 2 个独立 evidence identity，实际 $($entries.Count) 个。" }
@@ -140,6 +190,8 @@ if ($errors.Count -eq 0) {
         $source = Get-Content -LiteralPath $sourceFullPath -Raw
         $methodName = ($testIdentity -split '\.')[-1]
         $methodBody = Get-MethodBody -Source $source -MethodName $methodName -Context $context
+
+        Assert-ExactContractSet -Entry $entry -Context $context
 
         try {
             $displayIdentity = if ([int] $entry.expectedRuntimeTestCount -gt 1) {
@@ -242,9 +294,15 @@ if ($errors.Count -eq 0) {
             }
         }
 
-        if ($entry.contracts -contains 'fail-closed' -and
-            -not $methodBody.Contains('Assert.ThrowsAsync<WorldHistoryWarehouseOpsConsistencyException>', [StringComparison]::Ordinal)) {
-            Add-ManifestError "$context 已登记 fail-closed，但未找到 WorldHistoryWarehouseOpsConsistencyException 负向断言。"
+        foreach ($contract in @($entry.contracts)) {
+            $marker = $null
+            if (-not $contractMarkers.TryGetValue([string] $contract, [ref] $marker)) {
+                Add-ManifestError "$context 登记了未知合同 '$contract'。"
+                continue
+            }
+            if (-not $methodBody.Contains($marker, [StringComparison]::Ordinal)) {
+                Add-ManifestError "$context 合同 '$contract' 缺少可定位断言 '$marker'。"
+            }
         }
     }
 }
