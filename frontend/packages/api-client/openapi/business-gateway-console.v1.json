@@ -47605,6 +47605,34 @@
           "phone": {
             "type": "string",
             "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "crossesMidnight": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "paidMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "breakMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         }
       },
