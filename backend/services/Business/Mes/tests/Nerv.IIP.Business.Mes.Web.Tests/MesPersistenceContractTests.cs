@@ -1403,7 +1403,7 @@ public sealed class MesPersistenceContractTests
         using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                "{\"data\":{\"items\":[{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"status\":\"active\",\"planCode\":\"IP-SKU-FSA\"}],\"total\":1},\"success\":true}",
+                "{\"data\":{\"items\":[{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"status\":\"active\",\"planCode\":\"IP-SKU-FSA\",\"skuCode\":\"FG-FSA\",\"category\":\"operation\",\"workCenterId\":\"WC-FILL\"}],\"total\":1},\"success\":true}",
                 Encoding.UTF8,
                 "application/json"),
         });
@@ -1460,6 +1460,63 @@ public sealed class MesPersistenceContractTests
             !x.Message.Contains("首检", StringComparison.Ordinal) &&
             !x.Message.Contains("巡检", StringComparison.Ordinal) &&
             !x.Message.Contains("终检", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("OTHER-SKU", "operation", "WC-FILL")]
+    [InlineData("FG-FSA", "final", "WC-FILL")]
+    [InlineData("FG-FSA", "operation", "WC-OTHER")]
+    public async Task Foundation_readiness_quality_does_not_accept_plan_outside_requested_applicability(
+        string responseSkuCode,
+        string responseCategory,
+        string responseWorkCenterId)
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"data\":{{\"items\":[{{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"status\":\"active\",\"planCode\":\"IP-MISMATCH\",\"skuCode\":\"{responseSkuCode}\",\"category\":\"{responseCategory}\",\"workCenterId\":\"{responseWorkCenterId}\"}}],\"total\":1}},\"success\":true}}",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices($"{nameof(Foundation_readiness_quality_does_not_accept_plan_outside_requested_applicability)}-{responseCategory}-{responseWorkCenterId}");
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            new MesFoundationReadinessService(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.Status);
+        Assert.Contains(readiness.Issues, x => x.Code == MesReadinessReasonCodes.QualityPlanMissing);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task Foundation_readiness_quality_does_not_translate_quality_http_failure_to_missing_plan(
+        HttpStatusCode statusCode)
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(statusCode));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices($"{nameof(Foundation_readiness_quality_does_not_translate_quality_http_failure_to_missing_plan)}-{statusCode}");
+
+        using var scope = services.CreateScope();
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new GetMesFoundationReadinessAreaQueryHandler(
+                new MesFoundationReadinessService(
+                    scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                    new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None));
+
+        Assert.Contains("QUALITY_PLAN_SOURCE_UNAVAILABLE", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("QUALITY_PLAN_MISSING", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

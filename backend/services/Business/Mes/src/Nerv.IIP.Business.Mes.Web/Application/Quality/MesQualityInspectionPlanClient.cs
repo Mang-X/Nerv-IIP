@@ -71,11 +71,6 @@ public sealed class MesQualityInspectionPlanClient(
 
         using (response)
         {
-            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
-            {
-                return false;
-            }
-
             if (!response.IsSuccessStatusCode)
             {
                 throw new KnownException(
@@ -94,7 +89,10 @@ public sealed class MesQualityInspectionPlanClient(
                 data.Items.Any(x =>
                     string.Equals(x.OrganizationId, organizationId, StringComparison.Ordinal) &&
                     string.Equals(x.EnvironmentId, environmentId, StringComparison.Ordinal) &&
-                    string.Equals(x.Status, "active", StringComparison.OrdinalIgnoreCase));
+                    string.Equals(x.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(x.SkuCode, skuCode, StringComparison.Ordinal) &&
+                    string.Equals(x.Category, "operation", StringComparison.Ordinal) &&
+                    string.Equals(x.WorkCenterId, workCenterId, StringComparison.Ordinal));
         }
     }
 }
@@ -107,7 +105,10 @@ public sealed record MesQualityInspectionPlanItem(
     string OrganizationId,
     string EnvironmentId,
     string Status,
-    string PlanCode);
+    string PlanCode,
+    string? SkuCode,
+    string? Category,
+    string? WorkCenterId);
 
 internal sealed record MesQualityResponseDataEnvelope<T>(
     T? Data,
