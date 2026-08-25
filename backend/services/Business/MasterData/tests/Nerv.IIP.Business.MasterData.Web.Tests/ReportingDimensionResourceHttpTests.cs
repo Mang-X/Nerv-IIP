@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
@@ -36,6 +37,36 @@ public sealed class ReportingDimensionResourceHttpTests
                 new TimeOnly(4, 0),
                 420,
                 60));
+            dbContext.DeviceAssets.Add(DeviceAsset
+                .RegisterCapability(
+                    "org-001",
+                    "env-dev",
+                    "DEV-001",
+                    "灌装机",
+                    "LINE-001",
+                    "WC-001",
+                    "filler",
+                    "ACME",
+                    "SN-001",
+                    10m,
+                    500m,
+                    "unit",
+                    "critical",
+                    true,
+                    true,
+                    new Dictionary<string, string>())
+                .WithLedger(
+                    new DateOnly(2026, 1, 1),
+                    100000m,
+                    "CNY",
+                    new DateOnly(2028, 12, 31),
+                    "SUP-001",
+                    "SITE-001",
+                    "WS-001",
+                    "LINE-001",
+                    "ST-001",
+                    null,
+                    null));
             await dbContext.SaveChangesAsync();
         }
 
@@ -51,6 +82,12 @@ public sealed class ReportingDimensionResourceHttpTests
         Assert.True(shift.RootElement.GetProperty("crossesMidnight").GetBoolean());
         Assert.Equal(420, shift.RootElement.GetProperty("paidMinutes").GetInt32());
         Assert.Equal(60, shift.RootElement.GetProperty("breakMinutes").GetInt32());
+
+        using var deviceAsset = await GetSingleResourceAsync(client, "device-asset");
+        Assert.Equal("SITE-001", deviceAsset.RootElement.GetProperty("siteCode").GetString());
+        Assert.Equal("WS-001", deviceAsset.RootElement.GetProperty("workshopCode").GetString());
+        Assert.Equal("LINE-001", deviceAsset.RootElement.GetProperty("lineCode").GetString());
+        Assert.Equal("WC-001", deviceAsset.RootElement.GetProperty("workCenterCode").GetString());
     }
 
     private static async Task<JsonDocument> GetSingleResourceAsync(HttpClient client, string resourceType)
