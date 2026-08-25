@@ -543,14 +543,16 @@ describe('generated API client contract', () => {
   })
 
   it('types the MES supplementary material issue contract from OpenAPI', () => {
-    const request: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
-      isSupplementary: true,
-      originalMaterialIssueRequestNo: 'MIR-000123',
-    }
-    const response: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse = {
-      supplementaryCount: 1,
-      items: [request],
-    }
+    const request: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest =
+      {
+        isSupplementary: true,
+        originalMaterialIssueRequestNo: 'MIR-000123',
+      }
+    const response: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse =
+      {
+        supplementaryCount: 1,
+        items: [request],
+      }
 
     expect(request.isSupplementary).toBe(true)
     expect(request.originalMaterialIssueRequestNo).toBe('MIR-000123')
