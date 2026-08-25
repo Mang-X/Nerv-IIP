@@ -926,12 +926,17 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             var values = document.RootElement
                 .EnumerateObject()
                 .ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
+            var hasEventType = values.TryGetValue("EventType", out var eventTypeValue) &&
+                               eventTypeValue.ValueKind == JsonValueKind.String &&
+                               eventTypeValue.GetString() == eventType;
+            var hasName = values.TryGetValue("Name", out var nameValue) &&
+                          nameValue.ValueKind == JsonValueKind.String &&
+                          nameValue.GetString() == eventType;
             return ReadJsonString(values, "EventId") == eventId &&
                    ReadJsonString(values, "IdempotencyKey") == idempotencyKey &&
-                   (!values.TryGetValue("EventType", out var eventTypeValue) ||
-                    eventTypeValue.GetString() == eventType) &&
-                   (!values.TryGetValue("Name", out var nameValue) ||
-                    nameValue.GetString() == eventType);
+                   (hasEventType || hasName) &&
+                   (!values.ContainsKey("EventType") || hasEventType) &&
+                   (!values.ContainsKey("Name") || hasName);
         }
         catch (JsonException)
         {
