@@ -48,11 +48,12 @@ import {
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
+  listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
-  recordBusinessConsoleMesDefectMutationOptions,
+  recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
@@ -91,7 +92,7 @@ import {
   type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
-  type BusinessConsoleMesRecordDefectRequest,
+  type BusinessConsoleMesRecordDefectV2Request,
   type BusinessConsoleMesRecordDowntimeEventRequest,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
   type BusinessConsoleMesRelatedQualityItemRow,
@@ -125,9 +126,11 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   formatWorkScopeKey,
+  isAvailableMaterialLot,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
@@ -503,6 +506,7 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
   return {
     coversWorkOrder,
     principalIdentity,
+    refreshScope: () => workContextQuery.refetch(),
     requireSelectedScope,
     selectedScope,
     scopeMessage,
@@ -763,6 +767,70 @@ export type MesProductionReportInput = Omit<
 export interface MesProductionQuantitySnapshot {
   plannedQuantity: number
   reportedGoodQuantity: number
+}
+
+type AvailableMaterialLot = BusinessConsoleMesMaterialIssueRequestRow & AvailableMaterialLotFields
+
+export function useMesProductionMaterialLots(
+  context: () => { workOrderId?: string | null; operationTaskId?: string | null } | null,
+) {
+  const auth = useAuthStore()
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      workOrderId: '',
+      operationTaskId: '',
+      skip: 0,
+      take: 500,
+    }),
+  )
+  const materialsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.mes.materials.read'),
+  )
+
+  watch(
+    () => {
+      const current = context()
+      return [current?.workOrderId?.trim() ?? '', current?.operationTaskId?.trim() ?? '']
+    },
+    ([workOrderId, operationTaskId]) => {
+      filters.workOrderId = workOrderId
+      filters.operationTaskId = operationTaskId
+    },
+    { immediate: true },
+  )
+
+  const enabled = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      materialsReadPermission.value &&
+      Boolean(filters.workOrderId && filters.operationTaskId),
+  )
+  const materialLotsQuery = useQuery(() => ({
+    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        workOrderId: filters.workOrderId,
+        operationTaskId: filters.operationTaskId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    materialsReadPermission,
+    materialLotsPending: materialLotsQuery.isLoading,
+    materialLotsError: materialLotsQuery.error,
+    availableMaterialLots: computed<AvailableMaterialLot[]>(() => {
+      if (!materialLotsQuery.data.value?.success) return []
+      return (materialLotsQuery.data.value.data?.items ?? []).filter(isAvailableMaterialLot)
+    }),
+    refreshMaterialLots: () => (enabled.value ? materialLotsQuery.refetch() : Promise.resolve()),
+  }
 }
 
 export function useMesProductionReporting() {
@@ -2028,6 +2096,50 @@ export function useMesWipSummary() {
   }
 }
 
+/**
+ * 报废原因码只消费 Quality 域已发布的 scrap 专用目录；不在 MES/PDA 侧维护字典。
+ * 调用方通过 shouldLoad 将读取限定在确有报废数量的报工场景，且权限或业务上下文不满足时不发请求。
+ */
+export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
+  const auth = useAuthStore()
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: 100,
+    }),
+  )
+  const qualityInspectionRecordsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-records.read'),
+  )
+  const enabled = computed(
+    () =>
+      hasBusinessContext(filters) && qualityInspectionRecordsReadPermission.value && shouldLoad(),
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleQualityScrapReasonCodesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending: query.isLoading,
+    scrapReasonCodesError: query.error,
+    scrapReasonCodes: computed(() =>
+      query.data.value?.success ? (query.data.value.data?.items ?? []) : [],
+    ),
+    refreshScrapReasonCodes: () => (enabled.value ? query.refetch() : Promise.resolve()),
+  }
+}
+
 export function useMesProductionReports() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
@@ -2441,11 +2553,14 @@ export function useMesQualityContext() {
     ),
   )
   const defectMutation = useMutation({
-    ...recordBusinessConsoleMesDefectMutationOptions(),
+    ...recordBusinessConsoleMesDefectV2MutationOptions(),
     onSuccess: () =>
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesRelatedQualityItems']).catch(
-        ignoreBackgroundError,
-      ),
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesRelatedQualityItems',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesWorkOrderDetail',
+      ]).catch(ignoreBackgroundError),
   })
 
   return {
@@ -2460,8 +2575,31 @@ export function useMesQualityContext() {
     qualityItemsPending: qualityQuery.isLoading,
     qualityItemsState: businessReadState(qualityQuery, () => hasBusinessContext(filters)),
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
-    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) =>
-      defectMutation.mutateAsync({ body }),
+    recordDefect: async (
+      body: Omit<BusinessConsoleMesRecordDefectV2Request, 'organizationId' | 'environmentId'>,
+    ) => {
+      // 页面只提交缺陷事实和已核验的写范围选择；组织与环境取当前 Business Context，
+      // 不接受调用方覆盖。Gateway 仍会用主体令牌实时核验该目标上下文与工单范围。
+      const organizationId = filters.organizationId.trim()
+      const environmentId = filters.environmentId.trim()
+      if (!organizationId || !environmentId) {
+        throw new Error('尚未进入有效组织与环境，不能登记缺陷。')
+      }
+      const operationTaskId = body.operationTaskId?.trim()
+      const safeBody: BusinessConsoleMesRecordDefectV2Request = {
+        organizationId,
+        environmentId,
+        workOrderId: body.workOrderId,
+        ...(operationTaskId ? { operationTaskId } : {}),
+        defectCode: body.defectCode,
+        quantity: body.quantity,
+        recordedAtUtc: body.recordedAtUtc,
+        idempotencyKey: body.idempotencyKey,
+        scopeKind: body.scopeKind,
+        scopeId: body.scopeId,
+      }
+      return defectMutation.mutateAsync({ body: safeBody })
+    },
     recordDefectPending: defectMutation.isLoading,
     refreshQualityItems: () => refetchWithBusinessContext(filters, qualityQuery),
   }

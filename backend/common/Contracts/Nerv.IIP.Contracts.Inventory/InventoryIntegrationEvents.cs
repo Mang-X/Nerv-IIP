@@ -48,6 +48,15 @@ public static class InventoryMovementRequestTypes
     public const string StatusTransfer = "status-transfer";
 }
 
+public static class InventoryMovementUnitCostAuthorityReferences
+{
+    /// <summary>
+    /// Optional V1 marker for MES finished-goods receipts. It selects the internal
+    /// authority lookup policy; it is not itself proof of a unit cost.
+    /// </summary>
+    public const string MesFinishedGoodsReceipt = "mes-finished-goods-receipt-authority-v1";
+}
+
 public sealed record InventoryMovementRequestedIntegrationEvent(
     string EventId,
     string EventType,
@@ -87,7 +96,8 @@ public sealed record InventoryMovementRequestedPayload(
     string? TargetQualityStatus = null,
     DateOnly? ProductionDate = null,
     DateOnly? ExpiryDate = null,
-    int? ShelfLifeDays = null);
+    int? ShelfLifeDays = null,
+    string? UnitCostAuthorityReference = null);
 
 public sealed record InventoryReservationReleaseRequestedIntegrationEvent(
     string EventId,

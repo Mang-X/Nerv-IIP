@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -263,7 +264,10 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await mesDb.SaveChangesAsync();
         await RecordMesOutputLotAsync(mesDb, "WO-483", "LOT-FG-483", 8m, DateTimeOffset.Parse("2026-06-23T07:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
-        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var inventoryHandler = CreateInventoryHandler(
+            inventoryDb,
+            inventoryPublisher,
+            new AcceptanceMesFinishedGoodsAuthorityResolver(12.34m));
         var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
 
         var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(mesDb).Handle(
@@ -796,7 +800,10 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await mesDb.SaveChangesAsync();
         await RecordMesOutputLotAsync(mesDb, "WO-541", "LOT-FG-541", 8m, DateTimeOffset.Parse("2026-06-18T08:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
-        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var inventoryHandler = CreateInventoryHandler(
+            inventoryDb,
+            inventoryPublisher,
+            new AcceptanceMesFinishedGoodsAuthorityResolver(12.34m));
         var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
             mesDb,
             new InMemoryIntegrationEventDeadLetterStore());
@@ -1073,13 +1080,43 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
     private static InventoryMovementRequestedIntegrationEventHandlerForPostingMovement CreateInventoryHandler(
         InventoryDbContext inventoryDb,
-        RecordingIntegrationEventPublisher publisher)
+        RecordingIntegrationEventPublisher publisher,
+        IInventoryUnitCostAuthorityResolver? authorityResolver = null)
     {
         return new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
             NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             new InventoryCommandExecutingSender(inventoryDb),
             new InMemoryIntegrationEventDeadLetterStore(),
-            publisher);
+            publisher,
+            authorityResolver);
+    }
+
+    private sealed class AcceptanceMesFinishedGoodsAuthorityResolver(decimal unitCost)
+        : IInventoryUnitCostAuthorityResolver
+    {
+        public Task<InventoryUnitCostAuthorityResolution> ResolveAsync(
+            InventoryMovementRequestedIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            var payload = integrationEvent.Payload;
+            var isFinishedGoodsAuthorityReference =
+                string.Equals(
+                    integrationEvent.SourceService,
+                    InventoryIntegrationEventSources.BusinessMes,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    payload.UnitCostAuthorityReference,
+                    InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+                    StringComparison.Ordinal) &&
+                payload.IdempotencyKey.StartsWith(
+                    "mes:finished-goods-receipt:",
+                    StringComparison.Ordinal);
+
+            return Task.FromResult(
+                isFinishedGoodsAuthorityReference
+                    ? InventoryUnitCostAuthorityResolution.Available(unitCost)
+                    : InventoryUnitCostAuthorityResolution.Pending("authority-reference-missing"));
+        }
     }
 
     private static InventoryReservationReleaseRequestedIntegrationEventHandlerForReleaseReservations CreateInventoryReservationReleaseHandler(

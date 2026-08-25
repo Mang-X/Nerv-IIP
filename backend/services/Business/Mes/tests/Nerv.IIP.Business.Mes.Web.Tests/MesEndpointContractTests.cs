@@ -1174,6 +1174,49 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Assign_dispatch_task_endpoint_forwards_collaboration_participants()
+    {
+        var sender = new CapturingAssignDispatchTaskSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:planner");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/dispatch-tasks/OP-HTTP/assign",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                assignedUserId = "worker-a",
+                participants = new[]
+                {
+                    new { workerId = "worker-a", workerName = "Alice", sharePercent = 60m },
+                    new { workerId = "worker-b", workerName = "Bob", sharePercent = 40m },
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var command = Assert.IsType<AssignDispatchTaskCommand>(sender.Command);
+        Assert.Equal("OP-HTTP", command.OperationTaskId);
+        Assert.Equal("user:planner", command.Actor);
+        Assert.Collection(
+            Assert.IsAssignableFrom<IReadOnlyCollection<DispatchParticipantInput>>(command.Participants),
+            first => Assert.Equal(("worker-a", "Alice", 60m), (first.WorkerId, first.WorkerName, first.SharePercent)),
+            second => Assert.Equal(("worker-b", "Bob", 40m), (second.WorkerId, second.WorkerName, second.SharePercent)));
+    }
+
+    [Fact]
     public async Task Production_report_only_rolls_work_order_progress_from_output_operation()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
@@ -1743,6 +1786,48 @@ public sealed class MesEndpointContractTests
         var row = Assert.Single(response.Items);
         Assert.True(row.IsSupplementary);
         Assert.Equal("MIR-LIST-ORIGINAL", row.OriginalMaterialIssueRequestNo);
+    }
+
+    [Fact]
+    public async Task Material_issue_query_for_operation_returns_operation_and_work_order_level_received_requests()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        var operationRequest = Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-OP-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", "L", 1m, now);
+        operationRequest.ConfirmAndPostLineSideReceipt(
+            new Domain.AggregatesModel.MaterialSupplyAggregate.MaterialTransferLocations(
+                "SITE-001", "LOC-001", "LINE-001", "LINE-LOC-001"),
+            now.AddMinutes(1), 1m, "LOT-OP-001");
+        var workOrderRequest = Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-WO-001", "WO-MAT", null, "MAT-OIL", "L", 2m, now.AddMinutes(2));
+        workOrderRequest.ConfirmAndPostLineSideReceipt(
+            new Domain.AggregatesModel.MaterialSupplyAggregate.MaterialTransferLocations(
+                "SITE-001", "LOC-001", "LINE-001", "LINE-LOC-001"),
+            now.AddMinutes(3), 2m, "LOT-WO-001");
+        var otherOperationRequest = Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-OP-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", "L", 3m, now.AddMinutes(4));
+        otherOperationRequest.ConfirmAndPostLineSideReceipt(
+            new Domain.AggregatesModel.MaterialSupplyAggregate.MaterialTransferLocations(
+                "SITE-001", "LOC-001", "LINE-001", "LINE-LOC-001"),
+            now.AddMinutes(5), 3m, "LOT-OP-002");
+        dbContext.MaterialIssueRequests.AddRange(operationRequest, workOrderRequest, otherOperationRequest);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery(
+                "org-001", "env-dev", "WO-MAT", Skip: 0, Take: 10, OperationTaskId: "OP-MAT-10"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal(
+            ["MIR-WO-001", "MIR-OP-001"],
+            result.Items.Select(item => item.RequestId).ToArray());
+        Assert.All(result.Items, item => Assert.Equal(
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.ReceivedStatus,
+            item.Status));
     }
 
     [Fact]
@@ -2628,6 +2713,40 @@ public sealed class MesEndpointContractTests
         public Task Send<TRequest>(
             TRequest request,
             CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class CapturingAssignDispatchTaskSender : ISender
+    {
+        public AssignDispatchTaskCommand? Command { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Command = Assert.IsType<AssignDispatchTaskCommand>(request);
+            return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+                "Assigned",
+                Command.OperationTaskId,
+                DateTimeOffset.Parse("2026-08-25T08:00:00Z")));
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest =>
             throw new NotSupportedException();
 

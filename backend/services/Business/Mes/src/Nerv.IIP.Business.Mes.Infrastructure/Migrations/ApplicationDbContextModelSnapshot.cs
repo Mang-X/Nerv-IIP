@@ -930,6 +930,67 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTaskParticipant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Operation task participant fact id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation task public id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant scope.");
+
+                    b.Property<decimal>("SharePercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("numeric(7,4)")
+                        .HasColumnName("share_percent")
+                        .HasComment("Worker share of the operation labor time in percent.");
+
+                    b.Property<string>("WorkerId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("worker_id")
+                        .HasComment("MasterData worker user id captured for collaboration.");
+
+                    b.Property<string>("WorkerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("worker_name")
+                        .HasComment("Worker display name snapshot resolved at dispatch time.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "WorkerId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_operation_task_participants_scope_task_worker");
+
+                    b.ToTable("operation_task_participants", "mes", t =>
+                        {
+                            t.HasComment("Current MES operation collaboration roster with worker identity snapshots and labor shares.");
+
+                            t.HasCheckConstraint("ck_operation_task_participants_share_percent", "share_percent > 0 AND share_percent <= 100");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTaskStartAuthorization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1306,6 +1367,94 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("production_reports", "mes", t =>
                         {
                             t.HasComment("MES production report facts recording good and scrap quantities for operation execution.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportLaborAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Production report labor allocation id.");
+
+                    b.Property<long>("AllocatedLaborTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("allocated_labor_ticks")
+                        .HasComment("Final operation labor ticks allocated to this worker.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation task public id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant scope.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("Completing production report number.");
+
+                    b.Property<decimal>("SharePercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("numeric(7,4)")
+                        .HasColumnName("share_percent")
+                        .HasComment("Worker labor share captured when the operation completed.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work order public id.");
+
+                    b.Property<string>("WorkerId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("worker_id")
+                        .HasComment("Allocated MasterData worker user id snapshot.");
+
+                    b.Property<string>("WorkerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("worker_name")
+                        .HasComment("Allocated worker display name snapshot.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .HasDatabaseName("ix_production_report_labor_allocations_scope_work_order");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "WorkerId")
+                        .HasDatabaseName("ix_production_report_labor_allocations_scope_task_worker");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo", "WorkerId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_production_report_labor_allocations_scope_report_worker");
+
+                    b.ToTable("production_report_labor_allocations", "mes", t =>
+                        {
+                            t.HasComment("Immutable worker labor allocation snapshots created by completing MES production reports.");
+
+                            t.HasCheckConstraint("ck_production_report_labor_allocations_share_percent", "share_percent > 0 AND share_percent <= 100");
+
+                            t.HasCheckConstraint("ck_production_report_labor_allocations_ticks", "allocated_labor_ticks >= 0");
                         });
                 });
 
@@ -3002,6 +3151,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasConstraintName("fk_operation_tasks_work_orders");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTaskParticipant", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "OperationTaskId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_operation_task_participants_operation_tasks");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTaskStartAuthorization", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
@@ -3065,6 +3225,33 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_production_reports_work_orders");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportLaborAllocation", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "OperationTaskId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_production_report_labor_allocations_operation_tasks");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_production_report_labor_allocations_reports");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_production_report_labor_allocations_work_orders");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption", b =>

@@ -149,6 +149,20 @@ vi.mock('@/composables/useBusinessMes', async () => {
       reportScopeReady: shallowRef(true),
       refreshProductionReportState: vi.fn(),
     }),
+    useMesProductionMaterialLots: () => ({
+      materialsReadPermission: shallowRef(false),
+      materialLotsPending: shallowRef(false),
+      materialLotsError: shallowRef(undefined),
+      availableMaterialLots: shallowRef([]),
+      refreshMaterialLots: vi.fn(),
+    }),
+    useMesScrapReasonCodes: () => ({
+      qualityInspectionRecordsReadPermission: shallowRef(false),
+      scrapReasonCodesPending: shallowRef(false),
+      scrapReasonCodesError: shallowRef(undefined),
+      scrapReasonCodes: shallowRef([]),
+      refreshScrapReasonCodes: vi.fn(),
+    }),
     useMesProductionReports: () => ({
       filters: mesState.filters,
       // 按 keyword 过滤时返回对方那一行(模拟服务端跨页返回),否则返回本页三行——让跨页定位的

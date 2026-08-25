@@ -907,7 +907,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             var values = SplitCanonicalCsv(assignedUserIds);
             query = values.Length == 0
                 ? query.Where(_ => false)
-                : query.Where(x => values.Contains(x.AssignedUserId));
+                : query.Where(x =>
+                    values.Contains(x.AssignedUserId)
+                    || dbContext.OperationTaskParticipants.Any(participant =>
+                        participant.OrganizationId == x.OrganizationId
+                        && participant.EnvironmentId == x.EnvironmentId
+                        && participant.OperationTaskId == x.OperationTaskIdValue
+                        && values.Contains(participant.WorkerId)));
         }
 
         if (teamIds is not null)
@@ -1123,7 +1129,8 @@ public sealed record ListMaterialIssueRequestsQuery(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null) : IQuery<MesMaterialIssueRequestListResponse>;
+    string? Status = null,
+    string? OperationTaskId = null) : IQuery<MesMaterialIssueRequestListResponse>;
 
 public sealed record MesMaterialIssueRequestListResponse(
     IReadOnlyCollection<MesMaterialIssueRequestRow> Items,
@@ -1165,6 +1172,12 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
+        {
+            var operationTaskId = request.OperationTaskId.Trim();
+            query = query.Where(x => x.OperationTaskId == null || x.OperationTaskId == operationTaskId);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))

@@ -25,6 +25,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "GetAvailabilityAsync", 3, "稳定错误码与 Inventory provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "ResolveAsync", 1, "稳定错误码 MATERIAL_SUPPLY_LOCATION_UNCONFIGURED"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "SelectSourceAllocationsAsync", 1, "稳定错误码 MATERIAL_SOURCE_LOCATION_UNAVAILABLE"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "HttpMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", 15, "中文业务拒绝与稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "HttpMesWorkerSkillQualificationGate", "Unqualified", 1, "中文人员技能资格拒绝"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "UnconfiguredMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", 1, "稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "HttpMesProductEngineeringRoutingSnapshotProvider", "SendOptionalAsync", 3, "稳定错误码与 ProductEngineering provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "MesRoutingSnapshotMissingException", ".ctor", 1, "稳定错误码 ROUTING_SNAPSHOT_MISSING"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesQualityInspectionPlanClient.cs", "MesQualityInspectionPlanClient", "HasActiveOperationPlanAsync", 4, "稳定错误码 QUALITY_PLAN_SOURCE_UNAVAILABLE 与 Quality provider 失败透传"),
@@ -64,9 +67,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(50, discovered.Count);
-        Assert.Equal(117, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(115, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(53, discovered.Count);
+        Assert.Equal(134, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(131, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);

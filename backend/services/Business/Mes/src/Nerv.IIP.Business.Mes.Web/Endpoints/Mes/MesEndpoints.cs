@@ -334,7 +334,8 @@ public sealed record ListMaterialIssueRequestsRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null);
+    string? Status = null,
+    string? OperationTaskId = null);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -361,7 +362,8 @@ public sealed record AssignDispatchTaskRequest(
     string? ShiftId,
     DateTimeOffset? AssignedAtUtc,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<DispatchParticipantInput>? Participants = null);
 
 public sealed record OperationTaskActionRequest(
     string OrganizationId,
@@ -958,7 +960,8 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
             req.WorkCenterId,
             req.ShiftId,
             req.DeviceAssetId,
-            req.Status), ct);
+            req.Status,
+            req.OperationTaskId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1057,7 +1060,8 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
             MesAuthenticatedActor.Resolve(HttpContext),
             req.AssignedUserName,
             req.TeamId,
-            req.TeamName), ct);
+            req.TeamName,
+            req.Participants), ct);
         await Send.OkAsync(response, ct);
     }
 }

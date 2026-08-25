@@ -215,6 +215,31 @@ public sealed class MesTaskScopeQueryTests
     }
 
     [Fact]
+    public async Task Reportable_query_includes_an_in_progress_task_for_a_registered_participant()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = Utc("2026-07-29T08:00:00Z");
+        var task = SeedTask(dbContext, "WO-01", "OP-01", "WC-01", "lead-worker", "TEAM-A", now);
+        task.Start(now.AddMinutes(1));
+        dbContext.OperationTaskParticipants.Add(OperationTaskParticipant.Register(
+            "org-001", "env-dev", "OP-01", "participant-worker", "协作员工", 40m));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListReportableOperationTasksQueryHandler(dbContext).Handle(
+            new ListReportableOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                Status: nameof(OperationTaskLifecycleStatus.InProgress),
+                AssignedUserIds: "participant-worker"),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Total);
+        Assert.Equal("OP-01", Assert.Single(result.Items).OperationTaskId);
+    }
+
+    [Fact]
     public async Task Queued_task_without_material_snapshot_is_blocked_while_lifecycle_actions_are_authoritative()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

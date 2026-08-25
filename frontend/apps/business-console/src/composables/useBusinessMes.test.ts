@@ -34,6 +34,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReport,
+  recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -54,6 +55,7 @@ import {
   useMesOperationTasks,
   useMesOverview,
   useMesProductionPlans,
+  useMesProductionMaterialLots,
   useMesProductionReporting,
   useMesProductionReports,
   useMesQualityContext,
@@ -82,6 +84,7 @@ const authState = vi.hoisted(() => ({
     principalId: 'user-001',
     organizationId: 'org-001',
     environmentId: 'env-dev',
+    permissionCodes: [] as string[],
   },
   sessionId: 'session-001',
 }))
@@ -335,7 +338,7 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
-  recordBusinessConsoleMesDefectMutationOptions: vi.fn(() => ({
+  recordBusinessConsoleMesDefectV2MutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -486,6 +489,7 @@ describe('business MES composables', () => {
       principalId: 'user-001',
       organizationId: 'org-001',
       environmentId: 'env-dev',
+      permissionCodes: [],
     }
     reactiveAuthState.sessionId = 'session-001'
     coladaState.queryDataById.set(
@@ -1216,6 +1220,81 @@ describe('business MES composables', () => {
     expect(useMesProductionReports().productionReportsTotal.value).toBe(16)
     expect(useMesQualityContext().qualityItemsTotal.value).toBe(17)
     expect(useMesShiftHandovers().handoversTotal.value).toBe(18)
+  })
+
+  it('injects the current business context into the defect wire body and rejects caller overrides', async () => {
+    const quality = useMesQualityContext()
+    const body = {
+      organizationId: 'forged-org',
+      environmentId: 'forged-env',
+      workOrderId: 'WO-2',
+      operationTaskId: 'OP-2',
+      defectCode: 'SCRATCH',
+      quantity: 2.5,
+      recordedAtUtc: '2026-08-26T01:02:03.000Z',
+      idempotencyKey: 'defect-key',
+      actor: 'forged-user',
+      scopeKind: 'work-center',
+      scopeId: 'WC-2',
+    }
+
+    await quality.recordDefect(body as never)
+
+    const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
+      ?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'WO-2',
+        operationTaskId: 'OP-2',
+        defectCode: 'SCRATCH',
+        quantity: 2.5,
+        recordedAtUtc: '2026-08-26T01:02:03.000Z',
+        idempotencyKey: 'defect-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-2',
+      },
+    })
+    expect(mutation.mock.calls[0]?.[0].body).not.toHaveProperty('actor')
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls as unknown as Array<
+      [{ predicate: (entry: { key: Array<{ _id: string }> }) => boolean }]
+    >
+    const invalidatedIds = [
+      'listBusinessConsoleMesRelatedQualityItems',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ].filter((id) =>
+      invalidationCalls.some(([options]) => options.predicate({ key: [{ _id: id }] })),
+    )
+    expect(invalidatedIds).toEqual([
+      'listBusinessConsoleMesRelatedQualityItems',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ])
+  })
+
+  it('fails closed before defect mutation when the current business context is missing', async () => {
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    const quality = useMesQualityContext()
+
+    await expect(
+      quality.recordDefect({
+        workOrderId: 'WO-2',
+        defectCode: 'SCRATCH',
+        quantity: 2.5,
+        recordedAtUtc: '2026-08-26T01:02:03.000Z',
+        idempotencyKey: 'defect-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-2',
+      }),
+    ).rejects.toThrow('尚未进入有效组织与环境')
+
+    const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
+      ?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).not.toHaveBeenCalled()
   })
 
   it('sends MES list search and structured filters as server query parameters', () => {
@@ -1956,5 +2035,50 @@ describe('business MES composables', () => {
     ready.filters.workOrderId = 'WO-CANCEL'
     ready.activateCancelPreview()
     expect(ready.cancelPreviewReady.value).toBe(true)
+  })
+
+  it('只把 received 且仍有余量的批次提供给报工表单', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal,
+      permissionCodes: ['business.mes.materials.read'],
+    }
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        items: [
+          {
+            requestId: 'MIR-RECEIVED',
+            materialId: 'MAT-1',
+            materialLotId: 'LOT-1',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'received',
+          },
+          {
+            requestId: 'MIR-PARTIAL',
+            materialId: 'MAT-2',
+            materialLotId: 'LOT-2',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'partiallyReceived',
+          },
+          {
+            requestId: 'MIR-FAILED',
+            materialId: 'MAT-3',
+            materialLotId: 'LOT-3',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'inventoryPostingFailed',
+          },
+        ],
+      },
+    })
+
+    const result = useMesProductionMaterialLots(() => ({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+    }))
+
+    expect(result.availableMaterialLots.value.map((row) => row.requestId)).toEqual(['MIR-RECEIVED'])
   })
 })

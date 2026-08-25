@@ -5593,6 +5593,175 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_dispatch_facade_resolves_every_collaboration_participant_before_forwarding()
+    {
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseDispatchAssignHost(mes, out var masterData);
+        masterData.WorkerDirectory =
+        [
+            .. masterData.WorkerDirectory,
+            new(
+                "user-op-002",
+                "EMP-1002",
+                "王敏",
+                "DEPT-PROD",
+                "生产部",
+                "装配操作工",
+                "active",
+                null,
+                true,
+                [],
+                [],
+                "2026-01-01T00:00:00.0000000Z"),
+        ];
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                assignedUserId = "user-op-001",
+                idempotencyKey = "dispatch-collab-1",
+                participants = new[]
+                {
+                    new { workerId = "user-op-001", workerName = "伪造姓名 A", sharePercent = 60m },
+                    new { workerId = "user-op-002", workerName = "伪造姓名 B", sharePercent = 40m },
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Collection(
+            mes.LastAssignDispatchRequest!.Participants!,
+            first => Assert.Equal(("user-op-001", "陈志强", 60m), (first.WorkerId, first.WorkerName, first.SharePercent)),
+            second => Assert.Equal(("user-op-002", "王敏", 40m), (second.WorkerId, second.WorkerName, second.SharePercent)));
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_resolves_independent_workers_concurrently()
+    {
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseDispatchAssignHost(mes, out var masterData);
+        masterData.WorkerDirectory =
+        [
+            .. masterData.WorkerDirectory,
+            WorkerDirectoryItem("user-op-002", "王敏"),
+            WorkerDirectoryItem("user-op-003", "赵伟"),
+        ];
+        var enteredCalls = 0;
+        var twoCallsEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCalls = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        masterData.ListWorkersHandler = async (request, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref enteredCalls) >= 2)
+            {
+                twoCallsEntered.TrySetResult();
+            }
+
+            await releaseCalls.Task.WaitAsync(cancellationToken);
+            var worker = Assert.Single(masterData.WorkerDirectory, item => item.UserId == request.UserId);
+            return new BusinessConsoleWorkerDirectoryResponse(1, 1, 1, [worker]);
+        };
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var responseTask = client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                assignedUserId = "user-op-001",
+                idempotencyKey = "dispatch-collab-concurrent",
+                participants = new[]
+                {
+                    new { workerId = "user-op-002", sharePercent = 50m },
+                    new { workerId = "user-op-003", sharePercent = 50m },
+                },
+            });
+        var resolvedConcurrently = false;
+        try
+        {
+            await Nerv.IIP.Testing.TestTimeout.RunAsync(
+                "two independent MasterData worker resolutions enter before either completes",
+                async cancellationToken => await twoCallsEntered.Task.WaitAsync(cancellationToken),
+                TimeSpan.FromSeconds(1));
+            resolvedConcurrently = true;
+        }
+        catch (Nerv.IIP.Testing.TestTimeoutException)
+        {
+            // Assertion below reports the concurrency contract after releasing a sequential implementation.
+        }
+        finally
+        {
+            releaseCalls.TrySetResult();
+        }
+
+        var response = await responseTask;
+        Assert.True(resolvedConcurrently, "Independent worker lookups were serialized.");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private static BusinessConsoleWorkerDirectoryItem WorkerDirectoryItem(string userId, string displayName) =>
+        new(
+            userId,
+            userId,
+            displayName,
+            "DEPT-PROD",
+            "生产部",
+            "装配操作工",
+            "active",
+            null,
+            true,
+            [],
+            [],
+            "2026-01-01T00:00:00.0000000Z");
+
+    [Fact]
+    public async Task Mes_dispatch_facade_rejects_collaboration_share_that_exceeds_persisted_precision()
+    {
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseDispatchAssignHost(mes, out _);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                assignedUserId = "user-op-001",
+                idempotencyKey = "dispatch-collab-precision",
+                participants = new[]
+                {
+                    new { workerId = "user-op-001", sharePercent = 50.00001m },
+                    new { workerId = "user-op-002", sharePercent = 49.99999m },
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(mes.LastAssignDispatchRequest);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_rejects_an_explicitly_empty_collaboration_roster()
+    {
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseDispatchAssignHost(mes, out _);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                assignedUserId = "user-op-001",
+                idempotencyKey = "dispatch-collab-empty",
+                participants = Array.Empty<object>(),
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(mes.LastAssignDispatchRequest);
+    }
+
+    [Fact]
     public async Task Mes_dispatch_facade_rejects_an_unknown_worker()
     {
         var mes = new RecordingMesClient();
@@ -9428,6 +9597,7 @@ public sealed class BusinessGatewayProxyTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);
         var request = new BusinessConsoleMesListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
+        var materialRequest = new BusinessConsoleMesMaterialIssueRequestListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var requestWithoutStatus = new BusinessConsoleMesListWithoutStatusRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var dispatchRequest = new BusinessConsoleMesDispatchTaskListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", AssignedUserId: "user-emp-010", Skip: 4, Take: 12);
         var expectedQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12";
@@ -9439,7 +9609,7 @@ public sealed class BusinessGatewayProxyTests
             ("/api/business/v1/mes/capacity-impacts" + expectedQuery, async () => (await client.ListCapacityImpactsAsync("internal-token-001", request, CancellationToken.None)).Total),
             ("/api/business/v1/mes/dispatch-tasks" + expectedDispatchQuery, async () => (await client.ListDispatchTasksAsync("internal-token-001", dispatchRequest, CancellationToken.None)).Total),
             ("/api/business/v1/mes/finished-goods-receipt-requests" + expectedQuery, async () => (await client.ListFinishedGoodsReceiptRequestsAsync("internal-token-001", request, CancellationToken.None)).Total),
-            ("/api/business/v1/mes/material-issue-requests" + expectedQuery, async () => (await client.ListMaterialIssueRequestsAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/material-issue-requests" + expectedQuery, async () => (await client.ListMaterialIssueRequestsAsync("internal-token-001", materialRequest, CancellationToken.None)).Total),
             ("/api/business/v1/mes/downtime-events" + expectedQuery, async () => (await client.ListDowntimeEventsAsync("internal-token-001", request, CancellationToken.None)).Total),
             ("/api/business/v1/mes/shift-handovers" + expectedQuery, async () => (await client.ListShiftHandoversAsync("internal-token-001", request, CancellationToken.None)).Total),
             ("/api/business/v1/mes/production-reports" + expectedQuery, async () => (await client.ListProductionReportsAsync("internal-token-001", requestWithoutStatus, CancellationToken.None)).Total),
@@ -9453,6 +9623,32 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(cases.Select(x => x.Path), handler.Requests.Select(x => x.RequestUri!.PathAndQuery));
         Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task Material_issue_http_client_forwards_operation_task_filter()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = Array.Empty<object>(),
+            total = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessConsoleMesMaterialIssueRequestListRequest(
+            "org-001",
+            "env-dev",
+            WorkOrderId: "WO-MAT",
+            OperationTaskId: "OP-MAT-10",
+            Skip: 0,
+            Take: 500);
+
+        await client.ListMaterialIssueRequestsAsync("internal-token-001", request, CancellationToken.None);
+
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal(
+            "/api/business/v1/mes/material-issue-requests?organizationId=org-001&environmentId=env-dev&workOrderId=WO-MAT&skip=0&take=500&operationTaskId=OP-MAT-10",
+            sent.RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -11574,6 +11770,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             "2026-01-01T00:00:00.0000000Z"),
     ];
 
+    public Func<BusinessConsoleWorkerDirectoryRequest, CancellationToken, Task<BusinessConsoleWorkerDirectoryResponse>>?
+        ListWorkersHandler { get; set; }
+
     public IReadOnlyCollection<BusinessConsoleTeamMemberItem> TeamMembers { get; set; } =
     [
         new BusinessConsoleTeamMemberItem("team-001", "user-001", true, new DateOnly(2026, 1, 1), null, true, "v1"),
@@ -11596,6 +11795,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CancellationToken cancellationToken)
     {
         LastListWorkersRequest = request;
+        if (ListWorkersHandler is not null)
+        {
+            return ListWorkersHandler(request, cancellationToken);
+        }
+
         IEnumerable<BusinessConsoleWorkerDirectoryItem> query = WorkerDirectory;
         if (!string.IsNullOrWhiteSpace(request.UserId))
         {
@@ -15878,7 +16082,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesMaterialIssueRequestListRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
@@ -16099,7 +16303,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
                 ProducedLotNo: "LOT-FG-001",
                 InventoryPostingFailureCode: "posting-failed",
                 ReversalReportNo: "PR-REV-001"),
-            [new BusinessConsoleMesConsumedMaterialLot("MAT-001", "LOT-RM-001", 2.5m, "KG", "MIR-001")]));
+            [new BusinessConsoleMesConsumedMaterialLot("MAT-001", "LOT-RM-001", 2.5m, "KG", "MIR-001")],
+            []));
     }
 
     public Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(

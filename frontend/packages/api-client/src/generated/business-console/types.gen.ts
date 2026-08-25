@@ -4174,7 +4174,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     originalMaterialIssueRequestNo?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest = {
     [key: string]: never;
 };
 
@@ -4233,6 +4233,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetId?: string | null;
     shiftId?: string | null;
     idempotencyKey?: string;
+    participants?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest = {
+    workerId?: string;
+    sharePercent?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4292,6 +4298,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportListResponse | null;
 };
@@ -4331,6 +4341,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionRep
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse = {
     report?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail;
     consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot>;
+    laborAllocations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail = {
@@ -4363,6 +4374,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     consumedQuantity?: number;
     uomCode?: string;
     materialIssueRequestNo?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation = {
+    workerId?: string;
+    workerName?: string | null;
+    sharePercent?: number;
+    allocatedLaborTicks?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailRequest = {
@@ -14914,6 +14932,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         workOrderId?: string | null;
         skip?: number;
         take?: number;
+        operationTaskId?: string | null;
     };
     url: '/api/business-console/v1/mes/material-issue-requests';
 };
@@ -15060,6 +15079,10 @@ export type AssignBusinessConsoleMesDispatchTaskData = {
 
 export type AssignBusinessConsoleMesDispatchTaskErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15068,6 +15091,8 @@ export type AssignBusinessConsoleMesDispatchTaskErrors = {
      */
     403: unknown;
 };
+
+export type AssignBusinessConsoleMesDispatchTaskError = AssignBusinessConsoleMesDispatchTaskErrors[keyof AssignBusinessConsoleMesDispatchTaskErrors];
 
 export type AssignBusinessConsoleMesDispatchTaskResponses = {
     /**

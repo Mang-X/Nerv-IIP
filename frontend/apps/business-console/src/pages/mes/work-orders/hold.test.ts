@@ -59,6 +59,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(false),
+    materialLotsPending: ref(false),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref([]),
+    refreshMaterialLots: vi.fn(),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(false),
+    scrapReasonCodesPending: ref(false),
+    scrapReasonCodesError: ref(undefined),
+    scrapReasonCodes: ref([]),
+    refreshScrapReasonCodes: vi.fn(),
+  }),
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   useMesWorkOrderDetail: () => ({
     activateCancelPreview: vi.fn(),

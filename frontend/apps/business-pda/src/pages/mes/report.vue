@@ -33,9 +33,13 @@ import {
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
+import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
+import { useProductionReportScrapReason } from '@/composables/mes/useProductionReportScrapReason'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 
 definePage({
@@ -167,13 +171,41 @@ const progress = computed(() => productionReportFlow.progress(ctx))
 // --- 数量录入 ---
 const goodQuantity = ref(0)
 const scrapQuantity = ref(0)
+const reworkQuantity = ref(0)
 const completesOperation = ref(false)
+const {
+  qualityInspectionRecordsReadPermission,
+  scrapReasonCodesPending,
+  scrapReasonCodesError,
+  scrapReasonCodes,
+  scrapReasonCode,
+  invalidScrapReasonCode,
+  scrapReasonValidationMessage,
+  refreshScrapReasonCodes,
+} = useProductionReportScrapReason(scrapQuantity)
+const {
+  materialsReadPermission,
+  materialLotsPending,
+  materialLotsError,
+  availableMaterialLots,
+  refreshMaterialLots,
+  consumedMaterialLots,
+  invalidMaterialLots,
+  materialValidationMessage,
+  resetMaterialSelections,
+  materialSelected,
+  materialQuantity,
+  setMaterialSelected,
+  setMaterialQuantity,
+  materialRemaining,
+} = useProductionReportMaterials(pair, scrapQuantity)
 
 const quantityValid = computed(
   () =>
     goodQuantity.value >= 0 &&
     scrapQuantity.value >= 0 &&
-    goodQuantity.value + scrapQuantity.value > 0,
+    reworkQuantity.value >= 0 &&
+    goodQuantity.value + scrapQuantity.value + reworkQuantity.value > 0,
 )
 
 // 录数量面板：选中工序后打开
@@ -194,6 +226,14 @@ interface ReportIntent {
   payload: {
     goodQuantity: number
     scrapQuantity: number
+    reworkQuantity: number
+    consumedMaterialLots: Array<{
+      materialId: string
+      materialLotId: string
+      consumedQuantity: number
+      materialIssueRequestNo: string
+    }>
+    scrapReasonCode: string | undefined
     completesOperation: boolean
   }
   status: 'pending' | 'success' | 'error'
@@ -225,7 +265,10 @@ watch(
     if (workOrderId !== previousWorkOrderId || operationTaskId !== previousOperationTaskId) {
       goodQuantity.value = 0
       scrapQuantity.value = 0
+      reworkQuantity.value = 0
+      scrapReasonCode.value = ''
       completesOperation.value = false
+      resetMaterialSelections()
       ctx.quantityEntered = false
       ctx.recorded = currentIntent.value?.status === 'success'
     }
@@ -317,6 +360,9 @@ function resetReportIntent() {
   if (pairKey.value) intents.delete(pairKey.value)
   goodQuantity.value = 0
   scrapQuantity.value = 0
+  reworkQuantity.value = 0
+  scrapReasonCode.value = ''
+  resetMaterialSelections()
   completesOperation.value = false
   ctx.quantityEntered = false
   ctx.recorded = false
@@ -349,7 +395,7 @@ async function submit() {
   let intent = intents.get(key)
   if (intent?.status === 'pending' || intent?.status === 'success') return
   if (!intent) {
-    if (!quantityValid.value) return
+    if (!quantityValid.value || invalidMaterialLots.value || invalidScrapReasonCode.value) return
     intent = {
       attempt: Symbol('mes-report-attempt'),
       workOrderId,
@@ -358,6 +404,9 @@ async function submit() {
       payload: {
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
+        reworkQuantity: reworkQuantity.value,
+        scrapReasonCode: scrapQuantity.value > 0 ? scrapReasonCode.value.trim() : undefined,
+        consumedMaterialLots: consumedMaterialLots.value,
         completesOperation: completesOperation.value,
       },
       status: 'pending',
@@ -371,6 +420,7 @@ async function submit() {
     intent.result = null
   }
   ctx.quantityEntered = true
+  if (!intent) return
   const attempt = intent.attempt
   try {
     const receiptEnvelope = await recordReport({
@@ -722,6 +772,31 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
+        <ProductionReportScrapReasonField
+          v-if="scrapQuantity > 0"
+          v-model="scrapReasonCode"
+          :quality-inspection-records-read-permission="qualityInspectionRecordsReadPermission"
+          :scrap-reason-codes-pending="scrapReasonCodesPending"
+          :scrap-reason-codes-error="scrapReasonCodesError"
+          :scrap-reason-codes="scrapReasonCodes"
+          :scrap-reason-validation-message="scrapReasonValidationMessage"
+          :submitting="submitting"
+          :report-scope-ready="reportScopeReady"
+          :refresh-scrap-reason-codes="refreshScrapReasonCodes"
+        />
+
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">返修数</span>
+          <input
+            v-model.number="reworkQuantity"
+            data-testid="rework-quantity"
+            type="number"
+            inputmode="numeric"
+            min="0"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
+          />
+        </label>
+
         <label
           class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-3"
         >
@@ -739,14 +814,42 @@ function onScanWorkOrder(value: string) {
           当前工序可报数量；仅执行中的工序可同时完工。
         </p>
 
+        <ProductionReportMaterialLots
+          v-if="materialsReadPermission"
+          :available-material-lots="availableMaterialLots"
+          :material-lots-pending="materialLotsPending"
+          :material-lots-error="materialLotsError"
+          :submitting="submitting"
+          :material-validation-message="materialValidationMessage"
+          :refresh-material-lots="refreshMaterialLots"
+          :material-selected="materialSelected"
+          :material-quantity="materialQuantity"
+          :set-material-selected="setMaterialSelected"
+          :set-material-quantity="setMaterialQuantity"
+          :material-remaining="materialRemaining"
+        />
+        <p v-else data-testid="material-permission-message" class="text-sm text-muted-foreground">
+          当前账号没有材料读取权限，耗料批次选择已禁用。
+        </p>
+
         <p v-if="!quantityValid" class="text-sm text-muted-foreground">
-          良品数与次品数须为非负数，且合计大于 0。
+          良品数、次品数与返修数须为非负数，且合计大于 0。
+        </p>
+        <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
+          {{ scrapReasonValidationMessage }}
         </p>
 
         <button
           type="button"
           data-testid="submit-report"
-          :disabled="!quantityValid || submitting || reportScopePending || !reportScopeReady"
+          :disabled="
+            !quantityValid ||
+            invalidMaterialLots ||
+            invalidScrapReasonCode ||
+            submitting ||
+            reportScopePending ||
+            !reportScopeReady
+          "
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submit"
         >

@@ -2266,6 +2266,7 @@
       "route": "/api/business/v1/master-data/product-categories",
       "operationId": "listBusinessMasterDataProductCategories",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；保留 ProductCategory 专属筛选与响应契约。",
       "gateways": [
         "business"
       ],
@@ -2373,6 +2374,7 @@
       "route": "/api/business/v1/master-data/resources",
       "operationId": "listBusinessMasterDataResources",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；公开字段与既有分页默认值保持兼容。",
       "gateways": [
         "business"
       ],
@@ -2465,6 +2467,7 @@
       "route": "/api/business/v1/master-data/skills",
       "operationId": "listBusinessMasterDataSkills",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；保留 Skill 专属筛选与响应契约。",
       "gateways": [
         "business"
       ],
@@ -2732,7 +2735,8 @@
       ],
       "gatewayOperationIds": [
         "assignBusinessConsoleMesDispatchTask"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 对 AssignedUserId 及最多 20 名 Participants 执行 MasterData 在职校验并冻结姓名，再把完整协作派工契约转发至 MES；未提供 Participants 时保留单人兼容语义。"
     },
     {
       "service": "Mes",
@@ -2890,7 +2894,7 @@
       "gatewayOperationIds": [
         "listBusinessConsoleMesOperationTasks"
       ],
-      "note": "The exposed facade preserves the MES exact operationTaskId filter together with workOrderId and principal-derived scope before paging; PDA action readback uses this strong-ID query instead of keyword search."
+      "note": "exposed：BusinessGateway 保留 MES 的精确 operationTaskId、workOrderId 与主体范围过滤后再分页；AssignedUserIds 同时匹配主指派人与协作 Participants，PDA 动作回读使用该强标识查询而非关键字搜索。"
     },
     {
       "service": "Mes",
@@ -3028,7 +3032,8 @@
       ],
       "gatewayOperationIds": [
         "getBusinessConsoleMesProductionReport"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 保留 MES 报工详情的 LaborAllocations 不可变分摊快照；阶段报工返回空集合，仅完工报工返回按最终工序工时生成的逐人分摊。"
     },
     {
       "service": "Mes",
@@ -3041,7 +3046,8 @@
       ],
       "gatewayOperationIds": [
         "recordBusinessConsoleMesProductionReport"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 转发 CompletesOperation，并在响应中保留 LaborAllocations；只有完工报工生成分摊，阶段报工不生成。"
     },
     {
       "service": "Mes",
@@ -3067,7 +3073,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesReportableOperationTasks"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 的 Self/Team/Organization 范围经 AssignedUserIds、TeamIds 与 WorkCenterIds 转发；Self 范围同时匹配工序主指派人与协作 Participants，允许登记参与者本人报工。"
     },
     {
       "service": "Mes",

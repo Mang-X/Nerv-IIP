@@ -4257,6 +4257,19 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMesMaterialIssueRequestListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? OperationTaskId = null);
+
 /// <summary>派工任务列表专用请求：比通用 MES 列表多一个按被派工人过滤（PDA「我的任务」）。</summary>
 public sealed record BusinessConsoleMesDispatchTaskListRequest(
     string OrganizationId,
@@ -4844,7 +4857,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? ShiftId,
     string IdempotencyKey,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4853,7 +4867,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
 public sealed record BusinessConsoleMesOperationTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,
@@ -4931,7 +4946,8 @@ public sealed record BusinessConsoleMesProductionReportDetailRequest(
 
 public sealed record BusinessConsoleMesProductionReportDetailResponse(
     BusinessConsoleMesProductionReportDetail Report,
-    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots,
+    IReadOnlyCollection<BusinessConsoleMesLaborAllocation> LaborAllocations);
 
 public sealed record BusinessConsoleMesProductionReportDetail(
     string ProductionReportId,
