@@ -179,7 +179,7 @@ public sealed class MesRoutingSnapshotTests
         var captured = MesRoutingSnapshotResult.Captured(
             "product-engineering-http:PV-001:ROUTE-1000:A",
             [
-                new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", ["WC-MIX-ALT"], 45, true),
+                new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", ["WC-MIX-ALT"], 45, true, "cnc-operation"),
                 new MesRoutingOperationSnapshot(20, "PACK", "WC-PACK", [], 15, false),
             ]);
         var routingProvider = new FakeRoutingSnapshotProvider(captured);
@@ -226,6 +226,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal("PCS", mix.UomCode);
                 Assert.Equal(12m, mix.PlannedQuantity);
                 Assert.True(mix.RequiresQualityInspection);
+                Assert.Equal("cnc-operation", mix.RequiredSkillCode);
             },
             pack =>
             {
@@ -236,6 +237,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Empty(pack.AlternativeWorkCenterIdList);
                 Assert.Equal(TimeSpan.FromMinutes(15), pack.Duration);
                 Assert.False(pack.RequiresQualityInspection);
+                Assert.Null(pack.RequiredSkillCode);
             });
 
         var release = await new ReleaseWorkOrderCommandHandler(dbContext, NoMaterialRequirementsProvider.Instance).Handle(
@@ -343,6 +345,7 @@ public sealed class MesRoutingSnapshotTests
                             requiresReporting = true,
                             requiresQualityInspection = true,
                             isOutsourced = false,
+                            requiredSkillCode = " cnc-operation ",
                         },
                         new
                         {
@@ -394,6 +397,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Empty(operation.AlternativeWorkCenterIds);
                 Assert.Equal(45, operation.StandardMinutes);
                 Assert.True(operation.RequiresQualityInspection);
+                Assert.Equal("cnc-operation", operation.RequiredSkillCode);
             },
             operation => Assert.Equal("PACK", operation.OperationCode));
         Assert.Single(requests);
