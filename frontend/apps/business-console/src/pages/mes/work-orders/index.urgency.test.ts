@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
+import { useAuthStore } from '@/stores/auth'
 import WorkOrdersListPage from './index.vue'
 
 vi.mock('vue-router', () => ({
@@ -109,8 +111,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
 }))
 
 function mountList() {
+  const pinia = createPinia()
+  useAuthStore(pinia).$patch({
+    principal: {
+      principalId: 'u1',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'operator',
+      permissionCodes: ['business.mes.work-orders.read'],
+    },
+  })
   return mount(WorkOrdersListPage, {
     global: {
+      plugins: [pinia],
       stubs: {
         // 行内工单抽屉自带一整套 MES 查询，本用例只看紧急度徽章，整体桩掉。
         WorkOrderDetailSheet: true,
