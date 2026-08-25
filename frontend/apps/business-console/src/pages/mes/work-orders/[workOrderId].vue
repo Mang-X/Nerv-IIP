@@ -90,6 +90,8 @@ const {
   cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
+  closeWorkOrder,
+  closeWorkOrderPending,
   confirmLineSideReceipt,
   confirmLineSideReceiptPending,
   createMaterialIssueRequest,
@@ -107,6 +109,8 @@ const {
   refreshDetail,
   refreshMaterialIssueRequests,
   refreshMaterialReadiness,
+  recordEngineeringChangeDecision,
+  recordEngineeringChangeDecisionPending,
   retryCancelPreview,
   workOrderManageScopeMessage,
   workOrderManageScopeReady,
@@ -435,6 +439,55 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
+const closeOpen = ref(false)
+const decisionOpen = ref(false)
+const decisionForm = reactive({ changeNumber: '', decision: '', reason: '' })
+const canClose = computed(
+  () => workOrderManageScopeReady.value && currentStatus.value === 'completed',
+)
+const canRecordEngineeringDecision = computed(
+  () => workOrderManageScopeReady.value && !['closed', 'cancelled'].includes(currentStatus.value),
+)
+const canSubmitDecision = computed(
+  () =>
+    canRecordEngineeringDecision.value &&
+    decisionForm.changeNumber.trim().length > 0 &&
+    decisionForm.decision.length > 0 &&
+    decisionForm.reason.trim().length > 0,
+)
+async function submitClose() {
+  if (!canClose.value || closeWorkOrderPending.value) return
+  try {
+    await closeWorkOrder()
+    closeOpen.value = false
+    notifySuccess(`工单 ${workOrderLabel.value} 已关闭。`)
+    await refreshDetail()
+  } catch (error) {
+    notifyOperationFailure('关闭工单失败', error, '关闭工单失败，请稍后重试。')
+  }
+}
+function openDecisionDialog() {
+  if (!canRecordEngineeringDecision.value) return
+  decisionForm.changeNumber = ''
+  decisionForm.decision = ''
+  decisionForm.reason = ''
+  decisionOpen.value = true
+}
+async function submitDecision() {
+  if (!canSubmitDecision.value || recordEngineeringChangeDecisionPending.value) return
+  try {
+    await recordEngineeringChangeDecision({
+      changeNumber: decisionForm.changeNumber.trim(),
+      decision: decisionForm.decision,
+      reason: decisionForm.reason.trim(),
+    })
+    decisionOpen.value = false
+    notifySuccess(`工程变更决策已记录：${decisionForm.decision === 'continue-with-archived-version' ? '继续使用现行版本' : '停止工单'}。`)
+    await refreshDetail()
+  } catch (error) {
+    notifyOperationFailure('记录工程变更决策失败', error, '记录工程变更决策失败，请稍后重试。')
+  }
+}
 
 // 「对该单排产」（MAN-694 / #1262）：终态工单排不了，读权限也生成不了方案——
 // 两种情况都禁用并说明原因，而不是让用户点完吃一个 400。
@@ -660,6 +713,26 @@ function formatError(error: unknown) {
     >
       <template #actions>
         <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
+        <NvButton
+          v-if="canRecordEngineeringDecision"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="record-engineering-change-decision"
+          @click="openDecisionDialog"
+        >
+          记录工程变更决策
+        </NvButton>
+        <NvButton
+          v-if="canClose"
+          size="sm"
+          type="button"
+          variant="default"
+          data-testid="close-work-order"
+          @click="closeOpen = true"
+        >
+          关闭工单
+        </NvButton>
         <NvButton
           v-if="!scheduleDisabledReason"
           size="sm"
@@ -1356,6 +1429,67 @@ function formatError(error: unknown) {
             <Spinner v-if="cancelWorkOrderPending" aria-hidden="true" />
             <XCircleIcon v-else aria-hidden="true" />
             确认取消工单
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="closeOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>关闭工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>关闭后工单进入终态，不能再继续执行。</NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <CarriedContextSummary
+          label="关闭对象"
+          :items="[
+            { label: '工单', value: workOrderLabel },
+            { label: '当前状态', value: formatStatus(detail?.status) },
+          ]"
+        />
+        <NvAlertDialogFooter>
+          <NvButton type="button" variant="outline" :disabled="closeWorkOrderPending" @click="closeOpen = false">
+            返回
+          </NvButton>
+          <NvButton type="button" :disabled="closeWorkOrderPending" data-testid="confirm-close-work-order" @click="submitClose">
+            <Spinner v-if="closeWorkOrderPending" aria-hidden="true" />
+            确认关闭
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="decisionOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>记录工程变更决策 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>填写变更单号和处理意见，决策会回写到该工单。</NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="engineering-change-number">变更单号 <span class="text-destructive">*</span></NvFieldLabel>
+            <NvInput id="engineering-change-number" v-model="decisionForm.changeNumber" placeholder="请输入变更单号" />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="engineering-change-decision">处理意见 <span class="text-destructive">*</span></NvFieldLabel>
+            <NvSelect v-model="decisionForm.decision">
+              <NvSelectTrigger id="engineering-change-decision"><NvSelectValue placeholder="请选择处理意见" /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="continue-with-archived-version">继续使用现行版本</NvSelectItem>
+                <NvSelectItem value="abort-work-order">停止工单</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="engineering-change-reason">决策说明 <span class="text-destructive">*</span></NvFieldLabel>
+            <NvInput id="engineering-change-reason" v-model="decisionForm.reason" placeholder="请说明决策依据" />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton type="button" variant="outline" :disabled="recordEngineeringChangeDecisionPending" @click="decisionOpen = false">返回</NvButton>
+          <NvButton type="button" :disabled="!canSubmitDecision || recordEngineeringChangeDecisionPending" data-testid="confirm-engineering-change-decision" @click="submitDecision">
+            <Spinner v-if="recordEngineeringChangeDecisionPending" aria-hidden="true" />
+            保存决策
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>

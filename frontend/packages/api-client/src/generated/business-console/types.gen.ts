@@ -3962,6 +3962,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     changedAtUtc?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCloseWorkOrderRequest = {
+    closedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest = {
+    changeNumber?: string;
+    decision?: string;
+    reason?: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest = {
     reason?: string;
     sourceService?: string | null;
@@ -14468,6 +14478,74 @@ export type CancelBusinessConsoleMesWorkOrderResponses = {
 };
 
 export type CancelBusinessConsoleMesWorkOrderResponse = CancelBusinessConsoleMesWorkOrderResponses[keyof CancelBusinessConsoleMesWorkOrderResponses];
+
+export type CloseBusinessConsoleMesWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCloseWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/close';
+};
+
+export type CloseBusinessConsoleMesWorkOrderErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CloseBusinessConsoleMesWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type CloseBusinessConsoleMesWorkOrderResponse = CloseBusinessConsoleMesWorkOrderResponses[keyof CloseBusinessConsoleMesWorkOrderResponses];
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions';
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionResponse = RecordBusinessConsoleMesEngineeringChangeDecisionResponses[keyof RecordBusinessConsoleMesEngineeringChangeDecisionResponses];
 
 export type ForceReleaseBusinessConsoleMesQualityHoldData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest;

@@ -4612,6 +4612,24 @@ public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
+public sealed record BusinessConsoleMesCloseWorkOrderRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ClosedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessConsoleMesEngineeringChangeDecisionRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ChangeNumber,
+    string Decision,
+    string Reason,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
 // Actor is intentionally omitted: the gateway injects the authenticated principal as the
 // force-release audit actor so a caller cannot forge the releaser identity via the request body.
 public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(

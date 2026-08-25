@@ -775,6 +775,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/release", "post", "releaseBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post", "holdBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post", "cancelBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/close", "post", "closeBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", "post", "recordBusinessConsoleMesEngineeringChangeDecision");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release", "post", "forceReleaseBusinessConsoleMesQualityHold");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline", "get", "getBusinessConsoleMesQualityHoldTimeline");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}/reverse", "post", "reverseBusinessConsoleMesProductionReport");

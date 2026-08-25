@@ -1524,6 +1524,19 @@ public interface IBusinessMesClient
         BusinessConsoleMesWorkOrderReasonRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> CloseWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesCloseWorkOrderRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RecordEngineeringChangeDecisionAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesEngineeringChangeDecisionRequest request,
+        string actor,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
         string internalBearerToken,
         string sourceDocumentId,
@@ -8181,6 +8194,47 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             request,
             MesWorkOrderDocumentType,
             cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> CloseWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesCloseWorkOrderRequest request,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/close",
+            request,
+            MesWorkOrderDocumentType,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> RecordEngineeringChangeDecisionAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesEngineeringChangeDecisionRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/engineering-change-decisions",
+            new MesEngineeringChangeDecisionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                workOrderId,
+                request.ChangeNumber,
+                request.Decision,
+                actor,
+                request.Reason),
+            MesWorkOrderDocumentType,
+            cancellationToken);
+
+    private sealed record MesEngineeringChangeDecisionRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string WorkOrderId,
+        string ChangeNumber,
+        string Decision,
+        string DecidedBy,
+        string Reason);
 
     public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
         string internalBearerToken,
