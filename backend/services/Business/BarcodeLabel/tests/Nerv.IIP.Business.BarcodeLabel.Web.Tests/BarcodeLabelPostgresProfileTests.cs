@@ -97,6 +97,45 @@ public sealed class BarcodeLabelPostgresProfileTests
     }
 
     [RealPostgresFact]
+    public async Task Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first()
+    {
+        await ResetAndMigrateSchemaAsync();
+        using var cancellation = new CancellationTokenSource();
+        await using var provider = CreateCommandProvider(new MutatingCancelingLabelPrinter(
+            cancellation,
+            async () =>
+            {
+                await using var concurrentDb = CreatePostgresDbContext(LaneConnectionString);
+                var concurrentBatch = await concurrentDb.LabelPrintBatches
+                    .SingleAsync(batch => batch.IdempotencyKey == "idem-concurrent-dispatch");
+                concurrentBatch.RecordSentToPrinter("printer-concurrent", "concurrent-job");
+                await concurrentDb.SaveChangesAsync();
+            }));
+        var batchId = await AddReplayableBatchAsync(provider, "idem-concurrent-dispatch", markSent: false);
+
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            var handler = ActivatorUtilities.CreateInstance<DispatchLabelPrintBatchCommandHandler>(
+                commandScope.ServiceProvider);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => handler.Handle(
+                new DispatchLabelPrintBatchCommand(
+                    "org-001",
+                    "env-dev",
+                    batchId,
+                    "printer-canceled"),
+                cancellation.Token));
+        }
+
+        await using var verificationScope = provider.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("sent-to-printer", persisted.Status);
+        Assert.Equal("printer-concurrent", persisted.PrinterId);
+        Assert.Equal("concurrent-job", persisted.PrintJobId);
+        Assert.Null(persisted.FailureReason);
+    }
+
+    [RealPostgresFact]
     public async Task Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction()
     {
         await ResetAndMigrateSchemaAsync();

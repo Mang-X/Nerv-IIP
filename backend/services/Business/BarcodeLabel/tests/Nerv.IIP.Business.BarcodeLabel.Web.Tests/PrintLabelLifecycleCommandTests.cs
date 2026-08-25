@@ -866,7 +866,7 @@ public sealed class PrintLabelLifecycleCommandTests
         {
         }
 
-        public Task RecordDispatchCanceledAsync(
+        public Task<bool> TryRecordDispatchCanceledAsync(
             string organizationId,
             string environmentId,
             LabelPrintBatchId printBatchId,
@@ -890,7 +890,7 @@ public sealed class PrintLabelLifecycleCommandTests
 
         public List<RecordedAttempt> ReprintAttempts { get; } = [];
 
-        public Task RecordDispatchCanceledAsync(
+        public Task<bool> TryRecordDispatchCanceledAsync(
             string organizationId,
             string environmentId,
             LabelPrintBatchId printBatchId,
@@ -898,7 +898,7 @@ public sealed class PrintLabelLifecycleCommandTests
             LabelPrinterDispatchResult result)
         {
             DispatchAttempts.Add(new((organizationId, environmentId, printBatchId, printerId), result));
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }
 
         public Task<bool> TryRecordReprintCanceledAsync(

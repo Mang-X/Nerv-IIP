@@ -365,8 +365,12 @@ socket write 后重新开始。loopback 测试本身也以包含 connect/accept/
 通过独立依赖注入 scope 的新 `ApplicationDbContext` 按 organization/environment/batch 重新加载聚合，
 使用不复用已取消请求令牌的独立事务写入本次 `printer_id` / `print_job_id` / `failure_reason` facts；该提交
 不属于随后因异常回滚的命令 UnitOfWork。保存完成后 handler 原样继续抛出取消，不能把取消改写成成功响应。
-reprint 的独立 recorder 同时接收 `sequenceNo`，并在新的 DbContext 中重新执行单项 reprint 状态守卫；
+dispatch 的独立 recorder 会在新的 DbContext 中重新执行整批 dispatch 状态守卫；若另一条 dispatch 已先提交并
+推进批次状态，则不覆盖先提交的 transport facts，也不以 recorder 冲突遮蔽最初取消。reprint 的独立 recorder
+同时接收 `sequenceNo`，并在新的 DbContext 中重新执行单项 reprint 状态守卫；
 若打印期间该项已被并发作废、消费或批次状态已不再允许重打，则不覆盖最近 transport facts，仍原样传播最初取消。
+本修订没有引入 batch-scoped lifecycle gate、并发令牌或 durable attempt 聚合；两个并发命令都从旧状态通过
+初始守卫并各自执行真实 transport 的既有双打印风险，不在上述 recorder 冲突修复的证明范围内。
 连接/传输内部预算仍走普通 transport result，不伪装成
 调用方取消；资产加载、模板编译等尚未调用 printer 的阶段若取消，则直接传播且不虚构打印尝试。
 
@@ -388,9 +392,10 @@ seed，因此 `LabelPrintBatchCompletedDomainEvent` 也没有生产触发源。�
 误认为当前生产链路会发布完成事件。
 
 当前自动化证据边界为 pure compiler/领域测试、EF Core InMemory 应用编排、受控 HTTP handler、
-loopback TCP 字节传输、EF migration/model pending gate，以及 hosted `barcodelabel-postgres-profile` 的四条
+loopback TCP 字节传输、EF migration/model pending gate，以及 hosted `barcodelabel-postgres-profile` 的五条
 真实 PostgreSQL 用例。该 profile 证明扫码/EPCIS 唯一冲突映射、dispatch 与 reprint 取消 facts 在外层命令
-UnitOfWork 回滚后仍由独立事务提交，并证明 reprint 打印期间并发作废时不会覆盖既有 transport facts；
+UnitOfWork 回滚后仍由独立事务提交，并证明另一条 dispatch 先提交时 recorder 冲突不会遮蔽原始取消，及
+reprint 打印期间并发作废时不会覆盖既有 transport facts；
 profile 类被快速分片整体排除，因此默认门禁中的独立治理测试通过运行时反射穷举该类全部 xUnit Fact，要求
 `postgres-test-lane.json` 与 `test-evidence-policy.json` 的 identity 集合及 count 精确一致，新增但漏登记的类内
 测试会判红。它不证明其他真实 PostgreSQL 批次持久化场景、

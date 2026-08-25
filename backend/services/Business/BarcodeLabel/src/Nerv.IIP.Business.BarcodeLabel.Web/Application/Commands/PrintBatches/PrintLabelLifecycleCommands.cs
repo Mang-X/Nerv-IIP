@@ -96,7 +96,7 @@ public sealed class DispatchLabelPrintBatchCommandHandler(
         }
         catch (LabelPrinterDispatchCanceledException exception) when (cancellationToken.IsCancellationRequested)
         {
-            await attemptRecorder.RecordDispatchCanceledAsync(
+            await attemptRecorder.TryRecordDispatchCanceledAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.PrintBatchId,
@@ -170,7 +170,7 @@ public sealed class ReprintLabelCommandHandler(
 
 public interface ILabelPrintAttemptRecorder
 {
-    Task RecordDispatchCanceledAsync(
+    Task<bool> TryRecordDispatchCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
@@ -189,13 +189,34 @@ public interface ILabelPrintAttemptRecorder
 public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory scopeFactory)
     : ILabelPrintAttemptRecorder
 {
-    public Task RecordDispatchCanceledAsync(
+    public async Task<bool> TryRecordDispatchCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
         string printerId,
-        LabelPrinterDispatchResult result) =>
-        RecordAsync(organizationId, environmentId, printBatchId, printerId, result);
+        LabelPrinterDispatchResult result)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var independentDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            independentDbContext,
+            organizationId,
+            environmentId,
+            printBatchId,
+            CancellationToken.None);
+        try
+        {
+            batch.EnsureCanBeDispatched();
+        }
+        catch (LabelPrintLifecycleRejectedException)
+        {
+            return false;
+        }
+
+        LabelPrintLifecycle.ApplyResult(batch, printerId, result);
+        await independentDbContext.SaveChangesAsync(CancellationToken.None);
+        return true;
+    }
 
     public async Task<bool> TryRecordReprintCanceledAsync(
         string organizationId,
@@ -227,25 +248,6 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
         return true;
     }
 
-    private async Task RecordAsync(
-        string organizationId,
-        string environmentId,
-        LabelPrintBatchId printBatchId,
-        string printerId,
-        LabelPrinterDispatchResult result)
-    {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var independentDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(
-            independentDbContext,
-            organizationId,
-            environmentId,
-            printBatchId,
-            CancellationToken.None);
-        LabelPrintLifecycle.ApplyResult(batch, printerId, result);
-
-        await independentDbContext.SaveChangesAsync(CancellationToken.None);
-    }
 }
 
 public sealed class VoidLabelCommandHandler(ApplicationDbContext dbContext)
