@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Primitives;
@@ -74,7 +75,7 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     }
 
     [Fact]
-    public async Task EngineeringChangeReleasedHandler_RebindsNotStartedOrdersWithoutDiscardingReleasedMaterialSnapshots()
+    public async Task EngineeringChangeReleasedHandler_KeepsReleasedMaterialSnapshotsReadyToStartAfterRebind()
     {
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -107,6 +108,19 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
                 WorkOrder.MaterialRequirementSnapshotCapturedStatus,
                 DateTimeOffset.Parse("2026-07-06T07:00:00Z"));
             dbContext.WorkOrders.Add(released);
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-RELEASED",
+                "OP-RELEASED",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                "WC-ASSEMBLY",
+                [],
+                DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+                TimeSpan.FromHours(1),
+                null,
+                null));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -156,6 +170,13 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         var frozenRequirement = Assert.Single(await assertionDbContext.MaterialRequirements.ToListAsync());
         Assert.Equal("WO-RELEASED", frozenRequirement.WorkOrderId);
         Assert.Equal(["MAT-ALT-A"], frozenRequirement.GetSubstituteMaterialIds());
+        var releasedTask = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-RELEASED");
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(assertionDbContext).EvaluateAsync(
+            releasedTask,
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            CancellationToken.None);
+        Assert.Equal(["start"], readiness.AllowedActions);
+        Assert.Empty(readiness.BlockReasons);
         Assert.Equal("PV-OLD", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-STARTED")).ProductionVersionId);
         Assert.Equal("PV-OLD", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-COMPLETE")).ProductionVersionId);
 

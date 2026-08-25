@@ -2761,7 +2761,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "recordBusinessConsoleMesDowntimeEvent"
+        "recordBusinessConsoleMesDowntimeEvent",
+        "recordBusinessConsoleMesDowntimeEventV2"
       ]
     },
     {

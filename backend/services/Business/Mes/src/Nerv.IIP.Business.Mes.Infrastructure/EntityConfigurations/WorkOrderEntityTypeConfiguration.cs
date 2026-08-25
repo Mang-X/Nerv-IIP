@@ -41,7 +41,7 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.MaterialRequirementSnapshotProductionVersionId)
             .HasColumnName("material_requirement_snapshot_production_version_id")
             .HasMaxLength(100)
-            .HasComment("Production version id whose material requirement snapshot outcome was proved; it must match the current work order version.");
+            .HasComment("Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.");
         builder.OwnsOne(x => x.SourcePlanReference, source =>
         {
             source.Property(x => x.SourceSystem)
