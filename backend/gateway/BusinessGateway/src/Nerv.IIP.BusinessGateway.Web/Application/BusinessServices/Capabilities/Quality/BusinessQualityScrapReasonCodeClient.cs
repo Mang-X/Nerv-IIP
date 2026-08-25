@@ -1,6 +1,4 @@
-using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-
-namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.Quality;
+namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessQualityScrapReasonCodeClient
 {

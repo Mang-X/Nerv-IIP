@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -37,6 +38,17 @@ public sealed class QualityOpenApiTests
                 contract.OperationId,
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
+
+        foreach (var contract in QualityReasonEndpointContracts.All)
+        {
+            Assert.Equal(
+                contract.OperationId,
+                GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
+        }
+
+        Assert.Equal(
+            "listBusinessQualityScrapReasonCodes",
+            GetOperationId(document, "/api/business/v1/quality/scrap-reason-codes", "get"));
 
         foreach (var contract in QualityInspectionEndpointContracts.All)
         {

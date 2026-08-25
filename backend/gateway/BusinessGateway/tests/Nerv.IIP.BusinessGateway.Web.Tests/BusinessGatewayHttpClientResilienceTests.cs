@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -141,6 +142,30 @@ public sealed class BusinessGatewayHttpClientResilienceTests
         Assert.Equal(invocations.Length, calls.Total);
     }
 
+    [Fact]
+    public async Task Quality_scrap_reason_read_client_uses_standard_resilience()
+    {
+        var calls = new DownstreamCallCounter();
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder =>
+            {
+                builder.UseSetting("Quality:BaseUrl", "http://quality.local");
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                        new QualityScrapReasonTransientHandlerFilter(calls)));
+            });
+
+        var response = await factory.Services
+            .GetRequiredService<IBusinessQualityScrapReasonCodeClient>()
+            .ListScrapQualityReasonCodesAsync(
+                "internal-token",
+                new BusinessConsoleScrapQualityReasonCodeListRequest("org-001", "env-dev"),
+                CancellationToken.None);
+
+        Assert.Empty(response.Items);
+        Assert.Equal(3, calls.Total);
+    }
+
     [Theory]
     [InlineData(nameof(IBusinessGatewayAuthorizationClient), false)]
     [InlineData(nameof(IBusinessMasterDataClient), true)]
@@ -172,6 +197,8 @@ public sealed class BusinessGatewayHttpClientResilienceTests
         public int Total => callCount;
 
         public void Increment() => Interlocked.Increment(ref callCount);
+
+        public int IncrementAndGet() => Interlocked.Increment(ref callCount);
     }
 
     private sealed class DownstreamUnavailableHandlerFilter(DownstreamCallCounter calls)
@@ -196,6 +223,42 @@ public sealed class BusinessGatewayHttpClientResilienceTests
                     builder.PrimaryHandler = new DownstreamUnavailableHandler(calls);
                 }
             };
+    }
+
+    private sealed class QualityScrapReasonTransientHandlerFilter(DownstreamCallCounter calls)
+        : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
+            builder =>
+            {
+                next(builder);
+                if (builder.Name == nameof(IBusinessQualityScrapReasonCodeClient))
+                {
+                    builder.PrimaryHandler = new QualityScrapReasonTransientHandler(calls);
+                }
+            };
+    }
+
+    private sealed class QualityScrapReasonTransientHandler(DownstreamCallCounter calls) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var attempt = calls.IncrementAndGet();
+            if (attempt < 3)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"data\":{\"items\":[],\"total\":0}}",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        }
     }
 
     private sealed class DownstreamUnavailableHandler(DownstreamCallCounter calls) : HttpMessageHandler

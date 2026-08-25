@@ -347,7 +347,14 @@ try {
             'QualityReasonPostgresProfileTests.cs',
             'QualityReinspectionPostgresProfileTests.cs',
             'QualitySpcAnalysisTests.cs')
-    Assert-Contract ($qualityLaneSources -contains 'QualityReasonPostgresProfileTests.cs') 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
+    $hasQualityReasonSource = $false
+    foreach ($qualitySource in $qualityLaneSources) {
+        if ([string]::Equals([string]$qualitySource, 'QualityReasonPostgresProfileTests.cs', [StringComparison]::Ordinal)) {
+            $hasQualityReasonSource = $true
+            break
+        }
+    }
+    Assert-Contract $hasQualityReasonSource 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
     foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
         Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."

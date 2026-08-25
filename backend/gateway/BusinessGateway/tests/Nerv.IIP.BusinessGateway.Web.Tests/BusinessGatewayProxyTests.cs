@@ -12,7 +12,6 @@ using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.Quality;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
