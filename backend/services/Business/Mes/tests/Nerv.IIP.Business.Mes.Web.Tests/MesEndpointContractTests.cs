@@ -90,6 +90,37 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Line_side_return_endpoint_declares_and_returns_409_for_a_domain_conflict()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new LifecycleConflictSender());
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("Idempotency-Key", "return-contract-conflict");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/material-issue-requests/MIR-CONFLICT/line-side-returns",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                returnedQuantity = 1m,
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("\"success\":false", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Complete_operation_endpoint_preserves_readable_predecessor_sequences_without_raw_task_ids()
     {
         await using var factory = new WebApplicationFactory<Program>()

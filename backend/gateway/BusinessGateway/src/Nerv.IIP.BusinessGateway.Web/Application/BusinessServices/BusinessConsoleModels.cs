@@ -4612,6 +4612,24 @@ public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
+public sealed record BusinessConsoleMesCloseWorkOrderRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ClosedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessConsoleMesEngineeringChangeDecisionRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ChangeNumber,
+    string Decision,
+    string Reason,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
 // Actor is intentionally omitted: the gateway injects the authenticated principal as the
 // force-release audit actor so a caller cannot forge the releaser identity via the request body.
 public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
@@ -4727,11 +4745,14 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     string UomCode,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(
     IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items,
-    int Total);
+    int Total,
+    int SupplementaryCount = 0);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string RequestId,
@@ -4748,7 +4769,9 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
-    string? MaterialCode = null);
+    string? MaterialCode = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,
@@ -4758,6 +4781,14 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     decimal? ReceivedQuantity,
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ReturnedAtUtc,
+    decimal ReturnedQuantity,
+    [property: JsonRequired, Required] string IdempotencyKey);
 
 public sealed record BusinessConsoleMesDispatchTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items,

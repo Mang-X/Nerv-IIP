@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   cancelBusinessConsoleMesWorkOrder,
+  closeBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
@@ -33,6 +34,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReport,
+  recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
@@ -108,6 +110,12 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  closeBusinessConsoleMesWorkOrderMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   completeBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -155,6 +163,12 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  returnBusinessConsoleMesLineSideMaterialMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -321,6 +335,12 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   recordBusinessConsoleMesDefectMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -1583,6 +1603,43 @@ describe('business MES composables', () => {
           environmentId: 'env-dev',
           scopeKind: 'work-center',
           scopeId: 'WC-MANAGE',
+        },
+      }),
+    )
+  })
+
+  it('closes a work order and records an engineering decision through the manage scope', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-1953'
+
+    await detail.closeWorkOrder()
+    await detail.recordEngineeringChangeDecision({
+      changeNumber: 'ECO-1953-001',
+      decision: 'continue-with-archived-version',
+      reason: '当前批次继续使用现行版本，待下批次切换。',
+    })
+
+    expect(
+      vi.mocked(closeBusinessConsoleMesWorkOrderMutationOptions).mock.results.at(-1)?.value
+        .mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1953' },
+        query: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-A' }),
+        body: {},
+      }),
+    )
+    expect(
+      vi
+        .mocked(recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions)
+        .mock.results.at(-1)?.value.mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1953' },
+        body: {
+          changeNumber: 'ECO-1953-001',
+          decision: 'continue-with-archived-version',
+          reason: '当前批次继续使用现行版本，待下批次切换。',
         },
       }),
     )

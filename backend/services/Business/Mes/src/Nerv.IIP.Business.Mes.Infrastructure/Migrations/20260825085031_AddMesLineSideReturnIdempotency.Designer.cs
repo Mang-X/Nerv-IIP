@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825085031_AddMesLineSideReturnIdempotency")]
+    partial class AddMesLineSideReturnIdempotency
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -331,21 +334,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("inventory_posting_rollback_key")
                         .HasComment("MES normalized receipt-step key already rolled back for Inventory posting failure, used to avoid double rollback when both transfer legs fail.");
 
-                    b.Property<bool>("IsSupplementary")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("is_supplementary")
-                        .HasComment("Whether this material issue request supplements an earlier request.");
-
-                    b.Property<long>("LineSideReturnConcurrencyToken")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L)
-                        .HasColumnName("line_side_return_concurrency_token")
-                        .HasComment("Optimistic concurrency token for line-side return quantity and idempotency mutations.");
-
                     b.Property<string>("LineSideReturnIdempotencyKeysJson")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -379,12 +367,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
-
-                    b.Property<string>("OriginalMaterialIssueRequestNo")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("original_material_issue_request_no")
-                        .HasComment("Business number of the original material issue request in the same organization, environment, work order and material scope.");
 
                     b.Property<int>("PendingIssueLegCount")
                         .ValueGeneratedOnAdd()
@@ -539,9 +521,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("OrganizationId", "EnvironmentId", "RequestNo", "WorkOrderId", "MaterialId")
-                        .HasName("ak_material_issue_requests_scope_request_work_order_material");
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId")
                         .HasDatabaseName("ix_material_issue_requests_scope_operation");
 
@@ -552,16 +531,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "MaterialId")
                         .HasDatabaseName("ix_material_issue_requests_scope_work_order_material");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "OriginalMaterialIssueRequestNo", "WorkOrderId", "MaterialId")
-                        .HasDatabaseName("ix_material_issue_requests_scope_original_request");
-
                     b.ToTable("material_issue_requests", "mes", t =>
                         {
                             t.HasComment("MES material issue and line-side receipt facts tracking requested, received and consumed material quantities for work orders.");
-
-                            t.HasCheckConstraint("ck_material_issue_requests_not_self_referential", "original_material_issue_request_no IS NULL OR original_material_issue_request_no <> request_no");
-
-                            t.HasCheckConstraint("ck_material_issue_requests_supplementary_source", "(is_supplementary = TRUE AND original_material_issue_request_no IS NOT NULL) OR (is_supplementary = FALSE AND original_material_issue_request_no IS NULL)");
                         });
                 });
 
@@ -2841,13 +2813,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_material_issue_requests_work_orders");
-
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "EnvironmentId", "OriginalMaterialIssueRequestNo", "WorkOrderId", "MaterialId")
-                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "RequestNo", "WorkOrderId", "MaterialId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_material_issue_requests_original_request");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate.MaterialRequirement", b =>

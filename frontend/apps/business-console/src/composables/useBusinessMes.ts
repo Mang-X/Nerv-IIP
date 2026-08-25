@@ -2,10 +2,13 @@ import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
   cancelBusinessConsoleMesWorkOrder,
+  closeBusinessConsoleMesWorkOrderMutationOptions,
+  recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  returnBusinessConsoleMesLineSideMaterialMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -60,6 +63,7 @@ import {
   type BusinessConsoleMesCapacityImpactListEnvelope,
   type BusinessConsoleMesCapacityImpactRow,
   type BusinessConsoleMesConfirmLineSideReceiptRequest,
+  type BusinessConsoleMesReturnLineSideMaterialRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesDispatchTaskListEnvelope,
@@ -111,6 +115,8 @@ import {
   type BusinessConsoleMesWorkOrderDetailResponse,
   type BusinessConsoleMesWorkOrderItem,
   type BusinessConsoleMesWorkOrderListEnvelope,
+  type BusinessConsoleMesCloseWorkOrderRequest,
+  type BusinessConsoleMesEngineeringChangeDecisionRequest,
   type BusinessConsoleRecordProductionReportRequest,
   type BusinessConsoleRunScheduleRequest,
   type ListBusinessConsoleMesWorkOrdersData,
@@ -1279,6 +1285,9 @@ export function useMesWorkOrderDetail() {
   const confirmLineSideReceiptMutation = useMutation(
     confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
   )
+  const returnLineSideMaterialMutation = useMutation(
+    returnBusinessConsoleMesLineSideMaterialMutationOptions(),
+  )
   const refreshMaterialIssueQueries = () =>
     invalidateMesQueries(queryCache, [
       'listBusinessConsoleMesMaterialIssueRequests',
@@ -1355,6 +1364,54 @@ export function useMesWorkOrderDetail() {
     }
   }
 
+  const closeWorkOrderMutation = useMutation({
+    ...closeBusinessConsoleMesWorkOrderMutationOptions(),
+    onSuccess() {
+      void refreshCancelledWorkOrderQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const engineeringChangeDecisionMutation = useMutation({
+    ...recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions(),
+    onSuccess() {
+      void refreshCancelledWorkOrderQueries().catch(ignoreBackgroundError)
+    },
+  })
+
+  async function closeWorkOrder(
+    body: Pick<BusinessConsoleMesCloseWorkOrderRequest, 'closedAtUtc'> = {},
+  ) {
+    const selectedManageScope = workOrderManageScope.requireSelectedScope()
+    return closeWorkOrderMutation.mutateAsync({
+      path: { workOrderId: filters.workOrderId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        scopeKind: selectedManageScope.kind,
+        scopeId: selectedManageScope.id,
+      },
+      body,
+    })
+  }
+
+  async function recordEngineeringChangeDecision(
+    body: Pick<
+      BusinessConsoleMesEngineeringChangeDecisionRequest,
+      'changeNumber' | 'decision' | 'reason'
+    >,
+  ) {
+    const selectedManageScope = workOrderManageScope.requireSelectedScope()
+    return engineeringChangeDecisionMutation.mutateAsync({
+      path: { workOrderId: filters.workOrderId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        scopeKind: selectedManageScope.kind,
+        scopeId: selectedManageScope.id,
+      },
+      body,
+    })
+  }
+
   return {
     activateCancelPreview: () => {
       cancelPreviewRequested.value = true
@@ -1362,6 +1419,12 @@ export function useMesWorkOrderDetail() {
     cancelWorkOrder,
     cancelWorkOrderError,
     cancelWorkOrderPending,
+    closeWorkOrder,
+    closeWorkOrderError: closeWorkOrderMutation.error,
+    closeWorkOrderPending: closeWorkOrderMutation.isLoading,
+    recordEngineeringChangeDecision,
+    recordEngineeringChangeDecisionError: engineeringChangeDecisionMutation.error,
+    recordEngineeringChangeDecisionPending: engineeringChangeDecisionMutation.isLoading,
     // 补偿预览两项查询的加载/失败/就绪态，供破坏性确认按钮门禁：两项都成功拿到数据前禁用确认，失败可重试。
     cancelPreviewPending: computed(
       () =>
@@ -1454,6 +1517,19 @@ export function useMesWorkOrderDetail() {
       return result
     },
     confirmLineSideReceiptPending: confirmLineSideReceiptMutation.isLoading,
+    returnLineSideMaterial: async (
+      requestId: string,
+      body: BusinessConsoleMesReturnLineSideMaterialRequest,
+    ) => {
+      const result = await returnLineSideMaterialMutation.mutateAsync({
+        path: { requestId },
+        query: toContextQuery(filters),
+        body,
+      })
+      await refreshMaterialIssueQueries()
+      return result
+    },
+    returnLineSideMaterialPending: returnLineSideMaterialMutation.isLoading,
   }
 }
 

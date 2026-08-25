@@ -11,7 +11,11 @@ import {
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
   useCanScheduleSingleOrder,
 } from '@/composables/useSingleOrderScheduling'
-import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReasons,
+  makeIdempotencyKey,
+  useMesWorkOrderDetail,
+} from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,
@@ -90,8 +94,12 @@ const {
   cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
+  closeWorkOrder,
+  closeWorkOrderPending,
   confirmLineSideReceipt,
   confirmLineSideReceiptPending,
+  returnLineSideMaterial,
+  returnLineSideMaterialPending,
   createMaterialIssueRequest,
   createMaterialIssueRequestPending,
   detail,
@@ -107,6 +115,8 @@ const {
   refreshDetail,
   refreshMaterialIssueRequests,
   refreshMaterialReadiness,
+  recordEngineeringChangeDecision,
+  recordEngineeringChangeDecisionPending,
   retryCancelPreview,
   workOrderManageScopeMessage,
   workOrderManageScopeReady,
@@ -290,10 +300,8 @@ const receiveForm = reactive({
   materialLotId: '',
   idempotencyKey: '',
 })
-
-function newMaterialIdempotencyKey(scope: string) {
-  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
+const returnOpen = ref(false)
+const returnForm = reactive({ requestId: '', quantity: '', idempotencyKey: '' })
 
 const materialIssueRows = computed(() => materialIssueRequests.value)
 type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
@@ -346,7 +354,7 @@ function openIssueDialog(materialId?: string) {
   issueForm.materialId = materialId ?? ''
   issueForm.quantity = ''
   issueForm.operationTaskId = ''
-  issueForm.idempotencyKey = newMaterialIdempotencyKey(
+  issueForm.idempotencyKey = makeIdempotencyKey(
     `issue-${filters.workOrderId}-${materialId ?? 'material'}`,
   )
   issueOpen.value = true
@@ -359,14 +367,40 @@ function canReceive(row: MaterialIssueRow) {
   )
 }
 
+function returnableQuantityOfRow(row: MaterialIssueRow) {
+  return Math.max(0, (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0))
+}
+
+const returnFormMaxQuantity = computed(() => {
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  return row ? returnableQuantityOfRow(row) : undefined
+})
+
+function canReturn(row: MaterialIssueRow) {
+  return (
+    canManageMaterials.value &&
+    Boolean(row.materialLotId?.trim()) &&
+    returnableQuantityOfRow(row) > 0 &&
+    ['received', 'partiallyreceived'].includes((row.status ?? '').toLowerCase())
+  )
+}
+
 function openReceiveDialog(row: MaterialIssueRow) {
   if (!canReceive(row)) return
   receiveError.value = ''
   receiveForm.requestId = row.requestId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
-  receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
+  receiveForm.idempotencyKey = makeIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
   receiveOpen.value = true
+}
+
+function openReturnDialog(row: MaterialIssueRow) {
+  if (!canReturn(row)) return
+  returnForm.requestId = row.requestId ?? ''
+  returnForm.quantity = String(returnableQuantityOfRow(row))
+  returnForm.idempotencyKey = makeIdempotencyKey(`return-${row.requestId ?? 'request'}`)
+  returnOpen.value = true
 }
 
 async function submitIssue() {
@@ -411,6 +445,32 @@ async function submitReceipt() {
   }
 }
 
+async function submitReturn() {
+  if (!returnForm.requestId || returnLineSideMaterialPending.value) return
+  const returnedQuantity = Number(returnForm.quantity)
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  const returnableQuantity = row ? returnableQuantityOfRow(row) : 0
+  if (!Number.isFinite(returnedQuantity) || returnedQuantity <= 0) {
+    notifyError('退料数量必须大于 0。')
+    return
+  }
+  if (returnedQuantity > returnableQuantity) {
+    notifyError(`退料数量不能超过当前可退数量 ${returnableQuantity}。`)
+    return
+  }
+  try {
+    await returnLineSideMaterial(returnForm.requestId, {
+      returnedQuantity,
+      idempotencyKey: returnForm.idempotencyKey,
+    })
+    returnOpen.value = false
+    notifySuccess('已提交线边退料，线边可用量将随库存过账回读更新。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    notifyOperationFailure('线边退料失败', error, '线边退料失败，请稍后重试。')
+  }
+}
+
 // --- 取消工单（破坏性动作，原因必填 + 补偿预览，A1 §2/§4） ---
 const CANCELLABLE_STATUSES = new Set(['created', 'released', 'hold'])
 const CANCEL_REASONS = [
@@ -435,6 +495,75 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
+const closeOpen = ref(false)
+const decisionOpen = ref(false)
+const decisionShowErrors = ref(false)
+const decisionForm = reactive({ changeNumber: '', decision: '', reason: '' })
+const ENGINEERING_CHANGE_NUMBER_MAX_LENGTH = 100
+const ENGINEERING_CHANGE_REASON_MAX_LENGTH = 500
+const canClose = computed(
+  () => workOrderManageScopeReady.value && currentStatus.value === 'completed',
+)
+const canRecordEngineeringDecision = computed(
+  () => workOrderManageScopeReady.value && !['closed', 'cancelled'].includes(currentStatus.value),
+)
+const decisionFieldErrors = computed(() => ({
+  changeNumber: !decisionForm.changeNumber.trim()
+    ? '请输入变更单号。'
+    : decisionForm.changeNumber.trim().length > ENGINEERING_CHANGE_NUMBER_MAX_LENGTH
+      ? `变更单号不能超过 ${ENGINEERING_CHANGE_NUMBER_MAX_LENGTH} 个字符。`
+      : '',
+  decision: decisionForm.decision ? '' : '请选择处理意见。',
+  reason: !decisionForm.reason.trim()
+    ? '请输入决策说明。'
+    : decisionForm.reason.trim().length > ENGINEERING_CHANGE_REASON_MAX_LENGTH
+      ? `决策说明不能超过 ${ENGINEERING_CHANGE_REASON_MAX_LENGTH} 个字符。`
+      : '',
+}))
+const decisionValidationSummary = computed(() =>
+  Object.values(decisionFieldErrors.value).filter(Boolean),
+)
+const canSubmitDecision = computed(
+  () => canRecordEngineeringDecision.value && decisionValidationSummary.value.length === 0,
+)
+async function submitClose() {
+  if (!canClose.value || closeWorkOrderPending.value) return
+  try {
+    await closeWorkOrder()
+    closeOpen.value = false
+    notifySuccess(`工单 ${workOrderLabel.value} 已关闭。`)
+    await refreshDetail()
+  } catch (error) {
+    notifyOperationFailure('关闭工单失败', error, '关闭工单失败，请稍后重试。')
+  }
+}
+function openDecisionDialog() {
+  if (!canRecordEngineeringDecision.value) return
+  decisionForm.changeNumber = ''
+  decisionForm.decision = ''
+  decisionForm.reason = ''
+  decisionShowErrors.value = false
+  decisionOpen.value = true
+}
+async function submitDecision() {
+  if (!canRecordEngineeringDecision.value || recordEngineeringChangeDecisionPending.value) return
+  decisionShowErrors.value = true
+  if (!canSubmitDecision.value) return
+  try {
+    await recordEngineeringChangeDecision({
+      changeNumber: decisionForm.changeNumber.trim(),
+      decision: decisionForm.decision,
+      reason: decisionForm.reason.trim(),
+    })
+    decisionOpen.value = false
+    notifySuccess(
+      `工程变更决策已记录：${decisionForm.decision === 'continue-with-archived-version' ? '继续使用现行版本' : '停止工单'}。`,
+    )
+    await refreshDetail()
+  } catch (error) {
+    notifyOperationFailure('记录工程变更决策失败', error, '记录工程变更决策失败，请稍后重试。')
+  }
+}
 
 // 「对该单排产」（MAN-694 / #1262）：终态工单排不了，读权限也生成不了方案——
 // 两种情况都禁用并说明原因，而不是让用户点完吃一个 400。
@@ -660,6 +789,26 @@ function formatError(error: unknown) {
     >
       <template #actions>
         <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
+        <NvButton
+          v-if="canRecordEngineeringDecision"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="record-engineering-change-decision"
+          @click="openDecisionDialog"
+        >
+          记录工程变更决策
+        </NvButton>
+        <NvButton
+          v-if="canClose"
+          size="sm"
+          type="button"
+          variant="default"
+          data-testid="close-work-order"
+          @click="closeOpen = true"
+        >
+          关闭工单
+        </NvButton>
         <NvButton
           v-if="!scheduleDisabledReason"
           size="sm"
@@ -1027,7 +1176,19 @@ function formatError(error: unknown) {
           >
             线边收料
           </NvButton>
-          <span v-else class="text-xs text-muted-foreground">无需收料</span>
+          <NvButton
+            v-if="canReturn(row)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`return-material-${row.requestId}`"
+            @click="openReturnDialog(row)"
+          >
+            线边退料
+          </NvButton>
+          <span v-if="!canReceive(row) && !canReturn(row)" class="text-xs text-muted-foreground"
+            >无需操作</span
+          >
         </template>
       </NvDataTable>
     </div>
@@ -1153,6 +1314,50 @@ function formatError(error: unknown) {
           >
             <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
             确认收料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <!-- 线边退料 -->
+    <NvAlertDialog v-model:open="returnOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle
+            >线边退料 · {{ readFaceText(returnForm.requestId) }}</NvAlertDialogTitle
+          >
+          <NvAlertDialogDescription>
+            退料会把当前线边物料退回仓库；数量不得超过当前可退余额。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="return-quantity">退料数量</NvFieldLabel>
+            <NvInput
+              id="return-quantity"
+              v-model="returnForm.quantity"
+              inputmode="decimal"
+              :max="returnFormMaxQuantity"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="returnLineSideMaterialPending"
+            @click="returnOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="returnLineSideMaterialPending"
+            data-testid="submit-line-side-return"
+            @click="submitReturn"
+          >
+            <Spinner v-if="returnLineSideMaterialPending" aria-hidden="true" />
+            提交退料
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
@@ -1356,6 +1561,134 @@ function formatError(error: unknown) {
             <Spinner v-if="cancelWorkOrderPending" aria-hidden="true" />
             <XCircleIcon v-else aria-hidden="true" />
             确认取消工单
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="closeOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>关闭工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>关闭后工单进入终态，不能再继续执行。</NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <CarriedContextSummary
+          label="关闭对象"
+          :items="[
+            { label: '工单', value: workOrderLabel },
+            { label: '当前状态', value: formatStatus(detail?.status) },
+          ]"
+        />
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="closeWorkOrderPending"
+            @click="closeOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="closeWorkOrderPending"
+            data-testid="confirm-close-work-order"
+            @click="submitClose"
+          >
+            <Spinner v-if="closeWorkOrderPending" aria-hidden="true" />
+            确认关闭
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="decisionOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>记录工程变更决策 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription
+            >填写变更单号和处理意见，决策会回写到该工单。</NvAlertDialogDescription
+          >
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <p
+            v-if="decisionShowErrors && decisionValidationSummary.length"
+            class="text-sm text-destructive"
+            role="alert"
+            data-testid="engineering-change-decision-errors"
+          >
+            请修正标红的必填项后再保存。
+          </p>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.changeNumber">
+            <NvFieldLabel for="engineering-change-number"
+              >变更单号 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvInput
+              id="engineering-change-number"
+              v-model="decisionForm.changeNumber"
+              :maxlength="ENGINEERING_CHANGE_NUMBER_MAX_LENGTH"
+              placeholder="请输入变更单号"
+            />
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.changeNumber"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.changeNumber }}
+            </p>
+          </NvField>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.decision">
+            <NvFieldLabel for="engineering-change-decision"
+              >处理意见 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvSelect v-model="decisionForm.decision">
+              <NvSelectTrigger id="engineering-change-decision"
+                ><NvSelectValue placeholder="请选择处理意见"
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="continue-with-archived-version">继续使用现行版本</NvSelectItem>
+                <NvSelectItem value="abort-work-order">停止工单</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.decision"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.decision }}
+            </p>
+          </NvField>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.reason">
+            <NvFieldLabel for="engineering-change-reason"
+              >决策说明 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvInput
+              id="engineering-change-reason"
+              v-model="decisionForm.reason"
+              :maxlength="ENGINEERING_CHANGE_REASON_MAX_LENGTH"
+              placeholder="请说明决策依据"
+            />
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.reason"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.reason }}
+            </p>
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="recordEngineeringChangeDecisionPending"
+            @click="decisionOpen = false"
+            >返回</NvButton
+          >
+          <NvButton
+            type="button"
+            :disabled="recordEngineeringChangeDecisionPending"
+            data-testid="confirm-engineering-change-decision"
+            @click="submitDecision"
+          >
+            <Spinner v-if="recordEngineeringChangeDecisionPending" aria-hidden="true" />
+            保存决策
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>

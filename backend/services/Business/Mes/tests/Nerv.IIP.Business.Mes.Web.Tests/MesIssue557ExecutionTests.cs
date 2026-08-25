@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -30,6 +31,70 @@ public sealed class MesIssue557ExecutionTests
 
         Assert.Equal("business-mes:operation-task-action:org-001:env-dev:OP-10", settings.LockKey);
         Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_lock_normalizes_guid_and_request_number_to_the_same_aggregate_key()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_lock_normalizes_guid_and_request_number_to_the_same_aggregate_key));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var lockProvider = new ReturnLineSideMaterialCommandLock(dbContext);
+        var common = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "", Utc("2026-06-29T09:00:00Z"), 1m, "lock-normalization");
+
+        var byGuid = await lockProvider.GetLockKeysAsync(
+            common with { RequestId = materialRequest.Id.Id.ToString("D") },
+            CancellationToken.None);
+        var byRequestNo = await lockProvider.GetLockKeysAsync(
+            common with { RequestId = materialRequest.RequestNo },
+            CancellationToken.None);
+
+        Assert.Equal(byGuid.LockKey, byRequestNo.LockKey);
+        Assert.Equal(
+            $"business-mes:material-issue-return:org-001:env-dev:{materialRequest.Id.Id:D}",
+            byGuid.LockKey);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_concurrency_retry_replays_the_command_after_a_lost_save()
+    {
+        var databaseName = nameof(Return_line_side_material_concurrency_retry_replays_the_command_after_a_lost_save);
+        await using var dbContext = CreateDbContext(databaseName);
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        _ = await dbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == materialRequest.RequestNo);
+        await using var winningContext = CreateDbContext(databaseName);
+        var winningRequest = await winningContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == materialRequest.RequestNo);
+        winningRequest.ReturnLineSideMaterial(
+            Utc("2026-06-29T08:59:00Z"),
+            1m,
+            idempotencyKey: "winner");
+        await winningContext.SaveChangesAsync();
+
+        var behavior = new ReturnLineSideMaterialConcurrencyRetryBehavior<ReturnLineSideMaterialCommand, MesAcceptedResponse>(dbContext);
+        var command = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 1m, "retry-normalization");
+        var attempts = 0;
+
+        var result = await behavior.Handle(
+            command,
+            async _ =>
+            {
+                attempts++;
+                var currentRequest = await dbContext.MaterialIssueRequests
+                    .SingleAsync(x => x.RequestNo == materialRequest.RequestNo);
+                currentRequest.ReturnLineSideMaterial(
+                    command.ReturnedAtUtc,
+                    command.ReturnedQuantity,
+                    idempotencyKey: command.IdempotencyKey);
+                await dbContext.SaveChangesAsync();
+                return new MesAcceptedResponse("Accepted", "MIR-001", command.ReturnedAtUtc);
+            },
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", result.Status);
+        Assert.Equal(2, attempts);
     }
 
     [Fact]
@@ -658,13 +723,58 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                2m),
+                2m,
+                "legacy-return-1"),
             CancellationToken.None);
 
         Assert.Equal(3m, materialRequest.ReceivedQuantity);
         var eventNames = materialRequest.GetDomainEvents().Select(x => x.GetType().Name).ToArray();
         Assert.Contains("MaterialLineSideReturnRequestedDomainEvent", eventNames);
         Assert.Contains("MaterialReturnedToWarehouseDomainEvent", eventNames);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_replays_same_idempotency_key_without_a_second_return()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_replays_same_idempotency_key_without_a_second_return));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+        var first = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 2m, "mes-return-intent-1");
+
+        await handler.Handle(first, CancellationToken.None);
+        materialRequest.ClearDomainEvents();
+        await dbContext.SaveChangesAsync();
+
+        await handler.Handle(first, CancellationToken.None);
+
+        Assert.Equal(3m, materialRequest.ReceivedQuantity);
+        Assert.Empty(materialRequest.GetDomainEvents());
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_rejects_reusing_idempotency_key_for_different_quantity()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_rejects_reusing_idempotency_key_for_different_quantity));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+        const string key = "mes-return-intent-2";
+
+        await handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 2m, key),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:01:00Z"), 1m, key),
+            CancellationToken.None));
+
+        Assert.Contains("幂等键", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(3m, materialRequest.ReceivedQuantity);
     }
 
     [Fact]
@@ -692,7 +802,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                3m),
+                3m,
+                "legacy-return-consumed"),
             CancellationToken.None));
 
         Assert.Contains("可退", exception.Message, StringComparison.Ordinal);
@@ -713,7 +824,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                5m),
+                5m,
+                "legacy-return-zero"),
             CancellationToken.None);
 
         Assert.Equal(0m, materialRequest.ReceivedQuantity);

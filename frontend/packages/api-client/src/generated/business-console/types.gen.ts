@@ -3962,6 +3962,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     changedAtUtc?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCloseWorkOrderRequest = {
+    closedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest = {
+    changeNumber?: string;
+    decision?: string;
+    reason?: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest = {
     reason?: string;
     sourceService?: string | null;
@@ -4126,6 +4136,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
+    isSupplementary?: boolean;
+    originalMaterialIssueRequestNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4135,6 +4147,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssue
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow>;
     total?: number;
+    supplementaryCount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow = {
@@ -4153,6 +4166,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderNo?: string | null;
     operationTaskNo?: string | null;
     materialCode?: string | null;
+    isSupplementary?: boolean;
+    originalMaterialIssueRequestNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
@@ -4164,6 +4179,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     receivedQuantity?: number | null;
     evidenceFileIds?: Array<string> | null;
     idempotencyKey?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest = {
+    returnedAtUtc?: string | null;
+    returnedQuantity?: number;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDispatchTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -14469,6 +14490,74 @@ export type CancelBusinessConsoleMesWorkOrderResponses = {
 
 export type CancelBusinessConsoleMesWorkOrderResponse = CancelBusinessConsoleMesWorkOrderResponses[keyof CancelBusinessConsoleMesWorkOrderResponses];
 
+export type CloseBusinessConsoleMesWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCloseWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/close';
+};
+
+export type CloseBusinessConsoleMesWorkOrderErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CloseBusinessConsoleMesWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type CloseBusinessConsoleMesWorkOrderResponse = CloseBusinessConsoleMesWorkOrderResponses[keyof CloseBusinessConsoleMesWorkOrderResponses];
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions';
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionResponse = RecordBusinessConsoleMesEngineeringChangeDecisionResponses[keyof RecordBusinessConsoleMesEngineeringChangeDecisionResponses];
+
 export type ForceReleaseBusinessConsoleMesQualityHoldData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest;
     path: {
@@ -14793,6 +14882,41 @@ export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses = {
 };
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponse = ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses[keyof ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses];
+
+export type ReturnBusinessConsoleMesLineSideMaterialData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest;
+    path: {
+        requestId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns';
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialError = ReturnBusinessConsoleMesLineSideMaterialErrors[keyof ReturnBusinessConsoleMesLineSideMaterialErrors];
+
+export type ReturnBusinessConsoleMesLineSideMaterialResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialResponse = ReturnBusinessConsoleMesLineSideMaterialResponses[keyof ReturnBusinessConsoleMesLineSideMaterialResponses];
 
 export type ListBusinessConsoleMesDispatchTasksData = {
     body?: never;
