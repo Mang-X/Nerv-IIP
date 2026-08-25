@@ -70,7 +70,7 @@ public sealed record ListMasterDataResourcesQuery(
     string ResourceType,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? CodeSet = null,
     string? ParentCode = null,
     string? SiteCode = null,
@@ -91,8 +91,6 @@ public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<Li
     public ListMasterDataResourcesQueryValidator()
     {
         this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
-        this.AddOffsetPageRules(query => query.Skip, query => query.Take);
-        this.AddKeywordRule(query => query.Keyword);
     }
 }
 

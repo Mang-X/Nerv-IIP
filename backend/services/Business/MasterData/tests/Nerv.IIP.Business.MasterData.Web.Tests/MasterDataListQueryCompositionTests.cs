@@ -27,15 +27,12 @@ public sealed class MasterDataListQueryCompositionTests
     }
 
     [Fact]
-    public void List_query_rules_keep_default_and_existing_bounds()
+    public void List_query_criteria_preserves_legacy_page_clamping()
     {
-        var validator = new ListMasterDataResourcesQueryValidator();
-
-        Assert.True(validator.Validate(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku")).IsValid);
-        Assert.True(validator.Validate(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: 0, Take: 500)).IsValid);
-        Assert.False(validator.Validate(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: -1)).IsValid);
-        Assert.False(validator.Validate(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Take: 0)).IsValid);
-        Assert.False(validator.Validate(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Take: 501)).IsValid);
+        Assert.Equal(new OffsetPage(0, 100), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku").ToCriteria().Page);
+        Assert.Equal(new OffsetPage(0, 500), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: 0, Take: 500).ToCriteria().Page);
+        Assert.Equal(new OffsetPage(0, 1), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: -1, Take: 0).ToCriteria().Page);
+        Assert.Equal(new OffsetPage(0, 500), new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Take: 501).ToCriteria().Page);
     }
 
     [Theory]

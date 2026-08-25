@@ -4,8 +4,20 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
 public sealed record TenantScope(string OrganizationId, string EnvironmentId)
 {
-    public static TenantScope From(string organizationId, string environmentId) =>
-        new(organizationId.Trim(), environmentId.Trim());
+    public static TenantScope From(string organizationId, string environmentId)
+    {
+        if (string.IsNullOrWhiteSpace(organizationId))
+        {
+            throw new KnownException("组织标识不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(environmentId))
+        {
+            throw new KnownException("环境标识不能为空。");
+        }
+
+        return new TenantScope(organizationId.Trim(), environmentId.Trim());
+    }
 }
 
 public sealed record OffsetPage(int Skip, int Take)
@@ -54,24 +66,5 @@ public static class ListQueryValidationExtensions
         validator.RuleFor(environmentId)
             .NotEmpty().WithMessage("环境标识不能为空。")
             .MaximumLength(64).WithMessage("环境标识不能超过 64 个字符。");
-    }
-
-    public static void AddOffsetPageRules<T>(
-        this AbstractValidator<T> validator,
-        Expression<Func<T, int>> skip,
-        Expression<Func<T, int>> take)
-    {
-        validator.RuleFor(skip)
-            .GreaterThanOrEqualTo(0).WithMessage("skip 不能小于 0。");
-        validator.RuleFor(take)
-            .InclusiveBetween(1, OffsetPage.MaxTake).WithMessage("take 必须在 1 至 500 之间。");
-    }
-
-    public static void AddKeywordRule<T>(
-        this AbstractValidator<T> validator,
-        Expression<Func<T, string?>> keyword)
-    {
-        validator.RuleFor(keyword)
-            .MaximumLength(200).WithMessage("关键字不能超过 200 个字符。");
     }
 }
