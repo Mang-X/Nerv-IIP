@@ -1060,6 +1060,9 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 9. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
 10. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。
 11. 运行 `pwsh scripts/check-script-governance.ps1` 可验证脚本解析、分类声明、高风险命令 wrapper 和 legacy exemption 是否仍受控。
+
+源码规模增量治理可运行 `pwsh scripts/check-source-size-governance.ps1 -BaseCommit "$(git merge-base origin/main HEAD)"`：C#、PowerShell、JavaScript、TypeScript 与 Vue 新增文件不得超过 1000 物理行，阈值内存量不得越线，已超限存量不得继续增长；rename 保留 base 身份，未跟踪未忽略文件按新增处理。CI `Script Governance` 对 PR 使用 base SHA、对 main push 使用 before SHA，并以完整 Git history 失败关闭。该能力不包含存量大文件拆分，也不证明 #1222 的 `BusinessServiceClients.cs`、#1224 的 `BusinessConsoleModels.cs` 或 #1923 的 `FullStackSessionRuntime.ps1` 已完成治理；这些 owner 票继续独立交付。
+
 12. 运行 `pwsh scripts/verify-openapi-client-drift.ps1` 可重跑 Gateway OpenAPI 导出和前端 api-client 生成，并对 `frontend/packages/api-client/openapi/*.v1.json` 与 `frontend/packages/api-client/src/generated/**` 做 drift 门禁；GitHub CI 的 `OpenAPI/api-client Drift` job 使用同一入口。
 13. 运行 `pwsh scripts/check-script-compatibility.ps1` 可在 macOS/Linux 上记录脚本兼容门禁证据；Windows 本地只能使用 `-AllowWindows -FastOnly` 做 smoke，不作为兼容性声明依据。
 14. 运行 AppHub/Ops/IAM/FileStorage/Notification/BusinessMES schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。

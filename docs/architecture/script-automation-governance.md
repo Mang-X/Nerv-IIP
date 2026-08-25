@@ -335,6 +335,14 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归；真实浏览器全栈使用一次性 session | `.\nerv.ps1 fullstack run -Scenario smoke`、`.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`、`pwsh scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2`、`pwsh scripts/verify-third-slice-console.ps1` |
 | leader-demo | 重建隔离 PostgreSQL/Redis 演示 session，验证固定前置事实、公开 HTTP 查询、连续遥测、证据与精确清理 | `.\nerv.ps1 demo reset`、`.\nerv.ps1 demo health-check`、`pwsh scripts/verify-leader-demo-telemetry-simulator.ps1 -DurationMinutes 10 -HistoricalBackfill`、`.\nerv.ps1 demo stop`；停止后对同一 ID 执行 `.\nerv.ps1 fullstack stop -SessionId <sessionId>` 确认 `state=Stopped remaining=0`，再用 `fullstack status` 确认 `state=Stopped containers=0` |
 
+## 源码文件大小增量门禁
+
+`scripts/check-source-size-governance.ps1 -BaseCommit <sha>` 对 C#、PowerShell、JavaScript、TypeScript 和 Vue 源码执行 1000 物理行增量门禁。它不提交存量 baseline 或 allowlist，而是直接比较 Git base 与当前工作树：新增文件超过 1000 行失败；原本不超过 1000 行的文件越线失败；原本已经超过 1000 行的文件允许持平或缩小，但继续增长失败。rename 保留旧路径的 base 身份，删除忽略，未跟踪且未被 `.gitignore` 排除的文件按新增文件处理。
+
+排除只接受可审计的精确形态：EF `Migrations` 路径、`*.Designer.cs`、`*.g.cs`、`*.generated.*`、`frontend/packages/api-client/src/generated/**`，以及完整的 `vendor`、`bin`、`obj`、`node_modules`、`dist`、`coverage`、`artifacts` 路径段。`MigrationsSupport.cs`、`vendorized.ts`、稳定 barrel `frontend/packages/api-client/src/business-console.ts` 仍受管；普通文件仅添加 `auto-generated` 头不能自我豁免。base 不存在、Git diff/读取失败、rename 结构冲突、重复 head path 或扩展名配置为空均失败关闭；诊断按 ordinal 路径排序，只输出规则、路径与行数，不输出源码内容。
+
+`.github/workflows/ci.yml` 的 `Script Governance` job 以 `fetch-depth: 0` checkout，在独立 step 先运行 `scripts/tests/source-size-governance.Tests.ps1`，再以 PR 的 `github.event.pull_request.base.sha` 或 main push 的 `github.event.before` 运行生产 checker。job 同时消费 scripts、backend 与 frontend 影响信号；测试 step 与生产检查 step 都不得吞退出码。该门禁只阻止新增规模债务和存量继续恶化，不证明既有 God Class、巨型测试或巨型脚本已拆分。
+
 ## 跨平台兼容门禁
 
 当前脚本基线是 PowerShell 7 `pwsh`，不是 Windows-only 的 Windows PowerShell。`pwsh` 可以在 Windows、macOS 和 Linux 上运行，但 Nerv-IIP 不得在没有实际证据时声明某个脚本已经完成 macOS/Linux 支持。
@@ -355,6 +363,9 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 | 脚本 | 分类 | 当前治理状态 | 迁移要求 |
 | --- | --- | --- | --- |
+| `check-source-size-governance.ps1` | `check` | 已受治理 | 基于显式 Git base 检查 A/M/R 与未跟踪源码的物理行数增量；精确排除生成物和依赖目录，异常失败关闭，不写文件或源码内容。由 Script Governance 独立 step 执行。 |
+| `scripts/lib/SourceSizeGovernance.ps1` | `library` | 已受治理 | 源码路径分类、物理行计数与新增/越线/存量增长违规判定的纯策略库；不调用 Git，不读写文件。 |
+| `tests/source-size-governance.Tests.ps1` | `check` | 已受治理 | 使用 OS 临时目录中的真实 Git repository 覆盖阈值、rename、untracked、精确排除、失败关闭、ordinal 诊断、秘密不泄露与 CI 接线变异；夹具在 `finally` 清理。 |
 | `collect-test-evidence.ps1` | `check` + `generate` | 已受治理 | 读取 job-local raw TRX，执行 skip/zero-execution 门禁，并只写声明过的脱敏 evidence tree、Step Summary 与确定性 failure sibling；artifact writer 只消费已解析 records/summary，不接收或复制 raw TRX path；CI Script Governance 直接执行其语义契约测试。 |
 | `generate-test-evidence-baseline.ps1` | `generate` | 已受治理 | committed evidence snapshot 的唯一写入口；只接受 EvidenceRoot authority 或只读 GitHub Actions console provenance，禁止手改该文件。**#1507 起该 snapshot 是离线兜底而不是治理资产**：重生成属可选维护，任何拓扑/宿主变更都不再欠一次刷新，也没有任何门禁以它的覆盖面为判据（主耗时来源是 `update-backend-test-shard-timings.ps1` 的自动缓存）。runner 环境**按 lane 逐条**从各自 summary 读入并写进 `source.laneProvenance`（baseline schema 2），绝不取 `$first` 的值冒充整份 baseline —— 拆分理由见 `test-evidence-governance.md` 的“运行身份与逐作业环境”。 |
 | `scripts/lib/TestEvidence.ps1` | `check` library | 已受治理 | TestEvidence 稳定 façade，只提供共享 helper，并在全部共享 helper 定义后按 Policy → Privacy → Parsing → Artifacts → Provenance → Baseline 顺序加载六个 façade-owned 同级叶子子库；调用方仍只直接加载本文件且必须先加载 `ScriptAutomation.ps1`。读取侧只接受 baseline `schemaVersion` 1 或 2，其余（含缺失）降级为 `unsupported-baseline-schema-version` 的 report-only 不可用而非照常比较；**耗时比较键自 #1507 起是「程序集」单键**（lane 仍作为 provenance 留在行上，只在同一程序集出现两行时用来消歧，两行都不属当前 lane 则报 `ambiguous-assembly-in-baseline` 而不是随便挑一行），因此换片、改宿主都不再失键。**#1509 起本文件及六个 façade-owned 子库的标识符/身份语义比较由同一份被解析的契约兜底**（收口声明见下）；façade 保留 14 个共享函数，其中包括 `Test-NervOrdinalEquals`/`Get-NervOrdinalSet`/`Get-NervOrdinalSorted`/`Get-NervOrdinalGroups`/`Get-NervOrdinalSortedBy`/`Get-NervOrdinalRankedTop`/`Test-NervHasProperty` 七个 ordinal/property 原语。本文件具名豁免现为 0 条。 |
