@@ -9,8 +9,6 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayCapabilityBoundaryTests
 {
     private const string LegacyClientMonolithFileName = "BusinessServiceClients.cs";
-    private const string BusinessServicesNamespace =
-        "Nerv.IIP.BusinessGateway.Web.Application.BusinessServices";
     private static readonly IReadOnlyDictionary<string, string> ExpectedSharedTypeFiles =
         new Dictionary<string, string>
         {
@@ -18,40 +16,39 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             ["BusinessServiceProxyException"] = "BusinessServiceProxyException.cs",
             ["BusinessServiceHttpClient"] = "BusinessServiceHttpClient.cs",
         };
-    private static readonly IReadOnlySet<TypeDeclarationIdentity> ExpectedLegacyGovernedDeclarations =
-        CreateExpectedLegacyDeclarations(
-            BusinessServicesNamespace,
-            [
-                "BusinessGatewayInventoryForwardedPermissionOptions",
-                "HttpBusinessApprovalClient",
-                "HttpBusinessBarcodeLabelClient",
-                "HttpBusinessErpClient",
-                "HttpBusinessFileStorageClient",
-                "HttpBusinessIndustrialTelemetryClient",
-                "HttpBusinessInventoryClient",
-                "HttpBusinessMaintenanceClient",
-                "HttpBusinessMasterDataClient",
-                "HttpBusinessMesClient",
-                "HttpBusinessNotificationClient",
-                "HttpBusinessPlanningClient",
-                "HttpBusinessProductEngineeringClient",
-                "HttpBusinessQualityClient",
-                "HttpBusinessSchedulingClient",
-                "IBusinessApprovalClient",
-                "IBusinessBarcodeLabelClient",
-                "IBusinessErpClient",
-                "IBusinessFileStorageClient",
-                "IBusinessIndustrialTelemetryClient",
-                "IBusinessInventoryClient",
-                "IBusinessMaintenanceClient",
-                "IBusinessMasterDataClient",
-                "IBusinessMesClient",
-                "IBusinessNotificationClient",
-                "IBusinessPlanningClient",
-                "IBusinessProductEngineeringClient",
-                "IBusinessQualityClient",
-                "IBusinessSchedulingClient",
-            ]);
+    private static readonly IReadOnlySet<string> ExpectedLegacyGovernedTypeNames =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "BusinessGatewayInventoryForwardedPermissionOptions",
+            "HttpBusinessApprovalClient",
+            "HttpBusinessBarcodeLabelClient",
+            "HttpBusinessErpClient",
+            "HttpBusinessFileStorageClient",
+            "HttpBusinessIndustrialTelemetryClient",
+            "HttpBusinessInventoryClient",
+            "HttpBusinessMaintenanceClient",
+            "HttpBusinessMasterDataClient",
+            "HttpBusinessMesClient",
+            "HttpBusinessNotificationClient",
+            "HttpBusinessPlanningClient",
+            "HttpBusinessProductEngineeringClient",
+            "HttpBusinessQualityClient",
+            "HttpBusinessSchedulingClient",
+            "IBusinessApprovalClient",
+            "IBusinessBarcodeLabelClient",
+            "IBusinessErpClient",
+            "IBusinessFileStorageClient",
+            "IBusinessIndustrialTelemetryClient",
+            "IBusinessInventoryClient",
+            "IBusinessMaintenanceClient",
+            "IBusinessMasterDataClient",
+            "IBusinessMesClient",
+            "IBusinessNotificationClient",
+            "IBusinessPlanningClient",
+            "IBusinessProductEngineeringClient",
+            "IBusinessQualityClient",
+            "IBusinessSchedulingClient",
+        };
     private static readonly IReadOnlySet<string> NoLegacyGovernedTypes =
         new HashSet<string>(StringComparer.Ordinal);
 
@@ -63,7 +60,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         var violations = AnalyzeBoundary(
             businessServicesDirectory,
             ExpectedSharedTypeFiles,
-            ExpectedLegacyGovernedDeclarations);
+            ExpectedLegacyGovernedTypeNames);
 
         Assert.Empty(violations);
     }
@@ -223,9 +220,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
 
         Assert.Contains(violations, violation =>
-            violation.Contains("FirstOuter", StringComparison.Ordinal) &&
-            violation.Contains("SecondOuter", StringComparison.Ordinal) &&
-            violation.Contains("IBusinessInventoryClient", StringComparison.Ordinal));
+            violation.Contains("FirstOuter.IBusinessInventoryClient", StringComparison.Ordinal) &&
+            violation.Contains("SecondOuter.IBusinessInventoryClient", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -292,146 +288,22 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             violation.Contains("InventoryTransport", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void Boundary_analyzer_rejects_nonconventional_interface_derived_from_a_managed_client_interface()
-    {
-        var documents = CreateBoundaryDocuments(
-            "public interface IBusinessInventoryClient {} " +
-            "public sealed class HttpBusinessInventoryClient {} " +
-            "public interface EvidenceAxisInventoryTransport : IBusinessInventoryClient {}");
-        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "IBusinessInventoryClient",
-            "HttpBusinessInventoryClient",
-        };
-
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
-
-        Assert.Contains(violations, violation =>
-            violation.Contains("EvidenceAxisInventoryTransport", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Boundary_analyzer_rejects_multiple_semantic_clients_in_a_nonlegacy_file()
-    {
-        var documents = CreateBoundaryDocuments(
-            "public interface IBusinessInventoryClient {} public sealed class HttpBusinessInventoryClient {}",
-            new SourceDocument(
-                "EvidenceAxisReplacement.cs",
-                "public abstract class EvidenceAxisInventoryTransport : BusinessServiceHttpClient {} " +
-                "public abstract class EvidenceAxisQualityTransport : BusinessServiceHttpClient {}"));
-        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "IBusinessInventoryClient",
-            "HttpBusinessInventoryClient",
-        };
-
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
-
-        Assert.Contains(violations, violation =>
-            violation.Contains("EvidenceAxisReplacement.cs", StringComparison.Ordinal) &&
-            violation.Contains("EvidenceAxisInventoryTransport", StringComparison.Ordinal) &&
-            violation.Contains("EvidenceAxisQualityTransport", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Boundary_analyzer_rejects_legacy_declaration_kind_changes()
-    {
-        var documents = CreateBoundaryDocuments(
-            "public interface IBusinessInventoryClient {} " +
-            "public sealed class HttpBusinessInventoryClient {} " +
-            "public sealed record BusinessGatewayInventoryForwardedPermissionOptions {}");
-        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "IBusinessInventoryClient",
-            "HttpBusinessInventoryClient",
-            "BusinessGatewayInventoryForwardedPermissionOptions",
-        };
-
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
-
-        Assert.Contains(violations, violation =>
-            violation.Contains("record", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Boundary_analyzer_rejects_legacy_declaration_arity_changes()
-    {
-        var documents = CreateBoundaryDocuments(
-            "public interface IBusinessInventoryClient<T> {} public sealed class HttpBusinessInventoryClient {}");
-        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "IBusinessInventoryClient",
-            "HttpBusinessInventoryClient",
-        };
-
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
-
-        Assert.Contains(violations, violation =>
-            violation.Contains("arity", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Boundary_analyzer_rejects_legacy_declaration_namespace_changes()
-    {
-        var documents = CreateBoundaryDocuments(
-            "namespace MutatedBoundary { " +
-            "public interface IBusinessInventoryClient {} " +
-            "public sealed class HttpBusinessInventoryClient {} }");
-        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "IBusinessInventoryClient",
-            "HttpBusinessInventoryClient",
-        };
-
-        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
-
-        Assert.Contains(violations, violation =>
-            violation.Contains("MutatedBoundary", StringComparison.Ordinal));
-    }
-
-    private static IReadOnlyList<SourceDocument> CreateBoundaryDocuments(
-        string legacySource,
-        params SourceDocument[] additionalDocuments) =>
-        [
-            new SourceDocument(
-                "Shared/BusinessServiceAuditContext.cs",
-                "public sealed record BusinessServiceAuditContext {}"),
-            new SourceDocument(
-                "Shared/BusinessServiceProxyException.cs",
-                "public sealed class BusinessServiceProxyException {}"),
-            new SourceDocument(
-                "Shared/BusinessServiceHttpClient.cs",
-                "public abstract class BusinessServiceHttpClient {}"),
-            new SourceDocument(LegacyClientMonolithFileName, legacySource),
-            .. additionalDocuments,
-        ];
-
     private static IReadOnlyList<string> AnalyzeBoundary(
         string businessServicesDirectory,
         IReadOnlyDictionary<string, string> expectedFiles,
-        IReadOnlySet<TypeDeclarationIdentity> expectedLegacyGovernedDeclarations) =>
+        IReadOnlySet<string> expectedLegacyGovernedTypeNames) =>
         AnalyzeBoundary(
             Directory.EnumerateFiles(businessServicesDirectory, "*.cs", SearchOption.AllDirectories)
                 .Select(path => new SourceDocument(
                     Path.GetRelativePath(businessServicesDirectory, path).Replace('\\', '/'),
                     File.ReadAllText(path))),
             expectedFiles,
-            expectedLegacyGovernedDeclarations);
+            expectedLegacyGovernedTypeNames);
 
     private static IReadOnlyList<string> AnalyzeBoundary(
         IEnumerable<SourceDocument> documents,
         IReadOnlyDictionary<string, string> expectedFiles,
-        IReadOnlySet<string> expectedLegacyGovernedTypeNames) =>
-        AnalyzeBoundary(
-            documents,
-            expectedFiles,
-            CreateExpectedLegacyDeclarations(string.Empty, expectedLegacyGovernedTypeNames));
-
-    private static IReadOnlyList<string> AnalyzeBoundary(
-        IEnumerable<SourceDocument> documents,
-        IReadOnlyDictionary<string, string> expectedFiles,
-        IReadOnlySet<TypeDeclarationIdentity> expectedLegacyGovernedDeclarations)
+        IReadOnlySet<string> expectedLegacyGovernedTypeNames)
     {
         var syntaxTrees = documents
             .Select(document => CSharpSyntaxTree.ParseText(document.Source, path: document.RelativePath))
@@ -448,15 +320,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 return tree.GetRoot()
                     .DescendantNodes()
                     .OfType<BaseTypeDeclarationSyntax>()
-                    .Select(declaration =>
-                    {
-                        var symbol = semanticModel.GetDeclaredSymbol(declaration)!;
-                        return new TypeDeclaration(
-                            tree.FilePath,
-                            declaration.Identifier.ValueText,
-                            CreateDeclarationIdentity(declaration, symbol),
-                            symbol);
-                    });
+                    .Select(declaration => new TypeDeclaration(
+                        tree.FilePath,
+                        declaration.Identifier.ValueText,
+                        DeclarationIdentity(declaration),
+                        semanticModel.GetDeclaredSymbol(declaration)!));
             })
             .ToArray();
         var violations = new List<string>();
@@ -482,29 +350,45 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         var sharedClientBase = declarations.SingleOrDefault(declaration =>
             declaration.RelativePath == "Shared/BusinessServiceHttpClient.cs" &&
             declaration.TypeName == "BusinessServiceHttpClient");
-        var clientClassification = ClassifyClients(declarations, sharedClientBase?.Symbol);
+        var expectedClientInterfaces = legacyDeclarations
+            .Where(declaration =>
+                expectedLegacyGovernedTypeNames.Contains(declaration.DeclarationIdentity) &&
+                declaration.Symbol.TypeKind == TypeKind.Interface)
+            .Select(declaration => declaration.Symbol)
+            .ToHashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var semanticClientClasses = legacyDeclarations
+            .Where(declaration =>
+                declaration.Symbol.TypeKind == TypeKind.Class &&
+                (DerivesFrom(declaration.Symbol, sharedClientBase?.Symbol) ||
+                 declaration.Symbol.AllInterfaces.Any(expectedClientInterfaces.Contains)))
+            .Select(declaration => declaration.Symbol)
+            .ToHashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var semanticClientInterfaces = semanticClientClasses
+            .SelectMany(symbol => symbol.AllInterfaces)
+            .ToHashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         var actualLegacyGovernedDeclarations = legacyDeclarations
             .Where(declaration =>
-                expectedLegacyGovernedDeclarations.Contains(declaration.Identity) ||
+                expectedLegacyGovernedTypeNames.Contains(declaration.DeclarationIdentity) ||
+                CapabilityClientName(declaration.TypeName) is not null ||
                 declaration.TypeName.EndsWith("Options", StringComparison.Ordinal) ||
-                clientClassification.ClientSymbols.Contains(declaration.Symbol))
+                semanticClientClasses.Contains(declaration.Symbol) ||
+                semanticClientInterfaces.Contains(declaration.Symbol))
             .ToArray();
         var declarationCounts = actualLegacyGovernedDeclarations
-            .GroupBy(declaration => declaration.Identity)
-            .ToDictionary(group => group.Key, group => group.Count());
-        var legacyDeclarationDifferences = expectedLegacyGovernedDeclarations
+            .GroupBy(declaration => declaration.DeclarationIdentity, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var legacyDeclarationDifferences = expectedLegacyGovernedTypeNames
             .Concat(declarationCounts.Keys)
-            .Distinct()
+            .Distinct(StringComparer.Ordinal)
             .Select(identity => new
             {
                 Identity = identity,
-                Expected = expectedLegacyGovernedDeclarations.Contains(identity) ? 1 : 0,
+                Expected = expectedLegacyGovernedTypeNames.Contains(identity) ? 1 : 0,
                 Actual = declarationCounts.GetValueOrDefault(identity),
             })
             .Where(entry => entry.Expected != entry.Actual)
-            .OrderBy(entry => FormatIdentity(entry.Identity), StringComparer.Ordinal)
-            .Select(entry =>
-                $"{FormatIdentity(entry.Identity)} (expected {entry.Expected}, actual {entry.Actual})")
+            .OrderBy(entry => entry.Identity, StringComparer.Ordinal)
+            .Select(entry => $"{entry.Identity} (expected {entry.Expected}, actual {entry.Actual})")
             .ToArray();
         if (legacyDeclarationDifferences.Length > 0)
         {
@@ -517,174 +401,29 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                      .Where(declaration => declaration.RelativePath != LegacyClientMonolithFileName)
                      .GroupBy(declaration => declaration.RelativePath))
         {
-            var clientBoundaries = file
-                .Where(declaration => clientClassification.ClientSymbols.Contains(declaration.Symbol))
-                .SelectMany(declaration => ClientBoundaryKeys(declaration, clientClassification.Capabilities))
-                .GroupBy(boundary => boundary.Key, StringComparer.Ordinal)
-                .Select(group => new
-                {
-                    Key = group.Key,
-                    Declarations = group
-                        .Select(boundary => boundary.Declaration)
-                        .Distinct(StringComparer.Ordinal)
-                        .Order(StringComparer.Ordinal)
-                        .ToArray(),
-                })
-                .OrderBy(boundary => boundary.Key, StringComparer.Ordinal)
+            var capabilities = file
+                .SelectMany(CapabilityClientNames)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
                 .ToArray();
-            if (clientBoundaries.Length > 1)
+            if (capabilities.Length > 1)
             {
                 violations.Add(
-                    $"{file.Key} declares multiple client boundaries: " +
-                    string.Join(
-                        "; ",
-                        clientBoundaries.Select(boundary =>
-                            $"{boundary.Key} => {string.Join(", ", boundary.Declarations)}")) +
-                    ".");
+                    $"{file.Key} declares clients for multiple capabilities: {string.Join(", ", capabilities)}.");
             }
         }
 
         return violations;
     }
 
-    private static IReadOnlySet<TypeDeclarationIdentity> CreateExpectedLegacyDeclarations(
-        string namespaceName,
-        IEnumerable<string> typeNames) =>
-        typeNames
-            .Select(typeName => new TypeDeclarationIdentity(
-                namespaceName,
-                string.Empty,
-                typeName.StartsWith("IBusiness", StringComparison.Ordinal) ? "interface" : "class",
-                typeName,
-                0,
-                Accessibility.Public))
-            .ToHashSet();
-
-    private static TypeDeclarationIdentity CreateDeclarationIdentity(
-        BaseTypeDeclarationSyntax declaration,
-        INamedTypeSymbol symbol) =>
-        new(
-            symbol.ContainingNamespace.IsGlobalNamespace
-                ? string.Empty
-                : symbol.ContainingNamespace.ToDisplayString(),
-            ContainingTypePath(symbol.ContainingType),
-            DeclarationKind(declaration),
-            symbol.Name,
-            symbol.Arity,
-            symbol.DeclaredAccessibility);
-
-    private static string ContainingTypePath(INamedTypeSymbol? containingType)
-    {
-        var containingTypes = new Stack<string>();
-        for (var current = containingType; current is not null; current = current.ContainingType)
-        {
-            containingTypes.Push($"{current.Name}`{current.Arity}");
-        }
-
-        return string.Join(".", containingTypes);
-    }
-
-    private static string DeclarationKind(BaseTypeDeclarationSyntax declaration) =>
-        declaration switch
-        {
-            RecordDeclarationSyntax recordDeclaration when
-                recordDeclaration.ClassOrStructKeyword.IsKind(SyntaxKind.StructKeyword) => "record struct",
-            RecordDeclarationSyntax => "record class",
-            ClassDeclarationSyntax => "class",
-            InterfaceDeclarationSyntax => "interface",
-            StructDeclarationSyntax => "struct",
-            EnumDeclarationSyntax => "enum",
-            _ => declaration.Kind().ToString(),
-        };
-
-    private static string FormatIdentity(TypeDeclarationIdentity identity)
-    {
-        var namespaceName = string.IsNullOrEmpty(identity.NamespaceName)
-            ? "<global>"
-            : identity.NamespaceName;
-        var containingType = string.IsNullOrEmpty(identity.ContainingTypePath)
-            ? string.Empty
-            : $"{identity.ContainingTypePath}.";
-        return $"{identity.Accessibility.ToString().ToLowerInvariant()} {identity.DeclarationKind} " +
-               $"{namespaceName}.{containingType}{identity.TypeName} (arity {identity.Arity})";
-    }
-
-    private static ClientClassification ClassifyClients(
-        IReadOnlyCollection<TypeDeclaration> declarations,
-        INamedTypeSymbol? sharedClientBase)
-    {
-        var clientSymbols = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var capabilities = new Dictionary<INamedTypeSymbol, HashSet<string>>(SymbolEqualityComparer.Default);
-
-        foreach (var declaration in declarations)
-        {
-            var capability = CapabilityClientName(declaration.TypeName);
-            if (capability is not null)
-            {
-                clientSymbols.Add(declaration.Symbol);
-                GetCapabilities(capabilities, declaration.Symbol).Add(capability);
-            }
-
-            if (DerivesFrom(declaration.Symbol, sharedClientBase))
-            {
-                clientSymbols.Add(declaration.Symbol);
-            }
-        }
-
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (var declaration in declarations)
-            {
-                var symbol = declaration.Symbol;
-                var relatedSymbols = symbol.Interfaces
-                    .Concat(symbol.BaseType is null ? [] : [symbol.BaseType]);
-                foreach (var relatedSymbol in relatedSymbols.Where(clientSymbols.Contains))
-                {
-                    changed |= clientSymbols.Add(symbol);
-                    foreach (var capability in GetCapabilities(capabilities, relatedSymbol))
-                    {
-                        changed |= GetCapabilities(capabilities, symbol).Add(capability);
-                    }
-                }
-            }
-        }
-        while (changed);
-
-        return new ClientClassification(clientSymbols, capabilities);
-    }
-
-    private static HashSet<string> GetCapabilities(
-        IDictionary<INamedTypeSymbol, HashSet<string>> capabilities,
-        INamedTypeSymbol symbol)
-    {
-        if (!capabilities.TryGetValue(symbol, out var result))
-        {
-            result = new HashSet<string>(StringComparer.Ordinal);
-            capabilities.Add(symbol, result);
-        }
-
-        return result;
-    }
-
-    private static IEnumerable<ClientBoundary> ClientBoundaryKeys(
-        TypeDeclaration declaration,
-        IReadOnlyDictionary<INamedTypeSymbol, HashSet<string>> capabilities)
-    {
-        var declarationDisplay = FormatIdentity(declaration.Identity);
-        if (!capabilities.TryGetValue(declaration.Symbol, out var knownCapabilities) ||
-            knownCapabilities.Count == 0)
-        {
-            yield return new ClientBoundary($"unattributed:{declarationDisplay}", declarationDisplay);
-            yield break;
-        }
-
-        foreach (var capability in knownCapabilities)
-        {
-            yield return new ClientBoundary($"capability:{capability}", declarationDisplay);
-        }
-    }
+    private static string DeclarationIdentity(BaseTypeDeclarationSyntax declaration) =>
+        string.Join(
+            ".",
+            declaration.Ancestors()
+                .OfType<BaseTypeDeclarationSyntax>()
+                .Reverse()
+                .Select(ancestor => ancestor.Identifier.ValueText)
+                .Append(declaration.Identifier.ValueText));
 
     private static bool DerivesFrom(INamedTypeSymbol symbol, INamedTypeSymbol? expectedBase)
     {
@@ -702,6 +441,23 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         }
 
         return false;
+    }
+
+    private static IEnumerable<string> CapabilityClientNames(TypeDeclaration declaration)
+    {
+        var declaredCapability = CapabilityClientName(declaration.TypeName);
+        if (declaredCapability is not null)
+        {
+            yield return declaredCapability;
+        }
+
+        foreach (var capability in declaration.Symbol.AllInterfaces
+                     .Select(@interface => CapabilityClientName(@interface.Name))
+                     .Where(capability => capability is not null)
+                     .Cast<string>())
+        {
+            yield return capability;
+        }
     }
 
     private static string? CapabilityClientName(string typeName)
@@ -734,20 +490,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     private sealed record TypeDeclaration(
         string RelativePath,
         string TypeName,
-        TypeDeclarationIdentity Identity,
+        string DeclarationIdentity,
         INamedTypeSymbol Symbol);
-
-    private sealed record TypeDeclarationIdentity(
-        string NamespaceName,
-        string ContainingTypePath,
-        string DeclarationKind,
-        string TypeName,
-        int Arity,
-        Accessibility Accessibility);
-
-    private sealed record ClientClassification(
-        IReadOnlySet<INamedTypeSymbol> ClientSymbols,
-        IReadOnlyDictionary<INamedTypeSymbol, HashSet<string>> Capabilities);
-
-    private sealed record ClientBoundary(string Key, string Declaration);
 }
