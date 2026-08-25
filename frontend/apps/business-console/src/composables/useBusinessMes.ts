@@ -48,13 +48,14 @@ import {
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
+  listBusinessConsoleSearchableDirectoryQueryOptions,
   listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesDefectV2MutationOptions,
-  recordBusinessConsoleMesDowntimeEventMutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
@@ -93,7 +94,7 @@ import {
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesRecordDefectV2Request,
-  type BusinessConsoleMesRecordDowntimeEventRequest,
+  type BusinessConsoleMesRecordDowntimeEventV2Request,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
   type BusinessConsoleMesRelatedQualityItemRow,
   type BusinessConsoleMesReceiptRequestListEnvelope,
@@ -2610,6 +2611,7 @@ export const useMesRelatedQualityItems = useMesQualityContext
 export function useMesDowntimeEvents() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
+  const downtimeWriteScope = useMesPrincipalWorkScope(filters, 'business.mes.downtime.manage')
   const downtimeQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesDowntimeEventsQueryOptions({
@@ -2618,8 +2620,21 @@ export function useMesDowntimeEvents() {
       filters,
     ),
   )
+  const downtimeReasonsQuery = useQuery(() => ({
+    ...listBusinessConsoleSearchableDirectoryQueryOptions({
+      path: { directoryType: 'downtime-reason' },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        pageIndex: 1,
+        pageSize: 100,
+        rankingMode: 'default',
+      },
+    }),
+    enabled: hasBusinessContext(filters) && downtimeWriteScope.scopeReady.value,
+  }))
   const recordMutation = useMutation({
-    ...recordBusinessConsoleMesDowntimeEventMutationOptions(),
+    ...recordBusinessConsoleMesDowntimeEventV2MutationOptions(),
     onSuccess: () =>
       void invalidateMesQueries(queryCache, [
         'listBusinessConsoleMesDowntimeEvents',
@@ -2646,9 +2661,51 @@ export function useMesDowntimeEvents() {
     downtimeEventsPending: downtimeQuery.isLoading,
     downtimeEventsState: businessReadState(downtimeQuery, () => hasBusinessContext(filters)),
     downtimeEventsTotal: computed(() => envelopeTotal(downtimeQuery.data.value)),
+    downtimeReasonOptions: computed(() => {
+      const envelope = downtimeReasonsQuery.data.value
+      if (envelope?.success !== true || envelope.data?.status === 'unavailable') return []
+      return (envelope.data?.items ?? [])
+        .map((item) => {
+          const value = item.code?.trim()
+          if (!value) return undefined
+          const name = item.displayName?.trim()
+          return { value, label: name ? `${name}（${value}）` : value }
+        })
+        .filter((item): item is { value: string; label: string } => item !== undefined)
+    }),
+    downtimeReasonsError: downtimeReasonsQuery.error,
+    downtimeReasonsPending: downtimeReasonsQuery.isLoading,
+    downtimeWriteCoversWorkOrder: downtimeWriteScope.coversWorkOrder,
+    downtimeWriteScope: downtimeWriteScope.selectedScope,
+    downtimeWriteScopeMessage: downtimeWriteScope.scopeMessage,
+    downtimeWriteScopePending: downtimeWriteScope.scopePending,
+    downtimeWriteScopeReady: downtimeWriteScope.scopeReady,
     filters,
-    recordDowntimeEvent: (body: BusinessConsoleMesRecordDowntimeEventRequest) =>
-      recordMutation.mutateAsync({ body }),
+    recordDowntimeEvent: (
+      body: Omit<
+        BusinessConsoleMesRecordDowntimeEventV2Request,
+        'organizationId' | 'environmentId'
+      >,
+    ) => {
+      const organizationId = filters.organizationId.trim()
+      const environmentId = filters.environmentId.trim()
+      const selectedScope = downtimeWriteScope.requireSelectedScope()
+      if (!organizationId || !environmentId) {
+        throw new Error('尚未进入有效组织与环境，不能登记停机。')
+      }
+      if (body.scopeKind !== selectedScope.kind || body.scopeId !== selectedScope.id) {
+        throw new Error('停机登记范围已变化，请重新选择工单与工序。')
+      }
+      return recordMutation.mutateAsync({
+        body: {
+          ...body,
+          organizationId,
+          environmentId,
+          scopeKind: selectedScope.kind,
+          scopeId: selectedScope.id,
+        },
+      })
+    },
     recordDowntimeEventPending: recordMutation.isLoading,
     recoverDowntimeEvent: (
       downtimeEventId: string,
@@ -2665,6 +2722,7 @@ export function useMesDowntimeEvents() {
         body,
       }),
     recoverDowntimeEventPending: recoverMutation.isLoading,
+    refreshDowntimeWriteScope: downtimeWriteScope.refreshScope,
     refreshDowntimeEvents: () => refetchWithBusinessContext(filters, downtimeQuery),
   }
 }
