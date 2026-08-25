@@ -1,5 +1,7 @@
 namespace Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
+using System.Text.Json;
+
 public static class ToolingAuditIdentityPolicy
 {
     public const int MaxLength = 200;
@@ -15,19 +17,29 @@ public static class ToolingAuditIdentityPolicy
         "connectionstring",
     ];
 
-    public static bool IsValidActor(string? value) =>
+    public static bool IsValidActor(
+        string? value,
+        IReadOnlyCollection<string>? forbiddenCredentials = null) =>
         value is not null &&
         value.Length > UserActorPrefix.Length &&
         value.Length <= MaxLength &&
         value.StartsWith(UserActorPrefix, StringComparison.Ordinal) &&
         IsCanonicalToken(value.AsSpan(UserActorPrefix.Length)) &&
-        !ContainsSensitiveMarker(value);
+        !ContainsSensitiveContent(value, forbiddenCredentials);
 
-    public static bool IsValidOpaqueIdentity(string? value) =>
+    public static bool IsValidOpaqueIdentity(
+        string? value,
+        IReadOnlyCollection<string>? forbiddenCredentials = null) =>
         value is not null &&
         value.Length is > 0 and <= MaxLength &&
         IsCanonicalToken(value.AsSpan()) &&
-        !ContainsSensitiveMarker(value);
+        !ContainsSensitiveContent(value, forbiddenCredentials);
+
+    public static bool IsValidAuditText(
+        string? value,
+        IReadOnlyCollection<string>? forbiddenCredentials = null) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        !ContainsSensitiveContent(value, forbiddenCredentials);
 
     private static bool IsCanonicalToken(ReadOnlySpan<char> value)
     {
@@ -44,6 +56,46 @@ public static class ToolingAuditIdentityPolicy
     private static bool IsAsciiAlphaNumeric(char value) =>
         value is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9';
 
-    private static bool ContainsSensitiveMarker(string value) => SensitiveMarkers.Any(marker =>
-        value.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    private static bool ContainsSensitiveContent(
+        string value,
+        IReadOnlyCollection<string>? forbiddenCredentials) =>
+        SensitiveMarkers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase)) ||
+        ContainsCompactJwt(value) ||
+        (forbiddenCredentials?.Any(credential =>
+            !string.IsNullOrEmpty(credential) &&
+            value.Contains(credential, StringComparison.Ordinal)) == true);
+
+    private static bool ContainsCompactJwt(string value)
+    {
+        char[] separators = [' ', '\t', '\r', '\n', ':', '=', '"', '\'', ',', ';', '(', ')', '[', ']', '<', '>'];
+        return value.Split(separators, StringSplitOptions.RemoveEmptyEntries)
+            .Any(IsCompactJwt);
+    }
+
+    private static bool IsCompactJwt(string candidate)
+    {
+        var segments = candidate.Split('.');
+        if (segments.Length != 3 || segments.Any(string.IsNullOrEmpty)) return false;
+        try
+        {
+            var headerBytes = Convert.FromBase64String(ToBase64(segments[0]));
+            using var header = JsonDocument.Parse(headerBytes);
+            return header.RootElement.ValueKind == JsonValueKind.Object &&
+                header.RootElement.TryGetProperty("alg", out _);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string ToBase64(string value)
+    {
+        var normalized = value.Replace('-', '+').Replace('_', '/');
+        return normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
+    }
 }

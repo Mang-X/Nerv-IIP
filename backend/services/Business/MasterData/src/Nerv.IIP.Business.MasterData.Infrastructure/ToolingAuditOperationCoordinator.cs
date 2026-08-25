@@ -1,6 +1,3 @@
-using NetCorePal.Extensions.Repository;
-using NetCorePal.Extensions.Repository.EntityFrameworkCore;
-
 namespace Nerv.IIP.Business.MasterData.Infrastructure;
 
 public interface IToolingAuditOperationCoordinator
@@ -15,12 +12,11 @@ public interface IToolingAuditOperationCoordinator
 }
 
 public sealed class PostgreSqlToolingAuditOperationCoordinator(
-    ApplicationDbContext dbContext,
-    ITransactionUnitOfWork unitOfWork)
+    PostgreSqlTransactionalLockExecutor lockExecutor)
     : IToolingAuditOperationCoordinator
 {
     public PostgreSqlToolingAuditOperationCoordinator(ApplicationDbContext dbContext)
-        : this(dbContext, dbContext)
+        : this(new PostgreSqlTransactionalLockExecutor(dbContext))
     {
     }
 
@@ -32,60 +28,13 @@ public sealed class PostgreSqlToolingAuditOperationCoordinator(
         Func<CancellationToken, Task<T>> action,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(action);
-        if (!dbContext.Database.IsNpgsql())
-        {
-            return await action(cancellationToken);
-        }
-
-        if (unitOfWork.CurrentTransaction is not null)
-        {
-            await AcquireLocksAsync(organizationId, environmentId, operationId, toolingCode, cancellationToken);
-            var enlistedResult = await action(cancellationToken);
-            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
-            return enlistedResult;
-        }
-
-        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
-        unitOfWork.CurrentTransaction = transaction;
-        try
-        {
-            await AcquireLocksAsync(organizationId, environmentId, operationId, toolingCode, cancellationToken);
-            var result = await action(cancellationToken);
-            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
-            await unitOfWork.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch
-        {
-            await unitOfWork.RollbackAsync(CancellationToken.None);
-            throw;
-        }
-        finally
-        {
-            unitOfWork.CurrentTransaction = null;
-        }
-    }
-
-    private async Task AcquireLocksAsync(
-        string organizationId,
-        string environmentId,
-        string operationId,
-        string? toolingCode,
-        CancellationToken cancellationToken)
-    {
         var scope = $"{organizationId.Trim()}:{environmentId.Trim()}";
-        var operationLock = $"masterdata-tooling-operation:{scope}:{operationId.Trim()}";
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({operationLock}, 0))",
-            cancellationToken);
-
+        List<string> lockKeys = [$"masterdata-tooling-operation:{scope}:{operationId.Trim()}"];
         if (!string.IsNullOrWhiteSpace(toolingCode))
         {
-            var targetLock = $"masterdata-tooling-target:{scope}:{toolingCode.Trim().ToUpperInvariant()}";
-            await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT pg_advisory_xact_lock(hashtextextended({targetLock}, 0))",
-                cancellationToken);
+            lockKeys.Add($"masterdata-tooling-target:{scope}:{toolingCode.Trim().ToUpperInvariant()}");
         }
+
+        return await lockExecutor.ExecuteAsync(lockKeys, action, cancellationToken);
     }
 }

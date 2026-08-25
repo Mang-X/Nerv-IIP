@@ -6,16 +6,23 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverter
 
 public sealed record ToolingOperationAuditContext
 {
+    private readonly string[] forbiddenCredentials;
+
     private ToolingOperationAuditContext(
         string actor,
         string correlationId,
         string causationId,
-        string operationId)
+        string operationId,
+        IReadOnlyCollection<string>? forbiddenCredentials)
     {
-        Actor = actor;
-        CorrelationId = correlationId;
-        CausationId = causationId;
-        OperationId = operationId;
+        this.forbiddenCredentials = forbiddenCredentials?
+            .Where(credential => !string.IsNullOrWhiteSpace(credential))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray() ?? [];
+        Actor = ValidateActor(actor, this.forbiddenCredentials);
+        CorrelationId = ValidateIdentity(correlationId, "correlationId", this.forbiddenCredentials);
+        CausationId = ValidateIdentity(causationId, "causationId", this.forbiddenCredentials);
+        OperationId = ValidateIdentity(operationId, "operationId", this.forbiddenCredentials);
     }
 
     public string Actor { get; }
@@ -27,15 +34,28 @@ public sealed record ToolingOperationAuditContext
         string actor,
         string correlationId,
         string causationId,
-        string operationId) => new(
-            ValidateActor(actor),
-            ValidateIdentity(correlationId, "correlationId"),
-            ValidateIdentity(causationId, "causationId"),
-            ValidateIdentity(operationId, "operationId"));
+        string operationId,
+        IReadOnlyCollection<string>? forbiddenCredentials = null) => new(
+            actor,
+            correlationId,
+            causationId,
+            operationId,
+            forbiddenCredentials);
 
-    private static string ValidateActor(string value)
+    internal string RequireAuditableText(string value, string fieldName)
     {
-        if (!ToolingAuditIdentityPolicy.IsValidActor(value))
+        var normalized = value?.Trim();
+        if (!ToolingAuditIdentityPolicy.IsValidAuditText(normalized, forbiddenCredentials))
+        {
+            throw new KnownException($"工装写操作的 {fieldName} 不能包含凭据或敏感内容。");
+        }
+
+        return normalized!;
+    }
+
+    private static string ValidateActor(string value, IReadOnlyCollection<string> forbiddenCredentials)
+    {
+        if (!ToolingAuditIdentityPolicy.IsValidActor(value, forbiddenCredentials))
         {
             throw new KnownException("工装写操作需要合法的已授权用户主体标识。");
         }
@@ -43,9 +63,12 @@ public sealed record ToolingOperationAuditContext
         return value;
     }
 
-    private static string ValidateIdentity(string value, string fieldName)
+    private static string ValidateIdentity(
+        string value,
+        string fieldName,
+        IReadOnlyCollection<string> forbiddenCredentials)
     {
-        if (!ToolingAuditIdentityPolicy.IsValidOpaqueIdentity(value))
+        if (!ToolingAuditIdentityPolicy.IsValidOpaqueIdentity(value, forbiddenCredentials))
         {
             throw new KnownException($"工装写操作需要合法且不含敏感内容的 {fieldName}。");
         }
@@ -80,7 +103,8 @@ public sealed class HttpToolingOperationAuditContextAccessor(IHttpContextAccesso
             actor,
             ReadRequiredHeader(httpContext.Request.Headers, "X-Correlation-Id"),
             ReadRequiredHeader(httpContext.Request.Headers, "X-Causation-Id"),
-            ReadRequiredHeader(httpContext.Request.Headers, "X-Idempotency-Key"));
+            ReadRequiredHeader(httpContext.Request.Headers, "X-Idempotency-Key"),
+            ReadAuthorizationCredentials(httpContext.Request.Headers));
     }
 
     private static string ResolveAuthenticatedUser(ClaimsPrincipal user)
@@ -103,5 +127,18 @@ public sealed class HttpToolingOperationAuditContextAccessor(IHttpContextAccesso
         }
 
         return values[0]!;
+    }
+
+    private static string[] ReadAuthorizationCredentials(IHeaderDictionary headers)
+    {
+        if (!headers.TryGetValue("Authorization", out var values) || values.Count != 1 ||
+            !System.Net.Http.Headers.AuthenticationHeaderValue.TryParse(values[0], out var authorization) ||
+            !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(authorization.Parameter))
+        {
+            return [];
+        }
+
+        return [authorization.Parameter];
     }
 }

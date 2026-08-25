@@ -72,6 +72,16 @@ public sealed class RegisterToolingAssetCommandHandler(
                 replay.ToolingCode,
                 cancellationToken)
                 ?? throw new KnownException($"工装操作 '{operationId}' 指向的工装资产不存在。");
+            if (!replayedAsset.MatchesRegistration(
+                    request.Name,
+                    request.ToolingType,
+                    request.WorkCenterCodes,
+                    request.SkuCodes,
+                    request.MaintenanceLifeCount))
+            {
+                throw new KnownException($"工装操作 '{operationId}' 与此前持久化的注册内容冲突。");
+            }
+
             return new MasterDataResourceResult("tooling-asset", replayedAsset.Code, replayedAsset.Name);
         }
 
@@ -127,7 +137,7 @@ public sealed class ChangeToolingStatusCommandHandler(
     {
         var context = request.AuditContext;
         var operationId = context.OperationId;
-        var reason = ToolingAuditCommand.NormalizeReason(request.Reason);
+        var reason = context.RequireAuditableText(request.Reason, "reason");
         var fingerprint = ToolingAuditCommand.Fingerprint(
             ToolingAuditEntry.StatusOperation,
             ToolingAuditCommand.NormalizeRequiredCode(request.Code),
@@ -261,11 +271,6 @@ public sealed class RecordToolingUsageCommandHandler(
 
 internal static class ToolingAuditCommand
 {
-    public static string NormalizeReason(string reason) =>
-        string.IsNullOrWhiteSpace(reason)
-            ? throw new KnownException("工装状态变更原因不能为空。")
-            : reason.Trim();
-
     public static string NormalizeRequiredCode(string code) =>
         string.IsNullOrWhiteSpace(code)
             ? throw new KnownException("工装编码不能为空。")

@@ -118,15 +118,9 @@ public sealed class MasterDataSchemaConventionTests
         Assert.Equal(
             "\"OperationKind\" IN ('tooling-register', 'tooling-status', 'tooling-usage')",
             constraints["ck_tooling_audit_operation_kind"].Sql);
-        var summaryShape = constraints["ck_tooling_audit_summary_shape"].Sql;
-        Assert.Contains("\"OperationKind\" = 'tooling-register'", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"AfterStatus\" = 'Available'", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"AfterUsageCount\" = 0", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"OperationKind\" = 'tooling-status'", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"Reason\" IS NOT NULL", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"OperationKind\" = 'tooling-usage'", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"AfterUsageCount\" = \"BeforeUsageCount\" + \"UsageDelta\"", summaryShape, StringComparison.Ordinal);
-        Assert.Contains("\"UsageDelta\" > 0", summaryShape, StringComparison.Ordinal);
+        Assert.Equal(
+            "(\"OperationKind\" = 'tooling-register' AND \"BeforeStatus\" IS NULL AND \"AfterStatus\" = 'Available' AND \"BeforeUsageCount\" IS NULL AND \"AfterUsageCount\" = 0 AND \"UsageDelta\" IS NULL AND \"Reason\" IS NULL) OR (\"OperationKind\" = 'tooling-status' AND \"BeforeStatus\" IS NOT NULL AND \"AfterStatus\" IS NOT NULL AND \"BeforeUsageCount\" IS NULL AND \"AfterUsageCount\" IS NULL AND \"UsageDelta\" IS NULL AND \"Reason\" IS NOT NULL) OR (\"OperationKind\" = 'tooling-usage' AND \"BeforeStatus\" IS NULL AND \"AfterStatus\" IS NULL AND \"BeforeUsageCount\" >= 0 AND \"AfterUsageCount\" = \"BeforeUsageCount\" + \"UsageDelta\" AND \"UsageDelta\" > 0 AND \"Reason\" IS NULL)",
+            constraints["ck_tooling_audit_summary_shape"].Sql);
     }
 
     [Fact]
@@ -138,10 +132,45 @@ public sealed class MasterDataSchemaConventionTests
             "20260825081539_AddToolingOperationAudit");
 
         Assert.Contains("CREATE TRIGGER trg_tooling_audit_append_only", script, StringComparison.Ordinal);
+        Assert.Contains("RETURNS trigger", script, StringComparison.Ordinal);
+        Assert.Contains("LANGUAGE plpgsql", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "RAISE EXCEPTION 'business_masterdata.tooling_audit_entries is append-only'",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains(
             "BEFORE UPDATE OR DELETE ON business_masterdata.tooling_audit_entries",
             script,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "EXECUTE FUNCTION business_masterdata.reject_tooling_audit_mutation()",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Tooling_audit_down_script_rejects_existing_facts_before_destructive_statements()
+    {
+        using var fixture = CreateFixture();
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260825081539_AddToolingOperationAudit",
+            "20260728232043_AddPrincipalScopeContextAudit");
+
+        const string guard = "IF EXISTS (\n        SELECT 1\n        FROM business_masterdata.tooling_audit_entries\n    ) THEN";
+        Assert.Contains(guard, script, StringComparison.Ordinal);
+        Assert.Contains(
+            "RAISE EXCEPTION\n            'Cannot downgrade AddToolingOperationAudit while tooling audit facts exist. Preserve the evidence and roll forward with a corrective migration.'",
+            script,
+            StringComparison.Ordinal);
+        var guardPosition = script.IndexOf(guard, StringComparison.Ordinal);
+        var dropTablePosition = script.IndexOf(
+            "DROP TABLE business_masterdata.tooling_audit_entries",
+            StringComparison.Ordinal);
+        var dropFunctionPosition = script.IndexOf(
+            "DROP FUNCTION IF EXISTS business_masterdata.reject_tooling_audit_mutation()",
+            StringComparison.Ordinal);
+        Assert.True(guardPosition >= 0 && guardPosition < dropTablePosition, script);
+        Assert.True(dropTablePosition < dropFunctionPosition, script);
     }
 
     [Fact]

@@ -44,7 +44,7 @@ public sealed class ToolingAuditEntry : Entity<ToolingAuditEntryId>
         BeforeUsageCount = beforeUsageCount;
         AfterUsageCount = afterUsageCount;
         UsageDelta = usageDelta;
-        Reason = Optional(reason);
+        Reason = OptionalAuditText(reason);
         OccurredAtUtc = occurredAtUtc.ToUniversalTime();
     }
 
@@ -180,4 +180,12 @@ public sealed class ToolingAuditEntry : Entity<ToolingAuditEntryId>
 
     private static string? Optional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? OptionalAuditText(string? value)
+    {
+        var normalized = Optional(value);
+        return normalized is null || ToolingAuditIdentityPolicy.IsValidAuditText(normalized)
+            ? normalized
+            : throw new ArgumentException("Audit text cannot contain credentials or sensitive markers.", nameof(value));
+    }
 }

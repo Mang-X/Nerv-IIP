@@ -126,6 +126,8 @@ public sealed class MasterDataIntegrationEventContextTests
     [InlineData("correlation", "password=SENTINEL")]
     [InlineData("causation", "connection-string-SENTINEL")]
     [InlineData("operation", "authorization-SENTINEL")]
+    [InlineData("actor", "user:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
+    [InlineData("correlation", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
     public void Tooling_context_rejects_unapproved_actor_or_sensitive_identity(string field, string invalidValue)
     {
         var actor = field == "actor" ? invalidValue : "user:operator-001";
@@ -148,5 +150,21 @@ public sealed class MasterDataIntegrationEventContextTests
             new string('x', 201),
             "cause-001",
             "operation-001"));
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("correlation")]
+    [InlineData("causation")]
+    [InlineData("operation")]
+    public void Tooling_context_rejects_the_current_opaque_authorization_credential(string field)
+    {
+        const string credential = "opaque-current-credential-7ff1";
+        Assert.Throws<KnownException>(() => ToolingOperationAuditContext.CreateFromTrustedBoundary(
+            field == "actor" ? $"user:{credential}" : "user:operator-001",
+            field == "correlation" ? credential : "corr-001",
+            field == "causation" ? credential : "cause-001",
+            field == "operation" ? credential : "operation-001",
+            [credential]));
     }
 }

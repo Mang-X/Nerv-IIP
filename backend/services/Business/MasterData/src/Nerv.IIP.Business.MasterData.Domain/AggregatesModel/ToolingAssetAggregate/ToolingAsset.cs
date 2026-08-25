@@ -76,6 +76,24 @@ public class ToolingAsset : Entity<ToolingAssetId>, IAggregateRoot
         string.Equals(x.WorkCenterCode, workCenterCode, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(x.SkuCode, skuCode, StringComparison.OrdinalIgnoreCase));
 
+    public bool MatchesRegistration(
+        string name,
+        string toolingType,
+        IEnumerable<string> workCenterCodes,
+        IEnumerable<string> skuCodes,
+        long? maintenanceLifeCount) =>
+        string.Equals(Name, Required(name), StringComparison.Ordinal) &&
+        string.Equals(ToolingType, Required(toolingType), StringComparison.Ordinal) &&
+        MaintenanceLifeCount == maintenanceLifeCount &&
+        Normalize(workCenterCodes).SequenceEqual(
+            applicability.Select(item => item.WorkCenterCode).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase) &&
+        Normalize(skuCodes).SequenceEqual(
+            applicability.Select(item => item.SkuCode).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+
     public void RecordUsage(long count)
     {
         if (count <= 0) throw new ArgumentOutOfRangeException(nameof(count));

@@ -59,6 +59,8 @@ public sealed class ToolingAuditTests
     [InlineData("correlation", "password=SENTINEL")]
     [InlineData("causation", "connection-string-SENTINEL")]
     [InlineData("operation", "authorization-SENTINEL")]
+    [InlineData("actor", "user:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
+    [InlineData("correlation", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
     public void Audit_entity_rejects_sensitive_identity_at_the_persistence_boundary(
         string field,
         string invalidValue)
@@ -116,11 +118,10 @@ public sealed class ToolingAuditTests
         await dbContext.SaveChangesAsync();
         var replay = await handler.Handle(command with
         {
-            Name = "另一个排除名称",
-            ToolingType = "fixture",
-            WorkCenterCodes = ["WC-99"],
-            SkuCodes = ["SKU-Z"],
-            MaintenanceLifeCount = 999,
+            Code = "tool-001",
+            Name = " 敏感工装名称 ",
+            WorkCenterCodes = ["WC-01", " wc-01 "],
+            SkuCodes = [" sku-a "],
         }, CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -137,6 +138,48 @@ public sealed class ToolingAuditTests
         Assert.Null(audit.BeforeStatus);
         Assert.Equal(ToolingAssetStatus.Available, audit.AfterStatus);
         Assert.DoesNotContain("敏感工装名称", AuditText(audit), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("name")]
+    [InlineData("type")]
+    [InlineData("work-center")]
+    [InlineData("sku")]
+    [InlineData("maintenance-life")]
+    public async Task Register_replay_rejects_each_different_business_payload_without_new_audit(string mutation)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new RegisterToolingAssetCommandHandler(
+            new ToolingAssetRepository(dbContext),
+            new MasterDataCodingService(),
+            dbContext,
+            TestCoordinator);
+        var command = new RegisterToolingAssetCommand(
+            "org-001", "env-dev", "TOOL-REPLAY", "Original tool", "mould",
+            ["WC-01"], ["SKU-A"], 100, "tooling-register-replay",
+            TrustedContext("corr-register", "cause-register", "user:planner", "tooling-register-replay"));
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var conflicting = mutation switch
+        {
+            "name" => command with { Name = "Different tool" },
+            "type" => command with { ToolingType = "fixture" },
+            "work-center" => command with { WorkCenterCodes = ["WC-02"] },
+            "sku" => command with { SkuCodes = ["SKU-B"] },
+            "maintenance-life" => command with { MaintenanceLifeCount = 101 },
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(conflicting, CancellationToken.None));
+
+        var asset = await dbContext.ToolingAssets.Include(item => item.Applicability).SingleAsync();
+        Assert.Equal("Original tool", asset.Name);
+        Assert.Equal("mould", asset.ToolingType);
+        Assert.Equal(100, asset.MaintenanceLifeCount);
+        Assert.Contains(asset.Applicability, item => item.WorkCenterCode == "WC-01" && item.SkuCode == "SKU-A");
+        Assert.Single(dbContext.ToolingAuditEntries);
     }
 
     [Fact]
@@ -259,9 +302,24 @@ public sealed class ToolingAuditTests
 
     [Theory]
     [InlineData("operation-kind")]
-    [InlineData("register-shape")]
-    [InlineData("status-shape")]
+    [InlineData("register-before-status")]
+    [InlineData("register-after-status")]
+    [InlineData("register-before-usage")]
+    [InlineData("register-after-usage")]
+    [InlineData("register-delta")]
+    [InlineData("register-reason")]
+    [InlineData("status-before-status")]
+    [InlineData("status-after-status")]
+    [InlineData("status-before-usage")]
+    [InlineData("status-after-usage")]
+    [InlineData("status-delta")]
+    [InlineData("status-reason")]
+    [InlineData("usage-before-status")]
+    [InlineData("usage-after-status")]
+    [InlineData("usage-before-negative")]
     [InlineData("usage-arithmetic")]
+    [InlineData("usage-delta")]
+    [InlineData("usage-reason")]
     public async Task Audit_database_constraints_reject_each_discriminating_predicate_mutation(string mutation)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -281,14 +339,59 @@ public sealed class ToolingAuditTests
             case "operation-kind":
                 entry.Property(nameof(ToolingAuditEntry.OperationKind)).CurrentValue = "invalid";
                 break;
-            case "register-shape":
+            case "register-before-status":
+                entry.Property(nameof(ToolingAuditEntry.BeforeStatus)).CurrentValue = ToolingAssetStatus.Available;
+                break;
+            case "register-after-status":
+                entry.Property(nameof(ToolingAuditEntry.AfterStatus)).CurrentValue = ToolingAssetStatus.Maintenance;
+                break;
+            case "register-before-usage":
+                entry.Property(nameof(ToolingAuditEntry.BeforeUsageCount)).CurrentValue = 0L;
+                break;
+            case "register-after-usage":
                 entry.Property(nameof(ToolingAuditEntry.AfterUsageCount)).CurrentValue = 1L;
                 break;
-            case "status-shape":
+            case "register-delta":
+                entry.Property(nameof(ToolingAuditEntry.UsageDelta)).CurrentValue = 1L;
+                break;
+            case "register-reason":
+                entry.Property(nameof(ToolingAuditEntry.Reason)).CurrentValue = "service";
+                break;
+            case "status-before-status":
+                entry.Property(nameof(ToolingAuditEntry.BeforeStatus)).CurrentValue = null;
+                break;
+            case "status-after-status":
+                entry.Property(nameof(ToolingAuditEntry.AfterStatus)).CurrentValue = null;
+                break;
+            case "status-before-usage":
+                entry.Property(nameof(ToolingAuditEntry.BeforeUsageCount)).CurrentValue = 0L;
+                break;
+            case "status-after-usage":
+                entry.Property(nameof(ToolingAuditEntry.AfterUsageCount)).CurrentValue = 0L;
+                break;
+            case "status-delta":
+                entry.Property(nameof(ToolingAuditEntry.UsageDelta)).CurrentValue = 1L;
+                break;
+            case "status-reason":
                 entry.Property(nameof(ToolingAuditEntry.Reason)).CurrentValue = null;
+                break;
+            case "usage-before-status":
+                entry.Property(nameof(ToolingAuditEntry.BeforeStatus)).CurrentValue = ToolingAssetStatus.Available;
+                break;
+            case "usage-after-status":
+                entry.Property(nameof(ToolingAuditEntry.AfterStatus)).CurrentValue = ToolingAssetStatus.Available;
+                break;
+            case "usage-before-negative":
+                entry.Property(nameof(ToolingAuditEntry.BeforeUsageCount)).CurrentValue = -1L;
                 break;
             case "usage-arithmetic":
                 entry.Property(nameof(ToolingAuditEntry.AfterUsageCount)).CurrentValue = 2L;
+                break;
+            case "usage-delta":
+                entry.Property(nameof(ToolingAuditEntry.UsageDelta)).CurrentValue = 0L;
+                break;
+            case "usage-reason":
+                entry.Property(nameof(ToolingAuditEntry.Reason)).CurrentValue = "service";
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
@@ -299,12 +402,12 @@ public sealed class ToolingAuditTests
 
     private static ToolingAuditEntry CreateAuditForConstraintMutation(string mutation) => mutation switch
     {
-        "status-shape" => ToolingAuditEntry.Status(
+        _ when mutation.StartsWith("status-", StringComparison.Ordinal) => ToolingAuditEntry.Status(
             "org-001", "env-dev", "asset-001", "TOOL-001", "user:operator",
             "corr-status-shape", "cause-status-shape", "operation-status-shape",
             new string('a', 64), ToolingAssetStatus.Available, ToolingAssetStatus.Maintenance,
             "service", DateTimeOffset.UtcNow),
-        "register-shape" => ToolingAuditEntry.Register(
+        _ when mutation.StartsWith("register-", StringComparison.Ordinal) => ToolingAuditEntry.Register(
             "org-001", "env-dev", "asset-001", "TOOL-001", "user:operator",
             "corr-register-shape", "cause-register-shape", "operation-register-shape",
             new string('a', 64), DateTimeOffset.UtcNow),
