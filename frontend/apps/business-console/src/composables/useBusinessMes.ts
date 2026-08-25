@@ -2626,8 +2626,8 @@ export function useMesDowntimeEvents() {
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
-        pageIndex: 0,
-        pageSize: 200,
+        pageIndex: 1,
+        pageSize: 100,
         rankingMode: 'default',
       },
     }),

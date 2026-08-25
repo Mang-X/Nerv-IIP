@@ -56,6 +56,13 @@ const operationTasks = ref<
   Array<Omit<typeof operationTaskFixture, 'deviceAssetId'> & { deviceAssetId: string | null }>
 >([{ ...operationTaskFixture }])
 let permissionCodes: string[] = []
+const fakeNow = new Date('2026-08-26T01:00:00.000Z')
+const startedAt = new Date('2026-08-26T00:30:00.000Z')
+
+function toLocalDateTimeInput(date: Date) {
+  const localOffset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - localOffset).toISOString().slice(0, 16)
+}
 
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: () => 'record-downtime-stable-key',
@@ -197,12 +204,12 @@ async function openRecordDialog(wrapper: ReturnType<typeof mountPage>) {
 async function fillValidRecordForm(wrapper: ReturnType<typeof mountPage>) {
   await wrapper.get('[aria-label="工单与工序"]').setValue('operation:OP-001')
   await wrapper.get('[aria-label="停机原因"]').setValue('equipment-fault')
-  await wrapper.get('[aria-label="停机开始时间"]').setValue('2026-08-26T08:30')
+  await wrapper.get('[aria-label="停机开始时间"]').setValue(toLocalDateTimeInput(startedAt))
 }
 
 describe('MES downtime record entry', () => {
   it('submits the v2 contract with real operation context and refreshes the list', async () => {
-    vi.setSystemTime('2026-08-26T09:00:00+08:00')
+    vi.setSystemTime(fakeNow)
     const wrapper = mountPage()
 
     await openRecordDialog(wrapper)
@@ -239,11 +246,11 @@ describe('MES downtime record entry', () => {
   })
 
   it('fails closed without an operation target, configured reason or valid time', async () => {
-    vi.setSystemTime('2026-08-26T09:00:00+08:00')
+    vi.setSystemTime(fakeNow)
     const wrapper = mountPage()
 
     await openRecordDialog(wrapper)
-    await wrapper.get('[aria-label="停机开始时间"]').setValue('2026-08-26T08:30')
+    await wrapper.get('[aria-label="停机开始时间"]').setValue(toLocalDateTimeInput(startedAt))
     await wrapper.get('[data-testid="record-downtime-submit"]').trigger('click')
     await flushPromises()
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
@@ -271,7 +278,7 @@ describe('MES downtime record entry', () => {
   })
 
   it('preserves the service error and reuses the idempotency key for a safe retry', async () => {
-    vi.setSystemTime('2026-08-26T09:00:00+08:00')
+    vi.setSystemTime(fakeNow)
     const serviceError = { message: '所选设备不属于该工作中心', status: 400 }
     recordDowntimeEvent.mockRejectedValue(serviceError)
     const wrapper = mountPage()

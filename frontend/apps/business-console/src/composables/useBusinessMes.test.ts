@@ -74,6 +74,7 @@ const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
+  queryErrorById: new Map<string, unknown>(),
   queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
@@ -423,7 +424,7 @@ vi.mock('@pinia/colada', () => ({
     coladaState.queryDataRefById.set(id, data)
     return {
       data,
-      error: shallowRef(),
+      error: shallowRef(coladaState.queryErrorById.get(id)),
       isLoading: shallowRef(false),
       refetch,
     }
@@ -489,6 +490,7 @@ describe('business MES composables', () => {
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryErrorById.clear()
     coladaState.queryDataRefById.clear()
     coladaState.queryRefetchById.clear()
     reactiveAuthState.principal = {
@@ -1270,16 +1272,72 @@ describe('business MES composables', () => {
         scopeId: 'WC-A',
       },
     })
+  })
+
+  it('uses the searchable-directory 1-based page and server page-size bound for downtime reasons', () => {
+    useMesDowntimeEvents()
+
     expect(listBusinessConsoleSearchableDirectoryQueryOptions).toHaveBeenCalledWith({
       path: { directoryType: 'downtime-reason' },
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        pageIndex: 0,
-        pageSize: 200,
+        pageIndex: 1,
+        pageSize: 100,
         rankingMode: 'default',
       },
     })
+  })
+
+  it('maps an available downtime-reason directory response to selectable options', () => {
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: {
+        status: 'available',
+        items: [
+          {
+            id: 'reason-1',
+            code: 'equipment-fault',
+            displayName: '设备故障',
+            sourceService: 'BusinessMaintenance',
+            authorityDirectoryType: 'downtime-reason',
+          },
+        ],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([
+      { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
+    ])
+    expect(downtime.downtimeReasonsError.value).toBeUndefined()
+  })
+
+  it('keeps an unavailable downtime-reason directory fail closed without fabricated options', () => {
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: {
+        status: 'unavailable',
+        reasonCode: 'directory-authority-unconfigured',
+        items: [],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    expect(downtime.downtimeReasonsError.value).toBeUndefined()
+  })
+
+  it('exposes downtime-reason directory errors while keeping registration options empty', () => {
+    const directoryError = new Error('directory-page-invalid')
+    coladaState.queryErrorById.set('listBusinessConsoleSearchableDirectory', directoryError)
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    expect(downtime.downtimeReasonsError.value).toBe(directoryError)
   })
 
   it('injects the current business context into the defect wire body and rejects caller overrides', async () => {
