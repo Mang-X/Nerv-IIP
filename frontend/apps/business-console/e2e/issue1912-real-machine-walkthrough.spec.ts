@@ -1,7 +1,11 @@
 import { expect, test, type APIResponse, type Request, type Response } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { createSessionCredentialTracker } from './session-credential-tracker'
+import {
+  callWithSessionCredential,
+  createSessionCredentialTracker,
+  withSessionCredentialCleanup,
+} from './session-credential-tracker'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -339,7 +343,12 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   let environmentId = ''
   let principalId = ''
   let principalType = ''
-  const sessionCredentialTracker = createSessionCredentialTracker()
+  const sessionCredentialTracker = createSessionCredentialTracker({
+    origin: new URL(baseURL!).origin,
+    page,
+    businessPathPrefix: '/api/business-console/',
+    refreshPath: '/api/console/v1/auth/refresh',
+  })
   const evidence = new Map<NodeName, EvidenceEntry>()
   const setup: JsonRecord[] = []
   const uiEvidence: UiProof[] = []
@@ -364,7 +373,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
   const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
 
-  page.on('request', (request) => sessionCredentialTracker.observe(request))
+  page.on('request', (request) => sessionCredentialTracker.observeRequest({ page, request }))
   page.on('requestfailed', (request) => {
     const classified = classifyRequestFailure(request)
     if (classified.expected) expectedRequestCancellations.push(classified.record)
@@ -372,6 +381,16 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   })
   page.on('response', (response: Response) => {
     const url = new URL(response.url())
+    if (url.pathname === '/api/console/v1/auth/refresh') {
+      void sessionCredentialTracker.observeRefreshResponse({ page, response }).catch((error) => {
+        failedRequests.push({
+          kind: 'refresh-credential-capture',
+          path: url.pathname,
+          status: response.status(),
+          error: errorText(error),
+        })
+      })
+    }
     if (url.pathname.startsWith('/api/') && response.status() >= 400) {
       failedRequests.push({
         kind: 'http-error',
@@ -385,11 +404,13 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
   const call = async (method: 'GET' | 'POST', path: string, body?: JsonRecord) => {
     const url = new URL(path, baseURL!)
-    const response = await page.request.fetch(url.toString(), {
-      method,
-      data: body,
-      headers: sessionCredentialTracker.headers(),
-    })
+    const response = await callWithSessionCredential(sessionCredentialTracker, (headers) =>
+      page.request.fetch(url.toString(), {
+        method,
+        data: body,
+        headers,
+      }),
+    )
     const payload = await jsonOf(response)
     const summary: JsonRecord = {
       method,
@@ -623,8 +644,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       { timeout: 120_000 },
     )
     await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-    sessionCredentialTracker.observe(await businessRequest)
-    expect(sessionCredentialTracker.headers()).toBeDefined()
+    sessionCredentialTracker.observeRequest({ page, request: await businessRequest })
+    expect(await sessionCredentialTracker.headers()).toBeDefined()
 
     // The seed is intentionally read-only here. The test proves the reserved facts exist and never
     // creates or overwrites an approval template; CreatePurchaseOrderCommand starts the seeded chain.
@@ -1738,56 +1759,59 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     throw error
   } finally {
     const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
-    await writeFile(
-      evidencePath!,
-      JSON.stringify(
-        {
-          issue: 'GitHub #1912 / NERV-1127',
-          generatedAtUtc: generatedAtUtc.toISOString(),
-          organizationId,
-          environmentId,
-          rfqNo: RFQ_NO,
-          supplierQuotationNo: SUPPLIER_QUOTATION_NO,
-          salesQuotationNo: SALES_QUOTATION_NO,
-          purchaseOrderNo: PURCHASE_ORDER_NO,
-          purchaseReceiptNo: PURCHASE_RECEIPT_NO,
-          salesOrderNo: SALES_ORDER_NO,
-          deliveryOrderNo: DELIVERY_ORDER_NO,
-          runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
-          transport: transport ?? 'not-supplied',
-          persistence: persistence ?? 'not-supplied',
-          worldEnabled: worldEnabled ?? 'not-supplied',
-          historyEnabled: historyEnabled ?? 'not-supplied',
-          scaleOrderCount: scaleOrderCount ?? 'not-supplied',
-          assertionBoundary:
-            'public BusinessGateway HTTP plus rendered browser pages; no database reads as business assertions',
-          requestFailurePolicy:
-            'Only non-API ERR_ABORTED document/resource requests classified as superseded are separated; API failures, other navigation failures, and other resource failures remain fail-closed.',
-          setup,
-          uiEvidence,
-          failedRequests,
-          expectedRequestCancellations,
-          pageErrors,
-          entries,
-          summary: Object.fromEntries(
-            (['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [
-              conclusion,
-              entries.filter((entry) => entry.conclusion === conclusion).length,
-            ]),
+    await withSessionCredentialCleanup(
+      () =>
+        writeFile(
+          evidencePath!,
+          JSON.stringify(
+            {
+              issue: 'GitHub #1912 / NERV-1127',
+              generatedAtUtc: generatedAtUtc.toISOString(),
+              organizationId,
+              environmentId,
+              rfqNo: RFQ_NO,
+              supplierQuotationNo: SUPPLIER_QUOTATION_NO,
+              salesQuotationNo: SALES_QUOTATION_NO,
+              purchaseOrderNo: PURCHASE_ORDER_NO,
+              purchaseReceiptNo: PURCHASE_RECEIPT_NO,
+              salesOrderNo: SALES_ORDER_NO,
+              deliveryOrderNo: DELIVERY_ORDER_NO,
+              runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
+              transport: transport ?? 'not-supplied',
+              persistence: persistence ?? 'not-supplied',
+              worldEnabled: worldEnabled ?? 'not-supplied',
+              historyEnabled: historyEnabled ?? 'not-supplied',
+              scaleOrderCount: scaleOrderCount ?? 'not-supplied',
+              assertionBoundary:
+                'public BusinessGateway HTTP plus rendered browser pages; no database reads as business assertions',
+              requestFailurePolicy:
+                'Only non-API ERR_ABORTED document/resource requests classified as superseded are separated; API failures, other navigation failures, and other resource failures remain fail-closed.',
+              setup,
+              uiEvidence,
+              failedRequests,
+              expectedRequestCancellations,
+              pageErrors,
+              entries,
+              summary: Object.fromEntries(
+                (['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [
+                  conclusion,
+                  entries.filter((entry) => entry.conclusion === conclusion).length,
+                ]),
+              ),
+              conclusion:
+                entries.every((entry) => entry.conclusion === 'runtime-confirmed') &&
+                failedRequests.length === 0 &&
+                pageErrors.length === 0
+                  ? 'runtime-confirmed'
+                  : 'not-verified',
+            },
+            null,
+            2,
           ),
-          conclusion:
-            entries.every((entry) => entry.conclusion === 'runtime-confirmed') &&
-            failedRequests.length === 0 &&
-            pageErrors.length === 0
-              ? 'runtime-confirmed'
-              : 'not-verified',
-        },
-        null,
-        2,
-      ),
-      'utf8',
+          'utf8',
+        ),
+      () => sessionCredentialTracker.clear(),
     )
-    sessionCredentialTracker.clear()
   }
 
   const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
