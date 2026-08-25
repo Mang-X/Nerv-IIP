@@ -1,4 +1,13 @@
-import { expect, test, type APIResponse, type Request, type Response } from '@playwright/test'
+import {
+  expect,
+  test,
+  type APIResponse,
+  type BrowserContext,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test'
+import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -9,6 +18,7 @@ import {
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
+const workerPassword = process.env.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD
 const evidencePath = process.env.NERV_IIP_ISSUE_1912_EVIDENCE_PATH
 const runtimeProfileSource = process.env.NERV_IIP_ISSUE_1912_RUNTIME_PROFILE_SOURCE
 const transport = process.env.NERV_IIP_ISSUE_1912_TRANSPORT
@@ -17,7 +27,7 @@ const worldEnabled = process.env.NERV_IIP_ISSUE_1912_WORLD_ENABLED
 const historyEnabled = process.env.NERV_IIP_ISSUE_1912_HISTORY_ENABLED
 const scaleOrderCount = process.env.NERV_IIP_ISSUE_1912_SCALE_ORDER_COUNT
 
-const requiresManagedSession = !baseURL || !adminPassword || !evidencePath
+const requiresManagedSession = !baseURL || !adminPassword || !workerPassword || !evidencePath
 
 test.setTimeout(25 * 60 * 1000)
 test.describe.configure({ mode: 'serial' })
@@ -25,6 +35,7 @@ test.describe.configure({ mode: 'serial' })
 type JsonRecord = Record<string, unknown>
 type Conclusion = 'runtime-confirmed' | 'gap' | 'not-verified'
 type AutomationMode = 'automatic' | 'manual' | 'mixed'
+type WalkthroughActor = 'erp-admin' | 'wms-worker'
 
 const RFQ_NO = 'RFQ-WALK-001'
 const SUPPLIER_QUOTATION_NO = 'SQ-WALK-001'
@@ -82,6 +93,8 @@ type EvidenceEntry = {
 
 type UiProof = {
   node: NodeName
+  actor: WalkthroughActor
+  principalId: string
   page: string
   pageHttpStatus: number
   listPath: string
@@ -90,6 +103,19 @@ type UiProof = {
   renderedRowText: string
   emptyText: string
   screenshot: string
+}
+
+type SessionCredentialTracker = ReturnType<typeof createSessionCredentialTracker>
+
+type ActorRuntime = {
+  actor: WalkthroughActor
+  loginName: string
+  expectedPrincipalId: string
+  page: Page
+  tracker: SessionCredentialTracker
+  principalId: string
+  principalType: string
+  permissionCodes: string[]
 }
 
 const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
@@ -147,6 +173,20 @@ function rowsOf(value: unknown): JsonRecord[] {
   return Array.isArray(items) ? items.map(asRecord) : []
 }
 
+function firstAuthorizedWorkScope(value: unknown): JsonRecord | undefined {
+  const items = asRecord(dataOf(value)).items
+  if (!Array.isArray(items)) return undefined
+  return items.map(asRecord).find((item) => {
+    // WarehouseWorkScopeCatalogItem is the authorization boundary; only its public fields are
+    // trusted here, and an empty catalog fails closed.
+    return (
+      textOf(item.scopeKind).trim() !== '' &&
+      textOf(item.scopeId).trim() !== '' &&
+      textOf(item.displayName).trim() !== ''
+    )
+  })
+}
+
 function textOf(value: unknown): string {
   return value === null || value === undefined ? '' : String(value)
 }
@@ -163,6 +203,11 @@ function safeText(value: unknown): string {
     .replace(/(?:access|refresh|id)?[_-]?token/gi, '<redacted-field>')
     .replace(/(?:secret|connectionstring|jwt)/gi, '<redacted-field>')
     .slice(0, 1600)
+}
+
+function credentialDigest(headers: { authorization?: string } | undefined): string {
+  const authorization = headers?.authorization?.trim()
+  return authorization ? createHash('sha256').update(authorization).digest('hex').slice(0, 16) : ''
 }
 
 function publicJson(value: unknown): unknown {
@@ -321,6 +366,7 @@ test('request failure policy keeps superseded navigation aborts but records API 
 
 test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser pages', async ({
   page,
+  browser,
 }) => {
   test.skip(
     requiresManagedSession,
@@ -343,17 +389,49 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   let environmentId = ''
   let principalId = ''
   let principalType = ''
+  let workerPrincipalId = ''
+  let workerPrincipalType = ''
+  const workerContext: BrowserContext = await browser.newContext({ baseURL: baseURL! })
   const sessionCredentialTracker = createSessionCredentialTracker({
     origin: new URL(baseURL!).origin,
     page,
     businessPathPrefix: '/api/business-console/',
     refreshPath: '/api/console/v1/auth/refresh',
   })
+  const workerPage = await workerContext.newPage()
+  const workerSessionCredentialTracker = createSessionCredentialTracker({
+    origin: new URL(baseURL!).origin,
+    page: workerPage,
+    businessPathPrefix: '/api/business-console/',
+    refreshPath: '/api/console/v1/auth/refresh',
+  })
+  const adminRuntime: ActorRuntime = {
+    actor: 'erp-admin',
+    loginName: 'admin',
+    expectedPrincipalId: 'user-admin',
+    page,
+    tracker: sessionCredentialTracker,
+    principalId: '',
+    principalType: '',
+    permissionCodes: [],
+  }
+  const workerRuntime: ActorRuntime = {
+    actor: 'wms-worker',
+    loginName: 'emp049',
+    expectedPrincipalId: 'user-emp-049',
+    page: workerPage,
+    tracker: workerSessionCredentialTracker,
+    principalId: '',
+    principalType: '',
+    permissionCodes: [],
+  }
   const evidence = new Map<NodeName, EvidenceEntry>()
   const setup: JsonRecord[] = []
   const uiEvidence: UiProof[] = []
   const failedRequests: JsonRecord[] = []
   const expectedRequestCancellations: JsonRecord[] = []
+  const expectedBusinessRejections: JsonRecord[] = []
+  const expectedBusinessRejectionKeys = new Map<string, number>()
   const pageErrors: string[] = []
 
   for (const node of REQUIRED_NODES) {
@@ -373,39 +451,88 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
   const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
 
-  page.on('request', (request) => sessionCredentialTracker.observeRequest({ page, request }))
-  page.on('requestfailed', (request) => {
-    const classified = classifyRequestFailure(request)
-    if (classified.expected) expectedRequestCancellations.push(classified.record)
-    else failedRequests.push(classified.record)
-  })
-  page.on('response', (response: Response) => {
-    const url = new URL(response.url())
-    if (url.pathname === '/api/console/v1/auth/refresh') {
-      void sessionCredentialTracker.observeRefreshResponse({ page, response }).catch((error) => {
+  const attachObservers = (runtime: ActorRuntime) => {
+    runtime.page.on('request', (request) =>
+      runtime.tracker.observeRequest({ page: runtime.page, request }),
+    )
+    runtime.page.on('requestfailed', (request) => {
+      const classified = classifyRequestFailure(request)
+      const record = {
+        ...classified.record,
+        actor: runtime.actor,
+        principalId: runtime.principalId || runtime.expectedPrincipalId,
+      }
+      if (classified.expected) expectedRequestCancellations.push(record)
+      else failedRequests.push(record)
+    })
+    runtime.page.on('response', (response: Response) => {
+      const url = new URL(response.url())
+      if (url.pathname === '/api/console/v1/auth/refresh') {
+        void runtime.tracker
+          .observeRefreshResponse({ page: runtime.page, response })
+          .catch((error) => {
+            failedRequests.push({
+              kind: 'refresh-credential-capture',
+              actor: runtime.actor,
+              principalId: runtime.principalId || runtime.expectedPrincipalId,
+              path: url.pathname,
+              status: response.status(),
+              error: errorText(error),
+            })
+          })
+      }
+      if (url.pathname.startsWith('/api/') && response.status() >= 400) {
+        const rejectionKey = `${response.request().method()} ${url.pathname}`
+        const expectedCount = expectedBusinessRejectionKeys.get(rejectionKey) ?? 0
+        if (response.status() === 403 && expectedCount > 0) {
+          expectedBusinessRejectionKeys.set(rejectionKey, expectedCount - 1)
+          expectedBusinessRejections.push({
+            actor: runtime.actor,
+            principalId: runtime.principalId || runtime.expectedPrincipalId,
+            method: response.request().method(),
+            path: url.pathname + url.search,
+            status: response.status(),
+            reason: 'missing-authorized-scope',
+          })
+          return
+        }
         failedRequests.push({
-          kind: 'refresh-credential-capture',
-          path: url.pathname,
+          kind: 'http-error',
+          actor: runtime.actor,
+          principalId: runtime.principalId || runtime.expectedPrincipalId,
+          method: response.request().method(),
+          path: url.pathname + url.search,
           status: response.status(),
-          error: errorText(error),
         })
-      })
-    }
-    if (url.pathname.startsWith('/api/') && response.status() >= 400) {
-      failedRequests.push({
-        kind: 'http-error',
-        method: response.request().method(),
-        path: url.pathname + url.search,
-        status: response.status(),
-      })
-    }
-  })
-  page.on('pageerror', (error) => pageErrors.push(safeText(error.message)))
+      }
+    })
+    runtime.page.on('pageerror', (error) =>
+      pageErrors.push(`${runtime.actor}: ${safeText(error.message)}`),
+    )
+  }
 
-  const call = async (method: 'GET' | 'POST', path: string, body?: JsonRecord) => {
+  attachObservers(adminRuntime)
+  attachObservers(workerRuntime)
+
+  type CallOptions = { expectedStatus?: number }
+
+  const invoke = async (
+    runtime: ActorRuntime,
+    method: 'GET' | 'POST',
+    path: string,
+    body?: JsonRecord,
+    options: CallOptions = {},
+  ) => {
     const url = new URL(path, baseURL!)
-    const response = await callWithSessionCredential(sessionCredentialTracker, (headers) =>
-      page.request.fetch(url.toString(), {
+    if (options.expectedStatus !== undefined) {
+      const rejectionKey = `${method} ${url.pathname}`
+      expectedBusinessRejectionKeys.set(
+        rejectionKey,
+        (expectedBusinessRejectionKeys.get(rejectionKey) ?? 0) + 1,
+      )
+    }
+    const response = await callWithSessionCredential(runtime.tracker, (headers) =>
+      runtime.page.request.fetch(url.toString(), {
         method,
         data: body,
         headers,
@@ -413,6 +540,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     )
     const payload = await jsonOf(response)
     const summary: JsonRecord = {
+      actor: runtime.actor,
+      principalId: runtime.principalId || runtime.expectedPrincipalId,
       method,
       path: url.pathname + url.search,
       status: response.status(),
@@ -420,7 +549,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
       body: body ? publicJson(body) : null,
     }
-    if (!response.ok()) {
+    if (!response.ok() && response.status() !== options.expectedStatus) {
       throw new PublicCallError(
         method,
         summary.path as string,
@@ -432,7 +561,23 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     return { payload, summary, publicPayload: publicJson(payload) as JsonRecord }
   }
 
-  const pollRows = async (
+  const call = (method: 'GET' | 'POST', path: string, body?: JsonRecord) =>
+    invoke(adminRuntime, method, path, body)
+  const workerCall = (method: 'GET' | 'POST', path: string, body?: JsonRecord) =>
+    invoke(workerRuntime, method, path, body)
+  const workerCallExpecting = async (method: 'GET' | 'POST', path: string, body: JsonRecord) => {
+    const response = await invoke(workerRuntime, method, path, body, { expectedStatus: 403 })
+    expect(response.summary.status).toBe(403)
+    expectedBusinessRejections.push({
+      ...response.summary,
+      response: response.publicPayload,
+      reason: 'missing-authorized-scope',
+    })
+    return response
+  }
+
+  const pollRowsFor = async (
+    runtime: ActorRuntime,
     path: string,
     query: JsonRecord,
     predicate: (row: JsonRecord) => boolean,
@@ -444,7 +589,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     let lastRows: JsonRecord[] = []
     do {
       attempts += 1
-      const response = await call('GET', queryPath(path, query))
+      const response = await invoke(runtime, 'GET', queryPath(path, query))
       lastRows = rowsOf(response.payload)
       const match = lastRows.find(predicate)
       if (match)
@@ -454,12 +599,13 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
         }
       const remaining = deadline - Date.now()
-      if (remaining > 0) await page.waitForTimeout(Math.min(1000, remaining))
+      if (remaining > 0) await runtime.page.waitForTimeout(Math.min(1000, remaining))
     } while (Date.now() < deadline)
     throw new PollTimeoutError(path, { items: lastRows }, attempts, timeoutMs)
   }
 
-  const pollData = async (
+  const pollDataFor = async (
+    runtime: ActorRuntime,
     path: string,
     query: JsonRecord,
     predicate: (data: JsonRecord) => boolean,
@@ -471,7 +617,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     let lastData: JsonRecord = {}
     do {
       attempts += 1
-      const response = await call('GET', queryPath(path, query))
+      const response = await invoke(runtime, 'GET', queryPath(path, query))
       lastData = asRecord(dataOf(response.payload))
       if (predicate(lastData))
         return {
@@ -480,10 +626,35 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
         }
       const remaining = deadline - Date.now()
-      if (remaining > 0) await page.waitForTimeout(Math.min(1000, remaining))
+      if (remaining > 0) await runtime.page.waitForTimeout(Math.min(1000, remaining))
     } while (Date.now() < deadline)
     throw new PollTimeoutError(path, lastData, attempts, timeoutMs)
   }
+
+  const pollRows = (
+    path: string,
+    query: JsonRecord,
+    predicate: (row: JsonRecord) => boolean,
+    timeoutMs = 90_000,
+  ) => pollRowsFor(adminRuntime, path, query, predicate, timeoutMs)
+  const workerPollRows = (
+    path: string,
+    query: JsonRecord,
+    predicate: (row: JsonRecord) => boolean,
+    timeoutMs = 90_000,
+  ) => pollRowsFor(workerRuntime, path, query, predicate, timeoutMs)
+  const pollData = (
+    path: string,
+    query: JsonRecord,
+    predicate: (data: JsonRecord) => boolean,
+    timeoutMs = 90_000,
+  ) => pollDataFor(adminRuntime, path, query, predicate, timeoutMs)
+  const workerPollData = (
+    path: string,
+    query: JsonRecord,
+    predicate: (data: JsonRecord) => boolean,
+    timeoutMs = 90_000,
+  ) => pollDataFor(workerRuntime, path, query, predicate, timeoutMs)
 
   const markFailure = (node: NodeName, error: unknown, mode: AutomationMode = 'automatic') => {
     const current = evidence.get(node)!
@@ -511,6 +682,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   }
 
   type PageProofOptions = {
+    actor?: WalkthroughActor
     route: string
     listPath: string
     stableText: string
@@ -522,7 +694,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   }
 
   const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
-    const initialListResponse = page.waitForResponse(
+    const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
+    const targetPage = runtime.page
+    const initialListResponse = targetPage.waitForResponse(
       (response) => {
         const url = new URL(response.url())
         return (
@@ -533,7 +707,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       { timeout: 120_000 },
     )
-    const navigation = await page.goto(options.route, {
+    const navigation = await targetPage.goto(options.route, {
       waitUntil: 'domcontentloaded',
       timeout: 120_000,
     })
@@ -542,7 +716,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
 
     if (options.filterLabel) {
-      const filteredListResponse = page.waitForResponse(
+      const filteredListResponse = targetPage.waitForResponse(
         (response) => {
           const url = new URL(response.url())
           return (
@@ -553,16 +727,16 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         },
         { timeout: 120_000 },
       )
-      await page.getByLabel(options.filterLabel).fill(options.stableText)
+      await targetPage.getByLabel(options.filterLabel).fill(options.stableText)
       await filteredListResponse
     }
 
     if (options.tabText) {
-      await page.getByRole('tab', { name: options.tabText }).click()
+      await targetPage.getByRole('tab', { name: options.tabText }).click()
     }
 
     for (const selectOption of options.selectOptions ?? []) {
-      const listResponse = page.waitForResponse(
+      const listResponse = targetPage.waitForResponse(
         (response) => {
           const url = new URL(response.url())
           return (
@@ -573,21 +747,23 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         },
         { timeout: 120_000 },
       )
-      await page.getByLabel(selectOption.label).click()
-      await page.getByRole('option', { name: selectOption.option, exact: true }).click()
+      await targetPage.getByLabel(selectOption.label).click()
+      await targetPage.getByRole('option', { name: selectOption.option, exact: true }).click()
       await listResponse
     }
 
-    const row = page.locator('tbody tr').filter({ hasText: options.stableText }).first()
+    const row = targetPage.locator('tbody tr').filter({ hasText: options.stableText }).first()
     await expect(row, `page ${options.route} must render a stable business row`).toBeVisible({
       timeout: 120_000,
     })
     await expect(row).toContainText(options.stableText)
-    await expect(page.getByText(options.emptyText, { exact: true })).toHaveCount(0)
+    await expect(targetPage.getByText(options.emptyText, { exact: true })).toHaveCount(0)
     const screenshot = join(screenshotDirectory, options.screenshotName)
-    await page.screenshot({ path: screenshot, fullPage: true })
+    await targetPage.screenshot({ path: screenshot, fullPage: true })
     const proof: UiProof = {
-      node: options.node,
+      node,
+      actor: runtime.actor,
+      principalId: runtime.principalId,
       page: options.route,
       pageHttpStatus: navigation?.status() ?? 0,
       listPath: new URL(firstList.url()).pathname,
@@ -629,9 +805,16 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     environmentId = textOf(principal.environmentId)
     principalType = textOf(principal.principalType).trim().toLowerCase()
     principalId = textOf(principal.principalId).trim()
+    adminRuntime.principalId = principalId
+    adminRuntime.principalType = principalType
+    adminRuntime.permissionCodes = Array.isArray(principal.permissionCodes)
+      ? principal.permissionCodes.map(textOf).filter(Boolean)
+      : []
     expect(organizationId).not.toBe('')
     expect(environmentId).not.toBe('')
-    expect(principalId).not.toBe('')
+    expect(principalType).toBe('user')
+    expect(principalId).toBe(adminRuntime.expectedPrincipalId)
+    expect(adminRuntime.permissionCodes).toContain('business.approvals.manage')
 
     const businessRequest = page.waitForRequest(
       (request) => {
@@ -645,7 +828,80 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     )
     await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
     sessionCredentialTracker.observeRequest({ page, request: await businessRequest })
-    expect(await sessionCredentialTracker.headers()).toBeDefined()
+    const adminHeaders = await sessionCredentialTracker.headers()
+    expect(adminHeaders).toBeDefined()
+
+    await workerPage.goto('/login', { waitUntil: 'domcontentloaded', timeout: 120_000 })
+    const workerLoginName = workerPage.getByLabel('登录名')
+    await expect(workerLoginName).toBeVisible({ timeout: 120_000 })
+    const workerLoginResponse = workerPage.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
+      { timeout: 120_000 },
+    )
+    await workerLoginName.fill('emp049')
+    await workerPage.getByLabel('密码').fill(workerPassword!)
+    await workerPage.getByRole('button', { name: '登录' }).click()
+    const workerLogin = await workerLoginResponse
+    expect(workerLogin.status()).toBe(200)
+    const workerAuth = asRecord(dataOf(await workerLogin.json()))
+    const workerPrincipal = asRecord(workerAuth.principal)
+    workerPrincipalId = textOf(workerPrincipal.principalId).trim()
+    workerPrincipalType = textOf(workerPrincipal.principalType).trim().toLowerCase()
+    workerRuntime.principalId = workerPrincipalId
+    workerRuntime.principalType = workerPrincipalType
+    workerRuntime.permissionCodes = Array.isArray(workerPrincipal.permissionCodes)
+      ? workerPrincipal.permissionCodes.map(textOf).filter(Boolean)
+      : []
+    expect(workerPrincipal.organizationId).toBe(organizationId)
+    expect(workerPrincipal.environmentId).toBe(environmentId)
+    expect(workerPrincipalType).toBe('user')
+    expect(workerPrincipalId).toBe(workerRuntime.expectedPrincipalId)
+    expect(workerRuntime.permissionCodes).toContain('business.wms.receipts.manage')
+    expect(workerRuntime.permissionCodes).toContain('business.wms.shipments.manage')
+    expect(workerRuntime.permissionCodes).toContain('business.inventory.ledger.read')
+    expect(workerRuntime.permissionCodes).not.toContain('business.approvals.manage')
+
+    const workerBusinessRequest = workerPage.waitForRequest(
+      (request) => {
+        const path = new URL(request.url()).pathname
+        return path.startsWith('/api/business-console/') && Boolean(request.headers().authorization)
+      },
+      { timeout: 120_000 },
+    )
+    await workerPage.goto('/wms/inbound', {
+      waitUntil: 'domcontentloaded',
+      timeout: 120_000,
+    })
+    workerSessionCredentialTracker.observeRequest({
+      page: workerPage,
+      request: await workerBusinessRequest,
+    })
+    const workerHeaders = await workerSessionCredentialTracker.headers()
+    expect(workerHeaders).toBeDefined()
+    const adminCredentialDigest = credentialDigest(adminHeaders)
+    const workerCredentialDigest = credentialDigest(workerHeaders)
+    expect(adminCredentialDigest).not.toBe('')
+    expect(workerCredentialDigest).not.toBe('')
+    expect(workerCredentialDigest).not.toBe(adminCredentialDigest)
+    setup.push({
+      kind: 'identityIsolation',
+      contexts: 2,
+      admin: {
+        actor: adminRuntime.actor,
+        loginName: adminRuntime.loginName,
+        principalId: adminRuntime.principalId,
+        permissionCodes: adminRuntime.permissionCodes,
+        credentialDigest: adminCredentialDigest,
+      },
+      worker: {
+        actor: workerRuntime.actor,
+        loginName: workerRuntime.loginName,
+        principalId: workerRuntime.principalId,
+        permissionCodes: workerRuntime.permissionCodes,
+        credentialDigest: workerCredentialDigest,
+      },
+      credentialsShared: false,
+    })
 
     // The seed is intentionally read-only here. The test proves the reserved facts exist and never
     // creates or overwrites an approval template; CreatePurchaseOrderCommand starts the seeded chain.
@@ -976,31 +1232,30 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       responsibilityIssue: null,
     })
 
-    const receiptScopes = await call(
+    const receiptScopes = await workerCall(
       'GET',
       queryPath('/api/business-console/v1/wms/work-scopes/receipts', {
         organizationId,
         environmentId,
       }),
     )
-    const receiptScope = (
-      Array.isArray(asRecord(dataOf(receiptScopes.payload)).items)
-        ? asRecord(dataOf(receiptScopes.payload)).items
-        : []
-    )
-      .map(asRecord)
-      .find(
-        (item) =>
-          item.movementAllowed === true &&
-          item.isBlocked !== true &&
-          item.isExpired !== true &&
-          textOf(item.scopeKind) &&
-          textOf(item.scopeId),
-      )
+    const receiptScope = firstAuthorizedWorkScope(receiptScopes.payload)
     if (!receiptScope) throw new Error('WMS receipt scope catalog returned no authorized scope.')
-    const receiptScopeKind = textOf(receiptScope.scopeKind)
-    const receiptScopeId = textOf(receiptScope.scopeId)
-    const inbound = await call('POST', '/api/business-console/v1/wms/inbound-orders', {
+    expect(textOf(asRecord(dataOf(receiptScopes.payload)).actorPrincipalId)).toBe(
+      workerRuntime.principalId,
+    )
+    const receiptScopeKind = textOf(receiptScope.scopeKind).trim()
+    const receiptScopeId = textOf(receiptScope.scopeId).trim()
+    setup.push({
+      kind: 'wms-scope-catalog',
+      actor: workerRuntime.actor,
+      principalId: workerRuntime.principalId,
+      operation: 'receipts',
+      source: 'authorized WarehouseWorkScopeCatalogItem',
+      scope: publicJson(receiptScope),
+      request: receiptScopes.summary,
+    })
+    const inbound = await workerCall('POST', '/api/business-console/v1/wms/inbound-orders', {
       organizationId,
       environmentId,
       inboundOrderNo: INBOUND_ORDER_NO,
@@ -1024,7 +1279,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     })
     const inboundOrderId = textOf(asRecord(dataOf(inbound.payload)).inboundOrderId)
     if (!inboundOrderId) throw new Error(`WMS inbound ${INBOUND_ORDER_NO} did not return an ID.`)
-    const inboundRow = await pollRows(
+    const inboundRow = await workerPollRows(
       '/api/business-console/v1/wms/inbound-orders',
       {
         organizationId,
@@ -1038,7 +1293,49 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO,
     )
     const inboundVersion = Number(inboundRow.match.version ?? 1)
-    const putaway = await call(
+    const noScopeCompletion = await workerCallExpecting(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/complete`,
+        { organizationId, environmentId },
+      ),
+      {
+        idempotencyKey: `issue1912-${INBOUND_ORDER_NO}-missing-scope`,
+        lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
+        expectedVersion: inboundVersion,
+      },
+    )
+    const inboundAfterNoScope = await workerPollRows(
+      '/api/business-console/v1/wms/inbound-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: INBOUND_ORDER_NO,
+        scopeKind: receiptScopeKind,
+        scopeId: receiptScopeId,
+        skip: 0,
+        take: 100,
+      },
+      (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO,
+    )
+    expect(Number(inboundAfterNoScope.match.version ?? 0)).toBe(inboundVersion)
+    expect(textOf(inboundAfterNoScope.match.status).toLowerCase()).not.toBe('completed')
+    setup.push({
+      kind: 'wms-no-scope-fail-closed',
+      actor: workerRuntime.actor,
+      principalId: workerRuntime.principalId,
+      operation: 'inbound-complete',
+      request: noScopeCompletion.summary,
+      response: noScopeCompletion.publicPayload,
+      before: { version: inboundVersion, status: textOf(inboundRow.match.status) },
+      after: {
+        version: Number(inboundAfterNoScope.match.version ?? 0),
+        status: textOf(inboundAfterNoScope.match.status),
+      },
+      sideEffect: false,
+      scope: 'not-supplied',
+    })
+    const putaway = await workerCall(
       'POST',
       queryPath(
         `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/putaway-tasks`,
@@ -1052,7 +1349,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         quantity: materialQuantity,
       },
     )
-    const completedInbound = await call(
+    const completedInbound = await workerCall(
       'POST',
       queryPath(
         `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/complete`,
@@ -1066,7 +1363,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         expectedVersion: inboundVersion,
       },
     )
-    const inventory = await pollData(
+    const inventory = await workerPollData(
       '/api/business-console/v1/inventory/availability',
       {
         organizationId,
@@ -1082,6 +1379,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity,
     )
     const inboundUi = await provePageSafely('receipt-inbound-inventory', {
+      actor: 'wms-worker',
       route: '/wms/inbound',
       listPath: '/api/business-console/v1/wms/inbound-orders',
       filterLabel: '关键字搜索',
@@ -1515,7 +1813,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       emptyText: '还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。',
       screenshotName: '14-finished-goods-receipt.png',
     })
-    const finishedInventory = await pollData(
+    const finishedInventory = await workerPollData(
       '/api/business-console/v1/inventory/availability',
       {
         organizationId,
@@ -1555,6 +1853,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         availability: publicJson(finishedInventory.data),
         receipt: publicJson(finishedReceiptRow.match),
         ui: await provePageSafely('finished-goods-inventory', {
+          actor: 'wms-worker',
           route: queryPath('/inventory/availability', {
             skuCode: FINISHED_SKU,
             siteCode: SITE_CODE,
@@ -1619,31 +1918,30 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       responsibilityIssue: null,
     })
 
-    const shipmentScopes = await call(
+    const shipmentScopes = await workerCall(
       'GET',
       queryPath('/api/business-console/v1/wms/work-scopes/shipments', {
         organizationId,
         environmentId,
       }),
     )
-    const shipmentScope = (
-      Array.isArray(asRecord(dataOf(shipmentScopes.payload)).items)
-        ? asRecord(dataOf(shipmentScopes.payload)).items
-        : []
-    )
-      .map(asRecord)
-      .find(
-        (item) =>
-          item.movementAllowed === true &&
-          item.isBlocked !== true &&
-          item.isExpired !== true &&
-          textOf(item.scopeKind) &&
-          textOf(item.scopeId),
-      )
+    const shipmentScope = firstAuthorizedWorkScope(shipmentScopes.payload)
     if (!shipmentScope) throw new Error('WMS shipment scope catalog returned no authorized scope.')
-    const shipmentScopeKind = textOf(shipmentScope.scopeKind)
-    const shipmentScopeId = textOf(shipmentScope.scopeId)
-    const outbound = await pollRows(
+    expect(textOf(asRecord(dataOf(shipmentScopes.payload)).actorPrincipalId)).toBe(
+      workerRuntime.principalId,
+    )
+    const shipmentScopeKind = textOf(shipmentScope.scopeKind).trim()
+    const shipmentScopeId = textOf(shipmentScope.scopeId).trim()
+    setup.push({
+      kind: 'wms-scope-catalog',
+      actor: workerRuntime.actor,
+      principalId: workerRuntime.principalId,
+      operation: 'shipments',
+      source: 'authorized WarehouseWorkScopeCatalogItem',
+      scope: publicJson(shipmentScope),
+      request: shipmentScopes.summary,
+    })
+    const outbound = await workerPollRows(
       '/api/business-console/v1/wms/outbound-orders',
       {
         organizationId,
@@ -1658,6 +1956,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       180_000,
     )
     const outboundUi = await provePageSafely('delivery-wms-outbound', {
+      actor: 'wms-worker',
       route: '/wms/outbound',
       listPath: '/api/business-console/v1/wms/outbound-orders',
       filterLabel: '关键字搜索',
@@ -1681,7 +1980,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
     const outboundId = textOf(outbound.match.outboundOrderId)
     const outboundVersion = Number(outbound.match.version ?? 1)
-    const completedOutbound = await call(
+    const completedOutbound = await workerCall(
       'POST',
       queryPath(
         `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(outboundId)}/complete`,
@@ -1759,59 +2058,70 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     throw error
   } finally {
     const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
-    await withSessionCredentialCleanup(
-      () =>
-        writeFile(
-          evidencePath!,
-          JSON.stringify(
-            {
-              issue: 'GitHub #1912 / NERV-1127',
-              generatedAtUtc: generatedAtUtc.toISOString(),
-              organizationId,
-              environmentId,
-              rfqNo: RFQ_NO,
-              supplierQuotationNo: SUPPLIER_QUOTATION_NO,
-              salesQuotationNo: SALES_QUOTATION_NO,
-              purchaseOrderNo: PURCHASE_ORDER_NO,
-              purchaseReceiptNo: PURCHASE_RECEIPT_NO,
-              salesOrderNo: SALES_ORDER_NO,
-              deliveryOrderNo: DELIVERY_ORDER_NO,
-              runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
-              transport: transport ?? 'not-supplied',
-              persistence: persistence ?? 'not-supplied',
-              worldEnabled: worldEnabled ?? 'not-supplied',
-              historyEnabled: historyEnabled ?? 'not-supplied',
-              scaleOrderCount: scaleOrderCount ?? 'not-supplied',
-              assertionBoundary:
-                'public BusinessGateway HTTP plus rendered browser pages; no database reads as business assertions',
-              requestFailurePolicy:
-                'Only non-API ERR_ABORTED document/resource requests classified as superseded are separated; API failures, other navigation failures, and other resource failures remain fail-closed.',
-              setup,
-              uiEvidence,
-              failedRequests,
-              expectedRequestCancellations,
-              pageErrors,
-              entries,
-              summary: Object.fromEntries(
-                (['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [
-                  conclusion,
-                  entries.filter((entry) => entry.conclusion === conclusion).length,
-                ]),
-              ),
-              conclusion:
-                entries.every((entry) => entry.conclusion === 'runtime-confirmed') &&
-                failedRequests.length === 0 &&
-                pageErrors.length === 0
-                  ? 'runtime-confirmed'
-                  : 'not-verified',
-            },
-            null,
-            2,
+    try {
+      await withSessionCredentialCleanup(
+        () =>
+          writeFile(
+            evidencePath!,
+            JSON.stringify(
+              {
+                issue: 'GitHub #1912 / NERV-1127',
+                generatedAtUtc: generatedAtUtc.toISOString(),
+                organizationId,
+                environmentId,
+                adminPrincipalId: principalId,
+                workerPrincipalId,
+                rfqNo: RFQ_NO,
+                supplierQuotationNo: SUPPLIER_QUOTATION_NO,
+                salesQuotationNo: SALES_QUOTATION_NO,
+                purchaseOrderNo: PURCHASE_ORDER_NO,
+                purchaseReceiptNo: PURCHASE_RECEIPT_NO,
+                salesOrderNo: SALES_ORDER_NO,
+                deliveryOrderNo: DELIVERY_ORDER_NO,
+                runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
+                transport: transport ?? 'not-supplied',
+                persistence: persistence ?? 'not-supplied',
+                worldEnabled: worldEnabled ?? 'not-supplied',
+                historyEnabled: historyEnabled ?? 'not-supplied',
+                scaleOrderCount: scaleOrderCount ?? 'not-supplied',
+                assertionBoundary:
+                  'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
+                requestFailurePolicy:
+                  'Only non-API ERR_ABORTED document/resource requests classified as superseded are separated; API failures, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
+                setup,
+                identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
+                expectedBusinessRejections,
+                uiEvidence,
+                failedRequests,
+                expectedRequestCancellations,
+                pageErrors,
+                entries,
+                summary: Object.fromEntries(
+                  (['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [
+                    conclusion,
+                    entries.filter((entry) => entry.conclusion === conclusion).length,
+                  ]),
+                ),
+                conclusion:
+                  entries.every((entry) => entry.conclusion === 'runtime-confirmed') &&
+                  failedRequests.length === 0 &&
+                  pageErrors.length === 0
+                    ? 'runtime-confirmed'
+                    : 'not-verified',
+              },
+              null,
+              2,
+            ),
+            'utf8',
           ),
-          'utf8',
-        ),
-      () => sessionCredentialTracker.clear(),
-    )
+        () => {
+          sessionCredentialTracker.clear()
+          workerSessionCredentialTracker.clear()
+        },
+      )
+    } finally {
+      await workerContext?.close()
+    }
   }
 
   const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
@@ -1826,4 +2136,11 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   )
   expect(failedRequests, 'the real browser run must not leave failed requests').toEqual([])
   expect(pageErrors, 'the real browser run must not leave page errors').toEqual([])
+  expect(expectedBusinessRejections).toHaveLength(1)
+  expect(expectedBusinessRejections[0]).toMatchObject({
+    actor: 'wms-worker',
+    principalId: 'user-emp-049',
+    status: 403,
+    reason: 'missing-authorized-scope',
+  })
 })

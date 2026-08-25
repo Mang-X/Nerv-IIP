@@ -16,6 +16,24 @@ const scenarioSource = readFileSync(
   'utf8',
 )
 
+const consoleOpenApi = JSON.parse(
+  readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../../packages/api-client/openapi/business-gateway-console.v1.json',
+    ),
+    'utf8',
+  ),
+) as {
+  components?: {
+    schemas?: Record<string, { properties?: Record<string, unknown> }>
+  }
+}
+
+const workScopeCatalogItemSchema =
+  consoleOpenApi.components?.schemas
+    ?.NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkScopeCatalogItem
+
 const trackerScope = (page: object) => ({
   origin: 'https://console.fixture',
   page,
@@ -245,7 +263,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('await page.goto')
     expect(scenarioSource).toContain('await expect(row).toContainText')
     expect(scenarioSource).toContain('emptyText')
-    expect(scenarioSource).toContain('await page.screenshot')
+    expect(scenarioSource).toContain('await targetPage.screenshot')
     expect(scenarioSource).toContain('failedRequests')
     expect(scenarioSource).toContain('classifyRequestFailure')
     expect(scenarioSource).toContain('expectedRequestCancellations')
@@ -265,8 +283,39 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain(
       'requires a managed full-stack session and an evidence destination',
     )
-    expect(scenarioSource).toContain('node: options.node')
+    expect(scenarioSource).toContain('node,')
     expect(scenarioSource).toContain('proof.node))].sort())')
     expect(scenarioSource).toContain("conclusion: 'not-verified'")
+  })
+
+  it('uses two isolated identities and contexts for ERP approval versus WMS execution', () => {
+    expect(scenarioSource).toContain('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')
+    expect(scenarioSource).toContain(
+      'const workerContext: BrowserContext = await browser.newContext',
+    )
+    expect(scenarioSource).toContain('user-admin')
+    expect(scenarioSource).toContain('user-emp-049')
+    expect(scenarioSource).toContain("workerLoginName.fill('emp049')")
+    expect(scenarioSource).toContain('workerSessionCredentialTracker')
+    expect(scenarioSource).toContain('credentialDigest')
+    expect(scenarioSource).toContain('identityIsolation')
+  })
+
+  it('follows the public WarehouseWorkScopeCatalogItem contract and records fail-closed scope behavior', () => {
+    expect(workScopeCatalogItemSchema).toBeDefined()
+    expect(Object.keys(workScopeCatalogItemSchema?.properties ?? {}).sort()).toEqual([
+      'displayName',
+      'poolCode',
+      'scopeId',
+      'scopeKind',
+      'siteCode',
+    ])
+    expect(scenarioSource).not.toContain('movementAllowed')
+    expect(scenarioSource).not.toContain('isBlocked')
+    expect(scenarioSource).not.toContain('isExpired')
+    expect(scenarioSource).toContain('wms-no-scope-fail-closed')
+    expect(scenarioSource).toContain('sideEffect: false')
+    expect(scenarioSource).toContain('expectedVersion')
+    expect(scenarioSource).toContain('scope catalog')
   })
 })
