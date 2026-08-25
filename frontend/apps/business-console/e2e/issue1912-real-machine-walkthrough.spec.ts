@@ -15,6 +15,12 @@ import {
   createSessionCredentialTracker,
   withSessionCredentialCleanup,
 } from './session-credential-tracker'
+import {
+  extractPublicError,
+  runWithActorContext,
+  selectAuthorizedWorkScope,
+  type AuthorizedWorkScope,
+} from './issue1912-walkthrough-runtime'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -173,18 +179,63 @@ function rowsOf(value: unknown): JsonRecord[] {
   return Array.isArray(items) ? items.map(asRecord) : []
 }
 
-function firstAuthorizedWorkScope(value: unknown): JsonRecord | undefined {
-  const items = asRecord(dataOf(value)).items
-  if (!Array.isArray(items)) return undefined
-  return items.map(asRecord).find((item) => {
-    // WarehouseWorkScopeCatalogItem is the authorization boundary; only its public fields are
-    // trusted here, and an empty catalog fails closed.
-    return (
-      textOf(item.scopeKind).trim() !== '' &&
-      textOf(item.scopeId).trim() !== '' &&
-      textOf(item.displayName).trim() !== ''
-    )
-  })
+function inventoryStateFingerprint(value: unknown): JsonRecord {
+  const data = asRecord(dataOf(value))
+  const items = Array.isArray(data.items)
+    ? data.items
+        .map(asRecord)
+        .map((item) => ({
+          locationCode: textOf(item.locationCode),
+          lotNo: item.lotNo ?? null,
+          serialNo: item.serialNo ?? null,
+          qualityStatus: textOf(item.qualityStatus),
+          ownerType: textOf(item.ownerType),
+          ownerId: item.ownerId ?? null,
+          onHandQuantity: item.onHandQuantity ?? null,
+          reservedQuantity: item.reservedQuantity ?? null,
+          availableQuantity: item.availableQuantity ?? null,
+          inventoryValue: item.inventoryValue ?? null,
+        }))
+        .sort((left, right) =>
+          `${left.locationCode}/${left.lotNo ?? ''}/${left.serialNo ?? ''}`.localeCompare(
+            `${right.locationCode}/${right.lotNo ?? ''}/${right.serialNo ?? ''}`,
+          ),
+        )
+    : []
+  return {
+    onHandQuantity: data.onHandQuantity ?? null,
+    reservedQuantity: data.reservedQuantity ?? null,
+    availableQuantity: data.availableQuantity ?? null,
+    inventoryValue: data.inventoryValue ?? null,
+    items,
+  }
+}
+
+function inventoryMovementFingerprint(value: unknown): JsonRecord {
+  const data = asRecord(dataOf(value))
+  const items = rowsOf(value)
+    .map((item) => ({
+      movementId: textOf(item.movementId),
+      movementType: textOf(item.movementType),
+      sourceService: textOf(item.sourceService),
+      sourceDocumentId: textOf(item.sourceDocumentId),
+      sourceDocumentLineId: item.sourceDocumentLineId ?? null,
+      idempotencyKey: textOf(item.idempotencyKey),
+      skuCode: textOf(item.skuCode),
+      uomCode: textOf(item.uomCode),
+      siteCode: textOf(item.siteCode),
+      locationCode: textOf(item.locationCode),
+      lotNo: item.lotNo ?? null,
+      serialNo: item.serialNo ?? null,
+      quantity: item.quantity ?? null,
+    }))
+    .sort((left, right) => left.movementId.localeCompare(right.movementId))
+  return {
+    totalCount: data.totalCount ?? null,
+    inboundQuantityTotal: data.inboundQuantityTotal ?? null,
+    outboundQuantityTotal: data.outboundQuantityTotal ?? null,
+    items,
+  }
 }
 
 function textOf(value: unknown): string {
@@ -431,7 +482,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   const failedRequests: JsonRecord[] = []
   const expectedRequestCancellations: JsonRecord[] = []
   const expectedBusinessRejections: JsonRecord[] = []
-  const expectedBusinessRejectionKeys = new Map<string, number>()
   const pageErrors: string[] = []
 
   for (const node of REQUIRED_NODES) {
@@ -482,20 +532,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           })
       }
       if (url.pathname.startsWith('/api/') && response.status() >= 400) {
-        const rejectionKey = `${response.request().method()} ${url.pathname}`
-        const expectedCount = expectedBusinessRejectionKeys.get(rejectionKey) ?? 0
-        if (response.status() === 403 && expectedCount > 0) {
-          expectedBusinessRejectionKeys.set(rejectionKey, expectedCount - 1)
-          expectedBusinessRejections.push({
-            actor: runtime.actor,
-            principalId: runtime.principalId || runtime.expectedPrincipalId,
-            method: response.request().method(),
-            path: url.pathname + url.search,
-            status: response.status(),
-            reason: 'missing-authorized-scope',
-          })
-          return
-        }
         failedRequests.push({
           kind: 'http-error',
           actor: runtime.actor,
@@ -524,19 +560,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     options: CallOptions = {},
   ) => {
     const url = new URL(path, baseURL!)
-    if (options.expectedStatus !== undefined) {
-      const rejectionKey = `${method} ${url.pathname}`
-      expectedBusinessRejectionKeys.set(
-        rejectionKey,
-        (expectedBusinessRejectionKeys.get(rejectionKey) ?? 0) + 1,
-      )
-    }
     const response = await callWithSessionCredential(runtime.tracker, (headers) =>
-      runtime.page.request.fetch(url.toString(), {
-        method,
-        data: body,
-        headers,
-      }),
+      runWithActorContext(
+        {
+          actor: runtime.actor,
+          principalId: runtime.principalId || runtime.expectedPrincipalId,
+          authorization: headers.authorization ?? '',
+        },
+        ({ authorization }) =>
+          runtime.page.request.fetch(url.toString(), {
+            method,
+            data: body,
+            headers: { authorization },
+          }),
+      ),
     )
     const payload = await jsonOf(response)
     const summary: JsonRecord = {
@@ -565,15 +602,22 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     invoke(adminRuntime, method, path, body)
   const workerCall = (method: 'GET' | 'POST', path: string, body?: JsonRecord) =>
     invoke(workerRuntime, method, path, body)
-  const workerCallExpecting = async (method: 'GET' | 'POST', path: string, body: JsonRecord) => {
+  const workerCallExpecting = async (
+    method: 'GET' | 'POST',
+    path: string,
+    body: JsonRecord,
+    expectedError: { code: string; message: string },
+  ) => {
     const response = await invoke(workerRuntime, method, path, body, { expectedStatus: 403 })
     expect(response.summary.status).toBe(403)
+    const publicError = extractPublicError(response.publicPayload)
+    expect(publicError).toEqual(expectedError)
     expectedBusinessRejections.push({
       ...response.summary,
       response: response.publicPayload,
-      reason: 'missing-authorized-scope',
+      publicError,
     })
-    return response
+    return { ...response, publicError }
   }
 
   const pollRowsFor = async (
@@ -1239,7 +1283,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         environmentId,
       }),
     )
-    const receiptScope = firstAuthorizedWorkScope(receiptScopes.payload)
+    const receiptScope: AuthorizedWorkScope | undefined = selectAuthorizedWorkScope(
+      receiptScopes.payload,
+    )
     if (!receiptScope) throw new Error('WMS receipt scope catalog returned no authorized scope.')
     expect(textOf(asRecord(dataOf(receiptScopes.payload)).actorPrincipalId)).toBe(
       workerRuntime.principalId,
@@ -1293,6 +1339,31 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO,
     )
     const inboundVersion = Number(inboundRow.match.version ?? 1)
+    const noScopeInventoryQuery = {
+      organizationId,
+      environmentId,
+      skuCode: materialSku,
+      uomCode: materialUom,
+      siteCode: SITE_CODE,
+      locationCode: LINE_SIDE_LOCATION,
+      lotNo: 'LOT-WALK-RM-001',
+      qualityStatus: 'unrestricted',
+      ownerType: 'company',
+    }
+    const inventoryBeforeNoScope = await workerCall(
+      'GET',
+      queryPath('/api/business-console/v1/inventory/availability', noScopeInventoryQuery),
+    )
+    const movementsBeforeNoScope = await workerCall(
+      'GET',
+      queryPath('/api/business-console/v1/inventory/movements', {
+        organizationId,
+        environmentId,
+        sourceDocumentId: INBOUND_ORDER_NO,
+        page: 1,
+        pageSize: 100,
+      }),
+    )
     const noScopeCompletion = await workerCallExpecting(
       'POST',
       queryPath(
@@ -1304,6 +1375,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
         expectedVersion: inboundVersion,
       },
+      { code: 'missing-work-pool-assignment', message: 'missing-work-pool-assignment' },
     )
     const inboundAfterNoScope = await workerPollRows(
       '/api/business-console/v1/wms/inbound-orders',
@@ -1320,6 +1392,55 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     )
     expect(Number(inboundAfterNoScope.match.version ?? 0)).toBe(inboundVersion)
     expect(textOf(inboundAfterNoScope.match.status).toLowerCase()).not.toBe('completed')
+    const inventoryAfterNoScope = await workerCall(
+      'GET',
+      queryPath('/api/business-console/v1/inventory/availability', noScopeInventoryQuery),
+    )
+    const movementsAfterNoScope = await workerCall(
+      'GET',
+      queryPath('/api/business-console/v1/inventory/movements', {
+        organizationId,
+        environmentId,
+        sourceDocumentId: INBOUND_ORDER_NO,
+        page: 1,
+        pageSize: 100,
+      }),
+    )
+    const inventoryBeforeNoScopeFingerprint = inventoryStateFingerprint(
+      inventoryBeforeNoScope.payload,
+    )
+    const inventoryAfterNoScopeFingerprint = inventoryStateFingerprint(
+      inventoryAfterNoScope.payload,
+    )
+    const movementsBeforeNoScopeFingerprint = inventoryMovementFingerprint(
+      movementsBeforeNoScope.payload,
+    )
+    const movementsAfterNoScopeFingerprint = inventoryMovementFingerprint(
+      movementsAfterNoScope.payload,
+    )
+    expect(inventoryAfterNoScopeFingerprint).toEqual(inventoryBeforeNoScopeFingerprint)
+    expect(movementsAfterNoScopeFingerprint).toEqual(movementsBeforeNoScopeFingerprint)
+    const noScopeSideEffectProbe = {
+      unchanged:
+        JSON.stringify(inventoryAfterNoScopeFingerprint) ===
+          JSON.stringify(inventoryBeforeNoScopeFingerprint) &&
+        JSON.stringify(movementsAfterNoScopeFingerprint) ===
+          JSON.stringify(movementsBeforeNoScopeFingerprint),
+      inventoryAvailability: {
+        path: inventoryBeforeNoScope.summary.path,
+        before: inventoryBeforeNoScope.publicPayload,
+        after: inventoryAfterNoScope.publicPayload,
+        beforeFingerprint: inventoryBeforeNoScopeFingerprint,
+        afterFingerprint: inventoryAfterNoScopeFingerprint,
+      },
+      inventoryMovements: {
+        path: movementsBeforeNoScope.summary.path,
+        before: movementsBeforeNoScope.publicPayload,
+        after: movementsAfterNoScope.publicPayload,
+        beforeFingerprint: movementsBeforeNoScopeFingerprint,
+        afterFingerprint: movementsAfterNoScopeFingerprint,
+      },
+    }
     setup.push({
       kind: 'wms-no-scope-fail-closed',
       actor: workerRuntime.actor,
@@ -1327,12 +1448,14 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       operation: 'inbound-complete',
       request: noScopeCompletion.summary,
       response: noScopeCompletion.publicPayload,
+      publicError: noScopeCompletion.publicError,
       before: { version: inboundVersion, status: textOf(inboundRow.match.status) },
       after: {
         version: Number(inboundAfterNoScope.match.version ?? 0),
         status: textOf(inboundAfterNoScope.match.status),
       },
       sideEffect: false,
+      sideEffectProbe: noScopeSideEffectProbe,
       scope: 'not-supplied',
     })
     const putaway = await workerCall(
@@ -1925,7 +2048,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         environmentId,
       }),
     )
-    const shipmentScope = firstAuthorizedWorkScope(shipmentScopes.payload)
+    const shipmentScope: AuthorizedWorkScope | undefined = selectAuthorizedWorkScope(
+      shipmentScopes.payload,
+    )
     if (!shipmentScope) throw new Error('WMS shipment scope catalog returned no authorized scope.')
     expect(textOf(asRecord(dataOf(shipmentScopes.payload)).actorPrincipalId)).toBe(
       workerRuntime.principalId,
@@ -2141,6 +2266,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     actor: 'wms-worker',
     principalId: 'user-emp-049',
     status: 403,
-    reason: 'missing-authorized-scope',
+    publicError: {
+      code: 'missing-work-pool-assignment',
+      message: 'missing-work-pool-assignment',
+    },
   })
 })
