@@ -145,6 +145,8 @@ export type {
   LifecycleFacts,
   StatusActionGate,
 } from './actions/statusActionGate'
+export { isAvailableMaterialLot } from './mes/materialLots'
+export type { AvailableMaterialLotFields, MaterialLotAvailabilityLike } from './mes/materialLots'
 export {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
