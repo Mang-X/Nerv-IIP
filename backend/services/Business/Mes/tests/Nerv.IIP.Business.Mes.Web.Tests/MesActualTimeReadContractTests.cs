@@ -157,7 +157,7 @@ public sealed class MesActualTimeReadContractTests
     }
 
     [Fact]
-    public async Task Mes_http_read_endpoints_serialize_actual_hours_with_explicit_operation_scope()
+    public async Task Mes_http_read_endpoints_keep_actual_hours_internal_until_the_facade_slice()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -181,46 +181,31 @@ public sealed class MesActualTimeReadContractTests
             "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&take=10");
         var reportResponse = await client.GetAsync(
             "/api/business/v1/mes/production-reports/PRPT-ACTUAL?organizationId=org-001&environmentId=env-dev");
-        var nullReportResponse = await client.GetAsync(
-            "/api/business/v1/mes/production-reports/PRPT-NULL?organizationId=org-001&environmentId=env-dev");
-        var zeroReportResponse = await client.GetAsync(
-            "/api/business/v1/mes/production-reports/PRPT-ZERO?organizationId=org-001&environmentId=env-dev");
         var openApiResponse = await client.GetAsync("/swagger/v1/swagger.json");
 
         Assert.Equal(HttpStatusCode.OK, operationResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, reportResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, nullReportResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, zeroReportResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, openApiResponse.StatusCode);
         using var operationJson = JsonDocument.Parse(await operationResponse.Content.ReadAsStringAsync());
         using var reportJson = JsonDocument.Parse(await reportResponse.Content.ReadAsStringAsync());
         var operations = operationJson.RootElement.GetProperty("items")
             .EnumerateArray()
             .ToDictionary(x => x.GetProperty("operationTaskId").GetString()!, StringComparer.Ordinal);
-        Assert.Equal(1.25m, operations["OP-ACTUAL"].GetProperty("actualLaborHours").GetDecimal());
-        Assert.Equal(0.5m, operations["OP-ACTUAL"].GetProperty("actualMachineHours").GetDecimal());
-        Assert.False(operations["OP-ACTUAL"].TryGetProperty("actualHours", out _));
-        Assert.Equal(0m, operations["OP-ZERO"].GetProperty("actualLaborHours").GetDecimal());
-        Assert.Equal(0m, operations["OP-ZERO"].GetProperty("actualMachineHours").GetDecimal());
-        Assert.Equal(JsonValueKind.Null, operations["OP-NULL"].GetProperty("actualLaborHours").ValueKind);
-        Assert.Equal(JsonValueKind.Null, operations["OP-NULL"].GetProperty("actualMachineHours").ValueKind);
+        Assert.All(operations.Values, operation =>
+        {
+            Assert.False(operation.TryGetProperty("actualHours", out _));
+            Assert.False(operation.TryGetProperty("actualLaborHours", out _));
+            Assert.False(operation.TryGetProperty("actualMachineHours", out _));
+        });
         var report = reportJson.RootElement.GetProperty("report");
-        Assert.Equal(1.25m, report.GetProperty("operationActualLaborHours").GetDecimal());
-        Assert.Equal(0.5m, report.GetProperty("operationActualMachineHours").GetDecimal());
         Assert.False(report.TryGetProperty("operationActualHours", out _));
-        using var nullReportJson = JsonDocument.Parse(await nullReportResponse.Content.ReadAsStringAsync());
-        var nullReport = nullReportJson.RootElement.GetProperty("report");
-        Assert.Equal(JsonValueKind.Null, nullReport.GetProperty("operationActualLaborHours").ValueKind);
-        Assert.Equal(JsonValueKind.Null, nullReport.GetProperty("operationActualMachineHours").ValueKind);
-        using var zeroReportJson = JsonDocument.Parse(await zeroReportResponse.Content.ReadAsStringAsync());
-        var zeroReport = zeroReportJson.RootElement.GetProperty("report");
-        Assert.Equal(0m, zeroReport.GetProperty("operationActualLaborHours").GetDecimal());
-        Assert.Equal(0m, zeroReport.GetProperty("operationActualMachineHours").GetDecimal());
+        Assert.False(report.TryGetProperty("operationActualLaborHours", out _));
+        Assert.False(report.TryGetProperty("operationActualMachineHours", out _));
         var openApi = await openApiResponse.Content.ReadAsStringAsync();
-        Assert.Contains("\"actualLaborHours\"", openApi, StringComparison.Ordinal);
-        Assert.Contains("\"actualMachineHours\"", openApi, StringComparison.Ordinal);
-        Assert.Contains("\"operationActualLaborHours\"", openApi, StringComparison.Ordinal);
-        Assert.Contains("\"operationActualMachineHours\"", openApi, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"actualLaborHours\"", openApi, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"actualMachineHours\"", openApi, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"operationActualLaborHours\"", openApi, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"operationActualMachineHours\"", openApi, StringComparison.Ordinal);
     }
 
     private static OperationTask CreateTask(string workOrderId, string operationTaskId, DateTimeOffset queuedAtUtc) =>

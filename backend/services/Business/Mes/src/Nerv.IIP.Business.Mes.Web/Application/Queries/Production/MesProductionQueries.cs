@@ -50,8 +50,10 @@ public sealed record ProductionReportFact(
     // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
     [property: JsonIgnore] MesActualHours? OperationActualHours = null)
 {
+    [JsonIgnore]
     public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
 
+    [JsonIgnore]
     public decimal? OperationActualMachineHours => OperationActualHours?.MachineHours;
 }
 
