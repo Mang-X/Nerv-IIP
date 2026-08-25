@@ -80,4 +80,45 @@ public sealed class MasterDataIntegrationEventContextTests
 
         Assert.Equal("corr-activity-001", context.CorrelationId);
     }
+
+    [Fact]
+    public void Internal_service_without_canonical_forwarded_actor_is_not_trusted_for_user_audit()
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim("token_type", "internal_service"),
+                    new Claim(ClaimTypes.NameIdentifier, "business-gateway"),
+                ],
+                "test"))
+        };
+        var accessor = new HttpMasterDataIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
+
+        var context = accessor.GetContext();
+
+        Assert.False(context.HasTrustedActor);
+    }
+
+    [Fact]
+    public void Unauthenticated_subject_claim_is_not_trusted_for_user_audit()
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "untrusted-user")]))
+        };
+        var accessor = new HttpMasterDataIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
+
+        var context = accessor.GetContext();
+
+        Assert.Equal("system:business-masterdata", context.Actor);
+        Assert.False(context.HasTrustedActor);
+    }
 }

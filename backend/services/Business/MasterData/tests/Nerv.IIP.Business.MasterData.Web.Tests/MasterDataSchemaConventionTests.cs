@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Domain;
@@ -17,6 +19,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
@@ -80,6 +83,7 @@ public sealed class MasterDataSchemaConventionTests
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
             typeof(MasterDataLifecycleAuditEntry),
+            typeof(ToolingAuditEntry),
         };
 
         var failures = new List<string>();
@@ -89,6 +93,27 @@ public sealed class MasterDataSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MasterDataFacts.ServiceName, MasterDataFacts.Schema));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Tooling_audit_schema_has_append_only_identity_and_target_indexes()
+    {
+        using var fixture = CreateFixture();
+        var entityType = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ToolingAuditEntry));
+        Assert.NotNull(entityType);
+
+        var operationIndex = Assert.Single(entityType.GetIndexes(), candidate =>
+            candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "OperationId"]));
+        Assert.Equal("ux_tooling_audit_operation", operationIndex.GetDatabaseName());
+
+        var targetIndex = Assert.Single(entityType.GetIndexes(), candidate =>
+            !candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "ToolingCode", "OccurredAtUtc"]));
+        Assert.Equal("ix_tooling_audit_target_time", targetIndex.GetDatabaseName());
+        Assert.Equal(2, entityType.GetCheckConstraints().Count());
     }
 
     [Fact]

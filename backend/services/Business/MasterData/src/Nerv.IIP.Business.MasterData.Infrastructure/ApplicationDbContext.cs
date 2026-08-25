@@ -54,6 +54,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WorkCalendar> WorkCalendars => Set<WorkCalendar>();
     public DbSet<DeviceAsset> DeviceAssets => Set<DeviceAsset>();
     public DbSet<ToolingAsset> ToolingAssets => Set<ToolingAsset>();
+    public DbSet<ToolingAuditEntry> ToolingAuditEntries => Set<ToolingAuditEntry>();
     public DbSet<ChangeoverMatrixEntry> ChangeoverMatrixEntries => Set<ChangeoverMatrixEntry>();
     public DbSet<CodeRule> CodeRules => Set<CodeRule>();
     public DbSet<CodeRuleVersion> CodeRuleVersions => Set<CodeRuleVersion>();

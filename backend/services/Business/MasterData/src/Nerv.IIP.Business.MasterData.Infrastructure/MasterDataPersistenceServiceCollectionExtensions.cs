@@ -51,6 +51,7 @@ public static class MasterDataPersistenceServiceCollectionExtensions
         services.AddScoped<IReferenceDataCodeRepository, ReferenceDataCodeRepository>();
         services.AddScoped<IDeviceAssetReferenceValidator, DeviceAssetReferenceValidator>();
         services.AddScoped<IMasterDataReferenceScopeCoordinator, PostgreSqlMasterDataReferenceScopeCoordinator>();
+        services.AddScoped<IToolingAuditOperationCoordinator, PostgreSqlToolingAuditOperationCoordinator>();
         return services;
     }
 }

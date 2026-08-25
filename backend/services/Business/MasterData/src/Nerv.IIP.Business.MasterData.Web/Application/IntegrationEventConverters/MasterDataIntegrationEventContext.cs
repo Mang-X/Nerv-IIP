@@ -9,7 +9,8 @@ public sealed record MasterDataIntegrationEventContext(
     string CorrelationId,
     string CausationId,
     string Actor,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    bool HasTrustedActor = false);
 
 public interface IMasterDataIntegrationEventContextAccessor
 {
@@ -24,36 +25,44 @@ public sealed class HttpMasterDataIntegrationEventContextAccessor(IHttpContextAc
         var httpContext = httpContextAccessor.HttpContext;
         var headers = httpContext?.Request.Headers;
 
+        var actor = ResolveActor(httpContext?.User, headers);
         return new MasterDataIntegrationEventContext(
             ReadHeader(headers, "X-Correlation-Id")
                 ?? Activity.Current?.GetTagItem("correlationId")?.ToString()
                 ?? Guid.NewGuid().ToString("n"),
             ReadHeader(headers, "X-Causation-Id") ?? Guid.NewGuid().ToString("n"),
-            ResolveActor(httpContext?.User, headers),
-            ReadHeader(headers, "X-Idempotency-Key"));
+            actor.Value,
+            ReadHeader(headers, "X-Idempotency-Key"),
+            actor.IsTrusted);
     }
 
-    private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
+    private static (string Value, bool IsTrusted) ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
     {
+        if (user?.Identity?.IsAuthenticated != true)
+        {
+            return ($"system:{MasterDataIntegrationEventSources.BusinessMasterData}", false);
+        }
+
         var forwardedActor = ReadHeader(headers, "X-Authenticated-Actor");
         var tokenType = user?.FindFirstValue("token_type");
-        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal)
-            && IsCanonicalActor(forwardedActor))
+        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal))
         {
-            return forwardedActor!;
+            return IsCanonicalActor(forwardedActor)
+                ? (forwardedActor!, true)
+                : ($"system:{MasterDataIntegrationEventSources.BusinessMasterData}", false);
         }
 
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user?.FindFirstValue("sub");
         if (!string.IsNullOrWhiteSpace(subject))
         {
-            return $"user:{subject}";
+            return ($"user:{subject}", true);
         }
 
         var name = user?.Identity?.Name;
         return string.IsNullOrWhiteSpace(name)
-            ? $"system:{MasterDataIntegrationEventSources.BusinessMasterData}"
-            : $"user:{name}";
+            ? ($"system:{MasterDataIntegrationEventSources.BusinessMasterData}", false)
+            : ($"user:{name}", true);
     }
 
     private static bool IsCanonicalActor(string? actor)
