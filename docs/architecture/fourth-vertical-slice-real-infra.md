@@ -4,7 +4,7 @@
 
 ## 退役状态
 
-第一至第四阶段的纵切脚本已按 #2157 退役。对应路径仍保留为无副作用、明确失败的兼容墓碑；本文中的脚本命令和通过输出是历史执行记录，不是当前推荐入口。当前本地开发使用 `nerv.ps1 dev` 与 `nerv.ps1 fullstack run`，OpenAPI/api-client 漂移使用 `scripts/verify-openapi-client-drift.ps1`，真实 provider 证明使用专用 CI lane。
+第一至第四阶段的纵切脚本已按 #2157 退役；前三个历史路径曾保留为无副作用、明确失败的兼容墓碑，第四阶段路径现已删除。本文中的脚本命令和通过输出均是历史执行记录，不是当前推荐入口。当前本地开发使用 `nerv.ps1 dev` 与 `nerv.ps1 fullstack run`，OpenAPI/api-client 漂移使用 `scripts/verify-openapi-client-drift.ps1`，真实 PostgreSQL/Redis/provider 证明使用专用 CI lane；发布演练使用 `scripts/verify-production-release-rehearsal.ps1`。
 
 ## 目标
 
@@ -12,7 +12,7 @@
 2. 以 PostgreSQL 作为首个真实持久化 profile，验证服务事实跨 DbContext 生命周期保存。
 3. 接入 Redis、RabbitMQ 和 CAP 基础包，冻结后续缓存、消息和 outbox 接线边界；当前运行口径已进一步把 RabbitMQ 调整为 `Messaging:Provider=RabbitMQ` 时的可选 broker。
 4. 建立平台级 Aspire AppHost，作为 AppHub、Ops、Gateway、Connector Host 与基础设施资源的统一拓扑入口。
-5. 历史上保留前三阶段验证入口，并提供一个能拉起真实依赖、复跑控制台链路的第四阶段总门禁；这些入口现已按 #2157 退役。
+5. 历史上保留前三阶段验证入口，并提供一个能拉起真实依赖、复跑控制台链路的第四阶段总门禁；这些入口现已按 #2157 退役，第四阶段总门禁脚本已删除。
 
 ## 已落地范围
 
@@ -22,12 +22,12 @@
 4. AppHub/Ops PostgreSQL profile 已通过集成测试证明核心事实可持久化。
 5. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
 6. 历史 `scripts/verify-second-slice-ops.ps1` 和 `scripts/verify-third-slice-console.ps1` 曾支持 `-UsePostgres`，现已退役。
-7. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 曾拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，现已退役；当前真实基础设施验证由 AppHost/fullstack 与专用 provider lane 承接。
+7. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 曾拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，现已删除；当前真实基础设施验证由 AppHost/fullstack 与专用 provider lane 承接，不应恢复该历史路径。
 8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 在 `Messaging:Provider=RabbitMQ` profile 下加入拓扑。
 
 ## 验证命令
 
-历史第四阶段总门禁：
+历史第四阶段总门禁（已删除）：
 
 ```powershell
 pwsh scripts/verify-fourth-slice-real-infra.ps1
