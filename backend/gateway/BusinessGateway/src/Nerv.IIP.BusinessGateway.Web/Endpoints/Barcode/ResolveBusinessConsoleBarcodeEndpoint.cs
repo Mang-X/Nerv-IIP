@@ -1,3 +1,4 @@
+using System.Net;
 using FastEndpoints;
 using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -34,11 +35,14 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessBarcodeResolverClient barcode,
     IBusinessMesClient mes,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleBarcodeResolveRequest, BusinessConsoleBarcodeResolveResponse>(
         auth,
         BusinessGatewayPermissions.BarcodeScansWrite)
 {
+    private const int OperationLookupConcurrency = 8;
+
     protected override string OrganizationId(BusinessConsoleBarcodeResolveRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleBarcodeResolveRequest request) => request.EnvironmentId;
@@ -66,32 +70,59 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
                 downstream.Total);
         }
 
-        var mapped = new List<BusinessConsoleBarcodeResolveCandidate>(downstream.Candidates.Count);
-        foreach (var candidate in downstream.Candidates)
+        PrincipalWorkScopeSelection? operationScope = null;
+        if (downstream.Candidates.Any(IsOperationTask))
         {
-            var resolved = await MapCandidateAsync(request, candidate, cancellationToken);
-            if (resolved is null)
+            var operationAuthorization = await AuthorizationClient.CheckAsync(
+                bearerToken,
+                new BusinessGatewayPermissionRequirement(
+                    BusinessGatewayPermissions.MesOperationsRead,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    null,
+                    null,
+                    IncludePrincipalContext: true),
+                BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+                cancellationToken);
+            if (!operationAuthorization.IsAllowed)
             {
-                return new BusinessConsoleBarcodeResolveResponse(
-                    "unsupported",
-                    "resolved-object-type-unsupported",
-                    [],
-                    0);
+                throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "mes-operation-read-forbidden");
             }
 
-            mapped.Add(resolved);
+            operationScope = await workScopeResolver.ResolveAsync(
+                operationAuthorization,
+                request.OrganizationId,
+                request.EnvironmentId,
+                BusinessGatewayPermissions.MesOperationsRead,
+                null,
+                null,
+                cancellationToken);
+        }
+
+        using var operationLookupGate = new SemaphoreSlim(OperationLookupConcurrency);
+        var mapped = await Task.WhenAll(downstream.Candidates.Select(candidate =>
+            MapCandidateAsync(request, candidate, operationScope, operationLookupGate, cancellationToken)));
+        if (mapped.Any(candidate => candidate is null))
+        {
+            return new BusinessConsoleBarcodeResolveResponse(
+                "unsupported",
+                "resolved-object-type-unsupported",
+                [],
+                0);
         }
 
         return new BusinessConsoleBarcodeResolveResponse(
             downstream.Status,
             downstream.ReasonCode,
-            mapped,
+            mapped.Select(candidate => candidate!).ToArray(),
             downstream.Total);
     }
 
     private async Task<BusinessConsoleBarcodeResolveCandidate?> MapCandidateAsync(
         BusinessConsoleBarcodeResolveRequest request,
         BusinessBarcodeResolveCandidate candidate,
+        PrincipalWorkScopeSelection? operationScope,
+        SemaphoreSlim operationLookupGate,
         CancellationToken cancellationToken)
     {
         var sourceType = candidate.SourceDocumentType.Trim().ToLowerInvariant();
@@ -107,7 +138,12 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
             "inventory-location" => StrongId("inventoryLocationId", candidate.SourceDocumentId),
             "purchase-receipt" => StrongId("purchaseReceiptId", candidate.SourceDocumentId),
             "delivery-order" => StrongId("deliveryOrderId", candidate.SourceDocumentId),
-            "operation-task" => await ResolveOperationIdsAsync(request, candidate.SourceDocumentId, cancellationToken),
+            "operation-task" => await ResolveOperationIdsAsync(
+                request,
+                candidate.SourceDocumentId,
+                operationScope ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "work-scope-not-authorized"),
+                operationLookupGate,
+                cancellationToken),
             _ => null,
         };
         if (strongIds is null)
@@ -126,28 +162,52 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
     private async Task<IReadOnlyDictionary<string, string>?> ResolveOperationIdsAsync(
         BusinessConsoleBarcodeResolveRequest request,
         string operationTaskId,
+        PrincipalWorkScopeSelection operationScope,
+        SemaphoreSlim operationLookupGate,
         CancellationToken cancellationToken)
     {
-        var result = await mes.ListOperationTasksAsync(
-            tokenProvider.BearerToken,
-            new BusinessMesOperationTaskListRequest(
-                request.OrganizationId,
-                request.EnvironmentId,
-                OperationTaskId: operationTaskId,
-                Take: 2),
-            cancellationToken);
+        await operationLookupGate.WaitAsync(cancellationToken);
+        BusinessConsoleMesOperationTaskListResponse result;
+        try
+        {
+            result = await mes.ListOperationTasksAsync(
+                tokenProvider.BearerToken,
+                new BusinessMesOperationTaskListRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    OperationTaskId: operationTaskId,
+                    Take: 2,
+                    AssignedUserIds: Join(operationScope.AssignedUserIds),
+                    TeamIds: Join(operationScope.TeamIds),
+                    WorkCenterIds: Join(operationScope.WorkCenterIds)),
+                cancellationToken);
+        }
+        finally
+        {
+            operationLookupGate.Release();
+        }
+
         var exact = result.Items
             .Where(item => string.Equals(item.OperationTaskId, operationTaskId, StringComparison.Ordinal))
             .Take(2)
             .ToArray();
-        return exact.Length == 1
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["workOrderId"] = exact[0].WorkOrderId,
-                ["operationTaskId"] = exact[0].OperationTaskId,
-            }
-            : null;
+        if (exact.Length != 1)
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        }
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["workOrderId"] = exact[0].WorkOrderId,
+            ["operationTaskId"] = exact[0].OperationTaskId,
+        };
     }
+
+    private static bool IsOperationTask(BusinessBarcodeResolveCandidate candidate) =>
+        string.Equals(candidate.SourceDocumentType.Trim(), "operation-task", StringComparison.OrdinalIgnoreCase);
+
+    private static string? Join(IReadOnlyCollection<string> values) =>
+        values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
 
     private static IReadOnlyDictionary<string, string> StrongId(string name, string value) =>
         new Dictionary<string, string>(StringComparer.Ordinal) { [name] = value };

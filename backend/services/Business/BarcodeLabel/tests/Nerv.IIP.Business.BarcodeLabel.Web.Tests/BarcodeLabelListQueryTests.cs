@@ -38,6 +38,25 @@ public sealed class BarcodeLabelListQueryTests
     }
 
     [Fact]
+    public async Task Resolve_barcode_keeps_the_unique_candidate_when_ambiguous_paging_starts_after_it()
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
+        var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
+        var batch = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        dbContext.AddRange(rule, template, batch);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ResolveBarcodeQueryHandler(dbContext).Handle(
+            new ResolveBarcodeQuery("org-001", "env-dev", batch.Items.Single().LabelValue, Skip: 20, Take: 10),
+            CancellationToken.None);
+
+        Assert.Equal("resolved", result.Status);
+        Assert.Equal(1, result.Total);
+        Assert.Equal("WO-001", Assert.Single(result.Candidates).SourceDocumentId);
+    }
+
+    [Fact]
     public async Task Resolve_barcode_does_not_leak_a_matching_label_from_another_tenant_scope()
     {
         await using var dbContext = CreateDbContext();

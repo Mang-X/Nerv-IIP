@@ -69,12 +69,14 @@ public sealed class ResolveBarcodeQueryHandler(ApplicationDbContext dbContext)
                 ObservedAtUtc = group.Max(match => match.CreatedAtUtc),
             });
         var total = await distinctMatches.CountAsync(cancellationToken);
-        var candidateRows = await distinctMatches
-            .OrderBy(candidate => candidate.SourceDocumentType)
-            .ThenBy(candidate => candidate.SourceDocumentId)
-            .Skip(request.Skip)
-            .Take(request.Take)
-            .ToArrayAsync(cancellationToken);
+        var candidateRows = total == 1
+            ? await distinctMatches.ToArrayAsync(cancellationToken)
+            : await distinctMatches
+                .OrderBy(candidate => candidate.SourceDocumentType)
+                .ThenBy(candidate => candidate.SourceDocumentId)
+                .Skip(request.Skip)
+                .Take(request.Take)
+                .ToArrayAsync(cancellationToken);
         var candidates = candidateRows
             .Select(candidate => new ResolvedBarcodeCandidate(
                 candidate.SourceDocumentType,
@@ -96,7 +98,7 @@ public sealed class ResolveBarcodeQueryHandler(ApplicationDbContext dbContext)
         var activeRules = await dbContext.BarcodeRules
             .Where(rule => rule.OrganizationId == request.OrganizationId
                 && rule.EnvironmentId == request.EnvironmentId
-                && rule.Status == "active")
+                && rule.Status == BarcodeRule.ActiveStatus)
             .Select(rule => new { rule.BarcodeType, rule.Prefix, rule.Length })
             .ToArrayAsync(cancellationToken);
         var managedFormat = activeRules.Any(rule => MatchesRuleFormat(

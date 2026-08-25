@@ -30,8 +30,9 @@ public sealed class BarcodeLabelPostgresProfileTests
             var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
             var first = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
             var second = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
+            var unique = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-UNIQUE", "batch-unique", "{}", 1);
             Assert.Equal(first.Items.Single().LabelValue, second.Items.Single().LabelValue);
-            dbContext.AddRange(rule, template, first, second);
+            dbContext.AddRange(rule, template, first, second, unique);
             await dbContext.SaveChangesAsync();
 
             var result = await new ResolveBarcodeQueryHandler(dbContext).Handle(
@@ -41,6 +42,13 @@ public sealed class BarcodeLabelPostgresProfileTests
             Assert.Equal("ambiguous", result.Status);
             Assert.Equal(2, result.Total);
             Assert.Equal("WO001", Assert.Single(result.Candidates).SourceDocumentId);
+
+            var uniqueResult = await new ResolveBarcodeQueryHandler(dbContext).Handle(
+                new ResolveBarcodeQuery("org-001", "env-dev", unique.Items.Single().LabelValue, Skip: 20, Take: 10),
+                CancellationToken.None);
+
+            Assert.Equal("resolved", uniqueResult.Status);
+            Assert.Equal("WO-UNIQUE", Assert.Single(uniqueResult.Candidates).SourceDocumentId);
         }
 
         await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
