@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type Response } from '@playwright/test'
+import { expect, test, type APIResponse, type Request, type Response } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -12,10 +12,8 @@ const worldEnabled = process.env.NERV_IIP_ISSUE_1912_WORLD_ENABLED
 const historyEnabled = process.env.NERV_IIP_ISSUE_1912_HISTORY_ENABLED
 const scaleOrderCount = process.env.NERV_IIP_ISSUE_1912_SCALE_ORDER_COUNT
 
-test.skip(
-  !baseURL || !adminPassword || !evidencePath,
-  'requires a managed full-stack session and an evidence destination',
-)
+const requiresManagedSession = !baseURL || !adminPassword || !evidencePath
+
 test.setTimeout(25 * 60 * 1000)
 test.describe.configure({ mode: 'serial' })
 
@@ -27,6 +25,8 @@ const RFQ_NO = 'RFQ-WALK-001'
 const SUPPLIER_QUOTATION_NO = 'SQ-WALK-001'
 const SALES_QUOTATION_NO = 'QUO-WALK-001'
 const PURCHASE_ORDER_NO = 'PO-WALK-001'
+const PURCHASE_ORDER_APPROVAL_TEMPLATE_CODE = 'purchase-order-release'
+const PURCHASE_ORDER_APPROVAL_TEMPLATE_VERSION = 1
 const PURCHASE_RECEIPT_NO = 'PR-WALK-001'
 const SALES_ORDER_NO = 'SO-WALK-001'
 const DELIVERY_ORDER_NO = 'DO-WALK-001'
@@ -36,7 +36,6 @@ const PRODUCED_LOT_NO = 'LOT-WALK-001'
 const PACK_REVIEW_NO = 'PACK-WALK-001'
 const FINISHED_SKU = 'FG-QJ-P1-L'
 const SITE_CODE = 'SITE-001'
-const CUSTOMER_CODE = 'CUST-WB-001'
 const INBOUND_LOCATION = 'loc-raw-01'
 const LINE_SIDE_LOCATION = 'loc-line-01'
 const FINISHED_GOODS_LOCATION = 'loc-fg-01'
@@ -77,6 +76,7 @@ type EvidenceEntry = {
 }
 
 type UiProof = {
+  node: NodeName
   page: string
   pageHttpStatus: number
   listPath: string
@@ -86,6 +86,17 @@ type UiProof = {
   emptyText: string
   screenshot: string
 }
+
+const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
+  'document',
+  'stylesheet',
+  'script',
+  'image',
+  'font',
+  'media',
+  'manifest',
+  'texttrack',
+])
 
 class PublicCallError extends Error {
   constructor(
@@ -137,10 +148,15 @@ function textOf(value: unknown): string {
 
 function safeText(value: unknown): string {
   return textOf(value)
-    .replace(/authorization/gi, '<redacted-header>')
+    .replace(
+      /(["']?(?:authorization|password|(?:access|refresh|id)?[_-]?token|secret|connectionstring|jwt)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi,
+      '$1<redacted-secret>',
+    )
     .replace(/bearer\s+[^\s"']+/gi, '<redacted-credential>')
+    .replace(/authorization/gi, '<redacted-header>')
     .replace(/password/gi, '<redacted-field>')
-    .replace(/(?:access|refresh)[_-]?token/gi, '<redacted-field>')
+    .replace(/(?:access|refresh|id)?[_-]?token/gi, '<redacted-field>')
+    .replace(/(?:secret|connectionstring|jwt)/gi, '<redacted-field>')
     .slice(0, 1600)
 }
 
@@ -151,9 +167,41 @@ function publicJson(value: unknown): unknown {
   }
   return Object.fromEntries(
     Object.entries(value as JsonRecord)
-      .filter(([key]) => !/(authorization|password|access[_-]?token|refresh[_-]?token)/i.test(key))
+      .filter(
+        ([key]) =>
+          !/(authorization|password|(?:access|refresh|id)?[_-]?token|secret|connectionstring|jwt)/i.test(
+            key,
+          ),
+      )
       .map(([key, item]) => [key, publicJson(item)]),
   )
+}
+
+function classifyRequestFailure(request: Request): { expected: boolean; record: JsonRecord } {
+  const url = new URL(request.url())
+  const failure = safeText(request.failure()?.errorText ?? 'unknown request failure')
+  const resourceType = request.resourceType()
+  const isApi = url.pathname.startsWith('/api/')
+  const expected =
+    !isApi && failure === 'net::ERR_ABORTED' && EXPECTED_ABORT_RESOURCE_TYPES.has(resourceType)
+  return {
+    expected,
+    record: {
+      kind: 'requestfailed',
+      method: request.method(),
+      path: url.pathname + url.search,
+      failure,
+      resourceType,
+      isNavigationRequest: request.isNavigationRequest(),
+      classification: expected
+        ? 'expected-superseded-document-or-resource'
+        : isApi
+          ? 'api-request-failure'
+          : request.isNavigationRequest()
+            ? 'page-navigation-failure'
+            : 'resource-failure',
+    },
+  }
 }
 
 async function jsonOf(response: APIResponse): Promise<unknown> {
@@ -169,7 +217,8 @@ function dateOnly(date: Date): string {
 function queryPath(path: string, query: JsonRecord): string {
   const url = new URL(path, baseURL!)
   for (const [key, value] of Object.entries(query)) {
-    if (value !== null && value !== undefined && value !== '') url.searchParams.set(key, String(value))
+    if (value !== null && value !== undefined && value !== '')
+      url.searchParams.set(key, String(value))
   }
   return `${url.pathname}${url.search}`
 }
@@ -178,12 +227,111 @@ function errorText(error: unknown): string {
   return safeText(error instanceof Error ? error.message : error)
 }
 
-test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser pages', async ({ page }) => {
-  test.skip(test.info().project.name !== 'desktop', 'the evidence run is intentionally desktop-only')
+test('request failure policy keeps superseded navigation aborts but records API failures', async ({
+  page,
+}) => {
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'the request policy probe is intentionally desktop-only',
+  )
+
+  const expectedCancellations: JsonRecord[] = []
+  const unexpectedFailures: JsonRecord[] = []
+  const apiFailures: JsonRecord[] = []
+  page.on('requestfailed', (request) => {
+    const classified = classifyRequestFailure(request)
+    if (classified.expected) expectedCancellations.push(classified.record)
+    else unexpectedFailures.push(classified.record)
+  })
+  page.on('response', (response: Response) => {
+    const url = new URL(response.url())
+    if (url.pathname === '/api/issue1912-policy-failure' && response.status() >= 400) {
+      apiFailures.push({
+        kind: 'http-error',
+        method: response.request().method(),
+        path: url.pathname + url.search,
+        status: response.status(),
+        classification: 'api-http-error',
+      })
+    }
+  })
+
+  await page.route('**/issue1912-policy-navigation*', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('phase') === 'first')
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><p id="policy-success">success</p>',
+      })
+    } catch {
+      // The first navigation is intentionally superseded and may be gone by the time its route resolves.
+    }
+  })
+  await page.route('**/api/issue1912-policy-failure', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: '{"error":"intentional policy probe"}',
+    })
+  })
+
+  try {
+    const firstRequest = page.waitForRequest(
+      (request) => new URL(request.url()).pathname === '/issue1912-policy-navigation',
+    )
+    const firstNavigation = page
+      .goto('/issue1912-policy-navigation?phase=first', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30_000,
+      })
+      .catch(() => null)
+    await firstRequest
+    const secondNavigation = await page.goto('/issue1912-policy-navigation?phase=second', {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
+    })
+    await firstNavigation
+    expect(secondNavigation?.status()).toBe(200)
+    await expect(page.locator('#policy-success')).toHaveText('success')
+
+    await page.evaluate(() => fetch('/api/issue1912-policy-failure').catch(() => undefined))
+    await expect.poll(() => apiFailures.length).toBe(1)
+    expect(
+      expectedCancellations.some(
+        (item) =>
+          item.classification === 'expected-superseded-document-or-resource' &&
+          textOf(item.resourceType) === 'document',
+      ),
+    ).toBe(true)
+    expect(unexpectedFailures).toEqual([])
+    expect(apiFailures[0]).toMatchObject({ status: 503, classification: 'api-http-error' })
+  } finally {
+    await page.unroute('**/issue1912-policy-navigation*')
+    await page.unroute('**/api/issue1912-policy-failure')
+  }
+})
+
+test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser pages', async ({
+  page,
+}) => {
+  test.skip(
+    requiresManagedSession,
+    'requires a managed full-stack session and an evidence destination',
+  )
+  test.skip(
+    test.info().project.name !== 'desktop',
+    'the evidence run is intentionally desktop-only',
+  )
 
   const generatedAtUtc = new Date()
   const evidenceDirectory = dirname(evidencePath!)
-  const screenshotDirectory = join(evidenceDirectory, 'issue1912-real-machine-walkthrough-screenshots')
+  const screenshotDirectory = join(
+    evidenceDirectory,
+    'issue1912-real-machine-walkthrough-screenshots',
+  )
   await mkdir(screenshotDirectory, { recursive: true })
 
   let organizationId = ''
@@ -195,6 +343,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   const setup: JsonRecord[] = []
   const uiEvidence: UiProof[] = []
   const failedRequests: JsonRecord[] = []
+  const expectedRequestCancellations: JsonRecord[] = []
   const pageErrors: string[] = []
 
   for (const node of REQUIRED_NODES) {
@@ -215,12 +364,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
 
   page.on('requestfailed', (request) => {
-    failedRequests.push({
-      kind: 'requestfailed',
-      method: request.method(),
-      path: new URL(request.url()).pathname,
-      failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
-    })
+    const classified = classifyRequestFailure(request)
+    if (classified.expected) expectedRequestCancellations.push(classified.record)
+    else failedRequests.push(classified.record)
   })
   page.on('response', (response: Response) => {
     const url = new URL(response.url())
@@ -247,11 +393,18 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       method,
       path: url.pathname + url.search,
       status: response.status(),
-      correlationId: response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
+      correlationId:
+        response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
       body: body ? publicJson(body) : null,
     }
     if (!response.ok()) {
-      throw new PublicCallError(method, summary.path as string, response.status(), summary, publicJson(payload))
+      throw new PublicCallError(
+        method,
+        summary.path as string,
+        response.status(),
+        summary,
+        publicJson(payload),
+      )
     }
     return { payload, summary, publicPayload: publicJson(payload) as JsonRecord }
   }
@@ -271,7 +424,12 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       const response = await call('GET', queryPath(path, query))
       lastRows = rowsOf(response.payload)
       const match = lastRows.find(predicate)
-      if (match) return { match, call: response, poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs } }
+      if (match)
+        return {
+          match,
+          call: response,
+          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+        }
       const remaining = deadline - Date.now()
       if (remaining > 0) await page.waitForTimeout(Math.min(1000, remaining))
     } while (Date.now() < deadline)
@@ -292,7 +450,12 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       attempts += 1
       const response = await call('GET', queryPath(path, query))
       lastData = asRecord(dataOf(response.payload))
-      if (predicate(lastData)) return { data: lastData, call: response, poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs } }
+      if (predicate(lastData))
+        return {
+          data: lastData,
+          call: response,
+          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+        }
       const remaining = deadline - Date.now()
       if (remaining > 0) await page.waitForTimeout(Math.min(1000, remaining))
     } while (Date.now() < deadline)
@@ -301,11 +464,18 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
   const markFailure = (node: NodeName, error: unknown, mode: AutomationMode = 'automatic') => {
     const current = evidence.get(node)!
-    const publicError = error instanceof PublicCallError
-      ? { error: errorText(error), request: error.request, response: publicJson(error.payload) }
-      : error instanceof PollTimeoutError
-        ? { error: errorText(error), path: error.path, attempts: error.attempts, timeoutMs: error.timeoutMs, lastData: publicJson(error.lastData) }
-        : { error: errorText(error) }
+    const publicError =
+      error instanceof PublicCallError
+        ? { error: errorText(error), request: error.request, response: publicJson(error.payload) }
+        : error instanceof PollTimeoutError
+          ? {
+              error: errorText(error),
+              path: error.path,
+              attempts: error.attempts,
+              timeoutMs: error.timeoutMs,
+              lastData: publicJson(error.lastData),
+            }
+          : { error: errorText(error) }
     record({
       ...current,
       automationMode: mode,
@@ -317,23 +487,33 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     })
   }
 
-  const provePage = async (options: {
+  type PageProofOptions = {
     route: string
     listPath: string
     stableText: string
     filterLabel?: string
     tabText?: string | RegExp
+    selectOptions?: Array<{ label: string; option: string }>
     emptyText: string
     screenshotName: string
-  }): Promise<UiProof> => {
+  }
+
+  const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
     const initialListResponse = page.waitForResponse(
       (response) => {
         const url = new URL(response.url())
-        return response.request().method() === 'GET' && url.pathname === options.listPath && response.status() === 200
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname === options.listPath &&
+          response.status() === 200
+        )
       },
       { timeout: 120_000 },
     )
-    const navigation = await page.goto(options.route, { waitUntil: 'domcontentloaded', timeout: 120_000 })
+    const navigation = await page.goto(options.route, {
+      waitUntil: 'domcontentloaded',
+      timeout: 120_000,
+    })
     expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
     const firstList = await initialListResponse
     expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
@@ -342,7 +522,11 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       const filteredListResponse = page.waitForResponse(
         (response) => {
           const url = new URL(response.url())
-          return response.request().method() === 'GET' && url.pathname === options.listPath && response.status() === 200
+          return (
+            response.request().method() === 'GET' &&
+            url.pathname === options.listPath &&
+            response.status() === 200
+          )
         },
         { timeout: 120_000 },
       )
@@ -354,13 +538,33 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       await page.getByRole('tab', { name: options.tabText }).click()
     }
 
+    for (const selectOption of options.selectOptions ?? []) {
+      const listResponse = page.waitForResponse(
+        (response) => {
+          const url = new URL(response.url())
+          return (
+            response.request().method() === 'GET' &&
+            url.pathname === options.listPath &&
+            response.status() === 200
+          )
+        },
+        { timeout: 120_000 },
+      )
+      await page.getByLabel(selectOption.label).click()
+      await page.getByRole('option', { name: selectOption.option, exact: true }).click()
+      await listResponse
+    }
+
     const row = page.locator('tbody tr').filter({ hasText: options.stableText }).first()
-    await expect(row, `page ${options.route} must render a stable business row`).toBeVisible({ timeout: 120_000 })
+    await expect(row, `page ${options.route} must render a stable business row`).toBeVisible({
+      timeout: 120_000,
+    })
     await expect(row).toContainText(options.stableText)
     await expect(page.getByText(options.emptyText, { exact: true })).toHaveCount(0)
     const screenshot = join(screenshotDirectory, options.screenshotName)
     await page.screenshot({ path: screenshot, fullPage: true })
     const proof: UiProof = {
+      node: options.node,
       page: options.route,
       pageHttpStatus: navigation?.status() ?? 0,
       listPath: new URL(firstList.url()).pathname,
@@ -374,9 +578,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     return proof
   }
 
-  const provePageSafely = async (node: NodeName, options: Parameters<typeof provePage>[0]) => {
+  const provePageSafely = async (node: NodeName, options: PageProofOptions) => {
     try {
-      return await provePage(options)
+      return await provePage(node, options)
     } catch (error) {
       markFailure(node, error, 'mixed')
       throw error
@@ -406,34 +610,68 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     expect(environmentId).not.toBe('')
     expect(principalId).not.toBe('')
 
-    const businessRequest = page.waitForRequest((request) => {
-      const path = new URL(request.url()).pathname
-      return path === '/api/business-console/v1/master-data/skus' && Boolean(request.headers().authorization)
-    }, { timeout: 120_000 })
+    const businessRequest = page.waitForRequest(
+      (request) => {
+        const path = new URL(request.url()).pathname
+        return (
+          path === '/api/business-console/v1/master-data/skus' &&
+          Boolean(request.headers().authorization)
+        )
+      },
+      { timeout: 120_000 },
+    )
     await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
     sessionCredential = (await businessRequest).headers().authorization ?? ''
     expect(sessionCredential).not.toBe('')
 
     // The seed is intentionally read-only here. The test proves the reserved facts exist and never
     // creates or overwrites an approval template; CreatePurchaseOrderCommand starts the seeded chain.
-    const rfq = await call('GET', queryPath('/api/business-console/v1/erp/procurement/rfqs', {
-      organizationId, environmentId, keyword: RFQ_NO, skip: 0, take: 100,
-    }))
+    const rfq = await call(
+      'GET',
+      queryPath('/api/business-console/v1/erp/procurement/rfqs', {
+        organizationId,
+        environmentId,
+        keyword: RFQ_NO,
+        skip: 0,
+        take: 100,
+      }),
+    )
     const rfqRow = rowsOf(rfq.payload).find((row) => textOf(row.rfqNo) === RFQ_NO)
     if (!rfqRow) throw new Error(`Seed RFQ ${RFQ_NO} was not returned by the public facade.`)
-    const supplierQuotes = await call('GET', queryPath('/api/business-console/v1/erp/procurement/supplier-quotations', {
-      organizationId, environmentId, rfqNo: RFQ_NO, keyword: SUPPLIER_QUOTATION_NO, skip: 0, take: 100,
-    }))
-    const supplierQuote = rowsOf(supplierQuotes.payload).find((row) => textOf(row.quotationNo) === SUPPLIER_QUOTATION_NO)
-    if (!supplierQuote) throw new Error(`Seed supplier quotation ${SUPPLIER_QUOTATION_NO} was not returned by the public facade.`)
+    const supplierQuotes = await call(
+      'GET',
+      queryPath('/api/business-console/v1/erp/procurement/supplier-quotations', {
+        organizationId,
+        environmentId,
+        rfqNo: RFQ_NO,
+        keyword: SUPPLIER_QUOTATION_NO,
+        skip: 0,
+        take: 100,
+      }),
+    )
+    const supplierQuote = rowsOf(supplierQuotes.payload).find(
+      (row) => textOf(row.quotationNo) === SUPPLIER_QUOTATION_NO,
+    )
+    if (!supplierQuote)
+      throw new Error(
+        `Seed supplier quotation ${SUPPLIER_QUOTATION_NO} was not returned by the public facade.`,
+      )
     const quoteLine = asRecord((Array.isArray(supplierQuote.lines) ? supplierQuote.lines : [])[0])
     const supplierCode = textOf(supplierQuote.supplierCode)
     const materialSku = textOf(quoteLine.skuCode)
     const materialUom = textOf(quoteLine.uomCode)
     const materialQuantity = Number(quoteLine.quantity ?? 0)
     const materialUnitPrice = Number(quoteLine.unitPrice ?? 0)
-    if (!supplierCode || !materialSku || !materialUom || materialQuantity <= 0 || materialUnitPrice <= 0) {
-      throw new Error(`Seed supplier quotation ${SUPPLIER_QUOTATION_NO} did not expose a complete line.`)
+    if (
+      !supplierCode ||
+      !materialSku ||
+      !materialUom ||
+      materialQuantity <= 0 ||
+      materialUnitPrice <= 0
+    ) {
+      throw new Error(
+        `Seed supplier quotation ${SUPPLIER_QUOTATION_NO} did not expose a complete line.`,
+      )
     }
     const rfqUi = await provePageSafely('rfq-supplier-quotation', {
       route: '/erp/procurement/rfqs',
@@ -458,9 +696,14 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${RFQ_NO} -> ${SUPPLIER_QUOTATION_NO}`,
       automationMode: 'automatic',
       request: supplierQuotes.summary,
-      responseOrLog: { rfq: publicJson(rfqRow), supplierQuotation: publicJson(supplierQuote), ui: [rfqUi, quoteUi] },
+      responseOrLog: {
+        rfq: publicJson(rfqRow),
+        supplierQuotation: publicJson(supplierQuote),
+        ui: [rfqUi, quoteUi],
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: '浏览器页面以 HTTP 200 返回 RFQ 与供应商报价，并渲染了稳定业务编号行；报价事实来自隔离 walkthrough seed。',
+      demoWording:
+        '浏览器页面以 HTTP 200 返回 RFQ 与供应商报价，并渲染了稳定业务编号行；报价事实来自隔离 walkthrough seed。',
       responsibilityIssue: null,
     })
 
@@ -470,20 +713,27 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       purchaseOrderNo: PURCHASE_ORDER_NO,
       supplierCode,
       siteCode: SITE_CODE,
-      lines: [{
-        lineNo: textOf(quoteLine.lineNo || '10'),
-        skuCode: materialSku,
-        uomCode: materialUom,
-        quantity: materialQuantity,
-        unitPrice: materialUnitPrice,
-        promisedDate: textOf(quoteLine.promisedDate || '2099-12-31'),
-      }],
+      lines: [
+        {
+          lineNo: textOf(quoteLine.lineNo || '10'),
+          skuCode: materialSku,
+          uomCode: materialUom,
+          quantity: materialQuantity,
+          unitPrice: materialUnitPrice,
+          promisedDate: textOf(quoteLine.promisedDate || '2099-12-31'),
+        },
+      ],
       idempotencyKey: `issue1912-${PURCHASE_ORDER_NO}`,
     }
-    const purchaseOrder = await call('POST', '/api/business-console/v1/erp/procurement/purchase-orders', purchaseOrderRequest)
+    const purchaseOrder = await call(
+      'POST',
+      '/api/business-console/v1/erp/procurement/purchase-orders',
+      purchaseOrderRequest,
+    )
     setup.push({ request: purchaseOrder.summary, response: purchaseOrder.publicPayload })
     const purchaseOrderId = textOf(asRecord(dataOf(purchaseOrder.payload)).purchaseOrderId)
-    if (!purchaseOrderId) throw new Error(`Purchase order ${PURCHASE_ORDER_NO} did not return an ID.`)
+    if (!purchaseOrderId)
+      throw new Error(`Purchase order ${PURCHASE_ORDER_NO} did not return an ID.`)
     const poUi = await provePageSafely('supplier-quotation-purchase-order', {
       route: '/erp/procurement/purchase-orders',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
@@ -501,29 +751,104 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       request: purchaseOrder.summary,
       responseOrLog: { purchaseOrder: purchaseOrder.publicPayload, ui: poUi },
       conclusion: 'runtime-confirmed',
-      demoWording: '通过公开 ERP 采购接口以供应商报价行创建了固定采购订单，随后将用真实审批链释放。',
+      demoWording:
+        '通过公开 ERP 采购接口以供应商报价行创建了固定采购订单，随后将用真实审批链释放。',
       responsibilityIssue: null,
     })
 
-    const pendingApproval = await pollRows('/api/business-console/v1/approval/chains', {
-      organizationId, environmentId, status: 'pending', sourceService: 'business-erp',
-      documentType: 'purchase-order', documentId: PURCHASE_ORDER_NO, skip: 0, take: 100,
-    }, (row) => textOf(row.documentId) === PURCHASE_ORDER_NO && textOf(row.status).toLowerCase() === 'pending')
+    const pendingApproval = await pollRows(
+      '/api/business-console/v1/approval/chains',
+      {
+        organizationId,
+        environmentId,
+        status: 'pending',
+        sourceService: 'business-erp',
+        documentType: 'purchase-order',
+        documentId: PURCHASE_ORDER_NO,
+        skip: 0,
+        take: 100,
+      },
+      (row) =>
+        textOf(row.documentId) === PURCHASE_ORDER_NO &&
+        textOf(row.status).toLowerCase() === 'pending',
+    )
     const chainId = textOf(pendingApproval.match.chainId)
-    if (!chainId) throw new Error(`Purchase order ${PURCHASE_ORDER_NO} did not expose an approval chain.`)
-    const approvalDecision = await call('POST', queryPath(`/api/business-console/v1/approval/chains/${encodeURIComponent(chainId)}/steps/1/resolve`, {
-      organizationId, environmentId,
-    }), {
-      organizationId,
-      environmentId,
-      actorType: principalType || 'user',
-      actorRef: principalId,
-      decision: 'approve',
-      comment: 'NERV-1127 real-machine walkthrough approval',
-    })
-    const releasedOrder = await pollRows('/api/business-console/v1/erp/procurement/purchase-orders', {
-      organizationId, environmentId, keyword: PURCHASE_ORDER_NO, skip: 0, take: 100,
-    }, (row) => textOf(row.purchaseOrderNo) === PURCHASE_ORDER_NO && textOf(row.status).toLowerCase() === 'released')
+    if (!chainId)
+      throw new Error(`Purchase order ${PURCHASE_ORDER_NO} did not expose an approval chain.`)
+    const approvalTemplateCode = textOf(pendingApproval.match.templateCode)
+    const approvalTemplateVersion = Number(pendingApproval.match.templateVersion)
+    if (
+      approvalTemplateCode !== PURCHASE_ORDER_APPROVAL_TEMPLATE_CODE ||
+      approvalTemplateVersion !== PURCHASE_ORDER_APPROVAL_TEMPLATE_VERSION
+    ) {
+      throw new Error(
+        `Purchase order ${PURCHASE_ORDER_NO} matched unexpected approval template ${approvalTemplateCode}@${approvalTemplateVersion}.`,
+      )
+    }
+    const approvalChainDetail = await call(
+      'GET',
+      queryPath(`/api/business-console/v1/approval/chains/${encodeURIComponent(chainId)}`, {
+        organizationId,
+        environmentId,
+      }),
+    )
+    const approvalChain = asRecord(dataOf(approvalChainDetail.payload))
+    if (
+      textOf(approvalChain.templateCode) !== PURCHASE_ORDER_APPROVAL_TEMPLATE_CODE ||
+      Number(approvalChain.templateVersion) !== PURCHASE_ORDER_APPROVAL_TEMPLATE_VERSION ||
+      textOf(approvalChain.sourceService) !== 'business-erp' ||
+      textOf(approvalChain.documentType) !== 'purchase-order' ||
+      textOf(approvalChain.documentId) !== PURCHASE_ORDER_NO
+    ) {
+      throw new Error(
+        `Approval chain ${chainId} did not preserve the seeded purchase-order-release identity.`,
+      )
+    }
+    const approvalStep = (Array.isArray(approvalChain.steps) ? approvalChain.steps : [])
+      .map(asRecord)
+      .find((step) => Number(step.stepNo) === 1)
+    if (
+      !approvalStep ||
+      textOf(approvalStep.stepName).trim() === '' ||
+      textOf(approvalStep.approverType) !== 'user' ||
+      textOf(approvalStep.approverRef) !== 'user-admin' ||
+      textOf(approvalStep.status).toLowerCase() !== 'pending'
+    ) {
+      throw new Error(
+        `Approval chain ${chainId} did not expose the seeded user-admin step 1 as pending.`,
+      )
+    }
+    const approvalDecision = await call(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/approval/chains/${encodeURIComponent(chainId)}/steps/1/resolve`,
+        {
+          organizationId,
+          environmentId,
+        },
+      ),
+      {
+        organizationId,
+        environmentId,
+        actorType: principalType || 'user',
+        actorRef: principalId,
+        decision: 'approve',
+        comment: 'NERV-1127 real-machine walkthrough approval',
+      },
+    )
+    const releasedOrder = await pollRows(
+      '/api/business-console/v1/erp/procurement/purchase-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: PURCHASE_ORDER_NO,
+        skip: 0,
+        take: 100,
+      },
+      (row) =>
+        textOf(row.purchaseOrderNo) === PURCHASE_ORDER_NO &&
+        textOf(row.status).toLowerCase() === 'released',
+    )
     const approvalUi = await provePageSafely('purchase-order-approval', {
       route: `/approval?sourceService=business-erp&documentType=purchase-order&documentId=${encodeURIComponent(PURCHASE_ORDER_NO)}`,
       listPath: '/api/business-console/v1/approval/chains',
@@ -547,9 +872,19 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${PURCHASE_ORDER_NO} -> ${chainId} -> approved -> released`,
       automationMode: 'manual',
       request: pendingApproval.call.summary,
-      responseOrLog: { chain: publicJson(pendingApproval.match), decision: approvalDecision.publicPayload, releasedOrder: publicJson(releasedOrder.match), ui: [approvalUi, releasedPoUi] },
+      responseOrLog: {
+        chain: publicJson(pendingApproval.match),
+        templateCode: approvalTemplateCode,
+        templateVersion: approvalTemplateVersion,
+        chainDetail: approvalChainDetail.publicPayload,
+        step: publicJson(approvalStep),
+        decision: approvalDecision.publicPayload,
+        releasedOrder: publicJson(releasedOrder.match),
+        ui: [approvalUi, releasedPoUi],
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: '采购订单走过 ERP 创建的真实 purchase-order-release 审批模板，公开审批中心返回批准后订单行显示 released；测试没有写入或覆盖模板。',
+      demoWording:
+        '采购订单走过 ERP 创建的真实 purchase-order-release 审批模板，公开审批中心返回批准后订单行显示 released；测试没有写入或覆盖模板。',
       responsibilityIssue: null,
     })
 
@@ -558,17 +893,40 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       environmentId,
       purchaseReceiptNo: PURCHASE_RECEIPT_NO,
       purchaseOrderNo: PURCHASE_ORDER_NO,
-      lines: [{ purchaseOrderLineNo: textOf(quoteLine.lineNo || '10'), receivedQuantity: materialQuantity, qualityStatus: 'unrestricted' }],
+      lines: [
+        {
+          purchaseOrderLineNo: textOf(quoteLine.lineNo || '10'),
+          receivedQuantity: materialQuantity,
+          qualityStatus: 'unrestricted',
+        },
+      ],
       idempotencyKey: `issue1912-${PURCHASE_RECEIPT_NO}`,
     }
-    const receipt = await call('POST', '/api/business-console/v1/erp/procurement/purchase-receipts', receiptRequest)
+    const receipt = await call(
+      'POST',
+      '/api/business-console/v1/erp/procurement/purchase-receipts',
+      receiptRequest,
+    )
     setup.push({ request: receipt.summary, response: receipt.publicPayload })
-    const receiptOrder = await pollRows('/api/business-console/v1/erp/procurement/purchase-orders', {
-      organizationId, environmentId, keyword: PURCHASE_ORDER_NO, skip: 0, take: 100,
-    }, (row) => textOf(row.purchaseOrderNo) === PURCHASE_ORDER_NO && (Array.isArray(row.lines) ? row.lines : []).some((line) => {
-      const item = asRecord(line)
-      return textOf(item.lineNo) === textOf(quoteLine.lineNo || '10') && Number(item.receivedQuantity ?? 0) >= materialQuantity
-    }))
+    const receiptOrder = await pollRows(
+      '/api/business-console/v1/erp/procurement/purchase-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: PURCHASE_ORDER_NO,
+        skip: 0,
+        take: 100,
+      },
+      (row) =>
+        textOf(row.purchaseOrderNo) === PURCHASE_ORDER_NO &&
+        (Array.isArray(row.lines) ? row.lines : []).some((line) => {
+          const item = asRecord(line)
+          return (
+            textOf(item.lineNo) === textOf(quoteLine.lineNo || '10') &&
+            Number(item.receivedQuantity ?? 0) >= materialQuantity
+          )
+        }),
+    )
     const receiptUi = await provePageSafely('purchase-order-receipt', {
       route: '/erp/procurement/receipts',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
@@ -584,16 +942,38 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${PURCHASE_ORDER_NO} -> ${PURCHASE_RECEIPT_NO}`,
       automationMode: 'manual',
       request: receipt.summary,
-      responseOrLog: { receipt: receipt.publicPayload, purchaseOrder: publicJson(receiptOrder.match), ui: receiptUi },
+      responseOrLog: {
+        receipt: receipt.publicPayload,
+        purchaseOrder: publicJson(receiptOrder.match),
+        ui: receiptUi,
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: '采购收货公开接口以固定 PR-WALK-001 记账，采购收货页面以 HTTP 200 渲染同一 PO 行和已收数量。',
+      demoWording:
+        '采购收货公开接口以固定 PR-WALK-001 记账，采购收货页面以 HTTP 200 渲染同一 PO 行和已收数量。',
       responsibilityIssue: null,
     })
 
-    const receiptScopes = await call('GET', queryPath('/api/business-console/v1/wms/work-scopes/receipts', { organizationId, environmentId }))
-    const receiptScope = (Array.isArray(asRecord(dataOf(receiptScopes.payload)).items) ? asRecord(dataOf(receiptScopes.payload)).items : [])
+    const receiptScopes = await call(
+      'GET',
+      queryPath('/api/business-console/v1/wms/work-scopes/receipts', {
+        organizationId,
+        environmentId,
+      }),
+    )
+    const receiptScope = (
+      Array.isArray(asRecord(dataOf(receiptScopes.payload)).items)
+        ? asRecord(dataOf(receiptScopes.payload)).items
+        : []
+    )
       .map(asRecord)
-      .find((item) => item.movementAllowed === true && item.isBlocked !== true && item.isExpired !== true && textOf(item.scopeKind) && textOf(item.scopeId))
+      .find(
+        (item) =>
+          item.movementAllowed === true &&
+          item.isBlocked !== true &&
+          item.isExpired !== true &&
+          textOf(item.scopeKind) &&
+          textOf(item.scopeId),
+      )
     if (!receiptScope) throw new Error('WMS receipt scope catalog returned no authorized scope.')
     const receiptScopeKind = textOf(receiptScope.scopeKind)
     const receiptScopeId = textOf(receiptScope.scopeId)
@@ -604,43 +984,80 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       sourceDocumentType: 'purchase-order',
       sourceDocumentId: PURCHASE_ORDER_NO,
       siteCode: SITE_CODE,
-      lines: [{
-        lineNo: textOf(quoteLine.lineNo || '10'),
-        skuCode: materialSku,
-        uomCode: materialUom,
-        receivedQuantity: materialQuantity,
-        stagingLocationCode: INBOUND_LOCATION,
-        lotNo: 'LOT-WALK-RM-001',
-        serialNo: null,
-        qualityStatus: 'unrestricted',
-        ownerType: 'company',
-        ownerId: null,
-      }],
+      lines: [
+        {
+          lineNo: textOf(quoteLine.lineNo || '10'),
+          skuCode: materialSku,
+          uomCode: materialUom,
+          receivedQuantity: materialQuantity,
+          stagingLocationCode: INBOUND_LOCATION,
+          lotNo: 'LOT-WALK-RM-001',
+          serialNo: null,
+          qualityStatus: 'unrestricted',
+          ownerType: 'company',
+          ownerId: null,
+        },
+      ],
     })
     const inboundOrderId = textOf(asRecord(dataOf(inbound.payload)).inboundOrderId)
     if (!inboundOrderId) throw new Error(`WMS inbound ${INBOUND_ORDER_NO} did not return an ID.`)
-    const inboundRow = await pollRows('/api/business-console/v1/wms/inbound-orders', {
-      organizationId, environmentId, keyword: INBOUND_ORDER_NO, scopeKind: receiptScopeKind, scopeId: receiptScopeId, skip: 0, take: 100,
-    }, (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO)
+    const inboundRow = await pollRows(
+      '/api/business-console/v1/wms/inbound-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: INBOUND_ORDER_NO,
+        scopeKind: receiptScopeKind,
+        scopeId: receiptScopeId,
+        skip: 0,
+        take: 100,
+      },
+      (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO,
+    )
     const inboundVersion = Number(inboundRow.match.version ?? 1)
-    const putaway = await call('POST', queryPath(`/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/putaway-tasks`, { organizationId, environmentId }), {
-      taskNo: PUTAWAY_TASK_NO,
-      lineNo: textOf(quoteLine.lineNo || '10'),
-      fromLocationCode: INBOUND_LOCATION,
-      toLocationCode: LINE_SIDE_LOCATION,
-      quantity: materialQuantity,
-    })
-    const completedInbound = await call('POST', queryPath(`/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/complete`, { organizationId, environmentId }), {
-      idempotencyKey: `issue1912-${INBOUND_ORDER_NO}-complete`,
-      lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
-      scopeKind: receiptScopeKind,
-      scopeId: receiptScopeId,
-      expectedVersion: inboundVersion,
-    })
-    const inventory = await pollData('/api/business-console/v1/inventory/availability', {
-      organizationId, environmentId, skuCode: materialSku, uomCode: materialUom, siteCode: SITE_CODE,
-      locationCode: LINE_SIDE_LOCATION, lotNo: 'LOT-WALK-RM-001', qualityStatus: 'unrestricted', ownerType: 'company',
-    }, (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity)
+    const putaway = await call(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/putaway-tasks`,
+        { organizationId, environmentId },
+      ),
+      {
+        taskNo: PUTAWAY_TASK_NO,
+        lineNo: textOf(quoteLine.lineNo || '10'),
+        fromLocationCode: INBOUND_LOCATION,
+        toLocationCode: LINE_SIDE_LOCATION,
+        quantity: materialQuantity,
+      },
+    )
+    const completedInbound = await call(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/complete`,
+        { organizationId, environmentId },
+      ),
+      {
+        idempotencyKey: `issue1912-${INBOUND_ORDER_NO}-complete`,
+        lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
+        scopeKind: receiptScopeKind,
+        scopeId: receiptScopeId,
+        expectedVersion: inboundVersion,
+      },
+    )
+    const inventory = await pollData(
+      '/api/business-console/v1/inventory/availability',
+      {
+        organizationId,
+        environmentId,
+        skuCode: materialSku,
+        uomCode: materialUom,
+        siteCode: SITE_CODE,
+        locationCode: LINE_SIDE_LOCATION,
+        lotNo: 'LOT-WALK-RM-001',
+        qualityStatus: 'unrestricted',
+        ownerType: 'company',
+      },
+      (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity,
+    )
     const inboundUi = await provePageSafely('receipt-inbound-inventory', {
       route: '/wms/inbound',
       listPath: '/api/business-console/v1/wms/inbound-orders',
@@ -656,17 +1073,34 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${PURCHASE_RECEIPT_NO} -> ${INBOUND_ORDER_NO} -> ${textOf(inventory.data.movementId ?? inventory.data.ledgerVersion)}`,
       automationMode: 'mixed',
       request: inbound.summary,
-      responseOrLog: { inbound: inbound.publicPayload, putaway: putaway.publicPayload, completion: completedInbound.publicPayload, inventory: publicJson(inventory.data), ui: inboundUi },
+      responseOrLog: {
+        inbound: inbound.publicPayload,
+        putaway: putaway.publicPayload,
+        completion: completedInbound.publicPayload,
+        inventory: publicJson(inventory.data),
+        ui: inboundUi,
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: '真实 WMS 入库单在授权作业范围内完成，页面渲染 IN-WALK-001，库存公开可用量随后在 SITE-001/loc-line-01 出现。',
+      demoWording:
+        '真实 WMS 入库单在授权作业范围内完成，页面渲染 IN-WALK-001，库存公开可用量随后在 SITE-001/loc-line-01 出现。',
       responsibilityIssue: null,
     })
 
-    const salesQuotation = await call('GET', queryPath('/api/business-console/v1/erp/sales/quotations', {
-      organizationId, environmentId, keyword: SALES_QUOTATION_NO, skip: 0, take: 100,
-    }))
-    const quotationRow = rowsOf(salesQuotation.payload).find((row) => textOf(row.quotationNo) === SALES_QUOTATION_NO)
-    if (!quotationRow || textOf(quotationRow.status).toLowerCase() !== 'approved') throw new Error(`Seed sales quotation ${SALES_QUOTATION_NO} was not approved.`)
+    const salesQuotation = await call(
+      'GET',
+      queryPath('/api/business-console/v1/erp/sales/quotations', {
+        organizationId,
+        environmentId,
+        keyword: SALES_QUOTATION_NO,
+        skip: 0,
+        take: 100,
+      }),
+    )
+    const quotationRow = rowsOf(salesQuotation.payload).find(
+      (row) => textOf(row.quotationNo) === SALES_QUOTATION_NO,
+    )
+    if (!quotationRow || textOf(quotationRow.status).toLowerCase() !== 'approved')
+      throw new Error(`Seed sales quotation ${SALES_QUOTATION_NO} was not approved.`)
     const salesQuotationUi = await provePageSafely('sales-quotation-sales-order', {
       route: '/erp/sales/quotations',
       listPath: '/api/business-console/v1/erp/sales/quotations',
@@ -676,12 +1110,24 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       screenshotName: '08-sales-quotation.png',
     })
     const salesOrder = await call('POST', '/api/business-console/v1/erp/sales/sales-orders', {
-      organizationId, environmentId, salesOrderNo: SALES_ORDER_NO, quotationNo: SALES_QUOTATION_NO, siteCode: SITE_CODE,
+      organizationId,
+      environmentId,
+      salesOrderNo: SALES_ORDER_NO,
+      quotationNo: SALES_QUOTATION_NO,
+      siteCode: SITE_CODE,
       idempotencyKey: `issue1912-${SALES_ORDER_NO}`,
     })
-    const salesOrderRow = await pollRows('/api/business-console/v1/erp/sales/sales-orders', {
-      organizationId, environmentId, keyword: SALES_ORDER_NO, skip: 0, take: 100,
-    }, (row) => textOf(row.salesOrderNo) === SALES_ORDER_NO)
+    const salesOrderRow = await pollRows(
+      '/api/business-console/v1/erp/sales/sales-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: SALES_ORDER_NO,
+        skip: 0,
+        take: 100,
+      },
+      (row) => textOf(row.salesOrderNo) === SALES_ORDER_NO,
+    )
     const salesOrderUi = await provePageSafely('sales-quotation-sales-order', {
       route: `/erp/sales/orders?keyword=${encodeURIComponent(SALES_ORDER_NO)}`,
       listPath: '/api/business-console/v1/erp/sales/sales-orders',
@@ -697,13 +1143,22 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${SALES_QUOTATION_NO} -> ${SALES_ORDER_NO}`,
       automationMode: 'manual',
       request: salesOrder.summary,
-      responseOrLog: { quotation: publicJson(quotationRow), salesOrder: publicJson(salesOrderRow.match), ui: [salesQuotationUi, salesOrderUi] },
+      responseOrLog: {
+        quotation: publicJson(quotationRow),
+        salesOrder: publicJson(salesOrderRow.match),
+        ui: [salesQuotationUi, salesOrderUi],
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: '销售报价页面证明 QUO-WALK-001 已批准，销售订单页面以 HTTP 200 渲染稳定 SO-WALK-001 行。',
+      demoWording:
+        '销售报价页面证明 QUO-WALK-001 已批准，销售订单页面以 HTTP 200 渲染稳定 SO-WALK-001 行。',
       responsibilityIssue: null,
     })
 
-    const demand = await pollRows('/api/business-console/v1/planning/demands', { organizationId, environmentId }, (row) => textOf(row.sourceReference) === SALES_ORDER_NO)
+    const demand = await pollRows(
+      '/api/business-console/v1/planning/demands',
+      { organizationId, environmentId },
+      (row) => textOf(row.sourceReference) === SALES_ORDER_NO,
+    )
     const demandUi = await provePageSafely('sales-order-demand', {
       route: '/planning',
       listPath: '/api/business-console/v1/planning/demands',
@@ -727,14 +1182,31 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
     const horizonStart = dateOnly(new Date(generatedAtUtc.getTime() - 86_400_000))
     const mrp = await call('POST', '/api/business-console/v1/planning/mrp-runs', {
-      organizationId, environmentId, horizonStart, horizonEnd: '2100-01-01',
+      organizationId,
+      environmentId,
+      horizonStart,
+      horizonEnd: '2100-01-01',
     })
     const runId = textOf(asRecord(dataOf(mrp.payload)).runId)
     if (!runId) throw new Error('MRP run did not return a runId.')
-    const pegging = await pollRows(`/api/business-console/v1/planning/mrp-runs/${encodeURIComponent(runId)}/pegging`, {
-      organizationId, environmentId,
-    }, (row) => textOf(row.demandSourceReference) === SALES_ORDER_NO, 120_000)
-    const suggestion = await pollRows('/api/business-console/v1/planning/suggestions', { organizationId, environmentId }, (row) => textOf(row.runId) === runId && textOf(row.suggestionType) === 'planned-work-order' && textOf(row.skuCode) === FINISHED_SKU, 120_000)
+    const pegging = await pollRows(
+      `/api/business-console/v1/planning/mrp-runs/${encodeURIComponent(runId)}/pegging`,
+      {
+        organizationId,
+        environmentId,
+      },
+      (row) => textOf(row.demandSourceReference) === SALES_ORDER_NO,
+      120_000,
+    )
+    const suggestion = await pollRows(
+      '/api/business-console/v1/planning/suggestions',
+      { organizationId, environmentId },
+      (row) =>
+        textOf(row.runId) === runId &&
+        textOf(row.suggestionType) === 'planned-work-order' &&
+        textOf(row.skuCode) === FINISHED_SKU,
+      120_000,
+    )
     const suggestionUi = await provePageSafely('demand-mrp-suggestion', {
       route: '/planning',
       listPath: '/api/business-console/v1/planning/suggestions',
@@ -750,30 +1222,65 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${SALES_ORDER_NO} -> ${runId} -> ${FINISHED_SKU}`,
       automationMode: 'manual',
       request: mrp.summary,
-      responseOrLog: { mrp: mrp.publicPayload, pegging: publicJson(pegging.match), suggestion: publicJson(suggestion.match), ui: suggestionUi },
+      responseOrLog: {
+        mrp: mrp.publicPayload,
+        pegging: publicJson(pegging.match),
+        suggestion: publicJson(suggestion.match),
+        ui: suggestionUi,
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: 'MRP 使用包含 2099-12-31 种子需求日期的公开窗口，保留 SO-WALK-001 pegging 并在真实计划建议页展示成品生产建议。',
+      demoWording:
+        'MRP 使用包含 2099-12-31 种子需求日期的公开窗口，保留 SO-WALK-001 pegging 并在真实计划建议页展示成品生产建议。',
       responsibilityIssue: null,
     })
 
-    const mesReadContext = await call('GET', queryPath('/api/business-console/v1/me/work-context', {
-      organizationId, environmentId, permissionCode: 'business.mes.work-orders.read',
-    }))
+    const mesReadContext = await call(
+      'GET',
+      queryPath('/api/business-console/v1/me/work-context', {
+        organizationId,
+        environmentId,
+        permissionCode: 'business.mes.work-orders.read',
+      }),
+    )
     const mesReadData = asRecord(dataOf(mesReadContext.payload))
-    const mesReadScope = asRecord(mesReadData.selectedScope ?? (Array.isArray(mesReadData.authorizedScopes) ? mesReadData.authorizedScopes[0] : null))
+    const mesReadScope = asRecord(
+      mesReadData.selectedScope ??
+        (Array.isArray(mesReadData.authorizedScopes) ? mesReadData.authorizedScopes[0] : null),
+    )
     const mesScopeKind = textOf(mesReadScope.kind ?? mesReadScope.scopeKind)
     const mesScopeId = textOf(mesReadScope.id ?? mesReadScope.scopeId)
-    if (!mesScopeKind || !mesScopeId) throw new Error('MES work-order read context returned no authorized scope.')
-    const accepted = await call('POST', queryPath(`/api/business-console/v1/planning/suggestions/${encodeURIComponent(textOf(suggestion.match.suggestionId))}/accept`, { organizationId, environmentId }), {
-      downstreamService: 'BusinessMes', downstreamDocumentType: 'WorkOrder', downstreamDocumentId: null, idempotencyKey: `issue1912-accept-${textOf(suggestion.match.suggestionId)}`,
-    })
+    if (!mesScopeKind || !mesScopeId)
+      throw new Error('MES work-order read context returned no authorized scope.')
+    const accepted = await call(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/planning/suggestions/${encodeURIComponent(textOf(suggestion.match.suggestionId))}/accept`,
+        { organizationId, environmentId },
+      ),
+      {
+        downstreamService: 'BusinessMes',
+        downstreamDocumentType: 'WorkOrder',
+        downstreamDocumentId: null,
+        idempotencyKey: `issue1912-accept-${textOf(suggestion.match.suggestionId)}`,
+      },
+    )
     const acceptedData = asRecord(dataOf(accepted.payload))
     const workOrderId = textOf(acceptedData.downstreamDocumentId)
-    if (!workOrderId) throw new Error('Planning suggestion acceptance returned no MES work-order ID.')
-    const workOrderDetail = await call('GET', queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId }))
+    if (!workOrderId)
+      throw new Error('Planning suggestion acceptance returned no MES work-order ID.')
+    const workOrderDetail = await call(
+      'GET',
+      queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, {
+        organizationId,
+        environmentId,
+        scopeKind: mesScopeKind,
+        scopeId: mesScopeId,
+      }),
+    )
     const workOrder = asRecord(dataOf(workOrderDetail.payload))
     const sourcePlanReference = asRecord(workOrder.sourcePlanReference)
-    if (textOf(sourcePlanReference.sourceDemandReference) !== SALES_ORDER_NO) throw new Error(`MES work order ${workOrderId} did not preserve ${SALES_ORDER_NO}.`)
+    if (textOf(sourcePlanReference.sourceDemandReference) !== SALES_ORDER_NO)
+      throw new Error(`MES work order ${workOrderId} did not preserve ${SALES_ORDER_NO}.`)
     const workOrderNo = textOf(workOrder.workOrderNo || workOrderId)
     const workOrderUi = await provePageSafely('mrp-suggestion-mes-work-order', {
       route: `/mes/work-orders?keyword=${encodeURIComponent(workOrderNo)}`,
@@ -791,55 +1298,140 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       request: accepted.summary,
       responseOrLog: { workOrder: publicJson(workOrder), ui: workOrderUi },
       conclusion: 'runtime-confirmed',
-      demoWording: '计划建议接受后真实 MES 工单页渲染了生成的工单业务号，并通过详情公开关联回 SO-WALK-001。',
+      demoWording:
+        '计划建议接受后真实 MES 工单页渲染了生成的工单业务号，并通过详情公开关联回 SO-WALK-001。',
       responsibilityIssue: null,
     })
 
-    const mesManageContext = await call('GET', queryPath('/api/business-console/v1/me/work-context', {
-      organizationId, environmentId, permissionCode: 'business.mes.work-orders.manage',
-    }))
+    const mesManageContext = await call(
+      'GET',
+      queryPath('/api/business-console/v1/me/work-context', {
+        organizationId,
+        environmentId,
+        permissionCode: 'business.mes.work-orders.manage',
+      }),
+    )
     const mesManageData = asRecord(dataOf(mesManageContext.payload))
-    const mesManageScope = asRecord(mesManageData.selectedScope ?? (Array.isArray(mesManageData.authorizedScopes) ? mesManageData.authorizedScopes[0] : null))
-    const manageScopeKind = textOf((mesManageScope.kind ?? mesManageScope.scopeKind) || mesScopeKind)
+    const mesManageScope = asRecord(
+      mesManageData.selectedScope ??
+        (Array.isArray(mesManageData.authorizedScopes) ? mesManageData.authorizedScopes[0] : null),
+    )
+    const manageScopeKind = textOf(
+      (mesManageScope.kind ?? mesManageScope.scopeKind) || mesScopeKind,
+    )
     const manageScopeId = textOf((mesManageScope.id ?? mesManageScope.scopeId) || mesScopeId)
-    await call('POST', queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}/release`, { organizationId, environmentId, scopeKind: manageScopeKind, scopeId: manageScopeId }), {
-      confirmWarnings: true, idempotencyKey: `issue1912-release-${workOrderId}`,
-    })
-    let releasedDetail = await pollData(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId }, (data) => Array.isArray(data.operationTasks) && data.operationTasks.length > 0)
-    let operationTasks = (Array.isArray(releasedDetail.data.operationTasks) ? releasedDetail.data.operationTasks : []).map(asRecord).sort((a, b) => Number(a.operationSequence ?? 0) - Number(b.operationSequence ?? 0))
-    if (operationTasks.length === 0) throw new Error(`Released work order ${workOrderNo} has no operation tasks.`)
+    await call(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}/release`,
+        { organizationId, environmentId, scopeKind: manageScopeKind, scopeId: manageScopeId },
+      ),
+      {
+        confirmWarnings: true,
+        idempotencyKey: `issue1912-release-${workOrderId}`,
+      },
+    )
+    let releasedDetail = await pollData(
+      `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`,
+      { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId },
+      (data) => Array.isArray(data.operationTasks) && data.operationTasks.length > 0,
+    )
+    let operationTasks = (
+      Array.isArray(releasedDetail.data.operationTasks) ? releasedDetail.data.operationTasks : []
+    )
+      .map(asRecord)
+      .sort((a, b) => Number(a.operationSequence ?? 0) - Number(b.operationSequence ?? 0))
+    if (operationTasks.length === 0)
+      throw new Error(`Released work order ${workOrderNo} has no operation tasks.`)
 
-    const reportContext = await call('GET', queryPath('/api/business-console/v1/me/work-context', {
-      organizationId, environmentId, permissionCode: 'business.mes.reporting.write',
-    }))
+    const reportContext = await call(
+      'GET',
+      queryPath('/api/business-console/v1/me/work-context', {
+        organizationId,
+        environmentId,
+        permissionCode: 'business.mes.reporting.write',
+      }),
+    )
     const reportContextData = asRecord(dataOf(reportContext.payload))
-    const reportScope = asRecord(reportContextData.selectedScope ?? (Array.isArray(reportContextData.authorizedScopes) ? reportContextData.authorizedScopes[0] : null))
+    const reportScope = asRecord(
+      reportContextData.selectedScope ??
+        (Array.isArray(reportContextData.authorizedScopes)
+          ? reportContextData.authorizedScopes[0]
+          : null),
+    )
     const reportScopeKind = textOf((reportScope.kind ?? reportScope.scopeKind) || mesScopeKind)
     const reportScopeId = textOf((reportScope.id ?? reportScope.scopeId) || mesScopeId)
     const reportFacts: JsonRecord[] = []
     for (const task of operationTasks) {
       const taskId = textOf(task.operationTaskId)
       if (!taskId) throw new Error(`Work order ${workOrderNo} exposed an operation without an ID.`)
-      const taskStart = await call('POST', queryPath(`/api/business-console/v1/mes/operation-tasks/${encodeURIComponent(taskId)}/start`, {
-        organizationId, environmentId, scopeKind: manageScopeKind, scopeId: manageScopeId,
-      }), {
-        reasonCode: 'manual-evidence-transition', idempotencyKey: `issue1912-start-${taskId}`,
-      })
+      const taskStart = await call(
+        'POST',
+        queryPath(
+          `/api/business-console/v1/mes/operation-tasks/${encodeURIComponent(taskId)}/start`,
+          {
+            organizationId,
+            environmentId,
+            scopeKind: manageScopeKind,
+            scopeId: manageScopeId,
+          },
+        ),
+        {
+          reasonCode: 'manual-evidence-transition',
+          idempotencyKey: `issue1912-start-${taskId}`,
+        },
+      )
       const reportRequest: JsonRecord = {
-        organizationId, environmentId, workOrderId, operationTaskId: taskId, goodQuantity: QUANTITY, scrapQuantity: 0,
-        completesOperation: true, reportedAtUtc: new Date().toISOString(), idempotencyKey: `issue1912-report-${taskId}`,
-        scopeKind: reportScopeKind, scopeId: reportScopeId, consumedMaterialLots: [], reworkQuantity: 0,
+        organizationId,
+        environmentId,
+        workOrderId,
+        operationTaskId: taskId,
+        goodQuantity: QUANTITY,
+        scrapQuantity: 0,
+        completesOperation: true,
+        reportedAtUtc: new Date().toISOString(),
+        idempotencyKey: `issue1912-report-${taskId}`,
+        scopeKind: reportScopeKind,
+        scopeId: reportScopeId,
+        consumedMaterialLots: [],
+        reworkQuantity: 0,
       }
-      if (task === operationTasks[operationTasks.length - 1]) reportRequest.producedLotNo = PRODUCED_LOT_NO
-      const report = await call('POST', '/api/business-console/v1/mes/production-reports', reportRequest)
-      reportFacts.push({ task: publicJson(task), start: taskStart.publicPayload, report: report.publicPayload })
-      releasedDetail = await pollData(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId }, (data) => {
-        const currentTask = (Array.isArray(data.operationTasks) ? data.operationTasks : []).map(asRecord).find((item) => textOf(item.operationTaskId) === taskId)
-        return textOf(currentTask?.status).toLowerCase() === 'completed'
-      }, 120_000)
-      operationTasks = (Array.isArray(releasedDetail.data.operationTasks) ? releasedDetail.data.operationTasks : []).map(asRecord).sort((a, b) => Number(a.operationSequence ?? 0) - Number(b.operationSequence ?? 0))
+      if (task === operationTasks[operationTasks.length - 1])
+        reportRequest.producedLotNo = PRODUCED_LOT_NO
+      const report = await call(
+        'POST',
+        '/api/business-console/v1/mes/production-reports',
+        reportRequest,
+      )
+      reportFacts.push({
+        task: publicJson(task),
+        start: taskStart.publicPayload,
+        report: report.publicPayload,
+      })
+      releasedDetail = await pollData(
+        `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`,
+        { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId },
+        (data) => {
+          const currentTask = (Array.isArray(data.operationTasks) ? data.operationTasks : [])
+            .map(asRecord)
+            .find((item) => textOf(item.operationTaskId) === taskId)
+          return textOf(currentTask?.status).toLowerCase() === 'completed'
+        },
+        120_000,
+      )
+      operationTasks = (
+        Array.isArray(releasedDetail.data.operationTasks) ? releasedDetail.data.operationTasks : []
+      )
+        .map(asRecord)
+        .sort((a, b) => Number(a.operationSequence ?? 0) - Number(b.operationSequence ?? 0))
     }
-    const productionReports = await pollRows('/api/business-console/v1/mes/production-reports', { organizationId, environmentId, keyword: workOrderNo, skip: 0, take: 100 }, (row) => textOf(row.workOrderId) === workOrderId && textOf(row.producedLotNo) === PRODUCED_LOT_NO, 120_000)
+    const productionReports = await pollRows(
+      '/api/business-console/v1/mes/production-reports',
+      { organizationId, environmentId, keyword: workOrderNo, skip: 0, take: 100 },
+      (row) =>
+        textOf(row.workOrderId) === workOrderId && textOf(row.producedLotNo) === PRODUCED_LOT_NO,
+      120_000,
+    )
     const productionUi = await provePageSafely('mes-work-order-production', {
       route: '/mes/production-reports',
       listPath: '/api/business-console/v1/mes/production-reports',
@@ -850,23 +1442,49 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     record({
       node: 'mes-work-order-production',
       sourceObject: workOrderNo,
-      downstreamObject: textOf(productionReports.match.reportNo ?? productionReports.match.productionReportId),
+      downstreamObject: textOf(
+        productionReports.match.reportNo ?? productionReports.match.productionReportId,
+      ),
       stableKey: `${SALES_ORDER_NO} -> ${workOrderNo} -> ${PRODUCED_LOT_NO}`,
       automationMode: 'mixed',
       request: null,
-      responseOrLog: { reports: publicJson(productionReports.match), operationCount: reportFacts.length, facts: reportFacts, ui: productionUi },
+      responseOrLog: {
+        reports: publicJson(productionReports.match),
+        operationCount: reportFacts.length,
+        facts: reportFacts,
+        ui: productionUi,
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: 'MES 真实工单的全部工序通过公开 start/report 生命周期完成，最终报工产生固定成品批次；报工页面渲染工单业务号。',
+      demoWording:
+        'MES 真实工单的全部工序通过公开 start/report 生命周期完成，最终报工产生固定成品批次；报工页面渲染工单业务号。',
       responsibilityIssue: null,
     })
 
-    const finishedReceipt = await call('POST', '/api/business-console/v1/mes/finished-goods-receipt-requests', {
-      organizationId, environmentId, workOrderId, skuId: FINISHED_SKU, quantity: QUANTITY, uomCode: 'pcs',
-      requestedAtUtc: new Date().toISOString(), idempotencyKey: `issue1912-receipt-${PRODUCED_LOT_NO}`, producedLotNo: PRODUCED_LOT_NO,
-    })
+    const finishedReceipt = await call(
+      'POST',
+      '/api/business-console/v1/mes/finished-goods-receipt-requests',
+      {
+        organizationId,
+        environmentId,
+        workOrderId,
+        skuId: FINISHED_SKU,
+        quantity: QUANTITY,
+        uomCode: 'pcs',
+        requestedAtUtc: new Date().toISOString(),
+        idempotencyKey: `issue1912-receipt-${PRODUCED_LOT_NO}`,
+        producedLotNo: PRODUCED_LOT_NO,
+      },
+    )
     const receiptRequestNo = textOf(asRecord(dataOf(finishedReceipt.payload)).requestNo)
-    if (!receiptRequestNo) throw new Error(`Finished goods receipt for ${workOrderNo} did not return requestNo.`)
-    const finishedReceiptRow = await pollRows('/api/business-console/v1/mes/finished-goods-receipt-requests', { organizationId, environmentId, workOrderId, keyword: receiptRequestNo, skip: 0, take: 100 }, (row) => textOf(row.requestNo) === receiptRequestNo && textOf(row.producedLotNo) === PRODUCED_LOT_NO, 180_000)
+    if (!receiptRequestNo)
+      throw new Error(`Finished goods receipt for ${workOrderNo} did not return requestNo.`)
+    const finishedReceiptRow = await pollRows(
+      '/api/business-console/v1/mes/finished-goods-receipt-requests',
+      { organizationId, environmentId, workOrderId, keyword: receiptRequestNo, skip: 0, take: 100 },
+      (row) =>
+        textOf(row.requestNo) === receiptRequestNo && textOf(row.producedLotNo) === PRODUCED_LOT_NO,
+      180_000,
+    )
     const receiptPageUi = await provePageSafely('production-finished-goods-receipt', {
       route: '/mes/receipts',
       listPath: '/api/business-console/v1/mes/finished-goods-receipt-requests',
@@ -874,20 +1492,33 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       emptyText: '还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。',
       screenshotName: '14-finished-goods-receipt.png',
     })
-    const finishedInventory = await pollData('/api/business-console/v1/inventory/availability', {
-      organizationId, environmentId, skuCode: FINISHED_SKU, uomCode: 'pcs', siteCode: SITE_CODE,
-      locationCode: FINISHED_GOODS_LOCATION, lotNo: PRODUCED_LOT_NO,
-    }, (data) => Number(data.onHandQuantity ?? 0) >= QUANTITY, 180_000)
+    const finishedInventory = await pollData(
+      '/api/business-console/v1/inventory/availability',
+      {
+        organizationId,
+        environmentId,
+        skuCode: FINISHED_SKU,
+        uomCode: 'pcs',
+        siteCode: SITE_CODE,
+        locationCode: FINISHED_GOODS_LOCATION,
+        lotNo: PRODUCED_LOT_NO,
+      },
+      (data) => Number(data.onHandQuantity ?? 0) >= QUANTITY,
+      180_000,
+    )
     record({
       node: 'production-finished-goods-receipt',
-      sourceObject: textOf(productionReports.match.reportNo ?? productionReports.match.productionReportId),
+      sourceObject: textOf(
+        productionReports.match.reportNo ?? productionReports.match.productionReportId,
+      ),
       downstreamObject: receiptRequestNo,
       stableKey: `${workOrderNo} -> ${receiptRequestNo} -> ${PRODUCED_LOT_NO}`,
       automationMode: 'manual',
       request: finishedReceipt.summary,
       responseOrLog: { receipt: publicJson(finishedReceiptRow.match), ui: receiptPageUi },
       conclusion: 'runtime-confirmed',
-      demoWording: '最终报工通过公开完工入库请求登记固定批次，MES 完工入库页面以 HTTP 200 渲染 requestNo；随后 Inventory 公开可用量为正。',
+      demoWording:
+        '最终报工通过公开完工入库请求登记固定批次，MES 完工入库页面以 HTTP 200 渲染 requestNo；随后 Inventory 公开可用量为正。',
       responsibilityIssue: null,
     })
     record({
@@ -897,25 +1528,59 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${receiptRequestNo} -> ${SITE_CODE}/${FINISHED_GOODS_LOCATION}/${PRODUCED_LOT_NO}`,
       automationMode: 'automatic',
       request: finishedInventory.call.summary,
-      responseOrLog: { availability: publicJson(finishedInventory.data), receipt: publicJson(finishedReceiptRow.match) },
+      responseOrLog: {
+        availability: publicJson(finishedInventory.data),
+        receipt: publicJson(finishedReceiptRow.match),
+        ui: await provePageSafely('finished-goods-inventory', {
+          route: queryPath('/inventory/availability', {
+            skuCode: FINISHED_SKU,
+            siteCode: SITE_CODE,
+            locationCode: FINISHED_GOODS_LOCATION,
+            lotNo: PRODUCED_LOT_NO,
+          }),
+          listPath: '/api/business-console/v1/inventory/availability',
+          stableText: FINISHED_SKU,
+          selectOptions: [
+            { label: '质量状态', option: '全部状态' },
+            { label: '货主类型', option: '生产领用' },
+          ],
+          emptyText: '没有查到库存明细。换个物料、工厂或库位再查一次。',
+          screenshotName: '15-finished-goods-inventory.png',
+        }),
+      },
       conclusion: 'runtime-confirmed',
-      demoWording: '完工入库跨边界落到 Inventory 的固定成品批次分区，公开 availability 证明库存为正。',
+      demoWording:
+        '完工入库跨边界落到 Inventory 的固定成品批次分区，公开 availability 证明库存为正。',
       responsibilityIssue: null,
     })
 
     const delivery = await call('POST', '/api/business-console/v1/erp/sales/delivery-orders', {
-      organizationId, environmentId, deliveryOrderNo: DELIVERY_ORDER_NO, salesOrderNo: SALES_ORDER_NO,
-      lines: [{ salesOrderLineNo: '10', quantity: QUANTITY, locationCode: FINISHED_GOODS_LOCATION, lotNo: PRODUCED_LOT_NO }],
+      organizationId,
+      environmentId,
+      deliveryOrderNo: DELIVERY_ORDER_NO,
+      salesOrderNo: SALES_ORDER_NO,
+      lines: [
+        {
+          salesOrderLineNo: '10',
+          quantity: QUANTITY,
+          locationCode: FINISHED_GOODS_LOCATION,
+          lotNo: PRODUCED_LOT_NO,
+        },
+      ],
       idempotencyKey: `issue1912-${DELIVERY_ORDER_NO}`,
     })
-    const deliveryRow = await pollRows('/api/business-console/v1/erp/sales/delivery-orders', { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 }, (row) => textOf(row.deliveryOrderNo) === DELIVERY_ORDER_NO)
+    const deliveryRow = await pollRows(
+      '/api/business-console/v1/erp/sales/delivery-orders',
+      { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 },
+      (row) => textOf(row.deliveryOrderNo) === DELIVERY_ORDER_NO,
+    )
     const deliveryUi = await provePageSafely('sales-order-delivery', {
       route: '/erp/sales/deliveries',
       listPath: '/api/business-console/v1/erp/sales/delivery-orders',
       filterLabel: '发货关键字',
       stableText: DELIVERY_ORDER_NO,
       emptyText: '还没有发货单',
-      screenshotName: '15-sales-delivery.png',
+      screenshotName: '16-sales-delivery.png',
     })
     record({
       node: 'sales-order-delivery',
@@ -926,23 +1591,56 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       request: delivery.summary,
       responseOrLog: { delivery: publicJson(deliveryRow.match), ui: deliveryUi },
       conclusion: 'runtime-confirmed',
-      demoWording: '成品库存有正数后，公开 ERP 发货释放从同一 SO 生成固定 DO，销售发货页面渲染稳定业务编号。',
+      demoWording:
+        '成品库存有正数后，公开 ERP 发货释放从同一 SO 生成固定 DO，销售发货页面渲染稳定业务编号。',
       responsibilityIssue: null,
     })
 
-    const shipmentScopes = await call('GET', queryPath('/api/business-console/v1/wms/work-scopes/shipments', { organizationId, environmentId }))
-    const shipmentScope = (Array.isArray(asRecord(dataOf(shipmentScopes.payload)).items) ? asRecord(dataOf(shipmentScopes.payload)).items : []).map(asRecord).find((item) => item.movementAllowed === true && item.isBlocked !== true && item.isExpired !== true && textOf(item.scopeKind) && textOf(item.scopeId))
+    const shipmentScopes = await call(
+      'GET',
+      queryPath('/api/business-console/v1/wms/work-scopes/shipments', {
+        organizationId,
+        environmentId,
+      }),
+    )
+    const shipmentScope = (
+      Array.isArray(asRecord(dataOf(shipmentScopes.payload)).items)
+        ? asRecord(dataOf(shipmentScopes.payload)).items
+        : []
+    )
+      .map(asRecord)
+      .find(
+        (item) =>
+          item.movementAllowed === true &&
+          item.isBlocked !== true &&
+          item.isExpired !== true &&
+          textOf(item.scopeKind) &&
+          textOf(item.scopeId),
+      )
     if (!shipmentScope) throw new Error('WMS shipment scope catalog returned no authorized scope.')
     const shipmentScopeKind = textOf(shipmentScope.scopeKind)
     const shipmentScopeId = textOf(shipmentScope.scopeId)
-    const outbound = await pollRows('/api/business-console/v1/wms/outbound-orders', { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, scopeKind: shipmentScopeKind, scopeId: shipmentScopeId, skip: 0, take: 100 }, (row) => textOf(row.outboundOrderNo) === DELIVERY_ORDER_NO, 180_000)
+    const outbound = await pollRows(
+      '/api/business-console/v1/wms/outbound-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: DELIVERY_ORDER_NO,
+        scopeKind: shipmentScopeKind,
+        scopeId: shipmentScopeId,
+        skip: 0,
+        take: 100,
+      },
+      (row) => textOf(row.outboundOrderNo) === DELIVERY_ORDER_NO,
+      180_000,
+    )
     const outboundUi = await provePageSafely('delivery-wms-outbound', {
       route: '/wms/outbound',
       listPath: '/api/business-console/v1/wms/outbound-orders',
       filterLabel: '关键字搜索',
       stableText: DELIVERY_ORDER_NO,
       emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
-      screenshotName: '16-wms-outbound.png',
+      screenshotName: '17-wms-outbound.png',
     })
     record({
       node: 'delivery-wms-outbound',
@@ -953,17 +1651,36 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       request: outbound.call.summary,
       responseOrLog: { outbound: publicJson(outbound.match), ui: outboundUi },
       conclusion: 'runtime-confirmed',
-      demoWording: 'ERP 发货释放跨 Redis 生成 WMS 出库单，真实出库页面以 HTTP 200 渲染 DO-WALK-001。',
+      demoWording:
+        'ERP 发货释放跨 Redis 生成 WMS 出库单，真实出库页面以 HTTP 200 渲染 DO-WALK-001。',
       responsibilityIssue: null,
     })
 
     const outboundId = textOf(outbound.match.outboundOrderId)
     const outboundVersion = Number(outbound.match.version ?? 1)
-    const completedOutbound = await call('POST', queryPath(`/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(outboundId)}/complete`, { organizationId, environmentId }), {
-      packReviewNo: PACK_REVIEW_NO, passed: true, idempotencyKey: `issue1912-complete-${DELIVERY_ORDER_NO}`,
-      scopeKind: shipmentScopeKind, scopeId: shipmentScopeId, expectedVersion: outboundVersion,
-    })
-    const completedDelivery = await pollRows('/api/business-console/v1/erp/sales/delivery-orders', { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 }, (row) => textOf(row.deliveryOrderNo) === DELIVERY_ORDER_NO && textOf(row.status).toLowerCase() === 'completed', 180_000)
+    const completedOutbound = await call(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(outboundId)}/complete`,
+        { organizationId, environmentId },
+      ),
+      {
+        packReviewNo: PACK_REVIEW_NO,
+        passed: true,
+        idempotencyKey: `issue1912-complete-${DELIVERY_ORDER_NO}`,
+        scopeKind: shipmentScopeKind,
+        scopeId: shipmentScopeId,
+        expectedVersion: outboundVersion,
+      },
+    )
+    const completedDelivery = await pollRows(
+      '/api/business-console/v1/erp/sales/delivery-orders',
+      { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 },
+      (row) =>
+        textOf(row.deliveryOrderNo) === DELIVERY_ORDER_NO &&
+        textOf(row.status).toLowerCase() === 'completed',
+      180_000,
+    )
     record({
       node: 'wms-completed-erp-delivery',
       sourceObject: outboundId,
@@ -971,21 +1688,32 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       stableKey: `${outboundId} -> ${DELIVERY_ORDER_NO} -> completed`,
       automationMode: 'automatic',
       request: completedOutbound.summary,
-      responseOrLog: { completedOutbound: completedOutbound.publicPayload, delivery: publicJson(completedDelivery.match) },
+      responseOrLog: {
+        completedOutbound: completedOutbound.publicPayload,
+        delivery: publicJson(completedDelivery.match),
+      },
       conclusion: 'runtime-confirmed',
       demoWording: 'WMS 出库在真实作业范围内完成并以公开 ERP 读面证明对应 DO 已 completed。',
       responsibilityIssue: null,
     })
-    const receivable = await pollRows('/api/business-console/v1/erp/finance/receivables', { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 }, (row) => textOf(row.sourceDocumentNo) === DELIVERY_ORDER_NO, 180_000)
-    const receivableNo = textOf(receivable.match.receivableNo || receivable.match.accountReceivableNo)
-    if (!receivableNo) throw new Error(`Delivery ${DELIVERY_ORDER_NO} produced no stable receivable number.`)
+    const receivable = await pollRows(
+      '/api/business-console/v1/erp/finance/receivables',
+      { organizationId, environmentId, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 },
+      (row) => textOf(row.sourceDocumentNo) === DELIVERY_ORDER_NO,
+      180_000,
+    )
+    const receivableNo = textOf(
+      receivable.match.receivableNo || receivable.match.accountReceivableNo,
+    )
+    if (!receivableNo)
+      throw new Error(`Delivery ${DELIVERY_ORDER_NO} produced no stable receivable number.`)
     const arUi = await provePageSafely('erp-account-receivable', {
       route: '/erp/finance/ar-ap',
       listPath: '/api/business-console/v1/erp/finance/receivables',
       filterLabel: '应收关键字',
       stableText: DELIVERY_ORDER_NO,
       emptyText: '还没有应收账款。销售出货或手工登记后会在这里形成应收。',
-      screenshotName: '17-account-receivable.png',
+      screenshotName: '18-account-receivable.png',
     })
     record({
       node: 'erp-account-receivable',
@@ -996,49 +1724,80 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       request: receivable.call.summary,
       responseOrLog: { receivable: publicJson(receivable.match), ui: arUi },
       conclusion: 'runtime-confirmed',
-      demoWording: '只有完成 WMS 出库后，ERP 应收读面以 HTTP 200 渲染由同一 DO 生成的稳定应收单号。',
+      demoWording:
+        '只有完成 WMS 出库后，ERP 应收读面以 HTTP 200 渲染由同一 DO 生成的稳定应收单号。',
       responsibilityIssue: null,
     })
   } catch (error) {
-    const firstUnverified = REQUIRED_NODES.find((node) => evidence.get(node)?.conclusion === 'not-verified')
+    const firstUnverified = REQUIRED_NODES.find(
+      (node) => evidence.get(node)?.conclusion === 'not-verified',
+    )
     if (firstUnverified) markFailure(firstUnverified, error, 'mixed')
     throw error
   } finally {
     const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
-    await writeFile(evidencePath!, JSON.stringify({
-      issue: 'GitHub #1912 / NERV-1127',
-      generatedAtUtc: generatedAtUtc.toISOString(),
-      organizationId,
-      environmentId,
-      rfqNo: RFQ_NO,
-      supplierQuotationNo: SUPPLIER_QUOTATION_NO,
-      salesQuotationNo: SALES_QUOTATION_NO,
-      purchaseOrderNo: PURCHASE_ORDER_NO,
-      purchaseReceiptNo: PURCHASE_RECEIPT_NO,
-      salesOrderNo: SALES_ORDER_NO,
-      deliveryOrderNo: DELIVERY_ORDER_NO,
-      runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
-      transport: transport ?? 'not-supplied',
-      persistence: persistence ?? 'not-supplied',
-      worldEnabled: worldEnabled ?? 'not-supplied',
-      historyEnabled: historyEnabled ?? 'not-supplied',
-      scaleOrderCount: scaleOrderCount ?? 'not-supplied',
-      assertionBoundary: 'public BusinessGateway HTTP plus rendered browser pages; no database reads as business assertions',
-      setup,
-      uiEvidence,
-      failedRequests,
-      pageErrors,
-      entries,
-      summary: Object.fromEntries((['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [conclusion, entries.filter((entry) => entry.conclusion === conclusion).length])),
-      conclusion: entries.every((entry) => entry.conclusion === 'runtime-confirmed') && failedRequests.length === 0 && pageErrors.length === 0
-        ? 'runtime-confirmed'
-        : 'not-verified',
-    }, null, 2), 'utf8')
+    await writeFile(
+      evidencePath!,
+      JSON.stringify(
+        {
+          issue: 'GitHub #1912 / NERV-1127',
+          generatedAtUtc: generatedAtUtc.toISOString(),
+          organizationId,
+          environmentId,
+          rfqNo: RFQ_NO,
+          supplierQuotationNo: SUPPLIER_QUOTATION_NO,
+          salesQuotationNo: SALES_QUOTATION_NO,
+          purchaseOrderNo: PURCHASE_ORDER_NO,
+          purchaseReceiptNo: PURCHASE_RECEIPT_NO,
+          salesOrderNo: SALES_ORDER_NO,
+          deliveryOrderNo: DELIVERY_ORDER_NO,
+          runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
+          transport: transport ?? 'not-supplied',
+          persistence: persistence ?? 'not-supplied',
+          worldEnabled: worldEnabled ?? 'not-supplied',
+          historyEnabled: historyEnabled ?? 'not-supplied',
+          scaleOrderCount: scaleOrderCount ?? 'not-supplied',
+          assertionBoundary:
+            'public BusinessGateway HTTP plus rendered browser pages; no database reads as business assertions',
+          requestFailurePolicy:
+            'Only non-API ERR_ABORTED document/resource requests classified as superseded are separated; API failures, other navigation failures, and other resource failures remain fail-closed.',
+          setup,
+          uiEvidence,
+          failedRequests,
+          expectedRequestCancellations,
+          pageErrors,
+          entries,
+          summary: Object.fromEntries(
+            (['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [
+              conclusion,
+              entries.filter((entry) => entry.conclusion === conclusion).length,
+            ]),
+          ),
+          conclusion:
+            entries.every((entry) => entry.conclusion === 'runtime-confirmed') &&
+            failedRequests.length === 0 &&
+            pageErrors.length === 0
+              ? 'runtime-confirmed'
+              : 'not-verified',
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
     sessionCredential = ''
   }
 
   const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
-  expect(entries.filter((entry) => entry.conclusion !== 'runtime-confirmed').map((entry) => ({ node: entry.node, conclusion: entry.conclusion })), 'all #1912 walkthrough nodes must be runtime-confirmed through public HTTP and rendered pages').toEqual([])
+  expect(
+    entries
+      .filter((entry) => entry.conclusion !== 'runtime-confirmed')
+      .map((entry) => ({ node: entry.node, conclusion: entry.conclusion })),
+    'all #1912 walkthrough nodes must be runtime-confirmed through public HTTP and rendered pages',
+  ).toEqual([])
+  expect([...new Set(uiEvidence.map((proof) => proof.node))].sort()).toEqual(
+    [...REQUIRED_NODES].sort(),
+  )
   expect(failedRequests, 'the real browser run must not leave failed requests').toEqual([])
   expect(pageErrors, 'the real browser run must not leave page errors').toEqual([])
 })

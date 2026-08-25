@@ -99,6 +99,8 @@ Assert-True ($runtimeSource.Contains('function Assert-NervIssue1912WalkthroughEv
 Assert-True ($runtimeSource.Contains('function Invoke-NervIssue1912WalkthroughBrowserCheck', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must invoke the real Playwright browser scenario.'
 Assert-True ($runtimeSource.Contains('playwright-issue1912-real-machine-walkthrough.json', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must persist a Playwright JSON report.'
 Assert-True ($runtimeSource.Contains('issue1912-real-machine-walkthrough.json', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must persist the walkthrough evidence artifact.'
+Assert-True ($runtimeSource.Contains('$uiProofNodeSet', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must validate UI evidence by required node mapping, not proof count.'
+Assert-True ($runtimeSource.Contains('requestFailurePolicy', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must validate and preserve the browser request failure policy.'
 foreach ($requiredIssue1912Node in @(
     'rfq-supplier-quotation',
     'supplier-quotation-purchase-order',
