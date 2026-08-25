@@ -16348,6 +16348,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -45428,6 +45438,26 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workerId": {
+            "type": "string"
+          },
+          "sharePercent": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -45804,6 +45834,12 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot"
             }
+          },
+          "laborAllocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation"
+            }
           }
         }
       },
@@ -45913,6 +45949,27 @@
           },
           "materialIssueRequestNo": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workerId": {
+            "type": "string"
+          },
+          "workerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "sharePercent": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "allocatedLaborTicks": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

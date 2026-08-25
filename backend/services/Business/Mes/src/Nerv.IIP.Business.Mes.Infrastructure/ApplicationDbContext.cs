@@ -30,9 +30,13 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
 
+    public DbSet<OperationTaskParticipant> OperationTaskParticipants => Set<OperationTaskParticipant>();
+
     public DbSet<OperationTaskStartAuthorization> OperationTaskStartAuthorizations => Set<OperationTaskStartAuthorization>();
 
     public DbSet<ProductionReport> ProductionReports => Set<ProductionReport>();
+
+    public DbSet<ProductionReportLaborAllocation> ProductionReportLaborAllocations => Set<ProductionReportLaborAllocation>();
 
     public DbSet<TelemetryProductionReportCandidate> TelemetryProductionReportCandidates => Set<TelemetryProductionReportCandidate>();
     public DbSet<TelemetryProductionReportCandidateTransition> TelemetryProductionReportCandidateTransitions => Set<TelemetryProductionReportCandidateTransition>();

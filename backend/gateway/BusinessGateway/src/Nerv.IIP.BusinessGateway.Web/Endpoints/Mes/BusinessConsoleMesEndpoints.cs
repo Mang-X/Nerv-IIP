@@ -1012,26 +1012,28 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // The assignee must be a registered, on-duty worker; resolving here keeps the name snapshot
-        // trustworthy and stops arbitrary identifiers from reaching the dispatch record.
-        string? assignedUserName = null;
-        string? teamId = null;
-        string? teamName = null;
-        if (!string.IsNullOrWhiteSpace(request.AssignedUserId))
+        // Every assignee/participant must be a registered, on-duty worker. Resolving all names here keeps
+        // collaboration snapshots trustworthy and stops arbitrary caller-provided identities from reaching MES.
+        var workers = new Dictionary<string, BusinessConsoleWorkerDirectoryItem>(StringComparer.OrdinalIgnoreCase);
+        var workerIds = new[] { request.AssignedUserId }
+            .Concat(request.Participants?.Select(x => x.WorkerId) ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var workerId in workerIds)
         {
             var directory = await masterData.ListWorkersAsync(
                 tokenProvider.BearerToken,
                 new BusinessConsoleWorkerDirectoryRequest(
                     request.OrganizationId,
                     request.EnvironmentId,
-                    UserId: request.AssignedUserId,
+                    UserId: workerId,
                     PageIndex: 1,
                     PageSize: 1),
                 cancellationToken);
             var worker = directory.Items.FirstOrDefault();
             if (worker is null)
             {
-                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"未找到员工，工人标识 = {request.AssignedUserId}");
+                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"未找到员工，工人标识 = {workerId}");
             }
 
             if (!worker.Active || !string.Equals(worker.EmploymentStatus, "active", StringComparison.Ordinal))
@@ -1039,6 +1041,15 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
                 throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"员工 {worker.DisplayName} 当前不在岗，无法派工。");
             }
 
+            workers.Add(workerId!, worker);
+        }
+
+        string? assignedUserName = null;
+        string? teamId = null;
+        string? teamName = null;
+        if (!string.IsNullOrWhiteSpace(request.AssignedUserId))
+        {
+            var worker = workers[request.AssignedUserId];
             assignedUserName = worker.DisplayName;
 
             // 班组随派工落快照，口径与 assignedUserName 一致：由网关从主数据解析，不信调用方传入。
@@ -1047,6 +1058,11 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
             teamId = team?.TeamCode;
             teamName = team?.TeamName;
         }
+        var participants = request.Participants?.Select(participant =>
+            new BusinessConsoleMesDispatchParticipantForwardInput(
+                participant.WorkerId,
+                workers[participant.WorkerId].DisplayName,
+                participant.SharePercent)).ToArray();
 
         return await mes.AssignDispatchTaskAsync(
             tokenProvider.BearerToken,
@@ -1060,10 +1076,48 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
                 request.ShiftId,
                 request.IdempotencyKey,
                 teamId,
-                teamName),
+                teamName,
+                participants),
             RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
     }
+}
+
+public sealed class BusinessConsoleMesAssignDispatchTaskRequestValidator
+    : Validator<BusinessConsoleMesAssignDispatchTaskRequest>
+{
+    public BusinessConsoleMesAssignDispatchTaskRequestValidator()
+    {
+        RuleFor(x => x.Participants).Must(participants => participants is null || participants.Count is > 0 and <= 20)
+            .WithMessage("提供参与者列表时必须包含 1 至 20 人。");
+        RuleForEach(x => x.Participants).ChildRules(participant =>
+        {
+            participant.RuleFor(x => x.WorkerId).NotEmpty().MaximumLength(100);
+            participant.RuleFor(x => x.SharePercent)
+                .GreaterThan(0m)
+                .LessThanOrEqualTo(100m)
+                .Must(HasPersistableSharePrecision)
+                .WithMessage("工时占比最多保留四位小数。");
+        });
+        RuleFor(x => x.Participants).Must(HaveUniqueWorkersAndBalancedShares)
+            .WithMessage("工序参与者必须唯一，且工时占比合计必须为 100%。");
+    }
+
+    private static bool HaveUniqueWorkersAndBalancedShares(
+        IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? participants)
+    {
+        if (participants is null || participants.Count == 0)
+        {
+            return true;
+        }
+
+        return participants.All(x => !string.IsNullOrWhiteSpace(x.WorkerId)) &&
+            participants.Select(x => x.WorkerId.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() == participants.Count &&
+            participants.Sum(x => x.SharePercent) == 100m;
+    }
+
+    private static bool HasPersistableSharePrecision(decimal sharePercent) =>
+        decimal.Round(sharePercent, 4) == sharePercent;
 }
 
 [Tags("Business Console MES")]
