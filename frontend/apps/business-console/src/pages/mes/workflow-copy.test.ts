@@ -617,7 +617,7 @@ describe('MES workflow copy', () => {
     expect(carried.text()).toContain('FG-001')
   })
 
-  it('submits finished-goods receipt context with unit cost', async () => {
+  it('submits finished-goods receipt context without client unit cost', async () => {
     routeState.query = {
       quantity: '10',
       skuId: 'FG-001',
@@ -625,7 +625,7 @@ describe('MES workflow copy', () => {
     }
     const wrapper = mountMesPage(ReceiptsPage)
 
-    await wrapper.find('#receipt-unit-cost').setValue('12.34')
+    expect(wrapper.find('#receipt-unit-cost').exists()).toBe(false)
     await wrapper.find('form').trigger('submit')
 
     expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(
@@ -634,7 +634,6 @@ describe('MES workflow copy', () => {
         organizationId: 'org',
         quantity: 10,
         skuId: 'FG-001',
-        unitCost: 12.34,
         uomCode: 'pcs',
         workOrderId: 'WO-001',
       }),

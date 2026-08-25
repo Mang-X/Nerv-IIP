@@ -1765,7 +1765,6 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
-      unitCost: 12.34,
       uomCode: 'EA',
       idempotencyKey: 'op-receipt-1',
     })
@@ -1781,7 +1780,6 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
-      unitCost: 12.34,
       uomCode: 'EA',
     })
     expect(payload.body.idempotencyKey).toBe('op-receipt-1')
@@ -1925,12 +1923,12 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
-      unitCost: 12.34,
       uomCode: 'EA',
       idempotencyKey: 'op-receipt-stable',
       organizationId: 'EVIL',
       environmentId: 'EVIL',
       requestedAtUtc: '1999-01-01T00:00:00.000Z',
+      unitCost: 12.34,
     } as never)
 
     const mutateAsync = coladaState.mutateById.get(
@@ -1939,6 +1937,7 @@ describe('pda useBusinessMes composables', () => {
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.body.organizationId).toBe('org-001')
     expect(payload.body.environmentId).toBe('env-dev')
+    expect(payload.body).not.toHaveProperty('unitCost')
     expect(payload.body.requestedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
     expect(payload.body.idempotencyKey).toBe('op-receipt-stable')
   })
