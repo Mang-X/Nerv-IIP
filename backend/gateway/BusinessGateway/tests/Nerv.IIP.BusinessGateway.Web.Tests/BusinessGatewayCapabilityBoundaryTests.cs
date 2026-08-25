@@ -117,7 +117,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             new SourceDocument(
                 "Capabilities/Inventory/BusinessInventoryClient.cs",
                 $"namespace {BusinessServicesNamespace}; " +
-                "public sealed partial class HttpBusinessInventoryClient : " +
+                "public partial class HttpBusinessInventoryClient : " +
                 "BusinessServiceHttpClient, IBusinessInventoryClient {}"),
             new SourceDocument(
                 "Capabilities/Inventory/InventoryWireDto.cs",
@@ -151,7 +151,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             new SourceDocument(
                 "BusinessServiceClients.cs.partial.cs",
                 $"namespace {BusinessServicesNamespace}; " +
-                "public sealed partial class HttpBusinessInventoryClient {}"),
+                "public partial class HttpBusinessInventoryClient {}"),
             new SourceDocument(
                 "BusinessServiceClients.cs.nested.cs",
                 $"namespace {BusinessServicesNamespace}; " +
@@ -166,6 +166,13 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"namespace {BusinessServicesNamespace}; " +
                 "public interface IDerivedInventoryClient : IBusinessInventoryClient {} " +
                 "public sealed class NonConventionalInventoryClient : IDerivedInventoryClient {}"),
+            new SourceDocument(
+                "BusinessServiceClients.cs.indirect-base-chain.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public abstract class NonConventionalBase : " +
+                "HttpBusinessInventoryClient {} " +
+                "public sealed class LegacyDerivedInventoryClient : " +
+                "NonConventionalBase {}"),
             new SourceDocument(
                 "BusinessServiceClients.cs.unassigned-client.cs",
                 $"namespace {BusinessServicesNamespace}; " +
@@ -186,6 +193,22 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 string.Join(Environment.NewLine, violations),
                 StringComparison.Ordinal);
         }
+
+        var indirectBaseViolations = AnalyzeCapabilityBoundary(
+            baseDocuments.Append(mutations.Single(mutation =>
+                mutation.RelativePath == "BusinessServiceClients.cs.indirect-base-chain.cs")),
+            contract);
+        var indirectBaseReport = string.Join(
+            Environment.NewLine,
+            indirectBaseViolations);
+        Assert.Contains(
+            Identity("Class", "LegacyDerivedInventoryClient"),
+            indirectBaseReport,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "must be under Capabilities/Inventory",
+            indirectBaseReport,
+            StringComparison.Ordinal);
 
         var falsePositiveViolations = AnalyzeCapabilityBoundary(
             baseDocuments.Append(
