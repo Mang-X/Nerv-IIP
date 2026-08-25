@@ -107,7 +107,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(49, contracts.Count);
+        Assert.Equal(50, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -118,6 +118,19 @@ public sealed class MasterDataApiContractTests
             Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PUT", "PATCH", "DELETE" });
             Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
         });
+    }
+
+    [Fact]
+    public void Tooling_directory_has_a_dedicated_stable_read_contract()
+    {
+        Assert.Contains(
+            MasterDataEndpointContracts.All,
+            contract =>
+                contract.EndpointType == typeof(ListToolingAssetsEndpoint)
+                && contract.HttpMethod == "GET"
+                && contract.Route == "/api/business/v1/master-data/tooling-assets"
+                && contract.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+                && contract.OperationId == "listBusinessMasterDataToolingAssets");
     }
 
     [Fact]
