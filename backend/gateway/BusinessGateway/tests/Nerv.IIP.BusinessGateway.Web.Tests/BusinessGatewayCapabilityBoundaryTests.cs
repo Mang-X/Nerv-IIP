@@ -616,6 +616,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         seedCapabilities.Add(
             Identity("Class", "HttpBusinessQualityScrapReasonCodeClient"),
             "Quality");
+        seedCapabilities[Identity("Interface", "IBusinessBarcodeResolverClient")] = "BarcodeLabel";
+        seedCapabilities[Identity("Class", "HttpBusinessBarcodeResolverClient")] = "BarcodeLabel";
 
         AddManagedType(
             seedCapabilities,

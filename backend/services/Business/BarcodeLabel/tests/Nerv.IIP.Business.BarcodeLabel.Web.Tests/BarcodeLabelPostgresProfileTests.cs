@@ -2,9 +2,13 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 using Npgsql;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
@@ -22,6 +26,21 @@ public sealed class BarcodeLabelPostgresProfileTests
         {
             AssertUsesGovernedDatabase(dbContext);
             await dbContext.Database.MigrateAsync();
+            var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
+            var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
+            var first = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+            var second = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
+            Assert.Equal(first.Items.Single().LabelValue, second.Items.Single().LabelValue);
+            dbContext.AddRange(rule, template, first, second);
+            await dbContext.SaveChangesAsync();
+
+            var result = await new ResolveBarcodeQueryHandler(dbContext).Handle(
+                new ResolveBarcodeQuery("org-001", "env-dev", first.Items.Single().LabelValue, Skip: 1, Take: 1),
+                CancellationToken.None);
+
+            Assert.Equal("ambiguous", result.Status);
+            Assert.Equal(2, result.Total);
+            Assert.Equal("WO001", Assert.Single(result.Candidates).SourceDocumentId);
         }
 
         await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))

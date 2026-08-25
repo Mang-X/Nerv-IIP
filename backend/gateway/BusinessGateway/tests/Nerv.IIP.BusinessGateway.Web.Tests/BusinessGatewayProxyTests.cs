@@ -4690,6 +4690,194 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Barcode_resolve_facade_returns_stable_strong_ids_without_frontend_routes()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = "FGAWO0010001",
+            pageIndex = 1,
+            pageSize = 20,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.BarcodeScansWrite, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("internal-test-token", barcode.LastInternalToken);
+        Assert.Equal(
+            new BusinessBarcodeResolveRequest("org-001", "env-dev", "FGAWO0010001", 0, 20),
+            barcode.LastResolveRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("resolved", data.GetProperty("status").GetString());
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        var candidate = data.GetProperty("candidates")[0];
+        Assert.Equal("mes-work-order", candidate.GetProperty("objectType").GetString());
+        Assert.Equal("WO-001", candidate.GetProperty("strongIds").GetProperty("workOrderId").GetString());
+        Assert.False(candidate.TryGetProperty("target", out _));
+        Assert.False(candidate.TryGetProperty("route", out _));
+    }
+
+    [Fact]
+    public async Task Barcode_resolve_facade_pairs_operation_task_with_its_work_order()
+    {
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            ResolveResponse = new BusinessBarcodeResolveResponse(
+                "resolved",
+                null,
+                [new BusinessBarcodeResolveCandidate("operation-task", "OP-001", "barcode-label", DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture))],
+                1),
+        };
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-001",
+                    "WO-001",
+                    "Queued",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Ready"),
+            ],
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = "OP001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var candidate = document.RootElement.GetProperty("data").GetProperty("candidates")[0];
+        Assert.Equal("mes-operation", candidate.GetProperty("objectType").GetString());
+        Assert.Equal("WO-001", candidate.GetProperty("strongIds").GetProperty("workOrderId").GetString());
+        Assert.Equal("OP-001", candidate.GetProperty("strongIds").GetProperty("operationTaskId").GetString());
+        Assert.Equal("OP-001", mes.LastOperationTaskListRequest!.OperationTaskId);
+        Assert.Equal(2, mes.LastOperationTaskListRequest.Take);
+    }
+
+    [Fact]
+    public async Task Barcode_resolve_facade_preserves_ambiguous_paging_facts()
+    {
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            ResolveResponse = new BusinessBarcodeResolveResponse(
+                "ambiguous",
+                "multiple-source-documents",
+                [new BusinessBarcodeResolveCandidate("work-order", "WO-021", "barcode-label", DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture))],
+                23),
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = "DUPLICATE",
+            pageIndex = 3,
+            pageSize = 10,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new BusinessBarcodeResolveRequest("org-001", "env-dev", "DUPLICATE", 20, 10), barcode.LastResolveRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("ambiguous", data.GetProperty("status").GetString());
+        Assert.Equal("multiple-source-documents", data.GetProperty("reasonCode").GetString());
+        Assert.Equal(23, data.GetProperty("total").GetInt32());
+        Assert.Single(data.GetProperty("candidates").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Barcode_resolve_facade_fails_closed_before_downstream_when_forbidden()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = "WO001",
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, barcode.ResolveCallCount);
+    }
+
+    [Fact]
+    public async Task Barcode_resolve_facade_rejects_blank_scans_before_downstream()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = " ",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, barcode.ResolveCallCount);
+    }
+
+    [Fact]
     public async Task Scheduling_facade_uses_internal_service_token_and_forwards_stable_dtos()
     {
         var scheduling = new RecordingSchedulingClient();
@@ -13571,8 +13759,14 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     }
 }
 
-internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
+internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient, IBusinessBarcodeResolverClient
 {
+    public BusinessBarcodeResolveResponse ResolveResponse { get; init; } = new(
+        "resolved",
+        null,
+        [new BusinessBarcodeResolveCandidate("work-order", "WO-001", "barcode-label", DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture))],
+        1);
+
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleBarcodeRuleListRequest? LastRuleListRequest { get; private set; }
@@ -13588,6 +13782,10 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
     public BusinessConsoleRecordBarcodeScanRequest? LastScanRequest { get; private set; }
 
     public BusinessConsoleBarcodeScanListRequest? LastScanListRequest { get; private set; }
+
+    public BusinessBarcodeResolveRequest? LastResolveRequest { get; private set; }
+
+    public int ResolveCallCount { get; private set; }
 
     public Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
         string internalBearerToken,
@@ -13705,6 +13903,17 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
                 "observed",
                 DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
         ], 1));
+    }
+
+    public Task<BusinessBarcodeResolveResponse> ResolveAsync(
+        string internalBearerToken,
+        BusinessBarcodeResolveRequest request,
+        CancellationToken cancellationToken)
+    {
+        ResolveCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastResolveRequest = request;
+        return Task.FromResult(ResolveResponse);
     }
 }
 

@@ -264,6 +264,19 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/resolve",
+      "operationId": "resolveBusinessBarcode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "resolveBusinessConsoleBarcode"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "GET",
       "route": "/api/business/v1/barcodes/rules",
       "operationId": "listBusinessBarcodeRules",
