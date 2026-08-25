@@ -41,7 +41,8 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceSnapshotId = DomainGuard.Required(sourceSnapshotId, nameof(sourceSnapshotId));
         CapturedAtUtc = capturedAtUtc;
-        SubstituteMaterialIdsJson = JsonSerializer.Serialize(NormalizeSubstituteMaterialIds(MaterialId, substituteMaterialIds));
+        SubstituteMaterialIdsJson = JsonSerializer.Serialize(
+            MaterialSubstituteCandidateNormalizer.Normalize(MaterialId, substituteMaterialIds));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -92,14 +93,4 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
     public IReadOnlyCollection<string> GetSubstituteMaterialIds() =>
         JsonSerializer.Deserialize<string[]>(SubstituteMaterialIdsJson) ?? [];
 
-    private static string[] NormalizeSubstituteMaterialIds(
-        string materialId,
-        IReadOnlyCollection<string> substituteMaterialIds) =>
-        substituteMaterialIds
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Where(x => !string.Equals(x, materialId, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
 }

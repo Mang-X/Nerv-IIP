@@ -290,6 +290,10 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     [InlineData("wrong-archived-version")]
     [InlineData("wrong-successor-version")]
     [InlineData("broken-chain")]
+    [InlineData("wrong-organization")]
+    [InlineData("wrong-environment")]
+    [InlineData("non-released-impact")]
+    [InlineData("unreachable-cycle")]
     public async Task MaterialReadiness_RejectsInvalidAutomaticRebindChains(string invalidChain)
     {
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -315,23 +319,59 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
 
             var edges = invalidChain switch
             {
-                "wrong-work-order" => new[] { ("WO-OTHER", "PV-1", "PV-2"), ("WO-OTHER", "PV-2", "PV-3") },
-                "wrong-archived-version" => new[] { ("WO-CHAIN", "PV-X", "PV-2"), ("WO-CHAIN", "PV-2", "PV-3") },
-                "wrong-successor-version" => new[] { ("WO-CHAIN", "PV-1", "PV-2"), ("WO-CHAIN", "PV-2", "PV-X") },
-                "broken-chain" => new[] { ("WO-CHAIN", "PV-1", "PV-2"), ("WO-CHAIN", "PV-X", "PV-3") },
+                "wrong-work-order" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-OTHER", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-OTHER", WorkOrder.ReleasedStatus, "PV-2", "PV-3"),
+                },
+                "wrong-archived-version" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-X", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-2", "PV-3"),
+                },
+                "wrong-successor-version" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-2", "PV-X"),
+                },
+                "broken-chain" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-X", "PV-3"),
+                },
+                "wrong-organization" => new[]
+                {
+                    new AutomaticRebindEdge("org-other", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-other", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-2", "PV-3"),
+                },
+                "wrong-environment" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-other", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-other", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-2", "PV-3"),
+                },
+                "non-released-impact" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.CreatedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.CreatedStatus, "PV-2", "PV-3"),
+                },
+                "unreachable-cycle" => new[]
+                {
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+                    new AutomaticRebindEdge("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-2", "PV-1"),
+                },
                 _ => throw new ArgumentOutOfRangeException(nameof(invalidChain), invalidChain, null)
             };
-            foreach (var (workOrderId, archivedVersionId, successorVersionId) in edges)
+            foreach (var edge in edges)
             {
                 dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.AutoRebound(
-                    "org-001",
-                    "env-dev",
-                    workOrderId,
+                    edge.OrganizationId,
+                    edge.EnvironmentId,
+                    edge.WorkOrderId,
                     "SKU-FG-1000",
-                    WorkOrder.ReleasedStatus,
-                    $"ECO-{archivedVersionId}-{successorVersionId}",
-                    archivedVersionId,
-                    successorVersionId,
+                    edge.WorkOrderStatusAtDetection,
+                    $"ECO-{edge.ArchivedProductionVersionId}-{edge.SupersededByProductionVersionId}",
+                    edge.ArchivedProductionVersionId,
+                    edge.SupersededByProductionVersionId,
                     new DateOnly(2026, 7, 6),
                     DateTimeOffset.Parse("2026-07-06T08:00:00Z")));
             }
@@ -825,6 +865,14 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     {
         return new ApplicationDbContext(options, new NoopMediator());
     }
+
+    private sealed record AutomaticRebindEdge(
+        string OrganizationId,
+        string EnvironmentId,
+        string WorkOrderId,
+        string WorkOrderStatusAtDetection,
+        string ArchivedProductionVersionId,
+        string SupersededByProductionVersionId);
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

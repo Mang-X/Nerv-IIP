@@ -112,6 +112,37 @@ public sealed class MesSchemaConventionTests
     }
 
     [Fact]
+    public void Material_substitute_foundation_migration_updates_snapshot_provenance_comment_symmetrically()
+    {
+        const string originalComment =
+            "Production version id whose material requirement snapshot outcome was proved; it must match the current work order version.";
+        const string releasedRebindComment =
+            "Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.";
+        var migration = new AddMesMaterialSubstituteSnapshotFoundation();
+
+        var upBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [upBuilder]);
+
+        var upgradedComment = Assert.Single(upBuilder.Operations.OfType<AlterColumnOperation>());
+        Assert.Equal(MesFacts.Schema, upgradedComment.Schema);
+        Assert.Equal("work_orders", upgradedComment.Table);
+        Assert.Equal("material_requirement_snapshot_production_version_id", upgradedComment.Name);
+        Assert.Equal(releasedRebindComment, upgradedComment.Comment);
+        Assert.Equal(originalComment, upgradedComment.OldColumn.Comment);
+
+        var downBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Down", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [downBuilder]);
+
+        var restoredComment = Assert.Single(downBuilder.Operations.OfType<AlterColumnOperation>());
+        Assert.Equal(originalComment, restoredComment.Comment);
+        Assert.Equal(releasedRebindComment, restoredComment.OldColumn.Comment);
+    }
+
+    [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {
         using var fixture = CreateFixture();
