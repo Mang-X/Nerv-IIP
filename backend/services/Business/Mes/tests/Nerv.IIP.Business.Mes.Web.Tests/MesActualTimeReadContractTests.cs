@@ -156,7 +156,7 @@ public sealed class MesActualTimeReadContractTests
     }
 
     [Fact]
-    public void Production_report_actual_hours_use_one_correlated_operation_projection()
+    public void Production_report_actual_hours_use_one_correlated_operation_projection_with_npgsql_translation()
     {
         var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
             .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
