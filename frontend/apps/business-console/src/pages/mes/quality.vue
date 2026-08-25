@@ -162,17 +162,52 @@ const eligibleOperationTasks = computed(() => {
       qualityWriteScope.coversWorkOrder({ operationTasks: [task] }, writeScope),
   )
 })
+type OperationTask = (typeof operationTasks)['value'][number]
+type DefectTarget = {
+  key: string
+  workOrderId: string
+  operationTaskId?: string
+  operationTasks: OperationTask[]
+  label: string
+}
+const defectTargets = computed<DefectTarget[]>(() => {
+  const targets: DefectTarget[] = []
+  const tasksByWorkOrder = new Map<string, OperationTask[]>()
+  for (const task of eligibleOperationTasks.value) {
+    const workOrderId = task.workOrderId!.trim()
+    const tasks = tasksByWorkOrder.get(workOrderId) ?? []
+    tasks.push(task)
+    tasksByWorkOrder.set(workOrderId, tasks)
+  }
+  for (const [workOrderId, tasks] of tasksByWorkOrder) {
+    const workOrderLabel = tasks[0]?.workOrderNo || workOrderId
+    targets.push({
+      key: `work-order:${workOrderId}`,
+      workOrderId,
+      operationTasks: tasks,
+      label: `${workOrderLabel} · 工单级（不关联具体工序）`,
+    })
+    for (const task of tasks) {
+      const operationTaskId = task.operationTaskId!.trim()
+      targets.push({
+        key: `operation:${operationTaskId}`,
+        workOrderId,
+        operationTaskId,
+        operationTasks: [task],
+        label: [
+          workOrderLabel,
+          task.operationTaskNo || `第 ${task.operationSequence ?? '—'} 道工序`,
+          task.workCenterName || task.workCenterCode || task.workCenterId,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      })
+    }
+  }
+  return targets
+})
 const operationOptions = computed(() =>
-  eligibleOperationTasks.value.map((task) => ({
-    value: task.operationTaskId!,
-    label: [
-      task.workOrderNo || task.workOrderId,
-      task.operationTaskNo || `第 ${task.operationSequence ?? '—'} 道工序`,
-      task.workCenterName || task.workCenterCode || task.workCenterId,
-    ]
-      .filter(Boolean)
-      .join(' · '),
-  })),
+  defectTargets.value.map((target) => ({ value: target.key, label: target.label })),
 )
 const defectOptions = computed(() =>
   qualityReasons.value
@@ -188,8 +223,12 @@ const defectOptions = computed(() =>
 const defectDialogOpen = shallowRef(false)
 const defectShowErrors = shallowRef(false)
 const defectPreflightPending = shallowRef(false)
-const defectForm = reactive({ operationTaskId: '', defectCode: '', defectQuantity: '' })
-const pendingDefectIntent = shallowRef<{ fingerprint: string; idempotencyKey: string } | null>(null)
+const defectForm = reactive({ targetKey: '', defectCode: '', defectQuantity: '' })
+const pendingDefectIntent = shallowRef<{
+  fingerprint: string
+  idempotencyKey: string
+  recordedAtUtc: string
+} | null>(null)
 const defectPending = computed(
   () =>
     defectPreflightPending.value ||
@@ -223,12 +262,13 @@ function openDefectDialog() {
   if (defectEntryBlocker.value) return
   const routeTaskId = contextOperationTaskId.value
   const routeWorkOrderId = contextWorkOrderId.value
-  const preferred = eligibleOperationTasks.value.find(
-    (task) =>
-      (!routeTaskId || task.operationTaskId === routeTaskId) &&
-      (!routeWorkOrderId || task.workOrderId === routeWorkOrderId),
+  const preferred = defectTargets.value.find((target) =>
+    routeTaskId
+      ? target.operationTaskId === routeTaskId &&
+        (!routeWorkOrderId || target.workOrderId === routeWorkOrderId)
+      : !!routeWorkOrderId && !target.operationTaskId && target.workOrderId === routeWorkOrderId,
   )
-  defectForm.operationTaskId = preferred?.operationTaskId ?? ''
+  defectForm.targetKey = preferred?.key ?? ''
   defectForm.defectCode = ''
   defectForm.defectQuantity = ''
   defectShowErrors.value = false
@@ -241,39 +281,39 @@ function validDefectQuantity() {
   return Number.isFinite(quantity) && quantity > 0 ? quantity : undefined
 }
 
-function findEligibleOperationTask(operationTaskId: string) {
+function findEligibleDefectTarget(targetKey: string) {
   const writeScope = selectedQualityWriteScope.value
-  const task = operationTasks.value.find(
-    (candidate) => candidate.operationTaskId === operationTaskId,
-  )
+  const target = defectTargets.value.find((candidate) => candidate.key === targetKey)
   if (
-    !task?.operationTaskId?.trim() ||
-    !task.workOrderId?.trim() ||
+    !target?.workOrderId.trim() ||
     !writeScope ||
-    !qualityWriteScope.coversWorkOrder({ operationTasks: [task] }, writeScope)
+    !qualityWriteScope.coversWorkOrder({ operationTasks: target.operationTasks }, writeScope)
   ) {
     return undefined
   }
-  return task
+  return target
 }
 
 async function submitDefect() {
   const quantity = validDefectQuantity()
-  const operationTaskId = defectForm.operationTaskId.trim()
+  const targetKey = defectForm.targetKey.trim()
   const defectCode = defectForm.defectCode.trim()
-  if (defectEntryBlocker.value || !operationTaskId || !defectCode || quantity === undefined) {
+  if (defectEntryBlocker.value || !targetKey || !defectCode || quantity === undefined) {
     defectShowErrors.value = true
     return
   }
 
   defectPreflightPending.value = true
-  let latestTask: ReturnType<typeof findEligibleOperationTask>
+  let latestTarget: ReturnType<typeof findEligibleDefectTarget>
+  let latestScope: NonNullable<(typeof selectedQualityWriteScope)['value']>
   try {
     await Promise.all([refreshOperationTasks(), refreshQualityWriteScope()])
-    latestTask = findEligibleOperationTask(operationTaskId)
-    if (!latestTask) {
-      throw new Error('所选工序已不在当前主体可见且可登记缺陷的范围，请重新选择。')
+    latestTarget = findEligibleDefectTarget(targetKey)
+    const refreshedScope = selectedQualityWriteScope.value
+    if (!latestTarget || !refreshedScope) {
+      throw new Error('所选工单或工序已不在当前主体可见且可登记缺陷的范围，请重新选择。')
     }
+    latestScope = refreshedScope
   } catch (error) {
     notifyOperationFailure(
       '缺陷登记前置检查失败',
@@ -286,33 +326,31 @@ async function submitDefect() {
   }
 
   const fingerprint = JSON.stringify({
-    organizationId: filters.organizationId.trim(),
-    environmentId: filters.environmentId.trim(),
-    workOrderId: latestTask.workOrderId!.trim(),
-    operationTaskId: latestTask.operationTaskId!.trim(),
+    workOrderId: latestTarget.workOrderId,
+    operationTaskId: latestTarget.operationTaskId ?? null,
     defectCode,
-    defectQuantity: quantity,
-    materialLotId: null,
-    batchOrSerial: null,
+    quantity,
+    scopeKind: latestScope.kind,
+    scopeId: latestScope.id,
   })
   if (pendingDefectIntent.value?.fingerprint !== fingerprint) {
     pendingDefectIntent.value = {
       fingerprint,
       idempotencyKey: makeIdempotencyKey('record-defect'),
+      recordedAtUtc: new Date().toISOString(),
     }
   }
 
   try {
     const response = await recordDefect({
-      organizationId: filters.organizationId.trim(),
-      environmentId: filters.environmentId.trim(),
-      workOrderId: latestTask.workOrderId!.trim(),
-      operationTaskId: latestTask.operationTaskId!.trim(),
+      workOrderId: latestTarget.workOrderId,
+      ...(latestTarget.operationTaskId ? { operationTaskId: latestTarget.operationTaskId } : {}),
       defectCode,
-      defectQuantity: quantity,
-      materialLotId: null,
-      batchOrSerial: null,
+      quantity,
+      recordedAtUtc: pendingDefectIntent.value.recordedAtUtc,
       idempotencyKey: pendingDefectIntent.value.idempotencyKey,
+      scopeKind: latestScope.kind,
+      scopeId: latestScope.id,
     })
     if (response?.data?.accepted !== true) {
       throw new Error('缺陷登记结果未确认，请刷新质量记录核实后再重试。')
@@ -481,7 +519,7 @@ async function submitDefect() {
 
     <RecordDefectDialog
       v-model:open="defectDialogOpen"
-      v-model:operation-task-id="defectForm.operationTaskId"
+      v-model:target-key="defectForm.targetKey"
       v-model:defect-code="defectForm.defectCode"
       v-model:defect-quantity="defectForm.defectQuantity"
       :operation-options="operationOptions"

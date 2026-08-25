@@ -34,7 +34,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReport,
-  recordBusinessConsoleMesDefectMutationOptions,
+  recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -336,7 +336,7 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
-  recordBusinessConsoleMesDefectMutationOptions: vi.fn(() => ({
+  recordBusinessConsoleMesDefectV2MutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -1222,35 +1222,33 @@ describe('business MES composables', () => {
   it('forwards only the public defect contract and invalidates every related MES read model', async () => {
     const quality = useMesQualityContext()
     const body = {
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
+      organizationId: 'forged-org',
+      environmentId: 'forged-env',
       workOrderId: 'WO-2',
       operationTaskId: 'OP-2',
       defectCode: 'SCRATCH',
-      defectQuantity: 2.5,
-      materialLotId: null,
-      batchOrSerial: null,
+      quantity: 2.5,
+      recordedAtUtc: '2026-08-26T01:02:03.000Z',
       idempotencyKey: 'defect-key',
       actor: 'forged-user',
-      scopeKind: 'organization',
-      scopeId: 'other-org',
+      scopeKind: 'work-center',
+      scopeId: 'WC-2',
     }
 
     await quality.recordDefect(body as never)
 
-    const mutation = vi.mocked(recordBusinessConsoleMesDefectMutationOptions).mock.results.at(-1)
+    const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
       ?.value.mutation as ReturnType<typeof vi.fn>
     expect(mutation).toHaveBeenCalledWith({
       body: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
         workOrderId: 'WO-2',
         operationTaskId: 'OP-2',
         defectCode: 'SCRATCH',
-        defectQuantity: 2.5,
-        materialLotId: null,
-        batchOrSerial: null,
+        quantity: 2.5,
+        recordedAtUtc: '2026-08-26T01:02:03.000Z',
         idempotencyKey: 'defect-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-2',
       },
     })
     const invalidationCalls = coladaState.invalidateQueries.mock.calls as unknown as Array<

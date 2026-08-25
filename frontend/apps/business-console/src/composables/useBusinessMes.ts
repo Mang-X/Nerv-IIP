@@ -52,7 +52,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
-  recordBusinessConsoleMesDefectMutationOptions,
+  recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
@@ -91,7 +91,7 @@ import {
   type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
-  type BusinessConsoleMesRecordDefectRequest,
+  type BusinessConsoleMesRecordDefectV2Request,
   type BusinessConsoleMesRecordDowntimeEventRequest,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
   type BusinessConsoleMesRelatedQualityItemRow,
@@ -2442,7 +2442,7 @@ export function useMesQualityContext() {
     ),
   )
   const defectMutation = useMutation({
-    ...recordBusinessConsoleMesDefectMutationOptions(),
+    ...recordBusinessConsoleMesDefectV2MutationOptions(),
     onSuccess: () =>
       void invalidateMesQueries(queryCache, [
         'listBusinessConsoleMesRelatedQualityItems',
@@ -2464,18 +2464,18 @@ export function useMesQualityContext() {
     qualityItemsPending: qualityQuery.isLoading,
     qualityItemsState: businessReadState(qualityQuery, () => hasBusinessContext(filters)),
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
-    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) => {
-      // 公共 facade 不接受 actor 或授权范围声明；显式重建请求，避免运行时扩展字段越界透传。
-      const safeBody: BusinessConsoleMesRecordDefectRequest = {
-        organizationId: body.organizationId,
-        environmentId: body.environmentId,
+    recordDefect: (body: BusinessConsoleMesRecordDefectV2Request) => {
+      // v2 只接受缺陷事实和已核验的写范围选择；主体、组织与环境由会话上下文解析。
+      const operationTaskId = body.operationTaskId?.trim()
+      const safeBody: BusinessConsoleMesRecordDefectV2Request = {
         workOrderId: body.workOrderId,
-        operationTaskId: body.operationTaskId,
+        ...(operationTaskId ? { operationTaskId } : {}),
         defectCode: body.defectCode,
-        defectQuantity: body.defectQuantity,
-        materialLotId: body.materialLotId,
-        batchOrSerial: body.batchOrSerial,
+        quantity: body.quantity,
+        recordedAtUtc: body.recordedAtUtc,
         idempotencyKey: body.idempotencyKey,
+        scopeKind: body.scopeKind,
+        scopeId: body.scopeId,
       }
       return defectMutation.mutateAsync({ body: safeBody })
     },

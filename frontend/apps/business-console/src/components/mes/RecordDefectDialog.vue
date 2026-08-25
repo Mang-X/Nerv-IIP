@@ -25,7 +25,7 @@ defineProps<{
 
 const emit = defineEmits<{ submit: [] }>()
 const open = defineModel<boolean>('open', { required: true })
-const operationTaskId = defineModel<string>('operationTaskId', { required: true })
+const targetKey = defineModel<string>('targetKey', { required: true })
 const defectCode = defineModel<string>('defectCode', { required: true })
 const defectQuantity = defineModel<string>('defectQuantity', { required: true })
 </script>
@@ -36,7 +36,7 @@ const defectQuantity = defineModel<string>('defectQuantity', { required: true })
       <NvDialogHeader>
         <NvDialogTitle>登记生产过程缺陷</NvDialogTitle>
         <NvDialogDescription>
-          从当前主体可见且在质量登记范围内的工序选择上下文。登记时间由系统在受理时自动记录。
+          从当前主体可见且在质量登记范围内的工单选择上下文，可按需关联具体工序。
         </NvDialogDescription>
       </NvDialogHeader>
 
@@ -47,24 +47,24 @@ const defectQuantity = defineModel<string>('defectQuantity', { required: true })
           role="alert"
           data-testid="defect-validation-summary"
         >
-          请完整填写工单与工序、缺陷码和大于 0 的缺陷数量（已标红）。
+          请完整填写工单上下文、缺陷码和大于 0 的缺陷数量（已标红）。
         </p>
 
         <NvFieldGroup class="grid gap-3">
           <NvField>
             <NvFieldLabel for="defect-operation-task">
-              工单与工序 <span class="text-destructive">*</span>
+              工单与可选工序 <span class="text-destructive">*</span>
             </NvFieldLabel>
             <NvEntityPicker
               id="defect-operation-task"
-              v-model="operationTaskId"
+              v-model="targetKey"
               :options="operationOptions"
               title="选择工单与工序"
               placeholder="选择工单与工序"
-              source-text="仅列当前主体可见且在质量登记范围内的工序"
-              empty-text="当前授权范围内暂无可登记缺陷的工序"
+              source-text="仅列当前主体可见且在质量登记范围内的工单与工序"
+              empty-text="当前授权范围内暂无可登记缺陷的工单"
               aria-label="工单与工序"
-              :data-invalid="showErrors && !operationTaskId"
+              :data-invalid="showErrors && !targetKey"
               :disabled="pending"
             />
           </NvField>

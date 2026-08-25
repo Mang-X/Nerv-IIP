@@ -73,15 +73,22 @@ vi.mock('@/composables/useBusinessMes', () => ({
     scopePending: shallowRef(false),
     scopeReady: computed(() => state.writeScopeReady),
   }),
-  useMesOperationTasks: () => ({
-    filters: reactive({ organizationId: 'org-1', environmentId: 'prod', skip: 0, take: 20 }),
-    operationTasks: computed(() => state.operationTasks),
-    operationTasksError: shallowRef(undefined),
-    operationTasksPending: shallowRef(false),
-    operationListScopeMessage: computed(() => ''),
-    operationListScopeReady: computed(() => true),
-    refreshOperationTasks,
-  }),
+  useMesOperationTasks: () => {
+    const operationTasks = shallowRef([...state.operationTasks])
+    return {
+      filters: reactive({ organizationId: 'org-1', environmentId: 'prod', skip: 0, take: 20 }),
+      operationTasks,
+      operationTasksError: shallowRef(undefined),
+      operationTasksPending: shallowRef(false),
+      operationListScopeMessage: computed(() => ''),
+      operationListScopeReady: computed(() => true),
+      refreshOperationTasks: async () => {
+        const result = await refreshOperationTasks()
+        operationTasks.value = [...state.operationTasks]
+        return result
+      },
+    }
+  },
   useMesRelatedQualityItems: () => ({
     filters: reactive({ organizationId: 'org-1', environmentId: 'prod', skip: 0, take: 20 }),
     qualityItems: computed(() => state.qualityItems),
@@ -200,8 +207,8 @@ function button(wrapper: VueWrapper, label: string) {
   return target
 }
 
-async function fillValidForm(wrapper: VueWrapper, operationTaskId = 'OP-2') {
-  await wrapper.get('[aria-label="工单与工序"]').setValue(operationTaskId)
+async function fillValidForm(wrapper: VueWrapper, targetKey = 'operation:OP-2') {
+  await wrapper.get('[aria-label="工单与工序"]').setValue(targetKey)
   await wrapper.get('[aria-label="缺陷码"]').setValue('SCRATCH')
   await wrapper.get('[aria-label="缺陷数量"]').setValue('2.5')
 }
@@ -249,7 +256,7 @@ describe('MES 质量页 — 缺陷登记入口', () => {
   it('submits the selected real operation context and refreshes both related read models', async () => {
     const wrapper = mountPage()
     await button(wrapper, '登记缺陷').trigger('click')
-    await fillValidForm(wrapper, 'OP-2')
+    await fillValidForm(wrapper, 'operation:OP-2')
     await submitForm(wrapper)
     await flushPromises()
 
@@ -258,45 +265,64 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       { kind: 'work-center', id: 'WC-WRITE', displayName: '质量责任区' },
     )
     expect(recordDefect).toHaveBeenCalledWith({
-      organizationId: 'org-1',
-      environmentId: 'prod',
       workOrderId: 'WO-2',
       operationTaskId: 'OP-2',
       defectCode: 'SCRATCH',
-      defectQuantity: 2.5,
-      materialLotId: null,
-      batchOrSerial: null,
+      quantity: 2.5,
+      recordedAtUtc: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       idempotencyKey: 'defect-intent-key',
+      scopeKind: 'work-center',
+      scopeId: 'WC-WRITE',
     })
     expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('actor')
-    expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('scopeKind')
-    expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('scopeId')
-    expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('recordedAtUtc')
+    expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('organizationId')
+    expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('environmentId')
     expect(refreshQualityWriteScope).toHaveBeenCalledTimes(1)
     expect(refreshOperationTasks).toHaveBeenCalledTimes(2)
     expect(refreshQualityItems).toHaveBeenCalledTimes(1)
     expect(notifySuccess).toHaveBeenCalledWith('缺陷 DEF-20260825-001 已登记。')
   })
 
+  it('submits a real work-order context without inventing an operation task', async () => {
+    const wrapper = mountPage()
+    await button(wrapper, '登记缺陷').trigger('click')
+    await fillValidForm(wrapper, 'work-order:WO-2')
+    await submitForm(wrapper)
+    await flushPromises()
+
+    expect(recordDefect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workOrderId: 'WO-2',
+        defectCode: 'SCRATCH',
+        quantity: 2.5,
+        scopeKind: 'work-center',
+        scopeId: 'WC-WRITE',
+      }),
+    )
+    expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('operationTaskId')
+  })
+
   it('fails closed for a missing defect code or non-positive quantity', async () => {
     const wrapper = mountPage()
     await button(wrapper, '登记缺陷').trigger('click')
-    await wrapper.get('[aria-label="工单与工序"]').setValue('OP-2')
+    await wrapper.get('[aria-label="工单与工序"]').setValue('operation:OP-2')
     await wrapper.get('[aria-label="缺陷数量"]').setValue('0')
     await submitForm(wrapper)
 
-    expect(wrapper.text()).toContain('请完整填写工单与工序、缺陷码和大于 0 的缺陷数量')
+    expect(wrapper.text()).toContain('请完整填写工单上下文、缺陷码和大于 0 的缺陷数量')
     expect(refreshOperationTasks).not.toHaveBeenCalled()
     expect(recordDefect).not.toHaveBeenCalled()
   })
 
   it('does not mutate when the latest preflight no longer contains the selected context', async () => {
-    refreshOperationTasks.mockImplementationOnce(async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await button(wrapper, '登记缺陷').trigger('click')
+    await fillValidForm(wrapper, 'operation:OP-2')
+    refreshOperationTasks.mockReset()
+    refreshOperationTasks.mockImplementation(async () => {
       state.operationTasks.splice(0, state.operationTasks.length, operationTask())
     })
-    const wrapper = mountPage()
-    await button(wrapper, '登记缺陷').trigger('click')
-    await fillValidForm(wrapper, 'OP-2')
     await submitForm(wrapper)
     await flushPromises()
 
@@ -312,13 +338,15 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     coversWorkOrder.mockImplementation(({ operationTasks }) =>
       operationTasks.every((task) => task.workCenterId !== 'WC-OUT'),
     )
-    refreshOperationTasks.mockImplementationOnce(async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await button(wrapper, '登记缺陷').trigger('click')
+    await fillValidForm(wrapper, 'operation:OP-2')
+    refreshOperationTasks.mockReset()
+    refreshOperationTasks.mockImplementation(async () => {
       const selected = state.operationTasks.find((task) => task.operationTaskId === 'OP-2')
       if (selected) selected.workCenterId = 'WC-OUT'
     })
-    const wrapper = mountPage()
-    await button(wrapper, '登记缺陷').trigger('click')
-    await fillValidForm(wrapper, 'OP-2')
     await submitForm(wrapper)
     await flushPromises()
 
@@ -332,15 +360,17 @@ describe('MES 质量页 — 缺陷登记入口', () => {
 
   it('does not mutate when the refreshed quality write context no longer covers the task', async () => {
     state.writeScopeId = 'WC-2'
-    refreshQualityWriteScope.mockImplementationOnce(async () => {
-      state.writeScopeId = 'WC-REVOKED'
-    })
     coversWorkOrder.mockImplementation(({ operationTasks }, scope) =>
       operationTasks.some((task) => task.workCenterId === scope.id),
     )
     const wrapper = mountPage()
+    await flushPromises()
     await button(wrapper, '登记缺陷').trigger('click')
-    await fillValidForm(wrapper, 'OP-2')
+    await fillValidForm(wrapper, 'operation:OP-2')
+    refreshQualityWriteScope.mockReset()
+    refreshQualityWriteScope.mockImplementation(async () => {
+      state.writeScopeId = 'WC-REVOKED'
+    })
     await submitForm(wrapper)
     await flushPromises()
 
@@ -366,32 +396,41 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     const scoped = mountPage()
     await button(scoped, '登记缺陷').trigger('click')
     const options = scoped.get('[aria-label="工单与工序"]').findAll('option')
-    expect(options.map((option) => option.attributes('value'))).not.toContain('OP-1')
-    expect(options.map((option) => option.attributes('value'))).toContain('OP-2')
+    expect(options.map((option) => option.attributes('value'))).not.toContain('operation:OP-1')
+    expect(options.map((option) => option.attributes('value'))).toContain('operation:OP-2')
   })
 
-  it('keeps the same idempotency key and diagnostic error across an unchanged retry', async () => {
-    const rejection = { message: '当前工序已关闭，不能登记缺陷', status: 409 }
-    recordDefect.mockRejectedValueOnce(rejection)
-    const wrapper = mountPage()
-    await button(wrapper, '登记缺陷').trigger('click')
-    await fillValidForm(wrapper, 'OP-2')
+  it('replays the same complete payload after the server accepted but the response was lost', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-08-26T01:02:03.000Z'))
+      const rejection = { message: '响应丢失', status: 0 }
+      recordDefect.mockRejectedValueOnce(rejection)
+      const wrapper = mountPage()
+      await button(wrapper, '登记缺陷').trigger('click')
+      await fillValidForm(wrapper, 'operation:OP-2')
 
-    await submitForm(wrapper)
-    await flushPromises()
-    expect(notifyOperationFailure).toHaveBeenCalledWith(
-      '缺陷登记失败',
-      rejection,
-      '缺陷登记失败，请根据服务端原因检查后重试。',
-    )
-    expect(wrapper.text()).toContain('登记生产过程缺陷')
+      await submitForm(wrapper)
+      await flushPromises()
+      expect(notifyOperationFailure).toHaveBeenCalledWith(
+        '缺陷登记失败',
+        rejection,
+        '缺陷登记失败，请根据服务端原因检查后重试。',
+      )
+      expect(wrapper.text()).toContain('登记生产过程缺陷')
+      const firstPayload = structuredClone(recordDefect.mock.calls[0]?.[0])
 
-    await submitForm(wrapper)
-    await flushPromises()
+      vi.setSystemTime(new Date('2026-08-26T02:02:03.000Z'))
+      await submitForm(wrapper)
+      await flushPromises()
 
-    expect(recordDefect).toHaveBeenCalledTimes(2)
-    expect(recordDefect.mock.calls[0]?.[0].idempotencyKey).toBe('defect-intent-key')
-    expect(recordDefect.mock.calls[1]?.[0].idempotencyKey).toBe('defect-intent-key')
-    expect(makeIdempotencyKey).toHaveBeenCalledTimes(1)
+      expect(recordDefect).toHaveBeenCalledTimes(2)
+      expect(recordDefect.mock.calls[1]?.[0]).toEqual(firstPayload)
+      expect(firstPayload.recordedAtUtc).toBe('2026-08-26T01:02:03.000Z')
+      expect(firstPayload.idempotencyKey).toBe('defect-intent-key')
+      expect(makeIdempotencyKey).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
