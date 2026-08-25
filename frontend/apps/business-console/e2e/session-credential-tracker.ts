@@ -51,6 +51,8 @@ export function createSessionCredentialTracker(scope: SessionCredentialScope) {
   const expectedOrigin = new URL(scope.origin).origin
   let current = ''
   let generation = 0
+  let closed = false
+  let refreshFailed = false
   let refreshResponseObserved = false
   let pendingRefreshResponses = 0
   let refreshQueue: Promise<void> = Promise.resolve()
@@ -67,7 +69,13 @@ export function createSessionCredentialTracker(scope: SessionCredentialScope) {
 
   return {
     observeRequest(source: SessionCredentialRequest) {
-      if (!isScopedPage(source.page) || refreshResponseObserved || pendingRefreshResponses > 0) {
+      if (
+        closed ||
+        refreshFailed ||
+        !isScopedPage(source.page) ||
+        refreshResponseObserved ||
+        pendingRefreshResponses > 0
+      ) {
         return
       }
 
@@ -85,21 +93,42 @@ export function createSessionCredentialTracker(scope: SessionCredentialScope) {
       if (authorization) current = authorization
     },
     observeRefreshResponse(source: SessionCredentialRefreshResponse): Promise<void> {
-      if (!isScopedPage(source.page) || !isScopedUrl(source.response.url(), scope.refreshPath)) {
+      if (
+        closed ||
+        refreshFailed ||
+        !isScopedPage(source.page) ||
+        !isScopedUrl(source.response.url(), scope.refreshPath)
+      ) {
         return Promise.resolve()
       }
 
       pendingRefreshResponses += 1
       const responseGeneration = generation
       const capture = refreshQueue.then(async () => {
-        if (source.response.status() !== 200) {
-          throw new Error('refresh response was not successful')
-        }
+        if (closed || refreshFailed || generation !== responseGeneration) return
 
-        const authorization = authorizationFromRefreshPayload(await source.response.json())
-        if (generation === responseGeneration) {
-          current = authorization
-          refreshResponseObserved = true
+        try {
+          if (source.response.status() !== 200) {
+            throw new Error('refresh response was not successful')
+          }
+
+          let authorization: string
+          try {
+            authorization = authorizationFromRefreshPayload(await source.response.json())
+          } catch {
+            throw new Error('refresh response credential capture failed')
+          }
+
+          if (!closed && !refreshFailed && generation === responseGeneration) {
+            current = authorization
+            refreshResponseObserved = true
+          }
+        } catch (error) {
+          if (!closed && generation === responseGeneration) {
+            current = ''
+            refreshFailed = true
+          }
+          throw error
         }
       })
       refreshQueue = capture
@@ -111,9 +140,10 @@ export function createSessionCredentialTracker(scope: SessionCredentialScope) {
     },
     async headers(): Promise<SessionCredentialHeaders | undefined> {
       await refreshQueue
-      return current ? { authorization: current } : undefined
+      return !closed && !refreshFailed && current ? { authorization: current } : undefined
     },
     clear() {
+      closed = true
       generation += 1
       current = ''
       refreshResponseObserved = false
@@ -123,9 +153,11 @@ export function createSessionCredentialTracker(scope: SessionCredentialScope) {
 
 export async function callWithSessionCredential<T>(
   tracker: { headers: () => Promise<SessionCredentialHeaders | undefined> },
-  operation: (headers: SessionCredentialHeaders | undefined) => Promise<T>,
+  operation: (headers: SessionCredentialHeaders) => Promise<T>,
 ): Promise<T> {
-  return operation(await tracker.headers())
+  const headers = await tracker.headers()
+  if (!headers?.authorization) throw new Error('session credential unavailable')
+  return operation(headers)
 }
 
 export async function withSessionCredentialCleanup<T>(

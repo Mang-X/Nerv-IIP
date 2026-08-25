@@ -141,6 +141,71 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     await expect(tracker.headers()).resolves.toEqual({ authorization: 'fixture-current' })
   })
 
+  it.each([
+    {
+      label: 'non-200 response',
+      status: 401,
+      payload: { data: { accessToken: 'fixture-stale-token' } },
+    },
+    {
+      label: 'malformed envelope',
+      status: 200,
+      payload: { result: { token: 'fixture-malformed-token' } },
+    },
+    {
+      label: 'missing access token',
+      status: 200,
+      payload: { data: {} },
+    },
+  ])('fails closed after a $label refresh', async ({ status, payload }) => {
+    const page = {}
+    const tracker = createSessionCredentialTracker(trackerScope(page))
+    tracker.observeRequest(
+      requestSource(page, '/api/business-console/v1/master-data/skus', 'fixture-before-failure'),
+    )
+
+    await expect(
+      tracker.observeRefreshResponse({
+        page,
+        response: {
+          url: () => 'https://console.fixture/api/console/v1/auth/refresh',
+          status: () => status,
+          json: async () => payload,
+        },
+      }),
+    ).rejects.toThrow()
+    await expect(tracker.headers()).resolves.toBeUndefined()
+
+    let operationInvoked = false
+    await expect(
+      callWithSessionCredential(tracker, async (headers) => {
+        operationInvoked = true
+        return headers
+      }),
+    ).rejects.toThrow('session credential unavailable')
+    expect(operationInvoked).toBe(false)
+  })
+
+  it('does not repopulate credentials from a response observed after clear', async () => {
+    const page = {}
+    const tracker = createSessionCredentialTracker(trackerScope(page))
+
+    await withSessionCredentialCleanup(
+      async () => undefined,
+      () => tracker.clear(),
+    )
+    await tracker.observeRefreshResponse({
+      page,
+      response: {
+        url: () => 'https://console.fixture/api/console/v1/auth/refresh',
+        status: () => 200,
+        json: async () => ({ data: { accessToken: 'fixture-late-token' } }),
+      },
+    })
+
+    await expect(tracker.headers()).resolves.toBeUndefined()
+  })
+
   it('starts only from the reserved walkthrough facts and keeps downstream numbers stable', () => {
     expect(scenarioSource).toContain("const RFQ_NO = 'RFQ-WALK-001'")
     expect(scenarioSource).toContain("const SUPPLIER_QUOTATION_NO = 'SQ-WALK-001'")
