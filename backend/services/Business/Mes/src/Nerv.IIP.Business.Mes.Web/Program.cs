@@ -92,6 +92,7 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSu
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
+builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
 builder.Services.AddScoped<MesQualityInspectionPlanClient>();
 builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
     sp.GetRequiredService<MesQualityInspectionPlanClient>());
