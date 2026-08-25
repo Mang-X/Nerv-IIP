@@ -189,14 +189,7 @@ async function submitCreate() {
   const sku = skuId.value.trim()
   const uom = uomCode.value.trim()
   const qty = quantity.value
-  if (
-    !workOrderId ||
-    sku === '' ||
-    uom === '' ||
-    qty === null ||
-    !(qty > 0)
-  )
-    return
+  if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0)) return
   syncEnterStep()
   // 首次提交铸造稳定幂等键，重试复用同键。
   if (operationKey.value === '') {

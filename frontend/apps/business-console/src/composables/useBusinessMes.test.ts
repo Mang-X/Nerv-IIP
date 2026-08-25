@@ -1337,12 +1337,22 @@ describe('business MES composables', () => {
       workOrderId: 'wo-1',
       skuId: 'sku-1',
       quantity: 10,
+      unitCost: 12.34,
       uomCode: 'EA',
       requestedAtUtc: '2026-05-26T00:00:00.000Z',
       idempotencyKey: 'receipt-1',
-    })
+    } as never)
 
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
+    const mutationOptions = vi.mocked(
+      createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
+    ).mock.results[
+      vi.mocked(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).mock.results
+        .length - 1
+    ]?.value as { mutation: ReturnType<typeof vi.fn> } | undefined
+    expect(mutationOptions).toBeDefined()
+    const sentBody = mutationOptions!.mutation.mock.calls[0]![0].body
+    expect(sentBody).not.toHaveProperty('unitCost')
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
   })
 

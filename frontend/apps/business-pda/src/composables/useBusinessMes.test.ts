@@ -1928,6 +1928,7 @@ describe('pda useBusinessMes composables', () => {
       organizationId: 'EVIL',
       environmentId: 'EVIL',
       requestedAtUtc: '1999-01-01T00:00:00.000Z',
+      unitCost: 12.34,
     } as never)
 
     const mutateAsync = coladaState.mutateById.get(

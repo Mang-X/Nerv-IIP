@@ -376,6 +376,29 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(notifySpies.success).toHaveBeenCalledTimes(2)
   })
 
+  it('复用失败登记的同一幂等键，避免失败重试产生新意图', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.createReceiptRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('lost response'))
+      .mockResolvedValueOnce(undefined)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await submitReceipt(wrapper)
+    await submitReceipt(wrapper)
+
+    expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(2)
+    const firstKey = (
+      receiptState.createReceiptRequest.mock.calls[0]![0] as { idempotencyKey?: string }
+    ).idempotencyKey
+    const retryKey = (
+      receiptState.createReceiptRequest.mock.calls[1]![0] as { idempotencyKey?: string }
+    ).idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(retryKey).toBe(firstKey)
+  })
+
   it('carries the selected produced lot in the create request (auto-selected when single)', async () => {
     routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     const wrapper = mountPage()
