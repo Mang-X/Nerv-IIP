@@ -1945,9 +1945,7 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
 [HttpPost("/api/business-console/v1/mes/downtime-events")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesDowntimeEvent")]
 public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
+    IBusinessGatewayAuthorizationClient auth)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDowntimeEventRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeManage)
@@ -1960,7 +1958,102 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
         BusinessConsoleMesRecordDowntimeEventRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.RecordDowntimeEventAsync(tokenProvider.BearerToken, request, cancellationToken);
+        throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+            System.Net.HttpStatusCode.BadRequest,
+            "work-center-required-use-v2");
+}
+
+public sealed class BusinessConsoleMesRecordDowntimeEventRequestValidator
+    : Validator<BusinessConsoleMesRecordDowntimeEventRequest>
+{
+    public BusinessConsoleMesRecordDowntimeEventRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.OperationTaskId).MaximumLength(200);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(200);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v2/mes/downtime-events")]
+[BusinessGatewayOperationId("recordBusinessConsoleMesDowntimeEventV2")]
+public sealed class RecordBusinessConsoleMesDowntimeEventV2Endpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDowntimeEventV2Request, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesDowntimeManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesRecordDowntimeEventV2Request request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesRecordDowntimeEventV2Request request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesRecordDowntimeEventV2Request request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkCenterAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesDowntimeManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkCenterId,
+            cancellationToken);
+        return await mes.RecordDowntimeEventAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesRecordDowntimeEventRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.WorkCenterId,
+                request.DeviceAssetId,
+                request.ReasonCode,
+                request.StartedAtUtc,
+                request.IdempotencyKey,
+                request.ToUtc),
+            cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesRecordDowntimeEventV2RequestValidator
+    : Validator<BusinessConsoleMesRecordDowntimeEventV2Request>
+{
+    public BusinessConsoleMesRecordDowntimeEventV2RequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.OperationTaskId).MaximumLength(200);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(200);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(Endpoints.Principal.BusinessGatewayWorkScopeKinds.Contains);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ToUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc)
+            .When(x => x.ToUtc.HasValue);
+    }
 }
 
 [Tags("Business Console MES")]

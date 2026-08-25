@@ -44,6 +44,8 @@ import type {
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
   BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope,
   BusinessConsoleMesFinishedGoodsInventoryLinkResponse,
+  BusinessConsoleMesRecordDowntimeEventRequest,
+  BusinessConsoleMesRecordDowntimeEventV2Request,
   BusinessConsoleMesQualityHoldTimelineItem,
   BusinessConsoleMesQualityHoldTimelineRequest,
   BusinessConsoleMesQualityHoldTimelineResponse,
@@ -177,6 +179,7 @@ import {
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
@@ -216,6 +219,33 @@ describe('generated API client contract', () => {
     }>()
     expectTypeOf<BusinessConsoleArchiveSkillRequest>().toEqualTypeOf<{
       reason: string
+    }>()
+  })
+
+  it('keeps the legacy downtime request shape separate from the strict v2 context contract', () => {
+    expectTypeOf<BusinessConsoleMesRecordDowntimeEventRequest>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      workOrderId: string
+      operationTaskId?: string | null
+      deviceAssetId?: string | null
+      reasonCode: string
+      startedAtUtc: string
+      idempotencyKey: string
+    }>()
+    expectTypeOf<BusinessConsoleMesRecordDowntimeEventV2Request>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      workOrderId: string
+      operationTaskId?: string | null
+      workCenterId: string
+      deviceAssetId?: string | null
+      reasonCode: string
+      startedAtUtc: string
+      idempotencyKey: string
+      scopeKind: string
+      scopeId: string
+      toUtc?: string | null
     }>()
   })
 
@@ -530,6 +560,7 @@ describe('generated API client contract', () => {
     )
     expect(listBusinessConsoleMesDowntimeEventsQueryOptions).toBeTypeOf('function')
     expect(recordBusinessConsoleMesDowntimeEventMutationOptions).toBeTypeOf('function')
+    expect(recordBusinessConsoleMesDowntimeEventV2MutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesShiftHandoversQueryOptions).toBeTypeOf('function')
     expect(createBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')
     expect(acceptBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')

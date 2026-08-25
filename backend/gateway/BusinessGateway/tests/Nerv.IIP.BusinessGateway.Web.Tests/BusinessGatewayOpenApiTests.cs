@@ -903,6 +903,31 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link", "get", "getBusinessConsoleMesFinishedGoodsReceiptInventoryLink");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "get", "listBusinessConsoleMesDowntimeEvents");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEvent");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleMesRecordDowntimeEventRequest",
+            "workCenterId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "organizationId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "environmentId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "workOrderId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "reasonCode", 100);
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "startedAtUtc");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "idempotencyKey", 150);
+        AssertOperationId(paths, "/api/business-console/v2/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEventV2");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "organizationId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "environmentId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "workOrderId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "workCenterId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "reasonCode", 100);
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "startedAtUtc");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "scopeKind", 50);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "operationTaskId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "deviceAssetId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "toUtc");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events/{downtimeEventId}/recover", "post", "confirmBusinessConsoleMesDowntimeRecovery");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers", "get", "listBusinessConsoleMesShiftHandovers");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers", "post", "createBusinessConsoleMesShiftHandover");
