@@ -441,19 +441,34 @@ const cancelForm = reactive({ reasonCode: '', remark: '' })
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
 const closeOpen = ref(false)
 const decisionOpen = ref(false)
+const decisionShowErrors = ref(false)
 const decisionForm = reactive({ changeNumber: '', decision: '', reason: '' })
+const ENGINEERING_CHANGE_NUMBER_MAX_LENGTH = 100
+const ENGINEERING_CHANGE_REASON_MAX_LENGTH = 500
 const canClose = computed(
   () => workOrderManageScopeReady.value && currentStatus.value === 'completed',
 )
 const canRecordEngineeringDecision = computed(
   () => workOrderManageScopeReady.value && !['closed', 'cancelled'].includes(currentStatus.value),
 )
+const decisionFieldErrors = computed(() => ({
+  changeNumber: !decisionForm.changeNumber.trim()
+    ? '请输入变更单号。'
+    : decisionForm.changeNumber.trim().length > ENGINEERING_CHANGE_NUMBER_MAX_LENGTH
+      ? `变更单号不能超过 ${ENGINEERING_CHANGE_NUMBER_MAX_LENGTH} 个字符。`
+      : '',
+  decision: decisionForm.decision ? '' : '请选择处理意见。',
+  reason: !decisionForm.reason.trim()
+    ? '请输入决策说明。'
+    : decisionForm.reason.trim().length > ENGINEERING_CHANGE_REASON_MAX_LENGTH
+      ? `决策说明不能超过 ${ENGINEERING_CHANGE_REASON_MAX_LENGTH} 个字符。`
+      : '',
+}))
+const decisionValidationSummary = computed(() =>
+  Object.values(decisionFieldErrors.value).filter(Boolean),
+)
 const canSubmitDecision = computed(
-  () =>
-    canRecordEngineeringDecision.value &&
-    decisionForm.changeNumber.trim().length > 0 &&
-    decisionForm.decision.length > 0 &&
-    decisionForm.reason.trim().length > 0,
+  () => canRecordEngineeringDecision.value && decisionValidationSummary.value.length === 0,
 )
 async function submitClose() {
   if (!canClose.value || closeWorkOrderPending.value) return
@@ -471,10 +486,13 @@ function openDecisionDialog() {
   decisionForm.changeNumber = ''
   decisionForm.decision = ''
   decisionForm.reason = ''
+  decisionShowErrors.value = false
   decisionOpen.value = true
 }
 async function submitDecision() {
-  if (!canSubmitDecision.value || recordEngineeringChangeDecisionPending.value) return
+  if (!canRecordEngineeringDecision.value || recordEngineeringChangeDecisionPending.value) return
+  decisionShowErrors.value = true
+  if (!canSubmitDecision.value) return
   try {
     await recordEngineeringChangeDecision({
       changeNumber: decisionForm.changeNumber.trim(),
@@ -1480,17 +1498,32 @@ function formatError(error: unknown) {
           >
         </NvAlertDialogHeader>
         <NvFieldGroup class="grid gap-3">
-          <NvField>
+          <p
+            v-if="decisionShowErrors && decisionValidationSummary.length"
+            class="text-sm text-destructive"
+            role="alert"
+            data-testid="engineering-change-decision-errors"
+          >
+            请修正标红的必填项后再保存。
+          </p>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.changeNumber">
             <NvFieldLabel for="engineering-change-number"
               >变更单号 <span class="text-destructive">*</span></NvFieldLabel
             >
             <NvInput
               id="engineering-change-number"
               v-model="decisionForm.changeNumber"
+              :maxlength="ENGINEERING_CHANGE_NUMBER_MAX_LENGTH"
               placeholder="请输入变更单号"
             />
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.changeNumber"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.changeNumber }}
+            </p>
           </NvField>
-          <NvField>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.decision">
             <NvFieldLabel for="engineering-change-decision"
               >处理意见 <span class="text-destructive">*</span></NvFieldLabel
             >
@@ -1503,16 +1536,29 @@ function formatError(error: unknown) {
                 <NvSelectItem value="abort-work-order">停止工单</NvSelectItem>
               </NvSelectContent>
             </NvSelect>
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.decision"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.decision }}
+            </p>
           </NvField>
-          <NvField>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.reason">
             <NvFieldLabel for="engineering-change-reason"
               >决策说明 <span class="text-destructive">*</span></NvFieldLabel
             >
             <NvInput
               id="engineering-change-reason"
               v-model="decisionForm.reason"
+              :maxlength="ENGINEERING_CHANGE_REASON_MAX_LENGTH"
               placeholder="请说明决策依据"
             />
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.reason"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.reason }}
+            </p>
           </NvField>
         </NvFieldGroup>
         <NvAlertDialogFooter>
@@ -1525,7 +1571,7 @@ function formatError(error: unknown) {
           >
           <NvButton
             type="button"
-            :disabled="!canSubmitDecision || recordEngineeringChangeDecisionPending"
+            :disabled="recordEngineeringChangeDecisionPending"
             data-testid="confirm-engineering-change-decision"
             @click="submitDecision"
           >
