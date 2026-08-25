@@ -10,11 +10,19 @@ BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`Prod
 
 BusinessQuality 已新增职责独立的时间巡检扫描器。`Quality:PeriodicInspectionTime:Enabled` 是扫描器的全局配置开关，不是方案级停用/禁用语义；方案升级或停用不会改写 #2070 已冻结的运行上下文。启用扫描器并配置 `Scopes` 后，扫描器使用注入的 `TimeProvider`，从首次生产活动起按方案冻结的 `TimeIntervalHours` 生成 `operation/mes` 巡检任务；首个任务在第一个完整间隔到点时生成，已关闭、尚无报工或没有正数量高水位的上下文不生成。上下文持久化下一到期时间，扫描时只按到期顺序领取候选，避免未到期记录占用批次；每个候选通过独立依赖注入 scope 和命令 UoW 串行执行，候选失败会带同轮 `correlationId` 记录 Error 并继续处理其余候选。首次生成会冻结 UTC 调度锚点并原子推进窗口序号，后续乱序报工不移动已投递的窗口身份。每个窗口使用运行上下文 ID 与窗口序号形成稳定幂等键，来源行身份为 `operationId:periodic-time:runtimeContextId:sequence`，同时保留工单和工序来源身份、SKU、UOM、方案版本及个人/班组投递目标。
 
-扫描周期默认 15 分钟；`MaxWindowsPerContext` 默认 24，限制单上下文单轮补发量，剩余窗口由后续扫描继续追赶，不设置累计丢弃上限；`ContextBatchSize` 默认 100，两个上限均只接受 1–1000。生成过程复用工序范围的 PostgreSQL transaction-scoped advisory lock，在同一命令 UoW 事务提交任务与时间水位；多实例同时命中同一候选时，后取得锁的一方会用全新 DbContext 重读已提交水位并产出 0。任务唯一索引作为重试、重启与多实例竞争的第二道防线。该能力默认关闭，不新增 HTTP API；数量间隔生成仍由 #2072 交付。
+扫描周期默认 15 分钟；`MaxWindowsPerContext` 默认 24，限制单上下文单轮补发量，剩余窗口由后续扫描继续追赶，不设置累计丢弃上限；`ContextBatchSize` 默认 100，两个上限均只接受 1–1000。生成过程复用工序范围的 PostgreSQL transaction-scoped advisory lock，在同一命令 UoW 事务提交任务与时间水位；多实例同时命中同一候选时，后取得锁的一方会用全新 DbContext 重读已提交水位并产出 0。任务唯一索引作为重试、重启与多实例竞争的第二道防线。该能力默认关闭，不新增 HTTP API；数量间隔生成见下一节。
 
 发布迁移会把 `inspection_tasks.source_document_line_id` 从 150 扩到 250，属于向前兼容扩容，并把既有 active 上下文的 `next_time_window_at_utc` 回填为“历史首次报工时间 + 冻结间隔”；closed 上下文不回填。由于该特性默认关闭且本 PR 合并前不存在已生成的旧格式周期时间任务，因此无需迁移旧来源行身份。上线后首次开启前，运维必须按各 scope 评估从历史首次报工锚点到当前时间的预期重放窗口数；开启后扫描器会按每上下文每轮最多 24 个持续追赶全部漏发窗口，不能把 24 误读为累计总量上限。迁移应用并开始生成超过 150 字符的来源行身份后，`Down` 收窄列宽可能失败，因此该迁移按前滚修复处理，不把数据库回滚作为恢复手段。
 
-同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。真实 PostgreSQL profile 由同一 `quality-postgres-profile` lane 承载，当前登记 14 条冻结身份；单候选生成经正式容器与 `ISender` 执行并提交，不能据此单独证明 `AddUnitOfWorkBehaviors()` 是提交的唯一原因。数量间隔触发仍属于 #2072。
+同一工序的消费者写入由 PostgreSQL transaction-scoped advisory lock 串行化，多工序 release 按稳定 operation key 顺序取锁；数据库唯一索引和 check constraints 保护来源、report、方案/工序上下文及快照一致性。#2070 建立持久上下文和数量高水位；#2071 在其上新增时间窗口水位和 `inspection_tasks` 生成。单候选生成经正式容器与 `ISender` 执行并提交，不能据此单独证明 `AddUnitOfWorkBehaviors()` 是提交的唯一原因。
+
+## Quality 数量间隔巡检任务生成（#1973 子项④ / #2072）
+
+BusinessQuality 在现有 release/report 消费链路内，按运行上下文冻结的 `QuantityInterval` 和非冲销良品数量高水位逐桶生成 `operation/mes` 巡检任务。窗口序号从 1 开始，任务 `Quantity` 保存累计阈值，例如间隔 100 且一次报工跨到 250 时生成 100、200 两条任务；后续累计达到 300 时只补第 3 条。报工先于 release 时，release 创建并回放冻结上下文后立即补齐所有已跨窗口。只有 active、UOM 已知且冻结数量间隔为正的上下文参与生成；completion 关闭上下文后不再补发。冲销只降低净良品量，不推进、不回收已生成窗口，后续乱序的非冲销报工继续从单调高水位追加窗口。
+
+每个数量窗口使用运行上下文 ID 与窗口序号形成稳定身份：来源行是 `operationId:periodic-quantity:runtimeContextId:sequence`，触发幂等键是 `quality:periodic-quantity:runtimeContextId:sequence`。任务沿用冻结的工单、工序、SKU、UOM、方案版本和个人/班组投递目标；创建时间采用触发该次原子计算的 release/report 事件时间，期限为其后 24 小时。生成复用 #2070 的工序级 PostgreSQL transaction-scoped advisory lock，并在消费者同一 UoW 中原子写入 report、任务和 `last_generated_quantity_window_sequence`；重放、乱序及并发消费者只会留下每窗口一条任务。真实 PostgreSQL 故障注入验证任务写入失败时 report、任务、高水位和窗口水位全部回滚，重放后可正常生成。
+
+迁移为运行上下文新增默认值 0 的非负数量窗口水位，不在迁移期间创建任务；既有 active 上下文会在下一次被接受的 release/report 消费时按当前数量高水位补齐窗口。开始生成数量任务后不建议执行该迁移的 `Down`：降级会丢失水位，再升级回到 0 后既有任务唯一键会阻止重复写入并使后续消费者事务失败，应使用前滚修复。该能力不新增 HTTP API、MES 事件、PDA/SPC 页面或独立扫描配置。真实 PostgreSQL profile 继续由 `quality-postgres-profile` lane 承载，登记 16 条冻结身份，其中新增数量并发唯一性和写失败回滚两条 provider 证据。
 
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 

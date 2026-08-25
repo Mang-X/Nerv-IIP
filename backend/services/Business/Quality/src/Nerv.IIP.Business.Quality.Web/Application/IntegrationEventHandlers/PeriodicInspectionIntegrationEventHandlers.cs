@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -83,6 +84,10 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                             operationPayload.WorkCenterId,
                             payload.ReleasedAtUtc.UtcDateTime,
                             snapshots);
+                        PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                            dbContext,
+                            operation.RuntimeContexts,
+                            integrationEvent.OccurredAtUtc);
                     }
                 },
                 cancellationToken);
@@ -194,6 +199,10 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForTrackPerio
                         payload.ReportedAtUtc.UtcDateTime,
                         payload.IsReversal,
                         payload.ReversedReportNo);
+                    PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                        dbContext,
+                        operation.RuntimeContexts,
+                        integrationEvent.OccurredAtUtc);
                 },
                 cancellationToken);
         }
@@ -284,6 +293,48 @@ public sealed class MesOperationTaskCompletedIntegrationEventHandlerForClosePeri
                 integrationEvent,
                 exception,
                 cancellationToken);
+        }
+    }
+}
+
+internal static class PeriodicInspectionQuantityTaskGeneration
+{
+    public static void AddDueTasks(
+        ApplicationDbContext dbContext,
+        IReadOnlyCollection<PeriodicInspectionRuntimeContext> contexts,
+        DateTimeOffset occurredAtUtc)
+    {
+        foreach (var context in contexts.OrderBy(x => x.Id))
+        {
+            foreach (var window in context.TakeDueQuantityWindows())
+            {
+                var task = InspectionTask.CreatePending(
+                    context.OrganizationId,
+                    context.EnvironmentId,
+                    context.InspectionPlanId,
+                    sourceType: "operation",
+                    sourceService: "mes",
+                    sourceDocumentId: context.WorkOrderId,
+                    sourceDocumentLineId: $"{context.OperationId}:periodic-quantity:{context.Id.Id:D}:{window.Sequence}",
+                    skuCode: context.SkuCode,
+                    quantity: window.ThresholdQuantity,
+                    uomCode: context.UomCode!,
+                    batchNo: null,
+                    serialNo: null,
+                    occurredAtUtc,
+                    dueAtUtc: occurredAtUtc.AddHours(24),
+                    triggerIdempotencyKey: $"quality:periodic-quantity:{context.Id.Id:D}:{window.Sequence}");
+                if (context.AssignedInspectorUserId is not null || context.AssignedTeamId is not null)
+                {
+                    task.Assign(
+                        context.AssignedInspectorUserId,
+                        context.AssignedTeamId,
+                        task.Version,
+                        occurredAtUtc);
+                }
+
+                dbContext.InspectionTasks.Add(task);
+            }
         }
     }
 }

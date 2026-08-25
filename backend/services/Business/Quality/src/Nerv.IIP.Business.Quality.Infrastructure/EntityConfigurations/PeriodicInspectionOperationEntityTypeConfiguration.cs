@@ -107,6 +107,9 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
                     "ck_periodic_inspection_runtime_high_water",
                     "quantity_high_water >= 0");
                 table.HasCheckConstraint(
+                    "ck_periodic_inspection_runtime_quantity_watermark",
+                    "last_generated_quantity_window_sequence >= 0");
+                table.HasCheckConstraint(
                     "ck_periodic_inspection_runtime_time_watermark",
                     "(last_generated_time_window_sequence = 0 AND time_schedule_anchor_at_utc IS NULL) OR "
                     + "(last_generated_time_window_sequence > 0 AND time_schedule_anchor_at_utc IS NOT NULL)");
@@ -132,6 +135,7 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Authoritative MES production report UOM; null before the first report.");
         builder.Property(x => x.CumulativeGoodQuantity).HasColumnName("cumulative_good_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current signed net good quantity including reversal effects.");
         builder.Property(x => x.QuantityHighWater).HasColumnName("quantity_high_water").IsRequired().HasPrecision(18, 6).HasComment("Monotonic accepted good-quantity high water; reversal facts neither advance nor roll it back.");
+        builder.Property(x => x.LastGeneratedQuantityWindowSequence).HasColumnName("last_generated_quantity_window_sequence").IsRequired().HasComment("Last atomically generated cumulative quantity-window sequence; zero before generation.");
         builder.Property(x => x.TimeScheduleAnchorAtUtc).HasColumnName("time_schedule_anchor_at_utc").HasComment("Frozen UTC first-production anchor after the first time window is generated.");
         builder.Property(x => x.LastGeneratedTimeWindowSequence).HasColumnName("last_generated_time_window_sequence").IsRequired().HasComment("Last atomically generated time-window sequence; zero before generation.");
         builder.Property(x => x.NextTimeWindowAtUtc).HasColumnName("next_time_window_at_utc").HasComment("Persisted UTC due time for the next ungenerated time window; null before activity or after closure.");

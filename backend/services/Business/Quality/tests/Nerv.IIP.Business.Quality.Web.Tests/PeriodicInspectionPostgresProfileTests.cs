@@ -248,6 +248,126 @@ public sealed class PeriodicInspectionPostgresProfileTests
     }
 
     [QualityPostgresFact]
+    public async Task Concurrent_quantity_reports_create_each_window_once_and_atomically_advance_watermark_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan());
+            await setup.SaveChangesAsync();
+        }
+
+        await HandleReleaseAsync(options);
+        await using var gateConnection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString);
+        await gateConnection.OpenAsync();
+        await using var gateTransaction = await gateConnection.BeginTransactionAsync();
+        await using (var gateCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))",
+            gateConnection,
+            gateTransaction))
+        {
+            gateCommand.Parameters.AddWithValue(
+                "key",
+                "quality-periodic-inspection:org-001:env-dev:WO-001:OP-001");
+            await gateCommand.ExecuteNonQueryAsync();
+        }
+
+        var first = HandleReportAsync(
+            options,
+            ProductionReport("RPT-QTY-001", 100m, false, null, "2026-08-24T01:30:00Z"));
+        var second = HandleReportAsync(
+            options,
+            ProductionReport("RPT-QTY-002", 100m, false, null, "2026-08-24T01:31:00Z"));
+
+        await WaitForAdvisoryWaitersAsync(expected: 2, competingTasks: [first, second]);
+        Assert.False(first.IsCompleted);
+        Assert.False(second.IsCompleted);
+        await gateTransaction.CommitAsync();
+        await Task.WhenAll(first, second);
+
+        await using var assertion = CreateContext(options);
+        var context = await assertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+        var reports = await assertion.PeriodicInspectionProductionReports.AsNoTracking().OrderBy(x => x.ReportNo).ToArrayAsync();
+        var tasks = await assertion.InspectionTasks.AsNoTracking().OrderBy(x => x.Quantity).ToArrayAsync();
+        Assert.Equal(["RPT-QTY-001", "RPT-QTY-002"], reports.Select(x => x.ReportNo));
+        Assert.Equal([100m, 200m], tasks.Select(x => x.Quantity));
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Equal(200m, context.QuantityHighWater);
+        Assert.Equal(2, tasks.Select(x => x.TriggerIdempotencyKey).Distinct().Count());
+    }
+
+    [QualityPostgresFact]
+    public async Task Quantity_task_write_failure_rolls_back_report_watermark_and_task_before_replay_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan());
+            await setup.SaveChangesAsync();
+        }
+
+        await HandleReleaseAsync(options);
+        await using (var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await ExecuteSqlAsync(connection, """
+                CREATE OR REPLACE FUNCTION quality.fail_periodic_quantity_task()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $$
+                BEGIN
+                    IF NEW.source_document_line_id LIKE '%:periodic-quantity:%' THEN
+                        RAISE EXCEPTION 'injected periodic quantity task failure';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$;
+
+                CREATE TRIGGER fail_periodic_quantity_task
+                BEFORE INSERT ON quality.inspection_tasks
+                FOR EACH ROW EXECUTE FUNCTION quality.fail_periodic_quantity_task();
+                """);
+        }
+
+        var report = ProductionReport("RPT-QTY-FAIL", 100m, false, null, "2026-08-24T01:30:00Z");
+        await Assert.ThrowsAsync<DbUpdateException>(() => HandleReportAsync(options, report));
+
+        await using (var failedAssertion = CreateContext(options))
+        {
+            var context = await failedAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+            Assert.Empty(await failedAssertion.PeriodicInspectionProductionReports.AsNoTracking().ToArrayAsync());
+            Assert.Empty(await failedAssertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+            Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+            Assert.Equal(0m, context.QuantityHighWater);
+        }
+
+        await using (var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await ExecuteSqlAsync(connection, """
+                DROP TRIGGER fail_periodic_quantity_task ON quality.inspection_tasks;
+                DROP FUNCTION quality.fail_periodic_quantity_task();
+                """);
+        }
+
+        await HandleReportAsync(options, report);
+        await using var replayAssertion = CreateContext(options);
+        Assert.Single(await replayAssertion.PeriodicInspectionProductionReports.AsNoTracking().ToArrayAsync());
+        Assert.Single(await replayAssertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+        Assert.Equal(
+            1,
+            await replayAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking()
+                .Select(x => x.LastGeneratedQuantityWindowSequence)
+                .SingleAsync());
+    }
+
+    [QualityPostgresFact]
     public async Task Production_mediator_uow_dispatches_one_context_command_and_commits_its_task()
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();
@@ -474,6 +594,15 @@ public sealed class PeriodicInspectionPostgresProfileTests
                 UPDATE quality.periodic_inspection_runtime_contexts
                 SET last_generated_time_window_sequence = 1,
                     time_schedule_anchor_at_utc = NULL
+                WHERE id = '00000000-0000-0000-0000-000000000201';
+                """),
+            new ConstraintViolationCase(
+                "runtime quantity watermark",
+                PostgresErrorCodes.CheckViolation,
+                "ck_periodic_inspection_runtime_quantity_watermark",
+                """
+                UPDATE quality.periodic_inspection_runtime_contexts
+                SET last_generated_quantity_window_sequence = -1
                 WHERE id = '00000000-0000-0000-0000-000000000201';
                 """)
         };

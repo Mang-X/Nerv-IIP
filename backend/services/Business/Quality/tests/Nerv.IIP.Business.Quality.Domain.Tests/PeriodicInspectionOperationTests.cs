@@ -52,6 +52,78 @@ public sealed class PeriodicInspectionOperationTests
     }
 
     [Fact]
+    public void Quantity_window_is_not_generated_before_the_first_frozen_interval_is_reached()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 99.999999m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
+    public void One_report_crossing_multiple_quantity_intervals_emits_each_cumulative_threshold()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        var windows = context.TakeDueQuantityWindows();
+
+        Assert.Collection(
+            windows,
+            window => Assert.Equal((1L, 100m), (window.Sequence, window.ThresholdQuantity)),
+            window => Assert.Equal((2L, 200m), (window.Sequence, window.ThresholdQuantity)));
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
+    public void Quantity_remainder_continues_from_the_persisted_window_sequence()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(2, context.TakeDueQuantityWindows().Count);
+
+        operation.RecordProductionReport("RPT-002", "WC-001", 49.999999m, "EA", ReleasedAtUtc.AddMinutes(20), false, null);
+        Assert.Empty(context.TakeDueQuantityWindows());
+
+        operation.RecordProductionReport("RPT-003", "WC-001", 0.000001m, "EA", ReleasedAtUtc.AddMinutes(30), false, null);
+        var next = Assert.Single(context.TakeDueQuantityWindows());
+
+        Assert.Equal((3L, 300m), (next.Sequence, next.ThresholdQuantity));
+    }
+
+    [Fact]
+    public void Reversal_neither_generates_nor_reclaims_quantity_windows()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 200m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(2, context.TakeDueQuantityWindows().Count);
+
+        operation.RecordProductionReport("RPT-REV", "WC-001", -150m, "EA", ReleasedAtUtc.AddMinutes(20), true, "RPT-001");
+
+        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Equal(50m, context.CumulativeGoodQuantity);
+        Assert.Equal(200m, context.QuantityHighWater);
+    }
+
+    [Fact]
+    public void Closed_context_does_not_generate_unclaimed_quantity_windows()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", ReleasedAtUtc.AddHours(3));
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Empty(context.TakeDueQuantityWindows());
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
     public void Later_arriving_report_with_later_business_time_does_not_replace_first_activity()
     {
         var operation = ReleasedOperation();

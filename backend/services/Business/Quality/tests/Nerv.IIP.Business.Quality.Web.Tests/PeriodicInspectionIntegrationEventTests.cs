@@ -15,6 +15,128 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class PeriodicInspectionIntegrationEventTests
 {
     [Fact]
+    public async Task One_report_crossing_multiple_quantity_intervals_generates_each_stable_assigned_task_once()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = NewPeriodicPlan();
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var releaseHandler = new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters);
+        var reportHandler = new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters);
+        var report = ProductionReport() with
+        {
+            Payload = ProductionReport().Payload with { GoodQuantity = 250m },
+        };
+
+        await releaseHandler.HandleAsync(WorkOrderReleased(), CancellationToken.None);
+        await reportHandler.HandleAsync(report, CancellationToken.None);
+        await reportHandler.HandleAsync(report, CancellationToken.None);
+
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
+        Assert.Collection(
+            tasks,
+            task => AssertQuantityTask(task, context.Id.Id, 1, 100m, plan.Id),
+            task => AssertQuantityTask(task, context.Id.Id, 2, 200m, plan.Id));
+        Assert.All(tasks, task => Assert.Equal("team-quality-001", task.AssignedTeamId));
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Report_before_release_backfills_quantity_windows_from_the_frozen_context()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var report = ProductionReport() with
+        {
+            Payload = ProductionReport().Payload with { GoodQuantity = 200m },
+        };
+
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(report, CancellationToken.None);
+        Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
+
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
+        Assert.Equal([100m, 200m], tasks.Select(x => x.Quantity));
+        Assert.Equal(2, (await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync()).LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
+    public async Task Quantity_remainder_reversal_and_late_report_do_not_duplicate_or_reclaim_windows()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var handler = new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+
+        await handler.HandleAsync(ProductionReport() with
+        {
+            Payload = ProductionReport().Payload with { GoodQuantity = 150m },
+        }, CancellationToken.None);
+        await handler.HandleAsync(ProductionReport("RPT-REV", reportedAtUtc: "2026-08-24T01:20:00Z") with
+        {
+            Payload = ProductionReport("RPT-REV", reportedAtUtc: "2026-08-24T01:20:00Z").Payload with
+            {
+                GoodQuantity = -100m,
+                IsReversal = true,
+                ReversedReportNo = "RPT-001",
+            },
+        }, CancellationToken.None);
+        await handler.HandleAsync(ProductionReport("RPT-LATE", reportedAtUtc: "2026-08-24T01:10:00Z") with
+        {
+            Payload = ProductionReport("RPT-LATE", reportedAtUtc: "2026-08-24T01:10:00Z").Payload with { GoodQuantity = 150m },
+        }, CancellationToken.None);
+
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
+        Assert.Equal([100m, 200m, 300m], tasks.Select(x => x.Quantity));
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(200m, context.CumulativeGoodQuantity);
+        Assert.Equal(300m, context.QuantityHighWater);
+        Assert.Equal(3, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
+    public async Task Report_after_completion_does_not_generate_new_quantity_windows()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(WorkOrderReleased(), CancellationToken.None);
+        await new MesOperationTaskCompletedIntegrationEventHandlerForClosePeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(OperationCompleted(), CancellationToken.None);
+
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(ProductionReport() with
+            {
+                Payload = ProductionReport().Payload with { GoodQuantity = 250m },
+            }, CancellationToken.None);
+
+        Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal("closed", context.Status);
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
     public async Task Fake_time_at_the_first_due_window_generates_one_assigned_operation_task_and_advances_watermark()
     {
         await using var dbContext = CreateDbContext();
@@ -301,6 +423,26 @@ public sealed class PeriodicInspectionIntegrationEventTests
             .UseInMemoryDatabase($"periodic-inspection-{Guid.CreateVersion7()}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static void AssertQuantityTask(
+        InspectionTask task,
+        Guid runtimeContextId,
+        long sequence,
+        decimal thresholdQuantity,
+        InspectionPlanId inspectionPlanId)
+    {
+        Assert.Equal(inspectionPlanId, task.InspectionPlanId);
+        Assert.Equal("operation", task.SourceType);
+        Assert.Equal("mes", task.SourceService);
+        Assert.Equal("WO-001", task.SourceDocumentId);
+        Assert.Equal($"OP-001:periodic-quantity:{runtimeContextId:D}:{sequence}", task.SourceDocumentLineId);
+        Assert.Equal($"quality:periodic-quantity:{runtimeContextId:D}:{sequence}", task.TriggerIdempotencyKey);
+        Assert.Equal("SKU-FG-1000", task.SkuCode);
+        Assert.Equal(thresholdQuantity, task.Quantity);
+        Assert.Equal("EA", task.UomCode);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-24T01:30:00Z"), task.CreatedAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-25T01:30:00Z"), task.DueAtUtc);
     }
 
     private static async Task<int> GenerateDueAsync(

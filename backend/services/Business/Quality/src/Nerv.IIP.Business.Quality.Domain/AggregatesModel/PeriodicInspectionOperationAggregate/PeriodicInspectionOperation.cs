@@ -14,6 +14,8 @@ public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId,
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
 
+public sealed record PeriodicInspectionQuantityWindow(long Sequence, decimal ThresholdQuantity);
+
 public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOperationId>, IAggregateRoot
 {
     private PeriodicInspectionOperation()
@@ -426,6 +428,7 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     public string? UomCode { get; private set; }
     public decimal CumulativeGoodQuantity { get; private set; }
     public decimal QuantityHighWater { get; private set; }
+    public long LastGeneratedQuantityWindowSequence { get; private set; }
     public DateTime? TimeScheduleAnchorAtUtc { get; private set; }
     public long LastGeneratedTimeWindowSequence { get; private set; }
     public DateTime? NextTimeWindowAtUtc { get; private set; }
@@ -523,6 +526,37 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
             LastGeneratedTimeWindowSequence = windows[^1].Sequence;
         }
 
+        return windows;
+    }
+
+    public IReadOnlyList<PeriodicInspectionQuantityWindow> TakeDueQuantityWindows()
+    {
+        if (Status != "active"
+            || !QuantityInterval.HasValue
+            || UomCode is null
+            || QuantityHighWater <= 0m)
+        {
+            return [];
+        }
+
+        var targetSequence = decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
+        if (targetSequence <= LastGeneratedQuantityWindowSequence)
+        {
+            return [];
+        }
+
+        var windows = new List<PeriodicInspectionQuantityWindow>(
+            checked((int)(targetSequence - LastGeneratedQuantityWindowSequence)));
+        for (var sequence = checked(LastGeneratedQuantityWindowSequence + 1);
+             sequence <= targetSequence;
+             sequence = checked(sequence + 1))
+        {
+            windows.Add(new PeriodicInspectionQuantityWindow(
+                sequence,
+                checked(sequence * QuantityInterval.Value)));
+        }
+
+        LastGeneratedQuantityWindowSequence = targetSequence;
         return windows;
     }
 
