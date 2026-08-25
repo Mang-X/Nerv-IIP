@@ -370,7 +370,7 @@ public sealed class UploadCommitProtocolTests
                 return;
             }
 
-            await Task.Delay(10);
+            await Task.Yield();
         }
 
         Assert.Fail("等待提交执行租约续租超时。");
