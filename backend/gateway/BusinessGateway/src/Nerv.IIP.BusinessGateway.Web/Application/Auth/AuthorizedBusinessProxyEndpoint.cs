@@ -127,6 +127,18 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
             BusinessGatewayIdempotencyKey.ResolveForAudit(HttpContext, request));
     }
 
+    protected string ResolveCorrelationId()
+    {
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(correlationId))
+        {
+            correlationId = HttpContext.Response.Headers["X-Correlation-Id"].FirstOrDefault();
+        }
+        return string.IsNullOrWhiteSpace(correlationId)
+            ? Guid.CreateVersion7().ToString("N")
+            : correlationId.Trim();
+    }
+
     protected abstract string OrganizationId(TRequest request);
 
     protected abstract string EnvironmentId(TRequest request);

@@ -26,7 +26,7 @@ public sealed class ListBusinessConsoleToolingAssetsEndpoint(
         BusinessConsoleListToolingAssetsRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.ListToolingAssetsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.ListToolingAssetsAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -48,7 +48,7 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
         BusinessConsoleRegisterToolingAssetRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RegisterToolingAssetAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.RegisterToolingAssetAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -70,7 +70,7 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
         BusinessConsoleChangeToolingStatusRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.ChangeToolingStatusAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.ChangeToolingStatusAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -92,7 +92,7 @@ public sealed class RecordBusinessConsoleToolingUsageEndpoint(
         BusinessConsoleRecordToolingUsageRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RecordToolingUsageAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.RecordToolingUsageAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
 }
 
 public sealed class BusinessConsoleListToolingAssetsRequestValidator : Validator<BusinessConsoleListToolingAssetsRequest>

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public enum BusinessConsoleToolingAssetStatus
@@ -16,19 +18,19 @@ public sealed record BusinessConsoleListToolingAssetsRequest(
     int Take = 100);
 
 public sealed record BusinessConsoleToolingAssetItem(
-    string Code,
-    string Name,
-    string ToolingType,
-    BusinessConsoleToolingAssetStatus Status,
-    long? MaintenanceLifeCount,
-    long UsageCount,
-    bool IsSchedulable,
-    IReadOnlyCollection<string> WorkCenterCodes,
-    IReadOnlyCollection<string> SkuCodes);
+    [property: JsonRequired] string Code,
+    [property: JsonRequired] string Name,
+    [property: JsonRequired] string ToolingType,
+    [property: JsonRequired] BusinessConsoleToolingAssetStatus Status,
+    [property: JsonRequired] long? MaintenanceLifeCount,
+    [property: JsonRequired] long UsageCount,
+    [property: JsonRequired] bool IsSchedulable,
+    [property: JsonRequired] IReadOnlyCollection<string> WorkCenterCodes,
+    [property: JsonRequired] IReadOnlyCollection<string> SkuCodes);
 
 public sealed record BusinessConsoleToolingAssetListResponse(
-    IReadOnlyCollection<BusinessConsoleToolingAssetItem> Items,
-    int Total);
+    [property: JsonRequired] IReadOnlyCollection<BusinessConsoleToolingAssetItem> Items,
+    [property: JsonRequired] int Total);
 
 public sealed record BusinessConsoleRegisterToolingAssetRequest(
     string OrganizationId,
@@ -42,9 +44,9 @@ public sealed record BusinessConsoleRegisterToolingAssetRequest(
     string? IdempotencyKey);
 
 public sealed record BusinessConsoleToolingRegistrationResponse(
-    string ResourceType,
-    string Code,
-    string DisplayName);
+    [property: JsonRequired] string ResourceType,
+    [property: JsonRequired] string Code,
+    [property: JsonRequired] string DisplayName);
 
 public sealed record BusinessConsoleChangeToolingStatusRequest(
     string OrganizationId,

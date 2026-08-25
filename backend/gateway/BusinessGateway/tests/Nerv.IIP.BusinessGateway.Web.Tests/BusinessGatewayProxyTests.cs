@@ -561,6 +561,7 @@ public sealed class BusinessGatewayProxyTests
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-tooling-facades");
 
         var list = await client.GetAsync(
             "/api/business-console/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev&keyword=%E6%A8%A1%E5%85%B7&status=maintenance&skip=2&take=20");
@@ -593,7 +594,12 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.All([list, register, status, usage], response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
-        Assert.Equal("internal-tooling-token", masterData.LastInternalToken);
+        Assert.Equal(
+            ["internal-tooling-token", "internal-tooling-token", "internal-tooling-token", "internal-tooling-token"],
+            masterData.ToolingInternalTokens);
+        Assert.Equal(
+            ["corr-tooling-facades", "corr-tooling-facades", "corr-tooling-facades", "corr-tooling-facades"],
+            masterData.ToolingCorrelationIds);
         Assert.Equal(
             new BusinessConsoleListToolingAssetsRequest(
                 "org-001", "env-dev", "模具", BusinessConsoleToolingAssetStatus.Maintenance, 2, 20),
@@ -610,6 +616,27 @@ public sealed class BusinessGatewayProxyTests
                 BusinessGatewayPermissions.MasterDataResourcesManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_facade_reuses_generated_response_correlation_id_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responseCorrelationId = response.Headers.GetValues("X-Correlation-Id").Single();
+        Assert.False(string.IsNullOrWhiteSpace(responseCorrelationId));
+        Assert.Equal(responseCorrelationId, Assert.Single(masterData.ToolingCorrelationIds));
     }
 
     [Theory]
@@ -6840,38 +6867,38 @@ public sealed class BusinessGatewayProxyTests
                 "/api/business/v1/master-data/tooling-assets/status" or
                 "/api/business/v1/master-data/tooling-assets/usage" => new HttpResponseMessage(HttpStatusCode.NoContent),
                 "/api/business/v1/master-data/tooling-assets" when request.Method == HttpMethod.Post =>
-                JsonResponse(HttpStatusCode.OK, new
+                    JsonResponse(HttpStatusCode.OK, new
+                    {
+                        data = new { resourceType = "tooling-asset", code = "TOOL-001", displayName = "冲压模具" },
+                        success = true,
+                        message = string.Empty,
+                        code = 0,
+                    }),
+                _ => JsonResponse(HttpStatusCode.OK, new
                 {
-                    data = new { resourceType = "tooling-asset", code = "TOOL-001", displayName = "冲压模具" },
+                    data = new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                code = "TOOL-001",
+                                name = "冲压模具",
+                                toolingType = "mould",
+                                status = "maintenance",
+                                maintenanceLifeCount = 100L,
+                                usageCount = 100L,
+                                isSchedulable = false,
+                                workCenterCodes = new[] { "WC-01" },
+                                skuCodes = new[] { "SKU-01" },
+                            },
+                        },
+                        total = 1,
+                    },
                     success = true,
                     message = string.Empty,
                     code = 0,
                 }),
-            _ => JsonResponse(HttpStatusCode.OK, new
-            {
-                data = new
-                {
-                    items = new[]
-                    {
-                        new
-                        {
-                            code = "TOOL-001",
-                            name = "冲压模具",
-                            toolingType = "mould",
-                            status = "maintenance",
-                            maintenanceLifeCount = 100L,
-                            usageCount = 100L,
-                            isSchedulable = false,
-                            workCenterCodes = new[] { "WC-01" },
-                            skuCodes = new[] { "SKU-01" },
-                        },
-                    },
-                    total = 1,
-                },
-                success = true,
-                message = string.Empty,
-                code = 0,
-            }),
             };
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
@@ -6881,20 +6908,24 @@ public sealed class BusinessGatewayProxyTests
             "internal-tooling-token",
             new BusinessConsoleListToolingAssetsRequest(
                 "org-001", "env-dev", "模具", BusinessConsoleToolingAssetStatus.Maintenance, 2, 20),
+            "corr-tooling-client",
             CancellationToken.None);
         await client.RegisterToolingAssetAsync(
             "internal-tooling-token",
             new BusinessConsoleRegisterToolingAssetRequest(
                 "org-001", "env-dev", "TOOL-001", "冲压模具", "mould", ["WC-01"], ["SKU-01"], 100, "idem-001"),
+            "corr-tooling-client",
             CancellationToken.None);
         var status = await client.ChangeToolingStatusAsync(
             "internal-tooling-token",
             new BusinessConsoleChangeToolingStatusRequest(
                 "org-001", "env-dev", "TOOL-001", BusinessConsoleToolingAssetStatus.Retired, "寿命到期"),
+            "corr-tooling-client",
             CancellationToken.None);
         var usage = await client.RecordToolingUsageAsync(
             "internal-tooling-token",
             new BusinessConsoleRecordToolingUsageRequest("org-001", "env-dev", "TOOL-001", 3),
+            "corr-tooling-client",
             CancellationToken.None);
 
         Assert.Equal(BusinessConsoleToolingAssetStatus.Maintenance, Assert.Single(list.Items).Status);
@@ -6908,12 +6939,17 @@ public sealed class BusinessGatewayProxyTests
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/master-data/tooling-assets/status");
         AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/master-data/tooling-assets/usage");
         Assert.All(handler.Requests, request => Assert.Equal("internal-tooling-token", request.Headers.Authorization!.Parameter));
+        Assert.All(handler.Requests, request => Assert.Equal("corr-tooling-client", request.Headers.GetValues("X-Correlation-Id").Single()));
         Assert.Equal("idem-001", handler.Requests[1].Headers.GetValues("Idempotency-Key").Single());
-        using var statusBody = JsonDocument.Parse(requestBodies[2]!);
-        using var usageBody = JsonDocument.Parse(requestBodies[3]!);
-        Assert.Equal("retired", statusBody.RootElement.GetProperty("status").GetString());
-        Assert.Equal("寿命到期", statusBody.RootElement.GetProperty("reason").GetString());
-        Assert.Equal(3, usageBody.RootElement.GetProperty("count").GetInt64());
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(requestBodies[1]!),
+            JsonNode.Parse("""{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","name":"冲压模具","toolingType":"mould","workCenterCodes":["WC-01"],"skuCodes":["SKU-01"],"maintenanceLifeCount":100,"idempotencyKey":"idem-001"}""")));
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(requestBodies[2]!),
+            JsonNode.Parse("""{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","status":"retired","reason":"寿命到期"}""")));
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(requestBodies[3]!),
+            JsonNode.Parse("""{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","count":3}""")));
     }
 
     [Fact]
@@ -6932,6 +6968,104 @@ public sealed class BusinessGatewayProxyTests
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
             "internal-tooling-token",
             new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-invalid-list",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_item_omits_required_fields()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":1},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-missing-item",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_registration_omits_required_fields()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.RegisterToolingAssetAsync(
+            "internal-tooling-token",
+            new BusinessConsoleRegisterToolingAssetRequest(
+                "org-001", "env-dev", "TOOL-001", "冲压模具", "mould", ["WC-01"], ["SKU-01"], 100, "idem-001"),
+            "corr-tooling-missing-register",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_for_tooling_failure_envelope()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[],"total":0},"success":false,"message":"unexpected","code":1}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-failure-envelope",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_total_is_less_than_item_count()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":0},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-invalid-total",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_requires_no_content_for_tooling_commands()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new { accepted = true },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ChangeToolingStatusAsync(
+            "internal-tooling-token",
+            new BusinessConsoleChangeToolingStatusRequest(
+                "org-001", "env-dev", "TOOL-001", BusinessConsoleToolingAssetStatus.Retired, "寿命到期"),
+            "corr-tooling-status",
             CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
@@ -10600,6 +10734,10 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public int ToolingCallCount { get; private set; }
 
+    public List<string> ToolingInternalTokens { get; } = [];
+
+    public List<string> ToolingCorrelationIds { get; } = [];
+
     public BusinessConsoleListToolingAssetsRequest? LastToolingListRequest { get; private set; }
 
     public BusinessConsoleRegisterToolingAssetRequest? LastRegisterToolingRequest { get; private set; }
@@ -11197,10 +11335,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
         string internalBearerToken,
         BusinessConsoleListToolingAssetsRequest request,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ToolingCallCount++;
         LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(correlationId);
         LastToolingListRequest = request;
         return Task.FromResult(new BusinessConsoleToolingAssetListResponse(
             [new BusinessConsoleToolingAssetItem(
@@ -11212,10 +11353,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
         string internalBearerToken,
         BusinessConsoleRegisterToolingAssetRequest request,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ToolingCallCount++;
         LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(correlationId);
         LastRegisterToolingRequest = request;
         return Task.FromResult(new BusinessConsoleToolingRegistrationResponse(
             "tooling-asset", request.Code ?? "TOOL-GENERATED", request.Name));
@@ -11224,10 +11368,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
         string internalBearerToken,
         BusinessConsoleChangeToolingStatusRequest request,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ToolingCallCount++;
         LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(correlationId);
         LastChangeToolingStatusRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
@@ -11235,10 +11382,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
         string internalBearerToken,
         BusinessConsoleRecordToolingUsageRequest request,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ToolingCallCount++;
         LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(correlationId);
         LastRecordToolingUsageRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }

@@ -249,21 +249,25 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
         string internalBearerToken,
         BusinessConsoleListToolingAssetsRequest request,
+        string correlationId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
         string internalBearerToken,
         BusinessConsoleRegisterToolingAssetRequest request,
+        string correlationId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
         string internalBearerToken,
         BusinessConsoleChangeToolingStatusRequest request,
+        string correlationId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
         string internalBearerToken,
         BusinessConsoleRecordToolingUsageRequest request,
+        string correlationId,
         CancellationToken cancellationToken);
 }
 
@@ -1873,8 +1877,73 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         CancellationToken cancellationToken,
         JsonSerializerOptions? jsonOptions = null,
         Action<HttpRequestMessage>? configureRequest = null,
-        bool failClosedOnFailureEnvelope = false,
-        Func<TResponse>? noContentResponseFactory = null)
+        bool failClosedOnFailureEnvelope = false)
+    {
+        using var response = await SendRequestAsync(
+            internalBearerToken,
+            method,
+            requestUri,
+            body,
+            cancellationToken,
+            jsonOptions,
+            configureRequest);
+        try
+        {
+            return await ReadResponseDataAsync<TResponse>(
+                response,
+                jsonOptions ?? JsonOptions,
+                cancellationToken,
+                failClosedOnFailureEnvelope);
+        }
+        catch (JsonException ex)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response",
+                ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response",
+                ex);
+        }
+    }
+
+    protected async Task SendNoContentAsync(
+        string internalBearerToken,
+        HttpMethod method,
+        string requestUri,
+        object? body,
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? jsonOptions = null,
+        Action<HttpRequestMessage>? configureRequest = null)
+    {
+        using var response = await SendRequestAsync(
+            internalBearerToken,
+            method,
+            requestUri,
+            body,
+            cancellationToken,
+            jsonOptions,
+            configureRequest);
+        if (response.StatusCode != HttpStatusCode.NoContent)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendRequestAsync(
+        string internalBearerToken,
+        HttpMethod method,
+        string requestUri,
+        object? body,
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? jsonOptions,
+        Action<HttpRequestMessage>? configureRequest)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
@@ -1919,43 +1988,17 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 ex);
         }
 
+        if (response.IsSuccessStatusCode)
+        {
+            return response;
+        }
+
         using (response)
         {
-            if (!response.IsSuccessStatusCode)
-            {
-                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken);
-                throw response.StatusCode == HttpStatusCode.BadRequest
-                    ? BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage)
-                    : BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, downstreamMessage);
-            }
-
-            if (response.StatusCode == HttpStatusCode.NoContent && noContentResponseFactory is not null)
-            {
-                return noContentResponseFactory();
-            }
-
-            try
-            {
-                return await ReadResponseDataAsync<TResponse>(
-                    response,
-                    jsonOptions ?? JsonOptions,
-                    cancellationToken,
-                    failClosedOnFailureEnvelope);
-            }
-            catch (JsonException ex)
-            {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    HttpStatusCode.BadGateway,
-                    "downstream-invalid-response",
-                    ex);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    HttpStatusCode.BadGateway,
-                    "downstream-invalid-response",
-                    ex);
-            }
+            var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken);
+            throw response.StatusCode == HttpStatusCode.BadRequest
+                ? BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage)
+                : BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, downstreamMessage);
         }
     }
 
@@ -2829,6 +2872,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public async Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
         string internalBearerToken,
         BusinessConsoleListToolingAssetsRequest request,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<BusinessConsoleToolingAssetListResponse>(
@@ -2844,8 +2888,18 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             null,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId),
             failClosedOnFailureEnvelope: true);
-        if (response.Items is null || response.Total < response.Items.Count)
+        if (response.Items is null ||
+            response.Total < response.Items.Count ||
+            response.Items.Any(item =>
+                string.IsNullOrWhiteSpace(item.Code) ||
+                string.IsNullOrWhiteSpace(item.Name) ||
+                string.IsNullOrWhiteSpace(item.ToolingType) ||
+                item.UsageCount < 0 ||
+                item.MaintenanceLifeCount is <= 0 ||
+                item.WorkCenterCodes is null ||
+                item.SkuCodes is null))
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
@@ -2857,40 +2911,72 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
         string internalBearerToken,
         BusinessConsoleRegisterToolingAssetRequest request,
+        string correlationId,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleToolingRegistrationResponse>(
+        RegisterToolingAssetCoreAsync(internalBearerToken, request, correlationId, cancellationToken);
+
+    private async Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetCoreAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterToolingAssetRequest request,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleToolingRegistrationResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/master-data/tooling-assets",
             request,
             cancellationToken,
-            jsonOptions: ToolingJsonOptions);
+            jsonOptions: ToolingJsonOptions,
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId),
+            failClosedOnFailureEnvelope: true);
+        if (string.IsNullOrWhiteSpace(response.ResourceType) ||
+            string.IsNullOrWhiteSpace(response.Code) ||
+            string.IsNullOrWhiteSpace(response.DisplayName))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return response;
+    }
 
     public Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
         string internalBearerToken,
         BusinessConsoleChangeToolingStatusRequest request,
+        string correlationId,
         CancellationToken cancellationToken) =>
-        SendAsync(
+        AcceptedAfterAsync(SendNoContentAsync(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/master-data/tooling-assets/status",
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            noContentResponseFactory: static () => new BusinessConsoleAcceptedResponse(true));
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId)));
 
     public Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
         string internalBearerToken,
         BusinessConsoleRecordToolingUsageRequest request,
+        string correlationId,
         CancellationToken cancellationToken) =>
-        SendAsync(
+        AcceptedAfterAsync(SendNoContentAsync(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/master-data/tooling-assets/usage",
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            noContentResponseFactory: static () => new BusinessConsoleAcceptedResponse(true));
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId)));
+
+    private static async Task<BusinessConsoleAcceptedResponse> AcceptedAfterAsync(Task task)
+    {
+        await task;
+        return new BusinessConsoleAcceptedResponse(true);
+    }
+
+    private static void ConfigureCorrelationHeader(HttpRequestMessage message, string correlationId) =>
+        message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
 
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
         string internalBearerToken,
