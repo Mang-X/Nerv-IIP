@@ -12,6 +12,10 @@ BusinessMasterData 通用资源目录现已向后兼容地公开 OEE 多维报�
 冒充历史快照；MES 报工事件、IndustrialTelemetry 历史投影与 PostgreSQL 聚合核心由 #2231 交付，
 授权门面和趋势/横比页面由 #2232 交付。
 
+## ProductEngineering 工序所需技能发布快照（#1955 子项 A / #2225）
+
+ProductEngineering 的路线发布契约允许发布方为工序显式提供可选 `requiredSkillCode`，并将规范化后的 code 作为不可变发布快照持久化到 `routing_operations.required_skill_code`，同时在路线详情和生产版本路线快照中返回。既有路线保持 `null`，本切片不跨服务校验 MasterData 技能目录，也不实施 MES 派工资格拦截；MES 冻结所需技能与人员实时资格拦截分别由串行子项 #2226、#2227 承接。
+
 ## Quality 周期巡检工序上下文（#1973 子项② / #2070）
 
 BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。
