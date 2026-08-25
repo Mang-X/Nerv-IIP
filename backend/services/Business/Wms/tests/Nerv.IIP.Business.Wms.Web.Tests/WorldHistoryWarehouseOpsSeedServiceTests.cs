@@ -131,7 +131,10 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
 
     [Theory]
     [MemberData(nameof(AsOfDates))]
-    public async Task Warehouse_ops_seed_fills_all_four_tables_for_any_as_of_date(int year, int month, int day)
+    [Trait("SeedContract", "wms-world-history-warehouse-ops")]
+    [Trait("SeedBoundary", "go-live,go-live-plus-one,mid-year,demo,future")]
+    public async Task Warehouse_ops_seed_preserves_all_boundary_contracts_with_one_setup_per_date(
+        int year, int month, int day)
     {
         var asOfDate = new DateOnly(year, month, day);
         await using var db = CreateDbContext();
@@ -140,6 +143,9 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         var report = await new WorldHistoryWarehouseOpsSeedService(db)
             .SeedAsync("org-001", "env-dev", asOfDate, TestScale);
         await AssertCurrentQueueShapeAsync(db, asOfDate);
+
+        await AssertNumberSegmentsAndStatusDistributionAsync(db, asOfDate);
+        await AssertReferencesRemainCompleteAsync(db);
 
         // 四张表都不再是 0 行——这正是三页空白的直接原因。
         // WCS 与退货是**派生**事实：上线日附近上游单据链本来就只有个位数，
@@ -182,17 +188,14 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Equal(report.SupplierReturnRequestsWritten, report.Validation.SupplierReturnRequestsChecked);
         Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, report.Validation.WorkPoolsChecked);
         Assert.Equal(ExpectedMembershipCount, report.Validation.WorkPoolMembershipsChecked);
+
+        await AssertWarehouseOpsSeedIsIdempotentAsync(db, asOfDate, report);
     }
 
-    [Theory]
-    [MemberData(nameof(AsOfDates))]
-    public async Task Warehouse_ops_seed_keeps_number_segments_and_status_distribution(int year, int month, int day)
+    private static async Task AssertNumberSegmentsAndStatusDistributionAsync(
+        ApplicationDbContext db,
+        DateOnly asOfDate)
     {
-        var asOfDate = new DateOnly(year, month, day);
-        await using var db = CreateDbContext();
-        await SeedDocumentChainAsync(db, asOfDate);
-        await new WorldHistoryWarehouseOpsSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
-
         // 号段格式（设定集 §9 的仓储作业补充段），且不侵占 L2/规模块。
         var countNumbers = await db.CountExecutions.Select(x => x.CountNo).ToArrayAsync();
         Assert.All(countNumbers, no => Assert.Matches(@"^CNT-2026-\d{4}$", no));
@@ -260,16 +263,8 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
     }
 
     /// <summary>WCS 任务必须绑**库里真实存在**的仓储作业任务——这是「WCS 任务」页可下钻的前提。</summary>
-    [Theory]
-    [MemberData(nameof(AsOfDates))]
-    public async Task Wcs_tasks_anchor_on_real_warehouse_tasks_and_returns_on_real_inbound_orders(
-        int year, int month, int day)
+    private static async Task AssertReferencesRemainCompleteAsync(ApplicationDbContext db)
     {
-        var asOfDate = new DateOnly(year, month, day);
-        await using var db = CreateDbContext();
-        await SeedDocumentChainAsync(db, asOfDate);
-        await new WorldHistoryWarehouseOpsSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
-
         var warehouseTasks = await db.WarehouseTasks.ToDictionaryAsync(x => x.Id);
         var wcsTasks = await db.WcsTasks.ToArrayAsync();
         Assert.All(
@@ -304,6 +299,45 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             .ToHashSet(StringComparer.Ordinal);
         var returns = await db.SupplierReturnRequests.ToArrayAsync();
         Assert.All(returns, request => Assert.Contains(request.InboundOrderNo, inboundOrderNumbers));
+    }
+
+    private static async Task AssertWarehouseOpsSeedIsIdempotentAsync(
+        ApplicationDbContext db,
+        DateOnly asOfDate,
+        WorldHistoryWarehouseOpsSeedReport first)
+    {
+        var countExecutions = await db.CountExecutions.CountAsync();
+        var wcsTasks = await db.WcsTasks.CountAsync();
+        var circuits = await db.WcsDispatchCircuits.CountAsync();
+        var returns = await db.SupplierReturnRequests.CountAsync();
+        var workPools = await db.WarehouseWorkPools.CountAsync();
+        var memberships = await db.WarehouseWorkPoolMemberships.CountAsync();
+        var inboundOrders = await db.InboundOrders.CountAsync();
+        var outboundOrders = await db.OutboundOrders.CountAsync();
+        var warehouseTasks = await db.WarehouseTasks.CountAsync();
+
+        var second = await new WorldHistoryWarehouseOpsSeedService(db)
+            .SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        Assert.Equal(0, second.CountExecutionsWritten);
+        Assert.Equal(0, second.WcsTasksWritten);
+        Assert.Equal(0, second.WcsDispatchCircuitsWritten);
+        Assert.Equal(0, second.SupplierReturnRequestsWritten);
+        Assert.Equal(0, second.WorkPoolsWritten);
+        Assert.Equal(0, second.WorkPoolMembershipsWritten);
+        Assert.Equal(0, second.CurrentQueue.TotalWritten);
+        Assert.Equal(0, second.CurrentQueue.ReviewReadyOrdersWritten);
+        Assert.Equal(0, second.Assignments.TotalAssignments);
+        Assert.Equal(countExecutions, await db.CountExecutions.CountAsync());
+        Assert.Equal(wcsTasks, await db.WcsTasks.CountAsync());
+        Assert.Equal(circuits, await db.WcsDispatchCircuits.CountAsync());
+        Assert.Equal(returns, await db.SupplierReturnRequests.CountAsync());
+        Assert.Equal(workPools, await db.WarehouseWorkPools.CountAsync());
+        Assert.Equal(memberships, await db.WarehouseWorkPoolMemberships.CountAsync());
+        Assert.Equal(inboundOrders, await db.InboundOrders.CountAsync());
+        Assert.Equal(outboundOrders, await db.OutboundOrders.CountAsync());
+        Assert.Equal(warehouseTasks, await db.WarehouseTasks.CountAsync());
+        Assert.True(first.CountExecutionsWritten > 0);
     }
 
     /// <summary>历史铺开之后（非上线日边界），WCS 任务与退货申请必须实际存在，否则两页仍然是空的。</summary>
@@ -616,49 +650,6 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Equal(outboundOrders, await db.OutboundOrders.CountAsync());
         Assert.Equal(warehouseTasks, await db.WarehouseTasks.CountAsync());
         await AssertCurrentQueueShapeAsync(db, asOfDate);
-    }
-
-    [Theory]
-    [MemberData(nameof(AsOfDates))]
-    public async Task Warehouse_ops_seed_is_idempotent_for_any_as_of_date(int year, int month, int day)
-    {
-        var asOfDate = new DateOnly(year, month, day);
-        await using var db = CreateDbContext();
-        await SeedDocumentChainAsync(db, asOfDate);
-        var seed = new WorldHistoryWarehouseOpsSeedService(db);
-
-        var first = await seed.SeedAsync("org-001", "env-dev", asOfDate, TestScale);
-        var countExecutions = await db.CountExecutions.CountAsync();
-        var wcsTasks = await db.WcsTasks.CountAsync();
-        var circuits = await db.WcsDispatchCircuits.CountAsync();
-        var returns = await db.SupplierReturnRequests.CountAsync();
-        var workPools = await db.WarehouseWorkPools.CountAsync();
-        var memberships = await db.WarehouseWorkPoolMemberships.CountAsync();
-        var inboundOrders = await db.InboundOrders.CountAsync();
-        var outboundOrders = await db.OutboundOrders.CountAsync();
-        var warehouseTasks = await db.WarehouseTasks.CountAsync();
-
-        var second = await seed.SeedAsync("org-001", "env-dev", asOfDate, TestScale);
-
-        Assert.Equal(0, second.CountExecutionsWritten);
-        Assert.Equal(0, second.WcsTasksWritten);
-        Assert.Equal(0, second.WcsDispatchCircuitsWritten);
-        Assert.Equal(0, second.SupplierReturnRequestsWritten);
-        Assert.Equal(0, second.WorkPoolsWritten);
-        Assert.Equal(0, second.WorkPoolMembershipsWritten);
-        Assert.Equal(0, second.CurrentQueue.TotalWritten);
-        Assert.Equal(0, second.CurrentQueue.ReviewReadyOrdersWritten);
-        Assert.Equal(0, second.Assignments.TotalAssignments);
-        Assert.Equal(countExecutions, await db.CountExecutions.CountAsync());
-        Assert.Equal(wcsTasks, await db.WcsTasks.CountAsync());
-        Assert.Equal(circuits, await db.WcsDispatchCircuits.CountAsync());
-        Assert.Equal(returns, await db.SupplierReturnRequests.CountAsync());
-        Assert.Equal(workPools, await db.WarehouseWorkPools.CountAsync());
-        Assert.Equal(memberships, await db.WarehouseWorkPoolMemberships.CountAsync());
-        Assert.Equal(inboundOrders, await db.InboundOrders.CountAsync());
-        Assert.Equal(outboundOrders, await db.OutboundOrders.CountAsync());
-        Assert.Equal(warehouseTasks, await db.WarehouseTasks.CountAsync());
-        Assert.True(first.CountExecutionsWritten > 0);
     }
 
     /// <summary>设定集 §7 要求的全量规模：循环盘点每周一次 × 6 个组合，约 150–220 条。</summary>
