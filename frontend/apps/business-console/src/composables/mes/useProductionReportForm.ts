@@ -5,6 +5,7 @@ import {
   makeIdempotencyKey,
   useMesProductionMaterialLots,
   useMesProductionReporting,
+  useMesScrapReasonCodes,
   type MesProductionReportInput,
 } from '@/composables/useBusinessMes'
 import {
@@ -88,9 +89,17 @@ export function useProductionReportForm(
     goodQuantity: '1',
     scrapQuantity: '0',
     reworkQuantity: '0',
+    scrapReasonCode: '',
     completesOperation: canCompleteOperation.value,
     idempotencyKey: makeIdempotencyKey('production-report'),
   })
+  const {
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending,
+    scrapReasonCodesError,
+    scrapReasonCodes,
+    refreshScrapReasonCodes,
+  } = useMesScrapReasonCodes(() => (toOptionalNumber(form.scrapQuantity) ?? 0) > 0)
 
   const showErrors = ref(false)
   const intentAttempted = ref(false)
@@ -122,6 +131,7 @@ export function useProductionReportForm(
     form.goodQuantity = '1'
     form.scrapQuantity = '0'
     form.reworkQuantity = '0'
+    form.scrapReasonCode = ''
     form.completesOperation = canCompleteOperation.value
     form.idempotencyKey = makeIdempotencyKey('production-report')
     showErrors.value = false
@@ -130,7 +140,7 @@ export function useProductionReportForm(
 
   watch(
     () =>
-      `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.reworkQuantity}\u0000${form.completesOperation}\u0000${JSON.stringify([...materialSelections])}`,
+      `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.reworkQuantity}\u0000${form.scrapReasonCode}\u0000${form.completesOperation}\u0000${JSON.stringify([...materialSelections])}`,
     () => {
       quantityValidationMessage.value = ''
       overproductionConfirmationRequired.value = false
@@ -173,6 +183,7 @@ export function useProductionReportForm(
   const goodQuantity = computed(() => toOptionalNumber(form.goodQuantity))
   const scrapQuantity = computed(() => toOptionalNumber(form.scrapQuantity))
   const reworkQuantity = computed(() => toOptionalNumber(form.reworkQuantity))
+  const scrapReasonCode = computed(() => form.scrapReasonCode.trim())
   const consumedMaterialLots = computed(() =>
     availableMaterialLots.value.flatMap((row) => {
       const selection = materialSelections.get(row.requestId)
@@ -212,6 +223,25 @@ export function useProductionReportForm(
     if (invalidMaterialLots.value) return '耗料数量必须大于 0，且不能超过该批次可用数量。'
     return ''
   })
+  const invalidScrapReasonCode = computed(() => {
+    if ((scrapQuantity.value ?? 0) <= 0) return false
+    if (!qualityInspectionRecordsReadPermission.value) return true
+    if (scrapReasonCodesPending.value || scrapReasonCodesError.value) return true
+    return !scrapReasonCode.value || !scrapReasonCodes.value.some(
+      (row) => row.reasonCode?.trim() === scrapReasonCode.value && row.enabled !== false,
+    )
+  })
+  const scrapReasonValidationMessage = computed(() => {
+    if ((scrapQuantity.value ?? 0) <= 0) return ''
+    if (!qualityInspectionRecordsReadPermission.value) {
+      return '当前账号没有质量原因码读取权限，无法提交报废报工。'
+    }
+    if (scrapReasonCodesPending.value) return '正在读取报废原因码，请稍后重试。'
+    if (scrapReasonCodesError.value) return '报废原因码读取失败，请刷新后重试。'
+    if (scrapReasonCodes.value.length === 0) return '当前没有可用的报废原因码。'
+    if (!scrapReasonCode.value) return '报废数量大于 0 时必须选择报废原因码。'
+    return '所选报废原因码已失效，请重新选择。'
+  })
 
   const invalid = computed(() => {
     const good = goodQuantity.value
@@ -244,7 +274,8 @@ export function useProductionReportForm(
       !invalid.value.goodQuantity &&
       !invalid.value.scrapQuantity &&
       !invalid.value.reworkQuantity &&
-      !invalidMaterialLots.value
+      !invalidMaterialLots.value &&
+      !invalidScrapReasonCode.value
     )
   })
 
@@ -321,6 +352,7 @@ export function useProductionReportForm(
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
         reworkQuantity: reworkQuantity.value,
+        scrapReasonCode: (scrapQuantity.value ?? 0) > 0 ? scrapReasonCode.value : undefined,
         consumedMaterialLots: consumedMaterialLots.value,
         completesOperation: form.completesOperation,
         reportedAtUtc: new Date().toISOString(),
@@ -381,6 +413,13 @@ export function useProductionReportForm(
     consumedMaterialLots,
     invalidMaterialLots,
     materialValidationMessage,
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending,
+    scrapReasonCodesError,
+    scrapReasonCodes,
+    refreshScrapReasonCodes,
+    invalidScrapReasonCode,
+    scrapReasonValidationMessage,
     materialSelected: (requestId: string | undefined) =>
       requestId ? (materialSelections.get(requestId)?.selected ?? false) : false,
     materialQuantity: (requestId: string) =>

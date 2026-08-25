@@ -17,6 +17,7 @@ import {
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
@@ -1380,6 +1381,41 @@ export function useMesProductionMaterialLots(
       return (materialLotsQuery.data.value.data?.items ?? []).filter(isAvailableMaterialLot)
     }),
     refreshMaterialLots: () => (enabled.value ? materialLotsQuery.refetch() : Promise.resolve()),
+  }
+}
+
+/** 只消费 Quality 域发布的 scrap 专用原因码目录，不在 PDA 维护原因码字典。 */
+export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
+  const auth = useAuthStore()
+  const filters = defaultFilters()
+  const qualityInspectionRecordsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-records.read'),
+  )
+  const enabled = computed(
+    () =>
+      hasScope(filters) &&
+      qualityInspectionRecordsReadPermission.value &&
+      shouldLoad(),
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleQualityScrapReasonCodesQueryOptions({
+      query: {
+        ...scopeQuery(filters),
+        skip: 0,
+        take: 100,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending: query.isLoading,
+    scrapReasonCodesError: query.error,
+    scrapReasonCodes: computed(() =>
+      query.data.value?.success ? (query.data.value.data?.items ?? []) : [],
+    ),
+    refreshScrapReasonCodes: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }
 

@@ -110,6 +110,20 @@ const materialLotsRef = ref<Array<Record<string, unknown>>>([])
 const materialsReadPermissionRef = ref(true)
 const materialLotsPendingRef = ref(false)
 const materialLotsErrorRef = ref<unknown>(null)
+const scrapReasonCodesRef = ref<Array<Record<string, unknown>>>([
+  {
+    reasonCode: 'SCRAP-SURFACE',
+    reasonName: '表面缺陷',
+    groupName: '外观',
+    severity: 'major',
+    defaultDisposition: 'scrap',
+    enabled: true,
+    snapshotVersion: 'v1',
+  },
+])
+const qualityInspectionRecordsReadPermissionRef = ref(true)
+const scrapReasonCodesPendingRef = ref(false)
+const scrapReasonCodesErrorRef = ref<unknown>(null)
 const workScopeOptionsRef = ref([
   { label: '精加工一线（工作中心）', value: 'work-center:WC-A' },
   { label: '精加工二线（工作中心）', value: 'work-center:WC-B' },
@@ -225,6 +239,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     availableMaterialLots: materialLotsRef,
     refreshMaterialLots: vi.fn(async () => undefined),
   }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: qualityInspectionRecordsReadPermissionRef,
+    scrapReasonCodes: scrapReasonCodesRef,
+    scrapReasonCodesPending: scrapReasonCodesPendingRef,
+    scrapReasonCodesError: scrapReasonCodesErrorRef,
+    refreshScrapReasonCodes: vi.fn(async () => undefined),
+  }),
   useMesTelemetryProductionReportCandidates: () => ({
     candidates: computed(() => []),
     total: computed(() => 0),
@@ -297,6 +318,20 @@ describe('PDA MES production reporting page', () => {
     materialsReadPermissionRef.value = true
     materialLotsPendingRef.value = false
     materialLotsErrorRef.value = null
+    scrapReasonCodesRef.value = [
+      {
+        reasonCode: 'SCRAP-SURFACE',
+        reasonName: '表面缺陷',
+        groupName: '外观',
+        severity: 'major',
+        defaultDisposition: 'scrap',
+        enabled: true,
+        snapshotVersion: 'v1',
+      },
+    ]
+    qualityInspectionRecordsReadPermissionRef.value = true
+    scrapReasonCodesPendingRef.value = false
+    scrapReasonCodesErrorRef.value = null
     operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
@@ -936,6 +971,17 @@ describe('PDA MES production reporting page', () => {
     )!
     reworkInput.value = '2'
     reworkInput.dispatchEvent(new Event('input'))
+    const scrapInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="scrap-quantity"]',
+    )!
+    scrapInput.value = '1'
+    scrapInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    const scrapReason = document.body.querySelector<HTMLSelectElement>(
+      '[data-testid="scrap-reason-code"]',
+    )!
+    scrapReason.value = 'SCRAP-SURFACE'
+    scrapReason.dispatchEvent(new Event('change'))
     const materialCheckbox = document.body.querySelector<HTMLInputElement>(
       '[data-testid="material-lot-MIR-PDA-001"]',
     )!
@@ -953,6 +999,7 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
 
     expect(recordReport.mock.calls[0][0]).toMatchObject({
+      scrapReasonCode: 'SCRAP-SURFACE',
       reworkQuantity: 2,
       consumedMaterialLots: [
         {

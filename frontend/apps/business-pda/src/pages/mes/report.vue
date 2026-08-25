@@ -28,6 +28,7 @@ import {
   useMesExactOperationTask,
   useMesProductionMaterialLots,
   useMesProductionReports,
+  useMesScrapReasonCodes,
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
   useMesWorkOrders,
@@ -181,7 +182,16 @@ const progress = computed(() => productionReportFlow.progress(ctx))
 const goodQuantity = ref(0)
 const scrapQuantity = ref(0)
 const reworkQuantity = ref(0)
+const scrapReasonCode = ref('')
 const completesOperation = ref(false)
+const scrapReasonCodesState = useMesScrapReasonCodes(() => scrapQuantity.value > 0)
+const {
+  qualityInspectionRecordsReadPermission,
+  scrapReasonCodesPending,
+  scrapReasonCodesError,
+  scrapReasonCodes,
+  refreshScrapReasonCodes,
+} = scrapReasonCodesState
 
 const materialSelections = reactive(
   new Map<string, { selected: boolean; consumedQuantity: string }>(),
@@ -231,11 +241,30 @@ const invalidMaterialLots = computed(() =>
 )
 const materialValidationMessage = computed(() =>
   scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0
-    ? '报废报工至少选择一个已收料批次。'
-    : invalidMaterialLots.value
-      ? '耗料数量必须大于 0，且不能超过该批次可用数量。'
-      : '',
+      ? '报废报工至少选择一个已收料批次。'
+      : invalidMaterialLots.value
+        ? '耗料数量必须大于 0，且不能超过该批次可用数量。'
+        : '',
 )
+const invalidScrapReasonCode = computed(() => {
+  if (scrapQuantity.value <= 0) return false
+  if (!qualityInspectionRecordsReadPermission.value) return true
+  if (scrapReasonCodesPending.value || scrapReasonCodesError.value) return true
+  return !scrapReasonCode.value.trim() || !scrapReasonCodes.value.some(
+    (row) => row.reasonCode?.trim() === scrapReasonCode.value.trim() && row.enabled !== false,
+  )
+})
+const scrapReasonValidationMessage = computed(() => {
+  if (scrapQuantity.value <= 0) return ''
+  if (!qualityInspectionRecordsReadPermission.value) {
+    return '当前账号没有质量原因码读取权限，无法提交报废报工。'
+  }
+  if (scrapReasonCodesPending.value) return '正在读取报废原因码，请稍后重试。'
+  if (scrapReasonCodesError.value) return '报废原因码读取失败，请刷新后重试。'
+  if (scrapReasonCodes.value.length === 0) return '当前没有可用的报废原因码。'
+  if (!scrapReasonCode.value.trim()) return '报废数量大于 0 时必须选择报废原因码。'
+  return '所选报废原因码已失效，请重新选择。'
+})
 function materialSelected(requestId: string | undefined) {
   return requestId ? (materialSelections.get(requestId)?.selected ?? false) : false
 }
@@ -293,6 +322,7 @@ interface ReportIntent {
       consumedQuantity: number
       materialIssueRequestNo: string
     }>
+    scrapReasonCode: string | undefined
     completesOperation: boolean
   }
   status: 'pending' | 'success' | 'error'
@@ -325,6 +355,7 @@ watch(
       goodQuantity.value = 0
       scrapQuantity.value = 0
       reworkQuantity.value = 0
+      scrapReasonCode.value = ''
       completesOperation.value = false
       materialSelections.clear()
       ctx.quantityEntered = false
@@ -419,6 +450,7 @@ function resetReportIntent() {
   goodQuantity.value = 0
   scrapQuantity.value = 0
   reworkQuantity.value = 0
+  scrapReasonCode.value = ''
   materialSelections.clear()
   completesOperation.value = false
   ctx.quantityEntered = false
@@ -452,7 +484,7 @@ async function submit() {
   let intent = intents.get(key)
   if (intent?.status === 'pending' || intent?.status === 'success') return
   if (!intent) {
-    if (!quantityValid.value) return
+    if (!quantityValid.value || invalidMaterialLots.value || invalidScrapReasonCode.value) return
     intent = {
       attempt: Symbol('mes-report-attempt'),
       workOrderId,
@@ -462,6 +494,7 @@ async function submit() {
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
         reworkQuantity: reworkQuantity.value,
+        scrapReasonCode: scrapQuantity.value > 0 ? scrapReasonCode.value.trim() : undefined,
         consumedMaterialLots: consumedMaterialLots.value,
         completesOperation: completesOperation.value,
       },
@@ -828,6 +861,63 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
+        <section
+          v-if="scrapQuantity > 0"
+          data-testid="scrap-reason-code-field"
+          class="space-y-2 rounded-lg border border-border bg-card p-3"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <label for="scrap-reason-code" class="text-sm font-medium text-foreground">
+              报废原因码 <span class="text-destructive">*</span>
+            </label>
+            <button
+              type="button"
+              class="text-sm text-primary"
+              :disabled="scrapReasonCodesPending || submitting"
+              @click="refreshScrapReasonCodes"
+            >
+              刷新
+            </button>
+          </div>
+          <select
+            id="scrap-reason-code"
+            v-model="scrapReasonCode"
+            data-testid="scrap-reason-code"
+            class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base outline-none focus:border-primary disabled:opacity-60"
+            :disabled="
+              !qualityInspectionRecordsReadPermission ||
+              scrapReasonCodesPending ||
+              !!scrapReasonCodesError ||
+              submitting ||
+              !reportScopeReady
+            "
+          >
+            <option value="">请选择报废原因码</option>
+            <option
+              v-for="reason in scrapReasonCodes"
+              :key="reason.reasonCode"
+              :value="reason.reasonCode"
+            >
+              {{ reason.reasonCode }} · {{ reason.reasonName }}
+            </option>
+          </select>
+          <p v-if="scrapReasonCodesError" class="text-sm text-destructive" role="alert">
+            报废原因码读取失败，请刷新后重试。
+          </p>
+          <p v-else-if="scrapReasonCodesPending" class="text-sm text-muted-foreground">
+            正在读取报废原因码…
+          </p>
+          <p
+            v-else-if="!qualityInspectionRecordsReadPermission"
+            class="text-sm text-muted-foreground"
+          >
+            当前账号没有质量原因码读取权限，报废报工已禁用。
+          </p>
+          <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
+            {{ scrapReasonValidationMessage }}
+          </p>
+        </section>
+
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">返修数</span>
           <input
@@ -934,12 +1024,20 @@ function onScanWorkOrder(value: string) {
         <p v-if="!quantityValid" class="text-sm text-muted-foreground">
           良品数、次品数与返修数须为非负数，且合计大于 0。
         </p>
+        <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
+          {{ scrapReasonValidationMessage }}
+        </p>
 
         <button
           type="button"
           data-testid="submit-report"
           :disabled="
-            !quantityValid || invalidMaterialLots || submitting || reportScopePending || !reportScopeReady
+            !quantityValid ||
+            invalidMaterialLots ||
+            invalidScrapReasonCode ||
+            submitting ||
+            reportScopePending ||
+            !reportScopeReady
           "
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submit"

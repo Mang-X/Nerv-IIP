@@ -48,6 +48,7 @@ import {
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
+  listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
@@ -2111,6 +2112,52 @@ export function useMesWipSummary() {
       ),
     ),
     wipTotal: computed(() => envelopeTotal(wipQuery.data.value)),
+  }
+}
+
+/**
+ * 报废原因码只消费 Quality 域已发布的 scrap 专用目录；不在 MES/PDA 侧维护字典。
+ * 调用方通过 shouldLoad 将读取限定在确有报废数量的报工场景，且权限或业务上下文不满足时不发请求。
+ */
+export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
+  const auth = useAuthStore()
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: 100,
+    }),
+  )
+  const qualityInspectionRecordsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-records.read'),
+  )
+  const enabled = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      qualityInspectionRecordsReadPermission.value &&
+      shouldLoad(),
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleQualityScrapReasonCodesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending: query.isLoading,
+    scrapReasonCodesError: query.error,
+    scrapReasonCodes: computed(() =>
+      query.data.value?.success ? (query.data.value.data?.items ?? []) : [],
+    ),
+    refreshScrapReasonCodes: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }
 

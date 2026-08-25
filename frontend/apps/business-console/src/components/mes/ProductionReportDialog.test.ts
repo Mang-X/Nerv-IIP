@@ -29,6 +29,22 @@ const materialState = vi.hoisted(() => ({
   pending: false,
   rows: [] as Array<Record<string, unknown>>,
 }))
+const scrapReasonState = vi.hoisted(() => ({
+  permission: true,
+  pending: false,
+  error: undefined as unknown,
+  rows: [
+    {
+      reasonCode: 'SCRAP-SURFACE',
+      reasonName: '表面缺陷',
+      groupName: '外观',
+      severity: 'major',
+      defaultDisposition: 'scrap',
+      enabled: true,
+      snapshotVersion: 'v1',
+    },
+  ] as Array<Record<string, unknown>>,
+}))
 
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: spies.makeIdempotencyKey,
@@ -48,6 +64,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     materialLotsError: ref(undefined),
     availableMaterialLots: ref(materialState.rows),
     refreshMaterialLots: vi.fn(async () => undefined),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(scrapReasonState.permission),
+    scrapReasonCodes: ref(scrapReasonState.rows),
+    scrapReasonCodesPending: ref(scrapReasonState.pending),
+    scrapReasonCodesError: ref(scrapReasonState.error),
+    refreshScrapReasonCodes: vi.fn(async () => undefined),
   }),
 }))
 
@@ -145,6 +168,9 @@ describe('ProductionReportDialog — 带出式录入', () => {
     materialState.permission = true
     materialState.pending = false
     materialState.rows = []
+    scrapReasonState.permission = true
+    scrapReasonState.pending = false
+    scrapReasonState.error = undefined
   })
 
   it('带出的上下文只读呈现，且不提供工单/工序的输入位', () => {
@@ -216,6 +242,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
 
     await wrapper.find('#report-good').setValue('180')
     await wrapper.find('#report-scrap').setValue('3')
+    await wrapper.find('#report-scrap-reason').setValue('SCRAP-SURFACE')
     await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
     await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('1')
     await wrapper.find('form').trigger('submit')
@@ -227,6 +254,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(body.operationTaskId).toBe('WO-2026-0007-OP-20')
     expect(body.goodQuantity).toBe(180)
     expect(body.scrapQuantity).toBe(3)
+    expect(body.scrapReasonCode).toBe('SCRAP-SURFACE')
     expect(body.completesOperation).toBe(true)
     expect(typeof body.reportedAtUtc).toBe('string')
     expect(spies.notifySuccess).toHaveBeenCalledOnce()
@@ -334,6 +362,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
 
     await wrapper.find('#report-good').setValue('5')
     await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('#report-scrap-reason').setValue('SCRAP-SURFACE')
     await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
     await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('1')
     await wrapper.find('form').trigger('submit')
@@ -361,6 +390,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
 
     await wrapper.find('#report-good').setValue('5')
     await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('#report-scrap-reason').setValue('SCRAP-SURFACE')
     await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
     await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('1')
     await wrapper.find('form').trigger('submit')

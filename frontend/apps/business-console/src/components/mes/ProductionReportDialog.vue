@@ -68,6 +68,12 @@ const {
   availableMaterialLots,
   refreshMaterialLots,
   materialValidationMessage,
+  qualityInspectionRecordsReadPermission,
+  scrapReasonCodesPending,
+  scrapReasonCodesError,
+  scrapReasonCodes,
+  refreshScrapReasonCodes,
+  scrapReasonValidationMessage,
   materialSelected,
   materialQuantity,
   setMaterialSelected,
@@ -188,6 +194,63 @@ async function onSubmit() {
             />
           </NvField>
         </NvFieldGroup>
+
+        <section
+          v-if="Number(form.scrapQuantity) > 0"
+          data-testid="scrap-reason-code-field"
+          class="grid gap-2 rounded-lg border p-3"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <label for="report-scrap-reason" class="text-sm font-medium">
+              报废原因码 <span class="text-destructive">*</span>
+            </label>
+            <NvButton
+              type="button"
+              variant="ghost"
+              :disabled="scrapReasonCodesPending || intentLocked"
+              @click="refreshScrapReasonCodes"
+            >
+              刷新
+            </NvButton>
+          </div>
+          <select
+            id="report-scrap-reason"
+            v-model="form.scrapReasonCode"
+            class="min-h-10 w-full rounded-md border bg-background px-3 text-sm"
+            :disabled="
+              !qualityInspectionRecordsReadPermission ||
+              scrapReasonCodesPending ||
+              !!scrapReasonCodesError ||
+              intentLocked ||
+              !reportScopeReady
+            "
+            :data-invalid="showErrors && scrapReasonValidationMessage ? '' : undefined"
+          >
+            <option value="">请选择报废原因码</option>
+            <option
+              v-for="reason in scrapReasonCodes"
+              :key="reason.reasonCode"
+              :value="reason.reasonCode"
+            >
+              {{ reason.reasonCode }} · {{ reason.reasonName }}
+            </option>
+          </select>
+          <p v-if="scrapReasonCodesError" class="text-sm text-destructive" role="alert">
+            报废原因码读取失败，请刷新后重试。
+          </p>
+          <p v-else-if="scrapReasonCodesPending" class="text-sm text-muted-foreground">
+            正在读取报废原因码…
+          </p>
+          <p
+            v-else-if="!qualityInspectionRecordsReadPermission"
+            class="text-sm text-muted-foreground"
+          >
+            当前账号没有质量原因码读取权限，报废报工已禁用。
+          </p>
+          <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
+            {{ scrapReasonValidationMessage }}
+          </p>
+        </section>
 
         <section
           v-if="materialsReadPermission"
