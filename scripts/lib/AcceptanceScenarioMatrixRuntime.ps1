@@ -1356,20 +1356,17 @@ function Test-NervAcceptanceWmsVerifierContract {
         param([string] $CommandName, [string] $VariableName)
         $binding = & $getConstantBinding $VariableName
         if ($null -eq $binding) { return $false }
+        $valuePipeline = $binding.CommandElements[6].Pipeline
+        if ($valuePipeline -isnot [Management.Automation.Language.PipelineAst] -or
+            $valuePipeline.PipelineElements.Count -ne 1 -or
+            $valuePipeline.PipelineElements[0] -isnot [Management.Automation.Language.CommandAst]) { return $false }
+        $sourceCommand = $valuePipeline.PipelineElements[0]
         $matchingCommands = if ($commandsByName.ContainsKey($CommandName)) { @($commandsByName[$CommandName]) } else { @() }
-        $matches = [Collections.Generic.List[object]]::new()
-        foreach ($command in $matchingCommands) {
-            $ancestor = $command.Parent
-            while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.CommandAst]) {
-                $ancestor = $ancestor.Parent
-            }
-            if ([object]::ReferenceEquals($ancestor, $binding) -and
-                -not $conditionalNodeFlags[$command] -and
-                -not $inactiveNodeFlags[$command]) {
-                $matches.Add($command)
-            }
-        }
-        return $matches.Count -eq 1
+        $directMatches = @($matchingCommands | Where-Object { [object]::ReferenceEquals($_, $sourceCommand) })
+        return $directMatches.Count -eq 1 -and
+            [string]::Equals([string]$sourceCommand.GetCommandName(), $CommandName, [StringComparison]::Ordinal) -and
+            -not $conditionalNodeFlags[$sourceCommand] -and
+            -not $inactiveNodeFlags[$sourceCommand]
     }
 
     $hasActivePsVariableSet = @($invokeMembers | Where-Object {

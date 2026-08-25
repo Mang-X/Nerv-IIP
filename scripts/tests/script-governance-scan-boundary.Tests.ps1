@@ -1159,6 +1159,90 @@ function Invoke-FixtureCrossScopeAction {
             throw "The shared variable-provider item parser must retain the shipped '$itemFloor' alias floor."
         }
     }
+    $invokeItemFloorProbe = {
+        param([Parameter(Mandatory)] [string] $HelperSource)
+
+        $helperPayload = [Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($HelperSource))
+        $probeSource = @"
+`$ErrorActionPreference = 'Stop'
+Remove-Item -LiteralPath Alias:si -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath Alias:ni -Force -ErrorAction SilentlyContinue
+Invoke-Expression ([Text.UTF8Encoding]::new(`$false).GetString([Convert]::FromBase64String('$helperPayload')))
+foreach (`$probe in @(
+    @{ Source = 'si variable:floorSetTarget -Value 1'; Name = 'floorSetTarget'; Canonical = 'Set-Item' },
+    @{ Source = 'ni variable:floorNewTarget -Value 1'; Name = 'floorNewTarget'; Canonical = 'New-Item' }
+)) {
+    `$errors = `$null
+    `$ast = [Management.Automation.Language.Parser]::ParseInput([string]`$probe.Source, [ref]`$null, [ref]`$errors)
+    if (`$errors.Count -ne 0) { throw 'Item floor probe no longer parses.' }
+    `$command = `$ast.Find({ param(`$node) `$node -is [Management.Automation.Language.CommandAst] }, `$true)
+    if (-not [string]::Equals((Resolve-NervScriptVariableItemCanonicalName -WrittenName ([string]`$command.GetCommandName())), [string]`$probe.Canonical, [StringComparison]::Ordinal) -or
+        -not (Test-NervScriptVariableItemCommandWritesName -Command `$command -Name ([string]`$probe.Name))) {
+        throw "Shipped item alias floor failed for `$(`$probe.Source)."
+    }
+}
+"@
+        $encodedProbe = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probeSource))
+        $probeOutput = (& pwsh -NoProfile -EncodedCommand $encodedProbe 2>&1) -join "`n"
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $probeOutput }
+    }
+    $liveItemFloorProbe = & $invokeItemFloorProbe $bindingHelperText
+    if ($liveItemFloorProbe.ExitCode -ne 0) {
+        throw "The shipped si/ni alias floors must work after both session aliases are removed: $($liveItemFloorProbe.Output)"
+    }
+    $itemFloorBlock = @"
+foreach (`$floorEntry in @(
+        @{ Alias = 'si'; Canonical = 'Set-Item' },
+        @{ Alias = 'ni'; Canonical = 'New-Item' })) {
+"@
+    if ($bindingHelperText.IndexOf($itemFloorBlock, [StringComparison]::Ordinal) -lt 0) {
+        throw 'The item floor behavioural mutation requires the exact production floor loop.'
+    }
+    $deadItemFloorSource = $bindingHelperText.Replace($itemFloorBlock, "foreach (`$floorEntry in @()) {")
+    $deadItemFloorProbe = & $invokeItemFloorProbe $deadItemFloorSource
+    if ($deadItemFloorProbe.ExitCode -eq 0) {
+        throw 'Moving the si/ni shipped floors to a dead branch must be killed by isolated alias-removal behaviour.'
+    }
+
+    $dynamicProviderErrors = $null
+    $dynamicProviderAst = [Management.Automation.Language.Parser]::ParseInput(
+        '$providerPath = ''variable:dynamicTarget''; New-Item -Path $providerPath -Value 1',
+        [ref]$null,
+        [ref]$dynamicProviderErrors)
+    $dynamicProviderCommand = $dynamicProviderAst.Find({ param($node) $node -is [Management.Automation.Language.CommandAst] -and [string]::Equals([string]$node.GetCommandName(), 'New-Item', [StringComparison]::Ordinal) }, $true)
+    if ($dynamicProviderErrors.Count -ne 0 -or
+        (Test-NervScriptVariableItemCommandWritesName -Command $dynamicProviderCommand -Name 'dynamicTarget')) {
+        throw 'A dynamic New-Item provider path must not prove a write to a specific script variable.'
+    }
+    $dynamicNameErrors = $null
+    $dynamicNameAst = [Management.Automation.Language.Parser]::ParseInput(
+        '$itemName = ''dynamicTarget''; New-Item -Path variable: -Name $itemName -Value 1',
+        [ref]$null,
+        [ref]$dynamicNameErrors)
+    $dynamicNameCommand = $dynamicNameAst.Find({ param($node) $node -is [Management.Automation.Language.CommandAst] -and [string]::Equals([string]$node.GetCommandName(), 'New-Item', [StringComparison]::Ordinal) }, $true)
+    if ($dynamicNameErrors.Count -ne 0 -or
+        -not (Test-NervScriptVariableItemCommandWritesName -Command $dynamicNameCommand -Name 'dynamicTarget')) {
+        throw 'An explicit variable: root with a dynamic New-Item name must remain a conservative may-write.'
+    }
+    $dynamicProviderBranch = 'if ($path -isnot [Management.Automation.Language.StringConstantExpressionAst]) { return $false }'
+    if (([regex]::Matches($bindingHelperText, [regex]::Escape($dynamicProviderBranch))).Count -ne 1) {
+        throw 'The dynamic-provider mutation requires one exact production fail-open branch.'
+    }
+    $dynamicProviderMutationSource = $bindingHelperText.Replace($dynamicProviderBranch, 'if ($path -isnot [Management.Automation.Language.StringConstantExpressionAst]) { return $true }')
+    $dynamicProviderPayload = [Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($dynamicProviderMutationSource))
+    $dynamicProviderMutationProbe = @"
+`$ErrorActionPreference = 'Stop'
+Invoke-Expression ([Text.UTF8Encoding]::new(`$false).GetString([Convert]::FromBase64String('$dynamicProviderPayload')))
+`$errors = `$null
+`$ast = [Management.Automation.Language.Parser]::ParseInput('`$providerPath = ''variable:dynamicTarget''; New-Item -Path `$providerPath -Value 1', [ref]`$null, [ref]`$errors)
+`$command = `$ast.Find({ param(`$node) `$node -is [Management.Automation.Language.CommandAst] -and [string]::Equals([string]`$node.GetCommandName(), 'New-Item', [StringComparison]::Ordinal) }, `$true)
+if (Test-NervScriptVariableItemCommandWritesName -Command `$command -Name 'dynamicTarget') { throw 'Mutated dynamic provider path was incorrectly treated as a proven variable write.' }
+"@
+    $dynamicProviderEncodedProbe = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($dynamicProviderMutationProbe))
+    $dynamicProviderMutationOutput = (& pwsh -NoProfile -EncodedCommand $dynamicProviderEncodedProbe 2>&1) -join "`n"
+    if ($LASTEXITCODE -eq 0) {
+        throw "Returning true for a dynamic New-Item provider path must be killed by the shared helper boundary test: $dynamicProviderMutationOutput"
+    }
 
     # Guard 3, behavioural, against the one thing discovery cannot promise. `set` ships with
     # `Options = None`, so anything that ran before the checker can remove or reassign it — and the

@@ -855,6 +855,15 @@ try {
         Assert-Contract (-not [bool]$unusedFunctionContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier unused-function mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
 
         if (-not [string]::Equals([string]$contractMutation.Property, 'failureCaptureSupported', [StringComparison]::Ordinal)) {
+            $pipelineMapper = if ([string]::Equals([string]$contractMutation.Property, 'outboundCompletionWired', [StringComparison]::Ordinal)) {
+                " | ForEach-Object { [pscustomobject]@{ status = 'Completed'; completedAtUtc = '2026-08-25T00:00:00Z' } }"
+            }
+            else { ' | ForEach-Object { $true }' }
+            $pipelineMapperPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-pipeline-mapper.ps1"
+            $pipelineMapperSource = $wmsVerifierSource.Insert($mutationCommand[0].Extent.EndOffset, $pipelineMapper)
+            [IO.File]::WriteAllText($pipelineMapperPath, $pipelineMapperSource, [Text.UTF8Encoding]::new($false))
+            Assert-Contract (-not [bool](Test-NervAcceptanceWmsVerifierContract -Path $pipelineMapperPath).PSObject.Properties[$contractMutation.Property].Value) "Verifier pipeline mapper mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
+
             foreach ($constantBindingMutation in @(
                 @{ Name = 'missing-constant-option'; Old = '-Option Constant '; New = '' },
                 @{ Name = 'wrong-option'; Old = '-Option Constant'; New = '-Option ReadOnly' },
@@ -947,6 +956,7 @@ try {
         @{ Name = 'computed-set-variable'; Statement = '$computedName = ''completionHttpReplayConverged''; Set-Variable -Name $computedName -Value $true' },
         @{ Name = 'splatted-set-variable'; Statement = '$setArguments = @{ Name = ''completionHttpReplayConverged''; Value = $true }; Set-Variable @setArguments' },
         @{ Name = 'computed-set-item-path'; Statement = '$computedPath = ''variable:completionHttpReplayConverged''; Set-Item -LiteralPath $computedPath -Value $true' },
+        @{ Name = 'dynamic-new-item-provider-path'; Statement = '$computedProviderPath = ''variable:completionHttpReplayConverged''; New-Item -Path $computedProviderPath -Value $true -Force | Out-Null' },
         @{ Name = 'ref-rebinding'; Statement = '$completionReference = [ref]$completionHttpReplayConverged; $completionReference.Value = $true' }
     )) {
         $residualPath = Join-Path $fixtureRoot "wms-diagnostics/$($residualWrite.Name).ps1"
