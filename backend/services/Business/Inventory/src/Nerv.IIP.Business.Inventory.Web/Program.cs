@@ -119,6 +119,7 @@ try
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseDashboard();
         });
     }

@@ -58,6 +58,24 @@ public sealed class InventoryMesCostAuthorityTests
     }
 
     [Fact]
+    public async Task Pending_authority_without_formal_reason_fails_closed_without_writing_audit()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CapturingSender();
+        var handler = CreateHandler(
+            sender,
+            new FixedAuthorityResolver(new InventoryUnitCostAuthorityResolution(InventoryUnitCostAuthorityStatuses.Pending)),
+            dbContext);
+
+        var protocolException = await Assert.ThrowsAsync<InventoryUnitCostAuthorityProtocolException>(
+            () => handler.HandleAsync(CreateMesFinishedGoodsEvent(99.99m), CancellationToken.None));
+
+        Assert.Contains("formal ReasonCode", protocolException.Message, StringComparison.Ordinal);
+        Assert.Null(sender.Request);
+        Assert.Empty(dbContext.AuthorityResolutionPendingAudits);
+    }
+
+    [Fact]
     public async Task Ordinary_posting_rejection_does_not_write_pending_audit()
     {
         await using var dbContext = CreateContext();
@@ -228,6 +246,29 @@ public sealed class InventoryMesCostAuthorityTests
         Assert.Equal(InventoryUnitCostAuthorityStatuses.Rejected, result.Status);
         Assert.Equal("authority-rejected", result.ReasonCode);
         Assert.Null(result.UnitCost);
+    }
+
+    [Fact]
+    public async Task Http_authority_pending_response_without_formal_reason_fails_closed()
+    {
+        var httpHandler = new CapturingHttpMessageHandler
+        {
+            Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    status = "pending",
+                }, options: new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            },
+        };
+        var resolver = new HttpInventoryUnitCostAuthorityResolver(
+            new HttpClient(httpHandler) { BaseAddress = new Uri("http://mes.local") },
+            new FixedInternalServiceTokenProvider());
+
+        var protocolException = await Assert.ThrowsAsync<InventoryUnitCostAuthorityProtocolException>(
+            () => resolver.ResolveAsync(CreateMesFinishedGoodsEvent(99.99m), CancellationToken.None));
+
+        Assert.Contains("formal ReasonCode", protocolException.Message, StringComparison.Ordinal);
     }
 
     private static InventoryMovementRequestedIntegrationEventHandlerForPostingMovement CreateHandler(

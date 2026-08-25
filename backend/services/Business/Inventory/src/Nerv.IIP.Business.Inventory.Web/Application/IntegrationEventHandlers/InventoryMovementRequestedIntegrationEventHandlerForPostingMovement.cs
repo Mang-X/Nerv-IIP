@@ -66,7 +66,7 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 InventoryUnitCostAuthorityStatuses.NotRequired => payload.UnitCost,
                 InventoryUnitCostAuthorityStatuses.Available when authority.UnitCost is > 0m => authority.UnitCost,
                 InventoryUnitCostAuthorityStatuses.Pending => throw new InventoryUnitCostAuthorityPendingException(
-                    authority.ReasonCode ?? "authority-pending"),
+                    InventoryUnitCostAuthorityResolution.RequirePendingReasonCode(authority.ReasonCode)),
                 _ => throw InventoryPostingRejectedException.ForUnitCostAuthority(),
             };
 

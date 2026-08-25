@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Globalization;
+using DotNetCore.CAP;
 using Microsoft.AspNetCore.Hosting;
 using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -1134,6 +1136,16 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(
             "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext, Nerv.IIP.Business.Inventory.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
             store.GetType().FullName);
+    }
+
+    [Fact]
+    public void Inventory_registers_cap_failed_threshold_dead_letter_callback()
+    {
+        using var factory = new WebApplicationFactory<Program>();
+        using var scope = factory.Services.CreateScope();
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<CapOptions>>();
+
+        Assert.NotNull(options.Value.FailedThresholdCallback);
     }
 
     [Fact]
