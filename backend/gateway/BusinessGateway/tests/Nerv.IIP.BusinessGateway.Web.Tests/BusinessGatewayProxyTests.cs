@@ -4944,7 +4944,7 @@ public sealed class BusinessGatewayProxyTests
                     TeamId: "TEAM-A"))
                 .ToArray(),
             EmulateMesListPaging = true,
-            OperationTaskListDelay = TimeSpan.FromMilliseconds(100),
+            OperationTaskListPauseUntilConcurrentCalls = 8,
         };
         var masterData = new RecordingMasterDataClient
         {
@@ -4963,12 +4963,25 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        var responseTask = client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             scannedValue = "AMB-OPS",
         });
+        try
+        {
+            await BoundedSignal.ObserveAsync(
+                mes.OperationTaskListConcurrencyReached,
+                "eight concurrent MES operation lookups",
+                () => $"calls={mes.OperationTaskListCallCount}, maxConcurrent={mes.MaxConcurrentOperationTaskListCalls}");
+        }
+        finally
+        {
+            mes.ReleaseOperationTaskListCalls();
+        }
+
+        var response = await responseTask;
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(candidateCount, mes.OperationTaskListCallCount);
@@ -5017,6 +5030,59 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("multiple-source-documents", data.GetProperty("reasonCode").GetString());
         Assert.Equal(23, data.GetProperty("total").GetInt32());
         Assert.Single(data.GetProperty("candidates").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Barcode_resolve_facade_rejects_page_offset_overflow_before_authorization_and_downstream()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = "OVERFLOW",
+            pageIndex = int.MaxValue,
+            pageSize = 100,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+        Assert.Equal(0, barcode.ResolveCallCount);
+    }
+
+    [Fact]
+    public async Task Barcode_resolve_facade_forwards_the_largest_representable_page_offset_without_wrapping()
+    {
+        const int expectedSkip = 2_147_483_600;
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeResolverClient>();
+            services.AddSingleton<IBusinessBarcodeResolverClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/barcode/resolve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            scannedValue = "MAX-PAGE",
+            pageIndex = 21_474_837,
+            pageSize = 100,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expectedSkip, barcode.LastResolveRequest!.Skip);
     }
 
     [Fact]
@@ -15116,7 +15182,9 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public bool EmulateMesListPaging { get; init; }
 
-    public TimeSpan? OperationTaskListDelay { get; init; }
+    public int? OperationTaskListPauseUntilConcurrentCalls { get; init; }
+
+    public Task OperationTaskListConcurrencyReached => _operationTaskListConcurrencyReached.Task;
 
     public int OperationTaskListCallCount { get; private set; }
 
@@ -15124,7 +15192,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     private readonly object _operationTaskListCallLock = new();
 
+    private readonly TaskCompletionSource _operationTaskListConcurrencyReached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly TaskCompletionSource _operationTaskListRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private int _currentOperationTaskListCalls;
+
+    public void ReleaseOperationTaskListCalls() => _operationTaskListRelease.TrySetResult();
 
     public IReadOnlyCollection<BusinessConsoleMesProductionPlanRow>? ProductionPlans { get; init; }
 
@@ -15525,14 +15599,19 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             OperationTaskListCallCount++;
             _currentOperationTaskListCalls++;
             MaxConcurrentOperationTaskListCalls = Math.Max(MaxConcurrentOperationTaskListCalls, _currentOperationTaskListCalls);
+            if (OperationTaskListPauseUntilConcurrentCalls is { } target
+                && _currentOperationTaskListCalls >= target)
+            {
+                _operationTaskListConcurrencyReached.TrySetResult();
+            }
         }
         LastInternalToken = internalBearerToken;
         LastOperationTaskListRequest = request;
         try
         {
-            if (OperationTaskListDelay is { } delay)
+            if (OperationTaskListPauseUntilConcurrentCalls is not null)
             {
-                await Task.Delay(delay, cancellationToken);
+                await _operationTaskListRelease.Task.WaitAsync(cancellationToken);
             }
 
             var tasks = OperationTasks ??

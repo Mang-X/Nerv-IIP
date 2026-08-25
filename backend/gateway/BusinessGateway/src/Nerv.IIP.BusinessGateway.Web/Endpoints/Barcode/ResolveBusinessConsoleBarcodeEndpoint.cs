@@ -52,13 +52,18 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        if (!TryCalculatePageOffset(request.PageIndex, request.PageSize, out var pageOffset))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.BadRequest, "barcode-resolve-page-invalid");
+        }
+
         var downstream = await barcode.ResolveAsync(
             tokenProvider.BearerToken,
             new BusinessBarcodeResolveRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.ScannedValue,
-                checked((request.PageIndex - 1) * request.PageSize),
+                pageOffset,
                 request.PageSize),
             cancellationToken);
         if (downstream.Status is not ("resolved" or "ambiguous"))
@@ -209,6 +214,24 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
     private static string? Join(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
 
+    internal static bool TryCalculatePageOffset(int pageIndex, int pageSize, out int pageOffset)
+    {
+        pageOffset = 0;
+        if (pageIndex < 1 || pageSize is < 1 or > 100)
+        {
+            return false;
+        }
+
+        var candidate = ((long)pageIndex - 1L) * pageSize;
+        if (candidate > int.MaxValue)
+        {
+            return false;
+        }
+
+        pageOffset = (int)candidate;
+        return true;
+    }
+
     private static IReadOnlyDictionary<string, string> StrongId(string name, string value) =>
         new Dictionary<string, string>(StringComparer.Ordinal) { [name] = value };
 
@@ -238,5 +261,11 @@ public sealed class BusinessConsoleBarcodeResolveRequestValidator : Validator<Bu
         RuleFor(x => x.ScannedValue).NotEmpty().MaximumLength(200);
         RuleFor(x => x.PageIndex).GreaterThanOrEqualTo(1);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+        RuleFor(x => x)
+            .Must(request => ResolveBusinessConsoleBarcodeEndpoint.TryCalculatePageOffset(
+                request.PageIndex,
+                request.PageSize,
+                out _))
+            .WithMessage("Page offset exceeds the supported range.");
     }
 }
