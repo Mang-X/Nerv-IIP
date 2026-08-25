@@ -401,6 +401,7 @@ function Invoke-NervFullStackSmokeScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $HttpCheckAction,
         [scriptblock] $AspireSnapshotAction,
@@ -461,6 +462,9 @@ function Invoke-NervFullStackSmokeScenario {
         NERV_IIP_BUSINESS_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-gateway'
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        $childEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
     }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
@@ -612,6 +616,7 @@ function Invoke-NervLeaderDemoMainChainScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
@@ -669,6 +674,9 @@ function Invoke-NervLeaderDemoMainChainScenario {
         NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE = 'session-manifest'
         NERV_IIP_MAIN_CHAIN_TRANSPORT = 'redis-cross-process'
         NERV_IIP_MAIN_CHAIN_PERSISTENCE = 'postgresql'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        $childEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
     }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
@@ -896,6 +904,7 @@ function Invoke-NervLeaderDemoBranchScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [Parameter(Mandatory)] [string] $ScenarioLabel,
         [Parameter(Mandatory)] [string[]] $ResourceNames,
         [Parameter(Mandatory)] [System.Collections.IDictionary] $ScenarioEnvironment,
@@ -944,6 +953,9 @@ function Invoke-NervLeaderDemoBranchScenario {
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
     }
+    if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        $childEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
+    }
     foreach ($entry in $ScenarioEnvironment.GetEnumerator()) { $childEnvironment[$entry.Key] = "$($entry.Value)" }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $ResourceNames }
@@ -953,6 +965,7 @@ function Invoke-NervLeaderDemoQualityBranchScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
@@ -961,6 +974,7 @@ function Invoke-NervLeaderDemoQualityBranchScenario {
     return Invoke-NervLeaderDemoBranchScenario `
         -Manifest $Manifest `
         -SessionAdminPassword $SessionAdminPassword `
+        -SessionWorkerPassword $SessionWorkerPassword `
         -ScenarioLabel 'Leader-demo quality-branch' `
         -ResourceNames @(
             'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
@@ -984,6 +998,7 @@ function Invoke-NervLeaderDemoEquipmentBranchScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
@@ -992,6 +1007,7 @@ function Invoke-NervLeaderDemoEquipmentBranchScenario {
     return Invoke-NervLeaderDemoBranchScenario `
         -Manifest $Manifest `
         -SessionAdminPassword $SessionAdminPassword `
+        -SessionWorkerPassword $SessionWorkerPassword `
         -ScenarioLabel 'Leader-demo equipment-branch' `
         -ResourceNames @(
             'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
@@ -1519,7 +1535,9 @@ function ConvertTo-NervBase64Url {
 function New-NervFullStackSecretEnvironment {
     param(
         [Parameter(Mandatory)]
-        [string] $SessionId
+        [string] $SessionId,
+
+        [switch] $IncludeDemoWorkerPassword
     )
 
     if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
@@ -1541,6 +1559,12 @@ function New-NervFullStackSecretEnvironment {
             })
         } | ConvertTo-Json -Compress -Depth 5
         $adminPassword = New-NervFullStackSecretValue -Bytes 24
+        $workerPassword = if ($IncludeDemoWorkerPassword) {
+            New-NervFullStackSecretValue -Bytes 24
+        }
+        else {
+            $null
+        }
         $environment = @{
             'Parameters__iam-jwt-signing-key-id' = $kid
             'Parameters__iam-jwt-private-key-pem' = $rsa.ExportPkcs8PrivateKeyPem()
@@ -1555,10 +1579,14 @@ function New-NervFullStackSecretEnvironment {
             'Parameters__iam-seed-connector-host-secret' = New-NervFullStackSecretValue -Bytes 32
             'Parameters__connector-ingestion-token-signing-key' = New-NervFullStackSecretValue -Bytes 48
         }
+        if ($IncludeDemoWorkerPassword) {
+            $environment['Parameters__iam-seed-demo-worker-password'] = $workerPassword
+        }
 
         return [pscustomobject]@{
             Environment = $environment
             AdminPassword = $adminPassword
+            WorkerPassword = $workerPassword
         }
     }
     finally {

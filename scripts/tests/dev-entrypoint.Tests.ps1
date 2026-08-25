@@ -66,6 +66,8 @@ foreach ($expected in @(
     '.\nerv.ps1 logs',
     '.\nerv.ps1 describe',
     '.\nerv.ps1 fullstack run -Scenario smoke',
+    '.\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker',
+    '.\nerv.ps1 fullstack start -EnableWmsDemoWorker',
     '.\nerv.ps1 demo start',
     '.\nerv.ps1 demo reset',
     '.\nerv.ps1 demo seed',
@@ -101,7 +103,7 @@ if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::Ordin
     -not [string]::Equals('Automated', 'automated', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Full-stack mode comparer probe must reject U+00AD while accepting intended casing.'
 }
-foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc')) {
+foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', '-EnableWmsDemoWorker')) {
     if (-not $fullStackHelp.Output.Contains($expected)) {
         throw "Full-stack help did not contain '$expected'. Output: $($fullStackHelp.Output)"
     }
@@ -119,10 +121,11 @@ param(
     [string]$Scenario,
     [string]$SessionId,
     [switch]$NoBuild,
+    [switch]$EnableWmsDemoWorker,
     [int]$Tail,
     [switch]$Follow
 )
-[pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
+[pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; enableWmsDemoWorker=[bool]$EnableWmsDemoWorker; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
 '@
     [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText(
@@ -134,6 +137,12 @@ param(
     $runCapture = $fullStackRun.Output | ConvertFrom-Json
     if ($fullStackRun.ExitCode -ne 0 -or (-not [string]::Equals([string]($runCapture.action), [string]('run'), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]($runCapture.scenario), [string]('smoke'), [StringComparison]::OrdinalIgnoreCase)) -or -not $runCapture.noBuild) {
         throw "Named full-stack run options were not forwarded. Output: $($fullStackRun.Output)"
+    }
+
+    $fullStackWmsRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-EnableWmsDemoWorker')
+    $wmsRunCapture = $fullStackWmsRun.Output | ConvertFrom-Json
+    if ($fullStackWmsRun.ExitCode -ne 0 -or -not $wmsRunCapture.enableWmsDemoWorker) {
+        throw "WMS demo worker opt-in was not forwarded. Output: $($fullStackWmsRun.Output)"
     }
 
     $forwardedSessionId = 'nerv-abcd-123456'

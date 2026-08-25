@@ -402,6 +402,7 @@ Assert-True (
 $notificationStart = $appHostText.IndexOf('var notification =', [StringComparison]::Ordinal)
 $notificationEnd = $appHostText.IndexOf([char]';', $notificationStart)
 Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled', [StringComparison]::Ordinal)) 'AppHost must not leak the business leader-demo seed flag to Notification.'
+Assert-True ($appHostText.Contains('.WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)', [StringComparison]::Ordinal)) 'AppHost must bridge the controlled FullStack demo-worker seed to IAM without changing IAM permissions or membership.'
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
 foreach ($requiredName in @(
@@ -431,6 +432,33 @@ Assert-True `
     'The session JWKS key ID must match the private signing key ID.'
 $secretEnvironment.Environment.Clear()
 $secretEnvironment = $null
+
+$workerSecretEnvironment = New-NervFullStackSecretEnvironment `
+    -SessionId $sessionId `
+    -IncludeDemoWorkerPassword
+Assert-True ($workerSecretEnvironment.Environment.ContainsKey('Parameters__iam-seed-demo-worker-password')) 'WMS worker opt-in must inject a dedicated IAM demo-worker seed parameter.'
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$workerSecretEnvironment.WorkerPassword)) 'WMS worker opt-in must generate a non-empty worker password.'
+Assert-True (
+    -not [string]::Equals(
+        [string]$workerSecretEnvironment.AdminPassword,
+        [string]$workerSecretEnvironment.WorkerPassword,
+        [StringComparison]::Ordinal
+    )
+) 'WMS worker password must be independent from the admin password.'
+Assert-True (
+    [string]::Equals(
+        [string]$workerSecretEnvironment.WorkerPassword,
+        [string]$workerSecretEnvironment.Environment['Parameters__iam-seed-demo-worker-password'],
+        [StringComparison]::Ordinal
+    )
+) 'The generated WMS worker password must be the exact process-only IAM seed value.'
+$workerSecretEnvironment.Environment.Clear()
+$workerSecretEnvironment = $null
+
+$defaultSecretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
+Assert-True (-not $defaultSecretEnvironment.Environment.ContainsKey('Parameters__iam-seed-demo-worker-password')) 'Full-stack sessions without WMS worker opt-in must remain fail-closed for worker account seeding.'
+$defaultSecretEnvironment.Environment.Clear()
+$defaultSecretEnvironment = $null
 
 $scenarioManifest = [pscustomobject]@{
     sessionId = $sessionId
@@ -476,6 +504,24 @@ Assert-True ($script:browserEnvironment.Count -eq $expectedBrowserEnvironment.Co
 foreach ($key in $expectedBrowserEnvironment.Keys) {
     Assert-True ([string]::Equals([string]$script:browserEnvironment[$key], [string]$expectedBrowserEnvironment[$key], [StringComparison]::Ordinal)) "Unexpected browser environment value for '$key'."
 }
+$script:browserEnvironment = $null
+$workerScenarioResult = Invoke-NervFullStackSmokeScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'admin-secret-sentinel' `
+    -SessionWorkerPassword 'worker-secret-sentinel' `
+    -WaitAction { param($Name, $Manifest) } `
+    -HttpCheckAction { param($Name, $Url) } `
+    -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+    -BrowserAction { param($Environment, $Manifest) $script:browserEnvironment = $Environment }
+Assert-True (
+    [string]::Equals(
+        [string]$script:browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD,
+        'worker-secret-sentinel',
+        [StringComparison]::Ordinal
+    )
+) 'The WMS worker password must be passed to the Playwright child process only through its transient environment.'
+$script:browserEnvironment.Remove('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')
+$script:browserEnvironment = $null
 $playwrightReportRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-playwright-$([guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($playwrightReportRoot) | Out-Null
