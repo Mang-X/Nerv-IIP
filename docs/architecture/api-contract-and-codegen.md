@@ -442,7 +442,7 @@ BusinessGateway 控制台 API 引入后，生成链路增加 `business-gateway-c
 3. `@hey-api/sdk` 生成按 `operationId` 命名的调用函数。
 4. `@pinia/colada` 生成查询和变更选项。
 
-生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、API 客户端生成、前端类型检查/测试/构建；在脚本治理迁移中，该入口必须显式声明混合 `verify`/`generate` 副作用，或拆成受控生成步骤与纯验证步骤。
+生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。历史第三阶段总验收入口 `scripts/verify-third-slice-console.ps1` 已按 #2157 退役；当前分别使用 `scripts/export-gateway-openapi.ps1`、`pnpm -C frontend generate:api`、`pnpm -C frontend typecheck`、`pnpm -C frontend test` 和 `pnpm -C frontend build`，或使用 `scripts/verify-openapi-client-drift.ps1` 执行契约漂移闭环。
 
 ### 导出环境口径：NuGet 包 XML 文档漂移（已根治）
 
