@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -168,6 +169,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 capVersion,
                 pendingEvent.EventId,
                 pendingEvent.IdempotencyKey,
+                new Dictionary<string, string>
+                {
+                    [successEvent.EventId] = successEvent.IdempotencyKey,
+                    [successReplayEvent.EventId] = successReplayEvent.IdempotencyKey,
+                    [failureEvent.EventId] = failureEvent.IdempotencyKey,
+                    [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
+                    [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
+                },
                 successEvent.EventId,
                 successReplayEvent.EventId,
                 failureEvent.EventId,
@@ -197,6 +206,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 capVersion,
                 pendingEvent.EventId,
                 pendingEvent.IdempotencyKey,
+                new Dictionary<string, string>
+                {
+                    [successEvent.EventId] = successEvent.IdempotencyKey,
+                    [successReplayEvent.EventId] = successReplayEvent.IdempotencyKey,
+                    [failureEvent.EventId] = failureEvent.IdempotencyKey,
+                    [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
+                    [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
+                },
                 successEvent.EventId,
                 successReplayEvent.EventId,
                 failureEvent.EventId,
@@ -755,6 +772,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string capVersion,
         string pendingEventId,
         string pendingEventIdempotencyKey,
+        IReadOnlyDictionary<string, string> eventIdempotencyKeys,
         params string[] eventIds)
     {
         var eventFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
@@ -764,12 +782,20 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
             {
                 await using var published = mesConnection.CreateCommand();
-                published.CommandText = """
-                    SELECT COUNT(*) FROM mes.cap_published_messages
-                    WHERE "Content" LIKE @event_pattern;
-                    """;
-                published.Parameters.AddWithValue("event_pattern", $"%{eventId}%");
-                var publishedCount = (long)(await published.ExecuteScalarAsync() ?? 0L);
+                published.CommandText = "SELECT \"Content\" FROM mes.cap_published_messages WHERE \"Content\" IS NOT NULL;";
+                var publishedCount = 0L;
+                await using var publishedReader = await published.ExecuteReaderAsync();
+                while (await publishedReader.ReadAsync())
+                {
+                    if (ContentMatchesEvent(
+                        publishedReader.GetString(0),
+                        eventId,
+                        eventIdempotencyKeys[eventId],
+                        nameof(InventoryMovementRequestedIntegrationEvent)))
+                    {
+                        publishedCount++;
+                    }
+                }
                 eventFacts[eventId] = new EventMessageFact(publishedCount, 0L);
             }
         }
@@ -783,12 +809,20 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
             {
                 await using var consumed = inventoryConnection.CreateCommand();
-                consumed.CommandText = """
-                    SELECT COUNT(*) FROM inventory.cap_received_messages
-                    WHERE "Content" LIKE @event_pattern;
-                    """;
-                consumed.Parameters.AddWithValue("event_pattern", $"%{eventId}%");
-                var receivedCount = (long)(await consumed.ExecuteScalarAsync() ?? 0L);
+                consumed.CommandText = "SELECT \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
+                var receivedCount = 0L;
+                await using var receivedReader = await consumed.ExecuteReaderAsync();
+                while (await receivedReader.ReadAsync())
+                {
+                    if (ContentMatchesEvent(
+                        receivedReader.GetString(0),
+                        eventId,
+                        eventIdempotencyKeys[eventId],
+                        nameof(InventoryMovementRequestedIntegrationEvent)))
+                    {
+                        receivedCount++;
+                    }
+                }
                 eventFacts[eventId] = eventFacts[eventId] with { ReceivedCount = receivedCount };
             }
             await using var deadLetters = inventoryConnection.CreateCommand();
@@ -860,11 +894,12 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 pendingMessage.MessageId,
                 pendingMessage.MessageId,
                 1);
-            var content = string.Join(
-                "\n",
-                entries.SelectMany(entry => entry.Values.Select(value => value.Value.ToString())));
-            if (content.Contains(eventId, StringComparison.Ordinal) &&
-                content.Contains(idempotencyKey, StringComparison.Ordinal))
+            if (entries.SelectMany(entry => entry.Values)
+                .Any(value => ContentMatchesEvent(
+                    value.Value.ToString(),
+                    eventId,
+                    idempotencyKey,
+                    nameof(InventoryMovementRequestedIntegrationEvent))))
             {
                 return new PendingRedisFact(
                     true,
@@ -878,6 +913,38 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         return new PendingRedisFact(false, null, null, null, null, 0);
     }
+
+    private static bool ContentMatchesEvent(
+        string content,
+        string eventId,
+        string idempotencyKey,
+        string eventType)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var values = document.RootElement
+                .EnumerateObject()
+                .ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
+            return ReadJsonString(values, "EventId") == eventId &&
+                   ReadJsonString(values, "IdempotencyKey") == idempotencyKey &&
+                   (!values.TryGetValue("EventType", out var eventTypeValue) ||
+                    eventTypeValue.GetString() == eventType) &&
+                   (!values.TryGetValue("Name", out var nameValue) ||
+                    nameValue.GetString() == eventType);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string? ReadJsonString(
+        IReadOnlyDictionary<string, JsonElement> values,
+        string propertyName) =>
+        values.TryGetValue(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private sealed record ProbeSource(
         string OrganizationId,
