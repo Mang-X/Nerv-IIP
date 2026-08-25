@@ -1572,9 +1572,43 @@ public sealed class DismissBusinessConsoleMesTelemetryCandidateEndpoint(IBusines
 public sealed class RecordBusinessConsoleMesDefectEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider,
+    TimeProvider timeProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDefectRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesQualityWrite)
+{
+    protected override string OrganizationId(BusinessConsoleMesRecordDefectRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesRecordDefectRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesRecordDefectRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.RecordDefectAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesRecordDefectRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.DefectCode,
+                request.DefectQuantity,
+                timeProvider.GetUtcNow(),
+                request.IdempotencyKey),
+            cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v2/mes/defects")]
+[BusinessGatewayOperationId("recordBusinessConsoleMesDefectV2")]
+public sealed class RecordBusinessConsoleMesDefectV2Endpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
     MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDefectRequest, BusinessConsoleAcceptedResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDefectV2Request, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesQualityWrite)
 {
@@ -1583,12 +1617,12 @@ public sealed class RecordBusinessConsoleMesDefectEndpoint(
     protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
         BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
-    protected override string OrganizationId(BusinessConsoleMesRecordDefectRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesRecordDefectV2Request request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesRecordDefectRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesRecordDefectV2Request request) => request.EnvironmentId;
 
     protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
-        BusinessConsoleMesRecordDefectRequest request,
+        BusinessConsoleMesRecordDefectV2Request request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
@@ -1601,19 +1635,30 @@ public sealed class RecordBusinessConsoleMesDefectEndpoint(
             request.ScopeId,
             request.WorkOrderId,
             cancellationToken);
-        return await mes.RecordDefectAsync(tokenProvider.BearerToken, request, cancellationToken);
+        return await mes.RecordDefectAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesRecordDefectRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.DefectCode,
+                request.Quantity,
+                request.RecordedAtUtc,
+                request.IdempotencyKey),
+            cancellationToken);
     }
 }
 
-public sealed class BusinessConsoleMesRecordDefectRequestValidator
-    : Validator<BusinessConsoleMesRecordDefectRequest>
+public sealed class BusinessConsoleMesRecordDefectV2RequestValidator
+    : Validator<BusinessConsoleMesRecordDefectV2Request>
 {
-    public BusinessConsoleMesRecordDefectRequestValidator()
+    public BusinessConsoleMesRecordDefectV2RequestValidator()
     {
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.OperationTaskId).MaximumLength(200);
         RuleFor(x => x.DefectCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.Quantity).NotEmpty().GreaterThan(0);
         RuleFor(x => x.RecordedAtUtc).NotEmpty();
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ScopeKind)

@@ -1685,7 +1685,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
-        BusinessConsoleMesRecordDefectRequest request,
+        BusinessMesRecordDefectRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
@@ -8300,7 +8300,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
-        BusinessConsoleMesRecordDefectRequest request,
+        BusinessMesRecordDefectRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,

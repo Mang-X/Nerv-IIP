@@ -103,9 +103,9 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "Defect",
             client => client.RecordDefectAsync(
                 "token",
-                new BusinessConsoleMesRecordDefectRequest(
+                new BusinessMesRecordDefectRequest(
                     "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m,
-                    DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect", "work-center", "WC-A"),
+                    DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect"),
                 CancellationToken.None));
 
     [Fact]
@@ -113,9 +113,9 @@ public sealed class BusinessMesAcceptedReceiptClientTests
     {
         string? capturedBody = null;
         var client = ClientReturning(AcceptedJson("DEF-000031"), capturedBody: body => capturedBody = body);
-        var request = new BusinessConsoleMesRecordDefectRequest(
+        var request = new BusinessMesRecordDefectRequest(
             "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2.5m,
-            DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect", "work-center", "WC-A");
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect");
 
         await client.RecordDefectAsync("token", request, CancellationToken.None);
 
@@ -179,9 +179,9 @@ public sealed class BusinessMesAcceptedReceiptClientTests
 
         var response = await client.RecordDefectAsync(
             "token",
-            new BusinessConsoleMesRecordDefectRequest(
+            new BusinessMesRecordDefectRequest(
                 "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m,
-                DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect", "work-center", "WC-A"),
+                DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect"),
             CancellationToken.None);
 
         Assert.True(response.Accepted);

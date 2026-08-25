@@ -4470,10 +4470,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
     organizationId?: string;
     environmentId?: string;
+    workOrderId?: string;
+    operationTaskId?: string;
+    defectCode?: string;
+    defectQuantity?: number;
+    materialLotId?: string | null;
+    batchOrSerial?: string | null;
+    idempotencyKey?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request = {
+    organizationId?: string;
+    environmentId?: string;
     workOrderId: string;
-    operationTaskId: string;
+    operationTaskId?: string | null;
     defectCode: string;
-    quantity?: number;
+    quantity: number;
     recordedAtUtc: string;
     idempotencyKey: string;
     scopeKind: string;
@@ -15623,6 +15635,33 @@ export type RecordBusinessConsoleMesDefectData = {
 
 export type RecordBusinessConsoleMesDefectErrors = {
     /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesDefectResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesDefectResponse = RecordBusinessConsoleMesDefectResponses[keyof RecordBusinessConsoleMesDefectResponses];
+
+export type RecordBusinessConsoleMesDefectV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/mes/defects';
+};
+
+export type RecordBusinessConsoleMesDefectV2Errors = {
+    /**
      * Bad Request
      */
     400: FastEndpointsErrorResponse;
@@ -15636,16 +15675,16 @@ export type RecordBusinessConsoleMesDefectErrors = {
     403: unknown;
 };
 
-export type RecordBusinessConsoleMesDefectError = RecordBusinessConsoleMesDefectErrors[keyof RecordBusinessConsoleMesDefectErrors];
+export type RecordBusinessConsoleMesDefectV2Error = RecordBusinessConsoleMesDefectV2Errors[keyof RecordBusinessConsoleMesDefectV2Errors];
 
-export type RecordBusinessConsoleMesDefectResponses = {
+export type RecordBusinessConsoleMesDefectV2Responses = {
     /**
      * Success
      */
     200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
 };
 
-export type RecordBusinessConsoleMesDefectResponse = RecordBusinessConsoleMesDefectResponses[keyof RecordBusinessConsoleMesDefectResponses];
+export type RecordBusinessConsoleMesDefectV2Response = RecordBusinessConsoleMesDefectV2Responses[keyof RecordBusinessConsoleMesDefectV2Responses];
 
 export type ListBusinessConsoleMesRelatedQualityItemsData = {
     body?: never;

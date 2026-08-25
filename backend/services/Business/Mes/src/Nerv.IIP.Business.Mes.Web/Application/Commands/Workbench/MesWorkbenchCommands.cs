@@ -2173,6 +2173,21 @@ public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext, M
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
+        if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
+        {
+            var operationExists = await dbContext.OperationTasks.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == request.WorkOrderId &&
+                    x.OperationTaskIdValue == request.OperationTaskId,
+                cancellationToken);
+            if (!operationExists)
+            {
+                throw new KnownException(
+                    $"未找到当前生产工单下的工序任务，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+            }
+        }
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "defect",
