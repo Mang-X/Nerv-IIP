@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Xunit;
@@ -187,6 +188,106 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             violation.Contains("IBusinessBoundaryMutationClient", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Boundary_analyzer_rejects_allowlisted_clients_duplicated_under_distinct_outer_types()
+    {
+        var documents = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceAuditContext.cs",
+                "public sealed record BusinessServiceAuditContext {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceProxyException.cs",
+                "public sealed class BusinessServiceProxyException {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                LegacyClientMonolithFileName,
+                "public sealed class FirstOuter { " +
+                "public interface IBusinessInventoryClient {} " +
+                "public sealed class HttpBusinessInventoryClient {} } " +
+                "public sealed class SecondOuter { " +
+                "public interface IBusinessInventoryClient {} " +
+                "public sealed class HttpBusinessInventoryClient {} }"),
+        };
+        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "IBusinessInventoryClient",
+            "HttpBusinessInventoryClient",
+        };
+
+        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains("FirstOuter.IBusinessInventoryClient", StringComparison.Ordinal) &&
+            violation.Contains("SecondOuter.IBusinessInventoryClient", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Boundary_analyzer_rejects_nonconventional_type_derived_from_the_shared_client_base()
+    {
+        var documents = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceAuditContext.cs",
+                "public sealed record BusinessServiceAuditContext {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceProxyException.cs",
+                "public sealed class BusinessServiceProxyException {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                LegacyClientMonolithFileName,
+                "public interface IBusinessInventoryClient {} " +
+                "public sealed class HttpBusinessInventoryClient {} " +
+                "public sealed class InventoryTransport : BusinessServiceHttpClient {}"),
+        };
+        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "IBusinessInventoryClient",
+            "HttpBusinessInventoryClient",
+        };
+
+        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains("InventoryTransport", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Boundary_analyzer_rejects_nonconventional_type_implementing_a_managed_client_interface()
+    {
+        var documents = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceAuditContext.cs",
+                "public sealed record BusinessServiceAuditContext {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceProxyException.cs",
+                "public sealed class BusinessServiceProxyException {}"),
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                LegacyClientMonolithFileName,
+                "public interface IBusinessInventoryClient {} " +
+                "public sealed class HttpBusinessInventoryClient {} " +
+                "public sealed class InventoryTransport : IBusinessInventoryClient {}"),
+        };
+        IReadOnlySet<string> expectedLegacyTypes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "IBusinessInventoryClient",
+            "HttpBusinessInventoryClient",
+        };
+
+        var violations = AnalyzeBoundary(documents, ExpectedSharedTypeFiles, expectedLegacyTypes);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains("InventoryTransport", StringComparison.Ordinal));
+    }
+
     private static IReadOnlyList<string> AnalyzeBoundary(
         string businessServicesDirectory,
         IReadOnlyDictionary<string, string> expectedFiles,
@@ -204,15 +305,27 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         IReadOnlyDictionary<string, string> expectedFiles,
         IReadOnlySet<string> expectedLegacyGovernedTypeNames)
     {
-        var declarations = documents
-            .SelectMany(document => CSharpSyntaxTree
-                .ParseText(document.Source, path: document.RelativePath)
-                .GetRoot()
-                .DescendantNodes()
-                .OfType<BaseTypeDeclarationSyntax>()
-                .Select(declaration => new TypeDeclaration(
-                    document.RelativePath,
-                    declaration.Identifier.ValueText)))
+        var syntaxTrees = documents
+            .Select(document => CSharpSyntaxTree.ParseText(document.Source, path: document.RelativePath))
+            .ToArray();
+        var compilation = CSharpCompilation.Create(
+            "BusinessGatewayBoundaryAnalysis",
+            syntaxTrees,
+            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var declarations = syntaxTrees
+            .SelectMany(tree =>
+            {
+                var semanticModel = compilation.GetSemanticModel(tree);
+                return tree.GetRoot()
+                    .DescendantNodes()
+                    .OfType<BaseTypeDeclarationSyntax>()
+                    .Select(declaration => new TypeDeclaration(
+                        tree.FilePath,
+                        declaration.Identifier.ValueText,
+                        DeclarationIdentity(declaration),
+                        semanticModel.GetDeclaredSymbol(declaration)!));
+            })
             .ToArray();
         var violations = new List<string>();
 
@@ -231,25 +344,57 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             }
         }
 
-        var actualLegacyGovernedTypeNames = declarations
+        var legacyDeclarations = declarations
+            .Where(declaration => declaration.RelativePath == LegacyClientMonolithFileName)
+            .ToArray();
+        var sharedClientBase = declarations.SingleOrDefault(declaration =>
+            declaration.RelativePath == "Shared/BusinessServiceHttpClient.cs" &&
+            declaration.TypeName == "BusinessServiceHttpClient");
+        var expectedClientInterfaces = legacyDeclarations
             .Where(declaration =>
-                declaration.RelativePath == LegacyClientMonolithFileName &&
-                IsLegacyGovernedType(declaration.TypeName))
-            .Select(declaration => declaration.TypeName)
-            .ToHashSet(StringComparer.Ordinal);
-        var unexpectedLegacyTypes = actualLegacyGovernedTypeNames
-            .Except(expectedLegacyGovernedTypeNames, StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
+                expectedLegacyGovernedTypeNames.Contains(declaration.DeclarationIdentity) &&
+                declaration.Symbol.TypeKind == TypeKind.Interface)
+            .Select(declaration => declaration.Symbol)
+            .ToHashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var semanticClientClasses = legacyDeclarations
+            .Where(declaration =>
+                declaration.Symbol.TypeKind == TypeKind.Class &&
+                (DerivesFrom(declaration.Symbol, sharedClientBase?.Symbol) ||
+                 declaration.Symbol.AllInterfaces.Any(expectedClientInterfaces.Contains)))
+            .Select(declaration => declaration.Symbol)
+            .ToHashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var semanticClientInterfaces = semanticClientClasses
+            .SelectMany(symbol => symbol.AllInterfaces)
+            .ToHashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var actualLegacyGovernedDeclarations = legacyDeclarations
+            .Where(declaration =>
+                expectedLegacyGovernedTypeNames.Contains(declaration.DeclarationIdentity) ||
+                CapabilityClientName(declaration.TypeName) is not null ||
+                declaration.TypeName.EndsWith("Options", StringComparison.Ordinal) ||
+                semanticClientClasses.Contains(declaration.Symbol) ||
+                semanticClientInterfaces.Contains(declaration.Symbol))
             .ToArray();
-        var missingLegacyTypes = expectedLegacyGovernedTypeNames
-            .Except(actualLegacyGovernedTypeNames, StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
+        var declarationCounts = actualLegacyGovernedDeclarations
+            .GroupBy(declaration => declaration.DeclarationIdentity, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var legacyDeclarationDifferences = expectedLegacyGovernedTypeNames
+            .Concat(declarationCounts.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Select(identity => new
+            {
+                Identity = identity,
+                Expected = expectedLegacyGovernedTypeNames.Contains(identity) ? 1 : 0,
+                Actual = declarationCounts.GetValueOrDefault(identity),
+            })
+            .Where(entry => entry.Expected != entry.Actual)
+            .OrderBy(entry => entry.Identity, StringComparer.Ordinal)
+            .Select(entry => $"{entry.Identity} (expected {entry.Expected}, actual {entry.Actual})")
             .ToArray();
-        if (unexpectedLegacyTypes.Length > 0 || missingLegacyTypes.Length > 0)
+        if (legacyDeclarationDifferences.Length > 0)
         {
             violations.Add(
                 $"{LegacyClientMonolithFileName} client/config declarations differ from the managed migration allowlist; " +
-                $"unexpected: {ListOrNone(unexpectedLegacyTypes)}; missing: {ListOrNone(missingLegacyTypes)}.");
+                $"differences: {string.Join(", ", legacyDeclarationDifferences)}.");
         }
 
         foreach (var file in declarations
@@ -257,9 +402,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                      .GroupBy(declaration => declaration.RelativePath))
         {
             var capabilities = file
-                .Select(declaration => CapabilityClientName(declaration.TypeName))
-                .Where(capability => capability is not null)
-                .Cast<string>()
+                .SelectMany(CapabilityClientNames)
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray();
@@ -273,12 +416,49 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         return violations;
     }
 
-    private static string ListOrNone(IReadOnlyCollection<string> values) =>
-        values.Count == 0 ? "none" : string.Join(", ", values);
+    private static string DeclarationIdentity(BaseTypeDeclarationSyntax declaration) =>
+        string.Join(
+            ".",
+            declaration.Ancestors()
+                .OfType<BaseTypeDeclarationSyntax>()
+                .Reverse()
+                .Select(ancestor => ancestor.Identifier.ValueText)
+                .Append(declaration.Identifier.ValueText));
 
-    private static bool IsLegacyGovernedType(string typeName) =>
-        CapabilityClientName(typeName) is not null ||
-        typeName.EndsWith("Options", StringComparison.Ordinal);
+    private static bool DerivesFrom(INamedTypeSymbol symbol, INamedTypeSymbol? expectedBase)
+    {
+        if (expectedBase is null)
+        {
+            return false;
+        }
+
+        for (var baseType = symbol.BaseType; baseType is not null; baseType = baseType.BaseType)
+        {
+            if (SymbolEqualityComparer.Default.Equals(baseType, expectedBase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> CapabilityClientNames(TypeDeclaration declaration)
+    {
+        var declaredCapability = CapabilityClientName(declaration.TypeName);
+        if (declaredCapability is not null)
+        {
+            yield return declaredCapability;
+        }
+
+        foreach (var capability in declaration.Symbol.AllInterfaces
+                     .Select(@interface => CapabilityClientName(@interface.Name))
+                     .Where(capability => capability is not null)
+                     .Cast<string>())
+        {
+            yield return capability;
+        }
+    }
 
     private static string? CapabilityClientName(string typeName)
     {
@@ -307,5 +487,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
 
     private sealed record SourceDocument(string RelativePath, string Source);
 
-    private sealed record TypeDeclaration(string RelativePath, string TypeName);
+    private sealed record TypeDeclaration(
+        string RelativePath,
+        string TypeName,
+        string DeclarationIdentity,
+        INamedTypeSymbol Symbol);
 }
