@@ -7,6 +7,7 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { mesWorkOrderReleaseBlocker } from '@/composables/mes/workOrderRelease'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -27,9 +28,12 @@ import type { ProductionReportContext } from '@/composables/mes/useProductionRep
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -85,6 +89,8 @@ const {
   createRushWorkOrderPending,
   filters,
   refreshWorkOrders,
+  releaseWorkOrder,
+  releaseWorkOrderPending,
   workOrders,
   workOrdersError,
   workOrdersHasFailedResponse,
@@ -95,6 +101,10 @@ const {
   workOrderReadScope,
   workOrderReadScopeMessage,
   workOrderReadScopeReady,
+  readWorkOrderForRelease,
+  workOrderManageScopeMessage,
+  workOrderManageScopePending,
+  workOrderManageScopeReady,
 } = useMesWorkOrders()
 const orderUrgencies = useOrderUrgencies(
   computed(() => workOrders.value.map((order) => order.workOrderId)),
@@ -177,7 +187,123 @@ const skuOptions = computed(() => toResourceOptions(skus.value))
 // ── 急单表单的四个选择器 ────────────────────────────────────────
 // 物料 ▸ 生产版本 从属，工作中心 ▸ 工序任务 从属：上游变了清空下游。
 const { productionVersionOptions, productionVersionsPending } = useMesMaterialVersionCatalog()
-const { operationTasks, operationTasksPending } = useMesOperationTasks()
+const { operationTasks, operationTasksPending, refreshOperationTasks } = useMesOperationTasks()
+
+const auth = useAuthStore()
+const canManageWorkOrders = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.mesWorkOrdersManage),
+)
+
+type ReleaseIntent = {
+  idempotencyKey: string
+  workOrderId: string
+  workOrderLabel: string
+}
+
+const releaseIntent = shallowRef<ReleaseIntent | null>(null)
+const releaseWarningsConfirmed = shallowRef(false)
+const releasePreflightPending = shallowRef(false)
+const releaseDialogOpen = computed({
+  get: () => releaseIntent.value !== null,
+  set: (open: boolean) => {
+    if (!open && !releaseWorkOrderPending.value) clearReleaseIntent()
+  },
+})
+const releaseIntentOrder = computed(() => {
+  const intent = releaseIntent.value
+  return intent
+    ? (workOrders.value.find((order) => order.workOrderId === intent.workOrderId) ?? null)
+    : null
+})
+const releaseValidationMessage = computed(() => {
+  if (!releaseIntent.value) return ''
+  if (!releaseIntentOrder.value) return '工单已不在当前主体授权工单范围，请刷新后重试。'
+  return releaseBlocker(releaseIntentOrder.value) ?? ''
+})
+const canSubmitRelease = computed(
+  () =>
+    releaseIntent.value !== null &&
+    releaseWarningsConfirmed.value &&
+    !releaseValidationMessage.value &&
+    !releaseWorkOrderPending.value,
+)
+
+function releaseBlocker(order: Parameters<typeof mesWorkOrderReleaseBlocker>[0]) {
+  if (!canManageWorkOrders.value) return '没有工单下达权限'
+  if (workOrderManageScopePending.value) return '正在确认主体授权工单范围'
+  if (!workOrderManageScopeReady.value) {
+    return workOrderManageScopeMessage.value || '主体授权工单范围未就绪'
+  }
+  return mesWorkOrderReleaseBlocker(order)
+}
+
+async function openReleaseDialog(order: Row) {
+  if (releaseBlocker(order) || !order.workOrderId) return
+  releasePreflightPending.value = true
+  try {
+    const latest = await readWorkOrderForRelease(order.workOrderId)
+    const blocker = releaseBlocker(latest)
+    if (blocker) throw new Error(blocker)
+    releaseIntent.value = {
+      idempotencyKey: newMesIdempotencyKey(`release-work-order-${order.workOrderId}`),
+      workOrderId: order.workOrderId,
+      workOrderLabel: order.workOrderNo || order.workOrderId,
+    }
+    releaseWarningsConfirmed.value = false
+  } catch (error) {
+    notifyOperationFailure(
+      '工单下达前置检查失败',
+      error,
+      '未能在当前管理范围内确认工单下达条件，请检查授权范围和就绪状态后重试。',
+    )
+  } finally {
+    releasePreflightPending.value = false
+  }
+}
+
+function clearReleaseIntent() {
+  releaseIntent.value = null
+  releaseWarningsConfirmed.value = false
+}
+
+async function submitReleaseWorkOrder() {
+  const intent = releaseIntent.value
+  const order = releaseIntentOrder.value
+  if (!intent || !order || !canSubmitRelease.value) return
+
+  try {
+    const response = await releaseWorkOrder(intent.workOrderId, {
+      organizationId: filters.organizationId.trim(),
+      environmentId: filters.environmentId.trim(),
+      confirmWarnings: true,
+      idempotencyKey: intent.idempotencyKey,
+    })
+    if (response?.data?.accepted !== true) {
+      throw new Error('工单下达结果未确认，请刷新列表核实后再重试。')
+    }
+
+    // 服务端已确认受理后不再保留可重试入口，避免刷新失败导致重复提交；两个权威读面都显式刷新。
+    clearReleaseIntent()
+    const refreshResults = await Promise.allSettled([refreshWorkOrders(), refreshOperationTasks()])
+    notifySuccess(`工单 ${intent.workOrderLabel} 已下达。`)
+    const refreshFailure = refreshResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    )
+    if (refreshFailure) {
+      notifyOperationFailure(
+        '工单已下达，但状态刷新失败',
+        refreshFailure.reason,
+        '工单已下达，但最新状态刷新失败，请手动刷新列表。',
+      )
+    }
+  } catch (error) {
+    notifyOperationFailure(
+      '工单下达失败',
+      error,
+      '工单下达失败，请根据服务端原因检查就绪条件后重试。',
+    )
+  }
+}
 
 const rushVersionOptions = computed(() => productionVersionOptions(rushForm.skuId))
 const rushOperationTaskOptions = computed(() => {
@@ -431,11 +557,14 @@ function formatStatus(value?: string | null) {
     blocked: '阻塞',
     closed: '已关闭',
     completed: '已完成',
+    created: '新建',
+    hold: '暂停',
     inprogress: '执行中',
     queued: '排队中',
     ready: '可开工',
     released: '已下达',
     running: '执行中',
+    started: '已开工',
   }
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
@@ -652,6 +781,17 @@ function isNonEmpty(value: string) {
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
           </NvDropdownMenuItem>
+          <NvDropdownMenuItem
+            :aria-label="`下达工单 ${row.workOrderNo || row.workOrderId || ''}`"
+            :disabled="releasePreflightPending || Boolean(releaseBlocker(row))"
+            :title="
+              releasePreflightPending ? '正在确认下达条件' : (releaseBlocker(row) ?? '下达当前工单')
+            "
+            @click="openReleaseDialog(row)"
+          >
+            <FactoryIcon aria-hidden="true" />
+            {{ releaseBlocker(row) ? `不能下达：${releaseBlocker(row)}` : '下达工单' }}
+          </NvDropdownMenuItem>
           <NvDropdownMenuSeparator />
           <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderDetail(row)">
             <ExternalLinkIcon aria-hidden="true" />
@@ -660,6 +800,67 @@ function isNonEmpty(value: string) {
         </NvRowActions>
       </template>
     </NvDataTable>
+
+    <NvDialog v-model:open="releaseDialogOpen">
+      <NvDialogContent class="sm:max-w-lg">
+        <NvDialogHeader>
+          <NvDialogTitle>确认下达工单</NvDialogTitle>
+          <NvDialogDescription>
+            下达后，服务端会再次校验物料、设备、质量与工序就绪条件；未通过时不会视为成功。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitReleaseWorkOrder">
+          <dl v-if="releaseIntentOrder" class="grid gap-2 rounded-md border p-3 text-sm">
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">工单</dt>
+              <dd class="font-medium">{{ releaseIntent?.workOrderLabel }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">当前状态</dt>
+              <dd>{{ formatStatus(releaseIntentOrder.status) }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">生产版本</dt>
+              <dd>{{ releaseIntentOrder.productionVersionId }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">工序任务</dt>
+              <dd>{{ releaseIntentOrder.operationTasks?.length ?? 0 }} 道</dd>
+            </div>
+          </dl>
+          <p
+            v-if="releaseValidationMessage"
+            class="text-sm text-destructive"
+            role="alert"
+            data-testid="release-validation-message"
+          >
+            {{ releaseValidationMessage }}
+          </p>
+          <label class="flex items-start gap-2 text-sm">
+            <NvCheckbox
+              v-model="releaseWarningsConfirmed"
+              :disabled="releaseWorkOrderPending"
+              aria-label="确认已核对工单下达警告"
+            />
+            <span>我已核对当前工单、生产版本与工序信息，并确认继续执行服务端就绪检查。</span>
+          </label>
+          <NvDialogFooter>
+            <NvButton
+              type="button"
+              variant="outline"
+              :disabled="releaseWorkOrderPending"
+              @click="clearReleaseIntent"
+            >
+              取消
+            </NvButton>
+            <NvButton type="submit" :disabled="!canSubmitRelease">
+              <Spinner v-if="releaseWorkOrderPending" aria-hidden="true" />
+              确认下达
+            </NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
 
     <NvDialog v-model:open="rushSheetOpen">
       <NvDialogContent class="sm:max-w-2xl">
