@@ -1463,7 +1463,6 @@ public sealed class BusinessGatewayOpenApiTests
         string schemaNameSuffix,
         params string[] propertyNames)
     {
-        AssertRequiredSchemaProperties(document, schemaNameSuffix, propertyNames);
         var schemas = document.RootElement
             .GetProperty("components")
             .GetProperty("schemas")
@@ -1472,7 +1471,8 @@ public sealed class BusinessGatewayOpenApiTests
                 schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal)
                 && schema.Value.TryGetProperty("properties", out _))
             .ToArray();
-        var properties = Assert.Single(schemas).Value.GetProperty("properties");
+        var schema = Assert.Single(schemas).Value;
+        var properties = schema.GetProperty("properties");
         foreach (var propertyName in propertyNames)
         {
             var property = properties.GetProperty(propertyName);
@@ -1480,6 +1480,11 @@ public sealed class BusinessGatewayOpenApiTests
             Assert.Equal("decimal", property.GetProperty("format").GetString());
             Assert.True(property.GetProperty("nullable").GetBoolean());
             Assert.Contains("小时", property.GetProperty("description").GetString(), StringComparison.Ordinal);
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(value => value.GetString()));
+            }
         }
     }
 

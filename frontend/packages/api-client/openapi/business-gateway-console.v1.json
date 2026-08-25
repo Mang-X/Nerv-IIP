@@ -44299,10 +44299,6 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "actualLaborHours",
-          "actualMachineHours"
-        ],
         "properties": {
           "operationTaskId": {
             "type": "string"
@@ -45815,10 +45811,6 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportRow": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "operationActualLaborHours",
-          "operationActualMachineHours"
-        ],
         "properties": {
           "productionReportId": {
             "type": "string"
@@ -45943,10 +45935,6 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "operationActualLaborHours",
-          "operationActualMachineHours"
-        ],
         "properties": {
           "productionReportId": {
             "type": "string"

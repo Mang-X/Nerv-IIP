@@ -304,15 +304,18 @@ public sealed class MesActualTimeReadContractTests
     private static void AssertNullableDecimalProperties(JsonElement schema, params string[] propertyNames)
     {
         var properties = schema.GetProperty("properties");
-        var required = schema.GetProperty("required");
         foreach (var propertyName in propertyNames)
         {
-            Assert.Contains(required.EnumerateArray(), value => value.GetString() == propertyName);
             var property = properties.GetProperty(propertyName);
             Assert.Equal("number", property.GetProperty("type").GetString());
             Assert.Equal("decimal", property.GetProperty("format").GetString());
             Assert.True(property.GetProperty("nullable").GetBoolean());
             Assert.Contains("小时", property.GetProperty("description").GetString(), StringComparison.Ordinal);
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(value => value.GetString()));
+            }
         }
     }
 

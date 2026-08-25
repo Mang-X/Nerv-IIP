@@ -16,7 +16,6 @@ using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
-using Nerv.IIP.Business.Mes.Web.Application.OpenApi;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -39,7 +38,6 @@ builder.Services
         {
             s.Title = "Nerv IIP Business MES";
             s.Version = "v1";
-            s.DocumentProcessors.Add(new MesActualHoursOpenApiDocumentProcessor());
         };
     });
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
