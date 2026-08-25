@@ -28,6 +28,9 @@ public sealed class OperationReceiptOpenApiDocumentProcessor : IDocumentProcesso
         "completeBusinessConsoleWmsInboundOrder",
         "completeBusinessConsoleWmsOutboundOrder",
         "completeBusinessConsoleWmsCountExecution",
+        "registerBusinessConsoleToolingAsset",
+        "changeBusinessConsoleToolingStatus",
+        "recordBusinessConsoleToolingUsage",
     ];
 
     public void Process(DocumentProcessorContext context)

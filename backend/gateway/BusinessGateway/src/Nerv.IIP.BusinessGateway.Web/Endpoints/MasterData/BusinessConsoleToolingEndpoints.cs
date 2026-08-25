@@ -40,6 +40,8 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleRegisterToolingAssetRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleRegisterToolingAssetRequest request) => request.EnvironmentId;
@@ -48,7 +50,11 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
         BusinessConsoleRegisterToolingAssetRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RegisterToolingAssetAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
+        masterData.RegisterToolingAssetAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuditContext(request, requireIdempotencyKey: true),
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -62,6 +68,8 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleChangeToolingStatusRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleChangeToolingStatusRequest request) => request.EnvironmentId;
@@ -70,7 +78,11 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
         BusinessConsoleChangeToolingStatusRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.ChangeToolingStatusAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
+        masterData.ChangeToolingStatusAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuditContext(request, requireIdempotencyKey: true),
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -84,6 +96,8 @@ public sealed class RecordBusinessConsoleToolingUsageEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleRecordToolingUsageRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleRecordToolingUsageRequest request) => request.EnvironmentId;
@@ -92,7 +106,11 @@ public sealed class RecordBusinessConsoleToolingUsageEndpoint(
         BusinessConsoleRecordToolingUsageRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RecordToolingUsageAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
+        masterData.RecordToolingUsageAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuditContext(request, requireIdempotencyKey: true),
+            cancellationToken);
 }
 
 public sealed class BusinessConsoleListToolingAssetsRequestValidator : Validator<BusinessConsoleListToolingAssetsRequest>

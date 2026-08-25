@@ -22224,6 +22224,17 @@
           "Api"
         ],
         "operationId": "registerBusinessConsoleToolingAsset",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleRegisterToolingAssetRequest",
           "description": "",
@@ -22279,6 +22290,17 @@
           "Api"
         ],
         "operationId": "changeBusinessConsoleToolingStatus",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleChangeToolingStatusRequest",
           "description": "",
@@ -22334,6 +22356,17 @@
           "Api"
         ],
         "operationId": "recordBusinessConsoleToolingUsage",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleRecordToolingUsageRequest",
           "description": "",
@@ -50863,6 +50896,10 @@
             "type": "string",
             "minLength": 1,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -50897,6 +50934,10 @@
             "format": "int64",
             "minimum": 0.0,
             "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

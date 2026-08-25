@@ -1597,6 +1597,9 @@ public sealed class BusinessGatewayOpenApiTests
             "completeBusinessConsoleWmsInboundOrder",
             "completeBusinessConsoleWmsOutboundOrder",
             "completeBusinessConsoleWmsCountExecution",
+            "registerBusinessConsoleToolingAsset",
+            "changeBusinessConsoleToolingStatus",
+            "recordBusinessConsoleToolingUsage",
         };
 
         var operations = paths.EnumerateObject()

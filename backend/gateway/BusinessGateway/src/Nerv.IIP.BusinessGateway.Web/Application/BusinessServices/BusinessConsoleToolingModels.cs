@@ -53,10 +53,12 @@ public sealed record BusinessConsoleChangeToolingStatusRequest(
     string EnvironmentId,
     string Code,
     BusinessConsoleToolingAssetStatus Status,
-    string Reason);
+    string Reason,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleRecordToolingUsageRequest(
     string OrganizationId,
     string EnvironmentId,
     string Code,
-    long Count);
+    long Count,
+    string? IdempotencyKey = null);

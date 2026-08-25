@@ -110,21 +110,26 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
             : principalId;
     }
 
-    protected BusinessServiceAuditContext RequireAuditContext(object? request)
+    protected BusinessServiceAuditContext RequireAuditContext(object? request, bool requireIdempotencyKey = false)
     {
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        correlationId = string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.CreateVersion7().ToString("N")
-            : correlationId.Trim();
+        var correlationId = ResolveCorrelationId();
         var causationId = HttpContext.Request.Headers["X-Causation-Id"].FirstOrDefault();
         causationId = string.IsNullOrWhiteSpace(causationId)
             ? correlationId
             : causationId.Trim();
+        var idempotencyKey = BusinessGatewayIdempotencyKey.ResolveForAudit(HttpContext, request);
+        if (requireIdempotencyKey && idempotencyKey is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadRequest,
+                "idempotency-key-required");
+        }
+
         return new BusinessServiceAuditContext(
             RequireAuthorizedPrincipalActorReference(),
             correlationId,
             causationId,
-            BusinessGatewayIdempotencyKey.ResolveForAudit(HttpContext, request));
+            idempotencyKey);
     }
 
     protected string ResolveCorrelationId()

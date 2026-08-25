@@ -5625,6 +5625,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     code: string;
     status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus;
     reason: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest = {
@@ -5632,6 +5633,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     environmentId: string;
     code: string;
     count?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -17647,6 +17649,12 @@ export type ListBusinessConsoleToolingAssetsResponse = ListBusinessConsoleToolin
 
 export type RegisterBusinessConsoleToolingAssetData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/master-data/tooling-assets';
@@ -17680,6 +17688,12 @@ export type RegisterBusinessConsoleToolingAssetResponse = RegisterBusinessConsol
 
 export type ChangeBusinessConsoleToolingStatusData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/master-data/tooling-assets/status';
@@ -17713,6 +17727,12 @@ export type ChangeBusinessConsoleToolingStatusResponse = ChangeBusinessConsoleTo
 
 export type RecordBusinessConsoleToolingUsageData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/master-data/tooling-assets/usage';
