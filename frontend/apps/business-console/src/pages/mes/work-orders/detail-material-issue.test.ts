@@ -52,6 +52,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
 const state = vi.hoisted(() => ({
   createMaterialIssueRequest: vi.fn(),
   confirmLineSideReceipt: vi.fn(),
+  returnLineSideMaterial: vi.fn(),
   recordEngineeringChangeDecision: vi.fn(),
   materialIssueRequests: [] as Record<string, unknown>[],
   baseUomBySku: new Map<string, string>(),

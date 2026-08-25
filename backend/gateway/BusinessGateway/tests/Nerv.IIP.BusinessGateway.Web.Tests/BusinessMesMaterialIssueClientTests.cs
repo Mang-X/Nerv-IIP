@@ -77,6 +77,20 @@ public sealed class BusinessMesMaterialIssueClientTests
         Assert.Equal("MIR-000123", row.OriginalMaterialIssueRequestNo);
     }
 
+    [Fact]
+    public async Task Return_line_side_material_returns_an_accepted_receipt_carrying_the_request_number()
+    {
+        var client = ClientReturning(
+            """{"data":{"status":"Accepted","referenceId":"MIR-000123","acceptedAtUtc":"2026-07-31T08:10:00Z"}}""");
+        var request = new BusinessConsoleMesReturnLineSideMaterialRequest(
+            "MIR-000123", "org", "env", null, 2m);
+
+        var response = await client.ReturnLineSideMaterialAsync("token", "MIR-000123", request, CancellationToken.None);
+
+        Assert.True(response.Accepted);
+        Assert.Equal("MIR-000123", response.DownstreamDocumentId);
+    }
+
     private static HttpBusinessMesClient ClientReturning(string json) =>
         new(new HttpClient(new StubHandler(json)) { BaseAddress = new Uri("http://mes") });
 

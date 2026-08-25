@@ -49,6 +49,7 @@ const {
   refresh,
   createIssue,
   confirmLineSideReceipt,
+  returnLineSideMaterial,
 } = useMesMaterialIssue()
 
 const {
@@ -94,6 +95,10 @@ function requestSubtitle(req: IssueRequest) {
   if (req.requestedQuantity !== undefined) parts.push(`申请 ${req.requestedQuantity}`)
   if (req.receivedQuantity !== undefined) parts.push(`已收 ${req.receivedQuantity}`)
   return parts.join(' · ')
+}
+
+function returnableQuantity(req: IssueRequest) {
+  return Math.max(0, (req.receivedQuantity ?? 0) - (req.consumedQuantity ?? 0))
 }
 
 // --- 结果反馈 ---
@@ -193,6 +198,8 @@ async function retryCreate() {
 // --- 线边接收 ---
 const receiving = ref<IssueRequest | null>(null)
 const receivedQuantity = ref<number | null>(null)
+const returning = ref<IssueRequest | null>(null)
+const returnedQuantity = ref<number | null>(null)
 
 const receiveValid = computed(() => {
   // 接收数量可选；若填写则须 >= 0
@@ -222,6 +229,26 @@ function openReceive(req: IssueRequest) {
   operationKey.value = ''
   receiving.value = req
   receivedQuantity.value = req.requestedQuantity ?? null
+}
+
+function canReturn(req: IssueRequest) {
+  return (
+    (req.materialLotId ?? '').trim().length > 0 &&
+    returnableQuantity(req) > 0 &&
+    ['received', 'partiallyreceived'].includes((req.status ?? '').toLowerCase())
+  )
+}
+
+function openReturn(req: IssueRequest) {
+  if (!canReturn(req)) return
+  result.value = null
+  returning.value = req
+  returnedQuantity.value = returnableQuantity(req)
+}
+
+function closeReturn() {
+  returning.value = null
+  returnedQuantity.value = null
 }
 function closeReceive() {
   receiving.value = null
@@ -282,6 +309,41 @@ async function submitReceive() {
   }
 }
 
+async function submitReturn() {
+  const req = returning.value
+  const requestId = req?.requestId
+  const quantity = returnedQuantity.value
+  if (!requestId || quantity === null || !(quantity > 0) || quantity > returnableQuantity(req!)) return
+  submitting.value = true
+  returning.value = null
+  const doSubmit = () =>
+    returnLineSideMaterial(
+      requestId,
+      { returnedQuantity: quantity },
+      { workOrderId: req?.workOrderId },
+    )
+  try {
+    await doSubmit()
+    result.value = { status: 'success', title: '线边退料已提交', retry: () => {} }
+  } catch (e) {
+    result.value = {
+      status: 'error',
+      title: '线边退料失败',
+      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      retry: () => retryReturn(req!, quantity),
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function retryReturn(req: IssueRequest, quantity: number) {
+  result.value = null
+  returning.value = req
+  returnedQuantity.value = quantity
+  await submitReturn()
+}
+
 async function retryReceive(req: IssueRequest, quantity: number | null) {
   result.value = null
   receiving.value = req
@@ -302,7 +364,7 @@ function goBack() {
 
 // ScanBar 仅在列表态活跃；新建/接收/结果展开时不抢焦点
 const scanActive = computed(
-  () => result.value === null && !creating.value && receiving.value === null,
+  () => result.value === null && !creating.value && receiving.value === null && returning.value === null,
 )
 
 function onScan(value: string) {
@@ -429,10 +491,45 @@ function onScanWorkOrder(value: string) {
             >
               线边接收
             </button>
+            <button
+              v-if="canReturn(req)"
+              type="button"
+              :data-testid="`return-${req.requestId}`"
+              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary"
+              @click="openReturn(req)"
+            >
+              线边退料
+            </button>
           </template>
         </NvListRow>
       </div>
     </div>
+
+    <NvBottomSheet :open="returning !== null && result === null" title="线边退料" @update:open="(open) => { if (!open) closeReturn() }">
+      <div class="space-y-4 pb-2">
+        <p class="text-sm text-muted-foreground">退料数量不能超过当前线边可退数量。</p>
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">退料数量</span>
+          <input
+            v-model="returnedQuantity"
+            data-testid="returned-quantity"
+            type="number"
+            min="0"
+            step="any"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
+          />
+        </label>
+        <button
+          type="button"
+          data-testid="submit-return"
+          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-50"
+          :disabled="returnedQuantity === null || returnedQuantity <= 0 || submitting"
+          @click="submitReturn"
+        >
+          提交退料
+        </button>
+      </div>
+    </NvBottomSheet>
 
     <!-- 新建领料表单 -->
     <NvBottomSheet :open="createSheetOpen" title="新建领料" @update:open="createSheetOpen = $event">

@@ -5,6 +5,7 @@ import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 import {
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  returnBusinessConsoleMesLineSideMaterialMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
@@ -140,6 +141,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   ),
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: mockMutationOptions(
     'confirmBusinessConsoleMesLineSideMaterialReceipt',
+  ),
+  returnBusinessConsoleMesLineSideMaterialMutationOptions: mockMutationOptions(
+    'returnBusinessConsoleMesLineSideMaterial',
   ),
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions(
     'createBusinessConsoleMesFinishedGoodsReceiptRequest',

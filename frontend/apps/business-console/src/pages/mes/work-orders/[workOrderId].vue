@@ -94,6 +94,8 @@ const {
   closeWorkOrderPending,
   confirmLineSideReceipt,
   confirmLineSideReceiptPending,
+  returnLineSideMaterial,
+  returnLineSideMaterialPending,
   createMaterialIssueRequest,
   createMaterialIssueRequestPending,
   detail,
@@ -294,6 +296,9 @@ const receiveForm = reactive({
   materialLotId: '',
   idempotencyKey: '',
 })
+const returnOpen = ref(false)
+const returnError = ref('')
+const returnForm = reactive({ requestId: '', quantity: '' })
 
 function newMaterialIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -363,6 +368,19 @@ function canReceive(row: MaterialIssueRow) {
   )
 }
 
+function returnableQuantityOfRow(row: MaterialIssueRow) {
+  return Math.max(0, (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0))
+}
+
+function canReturn(row: MaterialIssueRow) {
+  return (
+    canManageMaterials.value &&
+    Boolean(row.materialLotId?.trim()) &&
+    returnableQuantityOfRow(row) > 0 &&
+    ['received', 'partiallyreceived'].includes((row.status ?? '').toLowerCase())
+  )
+}
+
 function openReceiveDialog(row: MaterialIssueRow) {
   if (!canReceive(row)) return
   receiveError.value = ''
@@ -371,6 +389,14 @@ function openReceiveDialog(row: MaterialIssueRow) {
   receiveForm.materialLotId = row.materialLotId ?? ''
   receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
   receiveOpen.value = true
+}
+
+function openReturnDialog(row: MaterialIssueRow) {
+  if (!canReturn(row)) return
+  returnError.value = ''
+  returnForm.requestId = row.requestId ?? ''
+  returnForm.quantity = String(returnableQuantityOfRow(row))
+  returnOpen.value = true
 }
 
 async function submitIssue() {
@@ -412,6 +438,24 @@ async function submitReceipt() {
   } catch (error) {
     receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
     notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+  }
+}
+
+async function submitReturn() {
+  if (!returnForm.requestId || returnLineSideMaterialPending.value) return
+  const returnedQuantity = Number(returnForm.quantity)
+  if (!Number.isFinite(returnedQuantity) || returnedQuantity <= 0) return
+  returnError.value = ''
+  try {
+    await returnLineSideMaterial(returnForm.requestId, {
+      returnedQuantity,
+    })
+    returnOpen.value = false
+    notifySuccess('已提交线边退料，线边可用量将随库存过账回读更新。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    returnError.value = inlineErrorMessage(error, '线边退料失败，请稍后重试。')
+    notifyOperationFailure('线边退料失败', error, '线边退料失败，请稍后重试。')
   }
 }
 
@@ -1120,7 +1164,17 @@ function formatError(error: unknown) {
           >
             线边收料
           </NvButton>
-          <span v-else class="text-xs text-muted-foreground">无需收料</span>
+          <NvButton
+            v-if="canReturn(row)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`return-material-${row.requestId}`"
+            @click="openReturnDialog(row)"
+          >
+            线边退料
+          </NvButton>
+          <span v-if="!canReceive(row) && !canReturn(row)" class="text-xs text-muted-foreground">无需操作</span>
         </template>
       </NvDataTable>
     </div>
@@ -1246,6 +1300,46 @@ function formatError(error: unknown) {
           >
             <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
             确认收料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <!-- 线边退料 -->
+    <NvAlertDialog v-model:open="returnOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>线边退料 · {{ readFaceText(returnForm.requestId) }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            退料会把当前线边物料退回仓库；数量不得超过当前可退余额。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <p
+            v-if="returnError"
+            class="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
+            data-testid="line-side-return-error"
+            role="alert"
+          >
+            {{ returnError }}
+          </p>
+          <NvField>
+            <NvFieldLabel for="return-quantity">退料数量</NvFieldLabel>
+            <NvInput id="return-quantity" v-model="returnForm.quantity" inputmode="decimal" />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton type="button" variant="outline" :disabled="returnLineSideMaterialPending" @click="returnOpen = false">
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="returnLineSideMaterialPending"
+            data-testid="submit-line-side-return"
+            @click="submitReturn"
+          >
+            <Spinner v-if="returnLineSideMaterialPending" aria-hidden="true" />
+            提交退料
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
