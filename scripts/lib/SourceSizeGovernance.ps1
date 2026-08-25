@@ -11,6 +11,71 @@
 
 Set-StrictMode -Version Latest
 
+function Get-NervGeneratedSourceReason {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path
+    )
+
+    $normalizedPath = $Path.Replace('\', '/')
+    $segments = $normalizedPath.Split('/', [StringSplitOptions]::RemoveEmptyEntries)
+    $fileName = if ($segments.Count -eq 0) { $normalizedPath } else { $segments[-1] }
+    $extension = [IO.Path]::GetExtension($fileName)
+
+    foreach ($segment in $segments) {
+        if ([string]::Equals($segment, 'vendor', [StringComparison]::OrdinalIgnoreCase)) { return 'vendor-directory' }
+        foreach ($excludedSegment in @('bin', 'obj', 'node_modules', 'dist', 'coverage', 'artifacts')) {
+            if ([string]::Equals($segment, $excludedSegment, [StringComparison]::OrdinalIgnoreCase)) {
+                return 'build-or-dependency-directory'
+            }
+        }
+    }
+
+    if ($normalizedPath.StartsWith('frontend/packages/api-client/src/generated/', [StringComparison]::OrdinalIgnoreCase)) {
+        return 'generated-api-client'
+    }
+    if ([string]::Equals($extension, '.cs', [StringComparison]::OrdinalIgnoreCase)) {
+        foreach ($segment in $segments) {
+            if ([string]::Equals($segment, 'Migrations', [StringComparison]::OrdinalIgnoreCase)) {
+                return 'entity-framework-migration'
+            }
+        }
+        if ($fileName.EndsWith('.Designer.cs', [StringComparison]::OrdinalIgnoreCase)) { return 'designer-csharp' }
+        if ($fileName.EndsWith('.g.cs', [StringComparison]::OrdinalIgnoreCase)) { return 'generated-csharp' }
+    }
+    if ($fileName.Contains('.generated.', [StringComparison]::OrdinalIgnoreCase)) { return 'generated-file-suffix' }
+
+    return $null
+}
+
+function Test-NervGovernedSourcePath {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string[]] $GovernedExtension
+    )
+
+    $extension = [IO.Path]::GetExtension($Path)
+    $extensionMatch = $false
+    foreach ($candidate in $GovernedExtension) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            throw 'Governed extensions must not contain empty values.'
+        }
+        $normalizedCandidate = if ($candidate.StartsWith('.', [StringComparison]::Ordinal)) { $candidate } else { ".$candidate" }
+        if ([string]::Equals($extension, $normalizedCandidate, [StringComparison]::OrdinalIgnoreCase)) {
+            $extensionMatch = $true
+            break
+        }
+    }
+
+    return $extensionMatch -and $null -eq (Get-NervGeneratedSourceReason -Path $Path)
+}
+
 function Get-NervSourcePhysicalLineCount {
     param(
         [Parameter(Mandatory)]
