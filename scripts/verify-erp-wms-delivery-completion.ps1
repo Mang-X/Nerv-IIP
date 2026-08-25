@@ -725,7 +725,9 @@ try {
         [void]$completedPickingReadbacks.Add($completedPickingTask)
         [void]$requestedPickingQuantities.Add([decimal]$outboundLine.requestedQuantity)
     }
-    $pickingLifecycleCompleted = Test-NervAcceptanceWmsPickingReadbacks -Readbacks $completedPickingReadbacks.ToArray() -RequestedQuantities $requestedPickingQuantities.ToArray()
+    New-Variable -Name pickingLifecycleCompleted -Option Constant -Value (
+        Test-NervAcceptanceWmsPickingReadbacks -Readbacks $completedPickingReadbacks.ToArray() -RequestedQuantities $requestedPickingQuantities.ToArray()
+    )
     if (-not $pickingLifecycleCompleted) { throw 'The public WMS picking lifecycle did not complete for every outbound line.' }
 
     $outboundAfterPicking = Wait-WmsOutboundOrder `
@@ -750,17 +752,21 @@ try {
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
     $firstCompletion = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
     $completionReplay = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
-    $completionHttpReplayConverged = Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $firstCompletion -ReplayCompletion $completionReplay
+    New-Variable -Name completionHttpReplayConverged -Option Constant -Value (
+        Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $firstCompletion -ReplayCompletion $completionReplay
+    )
     if (-not $completionHttpReplayConverged) {
         throw 'Public WMS completion replay did not return the same non-empty inventory movement requestId.'
     }
-    $completedOutboundOrder = Wait-WmsOutboundOrder `
-        -WmsUrl $wmsUrl `
-        -Headers $headers `
-        -DeliveryOrderNo $deliveryOrderNo `
-        -ActorPrincipalId $wmsActorPrincipalId `
-        -SiteCode $wmsSiteCode `
-        -RequireCompleted
+    New-Variable -Name completedOutboundOrder -Option Constant -Value (
+        Wait-WmsOutboundOrder `
+            -WmsUrl $wmsUrl `
+            -Headers $headers `
+            -DeliveryOrderNo $deliveryOrderNo `
+            -ActorPrincipalId $wmsActorPrincipalId `
+            -SiteCode $wmsSiteCode `
+            -RequireCompleted
+    )
 
     $deliveryBeforeReplay = Wait-ErpDeliveryOrder -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
     $receivableBeforeReplay = Wait-Receivable -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
@@ -816,7 +822,9 @@ try {
     }
     $repeatedEventConverged = $true
 
-    $businessEvidence = [ordered]@{
+    # These four authority facts are intentionally first-bound as constants. Do not restore defensive null initialization:
+    # the static contract proves their source, while Constant closes computed/provider-based runtime rebinding residuals.
+    New-Variable -Name businessEvidence -Option Constant -Value ([ordered]@{
         verifiedAtUtc = [DateTimeOffset]::UtcNow
         scenarioStatus = 'passed'
         deliveryOrderNo = $deliveryOrderNo
@@ -854,7 +862,7 @@ try {
         accountReceivable = [ordered]@{ receivableNo = $receivableAfterReplay.receivableNo; sourceDocumentNo = $receivableAfterReplay.sourceDocumentNo }
         repeatedEvent = 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter'
         repeatedEventConverged = $repeatedEventConverged
-    }
+    })
 }
 catch {
     $scenarioError = $_

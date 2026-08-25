@@ -12,9 +12,23 @@
 $script:nervScriptVariableScopeQualifiers = [Collections.Generic.HashSet[string]]::new(
     [string[]]@('local', 'script', 'global', 'private', 'variable'),
     [StringComparer]::OrdinalIgnoreCase)
-$script:nervScriptVariableSetItemCommands = [Collections.Generic.HashSet[string]]::new(
-    [string[]]@('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si'),
-    [StringComparer]::OrdinalIgnoreCase)
+# Binding rules and their shipped floors implement the #1509 ruling recorded in
+# docs/architecture/script-automation-governance.md; update that decision table with this library.
+$script:nervScriptVariableItemCanonicalNames = @('Set-Item', 'New-Item')
+$script:nervScriptVariableItemCommands = [Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($itemCanonicalName in $script:nervScriptVariableItemCanonicalNames) {
+    $script:nervScriptVariableItemCommands[$itemCanonicalName] = $itemCanonicalName
+    foreach ($alias in @(Get-Alias -Definition $itemCanonicalName -ErrorAction SilentlyContinue)) {
+        $script:nervScriptVariableItemCommands[[string]$alias.Name] = $itemCanonicalName
+    }
+}
+foreach ($floorEntry in @(
+        @{ Alias = 'si'; Canonical = 'Set-Item' },
+        @{ Alias = 'ni'; Canonical = 'New-Item' })) {
+    if (-not $script:nervScriptVariableItemCommands.ContainsKey($floorEntry.Alias)) {
+        $script:nervScriptVariableItemCommands[$floorEntry.Alias] = $floorEntry.Canonical
+    }
+}
 $script:nervScriptVariableBinderCanonicalNames = @('Set-Variable', 'New-Variable')
 $script:nervScriptVariableBinderCommands = [Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($seamBinderCanonicalName in $script:nervScriptVariableBinderCanonicalNames) {
@@ -41,6 +55,16 @@ function Resolve-NervScriptVariableBinderCanonicalName {
     $bareName = if ($separator -lt 0) { $WrittenName } else { $WrittenName.Substring($separator + 1) }
     if (-not $script:nervScriptVariableBinderCommands.ContainsKey($bareName)) { return $null }
     return [string]$script:nervScriptVariableBinderCommands[$bareName]
+}
+
+function Resolve-NervScriptVariableItemCanonicalName {
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $WrittenName)
+
+    if ([string]::IsNullOrEmpty($WrittenName)) { return $null }
+    $separator = $WrittenName.LastIndexOf('\', [StringComparison]::Ordinal)
+    $bareName = if ($separator -lt 0) { $WrittenName } else { $WrittenName.Substring($separator + 1) }
+    if (-not $script:nervScriptVariableItemCommands.ContainsKey($bareName)) { return $null }
+    return [string]$script:nervScriptVariableItemCommands[$bareName]
 }
 
 function Get-NervScriptVariableBindingNameFromText {
@@ -193,17 +217,18 @@ function Test-NervScriptVariableProviderPathMayMatch {
     return Test-NervScriptVariableNameTextMayMatch -CandidateName $variablePath -Name $Name
 }
 
-function Test-NervScriptVariableSetItemCommandWritesName {
+function Test-NervScriptVariableItemCommandWritesName {
     param(
         [Parameter(Mandatory)] [Management.Automation.Language.CommandAst] $Command,
         [Parameter(Mandatory)] [string] $Name)
 
-    $commandName = [string]$Command.GetCommandName()
-    if (-not $script:nervScriptVariableSetItemCommands.Contains($commandName)) { return $false }
-    $parameters = Get-NervScriptVariableBinderParameters -CanonicalName 'Set-Item'
+    $canonicalName = Resolve-NervScriptVariableItemCanonicalName -WrittenName ([string]$Command.GetCommandName())
+    if ([string]::IsNullOrEmpty($canonicalName)) { return $false }
+    $parameters = Get-NervScriptVariableBinderParameters -CanonicalName $canonicalName
     $elements = @($Command.CommandElements)
     $positionals = [Collections.Generic.List[Management.Automation.Language.Ast]]::new()
-    $namedTargets = [Collections.Generic.List[Management.Automation.Language.Ast]]::new()
+    $namedPaths = [Collections.Generic.List[Management.Automation.Language.Ast]]::new()
+    $itemName = $null
     for ($index = 1; $index -lt $elements.Count; $index++) {
         $element = $elements[$index]
         if ($element -isnot [Management.Automation.Language.CommandParameterAst]) {
@@ -221,12 +246,27 @@ function Test-NervScriptVariableSetItemCommandWritesName {
         if (($null -ne $argument) -and
             ([string]::Equals([string]$resolved.Name, 'Path', [StringComparison]::OrdinalIgnoreCase) -or
                 [string]::Equals([string]$resolved.Name, 'LiteralPath', [StringComparison]::OrdinalIgnoreCase))) {
-            $namedTargets.Add($argument)
+            $namedPaths.Add($argument)
+        }
+        if (($null -ne $argument) -and
+            [string]::Equals([string]$resolved.Name, 'Name', [StringComparison]::OrdinalIgnoreCase)) {
+            $itemName = $argument
         }
     }
-    foreach ($candidate in $namedTargets) {
-        if (Test-NervScriptVariableProviderPathMayMatch -Candidate $candidate -Name $Name) { return $true }
+
+    $path = if ($namedPaths.Count -gt 0) { $namedPaths[0] }
+    elseif ($positionals.Count -gt 0) { $positionals[0] }
+    else { $null }
+    if ([string]::Equals($canonicalName, 'Set-Item', [StringComparison]::OrdinalIgnoreCase)) {
+        return Test-NervScriptVariableProviderPathMayMatch -Candidate $path -Name $Name
     }
-    return $namedTargets.Count -eq 0 -and $positionals.Count -gt 0 -and
-        (Test-NervScriptVariableProviderPathMayMatch -Candidate $positionals[0] -Name $Name)
+    if ($path -isnot [Management.Automation.Language.StringConstantExpressionAst]) { return $false }
+    $providerPath = [string]$path.Value
+    if (-not $providerPath.StartsWith('variable:', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $variablePath = $providerPath.Substring('variable:'.Length).TrimStart('/', '\')
+    if (-not [string]::IsNullOrEmpty($variablePath)) {
+        return Test-NervScriptVariableNameTextMayMatch -CandidateName $variablePath -Name $Name
+    }
+    if ($itemName -isnot [Management.Automation.Language.StringConstantExpressionAst]) { return $true }
+    return Test-NervScriptVariableNameTextMayMatch -CandidateName ([string]$itemName.Value) -Name $Name
 }

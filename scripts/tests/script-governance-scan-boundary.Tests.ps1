@@ -1110,13 +1110,16 @@ function Invoke-FixtureCrossScopeAction {
     if (-not [string]::Equals(($declaredBinderCanonicalNames -join '|'), ($expectedBinderCanonicalNames -join '|'), [StringComparison]::Ordinal)) {
         throw "Binder cmdlet set changed: expected [$($expectedBinderCanonicalNames -join ', ')], found [$($declaredBinderCanonicalNames -join ', ')]. Update docs/architecture/script-automation-governance.md and this contract together."
     }
-    $binderAliasDiscovery = @(
+    $aliasDiscoveries = @(
         $bindingHelperAst.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.CommandAst] -and
             [string]::Equals([string] $node.GetCommandName(), 'Get-Alias', [StringComparison]::OrdinalIgnoreCase)
         }, $true)
     )
+    $binderAliasDiscovery = @($aliasDiscoveries | Where-Object {
+            $_.Extent.Text.IndexOf('$seamBinderCanonicalName', [StringComparison]::Ordinal) -ge 0
+        })
     if ($binderAliasDiscovery.Count -ne 1) {
         throw "The script governance checker must read its binder aliases from exactly one Get-Alias call; found $($binderAliasDiscovery.Count)."
     }
@@ -1124,6 +1127,37 @@ function Invoke-FixtureCrossScopeAction {
     if ($binderAliasDiscoveryText.IndexOf('-Definition', [StringComparison]::Ordinal) -lt 0 -or
         $binderAliasDiscoveryText.IndexOf('$seamBinderCanonicalName', [StringComparison]::Ordinal) -lt 0) {
         throw "Binder aliases must be discovered with Get-Alias -Definition over the shared canonical-name list, not hand-listed; found: $binderAliasDiscoveryText"
+    }
+
+    $itemCanonicalAssignment = $bindingHelperAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'script:nervScriptVariableItemCanonicalNames', [StringComparison]::Ordinal)
+    }, $true)
+    if (-not $itemCanonicalAssignment) {
+        throw 'The shared script variable binding helper must declare its item-provider cmdlets in $script:nervScriptVariableItemCanonicalNames.'
+    }
+    $declaredItemCanonicalNames = @(
+        $itemCanonicalAssignment.Right.FindAll({
+            param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+        }, $true) | ForEach-Object { [string]$_.Value }
+    )
+    $expectedItemCanonicalNames = @('Set-Item', 'New-Item')
+    if (-not [string]::Equals(($declaredItemCanonicalNames -join '|'), ($expectedItemCanonicalNames -join '|'), [StringComparison]::Ordinal)) {
+        throw "Variable-provider item cmdlet set changed: expected [$($expectedItemCanonicalNames -join ', ')], found [$($declaredItemCanonicalNames -join ', ')]."
+    }
+    $itemAliasDiscovery = @($aliasDiscoveries | Where-Object {
+            $_.Extent.Text.IndexOf('$itemCanonicalName', [StringComparison]::Ordinal) -ge 0
+        })
+    if ($itemAliasDiscovery.Count -ne 1 -or
+        $itemAliasDiscovery[0].Extent.Text.IndexOf('-Definition', [StringComparison]::Ordinal) -lt 0) {
+        throw 'Set/New-Item aliases must be discovered with Get-Alias -Definition over the shared item canonical-name list.'
+    }
+    foreach ($itemFloor in @('si', 'ni')) {
+        if ($bindingHelperText.IndexOf("Alias = '$itemFloor'", [StringComparison]::Ordinal) -lt 0) {
+            throw "The shared variable-provider item parser must retain the shipped '$itemFloor' alias floor."
+        }
     }
 
     # Guard 3, behavioural, against the one thing discovery cannot promise. `set` ships with

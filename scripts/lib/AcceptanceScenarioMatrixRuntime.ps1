@@ -1186,12 +1186,14 @@ function Test-NervAcceptanceWmsVerifierContract {
                 param($node)
                 $node -is [Management.Automation.Language.AssignmentStatementAst] -or
                     $node -is [Management.Automation.Language.CommandAst] -or
+                    $node -is [Management.Automation.Language.InvokeMemberExpressionAst] -or
                     $node -is [Management.Automation.Language.FunctionDefinitionAst] -or
                     $node -is [Management.Automation.Language.TryStatementAst] -or
                     $node -is [Management.Automation.Language.ReturnStatementAst]
             }, $true))
     $assignments = [Collections.Generic.List[object]]::new()
     $commands = [Collections.Generic.List[object]]::new()
+    $invokeMembers = [Collections.Generic.List[object]]::new()
     $functions = [Collections.Generic.List[object]]::new()
     $tryStatements = [Collections.Generic.List[object]]::new()
     $returnStatements = [Collections.Generic.List[object]]::new()
@@ -1210,6 +1212,7 @@ function Test-NervAcceptanceWmsVerifierContract {
                 $commandsByName[$commandName].Add($node)
             }
         }
+        elseif ($node -is [Management.Automation.Language.InvokeMemberExpressionAst]) { $invokeMembers.Add($node) }
         elseif ($node -is [Management.Automation.Language.FunctionDefinitionAst]) { $functions.Add($node) }
         elseif ($node -is [Management.Automation.Language.TryStatementAst]) { $tryStatements.Add($node) }
         elseif ($node -is [Management.Automation.Language.ReturnStatementAst]) {
@@ -1314,38 +1317,80 @@ function Test-NervAcceptanceWmsVerifierContract {
             }
             continue
         }
-        if ($script:nervScriptVariableSetItemCommands.Contains($commandName)) {
+        $itemName = Resolve-NervScriptVariableItemCanonicalName -WrittenName $commandName
+        if (-not [string]::IsNullOrEmpty($itemName)) {
             foreach ($variableName in $contractVariableNames) {
-                if (Test-NervScriptVariableSetItemCommandWritesName -Command $command -Name $variableName) {
+                if (Test-NervScriptVariableItemCommandWritesName -Command $command -Name $variableName) {
                     [void]$writesByVariable[$variableName].Add($command)
                 }
             }
         }
     }
-    $testAssignment = {
-        param([string] $CommandName, [string] $VariableName)
+    $getConstantBinding = {
+        param([string] $VariableName)
+
         $allWrites = @($writesByVariable[$VariableName])
+        if ($allWrites.Count -ne 1) { return $null }
+        $binding = $allWrites[0]
+        if ($binding -isnot [Management.Automation.Language.CommandAst] -or
+            $conditionalNodeFlags[$binding] -or $inactiveNodeFlags[$binding] -or
+            -not [string]::Equals([string]$binding.GetCommandName(), 'New-Variable', [StringComparison]::Ordinal) -or
+            $binding.CommandElements.Count -ne 7 -or
+            $binding.CommandElements[1] -isnot [Management.Automation.Language.CommandParameterAst] -or
+            -not [string]::Equals([string]$binding.CommandElements[1].ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase) -or
+            $null -ne $binding.CommandElements[1].Argument -or
+            $binding.CommandElements[2] -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+            -not [string]::Equals([string]$binding.CommandElements[2].Value, $VariableName, [StringComparison]::Ordinal) -or
+            $binding.CommandElements[3] -isnot [Management.Automation.Language.CommandParameterAst] -or
+            -not [string]::Equals([string]$binding.CommandElements[3].ParameterName, 'Option', [StringComparison]::OrdinalIgnoreCase) -or
+            $null -ne $binding.CommandElements[3].Argument -or
+            $binding.CommandElements[4] -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+            -not [string]::Equals([string]$binding.CommandElements[4].Value, 'Constant', [StringComparison]::Ordinal) -or
+            $binding.CommandElements[5] -isnot [Management.Automation.Language.CommandParameterAst] -or
+            -not [string]::Equals([string]$binding.CommandElements[5].ParameterName, 'Value', [StringComparison]::OrdinalIgnoreCase) -or
+            $null -ne $binding.CommandElements[5].Argument -or
+            $binding.CommandElements[6] -isnot [Management.Automation.Language.ParenExpressionAst]) { return $null }
+        return $binding
+    }
+    $testConstantBinding = {
+        param([string] $CommandName, [string] $VariableName)
+        $binding = & $getConstantBinding $VariableName
+        if ($null -eq $binding) { return $false }
         $matchingCommands = if ($commandsByName.ContainsKey($CommandName)) { @($commandsByName[$CommandName]) } else { @() }
         $matches = [Collections.Generic.List[object]]::new()
         foreach ($command in $matchingCommands) {
-            $assignment = $command.Parent
-            while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) {
-                if ($conditionalNodeFlags[$command]) { break }
-                $assignment = $assignment.Parent
+            $ancestor = $command.Parent
+            while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.CommandAst]) {
+                $ancestor = $ancestor.Parent
             }
-            if ($null -ne $assignment -and
-                $assignment -is [Management.Automation.Language.AssignmentStatementAst] -and
-                (& $testAssignmentWritesVariable $assignment $VariableName) -and
+            if ([object]::ReferenceEquals($ancestor, $binding) -and
                 -not $conditionalNodeFlags[$command] -and
                 -not $inactiveNodeFlags[$command]) {
                 $matches.Add($command)
             }
         }
-        return $allWrites.Count -eq 1 -and $matches.Count -eq 1
+        return $matches.Count -eq 1
     }
 
+    $hasActivePsVariableSet = @($invokeMembers | Where-Object {
+            $invoke = $_
+            if ($inactiveNodeFlags[$invoke] -or $conditionalNodeFlags[$invoke] -or
+                $invoke.Member -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+                -not [string]::Equals([string]$invoke.Member.Value, 'Set', [StringComparison]::OrdinalIgnoreCase) -or
+                $invoke.Expression -isnot [Management.Automation.Language.MemberExpressionAst]) { return $false }
+            $psVariable = $invoke.Expression
+            if ($psVariable.Member -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+                -not [string]::Equals([string]$psVariable.Member.Value, 'PSVariable', [StringComparison]::OrdinalIgnoreCase) -or
+                $psVariable.Expression -isnot [Management.Automation.Language.MemberExpressionAst]) { return $false }
+            $sessionState = $psVariable.Expression
+            return $sessionState.Member -is [Management.Automation.Language.StringConstantExpressionAst] -and
+                [string]::Equals([string]$sessionState.Member.Value, 'SessionState', [StringComparison]::OrdinalIgnoreCase) -and
+                $sessionState.Expression -is [Management.Automation.Language.VariableExpressionAst] -and
+                [string]::Equals((Get-NervScriptVariableBindingName -VariablePath $sessionState.Expression.VariablePath), 'ExecutionContext', [StringComparison]::OrdinalIgnoreCase)
+        }).Count -gt 0
+
     $testOutboundCompletion = {
-        if (-not (& $testAssignment 'Wait-WmsOutboundOrder' 'completedOutboundOrder')) { return $false }
+        if ($hasActivePsVariableSet -or -not (& $testConstantBinding 'Wait-WmsOutboundOrder' 'completedOutboundOrder')) { return $false }
         $waitFunctions = @($functions | Where-Object {
                 [string]::Equals($_.Name, 'Wait-WmsOutboundOrder', [StringComparison]::Ordinal) -and
                     -not $conditionalNodeFlags[$_] -and
@@ -1407,10 +1452,10 @@ function Test-NervAcceptanceWmsVerifierContract {
         $waitCallCandidates = if ($commandsByName.ContainsKey('Wait-WmsOutboundOrder')) { @($commandsByName['Wait-WmsOutboundOrder']) } else { @() }
         $waitCalls = @($waitCallCandidates | Where-Object {
                     $command = $_
-                    $assignment = $command.Parent
-                    while ($null -ne $assignment -and $assignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $assignment = $assignment.Parent }
-                    $null -ne $assignment -and
-                        (& $testAssignmentWritesVariable $assignment 'completedOutboundOrder') -and
+                    $binding = & $getConstantBinding 'completedOutboundOrder'
+                    $ancestor = $command.Parent
+                    while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.CommandAst]) { $ancestor = $ancestor.Parent }
+                    [object]::ReferenceEquals($ancestor, $binding) -and
                         -not $conditionalNodeFlags[$command] -and
                         -not $inactiveNodeFlags[$command]
                 })
@@ -1422,17 +1467,14 @@ function Test-NervAcceptanceWmsVerifierContract {
             })
         if ($requireCompletedParameters.Count -ne 1) { return $false }
 
-        $businessEvidenceWrites = @($writesByVariable['businessEvidence'])
-        $businessEvidenceAssignments = @($businessEvidenceWrites | Where-Object {
-                $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
-                    -not $conditionalNodeFlags[$_] -and
-                    $_.Right -is [Management.Automation.Language.CommandExpressionAst] -and
-                    $_.Right.Expression -is [Management.Automation.Language.ConvertExpressionAst] -and
-                    $_.Right.Expression.Child -is [Management.Automation.Language.HashtableAst]
-            })
-        if ($businessEvidenceWrites.Count -ne 1 -or $businessEvidenceAssignments.Count -ne 1 -or
-            -not [object]::ReferenceEquals($businessEvidenceWrites[0], $businessEvidenceAssignments[0])) { return $false }
-        $businessEvidenceTable = $businessEvidenceAssignments[0].Right.Expression.Child
+        $businessEvidenceBinding = & $getConstantBinding 'businessEvidence'
+        if ($null -eq $businessEvidenceBinding) { return $false }
+        $businessEvidenceValue = $businessEvidenceBinding.CommandElements[6]
+        if ($businessEvidenceValue.Pipeline.PipelineElements.Count -ne 1 -or
+            $businessEvidenceValue.Pipeline.PipelineElements[0] -isnot [Management.Automation.Language.CommandExpressionAst] -or
+            $businessEvidenceValue.Pipeline.PipelineElements[0].Expression -isnot [Management.Automation.Language.ConvertExpressionAst] -or
+            $businessEvidenceValue.Pipeline.PipelineElements[0].Expression.Child -isnot [Management.Automation.Language.HashtableAst]) { return $false }
+        $businessEvidenceTable = $businessEvidenceValue.Pipeline.PipelineElements[0].Expression.Child
         $wmsPairs = @($businessEvidenceTable.KeyValuePairs | Where-Object {
                 $_.Item1 -is [Management.Automation.Language.StringConstantExpressionAst] -and
                     [string]::Equals([string]$_.Item1.Value, 'wmsOutboundOrder', [StringComparison]::Ordinal)
@@ -1476,8 +1518,8 @@ function Test-NervAcceptanceWmsVerifierContract {
 
     return [pscustomobject][ordered]@{
         failureCaptureSupported = $exportFunctions.Count -eq 1 -and $orderedCaptureCalls.Count -eq 1
-        pickingReadbackWired = & $testAssignment 'Test-NervAcceptanceWmsPickingReadbacks' 'pickingLifecycleCompleted'
-        completionReplayWired = & $testAssignment 'Test-NervAcceptanceWmsCompletionReplay' 'completionHttpReplayConverged'
+        pickingReadbackWired = -not $hasActivePsVariableSet -and (& $testConstantBinding 'Test-NervAcceptanceWmsPickingReadbacks' 'pickingLifecycleCompleted')
+        completionReplayWired = -not $hasActivePsVariableSet -and (& $testConstantBinding 'Test-NervAcceptanceWmsCompletionReplay' 'completionHttpReplayConverged')
         outboundCompletionWired = & $testOutboundCompletion
     }
 }

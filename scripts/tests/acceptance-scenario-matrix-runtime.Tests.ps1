@@ -795,6 +795,23 @@ try {
     $mutationTokens = $mutationParseErrors = $null
     $mutationAst = [Management.Automation.Language.Parser]::ParseInput($wmsVerifierSource, [ref]$mutationTokens, [ref]$mutationParseErrors)
     Assert-Contract ($mutationParseErrors.Count -eq 0) 'The verifier must parse before generating reachability mutations.'
+    $constantBindingCommands = @($mutationAst.FindAll({
+                param($node)
+                $node -is [Management.Automation.Language.CommandAst] -and
+                    [string]::Equals([string]$node.GetCommandName(), 'New-Variable', [StringComparison]::Ordinal)
+            }, $true) | Where-Object {
+                $_.CommandElements.Count -eq 7 -and
+                    $_.CommandElements[1] -is [Management.Automation.Language.CommandParameterAst] -and
+                    [string]::Equals([string]$_.CommandElements[1].ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase) -and
+                    $_.CommandElements[3] -is [Management.Automation.Language.CommandParameterAst] -and
+                    [string]::Equals([string]$_.CommandElements[3].ParameterName, 'Option', [StringComparison]::OrdinalIgnoreCase) -and
+                    [string]::Equals([string]$_.CommandElements[4].Extent.Text, 'Constant', [StringComparison]::Ordinal) -and
+                    $_.CommandElements[5] -is [Management.Automation.Language.CommandParameterAst] -and
+                    [string]::Equals([string]$_.CommandElements[5].ParameterName, 'Value', [StringComparison]::OrdinalIgnoreCase)
+            })
+    $constantBindingNames = @($constantBindingCommands | ForEach-Object { [string]$_.CommandElements[2].Extent.Text })
+    Assert-Contract ($constantBindingCommands.Count -eq 4 -and
+        @('pickingLifecycleCompleted', 'completionHttpReplayConverged', 'completedOutboundOrder', 'businessEvidence').Where({ $constantBindingNames -notcontains $_ }).Count -eq 0) 'The verifier must establish the four authority facts through exact top-level Constant bindings.'
     foreach ($contractMutation in @(
         @{ Name = 'failure-capture-if-false'; Command = 'Export-Man527FailureDiagnostics'; Variable = '$diagnosticEvidence'; Property = 'failureCaptureSupported' },
         @{ Name = 'picking-if-false'; Command = 'Test-NervAcceptanceWmsPickingReadbacks'; Variable = '$pickingLifecycleCompleted'; Property = 'pickingReadbackWired' },
@@ -807,12 +824,24 @@ try {
                         [string]::Equals($node.GetCommandName(), [string]$contractMutation.Command, [StringComparison]::Ordinal)
                 }, $true) | Where-Object {
                     $ancestor = $_.Parent
-                    while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.AssignmentStatementAst]) { $ancestor = $ancestor.Parent }
-                    $null -ne $ancestor -and [string]::Equals($ancestor.Left.Extent.Text, [string]$contractMutation.Variable, [StringComparison]::Ordinal)
+                    if ([string]::Equals([string]$contractMutation.Property, 'failureCaptureSupported', [StringComparison]::Ordinal)) {
+                        while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.AssignmentStatementAst]) { $ancestor = $ancestor.Parent }
+                        return $null -ne $ancestor -and [string]::Equals($ancestor.Left.Extent.Text, [string]$contractMutation.Variable, [StringComparison]::Ordinal)
+                    }
+                    while ($null -ne $ancestor -and $ancestor -isnot [Management.Automation.Language.CommandAst]) { $ancestor = $ancestor.Parent }
+                    return $null -ne $ancestor -and
+                        [string]::Equals([string]$ancestor.GetCommandName(), 'New-Variable', [StringComparison]::Ordinal) -and
+                        [string]::Equals([string]$ancestor.CommandElements[2].Extent.Text, ([string]$contractMutation.Variable).TrimStart('$'), [StringComparison]::Ordinal)
                 })
-        Assert-Contract ($mutationCommand.Count -eq 1) "Verifier contract mutation '$($contractMutation.Name)' requires one exact production assignment."
+        Assert-Contract ($mutationCommand.Count -eq 1) "Verifier contract mutation '$($contractMutation.Name)' requires one exact production authority binding."
         $mutationAssignment = $mutationCommand[0].Parent
-        while ($mutationAssignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $mutationAssignment = $mutationAssignment.Parent }
+        if ([string]::Equals([string]$contractMutation.Property, 'failureCaptureSupported', [StringComparison]::Ordinal)) {
+            while ($mutationAssignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $mutationAssignment = $mutationAssignment.Parent }
+        }
+        else {
+            while ($mutationAssignment -isnot [Management.Automation.Language.CommandAst] -or
+                -not [string]::Equals([string]$mutationAssignment.GetCommandName(), 'New-Variable', [StringComparison]::Ordinal)) { $mutationAssignment = $mutationAssignment.Parent }
+        }
         $mutatedVerifierPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name).ps1"
         $mutatedVerifierSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, ' }').Insert($mutationAssignment.Extent.StartOffset, 'if ($false) { ')
         [IO.File]::WriteAllText($mutatedVerifierPath, $mutatedVerifierSource, [Text.UTF8Encoding]::new($false))
@@ -826,6 +855,18 @@ try {
         Assert-Contract (-not [bool]$unusedFunctionContract.PSObject.Properties[$contractMutation.Property].Value) "Verifier unused-function mutation '$($contractMutation.Name)' must be killed by '$($contractMutation.Property)'."
 
         if (-not [string]::Equals([string]$contractMutation.Property, 'failureCaptureSupported', [StringComparison]::Ordinal)) {
+            foreach ($constantBindingMutation in @(
+                @{ Name = 'missing-constant-option'; Old = '-Option Constant '; New = '' },
+                @{ Name = 'wrong-option'; Old = '-Option Constant'; New = '-Option ReadOnly' },
+                @{ Name = 'wrong-name'; Old = "-Name $(([string]$contractMutation.Variable).TrimStart('$'))"; New = '-Name unrelatedAuthorityFact' }
+            )) {
+                $constantMutationPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-$($constantBindingMutation.Name).ps1"
+                $constantMutationText = $mutationAssignment.Extent.Text.Replace([string]$constantBindingMutation.Old, [string]$constantBindingMutation.New)
+                $constantMutationSource = $wmsVerifierSource.Remove($mutationAssignment.Extent.StartOffset, $mutationAssignment.Extent.EndOffset - $mutationAssignment.Extent.StartOffset).Insert($mutationAssignment.Extent.StartOffset, $constantMutationText)
+                [IO.File]::WriteAllText($constantMutationPath, $constantMutationSource, [Text.UTF8Encoding]::new($false))
+                Assert-Contract (-not [bool](Test-NervAcceptanceWmsVerifierContract -Path $constantMutationPath).PSObject.Properties[$contractMutation.Property].Value) "Verifier Constant mutation '$($contractMutation.Name)-$($constantBindingMutation.Name)' must be killed by '$($contractMutation.Property)'."
+            }
+
             $overrideMutationPath = Join-Path $fixtureRoot "wms-diagnostics/$($contractMutation.Name)-top-level-override.ps1"
             $overrideMutationSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`n$($contractMutation.Variable) = `$true")
             [IO.File]::WriteAllText($overrideMutationPath, $overrideMutationSource, [Text.UTF8Encoding]::new($false))
@@ -839,7 +880,8 @@ try {
                         @{ Name = 'local-scoped'; Statement = '$local:pickingLifecycleCompleted = $true' },
                         @{ Name = 'private-scoped'; Statement = '$private:pickingLifecycleCompleted = $true' },
                         @{ Name = 'variable-drive'; Statement = '$variable:pickingLifecycleCompleted = $true' },
-                        @{ Name = 'braced'; Statement = '${pickingLifecycleCompleted} = $true' }
+                        @{ Name = 'braced'; Statement = '${pickingLifecycleCompleted} = $true' },
+                        @{ Name = 'new-item-direct-variable-provider'; Statement = 'New-Item variable:pickingLifecycleCompleted -Value $true -Force | Out-Null' }
                     )
             }
             elseif ([string]::Equals([string]$contractMutation.Property, 'completionReplayWired', [StringComparison]::Ordinal)) {
@@ -855,13 +897,18 @@ try {
                         @{ Name = 'set-item-variable-provider'; Statement = 'Set-Item -LiteralPath variable:completionHttpReplayConverged -Value $true' },
                         @{ Name = 'set-item-common-parameter-before-path'; Statement = 'Set-Item -ErrorAction Stop variable:completionHttpReplayConverged -Value $true' },
                         @{ Name = 'set-item-value-before-path'; Statement = 'Set-Item -Value $true variable:completionHttpReplayConverged' },
+                        @{ Name = 'set-item-force-before-path'; Statement = 'Set-Item -Force variable:completionHttpReplayConverged $true' },
+                        @{ Name = 'set-item-passthru-before-path'; Statement = 'Set-Item -PassThru variable:completionHttpReplayConverged $true | Out-Null' },
+                        @{ Name = 'new-item-alias-path'; Statement = 'ni -Path variable:completionHttpReplayConverged -Value $true -Force | Out-Null' },
+                        @{ Name = 'new-item-dynamic-name-under-variable-root'; Statement = '$computedNewItemName = ''completionHttpReplayConverged''; New-Item -Path variable: -Name $computedNewItemName -Value $true -Force | Out-Null' },
                         @{ Name = 'typed'; Statement = '[bool]$completionHttpReplayConverged = $true' }
                     )
             }
             elseif ([string]::Equals([string]$contractMutation.Property, 'outboundCompletionWired', [StringComparison]::Ordinal)) {
                 @(
                         @{ Name = 'typed'; Statement = '[object]$completedOutboundOrder = $null' },
-                        @{ Name = 'set-variable'; Statement = 'Set-Variable -Name completedOutboundOrder -Value $null' }
+                        @{ Name = 'set-variable'; Statement = 'Set-Variable -Name completedOutboundOrder -Value $null' },
+                        @{ Name = 'new-item-module-qualified'; Statement = 'Microsoft.PowerShell.Management\New-Item -Path variable:completedOutboundOrder -Value $null -Force | Out-Null' }
                     )
             }
             foreach ($alternateOverrideMutation in $alternateOverrideMutations) {
@@ -883,6 +930,8 @@ try {
     foreach ($nonTargetWrite in @(
         @{ Name = 'set-variable-unrelated'; Statement = 'Set-Variable -Name unrelatedWmsEvidence -Value $true' },
         @{ Name = 'new-variable-unrelated'; Statement = 'New-Variable -Name unrelatedWmsEvidence -Value $true -Force' },
+        @{ Name = 'new-item-unrelated'; Statement = 'New-Item -Path variable:unrelatedWmsEvidence -Value $true -Force | Out-Null' },
+        @{ Name = 'new-item-ordinary-path'; Statement = 'New-Item -Path ./pickingLifecycleCompleted -ItemType File -Force | Out-Null' },
         @{ Name = 'set-item-unrelated'; Statement = 'Set-Item -LiteralPath variable:unrelatedWmsEvidence -Value $true' },
         @{ Name = 'set-item-common-parameter-unrelated'; Statement = 'Set-Item -ErrorAction Stop variable:unrelatedWmsEvidence -Value $true' },
         @{ Name = 'env-prefix'; Statement = '$env:pickingLifecycleCompleted = ''not-the-script-variable''' }
@@ -898,7 +947,6 @@ try {
         @{ Name = 'computed-set-variable'; Statement = '$computedName = ''completionHttpReplayConverged''; Set-Variable -Name $computedName -Value $true' },
         @{ Name = 'splatted-set-variable'; Statement = '$setArguments = @{ Name = ''completionHttpReplayConverged''; Value = $true }; Set-Variable @setArguments' },
         @{ Name = 'computed-set-item-path'; Statement = '$computedPath = ''variable:completionHttpReplayConverged''; Set-Item -LiteralPath $computedPath -Value $true' },
-        @{ Name = 'psvariable-set'; Statement = '$ExecutionContext.SessionState.PSVariable.Set(''completionHttpReplayConverged'', $true)' },
         @{ Name = 'ref-rebinding'; Statement = '$completionReference = [ref]$completionHttpReplayConverged; $completionReference.Value = $true' }
     )) {
         $residualPath = Join-Path $fixtureRoot "wms-diagnostics/$($residualWrite.Name).ps1"
@@ -908,16 +956,51 @@ try {
         Assert-Contract ($residualContract.completionReplayWired) "Documented static-analysis residual '$($residualWrite.Name)' must remain outside the verifier wiring proof."
     }
 
+    foreach ($psVariableMutation in @(
+        @{ Name = 'literal'; Statement = '$ExecutionContext.SessionState.PSVariable.Set(''completionHttpReplayConverged'', $true)' },
+        @{ Name = 'computed'; Statement = '$computedPsVariableName = ''completionHttpReplayConverged''; $ExecutionContext.SessionState.PSVariable.Set($computedPsVariableName, $true)' }
+    )) {
+        $psVariablePath = Join-Path $fixtureRoot "wms-diagnostics/psvariable-set-$($psVariableMutation.Name).ps1"
+        $psVariableSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`n$($psVariableMutation.Statement)")
+        [IO.File]::WriteAllText($psVariablePath, $psVariableSource, [Text.UTF8Encoding]::new($false))
+        $psVariableContract = Test-NervAcceptanceWmsVerifierContract -Path $psVariablePath
+        Assert-Contract (-not $psVariableContract.pickingReadbackWired -and -not $psVariableContract.completionReplayWired -and -not $psVariableContract.outboundCompletionWired) "PSVariable.Set $($psVariableMutation.Name) override must invalidate every Constant-backed verifier authority fact."
+
+        $inactivePsVariablePath = Join-Path $fixtureRoot "wms-diagnostics/psvariable-set-$($psVariableMutation.Name)-unused-function.ps1"
+        $inactivePsVariableSource = $wmsVerifierSource.Insert($mutationAssignment.Extent.EndOffset, "`nfunction Invoke-UnusedPsVariableOverride { $($psVariableMutation.Statement) }")
+        [IO.File]::WriteAllText($inactivePsVariablePath, $inactivePsVariableSource, [Text.UTF8Encoding]::new($false))
+        $inactivePsVariableContract = Test-NervAcceptanceWmsVerifierContract -Path $inactivePsVariablePath
+        Assert-Contract ($inactivePsVariableContract.pickingReadbackWired -and $inactivePsVariableContract.completionReplayWired -and $inactivePsVariableContract.outboundCompletionWired) "Unused-function PSVariable.Set $($psVariableMutation.Name) must not invalidate top-level Constant bindings."
+    }
+    foreach ($constantRuntimeOverride in @(
+        '$ExecutionContext.SessionState.PSVariable.Set(''constantAuthorityFact'', ''mutated'')',
+        '$computedConstantName = ''constantAuthorityFact''; $ExecutionContext.SessionState.PSVariable.Set($computedConstantName, ''mutated'')'
+    )) {
+        $constantOverrideRejected = & ([scriptblock]::Create(@"
+New-Variable -Name constantAuthorityFact -Option Constant -Value 'earned'
+try {
+    $constantRuntimeOverride
+    return `$false
+}
+catch {
+    return [string]::Equals([string]`$constantAuthorityFact, 'earned', [StringComparison]::Ordinal)
+}
+"@))
+        Assert-Contract $constantOverrideRejected 'A Constant-backed authority fact must reject literal and computed PSVariable.Set runtime rebinding.'
+    }
+
     $pickingPredicateCommand = @($mutationAst.FindAll({
                 param($node)
                 $node -is [Management.Automation.Language.CommandAst] -and
                     [string]::Equals($node.GetCommandName(), 'Test-NervAcceptanceWmsPickingReadbacks', [StringComparison]::Ordinal)
             }, $true))[0]
     $pickingPredicateAssignment = $pickingPredicateCommand.Parent
-    while ($pickingPredicateAssignment -isnot [Management.Automation.Language.AssignmentStatementAst]) { $pickingPredicateAssignment = $pickingPredicateAssignment.Parent }
+    while ($pickingPredicateAssignment -isnot [Management.Automation.Language.CommandAst] -or
+        -not [string]::Equals([string]$pickingPredicateAssignment.GetCommandName(), 'New-Variable', [StringComparison]::Ordinal)) { $pickingPredicateAssignment = $pickingPredicateAssignment.Parent }
     $doublePredicatePath = Join-Path $fixtureRoot 'wms-diagnostics/picking-double-predicate.ps1'
-    $doublePredicateRight = "($($pickingPredicateAssignment.Right.Extent.Text)) -and ($($pickingPredicateAssignment.Right.Extent.Text))"
-    $doublePredicateSource = $wmsVerifierSource.Remove($pickingPredicateAssignment.Right.Extent.StartOffset, $pickingPredicateAssignment.Right.Extent.EndOffset - $pickingPredicateAssignment.Right.Extent.StartOffset).Insert($pickingPredicateAssignment.Right.Extent.StartOffset, $doublePredicateRight)
+    $pickingPredicateValue = $pickingPredicateAssignment.CommandElements[6]
+    $doublePredicateRight = "(($($pickingPredicateValue.Pipeline.Extent.Text))) -and (($($pickingPredicateValue.Pipeline.Extent.Text)))"
+    $doublePredicateSource = $wmsVerifierSource.Remove($pickingPredicateValue.Extent.StartOffset, $pickingPredicateValue.Extent.EndOffset - $pickingPredicateValue.Extent.StartOffset).Insert($pickingPredicateValue.Extent.StartOffset, $doublePredicateRight)
     [IO.File]::WriteAllText($doublePredicatePath, $doublePredicateSource, [Text.UTF8Encoding]::new($false))
     $doublePredicateContract = Test-NervAcceptanceWmsVerifierContract -Path $doublePredicatePath
     Assert-Contract (-not $doublePredicateContract.pickingReadbackWired) 'Two picking predicates inside one top-level assignment must invalidate pickingReadbackWired.'
@@ -986,7 +1069,7 @@ try {
     }
 
     $completedOutboundAssignmentText = $mutationAssignment.Extent.Text
-    Assert-Contract $completedOutboundAssignmentText.Contains('Wait-WmsOutboundOrder', [StringComparison]::Ordinal) 'The unused scriptblock mutation must target the completed outbound assignment.'
+    Assert-Contract $completedOutboundAssignmentText.Contains('Wait-WmsOutboundOrder', [StringComparison]::Ordinal) 'The unused scriptblock mutation must target the completed outbound Constant binding.'
     $unusedScriptblockPath = Join-Path $fixtureRoot 'wms-diagnostics/completed-outbound-unused-scriptblock.ps1'
     $unusedScriptblockSource = $wmsVerifierSource.Remove($mutationAssignment.Extent.StartOffset, $mutationAssignment.Extent.EndOffset - $mutationAssignment.Extent.StartOffset).Insert($mutationAssignment.Extent.StartOffset, "`$unusedCompletedOutboundRead = { $completedOutboundAssignmentText }")
     [IO.File]::WriteAllText($unusedScriptblockPath, $unusedScriptblockSource, [Text.UTF8Encoding]::new($false))
@@ -994,14 +1077,16 @@ try {
 
     $businessEvidenceAssignment = @($mutationAst.FindAll({
                 param($node)
-                $node -is [Management.Automation.Language.AssignmentStatementAst] -and
-                    $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
-                    [string]::Equals([string]$node.Left.VariablePath.UserPath, 'businessEvidence', [StringComparison]::Ordinal) -and
-                    $node.Right.Extent.Text.Contains('wmsOutboundOrder', [StringComparison]::Ordinal)
+                $node -is [Management.Automation.Language.CommandAst] -and
+                    [string]::Equals([string]$node.GetCommandName(), 'New-Variable', [StringComparison]::Ordinal) -and
+                    $node.CommandElements.Count -eq 7 -and
+                    [string]::Equals([string]$node.CommandElements[2].Extent.Text, 'businessEvidence', [StringComparison]::Ordinal) -and
+                    $node.CommandElements[6].Extent.Text.Contains('wmsOutboundOrder', [StringComparison]::Ordinal)
             }, $true))[0]
     foreach ($businessEvidenceOverride in @(
         @{ Name = 'direct'; Statement = '$businessEvidence = $null' },
-        @{ Name = 'set-variable'; Statement = 'Set-Variable -Name businessEvidence -Value $null' }
+        @{ Name = 'set-variable'; Statement = 'Set-Variable -Name businessEvidence -Value $null' },
+        @{ Name = 'new-item-split-provider'; Statement = 'New-Item -Path variable: -Name businessEvidence -Value $null -Force | Out-Null' }
     )) {
         $businessEvidenceOverridePath = Join-Path $fixtureRoot "wms-diagnostics/business-evidence-$($businessEvidenceOverride.Name)-override.ps1"
         $businessEvidenceOverrideSource = $wmsVerifierSource.Insert($businessEvidenceAssignment.Extent.EndOffset, "`n$($businessEvidenceOverride.Statement)")
