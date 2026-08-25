@@ -4745,11 +4745,14 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     string UomCode,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(
     IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items,
-    int Total);
+    int Total,
+    int SupplementaryCount = 0);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string RequestId,
@@ -4766,7 +4769,9 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
-    string? MaterialCode = null);
+    string? MaterialCode = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,

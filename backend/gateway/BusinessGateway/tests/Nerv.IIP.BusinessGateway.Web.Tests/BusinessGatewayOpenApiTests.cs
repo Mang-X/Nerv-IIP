@@ -1341,6 +1341,15 @@ public sealed class BusinessGatewayOpenApiTests
 
     private static void AssertMesListDisplayContract(JsonDocument document)
     {
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesCreateMaterialIssueRequest",
+            "isSupplementary",
+            "originalMaterialIssueRequestNo");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesMaterialIssueRequestListResponse",
+            "supplementaryCount");
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesCapacityImpactRow",
@@ -1405,7 +1414,9 @@ public sealed class BusinessGatewayOpenApiTests
             "BusinessConsoleMesMaterialIssueRequestRow",
             "workOrderNo",
             "operationTaskNo",
-            "materialCode");
+            "materialCode",
+            "isSupplementary",
+            "originalMaterialIssueRequestNo");
         AssertMesStatusEnum(document, "BusinessConsoleMesMaterialIssueRequestRow", "status");
 
         AssertMesDisplayProperties(

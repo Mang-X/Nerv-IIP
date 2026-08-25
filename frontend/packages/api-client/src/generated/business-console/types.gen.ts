@@ -4136,6 +4136,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
+    isSupplementary?: boolean;
+    originalMaterialIssueRequestNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4145,6 +4147,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssue
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow>;
     total?: number;
+    supplementaryCount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow = {
@@ -4163,6 +4166,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderNo?: string | null;
     operationTaskNo?: string | null;
     materialCode?: string | null;
+    isSupplementary?: boolean;
+    originalMaterialIssueRequestNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
