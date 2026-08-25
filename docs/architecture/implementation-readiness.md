@@ -2,6 +2,16 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## OEE 报表维度只读契约（#1965 子项① / #2230）
+
+BusinessMasterData 通用资源目录现已向后兼容地公开 OEE 多维报表所需的权威只读字段：Site 返回
+`timezone`，Shift 返回 `startsAt`、`endsAt`、`crossesMidnight`、`paidMinutes` 与
+`breakMinutes`，DeviceAsset 继续返回既有 `siteCode/workshopCode/lineCode/workCenterCode`
+层级。BusinessGateway 原样转发这些字段并纳入 Console OpenAPI 与生成客户端；字段均为可选，避免破坏
+既有资源目录消费者。本子项只交付维度来源契约，不计算 OEE、不新增数据库结构，也不把查询时的当前层级
+冒充历史快照；MES 报工事件、IndustrialTelemetry 历史投影与 PostgreSQL 聚合核心由 #2231 交付，
+授权门面和趋势/横比页面由 #2232 交付。
+
 ## Quality 周期巡检工序上下文（#1973 子项② / #2070）
 
 BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。
