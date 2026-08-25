@@ -55,6 +55,7 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PlannedQuantity).HasColumnName("planned_quantity").HasPrecision(18, 6).IsRequired().HasComment("Planned operation quantity used as the default good quantity for operation completion inspection triggers.");
         builder.Property(x => x.RequiresQualityInspection).HasColumnName("requires_quality_inspection").IsRequired().HasComment("Whether this operation completion should trigger a Quality inspection task.");
         builder.Property(x => x.OperationCode).HasColumnName("operation_code").HasMaxLength(100).HasComment("ProductEngineering standard operation code used to resolve current SOP or electronic work instructions.");
+        builder.Property(x => x.RequiredSkillCode).HasColumnName("required_skill_code").HasMaxLength(100).HasComment("Optional MasterData skill code frozen from the published routing snapshot when the work order is converted.");
         builder.Property(x => x.ScheduleInvalidationReasonCode).HasColumnName("schedule_invalidation_reason_code").HasMaxLength(64).HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
             .HasName("ak_operation_tasks_scope_task");
