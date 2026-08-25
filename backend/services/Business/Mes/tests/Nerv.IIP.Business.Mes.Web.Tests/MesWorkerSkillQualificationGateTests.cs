@@ -3,6 +3,7 @@ using System.Text;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -137,7 +138,7 @@ public sealed class MesWorkerSkillQualificationGateTests
     {
         var handler = new RecordingHandler(async (_, cancellationToken) =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
             throw new InvalidOperationException("不可达。");
         });
         var gate = CreateGate(handler);
