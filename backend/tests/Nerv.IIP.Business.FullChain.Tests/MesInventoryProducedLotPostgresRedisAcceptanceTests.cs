@@ -109,7 +109,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && state.Mes.PendingStatus == "Requested"
                     && state.Mes.PendingUnitCost is null
                     && state.Mes.PendingErpCapitalizedUnitCost is null
-                    && state.Mes.PendingPublishedMessageCount == 0
+                    && state.Mes.PendingPublishedMessageCount == 1
                     && state.Inventory.SuccessMovementCount == 1
                     && state.Inventory.FailureMovementCount == 0
                     && state.Inventory.PendingMovementCount == 0
@@ -156,6 +156,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             var transport = await ReadMessagingFactsAsync(
                 mesPostgres,
                 inventoryPostgres,
+                redis,
+                capVersion,
                 successEvent.EventId,
                 successReplayEvent.EventId,
                 failureEvent.EventId,
@@ -163,6 +165,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 pendingEvent.EventId);
             Assert.Equal(5L, transport.PublishedEventCount);
             Assert.Equal(5L, transport.InventoryReceivedEventCount);
+            Assert.Equal(1, transport.InventoryPendingMessageCount);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
@@ -172,6 +175,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             var finalMessagingFacts = await ReadMessagingFactsAsync(
                 mesPostgres,
                 inventoryPostgres,
+                redis,
+                capVersion,
                 successEvent.EventId,
                 successReplayEvent.EventId,
                 failureEvent.EventId,
@@ -713,6 +718,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
         string mesConnectionString,
         string inventoryConnectionString,
+        string redisConnectionString,
+        string capVersion,
         params string[] eventIds)
     {
         var eventParameters = eventIds.Select((_, index) => $"@event_id_{index}").ToArray();
@@ -769,7 +776,20 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             }
         }
 
-        return new MessagingFacts(publishedEventCount, inventoryReceivedEventCount, inventoryDeadLetterCount);
+        var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+        redisOptions.AbortOnConnectFail = false;
+        await using var redisConnection = await ConnectionMultiplexer.ConnectAsync(redisOptions);
+        var redisDatabase = redisConnection.GetDatabase();
+        var groupInfo = await redisDatabase.StreamGroupInfoAsync(
+            nameof(InventoryMovementRequestedIntegrationEvent));
+        var inventoryGroup = groupInfo.Single(group =>
+            group.Name == $"business-inventory.movement-requested.{capVersion}");
+
+        return new MessagingFacts(
+            publishedEventCount,
+            inventoryReceivedEventCount,
+            (int)inventoryGroup.PendingMessageCount,
+            inventoryDeadLetterCount);
     }
 
     private sealed record ProbeSource(
@@ -830,6 +850,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
     private sealed record MessagingFacts(
         long PublishedEventCount,
         long InventoryReceivedEventCount,
+        int InventoryPendingMessageCount,
         long InventoryDeadLetterCount);
 }
 
