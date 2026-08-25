@@ -106,6 +106,7 @@ public sealed class MesEndpointContractTests
         var client = factory.CreateClient();
         await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "principal:forged-header");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-authorize-start-http");
         client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-authorize-start-http");
 

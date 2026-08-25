@@ -327,7 +327,7 @@ public sealed class MesIssue557ExecutionTests
     [Fact]
     public async Task Approval_http_client_requires_approved_exact_mes_scope_and_uses_internal_token()
     {
-        using var httpClient = new HttpClient(new ApprovalResponseHandler("approval-1960-http"))
+        using var httpClient = new HttpClient(new ApprovalResponseHandler(" approval-1960-http "))
         {
             BaseAddress = new Uri("http://approval.local"),
         };
@@ -350,6 +350,7 @@ public sealed class MesIssue557ExecutionTests
             "WO-001",
             CancellationToken.None);
 
+        Assert.Equal("approval-1960-http", approved?.ApprovalChainId);
         Assert.Equal("user:supervisor-001", approved?.AuthorizedBy);
         Assert.Null(mismatched);
 

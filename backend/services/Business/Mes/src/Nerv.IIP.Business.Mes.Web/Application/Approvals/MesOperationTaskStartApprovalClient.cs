@@ -74,7 +74,7 @@ public sealed class HttpMesOperationTaskStartApprovalClient(
             .FirstOrDefault();
         return decision is null || string.IsNullOrWhiteSpace(decision.ActorType) || string.IsNullOrWhiteSpace(decision.ActorRef)
             ? null
-            : new MesOperationTaskStartApproval(chain.ChainId, $"{decision.ActorType}:{decision.ActorRef}");
+            : new MesOperationTaskStartApproval(canonicalApprovalChainId, $"{decision.ActorType}:{decision.ActorRef}");
     }
 
     private sealed record ApprovalChainResponse(
