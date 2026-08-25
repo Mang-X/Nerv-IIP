@@ -14,6 +14,7 @@ const releaseState = vi.hoisted(() => ({
   scopeReady: true,
 }))
 const releaseWorkOrder = vi.hoisted(() => vi.fn())
+const readWorkOrderForRelease = vi.hoisted(() => vi.fn())
 const refreshWorkOrders = vi.hoisted(() => vi.fn())
 const refreshOperationTasks = vi.hoisted(() => vi.fn())
 const notifyOperationFailure = vi.hoisted(() => vi.fn())
@@ -93,6 +94,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       take: 20,
     }),
     refreshWorkOrders,
+    readWorkOrderForRelease,
     releaseWorkOrder,
     releaseWorkOrderError: ref(undefined),
     releaseWorkOrderPending: ref(false),
@@ -236,6 +238,12 @@ describe('work-order list — release entry', () => {
     releaseWorkOrder.mockResolvedValue({
       data: { accepted: true, downstreamDocumentId: 'WO-1' },
     })
+    readWorkOrderForRelease.mockReset()
+    readWorkOrderForRelease.mockImplementation(async (workOrderId: string) => {
+      const candidate = releaseState.items.find((item) => item.workOrderId === workOrderId)
+      if (!candidate) throw new Error(`未找到工单 ${workOrderId}`)
+      return candidate
+    })
     refreshWorkOrders.mockReset().mockResolvedValue(undefined)
     refreshOperationTasks.mockReset().mockResolvedValue(undefined)
     notifyOperationFailure.mockReset()
@@ -262,6 +270,7 @@ describe('work-order list — release entry', () => {
     const wrapper = mountPage()
 
     await wrapper.get('[aria-label="下达工单 WO-20260825-002"]').trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('确认下达工单')
     expect(wrapper.text()).toContain('WO-20260825-002')
 
@@ -282,21 +291,45 @@ describe('work-order list — release entry', () => {
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('principalId')
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('scopeId')
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('scopeKind')
+    expect(readWorkOrderForRelease).toHaveBeenCalledTimes(1)
     expect(refreshWorkOrders).toHaveBeenCalledTimes(1)
     expect(refreshOperationTasks).toHaveBeenCalledTimes(1)
     expect(notifySuccess).toHaveBeenCalledWith(expect.stringContaining('WO-20260825-002'))
   })
 
-  it('does not send when the read and manage scopes identify different authorized ranges', async () => {
-    releaseState.manageScope = { kind: 'work-center', id: 'WC-2', displayName: '二号线' }
+  it('allows a covering workshop manage scope to preflight a work-center list row', async () => {
+    releaseState.manageScope = { kind: 'workshop', id: 'WS-1', displayName: '总装车间' }
     const wrapper = mountPage()
 
     const action = button(wrapper, '下达')
-    expect(action.attributes('disabled')).toBeDefined()
+    expect(action.attributes('disabled')).toBeUndefined()
     await action.trigger('click')
     await flushPromises()
 
+    expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
+    expect(wrapper.text()).toContain('确认下达工单')
     expect(releaseWorkOrder).not.toHaveBeenCalled()
+  })
+
+  it('does not send when the selected manage scope cannot read back the target work order', async () => {
+    releaseState.manageScope = { kind: 'work-center', id: 'WC-2', displayName: '二号线' }
+    const scopeError = new Error('403：工单不在当前管理范围')
+    readWorkOrderForRelease.mockRejectedValue(scopeError)
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeUndefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
+    expect(wrapper.text()).not.toContain('确认下达工单')
+    expect(releaseWorkOrder).not.toHaveBeenCalled()
+    expect(notifyOperationFailure).toHaveBeenCalledWith(
+      '工单下达前置检查失败',
+      scopeError,
+      expect.any(String),
+    )
   })
 
   it.each([
@@ -345,6 +378,57 @@ describe('work-order list — release entry', () => {
     await action.trigger('click')
     await flushPromises()
 
+    expect(releaseWorkOrder).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the material requirement snapshot is not proven', async () => {
+    const latest = workOrder({
+      operationTasks: [
+        {
+          operationTaskId: 'OP-1',
+          operationSequence: 10,
+          status: 'queued',
+          blockReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
+          evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+        },
+      ],
+    })
+    readWorkOrderForRelease.mockResolvedValue(latest)
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeUndefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
+    expect(wrapper.text()).not.toContain('确认下达工单')
+    expect(releaseWorkOrder).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a non-queued task has no release readiness facts', async () => {
+    const latest = workOrder({
+      status: 'started',
+      operationTasks: [
+        {
+          operationTaskId: 'OP-1',
+          operationSequence: 10,
+          status: 'inProgress',
+          blockReasons: [],
+          evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+        },
+      ],
+    })
+    readWorkOrderForRelease.mockResolvedValue(latest)
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeUndefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
+    expect(wrapper.text()).not.toContain('确认下达工单')
     expect(releaseWorkOrder).not.toHaveBeenCalled()
   })
 
@@ -398,6 +482,7 @@ describe('work-order list — release entry', () => {
     const wrapper = mountPage()
 
     await button(wrapper, '下达工单').trigger('click')
+    await flushPromises()
     const submit = button(wrapper, '确认下达')
     expect(submit.attributes('disabled')).toBeDefined()
     await wrapper.get('form').trigger('submit')
@@ -414,6 +499,7 @@ describe('work-order list — release entry', () => {
     const wrapper = mountPage()
 
     await button(wrapper, '下达工单').trigger('click')
+    await flushPromises()
     await wrapper.get('input[type="checkbox"]').setValue(true)
     const submit = button(wrapper, '确认下达')
     expect(submit.attributes('disabled')).toBeUndefined()

@@ -245,7 +245,22 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
-    query: vi.fn(async () => ({ success: true, data: { status: 'Created' } })),
+    query: vi.fn(async () => ({
+      success: true,
+      data: {
+        workOrderId: 'WO-RELEASE',
+        status: 'Created',
+        productionVersionId: 'PV-1',
+        operationTasks: [
+          {
+            status: 'queued',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+        qualityHolds: [],
+      },
+    })),
   })),
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
@@ -1575,19 +1590,37 @@ describe('business MES composables', () => {
     )
   })
 
-  it('requires and forwards the selected manage scope for work-order release', async () => {
+  it('preflights and releases the exact work order through the selected manage scope', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
       {
         success: true,
-        data: { selectedScope: { kind: 'work-center', id: 'WC-MANAGE' } },
+        data: { selectedScope: { kind: 'workshop', id: 'WS-MANAGE' } },
       },
     )
     const workOrders = useMesWorkOrders()
+    vi.mocked(getBusinessConsoleMesWorkOrderDetailQueryOptions).mockClear()
 
-    expect(workOrders.workOrderManageScope.value).toEqual({
-      kind: 'work-center',
-      id: 'WC-MANAGE',
+    await expect(workOrders.readWorkOrderForRelease('WO-RELEASE')).resolves.toMatchObject({
+      workOrderId: 'WO-RELEASE',
+      status: 'Created',
+      productionVersionId: 'PV-1',
+    })
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-RELEASE' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'workshop',
+        scopeId: 'WS-MANAGE',
+      },
     })
 
     await workOrders.releaseWorkOrder('WO-RELEASE', {
@@ -1606,11 +1639,12 @@ describe('business MES composables', () => {
         query: {
           organizationId: 'org-001',
           environmentId: 'env-dev',
-          scopeKind: 'work-center',
-          scopeId: 'WC-MANAGE',
+          scopeKind: 'workshop',
+          scopeId: 'WS-MANAGE',
         },
       }),
     )
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledTimes(2)
   })
 
   it('closes a work order and records an engineering decision through the manage scope', async () => {

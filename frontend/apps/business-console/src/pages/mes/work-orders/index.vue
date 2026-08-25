@@ -7,15 +7,12 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { mesWorkOrderReleaseBlocker } from '@/composables/mes/workOrderRelease'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import {
-  describeMesReadinessReason,
-  useMesOperationTasks,
-  useMesWorkOrders,
-} from '@/composables/useBusinessMes'
+import { useMesOperationTasks, useMesWorkOrders } from '@/composables/useBusinessMes'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -102,10 +99,10 @@ const {
   workOrdersLastUpdatedAt,
   workOrdersPending,
   workOrdersTotal,
-  workOrderManageScope,
   workOrderReadScope,
   workOrderReadScopeMessage,
   workOrderReadScopeReady,
+  readWorkOrderForRelease,
   workOrderManageScopeMessage,
   workOrderManageScopePending,
   workOrderManageScopeReady,
@@ -204,15 +201,9 @@ type ReleaseIntent = {
   workOrderLabel: string
 }
 
-const RELEASEABLE_STATUSES = new Set(['created', 'started', 'hold'])
-const RELEASE_IGNORED_TASK_BLOCKERS = new Set([
-  // 下达命令会生成物料需求快照；列表中的“快照缺失”是下达前的正常状态。
-  'MATERIAL_REQUIREMENT_SNAPSHOT_MISSING',
-  // 后序任务尚不可开工不影响整个工单下达。
-  'PREVIOUS_OPERATION_INCOMPLETE',
-])
 const releaseIntent = shallowRef<ReleaseIntent | null>(null)
 const releaseWarningsConfirmed = shallowRef(false)
+const releasePreflightPending = shallowRef(false)
 const releaseDialogOpen = computed({
   get: () => releaseIntent.value !== null,
   set: (open: boolean) => {
@@ -238,53 +229,37 @@ const canSubmitRelease = computed(
     !releaseWorkOrderPending.value,
 )
 
-function releaseBlocker(order: Row) {
+function releaseBlocker(order: Parameters<typeof mesWorkOrderReleaseBlocker>[0]) {
   if (!canManageWorkOrders.value) return '没有工单下达权限'
   if (workOrderManageScopePending.value) return '正在确认主体授权工单范围'
   if (!workOrderManageScopeReady.value) {
     return workOrderManageScopeMessage.value || '主体授权工单范围未就绪'
   }
-  const readScope = workOrderReadScope.value
-  const manageScope = workOrderManageScope.value
-  if (
-    !readScope ||
-    !manageScope ||
-    readScope.kind !== manageScope.kind ||
-    readScope.id !== manageScope.id
-  ) {
-    return '当前读取范围与管理范围不一致，不能下达'
-  }
-  if (!order.workOrderId) return '工单标识缺失，不能下达'
-  if (!RELEASEABLE_STATUSES.has((order.status ?? '').toLowerCase())) {
-    return '当前状态不能下达'
-  }
-  if (!order.productionVersionId?.trim()) return '缺少生产版本，不能下达'
-  if (!order.operationTasks?.length) return '尚未生成工序任务，不能下达'
-  if (order.hasActiveQualityHold) return '存在有效质量保留，不能下达'
-  for (const task of order.operationTasks) {
-    if (!task.evaluatedAtUtc?.trim() || !Array.isArray(task.blockReasons)) {
-      return '工序就绪状态尚未取得，不能下达'
-    }
-    const reason = task.blockReasons.find((candidate) => {
-      const { code } = describeMesReadinessReason(candidate)
-      return !RELEASE_IGNORED_TASK_BLOCKERS.has(code)
-    })
-    if (reason) {
-      const display = describeMesReadinessReason(reason)
-      return `${display.label}，不能下达${display.detail ? `：${display.detail}` : ''}`
-    }
-  }
-  return null
+  return mesWorkOrderReleaseBlocker(order)
 }
 
-function openReleaseDialog(order: Row) {
+async function openReleaseDialog(order: Row) {
   if (releaseBlocker(order) || !order.workOrderId) return
-  releaseIntent.value = {
-    idempotencyKey: newMesIdempotencyKey(`release-work-order-${order.workOrderId}`),
-    workOrderId: order.workOrderId,
-    workOrderLabel: order.workOrderNo || order.workOrderId,
+  releasePreflightPending.value = true
+  try {
+    const latest = await readWorkOrderForRelease(order.workOrderId)
+    const blocker = releaseBlocker(latest)
+    if (blocker) throw new Error(blocker)
+    releaseIntent.value = {
+      idempotencyKey: newMesIdempotencyKey(`release-work-order-${order.workOrderId}`),
+      workOrderId: order.workOrderId,
+      workOrderLabel: order.workOrderNo || order.workOrderId,
+    }
+    releaseWarningsConfirmed.value = false
+  } catch (error) {
+    notifyOperationFailure(
+      '工单下达前置检查失败',
+      error,
+      '未能在当前管理范围内确认工单下达条件，请检查授权范围和就绪状态后重试。',
+    )
+  } finally {
+    releasePreflightPending.value = false
   }
-  releaseWarningsConfirmed.value = false
 }
 
 function clearReleaseIntent() {
@@ -809,8 +784,10 @@ function isNonEmpty(value: string) {
           </NvDropdownMenuItem>
           <NvDropdownMenuItem
             :aria-label="`下达工单 ${row.workOrderNo || row.workOrderId || ''}`"
-            :disabled="Boolean(releaseBlocker(row))"
-            :title="releaseBlocker(row) ?? '下达当前工单'"
+            :disabled="releasePreflightPending || Boolean(releaseBlocker(row))"
+            :title="
+              releasePreflightPending ? '正在确认下达条件' : (releaseBlocker(row) ?? '下达当前工单')
+            "
             @click="openReleaseDialog(row)"
           >
             <FactoryIcon aria-hidden="true" />

@@ -142,6 +142,7 @@ import {
 } from './businessContextBinding'
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
+import { mesWorkOrderReleaseBlocker } from './mes/workOrderRelease'
 import {
   useListFreshness,
   useListResponseState,
@@ -942,6 +943,25 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     },
   })
 
+  async function readReleaseCandidate(workOrderId: string, selectedScope: MesSelectedWorkScope) {
+    const query = getBusinessConsoleMesWorkOrderDetailQueryOptions({
+      path: { workOrderId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        scopeKind: selectedScope.kind,
+        scopeId: selectedScope.id,
+      },
+    })
+    const response = await query.query({
+      signal: new AbortController().signal,
+    } as Parameters<typeof query.query>[0])
+    if (response?.success !== true || !response.data) {
+      throw new Error(response?.message ?? '未取得当前管理范围内的工单详情')
+    }
+    return response.data
+  }
+
   return {
     createRushWorkOrder: (body: BusinessConsoleCreateRushWorkOrderRequest) =>
       createRushMutation.mutateAsync({ body }),
@@ -953,6 +973,10 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     recordProductionReportPending: reporting.recordProductionReportPending,
     refreshWorkOrders: () =>
       workOrdersScopeReady.value ? workOrdersQuery.refetch() : Promise.resolve(),
+    readWorkOrderForRelease: async (workOrderId: string) => {
+      const selectedScope = workOrderManageScope.requireSelectedScope()
+      return readReleaseCandidate(workOrderId, selectedScope)
+    },
     releaseWorkOrder: async (
       workOrderId: string,
       body: {
@@ -963,6 +987,9 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
       },
     ) => {
       const selectedScope = workOrderManageScope.requireSelectedScope()
+      const latest = await readReleaseCandidate(workOrderId, selectedScope)
+      const blocker = mesWorkOrderReleaseBlocker(latest)
+      if (blocker) throw new Error(blocker)
       return releaseMutation.mutateAsync({
         path: { workOrderId },
         query: {
@@ -986,7 +1013,6 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     workOrdersLastUpdatedAt,
     workOrdersHasSuccessfulResponse,
     workOrdersHasFailedResponse,
-    workOrderManageScope: workOrderManageScope.selectedScope,
     workOrderReadScope: workOrderReadScope.selectedScope,
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
