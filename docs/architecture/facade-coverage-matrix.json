@@ -3291,16 +3291,26 @@
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/close",
       "operationId": "closeBusinessMesWorkOrder",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; MES work-order close follows the workbench close-action menu phase (hold/cancel already exposed via #833)."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "closeBusinessConsoleMesWorkOrder"
+      ]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions",
       "operationId": "recordBusinessMesEngineeringChangeDecision",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; work-order engineering-change-decision follows the ECO-on-workorder menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleMesEngineeringChangeDecision"
+      ]
     },
     {
       "service": "Mes",
