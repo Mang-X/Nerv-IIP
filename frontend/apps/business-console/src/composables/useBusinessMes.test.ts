@@ -54,6 +54,7 @@ import {
   useMesOperationTasks,
   useMesOverview,
   useMesProductionPlans,
+  useMesProductionMaterialLots,
   useMesProductionReporting,
   useMesProductionReports,
   useMesQualityContext,
@@ -82,6 +83,7 @@ const authState = vi.hoisted(() => ({
     principalId: 'user-001',
     organizationId: 'org-001',
     environmentId: 'env-dev',
+    permissionCodes: [] as string[],
   },
   sessionId: 'session-001',
 }))
@@ -486,6 +488,7 @@ describe('business MES composables', () => {
       principalId: 'user-001',
       organizationId: 'org-001',
       environmentId: 'env-dev',
+      permissionCodes: [],
     }
     reactiveAuthState.sessionId = 'session-001'
     coladaState.queryDataById.set(
@@ -1956,5 +1959,50 @@ describe('business MES composables', () => {
     ready.filters.workOrderId = 'WO-CANCEL'
     ready.activateCancelPreview()
     expect(ready.cancelPreviewReady.value).toBe(true)
+  })
+
+  it('只把 received 且仍有余量的批次提供给报工表单', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal,
+      permissionCodes: ['business.mes.materials.read'],
+    }
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        items: [
+          {
+            requestId: 'MIR-RECEIVED',
+            materialId: 'MAT-1',
+            materialLotId: 'LOT-1',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'received',
+          },
+          {
+            requestId: 'MIR-PARTIAL',
+            materialId: 'MAT-2',
+            materialLotId: 'LOT-2',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'partiallyReceived',
+          },
+          {
+            requestId: 'MIR-FAILED',
+            materialId: 'MAT-3',
+            materialLotId: 'LOT-3',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'inventoryPostingFailed',
+          },
+        ],
+      },
+    })
+
+    const result = useMesProductionMaterialLots(() => ({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+    }))
+
+    expect(result.availableMaterialLots.value.map((row) => row.requestId)).toEqual(['MIR-RECEIVED'])
   })
 })

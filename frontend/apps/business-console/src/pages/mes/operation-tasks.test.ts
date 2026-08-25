@@ -117,6 +117,20 @@ vi.mock('@/composables/useBusinessMes', async () => {
       reportScopeReady: computed(() => true),
       refreshProductionReportState: vi.fn(),
     }),
+    useMesProductionMaterialLots: () => ({
+      materialsReadPermission: shallowRef(false),
+      materialLotsPending: shallowRef(false),
+      materialLotsError: shallowRef(undefined),
+      availableMaterialLots: shallowRef([]),
+      refreshMaterialLots: vi.fn(),
+    }),
+    useMesScrapReasonCodes: () => ({
+      qualityInspectionRecordsReadPermission: shallowRef(false),
+      scrapReasonCodesPending: shallowRef(false),
+      scrapReasonCodesError: shallowRef(undefined),
+      scrapReasonCodes: shallowRef([]),
+      refreshScrapReasonCodes: vi.fn(),
+    }),
     describeMesReadinessReason: (v: string) => ({ code: v, label: v, nextStep: '' }),
     useMesOperationTasks: () => ({
       filters: state.filters,
