@@ -4470,13 +4470,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
     organizationId?: string;
     environmentId?: string;
-    workOrderId?: string;
-    operationTaskId?: string;
-    defectCode?: string;
-    defectQuantity?: number;
-    materialLotId?: string | null;
-    batchOrSerial?: string | null;
-    idempotencyKey?: string;
+    workOrderId: string;
+    operationTaskId: string;
+    defectCode: string;
+    quantity?: number;
+    recordedAtUtc: string;
+    idempotencyKey: string;
+    scopeKind: string;
+    scopeId: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesRelatedQualityItemListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -15622,6 +15623,10 @@ export type RecordBusinessConsoleMesDefectData = {
 
 export type RecordBusinessConsoleMesDefectErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15630,6 +15635,8 @@ export type RecordBusinessConsoleMesDefectErrors = {
      */
     403: unknown;
 };
+
+export type RecordBusinessConsoleMesDefectError = RecordBusinessConsoleMesDefectErrors[keyof RecordBusinessConsoleMesDefectErrors];
 
 export type RecordBusinessConsoleMesDefectResponses = {
     /**
