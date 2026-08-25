@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -45,6 +46,40 @@ public sealed class MesSchemaConventionTests
             MesFacts.Schema);
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Material_issue_request_supplementary_fields_are_scope_safe_and_constrained()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MaterialIssueRequest))!;
+
+        Assert.Equal("is_supplementary", entity.FindProperty(nameof(MaterialIssueRequest.IsSupplementary))!.GetColumnName());
+        Assert.Equal("original_material_issue_request_no", entity.FindProperty(nameof(MaterialIssueRequest.OriginalMaterialIssueRequestNo))!.GetColumnName());
+        Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_material_issue_requests_supplementary_source");
+        Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_material_issue_requests_not_self_referential");
+
+        var originalRequestForeignKey = Assert.Single(
+            entity.GetForeignKeys(),
+            x => x.GetConstraintName() == "fk_material_issue_requests_original_request");
+        Assert.Equal(
+            [
+                nameof(MaterialIssueRequest.OrganizationId),
+                nameof(MaterialIssueRequest.EnvironmentId),
+                nameof(MaterialIssueRequest.OriginalMaterialIssueRequestNo),
+                nameof(MaterialIssueRequest.WorkOrderId),
+                nameof(MaterialIssueRequest.MaterialId),
+            ],
+            originalRequestForeignKey.Properties.Select(x => x.Name).ToArray());
+        Assert.Equal(
+            [
+                nameof(MaterialIssueRequest.OrganizationId),
+                nameof(MaterialIssueRequest.EnvironmentId),
+                nameof(MaterialIssueRequest.RequestNo),
+                nameof(MaterialIssueRequest.WorkOrderId),
+                nameof(MaterialIssueRequest.MaterialId),
+            ],
+            originalRequestForeignKey.PrincipalKey.Properties.Select(x => x.Name).ToArray());
     }
 
     [Fact]
