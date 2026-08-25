@@ -5219,6 +5219,32 @@ public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     DateTimeOffset StartedAtUtc,
     string IdempotencyKey);
 
+public sealed record BusinessConsoleMesRecordDowntimeEventV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId,
+    DateTimeOffset? ToUtc = null);
+
+public sealed record BusinessMesRecordDowntimeEventRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey,
+    DateTimeOffset? ToUtc = null);
+
 public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: RouteParam] string DowntimeEventId,
     [property: QueryParam] string OrganizationId,

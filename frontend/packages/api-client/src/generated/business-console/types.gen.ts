@@ -4683,6 +4683,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request = {
+    organizationId: string;
+    environmentId: string;
+    workOrderId: string;
+    operationTaskId?: string | null;
+    workCenterId: string;
+    deviceAssetId?: string | null;
+    reasonCode: string;
+    startedAtUtc: string;
+    idempotencyKey: string;
+    scopeKind: string;
+    scopeId: string;
+    toUtc?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecoverDowntimeEventRequest = {
     recoveredAtUtc?: string;
     idempotencyKey?: string;
@@ -15929,6 +15944,10 @@ export type RecordBusinessConsoleMesDowntimeEventData = {
 
 export type RecordBusinessConsoleMesDowntimeEventErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15938,6 +15957,8 @@ export type RecordBusinessConsoleMesDowntimeEventErrors = {
     403: unknown;
 };
 
+export type RecordBusinessConsoleMesDowntimeEventError = RecordBusinessConsoleMesDowntimeEventErrors[keyof RecordBusinessConsoleMesDowntimeEventErrors];
+
 export type RecordBusinessConsoleMesDowntimeEventResponses = {
     /**
      * Success
@@ -15946,6 +15967,39 @@ export type RecordBusinessConsoleMesDowntimeEventResponses = {
 };
 
 export type RecordBusinessConsoleMesDowntimeEventResponse = RecordBusinessConsoleMesDowntimeEventResponses[keyof RecordBusinessConsoleMesDowntimeEventResponses];
+
+export type RecordBusinessConsoleMesDowntimeEventV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/mes/downtime-events';
+};
+
+export type RecordBusinessConsoleMesDowntimeEventV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesDowntimeEventV2Error = RecordBusinessConsoleMesDowntimeEventV2Errors[keyof RecordBusinessConsoleMesDowntimeEventV2Errors];
+
+export type RecordBusinessConsoleMesDowntimeEventV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesDowntimeEventV2Response = RecordBusinessConsoleMesDowntimeEventV2Responses[keyof RecordBusinessConsoleMesDowntimeEventV2Responses];
 
 export type ConfirmBusinessConsoleMesDowntimeRecoveryData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecoverDowntimeEventRequest;

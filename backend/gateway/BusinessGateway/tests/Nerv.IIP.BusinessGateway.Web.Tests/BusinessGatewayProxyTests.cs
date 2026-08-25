@@ -2521,6 +2521,182 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_downtime_v2_write_forwards_real_context_after_target_work_center_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "mes-operator",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesDowntimeManage]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "mes-assignment",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/downtime-events", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-DOWNTIME",
+            operationTaskId = "OP-10",
+            workCenterId = "WC-A",
+            deviceAssetId = "DEV-01",
+            reasonCode = "MECH-FAULT",
+            startedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "downtime-v2-001",
+            scopeKind = "work-center",
+            scopeId = "WC-A",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        Assert.Equal(1, mes.RecordDowntimeCallCount);
+        Assert.Equal(
+            new BusinessMesRecordDowntimeEventRequest(
+                "org-001",
+                "env-dev",
+                "WO-DOWNTIME",
+                "OP-10",
+                "WC-A",
+                "DEV-01",
+                "MECH-FAULT",
+                DateTimeOffset.Parse("2026-08-25T14:30:00Z"),
+                "downtime-v2-001"),
+            mes.LastRecordDowntimeRequest);
+    }
+
+    [Fact]
+    public async Task Mes_downtime_v2_write_rejects_a_target_work_center_outside_the_selected_scope_without_forwarding()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "mes-operator",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesDowntimeManage]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "mes-assignment",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/downtime-events", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-DOWNTIME",
+            workCenterId = "WC-B",
+            reasonCode = "MECH-FAULT",
+            startedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "downtime-v2-forbidden-001",
+            scopeKind = "work-center",
+            scopeId = "WC-A",
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.RecordDowntimeCallCount);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_downtime_v2_write_rejects_missing_work_center_before_authorization_or_forwarding()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/downtime-events", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-DOWNTIME",
+            reasonCode = "MECH-FAULT",
+            startedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "downtime-v2-missing-work-center-001",
+            scopeKind = "work-center",
+            scopeId = "WC-A",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, mes.RecordDowntimeCallCount);
+        Assert.Null(auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_downtime_v1_route_is_preserved_but_fails_closed_without_real_work_center_context()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/mes/downtime-events", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-DOWNTIME",
+            reasonCode = "MECH-FAULT",
+            startedAtUtc = "2026-08-25T14:30:00Z",
+            idempotencyKey = "downtime-v1-rejected-001",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("work-center-required-use-v2", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(0, mes.RecordDowntimeCallCount);
+    }
+
+    [Fact]
     public async Task Mes_operation_action_rejects_a_known_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -15686,6 +15862,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public int StartOperationCallCount { get; private set; }
     public int RecordProductionReportCallCount { get; private set; }
     public int RecordDefectCallCount { get; private set; }
+    public int RecordDowntimeCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
 
@@ -15696,6 +15873,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public BusinessMesOperationTaskListRequest? LastReportableOperationTaskListRequest { get; private set; }
 
     public BusinessMesRecordDefectRequest? LastRecordDefectRequest { get; private set; }
+
+    public BusinessMesRecordDowntimeEventRequest? LastRecordDowntimeRequest { get; private set; }
 
     public Exception? FoundationReadinessFailure { get; init; }
 
@@ -16398,8 +16577,23 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
         string internalBearerToken,
         BusinessConsoleMesRecordDowntimeEventRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        RecordDowntimeCallCount++;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
+        string internalBearerToken,
+        BusinessMesRecordDowntimeEventRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        RecordDowntimeCallCount++;
+        LastRecordDowntimeRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleAcceptedResponse> ConfirmDowntimeRecoveryAsync(
         string internalBearerToken,

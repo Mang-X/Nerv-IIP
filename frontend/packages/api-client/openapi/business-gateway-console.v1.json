@@ -18604,12 +18604,77 @@
           "x-position": 1
         },
         "responses": {
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v2/mes/downtime-events": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "recordBusinessConsoleMesDowntimeEventV2",
+        "requestBody": {
+          "x-name": "BusinessConsoleMesRecordDowntimeEventV2Request",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -47118,6 +47183,94 @@
           },
           "idempotencyKey": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "workOrderId",
+          "workCenterId",
+          "reasonCode",
+          "startedAtUtc",
+          "idempotencyKey",
+          "scopeKind",
+          "scopeId"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "workOrderId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "operationTaskId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": true
+          },
+          "reasonCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeKind": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "toUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
