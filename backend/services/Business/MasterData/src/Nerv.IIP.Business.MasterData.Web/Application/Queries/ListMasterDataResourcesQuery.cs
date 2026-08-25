@@ -86,11 +86,30 @@ public sealed record ListMasterDataResourcesQuery(
     string? SkillCode = null,
     string? WorkshopCode = null) : IQuery<ListMasterDataResourcesResponse>;
 
+public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<ListMasterDataResourcesQuery>
+{
+    public ListMasterDataResourcesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        this.AddOffsetPageRules(query => query.Skip, query => query.Take);
+        this.AddKeywordRule(query => query.Keyword);
+    }
+}
+
 public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMasterDataResourcesQuery, ListMasterDataResourcesResponse>
 {
     public async Task<ListMasterDataResourcesResponse> Handle(ListMasterDataResourcesQuery request, CancellationToken cancellationToken)
     {
+        var criteria = request.ToCriteria();
+        request = request with
+        {
+            OrganizationId = criteria.Tenant.OrganizationId,
+            EnvironmentId = criteria.Tenant.EnvironmentId,
+            Skip = criteria.Page.Skip,
+            Take = criteria.Page.Take,
+            Keyword = criteria.Keyword.Value,
+        };
         var type = request.ResourceType.Trim().ToLowerInvariant();
         var query = type switch
         {

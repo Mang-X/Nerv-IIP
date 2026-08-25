@@ -86,6 +86,58 @@ public sealed class MasterDataOpenApiTests
         AssertStringToolingStatusSchema(statusRequestSchema);
     }
 
+    [Fact]
+    public async Task OpenApi_document_keeps_master_data_resource_list_query_flat_and_compatible()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        using var document = await GetOpenApiDocumentAsync(client);
+        var operation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v1/master-data/resources")
+            .GetProperty("get");
+        var parameters = operation.GetProperty("parameters").EnumerateArray().ToArray();
+        var parameterNames = parameters
+            .Select(parameter => parameter.GetProperty("name").GetString()!)
+            .ToArray();
+
+        Assert.Equal(
+            [
+                "organizationId",
+                "environmentId",
+                "resourceType",
+                "includeDisabled",
+                "skip",
+                "take",
+                "codeSet",
+                "parentCode",
+                "siteCode",
+                "lineCode",
+                "workCenterCode",
+                "category",
+                "partnerType",
+                "keyword",
+                "all",
+                "departmentCode",
+                "shiftCode",
+                "userId",
+                "skillCode",
+                "workshopCode",
+            ],
+            parameterNames);
+
+        Assert.Equal(0, GetDefault(parameters, "skip"));
+        Assert.Equal(100, GetDefault(parameters, "take"));
+    }
+
+    private static int GetDefault(IEnumerable<JsonElement> parameters, string name) =>
+        parameters
+            .Single(parameter => parameter.GetProperty("name").GetString() == name)
+            .GetProperty("schema")
+            .GetProperty("default")
+            .GetInt32();
+
     private static JsonElement ResolveSchema(JsonElement schema, JsonElement schemas)
     {
         if (schema.TryGetProperty("$ref", out var schemaReference))
