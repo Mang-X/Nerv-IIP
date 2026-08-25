@@ -7617,6 +7617,35 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse = {
+    status?: string;
+    reasonCode?: string | null;
+    candidates?: Array<NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate = {
+    objectType?: string;
+    strongIds?: {
+        [key: string]: string;
+    };
+    authority?: string;
+    source?: string;
+    observedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest = {
+    organizationId: string;
+    environmentId: string;
+    scannedValue: string;
+    pageIndex?: number;
+    pageSize?: number;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalTemplateListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTemplateListResponse | null;
 };
@@ -20938,6 +20967,39 @@ export type RecordBusinessConsoleBarcodeScanResponses = {
 };
 
 export type RecordBusinessConsoleBarcodeScanResponse = RecordBusinessConsoleBarcodeScanResponses[keyof RecordBusinessConsoleBarcodeScanResponses];
+
+export type ResolveBusinessConsoleBarcodeData = {
+    body: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/barcode/resolve';
+};
+
+export type ResolveBusinessConsoleBarcodeErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ResolveBusinessConsoleBarcodeError = ResolveBusinessConsoleBarcodeErrors[keyof ResolveBusinessConsoleBarcodeErrors];
+
+export type ResolveBusinessConsoleBarcodeResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse;
+};
+
+export type ResolveBusinessConsoleBarcodeResponse = ResolveBusinessConsoleBarcodeResponses[keyof ResolveBusinessConsoleBarcodeResponses];
 
 export type ListBusinessConsoleApprovalTemplatesData = {
     body?: never;

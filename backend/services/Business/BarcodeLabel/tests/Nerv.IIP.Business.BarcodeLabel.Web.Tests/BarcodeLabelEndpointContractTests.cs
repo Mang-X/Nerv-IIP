@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Auth;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
 using Nerv.IIP.ServiceAuth;
 
@@ -18,7 +19,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(13, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -76,6 +77,11 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.PermissionCode == BarcodeLabelPermissionCodes.ScansWrite
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "listBusinessBarcodeScans");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/barcodes/resolve"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.ScansWrite
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "resolveBusinessBarcode");
     }
 
     [Theory]
@@ -91,6 +97,7 @@ public sealed class BarcodeLabelEndpointContractTests
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]
     [InlineData(typeof(ListScansEndpoint))]
+    [InlineData(typeof(ResolveBarcodeEndpoint))]
     public void BarcodeLabel_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
@@ -198,6 +205,21 @@ public sealed class BarcodeLabelEndpointContractTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(RecordScanCommand.SourceWorkflow)));
+    }
+
+    [Fact]
+    public void Resolve_validator_rejects_blank_or_oversized_scan_values()
+    {
+        var validator = new ResolveBarcodeQueryValidator();
+
+        var blank = validator.Validate(new ResolveBarcodeQuery("org-001", "env-dev", ""));
+        var oversized = validator.Validate(new ResolveBarcodeQuery("org-001", "env-dev", new string('A', 201)));
+
+        Assert.False(blank.IsValid);
+        Assert.False(oversized.IsValid);
+        Assert.All(
+            blank.Errors.Concat(oversized.Errors),
+            error => Assert.True(SameProperty(error.PropertyName, nameof(ResolveBarcodeQuery.ScannedValue))));
     }
 
     [Fact]
