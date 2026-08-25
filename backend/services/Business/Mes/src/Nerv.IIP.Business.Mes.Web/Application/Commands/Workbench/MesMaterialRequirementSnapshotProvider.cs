@@ -28,7 +28,7 @@ public sealed record MesMaterialRequirementSnapshotLine(
     decimal AvailableQuantity,
     decimal StagedQuantity,
     string SourceSnapshotId,
-    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
+    IReadOnlyCollection<string> SubstituteMaterialIds);
 
 public enum MesMaterialRequirementSnapshotStatus
 {

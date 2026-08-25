@@ -82,6 +82,7 @@ public sealed class MesSchemaConventionTests
             originalRequestForeignKey.PrincipalKey.Properties.Select(x => x.Name).ToArray());
     }
 
+    // Contract: Governance. Authority: Issue #2222 acceptance 3 and the MES database schema catalog; provider behavior is covered separately on PostgreSQL.
     [Fact]
     public void Material_substitute_snapshot_and_issue_audit_columns_are_explicit()
     {

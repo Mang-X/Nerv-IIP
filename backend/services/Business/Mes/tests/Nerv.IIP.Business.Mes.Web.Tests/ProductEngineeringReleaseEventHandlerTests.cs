@@ -99,7 +99,8 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
                 0m,
                 "test",
                 "PV-OLD:MAT-OLD",
-                DateTimeOffset.Parse("2026-07-06T07:00:00Z")));
+                DateTimeOffset.Parse("2026-07-06T07:00:00Z"),
+                []));
             var released = WorkOrder.Create("org-001", "env-dev", "WO-RELEASED", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
             released.MarkReleased();
             released.RecordMaterialRequirementSnapshot(

@@ -9,6 +9,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
+    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 2 and its explicit exclusion of substitute inventory aggregation.
     [Fact]
     public async Task Http_provider_freezes_normalized_mbom_substitute_candidates_without_counting_their_inventory_yet()
     {

@@ -26,8 +26,9 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         string sourceSystem,
         string sourceSnapshotId,
         DateTimeOffset capturedAtUtc,
-        IReadOnlyCollection<string>? substituteMaterialIds)
+        IReadOnlyCollection<string> substituteMaterialIds)
     {
+        ArgumentNullException.ThrowIfNull(substituteMaterialIds);
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
@@ -70,7 +71,7 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         string sourceSystem,
         string sourceSnapshotId,
         DateTimeOffset capturedAtUtc,
-        IReadOnlyCollection<string>? substituteMaterialIds = null)
+        IReadOnlyCollection<string> substituteMaterialIds)
     {
         return new MaterialRequirement(
             organizationId,
@@ -93,8 +94,8 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
 
     private static string[] NormalizeSubstituteMaterialIds(
         string materialId,
-        IReadOnlyCollection<string>? substituteMaterialIds) =>
-        (substituteMaterialIds ?? [])
+        IReadOnlyCollection<string> substituteMaterialIds) =>
+        substituteMaterialIds
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .Where(x => !string.Equals(x, materialId, StringComparison.OrdinalIgnoreCase))
