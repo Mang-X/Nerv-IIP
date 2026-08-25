@@ -64,6 +64,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.FailureRequestNo}",
             inventoryReservationId: "not-a-guid");
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
 
         // Real cross-process Redis CAP transport: the observable facts live in the two PostgreSQL databases,
@@ -79,13 +81,26 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && state.Mes.SuccessMovementId is not null
                     && state.Mes.FailureStatus == "InventoryPostingFailed"
                     && !string.IsNullOrWhiteSpace(state.Mes.FailureCode)
+                    && state.Mes.SuccessUnitCost == source.ErpCapitalizedUnitCost
+                    && state.Mes.ErpCapitalizedUnitCost == source.ErpCapitalizedUnitCost
                     && state.Inventory.SuccessMovementCount == 1
-                    && state.Inventory.FailureMovementCount == 0,
+                    && state.Inventory.FailureMovementCount == 0
+                    && state.Inventory.SuccessRequestedUnitCost == source.ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessUnitCost == source.ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessMovementAmount == 5m * source.ErpCapitalizedUnitCost
+                    && state.Inventory.LedgerMovingAverageUnitCost == source.ErpCapitalizedUnitCost
+                    && state.Inventory.LedgerInventoryValue == 5m * source.ErpCapitalizedUnitCost,
                 describe: state =>
                     $"SuccessStatus={state.Mes.SuccessStatus}, SuccessMovement={state.Mes.SuccessMovementId}, " +
                     $"FailureStatus={state.Mes.FailureStatus}, FailureCode={state.Mes.FailureCode}, " +
                     $"InventorySuccess={state.Inventory.SuccessMovementCount}, " +
-                    $"InventoryFailure={state.Inventory.FailureMovementCount}",
+                    $"InventoryFailure={state.Inventory.FailureMovementCount}, " +
+                    $"MesUnitCost={state.Mes.SuccessUnitCost}, " +
+                    $"RequestedUnitCost={state.Inventory.SuccessRequestedUnitCost}, " +
+                    $"EffectiveUnitCost={state.Inventory.SuccessUnitCost}, " +
+                    $"MovementAmount={state.Inventory.SuccessMovementAmount}, " +
+                    $"LedgerMovingAverage={state.Inventory.LedgerMovingAverageUnitCost}, " +
+                    $"LedgerValue={state.Inventory.LedgerInventoryValue}",
                 options: new EventuallyOptions(
                     Timeout: TimeSpan.FromSeconds(90),
                     PollInterval: TimeSpan.FromMilliseconds(500),
@@ -95,6 +110,12 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal(source.WorkOrderId, observed.Inventory.SuccessSourceDocumentLineId);
             Assert.Equal("business-mes", observed.Inventory.SuccessSourceService);
             Assert.Equal(0, observed.Inventory.SimilarSourceMovementCount);
+            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Mes.SuccessUnitCost);
+            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Inventory.SuccessRequestedUnitCost);
+            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Inventory.SuccessUnitCost);
+            Assert.Equal(5m * source.ErpCapitalizedUnitCost, observed.Inventory.SuccessMovementAmount);
+            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Inventory.LedgerMovingAverageUnitCost);
+            Assert.Equal(5m * source.ErpCapitalizedUnitCost, observed.Inventory.LedgerInventoryValue);
         }
         catch (EventuallyTimeoutException timeout)
         {
@@ -150,7 +171,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 InventoryQualityStatuses.Unrestricted,
                 "production",
                 null,
-                5m,
+                source.ErpCapitalizedUnitCost,
                 now,
                 inventoryReservationId,
                 UnitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt));
@@ -222,6 +243,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             $"FGR-MAN528-F-{suffix}",
             $"LOT-MAN528-S-{suffix}",
             $"LOT-MAN528-F-{suffix}",
+            0m,
             probeRunId);
 
         await using var transaction = await connection.BeginTransactionAsync();
@@ -234,7 +256,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                  material_movement_count, over_receipt_tolerance_percent, capitalized_unit_cost)
             VALUES
                 (@work_order_row_id, @organization_id, @environment_id, @work_order_id, @sku_id, @uom_code, 10, 10,
-                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0, @capitalized_unit_cost);
+                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0, @erp_capitalized_unit_cost);
 
             INSERT INTO mes.finished_goods_receipt_requests
                 (id, organization_id, environment_id, request_no, work_order_id, sku_id, quantity, uom_code,
@@ -265,7 +287,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         insert.Parameters.AddWithValue("due_utc", DateTimeOffset.UtcNow.AddHours(8));
         insert.Parameters.AddWithValue("success_lot_no", source.SuccessLotNo);
         insert.Parameters.AddWithValue("failure_lot_no", source.FailureLotNo);
-        insert.Parameters.AddWithValue("capitalized_unit_cost", 12.34m);
+        insert.Parameters.AddWithValue("erp_capitalized_unit_cost", 12.34m);
         insert.Parameters.AddWithValue("cost_event_row_id", Guid.CreateVersion7());
         insert.Parameters.AddWithValue("cost_consumer_name", "business-mes.work-order-cost-capitalized");
         insert.Parameters.AddWithValue("cost_event_id", $"evt-man528-cost-{suffix}");
@@ -277,7 +299,25 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             $"work-order-cost-capitalized:{source.OrganizationId}:{source.EnvironmentId}:{source.WorkOrderId}");
         await insert.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
-        return source;
+
+        await using var authority = connection.CreateCommand();
+        authority.CommandText = """
+            SELECT capitalized_unit_cost
+            FROM mes.work_orders
+            WHERE organization_id = @organization_id
+              AND environment_id = @environment_id
+              AND work_order_id = @work_order_id;
+            """;
+        authority.Parameters.AddWithValue("organization_id", source.OrganizationId);
+        authority.Parameters.AddWithValue("environment_id", source.EnvironmentId);
+        authority.Parameters.AddWithValue("work_order_id", source.WorkOrderId);
+        var authorityValue = await authority.ExecuteScalarAsync();
+        if (authorityValue is not decimal erpCapitalizedUnitCost)
+        {
+            throw new InvalidOperationException("MAN-528 probe could not read the ERP-authoritative capitalized unit cost projection.");
+        }
+
+        return source with { ErpCapitalizedUnitCost = erpCapitalizedUnitCost };
     }
 
     private static async Task<ReceiptFacts> ReadMesFactsAsync(
@@ -290,11 +330,16 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.Text;
         command.CommandText = """
-            SELECT request_no, status, posted_inventory_movement_id, inventory_posting_failure_code
-            FROM mes.finished_goods_receipt_requests
-            WHERE organization_id = @organization_id
-              AND environment_id = @environment_id
-              AND request_no IN (@success_request_no, @failure_request_no);
+            SELECT receipt.request_no, receipt.status, receipt.posted_inventory_movement_id,
+                   receipt.inventory_posting_failure_code, receipt.unit_cost, work_order.capitalized_unit_cost
+            FROM mes.finished_goods_receipt_requests AS receipt
+            INNER JOIN mes.work_orders AS work_order
+                ON work_order.organization_id = receipt.organization_id
+               AND work_order.environment_id = receipt.environment_id
+               AND work_order.work_order_id = receipt.work_order_id
+            WHERE receipt.organization_id = @organization_id
+              AND receipt.environment_id = @environment_id
+              AND receipt.request_no IN (@success_request_no, @failure_request_no);
             """;
         command.Parameters.AddWithValue("organization_id", source.OrganizationId);
         command.Parameters.AddWithValue("environment_id", source.EnvironmentId);
@@ -304,6 +349,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? successMovementId = null;
         string? failureStatus = null;
         string? failureCode = null;
+        decimal? successUnitCost = null;
+        decimal? erpCapitalizedUnitCost = null;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -311,6 +358,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             {
                 successStatus = reader.GetString(1);
                 successMovementId = reader.IsDBNull(2) ? null : reader.GetString(2);
+                successUnitCost = reader.IsDBNull(4) ? null : reader.GetDecimal(4);
+                erpCapitalizedUnitCost = reader.IsDBNull(5) ? null : reader.GetDecimal(5);
             }
             else
             {
@@ -319,7 +368,13 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             }
         }
 
-        return new ReceiptFacts(successStatus, successMovementId, failureStatus, failureCode);
+        return new ReceiptFacts(
+            successStatus,
+            successMovementId,
+            failureStatus,
+            failureCode,
+            successUnitCost,
+            erpCapitalizedUnitCost);
     }
 
     private static async Task<InventoryFacts> ReadInventoryFactsAsync(
@@ -332,7 +387,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.Text;
         command.CommandText = """
-            SELECT source_document_id, source_service, source_document_line_id, lot_no
+            SELECT source_document_id, source_service, source_document_line_id, lot_no,
+                   requested_unit_cost, unit_cost, movement_amount
             FROM inventory.stock_movements
             WHERE organization_id = @organization_id
               AND environment_id = @environment_id
@@ -350,24 +406,64 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? successSourceService = null;
         string? successSourceDocumentLineId = null;
         string? successLotNo = null;
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        decimal? successRequestedUnitCost = null;
+        decimal? successUnitCost = null;
+        decimal? successMovementAmount = null;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            var requestNo = reader.GetString(0);
-            if (requestNo == source.SuccessRequestNo)
+            while (await reader.ReadAsync(cancellationToken))
             {
-                successCount++;
-                successSourceService = reader.GetString(1);
-                successSourceDocumentLineId = reader.IsDBNull(2) ? null : reader.GetString(2);
-                successLotNo = reader.IsDBNull(3) ? null : reader.GetString(3);
+                var requestNo = reader.GetString(0);
+                if (requestNo == source.SuccessRequestNo)
+                {
+                    successCount++;
+                    successSourceService = reader.GetString(1);
+                    successSourceDocumentLineId = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    successLotNo = reader.IsDBNull(3) ? null : reader.GetString(3);
+                    successRequestedUnitCost = reader.IsDBNull(4) ? null : reader.GetDecimal(4);
+                    successUnitCost = reader.IsDBNull(5) ? null : reader.GetDecimal(5);
+                    successMovementAmount = reader.IsDBNull(6) ? null : reader.GetDecimal(6);
+                }
+                else if (requestNo == source.FailureRequestNo)
+                {
+                    failureCount++;
+                }
+                else
+                {
+                    similarCount++;
+                }
             }
-            else if (requestNo == source.FailureRequestNo)
+        }
+
+        decimal? ledgerMovingAverageUnitCost = null;
+        decimal? ledgerInventoryValue = null;
+        await using (var ledger = connection.CreateCommand())
+        {
+            ledger.CommandText = """
+                SELECT moving_average_unit_cost, inventory_value
+                FROM inventory.stock_ledgers
+                WHERE organization_id = @organization_id
+                  AND environment_id = @environment_id
+                  AND sku_code = @sku_code
+                  AND uom_code = @uom_code
+                  AND site_code = 'finished-goods'
+                  AND location_code = 'receiving'
+                  AND lot_no = @lot_no
+                  AND serial_no IS NULL
+                  AND quality_status = 'unrestricted'
+                  AND owner_type = 'production'
+                  AND owner_id IS NULL;
+                """;
+            ledger.Parameters.AddWithValue("organization_id", source.OrganizationId);
+            ledger.Parameters.AddWithValue("environment_id", source.EnvironmentId);
+            ledger.Parameters.AddWithValue("sku_code", source.SkuId);
+            ledger.Parameters.AddWithValue("uom_code", source.UomCode);
+            ledger.Parameters.AddWithValue("lot_no", source.SuccessLotNo);
+            await using var ledgerReader = await ledger.ExecuteReaderAsync(cancellationToken);
+            if (await ledgerReader.ReadAsync(cancellationToken))
             {
-                failureCount++;
-            }
-            else
-            {
-                similarCount++;
+                ledgerMovingAverageUnitCost = ledgerReader.GetDecimal(0);
+                ledgerInventoryValue = ledgerReader.GetDecimal(1);
             }
         }
 
@@ -377,7 +473,12 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             similarCount,
             successSourceService,
             successSourceDocumentLineId,
-            successLotNo);
+            successLotNo,
+            successRequestedUnitCost,
+            successUnitCost,
+            successMovementAmount,
+            ledgerMovingAverageUnitCost,
+            ledgerInventoryValue);
     }
 
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
@@ -456,13 +557,16 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string FailureRequestNo,
         string SuccessLotNo,
         string FailureLotNo,
+        decimal ErpCapitalizedUnitCost,
         string ProbeRunId);
 
     private sealed record ReceiptFacts(
         string? SuccessStatus,
         string? SuccessMovementId,
         string? FailureStatus,
-        string? FailureCode);
+        string? FailureCode,
+        decimal? SuccessUnitCost,
+        decimal? ErpCapitalizedUnitCost);
 
     private sealed record InventoryFacts(
         int SuccessMovementCount,
@@ -470,7 +574,12 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         int SimilarSourceMovementCount,
         string? SuccessSourceService,
         string? SuccessSourceDocumentLineId,
-        string? SuccessLotNo);
+        string? SuccessLotNo,
+        decimal? SuccessRequestedUnitCost,
+        decimal? SuccessUnitCost,
+        decimal? SuccessMovementAmount,
+        decimal? LedgerMovingAverageUnitCost,
+        decimal? LedgerInventoryValue);
 
     private sealed record MessagingFacts(
         string? SuccessPublishStatus,
