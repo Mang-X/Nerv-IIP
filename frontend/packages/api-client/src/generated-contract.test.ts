@@ -3,9 +3,11 @@ import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type {
   CreateBusinessConsoleCodeRuleVersionData,
+  NetCorePalExtensionsDtoResponseData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
+  RecordBusinessConsoleMesDowntimeEventErrors,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
@@ -247,6 +249,16 @@ describe('generated API client contract', () => {
       scopeId: string
       toUtc?: string | null
     }>()
+  })
+
+  it('exposes the v1 downtime fail-closed 400 response in generated contracts', () => {
+    type HasV1DowntimeBadRequest = RecordBusinessConsoleMesDowntimeEventErrors extends {
+      400: NetCorePalExtensionsDtoResponseData
+    }
+      ? true
+      : false
+
+    expectTypeOf<HasV1DowntimeBadRequest>().toEqualTypeOf<true>()
   })
 
   it('requires a non-null change reason for code-rule versions through the stable boundary', () => {

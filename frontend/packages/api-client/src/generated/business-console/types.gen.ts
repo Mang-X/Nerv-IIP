@@ -15944,6 +15944,10 @@ export type RecordBusinessConsoleMesDowntimeEventData = {
 
 export type RecordBusinessConsoleMesDowntimeEventErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15952,6 +15956,8 @@ export type RecordBusinessConsoleMesDowntimeEventErrors = {
      */
     403: unknown;
 };
+
+export type RecordBusinessConsoleMesDowntimeEventError = RecordBusinessConsoleMesDowntimeEventErrors[keyof RecordBusinessConsoleMesDowntimeEventErrors];
 
 export type RecordBusinessConsoleMesDowntimeEventResponses = {
     /**

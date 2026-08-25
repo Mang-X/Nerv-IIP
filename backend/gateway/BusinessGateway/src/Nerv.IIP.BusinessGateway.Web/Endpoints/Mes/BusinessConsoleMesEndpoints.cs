@@ -1944,6 +1944,7 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/downtime-events")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesDowntimeEvent")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
 public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
     IBusinessGatewayAuthorizationClient auth)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDowntimeEventRequest, BusinessConsoleAcceptedResponse>(

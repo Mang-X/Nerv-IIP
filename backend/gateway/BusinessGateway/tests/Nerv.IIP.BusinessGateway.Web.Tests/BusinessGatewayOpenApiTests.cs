@@ -915,6 +915,13 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "reasonCode");
         AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "startedAtUtc");
         AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "idempotencyKey");
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/downtime-events", "post", "400");
+        AssertJsonResponseRef(
+            paths,
+            "/api/business-console/v1/mes/downtime-events",
+            "post",
+            "400",
+            "NetCorePalExtensionsDtoResponseData");
         AssertOperationId(paths, "/api/business-console/v2/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEventV2");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "organizationId", 100);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "environmentId", 100);
