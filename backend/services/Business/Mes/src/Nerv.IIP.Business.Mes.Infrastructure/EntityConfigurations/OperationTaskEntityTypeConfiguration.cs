@@ -58,6 +58,8 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ScheduleInvalidationReasonCode).HasColumnName("schedule_invalidation_reason_code").HasMaxLength(64).HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
             .HasName("ak_operation_tasks_scope_task");
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue, x.WorkOrderId })
+            .HasName("ak_operation_tasks_scope_task_work_order");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

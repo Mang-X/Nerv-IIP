@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825114457_AddMesOperationTaskStartAuthorizations")]
+    partial class AddMesOperationTaskStartAuthorizations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -889,9 +892,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.HasAlternateKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue")
                         .HasName("ak_operation_tasks_scope_task");
 
-                    b.HasAlternateKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue", "WorkOrderId")
-                        .HasName("ak_operation_tasks_scope_task_work_order");
-
                     b.HasIndex("WorkOrderId")
                         .HasDatabaseName("ix_operation_tasks_work_order_id");
 
@@ -916,13 +916,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Stable authorization fact identifier.");
-
-                    b.Property<string>("ApprovalChainId")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
-                        .HasColumnName("approval_chain_id")
-                        .HasComment("BusinessApproval chain whose approved decision authorizes this start.");
 
                     b.Property<DateTimeOffset>("AuthorizedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -999,14 +992,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId");
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "IdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ux_operation_task_start_authorizations_scope_task_idempotency");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "WorkOrderId")
-                        .HasDatabaseName("IX_operation_task_start_authorizations_organization_id_enviro~1");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "AuthorizedAtUtc", "Id")
                         .HasDatabaseName("ix_operation_task_start_authorizations_scope_task_timeline");
@@ -2980,25 +2968,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_operation_tasks_work_orders");
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTaskStartAuthorization", b =>
-                {
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "EnvironmentId", "WorkOrderId")
-                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_operation_task_start_authorizations_work_orders");
-
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "EnvironmentId", "OperationTaskId", "WorkOrderId")
-                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue", "WorkOrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_operation_task_start_authorizations_operation_tasks");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.OutputLotGenealogy", b =>

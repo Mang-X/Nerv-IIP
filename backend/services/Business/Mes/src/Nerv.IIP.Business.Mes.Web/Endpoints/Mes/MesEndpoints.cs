@@ -1138,6 +1138,39 @@ public sealed class StartOperationTaskEndpoint(ISender sender, TimeProvider time
         StatusCodes.Status409Conflict);
 }
 
+public sealed record AuthorizeAndStartOperationTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string OperationTaskId,
+    string ApprovalChainId,
+    string Reason);
+
+public sealed class AuthorizeAndStartOperationTaskEndpoint(ISender sender)
+    : MesEndpoint<AuthorizeAndStartOperationTaskRequest, MesOperationActionResponse>
+{
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<AuthorizeAndStartOperationTaskEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AuthorizeAndStartOperationTaskRequest req, CancellationToken ct)
+    {
+        // 此内部入口只信任 InternalServiceAuthorizationPolicy 的认证主体；
+        // X-Authenticated-Actor 不参与授权，也不会写入跳站事实。授权主体只能来自
+        // Approval 服务返回的已通过裁决，避免把任意格式合法的转发头当作用户身份证明。
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        var idempotencyKey = HttpContext.Request.Headers["X-Idempotency-Key"].FirstOrDefault();
+        var response = await sender.Send(new AuthorizeAndStartOperationTaskCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OperationTaskId,
+            req.Reason,
+            req.ApprovalChainId,
+            correlationId ?? string.Empty,
+            idempotencyKey ?? string.Empty), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class PauseOperationTaskEndpoint(ISender sender, TimeProvider timeProvider)
     : OperationTaskActionEndpoint("pause", sender, timeProvider)
 {
@@ -1669,6 +1702,7 @@ public static class MesEndpointContracts
         new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
         new(typeof(ListReportableOperationTasksEndpoint), "GET", "/api/business/v1/mes/reportable-operation-tasks", MesPermissionCodes.ReportingRead, "listBusinessMesReportableOperationTasks"),
         new(typeof(StartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/start", MesPermissionCodes.OperationsManage, "startBusinessMesOperationTask"),
+        new(typeof(AuthorizeAndStartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start", MesPermissionCodes.OperationsManage, "authorizeAndStartBusinessMesOperationTask"),
         new(typeof(PauseOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/pause", MesPermissionCodes.OperationsManage, "pauseBusinessMesOperationTask"),
         new(typeof(ResumeOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/resume", MesPermissionCodes.OperationsManage, "resumeBusinessMesOperationTask"),
         new(typeof(CompleteOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/complete", MesPermissionCodes.OperationsManage, "completeBusinessMesOperationTask"),
