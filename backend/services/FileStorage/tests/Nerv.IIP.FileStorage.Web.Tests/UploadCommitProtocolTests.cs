@@ -15,6 +15,14 @@ namespace Nerv.IIP.FileStorage.Web.Tests;
 public sealed class UploadCommitProtocolTests
 {
     [Fact]
+    public void UploadSessionState_UsesDatabaseContractLiterals()
+    {
+        Assert.Equal("open", UploadSessionState.Open);
+        Assert.Equal("committing", UploadSessionState.Committing);
+        Assert.Equal("completed", UploadSessionState.Completed);
+    }
+
+    [Fact]
     public async Task PatchWaitingBehindTx1_ObservesCommittingBeforeMutation()
     {
         var services = new ServiceCollection();
@@ -32,34 +40,9 @@ public sealed class UploadCommitProtocolTests
             await db.SaveChangesAsync();
         }
 
-        var mutationGate = provider.GetRequiredService<IUploadSessionMutationGate>();
         var registry = provider.GetRequiredService<UploadSessionGateRegistry>();
-        var firstMutationEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseFirstMutation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var firstMutation = mutationGate.ExecutePatchMutationAsync(
-            "ups_gate",
-            async _ =>
-            {
-                firstMutationEntered.SetResult();
-                await releaseFirstMutation.Task;
-            },
-            CancellationToken.None);
-        var firstEdge = await Task.WhenAny(firstMutationEntered.Task, firstMutation);
-        Assert.Same(firstMutationEntered.Task, firstEdge);
-
-        var tx1GateTask = registry.EnterPatchCommitAsync("ups_gate", CancellationToken.None).AsTask();
-        Assert.False(tx1GateTask.IsCompleted);
-        releaseFirstMutation.SetResult();
-        Assert.Equal(UploadSessionMutationResult.Mutated, await firstMutation);
-        await using var tx1Gate = await tx1GateTask;
-        await using (var scope = provider.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var session = await db.UploadSessions.SingleAsync();
-            session.BeginCommit("cmt_gate", null, DateTimeOffset.UtcNow);
-            await db.SaveChangesAsync();
-        }
-
+        await using var tx1Gate = await registry.EnterPatchCommitAsync("ups_gate", CancellationToken.None);
+        var mutationGate = provider.GetRequiredService<IUploadSessionMutationGate>();
         var secondMutationRan = false;
         var waitingMutation = mutationGate.ExecutePatchMutationAsync(
             "ups_gate",
@@ -69,6 +52,15 @@ public sealed class UploadCommitProtocolTests
                 return Task.CompletedTask;
             },
             CancellationToken.None);
+        Assert.False(waitingMutation.IsCompleted);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var session = await db.UploadSessions.SingleAsync();
+            session.BeginCommit("cmt_gate", null, DateTimeOffset.UtcNow);
+            await db.SaveChangesAsync();
+        }
         await tx1Gate.DisposeAsync();
 
         Assert.Equal(UploadSessionMutationResult.NotOpen, await waitingMutation);
@@ -89,8 +81,156 @@ public sealed class UploadCommitProtocolTests
             CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
-        Assert.Equal(UploadSessionState.Committing, (await db.UploadSessions.SingleAsync()).State);
+        var session = await db.UploadSessions.SingleAsync();
+        Assert.Equal(UploadSessionState.Committing, session.State);
+        Assert.Null(session.NextRecoveryAtUtc);
+        Assert.NotNull(session.RecoveryTerminalAtUtc);
         Assert.Empty(await db.StoredFiles.ToArrayAsync());
+
+        var recoveryStorage = new ThrowingStorage();
+        var processor = new UploadCommitRecoveryProcessor(
+            db,
+            CreateService(db, recoveryStorage),
+            TimeProvider.System,
+            NullLogger<UploadCommitRecoveryProcessor>.Instance);
+        Assert.Equal(new UploadCommitRecoveryResult(0, 0, 0, 1), await processor.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(0, recoveryStorage.Attempts);
+    }
+
+    [Fact]
+    public async Task ExistingStoredFileForCommittingIntent_CompletesWithoutRepeatingStorage()
+    {
+        await using var db = CreateDbContext();
+        var session = CreateSession("ups_existing_file");
+        session.BeginCommit("cmt_existing_file", null, DateTimeOffset.UtcNow);
+        db.UploadSessions.Add(session);
+        db.StoredFiles.Add(StoredFileRecord.Create(
+            session.FileId,
+            session.OrganizationId,
+            session.EnvironmentId,
+            session.OwnerService,
+            session.OwnerType,
+            session.OwnerId,
+            session.FilePurpose,
+            session.FileName,
+            session.ContentType,
+            session.ExpectedSizeBytes,
+            $"sha256:{new string('a', 64)}",
+            session.ObjectKey,
+            Nerv.IIP.FileStorage.Domain.FileStorageFileStatus.Available,
+            session.CreatedAtUtc,
+            DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+        var storage = new ThrowingStorage();
+        var service = CreateService(db, storage);
+
+        var result = await service.CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, 5),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.Equal(0, storage.Attempts);
+        Assert.Equal(UploadSessionState.Completed, (await db.UploadSessions.SingleAsync()).State);
+        Assert.Single(await db.StoredFiles.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task ActiveStorageExecution_RenewsLeaseAndPreventsSecondOwnerAfterOriginalExpiry()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var root = new InMemoryDatabaseRoot();
+        var databaseName = $"filestorage-lease-{Guid.NewGuid():N}";
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, root)
+            .Options;
+        await using var firstDb = new ApplicationDbContext(options);
+        await using var secondDb = new ApplicationDbContext(options);
+        var leaseManager = new UploadCommitExecutionLeaseManager(
+            new TestDbContextFactory(options),
+            clock,
+            NullLogger<UploadCommitExecutionLeaseManager>.Instance);
+        var session = CreateSession("ups_lease");
+        session.BeginCommit("cmt_lease", null, clock.GetUtcNow());
+        firstDb.UploadSessions.Add(session);
+        await firstDb.SaveChangesAsync();
+        var blockingStorage = new BlockingStorage();
+        var firstService = CreateService(firstDb, blockingStorage, clock, leaseManager);
+        var secondService = CreateService(
+            secondDb,
+            new VerifiedStorage($"sha256:{new string('a', 64)}"),
+            clock,
+            leaseManager);
+
+        var first = firstService.CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, 5),
+            CancellationToken.None);
+        await blockingStorage.Entered;
+        for (var minute = 0; minute < 6; minute++)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            await WaitUntilAsync(async () =>
+            {
+                await using var evidenceDb = new ApplicationDbContext(options);
+                return await evidenceDb.UploadSessions
+                    .AsNoTracking()
+                    .AnyAsync(x => x.UploadSessionId == session.UploadSessionId
+                        && x.ExecutionLeaseUntilUtc > clock.GetUtcNow());
+            });
+        }
+
+        var second = await secondService.CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, 5),
+            CancellationToken.None);
+        blockingStorage.Release();
+        var firstResult = await first;
+
+        Assert.Equal(StatusCodes.Status409Conflict, second.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, firstResult.StatusCode);
+        Assert.Single(await firstDb.StoredFiles.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task StorageExecutionThatLosesOwnership_ReturnsConflictWithoutConcurrencyException()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var root = new InMemoryDatabaseRoot();
+        var databaseName = $"filestorage-lost-owner-{Guid.NewGuid():N}";
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, root)
+            .Options;
+        await using var ownerDb = new ApplicationDbContext(options);
+        var session = CreateSession("ups_lost_owner");
+        session.BeginCommit("cmt_lost_owner", null, clock.GetUtcNow());
+        ownerDb.UploadSessions.Add(session);
+        await ownerDb.SaveChangesAsync();
+        var storage = new BlockingStorage();
+        var leaseManager = new UploadCommitExecutionLeaseManager(
+            new TestDbContextFactory(options),
+            clock,
+            NullLogger<UploadCommitExecutionLeaseManager>.Instance);
+        var service = CreateService(ownerDb, storage, clock, leaseManager);
+        var completion = service.CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, 5),
+            CancellationToken.None);
+        await storage.Entered;
+        await using (var stealingDb = new ApplicationDbContext(options))
+        {
+            var stolen = await stealingDb.UploadSessions.SingleAsync();
+            stolen.ClaimExecution("wrk_stolen", clock.GetUtcNow().AddMinutes(5));
+            await stealingDb.SaveChangesAsync();
+        }
+
+        storage.Release();
+        var result = await completion;
+
+        Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+        await using var evidenceDb = new ApplicationDbContext(options);
+        Assert.Empty(await evidenceDb.StoredFiles.ToArrayAsync());
+        Assert.Equal(UploadSessionState.Committing, (await evidenceDb.UploadSessions.SingleAsync()).State);
     }
 
     [Fact]
@@ -114,7 +254,7 @@ public sealed class UploadCommitProtocolTests
     }
 
     [Fact]
-    public async Task RecoveryWithProofNoFinalActionStarted_ReopensSessionAndAllowsPatchMutation()
+    public async Task RecoveryAfterEarlierStorageActionStarted_RemainsCommittingAndRejectsPatchMutation()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var services = new ServiceCollection();
@@ -149,14 +289,11 @@ public sealed class UploadCommitProtocolTests
 
             Assert.Equal(new UploadCommitRecoveryResult(1, 0, 1), await processor.RunOnceAsync(CancellationToken.None));
             db.ChangeTracker.Clear();
-            var reopened = await db.UploadSessions.SingleAsync();
-            Assert.Equal(UploadSessionState.Open, reopened.State);
-            Assert.Null(reopened.CommitId);
-            Assert.Null(reopened.CommitChecksum);
-            Assert.Null(reopened.CommittingAtUtc);
-            Assert.Null(reopened.StorageActionStartedAtUtc);
-            Assert.Null(reopened.ExecutionOwnerId);
-            Assert.Null(reopened.ExecutionLeaseUntilUtc);
+            var retained = await db.UploadSessions.SingleAsync();
+            Assert.Equal(UploadSessionState.Committing, retained.State);
+            Assert.Equal("cmt_safe_reopen", retained.CommitId);
+            Assert.NotNull(retained.CommittingAtUtc);
+            Assert.NotNull(retained.StorageActionStartedAtUtc);
         }
 
         var patchMutationRan = false;
@@ -169,8 +306,8 @@ public sealed class UploadCommitProtocolTests
             },
             CancellationToken.None);
 
-        Assert.Equal(UploadSessionMutationResult.Mutated, mutation);
-        Assert.True(patchMutationRan);
+        Assert.Equal(UploadSessionMutationResult.NotOpen, mutation);
+        Assert.False(patchMutationRan);
     }
 
     [Fact]
@@ -209,18 +346,35 @@ public sealed class UploadCommitProtocolTests
     private static PostgreSqlFileStorageService CreateService(
         ApplicationDbContext db,
         IUploadCommitStorage storage,
-        TimeProvider? timeProvider = null) =>
+        TimeProvider? timeProvider = null,
+        UploadCommitExecutionLeaseManager? executionLeaseManager = null) =>
         new(
             db,
             new ServerProxyUploadProvider(),
             configuration: FileStorageTestConfiguration.Default,
             timeProvider: timeProvider,
-            commitStorage: storage);
+            commitStorage: storage,
+            executionLeaseManager: executionLeaseManager);
 
     private static ApplicationDbContext CreateDbContext() =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"filestorage-protocol-{Guid.NewGuid():N}")
             .Options);
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (await condition())
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        Assert.Fail("等待提交执行租约续租超时。");
+    }
 
     private static UploadSessionRecord CreateSession(string uploadSessionId) =>
         UploadSessionRecord.Create(
@@ -266,5 +420,45 @@ public sealed class UploadCommitProtocolTests
             UploadCommitIntent intent,
             CancellationToken cancellationToken) =>
             Task.FromResult(UploadCommitStorageResult.RetryableUnavailable());
+    }
+
+    private sealed class ThrowingStorage : IUploadCommitStorage
+    {
+        public int Attempts { get; private set; }
+
+        public Task<UploadCommitStorageResult> CommitAsync(
+            UploadCommitIntent intent,
+            CancellationToken cancellationToken)
+        {
+            Attempts++;
+            throw new InvalidOperationException("测试不应调用存储 seam。");
+        }
+    }
+
+    private sealed class BlockingStorage : IUploadCommitStorage
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => entered.Task;
+
+        public void Release() => release.TrySetResult();
+
+        public async Task<UploadCommitStorageResult> CommitAsync(
+            UploadCommitIntent intent,
+            CancellationToken cancellationToken)
+        {
+            entered.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            return UploadCommitStorageResult.Verified(
+                intent.ExpectedSizeBytes,
+                $"sha256:{new string('a', 64)}");
+        }
+    }
+
+    private sealed class TestDbContextFactory(DbContextOptions<ApplicationDbContext> options)
+        : IDbContextFactory<ApplicationDbContext>
+    {
+        public ApplicationDbContext CreateDbContext() => new(options);
     }
 }

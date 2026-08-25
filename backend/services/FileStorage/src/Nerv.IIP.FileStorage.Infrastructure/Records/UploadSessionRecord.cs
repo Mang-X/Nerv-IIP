@@ -30,6 +30,7 @@ public sealed class UploadSessionRecord
     public int RecoveryAttemptCount { get; private set; }
     public DateTimeOffset? NextRecoveryAtUtc { get; private set; }
     public string? LastRecoveryErrorCode { get; private set; }
+    public DateTimeOffset? RecoveryTerminalAtUtc { get; private set; }
     public string? ExecutionOwnerId { get; private set; }
     public DateTimeOffset? ExecutionLeaseUntilUtc { get; private set; }
     public long ConcurrencyVersion { get; private set; }
@@ -111,11 +112,33 @@ public sealed class UploadSessionRecord
         ConcurrencyVersion++;
     }
 
+    public void RecordTerminalRecoveryFailure(string errorCode, DateTimeOffset terminalAtUtc)
+    {
+        RecoveryAttemptCount++;
+        LastRecoveryErrorCode = errorCode;
+        NextRecoveryAtUtc = null;
+        RecoveryTerminalAtUtc = terminalAtUtc;
+        ExecutionOwnerId = null;
+        ExecutionLeaseUntilUtc = null;
+        ConcurrencyVersion++;
+    }
+
     public void ClaimExecution(string ownerId, DateTimeOffset leaseUntilUtc)
     {
         ExecutionOwnerId = ownerId;
         ExecutionLeaseUntilUtc = leaseUntilUtc;
         ConcurrencyVersion++;
+    }
+
+    public void RenewExecutionLease(DateTimeOffset leaseUntilUtc)
+    {
+        if (!string.Equals(State, UploadSessionState.Committing, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(ExecutionOwnerId))
+        {
+            throw new InvalidOperationException("只有当前 committing 执行所有者才能续租。");
+        }
+
+        ExecutionLeaseUntilUtc = leaseUntilUtc;
     }
 
     public void ReopenAfterStorageProvedNotStarted()
@@ -133,6 +156,7 @@ public sealed class UploadSessionRecord
         RecoveryAttemptCount = 0;
         NextRecoveryAtUtc = null;
         LastRecoveryErrorCode = null;
+        RecoveryTerminalAtUtc = null;
         ExecutionOwnerId = null;
         ExecutionLeaseUntilUtc = null;
         ConcurrencyVersion++;
@@ -144,6 +168,7 @@ public sealed class UploadSessionRecord
         CompletedAtUtc = completedAtUtc;
         NextRecoveryAtUtc = null;
         LastRecoveryErrorCode = null;
+        RecoveryTerminalAtUtc = null;
         ExecutionOwnerId = null;
         ExecutionLeaseUntilUtc = null;
         ConcurrencyVersion++;

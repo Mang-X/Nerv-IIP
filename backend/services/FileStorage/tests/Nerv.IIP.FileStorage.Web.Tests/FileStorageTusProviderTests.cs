@@ -74,7 +74,7 @@ public sealed class FileStorageTusProviderTests
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
         Assert.Null(result.Value);
-        Assert.Equal("最终存储提交暂不可用，请稍后重试完成上传。", result.Error?.Message);
+        Assert.Equal("Tus 上传存储暂不可用。", result.Error?.Message);
     }
 
     [Fact]
@@ -393,7 +393,7 @@ public sealed class FileStorageTusProviderTests
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
                 new CompleteUploadSessionRequest("org-001", "prod", "application-package", expectedChecksum, bytes.Length));
 
-            Assert.Equal(StatusCodes.Status503ServiceUnavailable, (int)completeResponse.StatusCode);
+            Assert.Equal(StatusCodes.Status400BadRequest, (int)completeResponse.StatusCode);
         }
         finally
         {

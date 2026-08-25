@@ -18,7 +18,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(71)",
                 maxLength: 71,
                 nullable: true,
-                comment: "不可变的预期规范 SHA-256 证据；最终存储需要自行计算时为空。");
+                comment: "Immutable expected canonical SHA-256 evidence; null when final storage must compute it.");
 
             migrationBuilder.AddColumn<string>(
                 name: "commit_id",
@@ -27,7 +27,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(64)",
                 maxLength: 64,
                 nullable: true,
-                comment: "首次持久提交 Tx1 时创建的不可变唯一所有权标识。");
+                comment: "Immutable unique commit ownership identifier created by Tx1.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "committing_at_utc",
@@ -35,7 +35,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "Tx1 将上传会话持久转换为 committing 状态时的 UTC 时间戳。");
+                comment: "UTC timestamp when Tx1 durably moved the upload session to committing.");
 
             migrationBuilder.AddColumn<long>(
                 name: "concurrency_version",
@@ -44,7 +44,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "bigint",
                 nullable: false,
                 defaultValue: 0L,
-                comment: "应用程序管理的上传状态转换乐观并发版本。");
+                comment: "Application-managed optimistic concurrency version for upload state transitions.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "execution_lease_until_utc",
@@ -52,7 +52,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "当前存储执行租约的 UTC 到期时间。");
+                comment: "UTC expiration timestamp of the current storage execution lease.");
 
             migrationBuilder.AddColumn<string>(
                 name: "execution_owner_id",
@@ -61,7 +61,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(64)",
                 maxLength: 64,
                 nullable: true,
-                comment: "获准为提交意图执行存储 I/O 的短期持久所有者。");
+                comment: "Short-lived durable owner authorized to execute storage I/O for the commit intent.");
 
             migrationBuilder.AddColumn<string>(
                 name: "last_recovery_error_code",
@@ -70,7 +70,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "character varying(64)",
                 maxLength: 64,
                 nullable: true,
-                comment: "最近一次恢复尝试产生的稳定非敏感诊断码。");
+                comment: "Stable non-sensitive diagnostic code from the latest recovery attempt.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "next_recovery_at_utc",
@@ -78,7 +78,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "恢复工作进程不得在此 UTC 时间戳之前重试此提交意图。");
+                comment: "UTC timestamp before which recovery must not retry this commit intent.");
 
             migrationBuilder.AddColumn<int>(
                 name: "recovery_attempt_count",
@@ -87,7 +87,15 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0,
-                comment: "此不可变提交意图的存储恢复失败次数。");
+                comment: "Storage recovery failure count for the immutable commit intent.");
+
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "recovery_terminal_at_utc",
+                schema: "filestorage",
+                table: "upload_sessions",
+                type: "timestamp with time zone",
+                nullable: true,
+                comment: "UTC timestamp when automatic recovery stopped after a permanent evidence failure.");
 
             migrationBuilder.AddColumn<string>(
                 name: "state",
@@ -97,7 +105,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 maxLength: 32,
                 nullable: false,
                 defaultValue: "open",
-                comment: "持久上传生命周期状态：open、committing 或 completed。");
+                comment: "Durable upload lifecycle state: open, committing, or completed.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "storage_action_started_at_utc",
@@ -105,7 +113,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 table: "upload_sessions",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "任何可能建立最终字节的存储操作开始前写入的 UTC 持久标记。");
+                comment: "Durable UTC marker written before any storage action that may establish final bytes.");
 
             migrationBuilder.Sql(
                 """
@@ -174,7 +182,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 name: "CK_upload_sessions_state_intent",
                 schema: "filestorage",
                 table: "upload_sessions",
-                sql: "(state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR (state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)");
+                sql: "(state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND (recovery_terminal_at_utc IS NULL OR (next_recovery_at_utc IS NULL AND last_recovery_error_code IS NOT NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)) AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR (state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)");
         }
 
         /// <inheritdoc />
@@ -187,7 +195,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 type: "boolean",
                 nullable: false,
                 defaultValue: false,
-                comment: "上传会话是否已完成。");
+                comment: "Whether the upload session was completed.");
 
             migrationBuilder.Sql(
                 """
@@ -252,6 +260,11 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
 
             migrationBuilder.DropColumn(
                 name: "recovery_attempt_count",
+                schema: "filestorage",
+                table: "upload_sessions");
+
+            migrationBuilder.DropColumn(
+                name: "recovery_terminal_at_utc",
                 schema: "filestorage",
                 table: "upload_sessions");
 

@@ -94,42 +94,45 @@ public sealed class UploadSessionRecordEntityTypeConfiguration : IEntityTypeConf
             .HasColumnName("state")
             .IsRequired()
             .HasMaxLength(32)
-            .HasComment("持久上传生命周期状态：open、committing 或 completed。");
+            .HasComment("Durable upload lifecycle state: open, committing, or completed.");
         builder.Property(x => x.CommitId)
             .HasColumnName("commit_id")
             .HasMaxLength(64)
-            .HasComment("首次持久提交 Tx1 时创建的不可变唯一所有权标识。");
+            .HasComment("Immutable unique commit ownership identifier created by Tx1.");
         builder.Property(x => x.CommitChecksum)
             .HasColumnName("commit_checksum")
             .HasMaxLength(71)
-            .HasComment("不可变的预期规范 SHA-256 证据；最终存储需要自行计算时为空。");
+            .HasComment("Immutable expected canonical SHA-256 evidence; null when final storage must compute it.");
         builder.Property(x => x.CommittingAtUtc)
             .HasColumnName("committing_at_utc")
-            .HasComment("Tx1 将上传会话持久转换为 committing 状态时的 UTC 时间戳。");
+            .HasComment("UTC timestamp when Tx1 durably moved the upload session to committing.");
         builder.Property(x => x.StorageActionStartedAtUtc)
             .HasColumnName("storage_action_started_at_utc")
-            .HasComment("任何可能建立最终字节的存储操作开始前写入的 UTC 持久标记。");
+            .HasComment("Durable UTC marker written before any storage action that may establish final bytes.");
         builder.Property(x => x.RecoveryAttemptCount)
             .HasColumnName("recovery_attempt_count")
-            .HasComment("此不可变提交意图的存储恢复失败次数。");
+            .HasComment("Storage recovery failure count for the immutable commit intent.");
         builder.Property(x => x.NextRecoveryAtUtc)
             .HasColumnName("next_recovery_at_utc")
-            .HasComment("恢复工作进程不得在此 UTC 时间戳之前重试此提交意图。");
+            .HasComment("UTC timestamp before which recovery must not retry this commit intent.");
         builder.Property(x => x.LastRecoveryErrorCode)
             .HasColumnName("last_recovery_error_code")
             .HasMaxLength(64)
-            .HasComment("最近一次恢复尝试产生的稳定非敏感诊断码。");
+            .HasComment("Stable non-sensitive diagnostic code from the latest recovery attempt.");
+        builder.Property(x => x.RecoveryTerminalAtUtc)
+            .HasColumnName("recovery_terminal_at_utc")
+            .HasComment("UTC timestamp when automatic recovery stopped after a permanent evidence failure.");
         builder.Property(x => x.ConcurrencyVersion)
             .HasColumnName("concurrency_version")
             .IsConcurrencyToken()
-            .HasComment("应用程序管理的上传状态转换乐观并发版本。");
+            .HasComment("Application-managed optimistic concurrency version for upload state transitions.");
         builder.Property(x => x.ExecutionOwnerId)
             .HasColumnName("execution_owner_id")
             .HasMaxLength(64)
-            .HasComment("获准为提交意图执行存储 I/O 的短期持久所有者。");
+            .HasComment("Short-lived durable owner authorized to execute storage I/O for the commit intent.");
         builder.Property(x => x.ExecutionLeaseUntilUtc)
             .HasColumnName("execution_lease_until_utc")
-            .HasComment("当前存储执行租约的 UTC 到期时间。");
+            .HasComment("UTC expiration timestamp of the current storage execution lease.");
         builder.Property(x => x.CompletedAtUtc)
             .HasColumnName("completed_at_utc")
             .HasComment("UTC timestamp when the upload session was completed.");
@@ -141,8 +144,8 @@ public sealed class UploadSessionRecordEntityTypeConfiguration : IEntityTypeConf
         builder.HasIndex(x => new { x.State, x.NextRecoveryAtUtc });
         builder.ToTable(table => table.HasCheckConstraint(
             "CK_upload_sessions_state_intent",
-            "(state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR " +
-            "(state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR " +
-            "(state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)"));
+            "(state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR " +
+            "(state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND (recovery_terminal_at_utc IS NULL OR (next_recovery_at_utc IS NULL AND last_recovery_error_code IS NOT NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)) AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR " +
+            "(state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)"));
     }
 }

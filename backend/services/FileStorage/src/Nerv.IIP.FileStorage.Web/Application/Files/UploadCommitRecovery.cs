@@ -5,7 +5,7 @@ using Nerv.IIP.FileStorage.Infrastructure.Records;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
-public sealed record UploadCommitRecoveryResult(int Examined, int Completed, int Deferred);
+public sealed record UploadCommitRecoveryResult(int Examined, int Completed, int Deferred, int Terminal = 0);
 
 public sealed class UploadCommitRecoveryProcessor(
     ApplicationDbContext dbContext,
@@ -16,9 +16,16 @@ public sealed class UploadCommitRecoveryProcessor(
     public async Task<UploadCommitRecoveryResult> RunOnceAsync(CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
+        var terminal = await dbContext.UploadSessions
+            .AsNoTracking()
+            .CountAsync(
+                x => x.State == UploadSessionState.Committing
+                    && x.RecoveryTerminalAtUtc != null,
+                cancellationToken);
         var sessions = await dbContext.UploadSessions
             .AsNoTracking()
             .Where(x => x.State == UploadSessionState.Committing
+                && x.RecoveryTerminalAtUtc == null
                 && (x.NextRecoveryAtUtc == null || x.NextRecoveryAtUtc <= now))
             .OrderBy(x => x.NextRecoveryAtUtc)
             .ThenBy(x => x.CommittingAtUtc)
@@ -52,16 +59,17 @@ public sealed class UploadCommitRecoveryProcessor(
             }
         }
 
-        if (sessions.Length > 0)
+        if (sessions.Length > 0 || terminal > 0)
         {
             logger.LogInformation(
-                "FileStorage 提交恢复本轮检查了 {ExaminedCount} 个意图；完成 {CompletedCount} 个；延后 {DeferredCount} 个。",
+                "FileStorage 提交恢复本轮检查了 {ExaminedCount} 个意图；完成 {CompletedCount} 个；延后 {DeferredCount} 个；终止积压 {TerminalCount} 个。",
                 sessions.Length,
                 completed,
-                sessions.Length - completed);
+                sessions.Length - completed,
+                terminal);
         }
 
-        return new UploadCommitRecoveryResult(sessions.Length, completed, sessions.Length - completed);
+        return new UploadCommitRecoveryResult(sessions.Length, completed, sessions.Length - completed, terminal);
     }
 }
 

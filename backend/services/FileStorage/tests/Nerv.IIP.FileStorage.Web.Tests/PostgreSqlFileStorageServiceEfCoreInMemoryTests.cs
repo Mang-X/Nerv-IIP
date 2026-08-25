@@ -615,7 +615,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     }
 
     [Fact]
-    public async Task CompleteUploadSession_CurrentTusStagingCannotMasqueradeAsFinalEvidence()
+    public async Task CompleteUploadSession_TusMagicMismatch_IsRejectedBeforeCommitIntent()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -645,8 +645,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 9),
                 CancellationToken.None);
 
-            Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
-            Assert.Equal("最终存储提交暂不可用，请稍后重试完成上传。", result.Error?.Message);
+            Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
             Assert.False((await dbContext.UploadSessions.SingleAsync()).Completed);
             Assert.Equal(UploadSessionState.Open, (await dbContext.UploadSessions.SingleAsync()).State);
             Assert.Empty(await dbContext.StoredFiles.ToArrayAsync());
@@ -1034,6 +1033,45 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             Assert.True(store.Exists("ups_completed"));
             Assert.Equal(["ups_active", "ups_completed"], await dbContext.UploadSessions.OrderBy(x => x.UploadSessionId).Select(x => x.UploadSessionId).ToArrayAsync());
             Assert.Equal(["dgr_active"], await dbContext.DownloadGrants.Select(x => x.DownloadGrantId).ToArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task GarbageCollector_RetainsExpiredCommittingSessionAndTusBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateEfCoreInMemoryDbContext();
+            var now = DateTimeOffset.UtcNow;
+            AddUploadSession(
+                dbContext,
+                "ups_committing",
+                "file_committing",
+                now.AddMinutes(-30),
+                now.AddMinutes(-10),
+                completed: false);
+            await dbContext.SaveChangesAsync();
+            var session = await dbContext.UploadSessions.SingleAsync();
+            session.BeginCommit("cmt_committing", null, now.AddMinutes(-15));
+            await dbContext.SaveChangesAsync();
+            var store = CreateTusStore(rootPath);
+            await WriteTusBytesAsync(store, session.UploadSessionId);
+            var collector = new PostgreSqlFileStorageGarbageCollector(
+                dbContext,
+                new TestTusStoreAccessor(store),
+                FileStorageTestConfiguration.Default);
+
+            var result = await collector.CollectAsync(CancellationToken.None);
+
+            Assert.Equal(0, result.ExpiredUploadSessionsRemoved);
+            Assert.Equal(0, result.LocalTusFilesRemoved);
+            Assert.True(store.Exists(session.UploadSessionId));
+            Assert.Equal(UploadSessionState.Committing, (await dbContext.UploadSessions.SingleAsync()).State);
         }
         finally
         {

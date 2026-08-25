@@ -197,7 +197,7 @@
       "id": "filestorage-postgres",
       "sourcePath": "backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageRestartPersistenceTests.cs",
       "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the FileStorage restart persistence smoke\\.\";$"
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the FileStorage PostgreSQL profile tests\\.\";$"
     },
     {
       "id": "acceptance-runtime-maintenance",
@@ -544,7 +544,7 @@
       "sourceId": "filestorage-postgres",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.FileStorage\\.Web\\.Tests\\.FileStorageRestartPersistenceTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the FileStorage restart persistence smoke\\.$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the FileStorage PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
       ],
@@ -554,9 +554,11 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Database_executes_state_check_and_unique_commit_id_constraints",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Independent_gate_registries_claim_one_database_owner_and_create_one_file_fact",
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "demandplanning-postgres",
