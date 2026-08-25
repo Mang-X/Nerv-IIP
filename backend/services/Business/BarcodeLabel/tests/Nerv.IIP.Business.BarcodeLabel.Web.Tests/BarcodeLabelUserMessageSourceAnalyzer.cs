@@ -27,6 +27,13 @@ public enum BarcodeLabelKnownExceptionSiteKind
 
 public static class BarcodeLabelUserMessageSourceAnalyzer
 {
+    private static readonly IReadOnlySet<string> ScannedAssemblyNames = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "Nerv.IIP.Business.BarcodeLabel.Domain",
+        "Nerv.IIP.Business.BarcodeLabel.Infrastructure",
+        "Nerv.IIP.Business.BarcodeLabel.Web",
+    };
+
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
     private const string CommandHandlerTypeName = "NetCorePal.Extensions.Primitives.ICommandHandler`1";
     private const string CommandHandlerWithResultTypeName = "NetCorePal.Extensions.Primitives.ICommandHandler`2";
@@ -46,7 +53,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
     public static IReadOnlyList<BarcodeLabelKnownExceptionSite> Discover(
         IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
         IReadOnlyCollection<string>? commandHandlerTypeNames = null,
-        bool requireSuccessfulCompilation = true)
+        IReadOnlyDictionary<string, int>? expectedCompilationErrorCounts = null)
     {
         if (documents.Count == 0)
         {
@@ -54,7 +61,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         }
 
         var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, requireSuccessfulCompilation);
+        var compilation = CreateCompilation(sourceTrees, expectedCompilationErrorCounts);
         var sites = new Dictionary<string, BarcodeLabelKnownExceptionSite>(StringComparer.Ordinal);
 
         foreach (var syntaxTree in sourceTrees)
@@ -205,7 +212,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
     public static IReadOnlyList<string> Analyze(
         IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
-        bool requireSuccessfulCompilation = true)
+        IReadOnlyDictionary<string, int>? expectedCompilationErrorCounts = null)
     {
         if (documents.Count == 0)
         {
@@ -213,7 +220,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         }
 
         var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, requireSuccessfulCompilation);
+        var compilation = CreateCompilation(sourceTrees, expectedCompilationErrorCounts);
         var violations = new List<Violation>();
 
         foreach (var syntaxTree in sourceTrees)
@@ -252,11 +259,12 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
 
     private static CSharpCompilation CreateCompilation(
         IReadOnlyCollection<SyntaxTree> sourceTrees,
-        bool requireSuccessfulCompilation)
+        IReadOnlyDictionary<string, int>? expectedCompilationErrorCounts)
     {
         var syntaxTrees = sourceTrees
             .Append(CSharpSyntaxTree.ParseText(
                 """
+                // 镜像 Microsoft.NET.Sdk.Web 的隐式全局 using；Primitives 是本门禁额外需要的语义合同。
                 global using Microsoft.AspNetCore.Builder;
                 global using Microsoft.AspNetCore.Hosting;
                 global using Microsoft.AspNetCore.Http;
@@ -281,18 +289,41 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             "BarcodeLabelUserMessageArchitecture",
             syntaxTrees,
             CreateMetadataReferences(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new CSharpCompilationOptions(sourceTrees.Any(tree =>
+                tree.GetRoot().DescendantNodes().OfType<GlobalStatementSyntax>().Any())
+                    ? OutputKind.ConsoleApplication
+                    : OutputKind.DynamicallyLinkedLibrary));
         var errors = compilation.GetDiagnostics()
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .OrderBy(diagnostic => NormalizePath(diagnostic.Location.SourceTree?.FilePath ?? string.Empty), StringComparer.Ordinal)
             .ThenBy(diagnostic => diagnostic.Location.SourceSpan.Start)
             .ThenBy(diagnostic => diagnostic.Id, StringComparer.Ordinal)
             .ToArray();
-        if (requireSuccessfulCompilation && errors.Length != 0)
+        var expectedErrorCounts = expectedCompilationErrorCounts
+            ?? new Dictionary<string, int>(StringComparer.Ordinal);
+        var actualErrorCounts = errors
+            .GroupBy(diagnostic => diagnostic.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var unexpectedErrorIds = actualErrorCounts.Keys
+            .Except(expectedErrorCounts.Keys, StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        var countMismatches = expectedErrorCounts
+            .Where(expected => actualErrorCounts.GetValueOrDefault(expected.Key) != expected.Value)
+            .OrderBy(expected => expected.Key, StringComparer.Ordinal)
+            .Select(expected => $"{expected.Key}：期望 {expected.Value}，实际 {actualErrorCounts.GetValueOrDefault(expected.Key)}")
+            .ToArray();
+        if (unexpectedErrorIds.Length != 0 || countMismatches.Length != 0)
         {
             throw new InvalidOperationException(
                 "BarcodeLabel 用户消息源码无法编译："
                 + Environment.NewLine
+                + (unexpectedErrorIds.Length == 0
+                    ? string.Empty
+                    : $"未登记诊断码：{string.Join(", ", unexpectedErrorIds)}。{Environment.NewLine}")
+                + (countMismatches.Length == 0
+                    ? string.Empty
+                    : $"诊断数量不匹配：{string.Join("；", countMismatches)}。{Environment.NewLine}")
                 + string.Join(Environment.NewLine, errors.Select(diagnostic => diagnostic.ToString())));
         }
 
@@ -487,6 +518,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
         var assemblyPaths = trustedPlatformAssemblies?
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Where(path => !ScannedAssemblyNames.Contains(Path.GetFileNameWithoutExtension(path)))
             .Append(typeof(KnownException).Assembly.Location)
             .Distinct(StringComparer.Ordinal)
             ?? [
