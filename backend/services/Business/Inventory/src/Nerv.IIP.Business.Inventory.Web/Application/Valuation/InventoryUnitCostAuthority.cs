@@ -29,7 +29,17 @@ public sealed record InventoryUnitCostAuthorityResolution(
         new(InventoryUnitCostAuthorityStatuses.Available, unitCost);
 
     public static InventoryUnitCostAuthorityResolution Pending(string reasonCode) =>
-        new(InventoryUnitCostAuthorityStatuses.Pending, ReasonCode: reasonCode);
+        new(InventoryUnitCostAuthorityStatuses.Pending, ReasonCode: RequirePendingReasonCode(reasonCode));
+
+    public static string RequirePendingReasonCode(string? reasonCode)
+    {
+        if (!string.IsNullOrWhiteSpace(reasonCode))
+        {
+            return reasonCode;
+        }
+
+        throw new InventoryUnitCostAuthorityProtocolException();
+    }
 
     public static InventoryUnitCostAuthorityResolution Rejected(string reasonCode) =>
         new(InventoryUnitCostAuthorityStatuses.Rejected, ReasonCode: reasonCode);
@@ -135,7 +145,8 @@ public sealed class HttpInventoryUnitCostAuthorityResolver(
 
             if (string.Equals(authority.Status, MesFinishedGoodsCostAuthorityStatuses.Pending, StringComparison.OrdinalIgnoreCase))
             {
-                return InventoryUnitCostAuthorityResolution.Pending(authority.ReasonCode ?? "authority-pending");
+                return InventoryUnitCostAuthorityResolution.Pending(
+                    InventoryUnitCostAuthorityResolution.RequirePendingReasonCode(authority.ReasonCode));
             }
 
             if (!string.Equals(authority.Status, MesFinishedGoodsCostAuthorityStatuses.Available, StringComparison.OrdinalIgnoreCase) ||
@@ -158,5 +169,18 @@ public sealed class HttpInventoryUnitCostAuthorityResolver(
     }
 }
 
-public sealed class InventoryUnitCostAuthorityPendingException(string reasonCode)
-    : Exception($"Inventory unit-cost authority is pending: {reasonCode}");
+public sealed class InventoryUnitCostAuthorityPendingException : Exception
+{
+    public InventoryUnitCostAuthorityPendingException(string reasonCode)
+        : base($"Inventory unit-cost authority is pending: {reasonCode}")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+        ReasonCode = reasonCode;
+    }
+
+    public string ReasonCode { get; }
+}
+
+public sealed class InventoryUnitCostAuthorityProtocolException()
+    : InvalidOperationException(
+        "Inventory unit-cost authority returned Pending without a formal ReasonCode.");

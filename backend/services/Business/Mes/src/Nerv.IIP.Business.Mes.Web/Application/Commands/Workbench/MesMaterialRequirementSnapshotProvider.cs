@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.ServiceAuth;
 using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
@@ -174,17 +175,16 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                     x.SkuCode,
                     x.UnitOfMeasureCode,
                     requiredQuantity,
-                    NormalizeSubstituteMaterialIds(x.SkuCode, x.SubstituteSkuCodes));
+                    ParseSubstituteMaterialIds(x.SkuCode, x.SubstituteSkuCodes));
             })
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.UomCode.ToUpperInvariant()}", StringComparer.Ordinal)
             .Select(x => new MaterialRequirementLineDraft(
                 x.First().MaterialId,
                 x.First().UomCode,
                 x.Sum(y => y.RequiredQuantity),
-                x.SelectMany(y => y.SubstituteMaterialIds)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Order(StringComparer.OrdinalIgnoreCase)
-                    .ToArray()))
+                MaterialSubstituteCandidateNormalizer.Normalize(
+                    x.First().MaterialId,
+                    x.SelectMany(y => y.SubstituteMaterialIds))))
             .ToArray();
         if (requiredLines.Length == 0)
         {
@@ -474,15 +474,13 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         return standalone.Concat(selectedAlternates).ToArray();
     }
 
-    private static IReadOnlyCollection<string> NormalizeSubstituteMaterialIds(
+    private static IReadOnlyCollection<string> ParseSubstituteMaterialIds(
         string materialId,
         string? substituteSkuCodes) =>
-        (substituteSkuCodes ?? string.Empty)
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(x => !string.Equals(x, materialId, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        MaterialSubstituteCandidateNormalizer.Normalize(
+            materialId,
+            (substituteSkuCodes ?? string.Empty)
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
     private static bool TryParseVersionReference(string versionId, out string code, out string revision)
     {
