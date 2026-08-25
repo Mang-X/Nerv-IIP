@@ -158,5 +158,14 @@ public sealed class HttpInventoryUnitCostAuthorityResolver(
     }
 }
 
-public sealed class InventoryUnitCostAuthorityPendingException(string reasonCode)
-    : Exception($"Inventory unit-cost authority is pending: {reasonCode}");
+public sealed class InventoryUnitCostAuthorityPendingException : Exception
+{
+    public InventoryUnitCostAuthorityPendingException(string reasonCode)
+        : base($"Inventory unit-cost authority is pending: {reasonCode}")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+        ReasonCode = reasonCode;
+    }
+
+    public string ReasonCode { get; }
+}

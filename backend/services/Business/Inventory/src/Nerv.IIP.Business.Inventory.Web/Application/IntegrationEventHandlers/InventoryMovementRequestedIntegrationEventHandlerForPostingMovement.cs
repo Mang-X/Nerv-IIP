@@ -1,5 +1,7 @@
 using DotNetCore.CAP;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -17,7 +19,8 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
     ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IIntegrationEventPublisher integrationEventPublisher,
-    IInventoryUnitCostAuthorityResolver? unitCostAuthorityResolver = null)
+    IInventoryUnitCostAuthorityResolver? unitCostAuthorityResolver = null,
+    ApplicationDbContext? dbContext = null)
     : IIntegrationEventHandler<InventoryMovementRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-inventory.movement-requested";
@@ -93,6 +96,11 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                     ShelfLifeDays: payload.ShelfLifeDays),
                 cancellationToken);
         }
+        catch (InventoryUnitCostAuthorityPendingException ex)
+        {
+            await RecordAuthorityResolutionPendingAsync(integrationEvent, ex, cancellationToken);
+            throw;
+        }
         catch (InventoryPostingRejectedException ex)
         {
             logger.LogWarning(
@@ -118,6 +126,36 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 payload.QualityStatus);
             await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
         }
+    }
+
+    private async Task RecordAuthorityResolutionPendingAsync(
+        InventoryMovementRequestedIntegrationEvent integrationEvent,
+        InventoryUnitCostAuthorityPendingException exception,
+        CancellationToken cancellationToken)
+    {
+        var context = dbContext
+            ?? throw new InvalidOperationException(
+                "Inventory authority pending audit persistence is not configured.",
+                exception);
+        var status = InventoryAuthorityResolutionPendingAudit.PendingStatus;
+        var existing = await context.AuthorityResolutionPendingAudits
+            .SingleOrDefaultAsync(x => x.EventId == integrationEvent.EventId, cancellationToken);
+        if (existing is not null)
+        {
+            existing.EnsureMatches(integrationEvent.Payload.IdempotencyKey, exception.ReasonCode, status);
+            return;
+        }
+
+        context.AuthorityResolutionPendingAudits.Add(
+            new InventoryAuthorityResolutionPendingAudit(
+                integrationEvent.EventId,
+                integrationEvent.Payload.IdempotencyKey,
+                exception.ReasonCode,
+                DateTimeOffset.UtcNow));
+
+        // Do not catch provider failures here. A failed audit write must escape
+        // the CAP handler so the delivery remains unacknowledged and retryable.
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     private Task SendStatusTransferAsync(InventoryMovementRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
