@@ -88,7 +88,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（345）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（346）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和

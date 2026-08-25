@@ -155,6 +155,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// <summary>已处理的线边退料幂等键及数量，支持客户端超时后的同意图回放。</summary>
     public string LineSideReturnIdempotencyKeysJson { get; private set; } = "{}";
 
+    /// <summary>退料幂等记录与数量变更共用的乐观并发令牌。</summary>
+    public long LineSideReturnConcurrencyToken { get; private set; }
+
     /// <summary>本次收料尝试的在途数量：已提交给库存、尚未双腿回执，齐套不计。</summary>
     public decimal PendingReceiptQuantity { get; private set; }
 
@@ -750,6 +753,8 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             recorded[idempotencyKey.Trim()] = returnedQuantity;
             LineSideReturnIdempotencyKeysJson = JsonSerializer.Serialize(recorded);
         }
+
+        LineSideReturnConcurrencyToken++;
 
         AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
         AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));

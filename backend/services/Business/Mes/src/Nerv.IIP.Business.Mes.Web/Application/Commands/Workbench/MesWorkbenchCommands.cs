@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.DemandPlanning;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -1132,7 +1133,7 @@ public sealed record ReturnLineSideMaterialCommand(
     string RequestId,
     DateTimeOffset ReturnedAtUtc,
     decimal ReturnedQuantity,
-    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
+    string IdempotencyKey) : ICommand<MesAcceptedResponse>;
 
 public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<ReturnLineSideMaterialCommand>
 {
@@ -1142,7 +1143,20 @@ public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<R
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.RequestId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReturnedQuantity).GreaterThan(0);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class ReturnLineSideMaterialCommandLock : ICommandLock<ReturnLineSideMaterialCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        ReturnLineSideMaterialCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-mes:material-issue-return:{command.OrganizationId.Trim()}:{command.EnvironmentId.Trim()}:{command.RequestId.Trim()}",
+            30));
     }
 }
 

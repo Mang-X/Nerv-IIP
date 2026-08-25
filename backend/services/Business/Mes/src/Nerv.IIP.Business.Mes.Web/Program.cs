@@ -115,6 +115,9 @@ builder.Services.AddMediatR(configuration => configuration
 builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,
     ChangeOperationTaskStateCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<ReturnLineSideMaterialCommand>,
+    ReturnLineSideMaterialCommandLock>();
 // Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
 // material has no returnable lot) as the standard success=false envelope instead of an unhandled
 // HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns

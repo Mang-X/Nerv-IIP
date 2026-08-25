@@ -11,7 +11,11 @@ import {
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
   useCanScheduleSingleOrder,
 } from '@/composables/useSingleOrderScheduling'
-import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReasons,
+  makeIdempotencyKey,
+  useMesWorkOrderDetail,
+} from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,
@@ -299,10 +303,6 @@ const receiveForm = reactive({
 const returnOpen = ref(false)
 const returnForm = reactive({ requestId: '', quantity: '', idempotencyKey: '' })
 
-function newMaterialIdempotencyKey(scope: string) {
-  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
-
 const materialIssueRows = computed(() => materialIssueRequests.value)
 type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
 const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
@@ -354,7 +354,7 @@ function openIssueDialog(materialId?: string) {
   issueForm.materialId = materialId ?? ''
   issueForm.quantity = ''
   issueForm.operationTaskId = ''
-  issueForm.idempotencyKey = newMaterialIdempotencyKey(
+  issueForm.idempotencyKey = makeIdempotencyKey(
     `issue-${filters.workOrderId}-${materialId ?? 'material'}`,
   )
   issueOpen.value = true
@@ -391,7 +391,7 @@ function openReceiveDialog(row: MaterialIssueRow) {
   receiveForm.requestId = row.requestId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
-  receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
+  receiveForm.idempotencyKey = makeIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
   receiveOpen.value = true
 }
 
@@ -399,7 +399,7 @@ function openReturnDialog(row: MaterialIssueRow) {
   if (!canReturn(row)) return
   returnForm.requestId = row.requestId ?? ''
   returnForm.quantity = String(returnableQuantityOfRow(row))
-  returnForm.idempotencyKey = newMaterialIdempotencyKey(`return-${row.requestId ?? 'request'}`)
+  returnForm.idempotencyKey = makeIdempotencyKey(`return-${row.requestId ?? 'request'}`)
   returnOpen.value = true
 }
 

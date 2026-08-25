@@ -45019,6 +45019,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
         "properties": {
           "returnedAtUtc": {
             "type": "string",
@@ -45031,7 +45034,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "nullable": true
+            "minLength": 1
           }
         }
       },

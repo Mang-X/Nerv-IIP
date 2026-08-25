@@ -337,6 +337,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_supplementary")
                         .HasComment("Whether this material issue request supplements an earlier request.");
+
                     b.Property<string>("LineSideReturnIdempotencyKeysJson")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

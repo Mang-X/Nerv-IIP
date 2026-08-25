@@ -658,7 +658,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                2m),
+                2m,
+                "legacy-return-1"),
             CancellationToken.None);
 
         Assert.Equal(3m, materialRequest.ReceivedQuantity);
@@ -736,7 +737,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                3m),
+                3m,
+                "legacy-return-consumed"),
             CancellationToken.None));
 
         Assert.Contains("可退", exception.Message, StringComparison.Ordinal);
@@ -757,7 +759,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                5m),
+                5m,
+                "legacy-return-zero"),
             CancellationToken.None);
 
         Assert.Equal(0m, materialRequest.ReceivedQuantity);

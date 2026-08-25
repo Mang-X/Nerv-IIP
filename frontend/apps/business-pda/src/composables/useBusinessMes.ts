@@ -1534,10 +1534,8 @@ export function useMesMaterialIssue() {
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
-        ignoreBackgroundError,
-      )
+    async onSuccess() {
+      await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
 
@@ -1552,10 +1550,8 @@ export function useMesMaterialIssue() {
 
   const returnMutation = useMutation({
     ...returnBusinessConsoleMesLineSideMaterialMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
-        ignoreBackgroundError,
-      )
+    async onSuccess() {
+      await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
 
@@ -1648,11 +1644,7 @@ export function useMesMaterialIssue() {
         if (items.length === 0 || skip + items.length >= total) break
         skip += items.length
       }
-      const returnable = Math.max(
-        0,
-        (authoritative?.receivedQuantity ?? 0) - (authoritative?.consumedQuantity ?? 0),
-      )
-      if (!authoritative || !(authoritative.materialLotId ?? '').trim() || returnable <= 0) {
+      if (!authoritative) {
         throw new Error('当前领料单没有可退回的线边物料。')
       }
       return returnMutation.mutateAsync({
