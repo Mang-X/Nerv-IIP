@@ -689,11 +689,16 @@ function Assert-NervIssue1912WalkthroughEvidence {
     if ($uiProofs.Count -lt $requiredNodes.Count) {
         throw "Issue #1912 walkthrough evidence must contain at least one UI proof per walkthrough node; found $($uiProofs.Count)."
     }
+    $uiProofNodeSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($proof in $uiProofs) {
         if ([int]$proof.pageHttpStatus -ne 200 -or [int]$proof.listHttpStatus -ne 200) {
             throw "Issue #1912 UI proof for '$($proof.page)' must record page/list HTTP 200."
         }
-        foreach ($field in @('page', 'listPath', 'stableKey', 'renderedRowText', 'emptyText', 'screenshot')) {
+        if (-not ($requiredNodes -contains [string]$proof.node)) {
+            throw "Issue #1912 UI proof references unknown walkthrough node '$($proof.node)'."
+        }
+        [void] $uiProofNodeSet.Add([string]$proof.node)
+        foreach ($field in @('node', 'page', 'listPath', 'stableKey', 'renderedRowText', 'emptyText', 'screenshot')) {
             if ([string]::IsNullOrWhiteSpace([string]$proof.$field)) {
                 throw "Issue #1912 UI proof is missing '$field'."
             }
@@ -701,6 +706,17 @@ function Assert-NervIssue1912WalkthroughEvidence {
         if (-not (Test-Path -LiteralPath ([string]$proof.screenshot) -PathType Leaf)) {
             throw "Issue #1912 UI proof screenshot was not created at '$($proof.screenshot)'."
         }
+    }
+    foreach ($node in $requiredNodes) {
+        if (-not $uiProofNodeSet.Contains($node)) {
+            throw "Issue #1912 walkthrough evidence is missing a UI proof for required node '$node'."
+        }
+    }
+    if ($uiProofNodeSet.Count -ne $requiredNodes.Count) {
+        throw "Issue #1912 walkthrough evidence UI proof mapping contains unexpected nodes."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$evidence.requestFailurePolicy)) {
+        throw 'Issue #1912 walkthrough evidence must declare its request failure policy.'
     }
     if (@($evidence.failedRequests).Count -ne 0) { throw 'Issue #1912 walkthrough evidence contains failed browser requests.' }
     if (@($evidence.pageErrors).Count -ne 0) { throw 'Issue #1912 walkthrough evidence contains browser page errors.' }
@@ -711,7 +727,7 @@ function Assert-NervIssue1912WalkthroughEvidence {
         throw 'Issue #1912 walkthrough evidence summary is not a complete runtime-confirmed set.'
     }
     $raw = Get-Content -LiteralPath $EvidencePath -Raw
-    foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token')) {
+    foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token', '(?i)\b(?:token|secret|connectionString|jwt)\b\s*["'']?\s*[:=]\s*(?!["'']?<redacted)')) {
         if ($raw -match $forbiddenPattern) { throw "Issue #1912 walkthrough evidence contains forbidden secret-shaped text matching '$forbiddenPattern'." }
     }
     return $evidence

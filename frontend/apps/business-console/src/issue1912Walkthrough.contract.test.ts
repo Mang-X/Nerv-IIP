@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const scenarioSource = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), '../e2e/issue1912-real-machine-walkthrough.spec.ts'),
+  resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    '../e2e/issue1912-real-machine-walkthrough.spec.ts',
+  ),
   'utf8',
 )
 
@@ -24,6 +27,11 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('/api/business-console/v1/erp/procurement/supplier-quotations')
     expect(scenarioSource).toContain('/api/business-console/v1/erp/procurement/purchase-orders')
     expect(scenarioSource).toContain('/api/business-console/v1/approval/chains')
+    expect(scenarioSource).toContain(
+      "PURCHASE_ORDER_APPROVAL_TEMPLATE_CODE = 'purchase-order-release'",
+    )
+    expect(scenarioSource).toContain('approvalChainDetail')
+    expect(scenarioSource).toContain("approverRef) !== 'user-admin'")
     expect(scenarioSource).toContain('/api/business-console/v1/erp/procurement/purchase-receipts')
     expect(scenarioSource).toContain('/api/business-console/v1/erp/sales/sales-orders')
     expect(scenarioSource).toContain('/api/business-console/v1/planning/demands')
@@ -45,6 +53,11 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('emptyText')
     expect(scenarioSource).toContain('await page.screenshot')
     expect(scenarioSource).toContain('failedRequests')
+    expect(scenarioSource).toContain('classifyRequestFailure')
+    expect(scenarioSource).toContain('expectedRequestCancellations')
+    expect(scenarioSource).toContain('requestFailurePolicy')
+    expect(scenarioSource).toContain('connectionstring')
+    expect(scenarioSource).toContain('jwt')
     expect(scenarioSource).toContain('NERV_IIP_ISSUE_1912_EVIDENCE_PATH')
     expect(scenarioSource).toContain('NERV_IIP_ISSUE_1912_WORLD_ENABLED')
     expect(scenarioSource).toContain('NERV_IIP_ISSUE_1912_HISTORY_ENABLED')
@@ -55,7 +68,11 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('NERV_IIP_PLAYWRIGHT_BASE_URL')
     expect(scenarioSource).toContain('NERV_IIP_FULLSTACK_ADMIN_PASSWORD')
     expect(scenarioSource).toContain('NERV_IIP_ISSUE_1912_EVIDENCE_PATH')
-    expect(scenarioSource).toContain('requires a managed full-stack session and an evidence destination')
+    expect(scenarioSource).toContain(
+      'requires a managed full-stack session and an evidence destination',
+    )
+    expect(scenarioSource).toContain('node: options.node')
+    expect(scenarioSource).toContain('proof.node))].sort())')
     expect(scenarioSource).toContain("conclusion: 'not-verified'")
   })
 })
