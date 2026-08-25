@@ -1463,6 +1463,7 @@ public sealed class BusinessGatewayOpenApiTests
         string schemaNameSuffix,
         params string[] propertyNames)
     {
+        AssertRequiredSchemaProperties(document, schemaNameSuffix, propertyNames);
         var schemas = document.RootElement
             .GetProperty("components")
             .GetProperty("schemas")

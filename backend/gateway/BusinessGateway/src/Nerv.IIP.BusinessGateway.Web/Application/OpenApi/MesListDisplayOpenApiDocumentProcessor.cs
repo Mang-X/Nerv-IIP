@@ -54,6 +54,13 @@ public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
         ("BusinessConsoleMesCapacityImpactRow", "status"),
     ];
 
+    private static readonly (string SchemaSuffix, string[] PropertyNames)[] RequiredNullableActualHoursProperties =
+    [
+        ("BusinessConsoleMesOperationTaskRow", ["actualLaborHours", "actualMachineHours"]),
+        ("BusinessConsoleMesProductionReportRow", ["operationActualLaborHours", "operationActualMachineHours"]),
+        ("BusinessConsoleMesProductionReportDetail", ["operationActualLaborHours", "operationActualMachineHours"]),
+    ];
+
     private static readonly string[] MesListPaths =
     [
         "/api/business-console/v1/mes/work-orders",
@@ -81,6 +88,22 @@ public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
             }
 
             ApplyStatusEnum(property);
+        }
+
+        foreach (var (schemaSuffix, propertyNames) in RequiredNullableActualHoursProperties)
+        {
+            var schema = FindSchemaBySuffix(context, schemaSuffix);
+            foreach (var propertyName in propertyNames)
+            {
+                if (!schema.Properties.TryGetValue(propertyName, out var property))
+                {
+                    throw new InvalidOperationException(
+                        $"Missing MES actual-hours OpenAPI schema property: {schemaSuffix}.{propertyName}");
+                }
+
+                schema.RequiredProperties.Add(propertyName);
+                property.IsNullableRaw = true;
+            }
         }
 
         foreach (var path in MesListPaths)
