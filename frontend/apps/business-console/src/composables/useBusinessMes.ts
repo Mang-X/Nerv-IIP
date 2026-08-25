@@ -53,7 +53,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
-  recordBusinessConsoleMesDefectMutationOptions,
+  recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
@@ -92,7 +92,7 @@ import {
   type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
-  type BusinessConsoleMesRecordDefectRequest,
+  type BusinessConsoleMesRecordDefectV2Request,
   type BusinessConsoleMesRecordDowntimeEventRequest,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
   type BusinessConsoleMesRelatedQualityItemRow,
@@ -506,6 +506,7 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
   return {
     coversWorkOrder,
     principalIdentity,
+    refreshScope: () => workContextQuery.refetch(),
     requireSelectedScope,
     selectedScope,
     scopeMessage,
@@ -2552,11 +2553,14 @@ export function useMesQualityContext() {
     ),
   )
   const defectMutation = useMutation({
-    ...recordBusinessConsoleMesDefectMutationOptions(),
+    ...recordBusinessConsoleMesDefectV2MutationOptions(),
     onSuccess: () =>
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesRelatedQualityItems']).catch(
-        ignoreBackgroundError,
-      ),
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesRelatedQualityItems',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesWorkOrderDetail',
+      ]).catch(ignoreBackgroundError),
   })
 
   return {
@@ -2571,8 +2575,31 @@ export function useMesQualityContext() {
     qualityItemsPending: qualityQuery.isLoading,
     qualityItemsState: businessReadState(qualityQuery, () => hasBusinessContext(filters)),
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
-    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) =>
-      defectMutation.mutateAsync({ body }),
+    recordDefect: async (
+      body: Omit<BusinessConsoleMesRecordDefectV2Request, 'organizationId' | 'environmentId'>,
+    ) => {
+      // 页面只提交缺陷事实和已核验的写范围选择；组织与环境取当前 Business Context，
+      // 不接受调用方覆盖。Gateway 仍会用主体令牌实时核验该目标上下文与工单范围。
+      const organizationId = filters.organizationId.trim()
+      const environmentId = filters.environmentId.trim()
+      if (!organizationId || !environmentId) {
+        throw new Error('尚未进入有效组织与环境，不能登记缺陷。')
+      }
+      const operationTaskId = body.operationTaskId?.trim()
+      const safeBody: BusinessConsoleMesRecordDefectV2Request = {
+        organizationId,
+        environmentId,
+        workOrderId: body.workOrderId,
+        ...(operationTaskId ? { operationTaskId } : {}),
+        defectCode: body.defectCode,
+        quantity: body.quantity,
+        recordedAtUtc: body.recordedAtUtc,
+        idempotencyKey: body.idempotencyKey,
+        scopeKind: body.scopeKind,
+        scopeId: body.scopeId,
+      }
+      return defectMutation.mutateAsync({ body: safeBody })
+    },
     recordDefectPending: defectMutation.isLoading,
     refreshQualityItems: () => refetchWithBusinessContext(filters, qualityQuery),
   }
