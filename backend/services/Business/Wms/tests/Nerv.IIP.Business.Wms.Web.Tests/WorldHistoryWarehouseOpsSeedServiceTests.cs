@@ -711,6 +711,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
     }
 
     [Fact]
+    [Trait("SeedContract", "wms-world-history-warehouse-ops")]
     public async Task Validator_fails_closed_when_a_count_execution_disappears()
     {
         var asOfDate = new DateOnly(2026, 7, 26);

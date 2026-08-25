@@ -25,6 +25,11 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 . (Join-Path $repoRoot 'scripts/lib/WorldHistoryCrossDomain.ps1')
 
+# NERV-677 清单②：现有 Script Governance world-history 契约同时消费 WMS seed layer manifest，
+# 使 identity、trait、provider/lane、日期边界、setup 次数与合同登记发生漂移时 fail-closed。
+& (Join-Path $repoRoot 'scripts/verify-seed-test-layer-manifest.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'WMS seed-test layer manifest verification failed.' }
+
 $script:Failures = New-Object System.Collections.Generic.List[string]
 
 function Assert-Contract([bool] $Condition, [string] $Message) {
