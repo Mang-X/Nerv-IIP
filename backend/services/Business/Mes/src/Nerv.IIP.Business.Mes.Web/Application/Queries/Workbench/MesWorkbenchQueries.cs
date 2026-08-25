@@ -1127,7 +1127,8 @@ public sealed record ListMaterialIssueRequestsQuery(
 
 public sealed record MesMaterialIssueRequestListResponse(
     IReadOnlyCollection<MesMaterialIssueRequestRow> Items,
-    int Total);
+    int Total,
+    int SupplementaryCount);
 
 public sealed record MesMaterialIssueRequestRow(
     string RequestId,
@@ -1148,7 +1149,9 @@ public sealed record MesMaterialIssueRequestRow(
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null,
     string? WmsRequestId = null,
-    string? WmsPickingTaskNo = null);
+    string? WmsPickingTaskNo = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -1200,6 +1203,7 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
         }
 
         var total = await query.CountAsync(cancellationToken);
+        var supplementaryCount = await query.CountAsync(x => x.IsSupplementary, cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RequestedAtUtc)
             .Skip(Math.Max(0, request.Skip))
@@ -1232,9 +1236,11 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.InventoryPostingFailureMessage,
                 x.InventoryPostingFailedAtUtc,
                 x.WmsRequestId,
-                x.WmsPickingTaskNo))
+                x.WmsPickingTaskNo,
+                x.IsSupplementary,
+                x.OriginalMaterialIssueRequestNo))
             .ToArrayAsync(cancellationToken);
-        return new MesMaterialIssueRequestListResponse(items, total);
+        return new MesMaterialIssueRequestListResponse(items, total, supplementaryCount);
     }
 }
 
