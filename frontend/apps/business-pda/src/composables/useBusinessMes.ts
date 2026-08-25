@@ -54,10 +54,12 @@ import {
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
   formatWorkScopeKey,
+  isAvailableMaterialLot,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
   statusActionGate,
 } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import {
   useListFreshness,
@@ -72,29 +74,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useTaskListPagination } from './useTaskListPagination'
 
-type AvailableMaterialLot = Omit<
-  BusinessConsoleMesMaterialIssueRequestRow,
-  'requestId' | 'materialId' | 'materialLotId' | 'receivedQuantity' | 'consumedQuantity'
-> & {
-  requestId: string
-  materialId: string
-  materialLotId: string
-  receivedQuantity: number
-  consumedQuantity: number
-}
-
-function isAvailableMaterialLot(
-  row: BusinessConsoleMesMaterialIssueRequestRow,
-): row is AvailableMaterialLot {
-  return (
-    typeof row.requestId === 'string' &&
-    typeof row.materialId === 'string' &&
-    typeof row.materialLotId === 'string' &&
-    typeof row.receivedQuantity === 'number' &&
-    typeof row.consumedQuantity === 'number' &&
-    row.receivedQuantity > row.consumedQuantity
-  )
-}
+type AvailableMaterialLot = BusinessConsoleMesMaterialIssueRequestRow & AvailableMaterialLotFields
 
 const DEFAULT_TAKE = 100
 const TASK_LIST_PAGE_SIZE = 20

@@ -126,9 +126,11 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   formatWorkScopeKey,
+  isAvailableMaterialLot,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
@@ -766,29 +768,7 @@ export interface MesProductionQuantitySnapshot {
   reportedGoodQuantity: number
 }
 
-type AvailableMaterialLot = Omit<
-  BusinessConsoleMesMaterialIssueRequestRow,
-  'requestId' | 'materialId' | 'materialLotId' | 'receivedQuantity' | 'consumedQuantity'
-> & {
-  requestId: string
-  materialId: string
-  materialLotId: string
-  receivedQuantity: number
-  consumedQuantity: number
-}
-
-function isAvailableMaterialLot(
-  row: BusinessConsoleMesMaterialIssueRequestRow,
-): row is AvailableMaterialLot {
-  return (
-    typeof row.requestId === 'string' &&
-    typeof row.materialId === 'string' &&
-    typeof row.materialLotId === 'string' &&
-    typeof row.receivedQuantity === 'number' &&
-    typeof row.consumedQuantity === 'number' &&
-    row.receivedQuantity > row.consumedQuantity
-  )
-}
+type AvailableMaterialLot = BusinessConsoleMesMaterialIssueRequestRow & AvailableMaterialLotFields
 
 export function useMesProductionMaterialLots(
   context: () => { workOrderId?: string | null; operationTaskId?: string | null } | null,

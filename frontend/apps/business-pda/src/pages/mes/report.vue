@@ -26,18 +26,20 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   useMesExactOperationTask,
-  useMesProductionMaterialLots,
   useMesProductionReports,
-  useMesScrapReasonCodes,
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
+import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
+import { useProductionReportScrapReason } from '@/composables/mes/useProductionReportScrapReason'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 
 definePage({
@@ -119,18 +121,6 @@ const {
 
 const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
   useMesProductionReports()
-const productionMaterialLots = useMesProductionMaterialLots(() =>
-  pair.value
-    ? { workOrderId: pair.value.workOrderId, operationTaskId: pair.value.operationTaskId }
-    : null,
-)
-const {
-  materialsReadPermission,
-  materialLotsPending,
-  materialLotsError,
-  availableMaterialLots,
-  refreshMaterialLots,
-} = productionMaterialLots
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
@@ -182,116 +172,33 @@ const progress = computed(() => productionReportFlow.progress(ctx))
 const goodQuantity = ref(0)
 const scrapQuantity = ref(0)
 const reworkQuantity = ref(0)
-const scrapReasonCode = ref('')
 const completesOperation = ref(false)
-const scrapReasonCodesState = useMesScrapReasonCodes(() => scrapQuantity.value > 0)
 const {
   qualityInspectionRecordsReadPermission,
   scrapReasonCodesPending,
   scrapReasonCodesError,
   scrapReasonCodes,
+  scrapReasonCode,
+  invalidScrapReasonCode,
+  scrapReasonValidationMessage,
   refreshScrapReasonCodes,
-} = scrapReasonCodesState
-
-const materialSelections = reactive(
-  new Map<string, { selected: boolean; consumedQuantity: string }>(),
-)
-watch(
-  productionMaterialLots.availableMaterialLots,
-  (rows) => {
-    const knownRequestIds = new Set(rows.map((row) => row.requestId))
-    for (const row of rows) {
-      if (!materialSelections.has(row.requestId)) {
-        materialSelections.set(row.requestId, { selected: false, consumedQuantity: '' })
-      }
-    }
-    for (const requestId of materialSelections.keys()) {
-      if (!knownRequestIds.has(requestId)) materialSelections.delete(requestId)
-    }
-  },
-  { immediate: true },
-)
-const consumedMaterialLots = computed(() =>
-  productionMaterialLots.availableMaterialLots.value.flatMap((row) => {
-    const selection = materialSelections.get(row.requestId)
-    const materialLotId = row.materialLotId?.trim()
-    if (!selection?.selected || !materialLotId) return []
-    return [
-      {
-        materialId: row.materialId,
-        materialLotId,
-        consumedQuantity: Number(selection.consumedQuantity),
-        materialIssueRequestNo: row.requestId,
-      },
-    ]
-  }),
-)
-const invalidMaterialLots = computed(
-  () =>
-    (scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0) ||
-    productionMaterialLots.availableMaterialLots.value.some((row) => {
-      const selection = materialSelections.get(row.requestId)
-      if (!selection?.selected) return false
-      const quantity = Number(selection.consumedQuantity)
-      return (
-        !Number.isFinite(quantity) ||
-        quantity <= 0 ||
-        quantity > row.receivedQuantity - row.consumedQuantity
-      )
-    }),
-)
-const materialValidationMessage = computed(() =>
-  scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0
-    ? '报废报工至少选择一个已收料批次。'
-    : invalidMaterialLots.value
-      ? '耗料数量必须大于 0，且不能超过该批次可用数量。'
-      : '',
-)
-const invalidScrapReasonCode = computed(() => {
-  if (scrapQuantity.value <= 0) return false
-  if (!qualityInspectionRecordsReadPermission.value) return true
-  if (scrapReasonCodesPending.value || scrapReasonCodesError.value) return true
-  return (
-    !scrapReasonCode.value.trim() ||
-    !scrapReasonCodes.value.some(
-      (row) => row.reasonCode?.trim() === scrapReasonCode.value.trim() && row.enabled !== false,
-    )
-  )
-})
-const scrapReasonValidationMessage = computed(() => {
-  if (scrapQuantity.value <= 0) return ''
-  if (!qualityInspectionRecordsReadPermission.value) {
-    return '当前账号没有质量原因码读取权限，无法提交报废报工。'
-  }
-  if (scrapReasonCodesPending.value) return '正在读取报废原因码，请稍后重试。'
-  if (scrapReasonCodesError.value) return '报废原因码读取失败，请刷新后重试。'
-  if (scrapReasonCodes.value.length === 0) return '当前没有可用的报废原因码。'
-  if (!scrapReasonCode.value.trim()) return '报废数量大于 0 时必须选择报废原因码。'
-  return '所选报废原因码已失效，请重新选择。'
-})
-function materialSelected(requestId: string | undefined) {
-  return requestId ? (materialSelections.get(requestId)?.selected ?? false) : false
-}
-function materialQuantity(requestId: string | undefined) {
-  return requestId ? (materialSelections.get(requestId)?.consumedQuantity ?? '') : ''
-}
-function setMaterialSelected(requestId: string | undefined, selected: boolean | undefined) {
-  if (!requestId) return
-  const current = materialSelections.get(requestId) ?? { selected: false, consumedQuantity: '' }
-  current.selected = selected ?? false
-  materialSelections.set(requestId, current)
-}
-function setMaterialQuantity(requestId: string | undefined, quantity: string | undefined) {
-  if (!requestId) return
-  const current = materialSelections.get(requestId) ?? { selected: false, consumedQuantity: '' }
-  current.consumedQuantity = quantity ?? ''
-  materialSelections.set(requestId, current)
-}
-function materialRemaining(row: { receivedQuantity?: number; consumedQuantity?: number }) {
-  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(
-    (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0),
-  )
-}
+} = useProductionReportScrapReason(scrapQuantity)
+const {
+  materialsReadPermission,
+  materialLotsPending,
+  materialLotsError,
+  availableMaterialLots,
+  refreshMaterialLots,
+  consumedMaterialLots,
+  invalidMaterialLots,
+  materialValidationMessage,
+  resetMaterialSelections,
+  materialSelected,
+  materialQuantity,
+  setMaterialSelected,
+  setMaterialQuantity,
+  materialRemaining,
+} = useProductionReportMaterials(pair, scrapQuantity)
 
 const quantityValid = computed(
   () =>
@@ -361,7 +268,7 @@ watch(
       reworkQuantity.value = 0
       scrapReasonCode.value = ''
       completesOperation.value = false
-      materialSelections.clear()
+      resetMaterialSelections()
       ctx.quantityEntered = false
       ctx.recorded = currentIntent.value?.status === 'success'
     }
@@ -455,7 +362,7 @@ function resetReportIntent() {
   scrapQuantity.value = 0
   reworkQuantity.value = 0
   scrapReasonCode.value = ''
-  materialSelections.clear()
+  resetMaterialSelections()
   completesOperation.value = false
   ctx.quantityEntered = false
   ctx.recorded = false
@@ -865,62 +772,18 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
-        <section
+        <ProductionReportScrapReasonField
           v-if="scrapQuantity > 0"
-          data-testid="scrap-reason-code-field"
-          class="space-y-2 rounded-lg border border-border bg-card p-3"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <label for="scrap-reason-code" class="text-sm font-medium text-foreground">
-              报废原因码 <span class="text-destructive">*</span>
-            </label>
-            <button
-              type="button"
-              class="text-sm text-primary"
-              :disabled="scrapReasonCodesPending || submitting"
-              @click="refreshScrapReasonCodes"
-            >
-              刷新
-            </button>
-          </div>
-          <select
-            id="scrap-reason-code"
-            v-model="scrapReasonCode"
-            data-testid="scrap-reason-code"
-            class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base outline-none focus:border-primary disabled:opacity-60"
-            :disabled="
-              !qualityInspectionRecordsReadPermission ||
-              scrapReasonCodesPending ||
-              !!scrapReasonCodesError ||
-              submitting ||
-              !reportScopeReady
-            "
-          >
-            <option value="">请选择报废原因码</option>
-            <option
-              v-for="reason in scrapReasonCodes"
-              :key="reason.reasonCode"
-              :value="reason.reasonCode"
-            >
-              {{ reason.reasonCode }} · {{ reason.reasonName }}
-            </option>
-          </select>
-          <p v-if="scrapReasonCodesError" class="text-sm text-destructive" role="alert">
-            报废原因码读取失败，请刷新后重试。
-          </p>
-          <p v-else-if="scrapReasonCodesPending" class="text-sm text-muted-foreground">
-            正在读取报废原因码…
-          </p>
-          <p
-            v-else-if="!qualityInspectionRecordsReadPermission"
-            class="text-sm text-muted-foreground"
-          >
-            当前账号没有质量原因码读取权限，报废报工已禁用。
-          </p>
-          <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
-            {{ scrapReasonValidationMessage }}
-          </p>
-        </section>
+          v-model="scrapReasonCode"
+          :quality-inspection-records-read-permission="qualityInspectionRecordsReadPermission"
+          :scrap-reason-codes-pending="scrapReasonCodesPending"
+          :scrap-reason-codes-error="scrapReasonCodesError"
+          :scrap-reason-codes="scrapReasonCodes"
+          :scrap-reason-validation-message="scrapReasonValidationMessage"
+          :submitting="submitting"
+          :report-scope-ready="reportScopeReady"
+          :refresh-scrap-reason-codes="refreshScrapReasonCodes"
+        />
 
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">返修数</span>
@@ -951,68 +814,20 @@ function onScanWorkOrder(value: string) {
           当前工序可报数量；仅执行中的工序可同时完工。
         </p>
 
-        <section
+        <ProductionReportMaterialLots
           v-if="materialsReadPermission"
-          data-testid="production-material-lots"
-          class="space-y-2 rounded-lg border border-border bg-card p-3"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-medium text-foreground">耗料批次</h3>
-            <button
-              type="button"
-              class="text-sm text-primary"
-              :disabled="materialLotsPending || submitting"
-              @click="refreshMaterialLots"
-            >
-              刷新
-            </button>
-          </div>
-          <p v-if="materialLotsError" class="text-sm text-destructive">
-            已收料批次读取失败，请刷新后重试。
-          </p>
-          <p v-else-if="materialLotsPending" class="text-sm text-muted-foreground">
-            正在读取已收料批次…
-          </p>
-          <p v-else-if="availableMaterialLots.length === 0" class="text-sm text-muted-foreground">
-            当前工序暂无可用已收料批次。
-          </p>
-          <div v-for="row in availableMaterialLots" :key="row.requestId" class="space-y-2">
-            <label class="flex items-center gap-2 text-sm text-foreground">
-              <input
-                :checked="materialSelected(row.requestId)"
-                :data-testid="`material-lot-${row.requestId}`"
-                type="checkbox"
-                class="size-5"
-                :disabled="submitting"
-                @change="
-                  setMaterialSelected(row.requestId, ($event.target as HTMLInputElement).checked)
-                "
-              />
-              <span>
-                {{ row.materialId }} · {{ row.materialLotId }}
-                <span class="text-muted-foreground">
-                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用
-                  {{ materialRemaining(row) }} {{ row.uomCode }}）
-                </span>
-              </span>
-            </label>
-            <input
-              :value="materialQuantity(row.requestId)"
-              :data-testid="`material-quantity-${row.requestId}`"
-              type="number"
-              inputmode="decimal"
-              min="0"
-              step="any"
-              placeholder="耗用数量"
-              class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base outline-none focus:border-primary disabled:opacity-60"
-              :disabled="!materialSelected(row.requestId) || submitting"
-              @input="setMaterialQuantity(row.requestId, ($event.target as HTMLInputElement).value)"
-            />
-          </div>
-          <p v-if="materialValidationMessage" class="text-sm text-destructive" role="alert">
-            {{ materialValidationMessage }}
-          </p>
-        </section>
+          :available-material-lots="availableMaterialLots"
+          :material-lots-pending="materialLotsPending"
+          :material-lots-error="materialLotsError"
+          :submitting="submitting"
+          :material-validation-message="materialValidationMessage"
+          :refresh-material-lots="refreshMaterialLots"
+          :material-selected="materialSelected"
+          :material-quantity="materialQuantity"
+          :set-material-selected="setMaterialSelected"
+          :set-material-quantity="setMaterialQuantity"
+          :material-remaining="materialRemaining"
+        />
         <p v-else data-testid="material-permission-message" class="text-sm text-muted-foreground">
           当前账号没有材料读取权限，耗料批次选择已禁用。
         </p>
