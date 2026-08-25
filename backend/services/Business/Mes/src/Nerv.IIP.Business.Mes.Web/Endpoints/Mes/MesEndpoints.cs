@@ -1143,10 +1143,9 @@ public sealed record AuthorizeAndStartOperationTaskRequest(
     string EnvironmentId,
     [property: RouteParam] string OperationTaskId,
     string ApprovalChainId,
-    string Reason,
-    DateTimeOffset? ChangedAtUtc = null);
+    string Reason);
 
-public sealed class AuthorizeAndStartOperationTaskEndpoint(ISender sender, TimeProvider timeProvider)
+public sealed class AuthorizeAndStartOperationTaskEndpoint(ISender sender)
     : MesEndpoint<AuthorizeAndStartOperationTaskRequest, MesOperationActionResponse>
 {
     public override void Configure() => ConfigureMesContract(
@@ -1155,14 +1154,15 @@ public sealed class AuthorizeAndStartOperationTaskEndpoint(ISender sender, TimeP
 
     public override async Task HandleAsync(AuthorizeAndStartOperationTaskRequest req, CancellationToken ct)
     {
-        _ = MesAuthenticatedActor.Resolve(HttpContext);
+        // 此内部入口只信任 InternalServiceAuthorizationPolicy 的认证主体；
+        // X-Authenticated-Actor 不参与授权，也不会写入跳站事实。授权主体只能来自
+        // Approval 服务返回的已通过裁决，避免把任意格式合法的转发头当作用户身份证明。
         var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
         var idempotencyKey = HttpContext.Request.Headers["X-Idempotency-Key"].FirstOrDefault();
         var response = await sender.Send(new AuthorizeAndStartOperationTaskCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.OperationTaskId,
-            req.ChangedAtUtc ?? timeProvider.GetUtcNow(),
             req.Reason,
             req.ApprovalChainId,
             correlationId ?? string.Empty,

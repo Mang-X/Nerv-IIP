@@ -1549,7 +1549,6 @@ public sealed record AuthorizeAndStartOperationTaskCommand(
     string OrganizationId,
     string EnvironmentId,
     string OperationTaskId,
-    DateTimeOffset ChangedAtUtc,
     string Reason,
     string ApprovalChainId,
     string CorrelationId,
@@ -1571,7 +1570,8 @@ public sealed class AuthorizeAndStartOperationTaskCommandLock
 
 public sealed class AuthorizeAndStartOperationTaskCommandHandler(
     ApplicationDbContext dbContext,
-    IMesOperationTaskStartApprovalClient approvalClient)
+    IMesOperationTaskStartApprovalClient approvalClient,
+    TimeProvider timeProvider)
     : ICommandHandler<AuthorizeAndStartOperationTaskCommand, MesOperationActionResponse>
 {
     private const string AuthorizedStartRuleKey = "operation-task-authorized-start";
@@ -1582,6 +1582,7 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
     {
         var canonical = Canonicalize(request);
         EnsureRequired(canonical);
+        var authorizedAtUtc = timeProvider.GetUtcNow();
 
         var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == canonical.OrganizationId &&
@@ -1643,7 +1644,7 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
 
         var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext).EvaluateAsync(
             task,
-            canonical.ChangedAtUtc,
+            authorizedAtUtc,
             cancellationToken);
         var nonPreviousBlockReasons = readiness.BlockReasons
             .Where(x => !x.StartsWith("PREVIOUS_OPERATION_INCOMPLETE:", StringComparison.Ordinal))
@@ -1662,17 +1663,17 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
 
         MesDomainRuleGuard.Enforce(() =>
         {
-            task.Start(canonical.ChangedAtUtc);
+            task.Start(authorizedAtUtc);
             if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
             {
-                workOrder.Start(canonical.ChangedAtUtc);
+                workOrder.Start(authorizedAtUtc);
             }
         });
 
         var result = new MesOperationActionResponse(
             task.OperationTaskIdValue,
             task.Status.ToString(),
-            canonical.ChangedAtUtc);
+            authorizedAtUtc);
         dbContext.OperationTaskStartAuthorizations.Add(OperationTaskStartAuthorization.Record(
             canonical.OrganizationId,
             canonical.EnvironmentId,
@@ -1684,7 +1685,7 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
             approval.AuthorizedBy,
             canonical.CorrelationId,
             canonical.IdempotencyKey,
-            canonical.ChangedAtUtc,
+            authorizedAtUtc,
             result.Status));
         return result;
     }
@@ -1716,6 +1717,7 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
         OperationTaskStartAuthorization existing,
         AuthorizeAndStartOperationTaskCommand request) =>
         string.Equals(existing.Reason, request.Reason.Trim(), StringComparison.Ordinal) &&
+        string.Equals(existing.ApprovalChainId, request.ApprovalChainId.Trim(), StringComparison.Ordinal) &&
         string.Equals(existing.CorrelationId, request.CorrelationId.Trim(), StringComparison.Ordinal);
 
     private static AuthorizeAndStartOperationTaskCommand Canonicalize(

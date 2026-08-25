@@ -94,6 +94,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
+        EnsureOperationTaskStartAuthorizationsAreAppendOnly();
         try
         {
             return await ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
@@ -170,6 +171,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        EnsureOperationTaskStartAuthorizationsAreAppendOnly();
         try
         {
             return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
@@ -180,6 +182,18 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         {
             ChangeTracker.Clear();
             throw DuplicateProductionReportReversal(exception);
+        }
+    }
+
+    private void EnsureOperationTaskStartAuthorizationsAreAppendOnly()
+    {
+        var changed = ChangeTracker.Entries<OperationTaskStartAuthorization>()
+            .Where(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            .Select(entry => entry.Entity.Id.ToString())
+            .ToArray();
+        if (changed.Length > 0)
+        {
+            throw new InvalidOperationException("MES 授权跳站事实只允许追加，不能修改或删除。");
         }
     }
 
