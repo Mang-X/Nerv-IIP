@@ -84,7 +84,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **420** | **349** |   **46** |   **25** |
+| **Total**           | **421** | **349** |   **46** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
