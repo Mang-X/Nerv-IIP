@@ -503,6 +503,7 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
   return {
     coversWorkOrder,
     principalIdentity,
+    refreshScope: () => workContextQuery.refetch(),
     requireSelectedScope,
     selectedScope,
     scopeMessage,

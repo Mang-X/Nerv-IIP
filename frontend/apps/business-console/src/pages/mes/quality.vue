@@ -67,6 +67,7 @@ const {
   refreshOperationTasks,
 } = useMesOperationTasks()
 const qualityWriteScope = useMesWorkScopeSelection(P.mesQualityWrite)
+const refreshQualityWriteScope = qualityWriteScope.refreshScope
 const auth = useAuthStore()
 const { keyword } = useMesKeywordFilter(filters)
 const { page, pageSize } = usePagedList(filters, {
@@ -268,7 +269,7 @@ async function submitDefect() {
   defectPreflightPending.value = true
   let latestTask: ReturnType<typeof findEligibleOperationTask>
   try {
-    await refreshOperationTasks()
+    await Promise.all([refreshOperationTasks(), refreshQualityWriteScope()])
     latestTask = findEligibleOperationTask(operationTaskId)
     if (!latestTask) {
       throw new Error('所选工序已不在当前主体可见且可登记缺陷的范围，请重新选择。')

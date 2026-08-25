@@ -11,11 +11,13 @@ const state = vi.hoisted(() => ({
   qualityItems: [] as Array<Record<string, unknown>>,
   routeQuery: {} as Record<string, string>,
   writeScopeReady: true,
+  writeScopeId: 'WC-WRITE',
   writeScopeMessage: '',
 }))
 const recordDefect = vi.hoisted(() => vi.fn())
 const refreshOperationTasks = vi.hoisted(() => vi.fn())
 const refreshQualityItems = vi.hoisted(() => vi.fn())
+const refreshQualityWriteScope = vi.hoisted(() => vi.fn())
 const coversWorkOrder = vi.hoisted(() =>
   vi.fn(
     (
@@ -59,11 +61,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
   mesWorkScopeKindLabel: (kind: string) => (kind === 'work-center' ? '工作中心' : kind),
   useMesWorkScopeSelection: () => ({
     coversWorkOrder,
-    selectedScope: computed(() =>
-      state.writeScopeReady
-        ? { kind: 'work-center', id: 'WC-WRITE', displayName: '质量责任区' }
-        : undefined,
-    ),
+    selectedScope: {
+      get value() {
+        return state.writeScopeReady
+          ? { kind: 'work-center', id: state.writeScopeId, displayName: '质量责任区' }
+          : undefined
+      },
+    },
+    refreshScope: refreshQualityWriteScope,
     scopeMessage: computed(() => state.writeScopeMessage),
     scopePending: shallowRef(false),
     scopeReady: computed(() => state.writeScopeReady),
@@ -222,12 +227,14 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     state.qualityItems = []
     state.routeQuery = {}
     state.writeScopeReady = true
+    state.writeScopeId = 'WC-WRITE'
     state.writeScopeMessage = ''
     vi.clearAllMocks()
     coversWorkOrder.mockImplementation(() => true)
     makeIdempotencyKey.mockReturnValue('defect-intent-key')
     refreshOperationTasks.mockResolvedValue(undefined)
     refreshQualityItems.mockResolvedValue(undefined)
+    refreshQualityWriteScope.mockResolvedValue(undefined)
     recordDefect.mockResolvedValue({
       success: true,
       data: {
@@ -265,6 +272,7 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('scopeKind')
     expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('scopeId')
     expect(recordDefect.mock.calls[0]?.[0]).not.toHaveProperty('recordedAtUtc')
+    expect(refreshQualityWriteScope).toHaveBeenCalledTimes(1)
     expect(refreshOperationTasks).toHaveBeenCalledTimes(2)
     expect(refreshQualityItems).toHaveBeenCalledTimes(1)
     expect(notifySuccess).toHaveBeenCalledWith('缺陷 DEF-20260825-001 已登记。')
@@ -314,6 +322,29 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     await submitForm(wrapper)
     await flushPromises()
 
+    expect(recordDefect).not.toHaveBeenCalled()
+    expect(notifyOperationFailure).toHaveBeenCalledWith(
+      '缺陷登记前置检查失败',
+      expect.any(Error),
+      expect.stringContaining('当前主体可见范围'),
+    )
+  })
+
+  it('does not mutate when the refreshed quality write context no longer covers the task', async () => {
+    state.writeScopeId = 'WC-2'
+    refreshQualityWriteScope.mockImplementationOnce(async () => {
+      state.writeScopeId = 'WC-REVOKED'
+    })
+    coversWorkOrder.mockImplementation(({ operationTasks }, scope) =>
+      operationTasks.some((task) => task.workCenterId === scope.id),
+    )
+    const wrapper = mountPage()
+    await button(wrapper, '登记缺陷').trigger('click')
+    await fillValidForm(wrapper, 'OP-2')
+    await submitForm(wrapper)
+    await flushPromises()
+
+    expect(refreshQualityWriteScope).toHaveBeenCalledTimes(1)
     expect(recordDefect).not.toHaveBeenCalled()
     expect(notifyOperationFailure).toHaveBeenCalledWith(
       '缺陷登记前置检查失败',
