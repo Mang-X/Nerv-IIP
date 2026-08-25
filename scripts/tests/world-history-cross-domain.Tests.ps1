@@ -111,6 +111,14 @@ $mutationDefinitions = @(
         }
     }
     [ordered]@{
+        Name = 'provider'
+        ExpectedFailure = 'provider'
+        Mutate = {
+            param($manifest, $sourcePath)
+            $manifest.entries[0].provider = 'PostgreSQL'
+        }
+    }
+    [ordered]@{
         Name = 'boundary-date'
         ExpectedFailure = '日期边界'
         Mutate = {
@@ -444,4 +452,5 @@ if ($script:Failures.Count -gt 0) {
     exit 1
 }
 
+$global:LASTEXITCODE = 0
 Write-Host 'World-history cross-domain reconciliation contract tests passed.' -ForegroundColor Green

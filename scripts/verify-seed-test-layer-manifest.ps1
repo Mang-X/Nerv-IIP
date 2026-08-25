@@ -101,6 +101,10 @@ $expectedContractsByIdentity['wms-world-history-warehouse-ops-pr-boundary'] = @(
     'current-queue-shape')
 $expectedContractsByIdentity['wms-world-history-warehouse-ops-pr-fail-closed'] = @('fail-closed')
 
+$expectedProvidersByIdentity = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+$expectedProvidersByIdentity['wms-world-history-warehouse-ops-pr-boundary'] = 'EF Core InMemory'
+$expectedProvidersByIdentity['wms-world-history-warehouse-ops-pr-fail-closed'] = 'EF Core InMemory'
+
 $contractMarkers = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
 $contractMarkers['idempotency'] = 'AssertWarehouseOpsSeedIsIdempotentAsync'
 $contractMarkers['reference-integrity'] = 'AssertReferencesRemainCompleteAsync'
@@ -192,6 +196,14 @@ if ($errors.Count -eq 0) {
         $methodBody = Get-MethodBody -Source $source -MethodName $methodName -Context $context
 
         Assert-ExactContractSet -Entry $entry -Context $context
+
+        $expectedProvider = $null
+        if (-not $expectedProvidersByIdentity.TryGetValue([string] $entry.id, [ref] $expectedProvider)) {
+            Add-ManifestError "$context identity 未登记 provider 闭合规则。"
+        }
+        elseif (-not [string]::Equals($provider, $expectedProvider, [StringComparison]::Ordinal)) {
+            Add-ManifestError "$context provider '$provider' 不符合预期 provider '$expectedProvider'。"
+        }
 
         try {
             $displayIdentity = if ([int] $entry.expectedRuntimeTestCount -gt 1) {
