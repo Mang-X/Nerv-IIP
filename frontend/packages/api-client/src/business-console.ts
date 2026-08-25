@@ -2531,6 +2531,22 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition as BusinessConsoleMesTelemetryCandidateTransition,
 } from './generated/business-console'
 
+// #1964/#2228: Inventory 权威线边余额与账龄，经 MES facade 稳定导出。
+export {
+  listBusinessConsoleMesLineSideInventoryBalances,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
+} from './generated/business-console'
+
+export type {
+  ListBusinessConsoleMesLineSideInventoryBalancesData,
+  ListBusinessConsoleMesLineSideInventoryBalancesError,
+  ListBusinessConsoleMesLineSideInventoryBalancesResponse,
+  NervIipContractsInventoryLineSideInventoryBalanceItem as BusinessConsoleMesLineSideInventoryBalanceItem,
+  NervIipContractsInventoryLineSideInventoryBalancesRequest as BusinessConsoleMesLineSideInventoryBalancesRequest,
+  NervIipContractsInventoryLineSideInventoryBalancesResponse as BusinessConsoleMesLineSideInventoryBalancesResponse,
+  NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse as BusinessConsoleMesLineSideInventoryBalancesEnvelope,
+} from './generated/business-console'
+
 // MAN-632 / #1169: unified owner-backed searchable directory contract.
 export {
   listBusinessConsoleSearchableDirectory,
