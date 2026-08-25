@@ -506,7 +506,13 @@ public sealed record ReleaseRoutingCommand(
     IReadOnlyCollection<RoutingOperationCommand> Operations,
     string? IdempotencyKey = null) : ICommand<ReleasedEngineeringVersionResult>;
 
-public sealed record RoutingOperationCommand(int Sequence, string? WorkCenterCode, string OperationCode, string? OperationName, int StandardMinutes = 0);
+public sealed record RoutingOperationCommand(
+    int Sequence,
+    string? WorkCenterCode,
+    string OperationCode,
+    string? OperationName,
+    int StandardMinutes = 0,
+    string? RequiredSkillCode = null);
 
 public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRoutingCommand>
 {
@@ -525,6 +531,7 @@ public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRo
             operation.RuleFor(x => x.OperationCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
             operation.RuleFor(x => x.OperationName).MaximumLength(200);
             operation.RuleFor(x => x.StandardMinutes).GreaterThanOrEqualTo(0);
+            operation.RuleFor(x => x.RequiredSkillCode).MaximumLength(100);
         });
     }
 }
@@ -546,7 +553,11 @@ public sealed class ReleaseRoutingCommandHandler(
             request.EnvironmentId, "routing",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.OperationCode}")),
+            ProductEngineeringCodingService.Fingerprint(
+                request.Revision,
+                request.SkuCode,
+                request.EffectiveDate,
+                request.Operations.Select(x => $"{x.Sequence}:{x.OperationCode}:{x.RequiredSkillCode?.Trim()}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -607,7 +618,8 @@ public sealed class ReleaseRoutingCommandHandler(
                     standardOperation.ControlKey,
                     standardOperation.RequiresReporting,
                     standardOperation.RequiresQualityInspection,
-                    standardOperation.IsOutsourced);
+                    standardOperation.IsOutsourced,
+                    operation.RequiredSkillCode);
             }
 
             draft.Release(request.EffectiveDate);
