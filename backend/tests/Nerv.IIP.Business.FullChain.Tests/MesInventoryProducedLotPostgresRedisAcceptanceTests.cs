@@ -67,13 +67,20 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         var successReplayEvent = receiptBoundary.SuccessReplayEvent;
         var failureEvent = receiptBoundary.FailureEvent;
         var failureReplayEvent = receiptBoundary.FailureReplayEvent;
+        var pendingEvent = receiptBoundary.PendingEvent;
         Assert.NotEqual(successEvent.EventId, successReplayEvent.EventId);
         Assert.Equal(successEvent.IdempotencyKey, successReplayEvent.IdempotencyKey);
         Assert.NotEqual(failureEvent.EventId, failureReplayEvent.EventId);
         Assert.Equal(failureEvent.IdempotencyKey, failureReplayEvent.IdempotencyKey);
         Assert.NotEqual(source.ClientSuppliedUnitCost, source.ErpCapitalizedUnitCost);
-        Assert.Equal(source.ErpCapitalizedUnitCost, successEvent.Payload.UnitCost);
-        Assert.NotEqual(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, successReplayEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, failureEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, failureReplayEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, pendingEvent.Payload.UnitCost);
+        Assert.Equal(
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            pendingEvent.Payload.UnitCostAuthorityReference);
         Assert.Equal(source.ClientSuppliedUnitCost, receiptBoundary.SuccessCommandUnitCost);
         Assert.Equal(source.ClientSuppliedUnitCost, receiptBoundary.PendingCommandUnitCost);
         Assert.Null(receiptBoundary.PendingUnitCost);
@@ -82,6 +89,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureReplayEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), pendingEvent);
 
         // Real cross-process Redis CAP transport: the observable facts live in the two PostgreSQL databases,
         // so poll them on a bounded budget instead of guessing a single completion instant.
@@ -142,7 +150,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal("Requested", observed.Mes.PendingStatus);
             Assert.Null(observed.Mes.PendingUnitCost);
             Assert.Null(observed.Mes.PendingErpCapitalizedUnitCost);
-            Assert.Equal(0L, observed.Mes.PendingPublishedMessageCount);
+            Assert.Equal(1L, observed.Mes.PendingPublishedMessageCount);
             Assert.Equal(0, observed.Inventory.PendingMovementCount);
 
             var transport = await ReadMessagingFactsAsync(
@@ -151,9 +159,10 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 successEvent.EventId,
                 successReplayEvent.EventId,
                 failureEvent.EventId,
-                failureReplayEvent.EventId);
-            Assert.Equal(4L, transport.PublishedEventCount);
-            Assert.Equal(4L, transport.InventoryReceivedEventCount);
+                failureReplayEvent.EventId,
+                pendingEvent.EventId);
+            Assert.Equal(5L, transport.PublishedEventCount);
+            Assert.Equal(5L, transport.InventoryReceivedEventCount);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
@@ -166,7 +175,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 successEvent.EventId,
                 successReplayEvent.EventId,
                 failureEvent.EventId,
-                failureReplayEvent.EventId);
+                failureReplayEvent.EventId,
+                pendingEvent.EventId);
             throw new TimeoutException(
                 $"{timeout.Message} " +
                 $"PublishedEvents={finalMessagingFacts.PublishedEventCount}, " +
@@ -273,6 +283,37 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 UnitCostAuthorityReference = InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
             },
         };
+        var pendingEvent = new InventoryMovementRequestedIntegrationEvent(
+            $"evt-man528-pending-{Guid.CreateVersion7():N}",
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            requestedAtUtc,
+            InventoryIntegrationEventSources.BusinessMes,
+            $"corr-man528-{source.ProbeRunId}",
+            pendingResult.RequestNo,
+            source.OrganizationId,
+            source.EnvironmentId,
+            "system:acceptance-probe",
+            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{pendingResult.RequestNo}",
+            new InventoryMovementRequestedPayload(
+                MovementType: "inbound",
+                SourceService: InventoryIntegrationEventSources.BusinessMes,
+                SourceDocumentId: pendingResult.RequestNo,
+                SourceDocumentLineId: source.PendingWorkOrderId,
+                IdempotencyKey: $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{pendingResult.RequestNo}",
+                SkuCode: source.SkuId,
+                UomCode: source.UomCode,
+                SiteCode: "finished-goods",
+                LocationCode: "receiving",
+                LotNo: source.PendingLotNo,
+                SerialNo: null,
+                QualityStatus: InventoryQualityStatuses.Unrestricted,
+                OwnerType: "production",
+                OwnerId: null,
+                Quantity: ReceiptQuantity,
+                RequestedAtUtc: requestedAtUtc,
+                UnitCost: source.ClientSuppliedUnitCost,
+                UnitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt));
 
         Assert.Equal(source.ErpCapitalizedUnitCost, successReceipt.UnitCost);
         Assert.Equal(source.ErpCapitalizedUnitCost, failureReceipt.UnitCost);
@@ -295,6 +336,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             successReplayEvent,
             failureEvent,
             failureReplayEvent,
+            pendingEvent,
             successCommand.UnitCost,
             pendingCommand.UnitCost,
             pendingReceipt.UnitCost,
@@ -753,6 +795,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         InventoryMovementRequestedIntegrationEvent SuccessReplayEvent,
         InventoryMovementRequestedIntegrationEvent FailureEvent,
         InventoryMovementRequestedIntegrationEvent FailureReplayEvent,
+        InventoryMovementRequestedIntegrationEvent PendingEvent,
         decimal? SuccessCommandUnitCost,
         decimal? PendingCommandUnitCost,
         decimal? PendingUnitCost,
