@@ -19,11 +19,14 @@ using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using System.Net;
+using System.Text;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -1357,7 +1360,7 @@ public sealed class MesPersistenceContractTests
             "ASSET-FILL-01"));
         await dbContext.SaveChangesAsync();
 
-        var handler = new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext));
+        var handler = new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext, MissingQualityInspectionPlanReader.Instance));
         var quality = await handler.Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
@@ -1395,13 +1398,101 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Foundation_readiness_quality_is_ready_only_when_quality_returns_an_active_plan()
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"data\":{\"items\":[{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"status\":\"active\",\"planCode\":\"IP-SKU-FSA\"}],\"total\":1},\"success\":true}",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices(nameof(Foundation_readiness_quality_is_ready_only_when_quality_returns_an_active_plan));
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            new MesFoundationReadinessService(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Ready", readiness.Status);
+        Assert.DoesNotContain(readiness.Issues, x => x.Code == MesReadinessReasonCodes.QualityPlanMissing);
+        var requestQuery = Assert.Single(handler.Requests).RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("environmentId=env-dev", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("category=operation", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("skuCode=FG-FSA", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("status=active", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("workCenterId=WC-FILL", requestQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Foundation_readiness_quality_blocks_when_quality_returns_no_active_plan()
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"data\":{\"items\":[],\"total\":0},\"success\":true}",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices(nameof(Foundation_readiness_quality_blocks_when_quality_returns_no_active_plan));
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            new MesFoundationReadinessService(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.Status);
+        Assert.Contains(readiness.Issues, x =>
+            x.Code == MesReadinessReasonCodes.QualityPlanMissing &&
+            !x.Message.Contains("首检", StringComparison.Ordinal) &&
+            !x.Message.Contains("巡检", StringComparison.Ordinal) &&
+            !x.Message.Contains("终检", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Foundation_readiness_quality_fails_closed_for_production_version_without_sku()
+    {
+        var services = CreateServices(nameof(Foundation_readiness_quality_fails_closed_for_production_version_without_sku));
+        var reader = new RecordingQualityInspectionPlanReader { Result = true };
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            new MesFoundationReadinessService(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                reader))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", null, "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.Status);
+        Assert.Contains(readiness.Issues, x => x.Code == MesReadinessReasonCodes.QualityPlanMissing);
+        Assert.Equal(0, reader.CallCount);
+    }
+
+    [Fact]
     public async Task Foundation_readiness_without_execution_context_does_not_block_contextual_quality_or_equipment_checks()
     {
         var services = CreateServices(nameof(Foundation_readiness_without_execution_context_does_not_block_contextual_quality_or_equipment_checks));
 
         using var scope = services.CreateScope();
         var handler = new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()));
+            new MesFoundationReadinessService(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                MissingQualityInspectionPlanReader.Instance));
 
         var quality = await handler.Handle(
             new GetMesFoundationReadinessAreaQuery(
@@ -1455,7 +1546,7 @@ public sealed class MesPersistenceContractTests
             "DEV-OIL-01"));
         await dbContext.SaveChangesAsync();
 
-        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext)).Handle(
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext, MissingQualityInspectionPlanReader.Instance)).Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
                 "env-dev",
@@ -2936,6 +3027,50 @@ public sealed class MesPersistenceContractTests
         {
             Requests.Add(request);
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class MissingQualityInspectionPlanReader : IMesQualityInspectionPlanReader
+    {
+        public static readonly MissingQualityInspectionPlanReader Instance = new();
+
+        public Task<bool> HasActiveOperationPlanAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            string? workCenterId,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+    }
+
+    private sealed class RecordingQualityInspectionPlanReader : IMesQualityInspectionPlanReader
+    {
+        public bool Result { get; init; }
+
+        public int CallCount { get; private set; }
+
+        public Task<bool> HasActiveOperationPlanAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            string? workCenterId,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class StubHttpMessageHandler(
+        Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(responseFactory(request));
         }
     }
 
