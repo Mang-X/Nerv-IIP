@@ -706,9 +706,9 @@ public sealed class MesPersistenceContractTests
 
     // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 1; the released MES snapshot remains frozen after the upstream snapshot changes.
     [Fact]
-    public async Task Released_work_order_keeps_frozen_substitute_candidates_after_engineering_snapshot_changes()
+    public async Task Convert_then_release_keeps_the_original_snapshot_after_engineering_changes()
     {
-        var services = CreateServices(nameof(Released_work_order_keeps_frozen_substitute_candidates_after_engineering_snapshot_changes));
+        var services = CreateServices(nameof(Convert_then_release_keeps_the_original_snapshot_after_engineering_changes));
         var now = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
         var snapshotProvider = new FakeMesMaterialRequirementSnapshotProvider(
             MesMaterialRequirementSnapshotResult.Captured(
@@ -718,21 +718,23 @@ public sealed class MesPersistenceContractTests
                         null, "MAT-PRIMARY", null, 10m, "PCS", 10m, 0m,
                         "MBOM-A:MAT-PRIMARY", ["MAT-ALT-A"]),
                 ]));
+        string workOrderId;
 
-        using (var releaseScope = services.CreateScope())
+        using (var convertScope = services.CreateScope())
         {
-            var dbContext = releaseScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create(
-                "org-001", "env-dev", "WO-FROZEN-001", "FG-001", "PV-FROZEN", 10m, 10, now));
-            dbContext.OperationTasks.Add(OperationTask.Create(
-                "org-001", "env-dev", "WO-FROZEN-001", "OP-FROZEN-10",
-                OperationTaskLifecycleStatus.Queued, 10, "WC-FROZEN", [], now,
-                TimeSpan.FromMinutes(30), null, null));
-            await dbContext.SaveChangesAsync();
-
-            await new ReleaseWorkOrderCommandHandler(dbContext, snapshotProvider).Handle(
-                new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-FROZEN-001", now.AddMinutes(1)),
-                CancellationToken.None);
+            var dbContext = convertScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var converted = await new ConvertPlanToWorkOrderCommandHandler(
+                dbContext,
+                new RuleScheduler(),
+                null,
+                snapshotProvider).Handle(
+                    new ConvertPlanToWorkOrderCommand(
+                        "org-001", "env-dev", "PLAN-FROZEN-001", null, now,
+                        "FG-001", "PV-FROZEN", 10m, "PCS", now.AddDays(2), "WC-FROZEN",
+                        "DemandPlanning", "PlanningSuggestion", "SUG-FROZEN-001", "DEMAND-FROZEN-001",
+                        "convert-plan-frozen-material-snapshot"),
+                    CancellationToken.None);
+            workOrderId = converted.ReferenceId;
             await dbContext.SaveChangesAsync();
         }
 
@@ -744,11 +746,23 @@ public sealed class MesPersistenceContractTests
                     "MBOM-B:MAT-PRIMARY", ["MAT-ALT-B"]),
             ]);
 
-        using var readScope = services.CreateScope();
-        var frozenRequirement = await readScope.ServiceProvider
-            .GetRequiredService<ApplicationDbContext>()
-            .MaterialRequirements.SingleAsync(x => x.WorkOrderId == "WO-FROZEN-001");
+        using (var releaseScope = services.CreateScope())
+        {
+            var dbContext = releaseScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var released = await new ReleaseWorkOrderCommandHandler(dbContext, snapshotProvider).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", workOrderId, now.AddMinutes(1)),
+                CancellationToken.None);
+            Assert.Equal("Accepted", released.Status);
+            await dbContext.SaveChangesAsync();
+        }
 
+        using var readScope = services.CreateScope();
+        var frozenRequirement = Assert.Single(await readScope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>()
+            .MaterialRequirements.Where(x => x.WorkOrderId == workOrderId)
+            .ToArrayAsync());
+
+        Assert.Single(snapshotProvider.Requests);
         Assert.Equal("MBOM-A:MAT-PRIMARY", frozenRequirement.SourceSnapshotId);
         Assert.Equal(["MAT-ALT-A"], frozenRequirement.GetSubstituteMaterialIds());
     }

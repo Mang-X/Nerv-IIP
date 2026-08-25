@@ -50,7 +50,13 @@ public sealed record MasterDataResourceItem(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? Timezone = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    bool? CrossesMidnight = null,
+    int? PaidMinutes = null,
+    int? BreakMinutes = null);
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
@@ -427,7 +433,16 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.Code == request.SiteCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Name,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                Status = x.Disabled ? "disabled" : "active",
+                Timezone = x.Timezone,
+            });
     }
 
     private IQueryable<MasterDataResourceItem> ListProductionLines(ListMasterDataResourcesQuery request, string resourceType)
@@ -453,7 +468,20 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Name,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                Status = x.Disabled ? "disabled" : "active",
+                StartsAt = x.StartsAt,
+                EndsAt = x.EndsAt,
+                CrossesMidnight = x.CrossesMidnight,
+                PaidMinutes = x.PaidMinutes,
+                BreakMinutes = x.BreakMinutes,
+            });
     }
 
     private IQueryable<MasterDataResourceItem> ListReferenceDataCodes(ListMasterDataResourcesQuery request, string resourceType)
