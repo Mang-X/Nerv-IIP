@@ -2134,9 +2134,7 @@ export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
   )
   const enabled = computed(
     () =>
-      hasBusinessContext(filters) &&
-      qualityInspectionRecordsReadPermission.value &&
-      shouldLoad(),
+      hasBusinessContext(filters) && qualityInspectionRecordsReadPermission.value && shouldLoad(),
   )
   const query = useQuery(() => ({
     ...listBusinessConsoleQualityScrapReasonCodesQueryOptions({

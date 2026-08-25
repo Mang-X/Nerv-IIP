@@ -68,9 +68,7 @@ export function useProductionReportForm(
     refreshMaterialLots,
   } = useMesProductionMaterialLots(() => {
     const ctx = context()
-    return ctx
-      ? { workOrderId: ctx.workOrderId, operationTaskId: ctx.operationTaskId }
-      : null
+    return ctx ? { workOrderId: ctx.workOrderId, operationTaskId: ctx.operationTaskId } : null
   })
 
   const canCompleteOperation = computed(() => {
@@ -227,8 +225,11 @@ export function useProductionReportForm(
     if ((scrapQuantity.value ?? 0) <= 0) return false
     if (!qualityInspectionRecordsReadPermission.value) return true
     if (scrapReasonCodesPending.value || scrapReasonCodesError.value) return true
-    return !scrapReasonCode.value || !scrapReasonCodes.value.some(
-      (row) => row.reasonCode?.trim() === scrapReasonCode.value && row.enabled !== false,
+    return (
+      !scrapReasonCode.value ||
+      !scrapReasonCodes.value.some(
+        (row) => row.reasonCode?.trim() === scrapReasonCode.value && row.enabled !== false,
+      )
     )
   })
   const scrapReasonValidationMessage = computed(() => {

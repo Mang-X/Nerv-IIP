@@ -9,7 +9,7 @@ async function applyNavigation(to: string | { query?: Record<string, unknown> })
     if (to === '/mes/report') route.query = {}
     return
   }
-  route.query = { ...(to.query ?? {}) }
+  route.query = { ...to.query }
 }
 const push = vi.fn(applyNavigation)
 const replace = vi.fn(applyNavigation)
@@ -991,7 +991,9 @@ describe('PDA MES production reporting page', () => {
     )!
     materialQuantity.value = '3'
     materialQuantity.dispatchEvent(new Event('input'))
-    const goodInput = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    const goodInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="good-quantity"]',
+    )!
     goodInput.value = '8'
     goodInput.dispatchEvent(new Event('input'))
     await flushPromises()

@@ -67,6 +67,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(false),
+    materialLotsPending: ref(false),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref([]),
+    refreshMaterialLots: vi.fn(),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(false),
+    scrapReasonCodesPending: ref(false),
+    scrapReasonCodesError: ref(undefined),
+    scrapReasonCodes: ref([]),
+    refreshScrapReasonCodes: vi.fn(),
+  }),
   // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
   useMesOperationTasks: () => ({
     filters: reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 200 }),

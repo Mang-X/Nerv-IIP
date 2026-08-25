@@ -288,8 +288,8 @@ async function onSubmit() {
               <span>
                 {{ row.materialId }} · {{ row.materialLotId }}
                 <span class="text-muted-foreground">
-                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用 {{ materialRemaining(row) }}
-                  {{ row.uomCode }}）
+                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用
+                  {{ materialRemaining(row) }} {{ row.uomCode }}）
                 </span>
               </span>
             </label>

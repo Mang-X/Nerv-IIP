@@ -226,32 +226,36 @@ const consumedMaterialLots = computed(() =>
     ]
   }),
 )
-const invalidMaterialLots = computed(() =>
-  (scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0) ||
-  productionMaterialLots.availableMaterialLots.value.some((row) => {
-    const selection = materialSelections.get(row.requestId)
-    if (!selection?.selected) return false
-    const quantity = Number(selection.consumedQuantity)
-    return (
-      !Number.isFinite(quantity) ||
-      quantity <= 0 ||
-      quantity > row.receivedQuantity - row.consumedQuantity
-    )
-  }),
+const invalidMaterialLots = computed(
+  () =>
+    (scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0) ||
+    productionMaterialLots.availableMaterialLots.value.some((row) => {
+      const selection = materialSelections.get(row.requestId)
+      if (!selection?.selected) return false
+      const quantity = Number(selection.consumedQuantity)
+      return (
+        !Number.isFinite(quantity) ||
+        quantity <= 0 ||
+        quantity > row.receivedQuantity - row.consumedQuantity
+      )
+    }),
 )
 const materialValidationMessage = computed(() =>
   scrapQuantity.value > 0 && consumedMaterialLots.value.length === 0
-      ? '报废报工至少选择一个已收料批次。'
-      : invalidMaterialLots.value
-        ? '耗料数量必须大于 0，且不能超过该批次可用数量。'
-        : '',
+    ? '报废报工至少选择一个已收料批次。'
+    : invalidMaterialLots.value
+      ? '耗料数量必须大于 0，且不能超过该批次可用数量。'
+      : '',
 )
 const invalidScrapReasonCode = computed(() => {
   if (scrapQuantity.value <= 0) return false
   if (!qualityInspectionRecordsReadPermission.value) return true
   if (scrapReasonCodesPending.value || scrapReasonCodesError.value) return true
-  return !scrapReasonCode.value.trim() || !scrapReasonCodes.value.some(
-    (row) => row.reasonCode?.trim() === scrapReasonCode.value.trim() && row.enabled !== false,
+  return (
+    !scrapReasonCode.value.trim() ||
+    !scrapReasonCodes.value.some(
+      (row) => row.reasonCode?.trim() === scrapReasonCode.value.trim() && row.enabled !== false,
+    )
   )
 })
 const scrapReasonValidationMessage = computed(() => {
@@ -966,23 +970,13 @@ function onScanWorkOrder(value: string) {
           <p v-if="materialLotsError" class="text-sm text-destructive">
             已收料批次读取失败，请刷新后重试。
           </p>
-          <p
-            v-else-if="materialLotsPending"
-            class="text-sm text-muted-foreground"
-          >
+          <p v-else-if="materialLotsPending" class="text-sm text-muted-foreground">
             正在读取已收料批次…
           </p>
-          <p
-            v-else-if="availableMaterialLots.length === 0"
-            class="text-sm text-muted-foreground"
-          >
+          <p v-else-if="availableMaterialLots.length === 0" class="text-sm text-muted-foreground">
             当前工序暂无可用已收料批次。
           </p>
-          <div
-            v-for="row in availableMaterialLots"
-            :key="row.requestId"
-            class="space-y-2"
-          >
+          <div v-for="row in availableMaterialLots" :key="row.requestId" class="space-y-2">
             <label class="flex items-center gap-2 text-sm text-foreground">
               <input
                 :checked="materialSelected(row.requestId)"
@@ -990,13 +984,15 @@ function onScanWorkOrder(value: string) {
                 type="checkbox"
                 class="size-5"
                 :disabled="submitting"
-                @change="setMaterialSelected(row.requestId, ($event.target as HTMLInputElement).checked)"
+                @change="
+                  setMaterialSelected(row.requestId, ($event.target as HTMLInputElement).checked)
+                "
               />
               <span>
                 {{ row.materialId }} · {{ row.materialLotId }}
                 <span class="text-muted-foreground">
-                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用 {{ materialRemaining(row) }}
-                  {{ row.uomCode }}）
+                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用
+                  {{ materialRemaining(row) }} {{ row.uomCode }}）
                 </span>
               </span>
             </label>
