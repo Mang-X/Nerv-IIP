@@ -1,6 +1,10 @@
 # 第四阶段真实基础设施纵切
 
-本文档记录第四阶段从“控制台纵切已跑通”推进到“真实基础设施门禁已通过”的统一验收口径。前三阶段分别验证接入查询、低风险动作闭环和控制台 API/codegen；第四阶段不扩大业务范围，重点把 AppHub、Ops、Gateway、Connector Host 和 Console 链路放到可验证的真实基础设施底座上。
+本文档记录第四阶段从“控制台纵切已跑通”推进到“真实基础设施门禁已通过”的历史验收口径。前三阶段分别验证接入查询、低风险动作闭环和控制台 API/codegen；第四阶段不扩大业务范围，重点把 AppHub、Ops、Gateway、Connector Host 和 Console 链路放到可验证的真实基础设施底座上。
+
+## 退役状态
+
+第一至第四阶段的纵切脚本已按 #2157 退役。对应路径仍保留为无副作用、明确失败的兼容墓碑；本文中的脚本命令和通过输出是历史执行记录，不是当前推荐入口。当前本地开发使用 `nerv.ps1 dev` 与 `nerv.ps1 fullstack run`，OpenAPI/api-client 漂移使用 `scripts/verify-openapi-client-drift.ps1`，真实 provider 证明使用专用 CI lane。
 
 ## 目标
 
@@ -8,7 +12,7 @@
 2. 以 PostgreSQL 作为首个真实持久化 profile，验证服务事实跨 DbContext 生命周期保存。
 3. 接入 Redis、RabbitMQ 和 CAP 基础包，冻结后续缓存、消息和 outbox 接线边界；当前运行口径已进一步把 RabbitMQ 调整为 `Messaging:Provider=RabbitMQ` 时的可选 broker。
 4. 建立平台级 Aspire AppHost，作为 AppHub、Ops、Gateway、Connector Host 与基础设施资源的统一拓扑入口。
-5. 保留前三阶段验证入口，并提供一个能拉起真实依赖、复跑控制台链路的第四阶段总门禁。
+5. 历史上保留前三阶段验证入口，并提供一个能拉起真实依赖、复跑控制台链路的第四阶段总门禁；这些入口现已按 #2157 退役。
 
 ## 已落地范围
 
@@ -17,13 +21,13 @@
 3. AppHub/Ops Web endpoint 已通过 MediatR 调用 command/query，不再直接把 endpoint 绑定到具体 store。
 4. AppHub/Ops PostgreSQL profile 已通过集成测试证明核心事实可持久化。
 5. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
-6. `scripts/verify-second-slice-ops.ps1` 和 `scripts/verify-third-slice-console.ps1` 支持 `-UsePostgres`。
-7. `scripts/verify-fourth-slice-real-infra.ps1` 会拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，重建验证库并复跑第三阶段控制台纵切。
+6. 历史 `scripts/verify-second-slice-ops.ps1` 和 `scripts/verify-third-slice-console.ps1` 曾支持 `-UsePostgres`，现已退役。
+7. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 曾拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，现已退役；当前真实基础设施验证由 AppHost/fullstack 与专用 provider lane 承接。
 8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 在 `Messaging:Provider=RabbitMQ` profile 下加入拓扑。
 
 ## 验证命令
 
-第四阶段总门禁：
+历史第四阶段总门禁：
 
 ```powershell
 pwsh scripts/verify-fourth-slice-real-infra.ps1
@@ -35,7 +39,7 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 Fourth vertical slice real infrastructure verified.
 ```
 
-该脚本覆盖 AppHub/Ops PostgreSQL profile tests、backend solution tests、connector-hosts solution tests、Gateway OpenAPI 导出、frontend api-client 生成、console typecheck/test/build，以及 PostgreSQL 模式下的 Gateway/AppHub/Ops/Connector Host 联调。
+该脚本历史上覆盖 AppHub/Ops PostgreSQL profile tests、backend solution tests、connector-hosts solution tests、Gateway OpenAPI 导出、frontend api-client 生成、console typecheck/test/build，以及 PostgreSQL 模式下的 Gateway/AppHub/Ops/Connector Host 联调；脚本退役后不再执行这些步骤。
 
 前端质量门禁仍需单独保持：
 
