@@ -1,7 +1,7 @@
 // 大屏选择页（指挥中心门厅）数据契约：全厂脉搏 KPI + 每块屏的领域一瞥。
 // 🟠 动态指标当前无真实聚合端点（见 #570），mock 先按此形状产出；
 // 接入后仅换 fetchers/launcher.ts，本契约与页面不动。
-import type { ScreenKey } from '@/data/mock/scope'
+import type { ScreenKey } from '@/data/contracts/scope'
 
 export interface HallKpis {
   /** 今日产量（件） 🟠 待 #570 */

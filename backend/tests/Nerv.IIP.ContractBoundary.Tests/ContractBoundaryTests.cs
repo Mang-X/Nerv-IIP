@@ -3,11 +3,13 @@ using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using Nerv.IIP.AppHub.Domain;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Ops.Domain;
@@ -23,6 +25,8 @@ public sealed class ContractBoundaryTests
         new(typeof(SchedulePlan).Assembly, ["Nerv.IIP.Contracts.Scheduling"]),
         // #1857 / #1890：为 Domain 开放词表契约时，查询 / 读模型 / 算法契约禁引面必须同时登记。
         new(typeof(ApprovalChain).Assembly,
+            ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
+        new(typeof(PurchaseReceipt).Assembly,
             ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
         new(typeof(StockMovement).Assembly,
             ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
@@ -44,6 +48,10 @@ public sealed class ContractBoundaryTests
             typeof(ApprovalChain).Assembly,
             typeof(ApprovalChainStatuses).Assembly,
             [typeof(ApprovalChainStatuses).FullName!, typeof(ApprovalDecisions).FullName!]),
+        new(
+            typeof(PurchaseReceipt).Assembly,
+            typeof(ErpReceiptQualityStatuses).Assembly,
+            [typeof(ErpReceiptQualityStatuses).FullName!]),
         // #1891 / #1892 将在对应 Domain 引用化时使用；先登记开门边界，禁止放宽到整个契约程序集。
         new(
             typeof(StockMovement).Assembly,
@@ -110,6 +118,8 @@ public sealed class ContractBoundaryTests
             [
                 "Nerv.IIP.Business.Approval.Domain -> Nerv.IIP.Contracts.Approval: "
                 + "Nerv.IIP.Contracts.Approval.ApprovalChainStatuses,Nerv.IIP.Contracts.Approval.ApprovalDecisions",
+                "Nerv.IIP.Business.Erp.Domain -> Nerv.IIP.Contracts.Erp: "
+                + "Nerv.IIP.Contracts.Erp.ErpReceiptQualityStatuses",
                 "Nerv.IIP.Business.Inventory.Domain -> Nerv.IIP.Contracts.Inventory: "
                 + "Nerv.IIP.Contracts.Inventory.InventoryMovementTypes,Nerv.IIP.Contracts.Inventory.InventoryQualityStatuses",
                 "Nerv.IIP.Business.Quality.Domain -> Nerv.IIP.Contracts.Quality: "

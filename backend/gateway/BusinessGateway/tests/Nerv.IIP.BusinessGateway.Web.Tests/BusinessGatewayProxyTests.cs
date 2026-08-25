@@ -928,7 +928,7 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&status=rejected&keyword=SKU-RM-1000&skip=2&take=25");
+        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&status=rejected&keyword=SKU-RM-1000&sourceType=first-article&skip=2&take=25");
         var openNcr = await client.PostAsJsonAsync("/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", new
         {
             inspectionRecordId = "ignored",
@@ -941,7 +941,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.Equal(HttpStatusCode.OK, openNcr.StatusCode);
         Assert.Equal("internal-test-token", quality.LastInternalToken);
-        Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "rejected", "SKU-RM-1000", 2, 25), quality.LastInspectionRecordListRequest);
+        Assert.Equal(new BusinessConsoleQualityInspectionRecordListRequest("org-001", "env-dev", "rejected", "SKU-RM-1000", "first-article", 2, 25), quality.LastInspectionRecordListRequest);
         Assert.Equal("inspection-001", quality.LastOpenNcrInspectionRecordId);
         Assert.Equal("inspection-001", quality.LastOpenNcrFromInspectionRequest!.InspectionRecordId);
         Assert.Equal("org-001", quality.LastOpenNcrFromInspectionRequest.OrganizationId);
@@ -7710,6 +7710,103 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_assignment_without_interval()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001",
+            "env-dev",
+            "IP-RUN-001",
+            "operation",
+            "SKU-RUN-001",
+            null,
+            "WC-RUN-001",
+            null,
+            "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            AssignedTeamId: "team-quality-001");
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("至少一个巡检间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_periodic_policy_without_sku_and_work_center()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", null, null, null, null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            QuantityInterval: 100m);
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("SKU 和 WorkCenterId", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_quantity_interval_above_database_precision()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", "SKU-RUN-001", null, "WC-RUN-001", null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            QuantityInterval: 1_000_000_000_000m);
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_time_interval_above_timespan_precision()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", "SKU-RUN-001", null, "WC-RUN-001", null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            TimeIntervalHours: 256_204_778.801522m);
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("时间间隔", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("time-minimum")]
+    [InlineData("time-maximum")]
+    [InlineData("quantity-minimum")]
+    [InlineData("quantity-maximum")]
+    public void Create_quality_inspection_plan_validator_accepts_supported_interval_boundaries(string boundary)
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", "SKU-RUN-001", null, "WC-RUN-001", null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            TimeIntervalHours: boundary switch
+            {
+                "time-minimum" => 0.000001m,
+                "time-maximum" => 256_204_778.801521m,
+                _ => null,
+            },
+            QuantityInterval: boundary switch
+            {
+                "quantity-minimum" => 0.000001m,
+                "quantity-maximum" => 999_999_999_999.999999m,
+                _ => null,
+            });
+
+        var result = validator.Validate(request);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_real_downstream_inspection_plan_payload_to_console_items()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -7725,6 +7822,10 @@ public sealed class BusinessGatewayProxyTests
                         planCode = "IP-001",
                         category = "incoming",
                         skuCode = "SKU-001",
+                        timeIntervalHours = 2.5m,
+                        quantityInterval = 100m,
+                        assignedInspectorUserId = "user-inspector-001",
+                        assignedTeamId = (string?)null,
                         status = "active",
                     },
                 },
@@ -7738,7 +7839,13 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionPlansAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", Keyword: "IP-001", Take: 12),
+            new BusinessConsoleQualityInspectionPlanListRequest(
+                "org-001",
+                "env-dev",
+                "active",
+                "IP-001",
+                "first-article",
+                Take: 12),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -7748,8 +7855,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("active", item.Status);
         Assert.Equal("incoming", item.Category);
         Assert.Equal("SKU-001", item.SkuCode);
+        Assert.Equal(2.5m, item.TimeIntervalHours);
+        Assert.Equal(100m, item.QuantityInterval);
+        Assert.Equal("user-inspector-001", item.AssignedInspectorUserId);
+        Assert.Null(item.AssignedTeamId);
         var request = handler.Requests.Single();
-        Assert.Equal("/api/business/v1/quality/inspection-plans?organizationId=org-001&environmentId=env-dev&status=active&keyword=IP-001&skip=0&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/quality/inspection-plans?organizationId=org-001&environmentId=env-dev&category=first-article&status=active&keyword=IP-001&skip=0&take=12", request.RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -7789,7 +7900,11 @@ public sealed class BusinessGatewayProxyTests
                     "major",
                     true,
                     "100-percent",
-                    "attribute")]),
+                    "attribute")],
+                TimeIntervalHours: 2.5m,
+                QuantityInterval: 100m,
+                AssignedInspectorUserId: null,
+                AssignedTeamId: "team-quality-001"),
             CancellationToken.None);
 
         Assert.Equal("019f87d0-3f7f-7ad0-a829-7724ea91c111", response.InspectionPlanId);
@@ -7805,6 +7920,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SKU-RUN-001", root.GetProperty("skuCode").GetString());
         Assert.Equal("WC-RUN-001", root.GetProperty("workCenterId").GetString());
         Assert.Equal("operation-task", root.GetProperty("documentType").GetString());
+        Assert.Equal(2.5m, root.GetProperty("timeIntervalHours").GetDecimal());
+        Assert.Equal(100m, root.GetProperty("quantityInterval").GetDecimal());
+        Assert.Equal("team-quality-001", root.GetProperty("assignedTeamId").GetString());
         Assert.Equal("ATTR-RUN-001", root.GetProperty("characteristics")[0].GetProperty("characteristicCode").GetString());
     }
 
@@ -8055,12 +8173,20 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionRecordsAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev"),
+            new BusinessConsoleQualityInspectionRecordListRequest(
+                "org-001",
+                "env-dev",
+                "passed",
+                "SKU-001",
+                "first-article"),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
         Assert.Equal(2, item.AttemptNumber);
         Assert.Equal("inspection-001", item.ReinspectionOfInspectionRecordId);
+        Assert.Equal(
+            "/api/business/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&sourceType=first-article&result=passed&skuCode=SKU-001&skip=0&take=100",
+            handler.Requests.Single().RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -11510,7 +11636,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastNcrListRequest { get; private set; }
 
-    public BusinessConsoleQualityListRequest? LastInspectionRecordListRequest { get; private set; }
+    public BusinessConsoleQualityInspectionRecordListRequest? LastInspectionRecordListRequest { get; private set; }
 
     public BusinessConsoleQualitySpcRequest? LastSpcControlChartRequest { get; private set; }
 
@@ -11580,7 +11706,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionPlanListRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleQualityListResponse([], 0));
 
@@ -11599,7 +11725,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionRecordListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

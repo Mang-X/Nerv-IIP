@@ -244,6 +244,55 @@ function Wait-Receivable {
     throw "ERP receivable did not converge for completed delivery $DeliveryOrderNo."
 }
 
+function New-WmsWorkPoolFixture {
+    param(
+        [string]$WmsUrl,
+        [hashtable]$Headers,
+        [string]$SiteCode,
+        [string]$PoolCode,
+        [string]$DisplayName,
+        [string]$AssignerPrincipalId,
+        [string]$OperatorPrincipalId)
+    # 作业池与成员资格是派工的前置资格边界。此处一律走公开写面现造，
+    # 不依赖 LeaderDemo 世界观种子：种子被拆除后本场景仍必须自洽。
+    $pool = Invoke-JsonPost -Uri "$WmsUrl/api/business/v1/wms/work-pools" -Headers $Headers -Body @{
+        organizationId = 'org-001'
+        environmentId = 'env-dev'
+        actorPrincipalId = $AssignerPrincipalId
+        authorizedSiteCodes = @($SiteCode)
+        poolCode = $PoolCode
+        displayName = $DisplayName
+        siteCode = $SiteCode
+    }
+    if (-not [string]::Equals([string]$pool.data.poolCode, $PoolCode, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$pool.data.siteCode, $SiteCode, [StringComparison]::Ordinal) -or
+        -not [bool]$pool.data.active -or
+        -not [bool]$pool.data.created) {
+        throw "Public WMS work-pool provisioning did not create $PoolCode at $SiteCode."
+    }
+
+    $memberUri = "$WmsUrl/api/business/v1/wms/work-pools/$([Uri]::EscapeDataString($PoolCode))/members"
+    $member = Invoke-JsonPost -Uri $memberUri -Headers $Headers -Body @{
+        poolCode = $PoolCode
+        organizationId = 'org-001'
+        environmentId = 'env-dev'
+        actorPrincipalId = $AssignerPrincipalId
+        authorizedSiteCodes = @($SiteCode)
+        principalId = $OperatorPrincipalId
+    }
+    if (-not [string]::Equals([string]$member.data.principalId, $OperatorPrincipalId, [StringComparison]::Ordinal) -or
+        -not [bool]$member.data.created) {
+        throw "Public WMS work-pool membership was not created for $OperatorPrincipalId in $PoolCode."
+    }
+
+    [pscustomobject]@{
+        poolCode = [string]$pool.data.poolCode
+        siteCode = [string]$pool.data.siteCode
+        operatorPrincipalId = [string]$member.data.principalId
+        effectiveFromUtc = [string]$member.data.effectiveFromUtc
+    }
+}
+
 $composeFile = Join-Path $root 'infra/docker-compose.dev.yml'
 $runningResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man527-compose-running'
 $running = @("$($runningResult.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
@@ -261,9 +310,10 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
 $capVersion = "man527-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $internalToken = "man527-$([Guid]::NewGuid().ToString('N'))"
 $deliveryOrderNo = "DO-MAN527-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
-$wmsActorPrincipalId = 'user-emp-049'
+$wmsActorPrincipalId = "man527-operator-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+$wmsSupervisorPrincipalId = "man527-supervisor-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
 $wmsSiteCode = 'SITE-001'
-$wmsShippingPoolCode = 'POOL-WMS-SHIPPING'
+$wmsShippingPoolCode = "POOL-MAN527-SHIPPING-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
 $erpUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
 $wmsUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
 $inventoryUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
@@ -329,9 +379,6 @@ try {
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
         ASPNETCORE_URLS = $wmsUrl
         Inventory__BaseUrl = $inventoryUrl
-        LeaderDemo__History__Enabled = 'true'
-        LeaderDemo__Seed__OrganizationId = 'org-001'
-        LeaderDemo__Seed__EnvironmentId = 'env-dev'
     }) -ScriptBlock {
         $script:wmsProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $wmsProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-wms-work-scope'
     }
@@ -356,6 +403,14 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:man527-acceptance'
     }
+    $workPoolFixture = New-WmsWorkPoolFixture `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -SiteCode $wmsSiteCode `
+        -PoolCode $wmsShippingPoolCode `
+        -DisplayName '拣货与发运' `
+        -AssignerPrincipalId $wmsSupervisorPrincipalId `
+        -OperatorPrincipalId $wmsActorPrincipalId
     Wait-ErpSalesOrder -ErpUrl $erpUrl -Headers $headers | Out-Null
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/delivery-orders" -Headers $headers -Body @{
         organizationId = 'org-001'
@@ -550,6 +605,14 @@ try {
         persistence = 'Disposable real PostgreSQL database'
         wmsOutboundOrder = [ordered]@{
             outboundOrderNo = $outbound.outboundOrderNo
+            workPoolFixture = [ordered]@{
+                poolCode = $workPoolFixture.poolCode
+                siteCode = $workPoolFixture.siteCode
+                operatorPrincipalId = $workPoolFixture.operatorPrincipalId
+                effectiveFromUtc = $workPoolFixture.effectiveFromUtc
+                establishedThrough = 'public WMS work-pool and membership endpoints'
+                leaderDemoSeed = 'not enabled for this scenario'
+            }
             firstAssignment = [ordered]@{
                 preAssignmentReadback = 'exact run-scoped row had no assigned pool or operator'
                 preAssignmentVersion = $unassignedOutbound.version

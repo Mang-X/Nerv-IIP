@@ -51,6 +51,15 @@ public sealed class MasterDataOpenApiTests
             .Select(property => property.Name)
             .Order(StringComparer.Ordinal)
             .ToArray();
+        var statusResponseSchema = ResolveSchema(
+            toolingItemSchema.GetProperty("properties").GetProperty("status"),
+            schemas);
+        var statusRequestSchema = ResolveSchema(
+            operation.GetProperty("parameters")
+                .EnumerateArray()
+                .Single(parameter => parameter.GetProperty("name").GetString() == "status")
+                .GetProperty("schema"),
+            schemas);
 
         Assert.Equal("listBusinessMasterDataToolingAssets", operation.GetProperty("operationId").GetString());
         Assert.Contains("organizationId", parameterNames);
@@ -73,6 +82,38 @@ public sealed class MasterDataOpenApiTests
                 "workCenterCodes",
             ],
             responsePropertyNames);
+        AssertStringToolingStatusSchema(statusResponseSchema);
+        AssertStringToolingStatusSchema(statusRequestSchema);
+    }
+
+    private static JsonElement ResolveSchema(JsonElement schema, JsonElement schemas)
+    {
+        if (schema.TryGetProperty("$ref", out var schemaReference))
+        {
+            return schemas.GetProperty(schemaReference.GetString()!.Split('/')[^1]);
+        }
+
+        if (schema.TryGetProperty("oneOf", out var alternatives))
+        {
+            return ResolveSchema(Assert.Single(alternatives.EnumerateArray()), schemas);
+        }
+
+        if (schema.TryGetProperty("allOf", out var inheritedSchemas))
+        {
+            return ResolveSchema(Assert.Single(inheritedSchemas.EnumerateArray()), schemas);
+        }
+
+        return schema;
+    }
+
+    private static void AssertStringToolingStatusSchema(JsonElement schema)
+    {
+        Assert.True(schema.TryGetProperty("type", out var type), $"枚举 schema 缺少 type：{schema.GetRawText()}");
+        Assert.Equal("string", type.GetString());
+        Assert.True(schema.TryGetProperty("enum", out var values), $"枚举 schema 缺少 enum：{schema.GetRawText()}");
+        Assert.Equal(
+            ["available", "maintenance", "retired"],
+            values.EnumerateArray().Select(value => value.GetString()));
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

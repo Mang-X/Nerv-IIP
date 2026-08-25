@@ -139,6 +139,7 @@ try
     builder.Services.AddScoped<ICapaAutomationService, CapaAutomationService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<InspectionTaskOverdueScheduler>();
+    builder.Services.AddHostedService<PeriodicInspectionTimeTaskScheduler>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

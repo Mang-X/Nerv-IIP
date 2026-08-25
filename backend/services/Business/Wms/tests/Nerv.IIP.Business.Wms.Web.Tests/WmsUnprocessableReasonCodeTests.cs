@@ -62,6 +62,7 @@ public sealed class WmsUnprocessableReasonCodeTests
     [InlineData(WmsUnprocessableReasonCodes.PickingDifferenceReasonRequired)]
     [InlineData(WmsUnprocessableReasonCodes.PickingOverLimit)]
     [InlineData(WmsUnprocessableReasonCodes.ExecutedQuantityOutOfRange)]
+    [InlineData(WmsUnprocessableReasonCodes.WorkPoolMembershipWindowNotForward)]
     public void Every_reason_code_survives_the_gateway_safe_message_filter(string code)
     {
         Assert.Equal(code, WmsLifecycleConflictMiddleware.SafeOutboundCode(code, "fallback"));

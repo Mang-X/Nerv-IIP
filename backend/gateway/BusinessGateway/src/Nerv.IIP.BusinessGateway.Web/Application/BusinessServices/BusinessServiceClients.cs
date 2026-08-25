@@ -348,12 +348,12 @@ public interface IBusinessQualityClient
 
     Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionPlanListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionRecordListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
@@ -3251,7 +3251,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionPlanListRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamInspectionPlanListResponse>(
@@ -3260,6 +3260,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             "/api/business/v1/quality/inspection-plans?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
+                ("category", request.Category),
                 ("status", request.Status),
                 ("keyword", request.Keyword),
                 ("skip", request.Skip),
@@ -3478,7 +3479,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,
-        BusinessConsoleQualityListRequest request,
+        BusinessConsoleQualityInspectionRecordListRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamInspectionRecordListResponse>(
@@ -3487,6 +3488,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             "/api/business/v1/quality/inspection-records?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
+                ("sourceType", request.SourceType),
                 ("result", request.Status),
                 ("skuCode", request.Keyword),
                 ("skip", request.Skip),
@@ -3862,7 +3864,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             null,
             null,
-            null);
+            null,
+            TimeIntervalHours: item.TimeIntervalHours,
+            QuantityInterval: item.QuantityInterval,
+            AssignedInspectorUserId: item.AssignedInspectorUserId,
+            AssignedTeamId: item.AssignedTeamId);
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamNcrItem item) =>
         new(
@@ -4094,7 +4100,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? DocumentType,
         int Version,
         string Status,
-        IReadOnlyCollection<DownstreamInspectionPlanCharacteristic>? Characteristics);
+        IReadOnlyCollection<DownstreamInspectionPlanCharacteristic>? Characteristics,
+        decimal? TimeIntervalHours = null,
+        decimal? QuantityInterval = null,
+        string? AssignedInspectorUserId = null,
+        string? AssignedTeamId = null);
 
     private sealed record DownstreamInspectionPlanCharacteristic(
         string CharacteristicCode,

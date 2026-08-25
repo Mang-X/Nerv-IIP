@@ -8,11 +8,16 @@ public partial record InspectionPlanCharacteristicId : IGuidStronglyTypedId;
 
 public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
 {
+    private const decimal MinimumPeriodicInterval = 0.000001m;
+    // Largest six-decimal hour value that TimeSpan.FromHours can represent without overflow.
+    public const decimal MaximumTimeIntervalHours = 256_204_778.801521m;
+    public const decimal MaximumQuantityInterval = 999_999_999_999.999999m;
     private static readonly HashSet<string> Categories =
     [
         "receiving",
         "operation",
         "final",
+        "first-article",
         "maintenance",
         "customer-return",
     ];
@@ -44,6 +49,16 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
         WorkCenterId = Optional(workCenterId);
         DeviceAssetId = Optional(deviceAssetId);
         DocumentType = Optional(documentType);
+        if (Category == "first-article" && SkuCode is null)
+        {
+            throw new KnownException("首件检验方案必须指定适用物料。");
+        }
+
+        if (Category == "first-article" && WorkCenterId is null)
+        {
+            throw new KnownException("首件检验方案必须指定工序工作中心。");
+        }
+
         Version = version <= 0 ? throw new ArgumentOutOfRangeException(nameof(version), "Version must be positive.") : version;
         SupersedesPlanId = supersedesPlanId;
         Status = "draft";
@@ -60,6 +75,10 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
     public string? WorkCenterId { get; private set; }
     public string? DeviceAssetId { get; private set; }
     public string? DocumentType { get; private set; }
+    public decimal? TimeIntervalHours { get; private set; }
+    public decimal? QuantityInterval { get; private set; }
+    public string? AssignedInspectorUserId { get; private set; }
+    public string? AssignedTeamId { get; private set; }
     public int Version { get; private set; }
     public InspectionPlanId? SupersedesPlanId { get; private set; }
     public string Status { get; private set; } = string.Empty;
@@ -77,9 +96,13 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
         string? partnerId,
         string? workCenterId,
         string? deviceAssetId,
-        string? documentType)
+        string? documentType,
+        decimal? timeIntervalHours = null,
+        decimal? quantityInterval = null,
+        string? assignedInspectorUserId = null,
+        string? assignedTeamId = null)
     {
-        return new InspectionPlan(
+        var plan = new InspectionPlan(
             organizationId,
             environmentId,
             planCode,
@@ -91,6 +114,71 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
             documentType,
             1,
             null);
+        plan.ConfigurePeriodicInspectionPolicy(
+            timeIntervalHours,
+            quantityInterval,
+            assignedInspectorUserId,
+            assignedTeamId);
+        return plan;
+    }
+
+    public void ConfigurePeriodicInspectionPolicy(
+        decimal? timeIntervalHours,
+        decimal? quantityInterval,
+        string? assignedInspectorUserId,
+        string? assignedTeamId)
+    {
+        EnsureDraft();
+        var normalizedInspectorUserId = Optional(assignedInspectorUserId);
+        var normalizedTeamId = Optional(assignedTeamId);
+        var hasInterval = timeIntervalHours.HasValue || quantityInterval.HasValue;
+        var hasAssignment = normalizedInspectorUserId is not null || normalizedTeamId is not null;
+
+        if (timeIntervalHours is < MinimumPeriodicInterval)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeIntervalHours), "Time interval hours must be at least 0.000001.");
+        }
+
+        if (timeIntervalHours > MaximumTimeIntervalHours)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeIntervalHours), "Time interval hours must fit in a TimeSpan.");
+        }
+
+        if (quantityInterval is < MinimumPeriodicInterval)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantityInterval), "Quantity interval must be at least 0.000001.");
+        }
+
+        if (quantityInterval > MaximumQuantityInterval)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantityInterval), $"Quantity interval must not exceed {MaximumQuantityInterval}.");
+        }
+
+        if (normalizedInspectorUserId is not null && normalizedTeamId is not null)
+        {
+            throw new ArgumentException("Periodic inspection assignment can target either an inspector user or a team, not both.");
+        }
+
+        if (hasAssignment && !hasInterval)
+        {
+            throw new ArgumentException("Periodic inspection assignment requires at least one interval.");
+        }
+
+        if ((hasInterval || hasAssignment) && Category != "operation")
+        {
+            throw new InvalidOperationException("Periodic inspection policy is only supported for operation plans.");
+        }
+
+        if ((hasInterval || hasAssignment) && (SkuCode is null || WorkCenterId is null))
+        {
+            throw new InvalidOperationException("Periodic inspection policy requires both SKU and work center applicability.");
+        }
+
+        TimeIntervalHours = timeIntervalHours;
+        QuantityInterval = quantityInterval;
+        AssignedInspectorUserId = normalizedInspectorUserId;
+        AssignedTeamId = normalizedTeamId;
+        Touch();
     }
 
     public void AddCharacteristic(
@@ -188,6 +276,11 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
             DocumentType,
             Version + 1,
             Id);
+        nextVersion.ConfigurePeriodicInspectionPolicy(
+            TimeIntervalHours,
+            QuantityInterval,
+            AssignedInspectorUserId,
+            AssignedTeamId);
 
         foreach (var characteristic in Characteristics)
         {

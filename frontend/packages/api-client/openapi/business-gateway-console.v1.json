@@ -6763,6 +6763,14 @@
             }
           },
           {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -6790,6 +6798,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -6957,6 +6975,14 @@
             }
           },
           {
+            "name": "sourceType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -6984,6 +7010,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -36621,6 +36657,28 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicInput"
             }
+          },
+          "timeIntervalHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "quantityInterval": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "assignedInspectorUserId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          },
+          "assignedTeamId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -36836,10 +36894,28 @@
           "closeReason": {
             "type": "string",
             "nullable": true
+          },
+          "timeIntervalHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "quantityInterval": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "assignedInspectorUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignedTeamId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -37070,6 +37146,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionRecordListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenNcrFromInspectionResponse": {
         "allOf": [
@@ -37622,6 +37702,10 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest": {
         "type": "object",
         "additionalProperties": false
       },
