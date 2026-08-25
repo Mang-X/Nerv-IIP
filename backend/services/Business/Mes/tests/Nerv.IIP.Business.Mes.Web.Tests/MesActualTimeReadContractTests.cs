@@ -54,18 +54,12 @@ public sealed class MesActualTimeReadContractTests
             CancellationToken.None);
 
         var rows = result.Items.ToDictionary(x => x.OperationTaskId, StringComparer.Ordinal);
-        Assert.Null(rows["OP-QUEUED"].ActualLaborHours);
-        Assert.Null(rows["OP-QUEUED"].ActualMachineHours);
-        Assert.Null(rows["OP-RUNNING"].ActualLaborHours);
-        Assert.Null(rows["OP-RUNNING"].ActualMachineHours);
-        Assert.Null(rows["OP-PAUSED"].ActualLaborHours);
-        Assert.Null(rows["OP-PAUSED"].ActualMachineHours);
-        Assert.Equal(1.25m, rows["OP-COMPLETED"].ActualLaborHours);
-        Assert.Equal(0.5m, rows["OP-COMPLETED"].ActualMachineHours);
-        Assert.Equal(0m, rows["OP-ZERO"].ActualLaborHours);
-        Assert.Equal(0m, rows["OP-ZERO"].ActualMachineHours);
-        Assert.Null(rows["OP-REOPENED"].ActualLaborHours);
-        Assert.Null(rows["OP-REOPENED"].ActualMachineHours);
+        Assert.Null(rows["OP-QUEUED"].ActualHours);
+        Assert.Null(rows["OP-RUNNING"].ActualHours);
+        Assert.Null(rows["OP-PAUSED"].ActualHours);
+        Assert.Equal(new MesActualHours(1.25m, 0.5m), rows["OP-COMPLETED"].ActualHours);
+        Assert.Equal(new MesActualHours(0m, 0m), rows["OP-ZERO"].ActualHours);
+        Assert.Null(rows["OP-REOPENED"].ActualHours);
     }
 
     [Fact]
@@ -99,8 +93,7 @@ public sealed class MesActualTimeReadContractTests
             CancellationToken.None);
 
         var row = Assert.Single(result.OperationTasks);
-        Assert.Equal(1.25m, row.ActualLaborHours);
-        Assert.Equal(0.5m, row.ActualMachineHours);
+        Assert.Equal(new MesActualHours(1.25m, 0.5m), row.ActualHours);
     }
 
     [Fact]
@@ -114,6 +107,9 @@ public sealed class MesActualTimeReadContractTests
         completed.Start(startedAtUtc);
         completed.Complete(startedAtUtc.AddMinutes(75));
         dbContext.Entry(completed).Property(x => x.MachineTimeTicks).CurrentValue = TimeSpan.FromMinutes(30).Ticks;
+        var completedWithZero = CreateTask("WO-ZERO-REPORT", "OP-ZERO-REPORT", startedAtUtc);
+        completedWithZero.Start(startedAtUtc);
+        completedWithZero.Complete(startedAtUtc);
         var running = CreateTask("WO-RUNNING-REPORT", "OP-RUNNING-REPORT", startedAtUtc);
         running.Start(startedAtUtc);
         var otherScope = OperationTask.Queue(
@@ -128,10 +124,12 @@ public sealed class MesActualTimeReadContractTests
             TimeSpan.FromMinutes(30));
         otherScope.Start(startedAtUtc);
         otherScope.Complete(startedAtUtc.AddHours(2));
-        dbContext.OperationTasks.AddRange(completed, running, otherScope);
+        dbContext.OperationTasks.AddRange(completed, completedWithZero, running, otherScope);
         dbContext.ProductionReports.AddRange(
             ProductionReport.Record(
                 "org-001", "env-dev", "PRPT-ACTUAL", "WO-REPORT", "OP-REPORT", 2m, 0m, false, startedAtUtc.AddMinutes(80)),
+            ProductionReport.Record(
+                "org-001", "env-dev", "PRPT-ZERO", "WO-ZERO-REPORT", "OP-ZERO-REPORT", 1m, 0m, false, startedAtUtc),
             ProductionReport.Record(
                 "org-001", "env-dev", "PRPT-RUNNING", "WO-RUNNING-REPORT", "OP-RUNNING-REPORT", 1m, 0m, false, startedAtUtc.AddMinutes(10)),
             ProductionReport.Record(
@@ -144,16 +142,26 @@ public sealed class MesActualTimeReadContractTests
         var detail = await new GetProductionReportQueryHandler(dbContext).Handle(
             new GetProductionReportQuery("org-001", "env-dev", "PRPT-ACTUAL"),
             CancellationToken.None);
+        var zeroDetail = await new GetProductionReportQueryHandler(dbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-ZERO"),
+            CancellationToken.None);
 
         var rows = list.Items.ToDictionary(x => x.ReportNo, StringComparer.Ordinal);
-        Assert.Equal(1.25m, rows["PRPT-ACTUAL"].OperationActualLaborHours);
-        Assert.Equal(0.5m, rows["PRPT-ACTUAL"].OperationActualMachineHours);
-        Assert.Null(rows["PRPT-RUNNING"].OperationActualLaborHours);
-        Assert.Null(rows["PRPT-RUNNING"].OperationActualMachineHours);
-        Assert.Null(rows["PRPT-NO-SAME-SCOPE"].OperationActualLaborHours);
-        Assert.Null(rows["PRPT-NO-SAME-SCOPE"].OperationActualMachineHours);
-        Assert.Equal(1.25m, detail.Report.OperationActualLaborHours);
-        Assert.Equal(0.5m, detail.Report.OperationActualMachineHours);
+        Assert.Equal(new MesActualHours(1.25m, 0.5m), rows["PRPT-ACTUAL"].OperationActualHours);
+        Assert.Equal(new MesActualHours(0m, 0m), rows["PRPT-ZERO"].OperationActualHours);
+        Assert.Null(rows["PRPT-RUNNING"].OperationActualHours);
+        Assert.Null(rows["PRPT-NO-SAME-SCOPE"].OperationActualHours);
+        Assert.Equal(new MesActualHours(1.25m, 0.5m), detail.Report.OperationActualHours);
+        Assert.Equal(new MesActualHours(0m, 0m), zeroDetail.Report.OperationActualHours);
+    }
+
+    [Fact]
+    public void Internal_actual_hours_use_only_the_paired_read_model()
+    {
+        Assert.Null(typeof(MesOperationTaskRow).GetProperty("ActualLaborHours"));
+        Assert.Null(typeof(MesOperationTaskRow).GetProperty("ActualMachineHours"));
+        Assert.Null(typeof(ProductionReportFact).GetProperty("OperationActualLaborHours"));
+        Assert.Null(typeof(ProductionReportFact).GetProperty("OperationActualMachineHours"));
     }
 
     [Fact]
@@ -266,13 +274,11 @@ public sealed class MesActualTimeReadContractTests
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            var actualHours = request.ReportNo switch
+            if (!string.Equals(request.ReportNo, "PRPT-ACTUAL", StringComparison.Ordinal))
             {
-                "PRPT-ACTUAL" => new MesActualHours(1.25m, 0.5m),
-                "PRPT-ZERO" => new MesActualHours(0m, 0m),
-                "PRPT-NULL" => null,
-                _ => throw new NotSupportedException($"Unsupported report: {request.ReportNo}"),
-            };
+                throw new NotSupportedException($"Unsupported report: {request.ReportNo}");
+            }
+
             return Task.FromResult(new GetProductionReportResponse(
                 new ProductionReportFact(
                     "019f9db7-56e7-7446-bb96-f6d9e3e05459",
@@ -283,7 +289,7 @@ public sealed class MesActualTimeReadContractTests
                     0m,
                     0m,
                     DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
-                    OperationActualHours: actualHours),
+                    OperationActualHours: new MesActualHours(1.25m, 0.5m)),
                 []));
         }
     }

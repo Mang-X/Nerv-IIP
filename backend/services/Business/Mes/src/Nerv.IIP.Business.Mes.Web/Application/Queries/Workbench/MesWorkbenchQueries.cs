@@ -654,12 +654,6 @@ public sealed record MesOperationTaskRow(
     // 只在工序完成后返回已冻结的累计实绩；未完成或冲销后重新打开时为 null，单位为小时。
     [property: JsonIgnore] MesActualHours? ActualHours = null)
 {
-    [JsonIgnore]
-    public decimal? ActualLaborHours => ActualHours?.LaborHours;
-
-    [JsonIgnore]
-    public decimal? ActualMachineHours => ActualHours?.MachineHours;
-
     public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
     public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
