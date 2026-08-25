@@ -37,6 +37,18 @@ public sealed class MesSchemaConventionTests
     }
 
     [Fact]
+    public void Operation_task_required_skill_snapshot_is_nullable_and_bounded()
+    {
+        using var fixture = CreateFixture();
+        var property = fixture.DbContext.Model.FindEntityType(typeof(OperationTask))!
+            .FindProperty(nameof(OperationTask.RequiredSkillCode))!;
+
+        Assert.Equal("required_skill_code", property.GetColumnName());
+        Assert.Equal(100, property.GetMaxLength());
+        Assert.True(property.IsNullable);
+    }
+
+    [Fact]
     public void Runtime_PostgreSQL_profile_configures_migrations_history_schema()
     {
         using var fixture = CreateFixture();
