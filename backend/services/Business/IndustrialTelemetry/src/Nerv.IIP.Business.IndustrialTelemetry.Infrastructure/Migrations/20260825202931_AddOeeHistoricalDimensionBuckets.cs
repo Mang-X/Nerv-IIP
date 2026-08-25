@@ -11,11 +11,59 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.RenameIndex(
+            migrationBuilder.DropIndex(
                 name: "IX_oee_production_facts_organization_id_environment_id_device_~",
                 schema: "industrial_telemetry",
+                table: "oee_production_facts");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "work_center_id",
+                schema: "industrial_telemetry",
                 table: "oee_production_facts",
-                newName: "ix_oee_production_facts_scope_device_reported_at");
+                type: "character varying(100)",
+                maxLength: 100,
+                nullable: true,
+                comment: "MES work center snapshot for the reported operation; null is retained as an explicit degraded fact.",
+                oldClrType: typeof(string),
+                oldType: "character varying(100)",
+                oldMaxLength: 100,
+                oldComment: "MES work center snapshot for the reported operation.");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "device_asset_id",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                type: "character varying(150)",
+                maxLength: 150,
+                nullable: true,
+                comment: "MES assigned device asset used to scope OEE; null is retained as an explicit degraded fact.",
+                oldClrType: typeof(string),
+                oldType: "character varying(150)",
+                oldMaxLength: 150,
+                oldComment: "MES assigned device asset used to scope OEE.");
+
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "aggregation_occurred_at_utc",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                type: "timestamp with time zone",
+                nullable: true,
+                comment: "Effective UTC instant used to select the historical aggregation window; reversals retain the original fact instant.");
+
+            migrationBuilder.Sql(
+                "UPDATE industrial_telemetry.oee_production_facts SET aggregation_occurred_at_utc = reported_at_utc WHERE aggregation_occurred_at_utc IS NULL;");
+
+            migrationBuilder.AlterColumn<DateTimeOffset>(
+                name: "aggregation_occurred_at_utc",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                type: "timestamp with time zone",
+                nullable: false,
+                comment: "Effective UTC instant used to select the historical aggregation window; reversals retain the original fact instant.",
+                oldClrType: typeof(DateTimeOffset),
+                oldType: "timestamp with time zone",
+                oldNullable: true,
+                oldComment: "Effective UTC instant used to select the historical aggregation window; reversals retain the original fact instant.");
 
             migrationBuilder.AddColumn<DateOnly>(
                 name: "business_date",
@@ -157,10 +205,16 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "site_code", "day_bucket_start_utc" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_oee_production_facts_scope_device_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                columns: new[] { "organization_id", "environment_id", "device_asset_id", "aggregation_occurred_at_utc" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_oee_production_facts_scope_line_reported_at",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts",
-                columns: new[] { "organization_id", "environment_id", "line_code", "reported_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "line_code", "aggregation_occurred_at_utc" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_oee_production_facts_scope_shift_bucket",
@@ -172,25 +226,30 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 name: "ix_oee_production_facts_scope_work_center_reported_at",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts",
-                columns: new[] { "organization_id", "environment_id", "work_center_id", "reported_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "work_center_id", "aggregation_occurred_at_utc" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_oee_production_facts_scope_workshop_reported_at",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts",
-                columns: new[] { "organization_id", "environment_id", "workshop_code", "reported_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "workshop_code", "aggregation_occurred_at_utc" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "ix_oee_production_facts_scope_line_reported_at",
+                name: "ix_oee_production_facts_scope_day_bucket",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts");
 
             migrationBuilder.DropIndex(
-                name: "ix_oee_production_facts_scope_day_bucket",
+                name: "ix_oee_production_facts_scope_device_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts");
+
+            migrationBuilder.DropIndex(
+                name: "ix_oee_production_facts_scope_line_reported_at",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts");
 
@@ -206,6 +265,11 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
             migrationBuilder.DropIndex(
                 name: "ix_oee_production_facts_scope_workshop_reported_at",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts");
+
+            migrationBuilder.DropColumn(
+                name: "aggregation_occurred_at_utc",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts");
 
@@ -289,11 +353,41 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 schema: "industrial_telemetry",
                 table: "oee_production_facts");
 
-            migrationBuilder.RenameIndex(
-                name: "ix_oee_production_facts_scope_device_reported_at",
+            migrationBuilder.AlterColumn<string>(
+                name: "work_center_id",
                 schema: "industrial_telemetry",
                 table: "oee_production_facts",
-                newName: "IX_oee_production_facts_organization_id_environment_id_device_~");
+                type: "character varying(100)",
+                maxLength: 100,
+                nullable: false,
+                defaultValue: "",
+                comment: "MES work center snapshot for the reported operation.",
+                oldClrType: typeof(string),
+                oldType: "character varying(100)",
+                oldMaxLength: 100,
+                oldNullable: true,
+                oldComment: "MES work center snapshot for the reported operation; null is retained as an explicit degraded fact.");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "device_asset_id",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                type: "character varying(150)",
+                maxLength: 150,
+                nullable: false,
+                defaultValue: "",
+                comment: "MES assigned device asset used to scope OEE.",
+                oldClrType: typeof(string),
+                oldType: "character varying(150)",
+                oldMaxLength: 150,
+                oldNullable: true,
+                oldComment: "MES assigned device asset used to scope OEE; null is retained as an explicit degraded fact.");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_oee_production_facts_organization_id_environment_id_device_~",
+                schema: "industrial_telemetry",
+                table: "oee_production_facts",
+                columns: new[] { "organization_id", "environment_id", "device_asset_id", "reported_at_utc" });
         }
     }
 }

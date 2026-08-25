@@ -2320,7 +2320,7 @@ public sealed class MesPersistenceContractTests
                 CancellationToken.None);
             await dbContext.SaveChangesAsync();
 
-            await new RecordProductionReportCommandHandler(dbContext).Handle(
+            await new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider()).Handle(
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
                     10m, 0m, true, now.AddMinutes(40), "report-collab-001"),
@@ -2366,7 +2366,7 @@ public sealed class MesPersistenceContractTests
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider());
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",

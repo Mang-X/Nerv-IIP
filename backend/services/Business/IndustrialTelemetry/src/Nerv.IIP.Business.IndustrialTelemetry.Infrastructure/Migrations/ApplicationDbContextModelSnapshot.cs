@@ -921,6 +921,11 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("OEE production fact aggregate id.");
 
+                    b.Property<DateTimeOffset>("AggregationOccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("aggregation_occurred_at_utc")
+                        .HasComment("Effective UTC instant used to select the historical aggregation window; reversals retain the original fact instant.");
+
                     b.Property<DateOnly?>("BusinessDate")
                         .HasColumnType("date")
                         .HasColumnName("business_date")
@@ -937,11 +942,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasComment("UTC start of the captured site-local business day.");
 
                     b.Property<string>("DeviceAssetId")
-                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("device_asset_id")
-                        .HasComment("MES assigned device asset used to scope OEE.");
+                        .HasComment("MES assigned device asset used to scope OEE; null is retained as an explicit degraded fact.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -1065,11 +1069,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasComment("Output quantity unit copied from the MES operation snapshot.");
 
                     b.Property<string>("WorkCenterId")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("work_center_id")
-                        .HasComment("MES work center snapshot for the reported operation.");
+                        .HasComment("MES work center snapshot for the reported operation; null is retained as an explicit degraded fact.");
 
                     b.Property<string>("WorkshopCode")
                         .HasMaxLength(100)
@@ -1083,10 +1086,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_oee_production_facts_scope_source_report_no");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "ReportedAtUtc")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "AggregationOccurredAtUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_device_reported_at");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "LineCode", "ReportedAtUtc")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "LineCode", "AggregationOccurredAtUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_line_reported_at");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ShiftCode", "ShiftBucketStartUtc")
@@ -1095,10 +1098,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "SiteCode", "DayBucketStartUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_day_bucket");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "ReportedAtUtc")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "AggregationOccurredAtUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_work_center_reported_at");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkshopCode", "ReportedAtUtc")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkshopCode", "AggregationOccurredAtUtc")
                         .HasDatabaseName("ix_oee_production_facts_scope_workshop_reported_at");
 
                     b.ToTable("oee_production_facts", "industrial_telemetry", t =>

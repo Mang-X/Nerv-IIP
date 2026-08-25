@@ -30,28 +30,30 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
         string organizationId,
         string environmentId,
         string sourceReportNo,
-        string workCenterId,
-        string deviceAssetId,
+        string? workCenterId,
+        string? deviceAssetId,
         decimal goodQuantity,
         decimal scrapQuantity,
         decimal reworkQuantity,
         string uomCode,
         decimal? theoreticalRatePerHour,
         DateTimeOffset reportedAtUtc,
-        OeeHistoricalDimensionSnapshot? dimensionSnapshot)
+        OeeHistoricalDimensionSnapshot? dimensionSnapshot,
+        DateTimeOffset? aggregationOccurredAtUtc)
     {
         Id = new OeeProductionFactId(Guid.CreateVersion7());
         OrganizationId = IndustrialTelemetryText.Required(organizationId, nameof(organizationId));
         EnvironmentId = IndustrialTelemetryText.Required(environmentId, nameof(environmentId));
         SourceReportNo = IndustrialTelemetryText.Required(sourceReportNo, nameof(sourceReportNo));
-        WorkCenterId = IndustrialTelemetryText.Required(workCenterId, nameof(workCenterId));
-        DeviceAssetId = IndustrialTelemetryText.Required(deviceAssetId, nameof(deviceAssetId));
+        WorkCenterId = IndustrialTelemetryText.Optional(workCenterId);
+        DeviceAssetId = IndustrialTelemetryText.Optional(deviceAssetId);
         GoodQuantity = goodQuantity;
         ScrapQuantity = scrapQuantity;
         ReworkQuantity = reworkQuantity;
         UomCode = IndustrialTelemetryText.Required(uomCode, nameof(uomCode));
         TheoreticalRatePerHour = theoreticalRatePerHour;
         ReportedAtUtc = reportedAtUtc;
+        AggregationOccurredAtUtc = aggregationOccurredAtUtc ?? reportedAtUtc;
         SiteCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.SiteCode);
         WorkshopCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.WorkshopCode);
         LineCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.LineCode);
@@ -73,14 +75,15 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string SourceReportNo { get; private set; } = string.Empty;
-    public string WorkCenterId { get; private set; } = string.Empty;
-    public string DeviceAssetId { get; private set; } = string.Empty;
+    public string? WorkCenterId { get; private set; }
+    public string? DeviceAssetId { get; private set; }
     public decimal GoodQuantity { get; private set; }
     public decimal ScrapQuantity { get; private set; }
     public decimal ReworkQuantity { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
     public decimal? TheoreticalRatePerHour { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
+    public DateTimeOffset AggregationOccurredAtUtc { get; private set; }
     public string? SiteCode { get; private set; }
     public string? WorkshopCode { get; private set; }
     public string? LineCode { get; private set; }
@@ -102,15 +105,16 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
         string organizationId,
         string environmentId,
         string sourceReportNo,
-        string workCenterId,
-        string deviceAssetId,
+        string? workCenterId,
+        string? deviceAssetId,
         decimal goodQuantity,
         decimal scrapQuantity,
         decimal reworkQuantity,
         string uomCode,
         decimal? theoreticalRatePerHour,
         DateTimeOffset reportedAtUtc,
-        OeeHistoricalDimensionSnapshot? dimensionSnapshot = null)
+        OeeHistoricalDimensionSnapshot? dimensionSnapshot = null,
+        DateTimeOffset? aggregationOccurredAtUtc = null)
     {
         return new OeeProductionFact(
             organizationId,
@@ -124,7 +128,8 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
             uomCode,
             theoreticalRatePerHour,
             reportedAtUtc,
-            dimensionSnapshot);
+            dimensionSnapshot,
+            aggregationOccurredAtUtc);
     }
 
     public OeeHistoricalDimensionSnapshot HistoricalDimensionSnapshot() =>

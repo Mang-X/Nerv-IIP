@@ -33,13 +33,6 @@ public sealed class ProductionReportOeeProjectionHandler(
     private async Task HandleValidEventAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        if (string.IsNullOrWhiteSpace(payload.DeviceAssetId) || string.IsNullOrWhiteSpace(payload.WorkCenterId))
-        {
-            // A device-level OEE fact requires the MES assignment snapshot; skipping incomplete input
-            // leaves the read model explicitly degraded instead of turning a malformed event into poison.
-            return;
-        }
-
         // MES allocates one immutable report number per production-report fact. The converter's
         // idempotency key deterministically includes this scoped report number; retain the business
         // identity here so the materialized fact remains traceable to the source report.
@@ -54,6 +47,7 @@ public sealed class ProductionReportOeeProjectionHandler(
         }
 
         var historicalDimensionSnapshot = OeeHistoricalBucketResolver.Resolve(payload);
+        DateTimeOffset? aggregationOccurredAtUtc = null;
         if (payload.IsReversal)
         {
             if (string.IsNullOrWhiteSpace(payload.ReversedReportNo))
@@ -71,6 +65,7 @@ public sealed class ProductionReportOeeProjectionHandler(
                 ?? throw new InvalidOperationException(
                     $"OEE reversal cannot resolve original production report '{payload.ReversedReportNo}'.");
             historicalDimensionSnapshot = originalFact.HistoricalDimensionSnapshot();
+            aggregationOccurredAtUtc = originalFact.AggregationOccurredAtUtc;
         }
 
         dbContext.OeeProductionFacts.Add(OeeProductionFact.Project(
@@ -85,7 +80,8 @@ public sealed class ProductionReportOeeProjectionHandler(
             payload.UomCode,
             payload.TheoreticalRatePerHour,
             payload.ReportedAtUtc,
-            historicalDimensionSnapshot));
+            historicalDimensionSnapshot,
+            aggregationOccurredAtUtc));
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

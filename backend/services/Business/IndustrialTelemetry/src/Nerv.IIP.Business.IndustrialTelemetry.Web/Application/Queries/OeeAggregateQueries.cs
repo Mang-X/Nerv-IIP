@@ -21,6 +21,49 @@ public static class OeeAggregateDimensions
         value is Device or WorkCenter or Line or Workshop or Shift or Day;
 }
 
+public static class OeeAggregateMaterializationLimits
+{
+    public const int MaximumProductionFactCount = 10_000;
+    public const int MaximumStateSampleCount = 10_000;
+}
+
+internal static class OeeAggregateQueryPlan
+{
+    internal static IQueryable<OeeProductionFact> BuildFacts(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request) =>
+        dbContext.OeeProductionFacts
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.AggregationOccurredAtUtc >= request.WindowStartUtc)
+            .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc)
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => request.WorkCenterId == null || x.WorkCenterId == request.WorkCenterId)
+            .Where(x => request.ShiftCode == null || x.ShiftCode == request.ShiftCode)
+            .Where(x => request.LineCode == null || x.LineCode == request.LineCode)
+            .Where(x => request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode)
+            .OrderBy(x => x.AggregationOccurredAtUtc)
+            .ThenBy(x => x.SourceReportNo)
+            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1);
+
+    internal static IQueryable<DeviceStateSnapshot> BuildInWindowStates(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request,
+        IReadOnlyCollection<string> deviceIds,
+        DateTimeOffset earliestStart,
+        DateTimeOffset latestEnd) =>
+        dbContext.DeviceStateSnapshots
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => deviceIds.Contains(x.DeviceAssetId))
+            .Where(x => x.OccurredAtUtc >= earliestStart)
+            .Where(x => x.OccurredAtUtc < latestEnd)
+            .OrderBy(x => x.OccurredAtUtc)
+            .Take(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1);
+}
+
 public sealed record QueryOeeAggregateBucketsQuery(
     string OrganizationId,
     string EnvironmentId,
@@ -94,18 +137,12 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         QueryOeeAggregateBucketsQuery request,
         CancellationToken cancellationToken)
     {
-        var facts = await dbContext.OeeProductionFacts
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.ReportedAtUtc >= request.WindowStartUtc)
-            .Where(x => x.ReportedAtUtc < request.WindowEndUtc)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => request.WorkCenterId == null || x.WorkCenterId == request.WorkCenterId)
-            .Where(x => request.ShiftCode == null || x.ShiftCode == request.ShiftCode)
-            .Where(x => request.LineCode == null || x.LineCode == request.LineCode)
-            .Where(x => request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode)
-            .ToArrayAsync(cancellationToken);
+        var facts = await OeeAggregateQueryPlan.BuildFacts(dbContext, request).ToArrayAsync(cancellationToken);
+        if (facts.Length > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
+        }
         if (facts.Length == 0)
         {
             return Response(request, []);
@@ -127,7 +164,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             return Response(request, []);
         }
 
-        var deviceIds = facts.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).ToArray();
+        var deviceIds = facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
         var earliestStart = groups.Min(x => x.StartUtc);
         var latestEnd = groups.Max(x => x.EndUtc);
         var carryIns = await dbContext.DeviceStateSnapshots
@@ -139,15 +176,14 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             .GroupBy(x => x.DeviceAssetId)
             .Select(group => group.OrderByDescending(x => x.OccurredAtUtc).First())
             .ToArrayAsync(cancellationToken);
-        var inWindowStates = await dbContext.DeviceStateSnapshots
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => deviceIds.Contains(x.DeviceAssetId))
-            .Where(x => x.OccurredAtUtc >= earliestStart)
-            .Where(x => x.OccurredAtUtc < latestEnd)
-            .OrderBy(x => x.OccurredAtUtc)
+        var inWindowStates = await OeeAggregateQueryPlan
+            .BuildInWindowStates(dbContext, request, deviceIds, earliestStart, latestEnd)
             .ToArrayAsync(cancellationToken);
+        if (inWindowStates.Length > OeeAggregateMaterializationLimits.MaximumStateSampleCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumStateSampleCount} device-state materialization limit; narrow the window or add dimension filters.");
+        }
         var statesByDevice = carryIns
             .Concat(inWindowStates)
             .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
@@ -165,7 +201,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         IReadOnlyDictionary<string, IReadOnlyList<DeviceStateSnapshot>> statesByDevice)
     {
         var degradedReasons = new HashSet<string>(StringComparer.Ordinal);
-        var deviceIds = group.Facts.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).ToArray();
+        var deviceIds = group.Facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
         long loadingTicks = 0;
         long productiveTicks = 0;
         var stateSampleCount = 0;
@@ -205,7 +241,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
 
         decimal expectedOutputQuantity = 0m;
         var hasUsableTheory = true;
-        foreach (var deviceGroup in group.Facts.GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal))
+        foreach (var deviceGroup in group.Facts.Where(x => x.DeviceAssetId != null).GroupBy(x => x.DeviceAssetId!, StringComparer.Ordinal))
         {
             var rates = deviceGroup.Select(x => x.TheoreticalRatePerHour).Where(x => x is > 0m).Select(x => x!.Value).Distinct().ToArray();
             if (rates.Length != 1 || deviceGroup.Any(x => x.TheoreticalRatePerHour is not > 0m))
@@ -319,6 +355,8 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         if (facts.Any(x => string.IsNullOrWhiteSpace(x.SiteCode))) reasons.Add("site-dimension-missing");
         if (facts.Any(x => string.IsNullOrWhiteSpace(x.WorkshopCode))) reasons.Add("workshop-dimension-missing");
         if (facts.Any(x => string.IsNullOrWhiteSpace(x.LineCode))) reasons.Add("line-dimension-missing");
+        if (facts.Any(x => string.IsNullOrWhiteSpace(x.WorkCenterId))) reasons.Add("work-center-dimension-missing");
+        if (facts.Any(x => string.IsNullOrWhiteSpace(x.DeviceAssetId))) reasons.Add("device-dimension-missing");
         if (HasMultipleValues(facts.Select(x => x.SiteCode))) reasons.Add("site-dimension-ambiguous");
         if (HasMultipleValues(facts.Select(x => x.WorkshopCode))) reasons.Add("workshop-dimension-ambiguous");
         if (HasMultipleValues(facts.Select(x => x.LineCode))) reasons.Add("line-dimension-ambiguous");

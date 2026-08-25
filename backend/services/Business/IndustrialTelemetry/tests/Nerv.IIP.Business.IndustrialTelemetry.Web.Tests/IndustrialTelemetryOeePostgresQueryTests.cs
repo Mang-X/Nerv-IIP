@@ -85,11 +85,13 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         dbContext.DeviceStateSnapshots.AddRange(
             State("org-001", "DEV-01", "running", start, "state-01"),
             State("org-001", "DEV-01", "stopped", start.AddHours(1), "state-02"),
-            State("org-001", "DEV-02", "running", start, "state-03"));
+            State("org-001", "DEV-02", "running", start, "state-03"),
+            State("org-001", "DEV-01", "stopped", start, "state-other-environment", environmentId: "env-other"));
         dbContext.OeeProductionFacts.AddRange(
             Fact("PRPT-WEIGHTED-01", start.AddMinutes(30), "DEV-01", "WC-WEIGHTED", 80m, 20m, "PCS", 100m),
             Fact("PRPT-WEIGHTED-02", start.AddMinutes(45), "DEV-02", "WC-WEIGHTED", 180m, 20m, "PCS", 200m),
-            Fact("PRPT-OTHER-TENANT", start.AddMinutes(30), "DEV-01", "WC-WEIGHTED", 999m, 1m, "PCS", 100m, organizationId: "org-other"));
+            Fact("PRPT-OTHER-TENANT", start.AddMinutes(30), "DEV-01", "WC-WEIGHTED", 999m, 1m, "PCS", 100m, organizationId: "org-other"),
+            Fact("PRPT-OTHER-ENVIRONMENT", start.AddMinutes(30), "DEV-01", "WC-WEIGHTED", 777m, 223m, "PCS", 100m, environmentId: "env-other"));
         await dbContext.SaveChangesAsync();
 
         var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
@@ -247,11 +249,19 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
             new QueryOeeAggregateBucketsQuery(
                 "org-001", "env-dev", OeeAggregateDimensions.Day,
                 DateTimeOffset.Parse("2026-07-10T16:00:00Z"),
-                DateTimeOffset.Parse("2026-07-12T16:00:00Z")),
+                DateTimeOffset.Parse("2026-07-11T16:00:00Z")),
             CancellationToken.None);
         var bucket = Assert.Single(result.Buckets);
         Assert.Equal(2, bucket.ProductionFactCount);
         Assert.Equal(0m, bucket.GoodQuantity);
+
+        var reversalWindow = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Day,
+                DateTimeOffset.Parse("2026-07-11T16:00:00Z"),
+                DateTimeOffset.Parse("2026-07-12T16:00:00Z")),
+            CancellationToken.None);
+        Assert.Empty(reversalWindow.Buckets);
     }
 
     [RealPostgresFact]
@@ -302,10 +312,11 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         decimal scrapQuantity,
         string uomCode,
         decimal theoreticalRatePerHour,
-        string organizationId = "org-001") =>
+        string organizationId = "org-001",
+        string environmentId = "env-dev") =>
         OeeProductionFact.Project(
             organizationId,
-            "env-dev",
+            environmentId,
             reportNo,
             workCenterId,
             deviceAssetId,
@@ -381,10 +392,11 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         string deviceAssetId,
         string state,
         DateTimeOffset occurredAtUtc,
-        string sequence) =>
+        string sequence,
+        string environmentId = "env-dev") =>
         DeviceStateSnapshot.Record(
             organizationId,
-            "env-dev",
+            environmentId,
             deviceAssetId,
             state,
             occurredAtUtc,

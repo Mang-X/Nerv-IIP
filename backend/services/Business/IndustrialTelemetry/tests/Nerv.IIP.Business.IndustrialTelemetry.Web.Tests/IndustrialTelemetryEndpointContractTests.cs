@@ -139,15 +139,85 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public void Oee_aggregate_validator_limits_materialized_history_to_thirty_one_days()
+    public async Task Oee_aggregate_http_contract_rejects_windows_over_thirty_one_days()
     {
-        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
-        var validator = new QueryOeeAggregateBucketsQueryValidator();
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
-        Assert.True(validator.Validate(new QueryOeeAggregateBucketsQuery(
-            "org-001", "env-dev", OeeAggregateDimensions.Day, start, start.AddDays(31))).IsValid);
-        Assert.False(validator.Validate(new QueryOeeAggregateBucketsQuery(
-            "org-001", "env-dev", OeeAggregateDimensions.Day, start, start.AddDays(31).AddTicks(1))).IsValid);
+        using var accepted = await client.GetAsync(
+            "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=day&windowStartUtc=2026-07-01T00:00:00Z&windowEndUtc=2026-08-01T00:00:00Z");
+        using var rejected = await client.GetAsync(
+            "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=day&windowStartUtc=2026-07-01T00:00:00Z&windowEndUtc=2026-08-01T00:00:00.0000001Z");
+
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+    }
+
+    [Fact]
+    public async Task Oee_aggregate_query_rejects_fact_cardinality_above_the_materialization_limit()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        dbContext.OeeProductionFacts.AddRange(Enumerable.Range(0, OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1)
+            .Select(index => OeeProductionFact.Project(
+                "org-limit", "env-dev", $"PRPT-LIMIT-{index:D5}", "WC-LIMIT", "DEV-LIMIT",
+                1m, 0m, 0m, "PCS", 1m, start.AddSeconds(index))));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+                new QueryOeeAggregateBucketsQuery(
+                    "org-limit", "env-dev", OeeAggregateDimensions.WorkCenter, start, start.AddDays(1)),
+                CancellationToken.None));
+
+        Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount.ToString(), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Oee_aggregate_query_rejects_state_cardinality_above_the_materialization_limit()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        dbContext.OeeProductionFacts.Add(OeeProductionFact.Project(
+            "org-state-limit", "env-dev", "PRPT-STATE-LIMIT", "WC-LIMIT", "DEV-LIMIT",
+            1m, 0m, 0m, "PCS", 1m, start.AddMinutes(1)));
+        dbContext.DeviceStateSnapshots.AddRange(Enumerable.Range(0, OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1)
+            .Select(index => DeviceStateSnapshot.Record(
+                "org-state-limit", "env-dev", "DEV-LIMIT", "running", start.AddSeconds(index),
+                $"state-limit-{index:D5}", raiseChangedEvent: false)));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+                new QueryOeeAggregateBucketsQuery(
+                    "org-state-limit", "env-dev", OeeAggregateDimensions.WorkCenter, start, start.AddDays(1)),
+                CancellationToken.None));
+
+        Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount.ToString(), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Oee_aggregate_npgsql_plan_limits_fact_and_state_rows_before_materialization()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=translation-only.invalid;Port=5432;Database=translation_only;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        var request = new QueryOeeAggregateBucketsQuery(
+            "org-001", "env-dev", OeeAggregateDimensions.WorkCenter, start, start.AddDays(31));
+
+        var factSql = OeeAggregateQueryPlan.BuildFacts(dbContext, request).ToQueryString();
+        var stateSql = OeeAggregateQueryPlan.BuildInWindowStates(
+            dbContext, request, ["DEV-01"], start, start.AddDays(31)).ToQueryString();
+
+        Assert.Contains("LIMIT", factSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("LIMIT", stateSql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -545,7 +615,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Production_report_event_consumer_ignores_incomplete_assignment_snapshot_without_poisoning_delivery()
+    public async Task Production_report_event_consumer_preserves_incomplete_assignment_as_explicitly_degraded_fact()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         await using var scope = factory.Services.CreateAsyncScope();
@@ -580,8 +650,41 @@ public sealed class IndustrialTelemetryEndpointContractTests
                 false));
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent with
+        {
+            EventId = "evt-prpt-oee-missing-device-001",
+            CorrelationId = "PRPT-OEE-MISSING-DEVICE-001",
+            CausationId = "PRPT-OEE-MISSING-DEVICE-001",
+            IdempotencyKey = "production-report-recorded:org-001:env-dev:PRPT-OEE-MISSING-DEVICE-001",
+            Payload = integrationEvent.Payload with
+            {
+                ReportNo = "PRPT-OEE-MISSING-DEVICE-001",
+                WorkCenterId = "WC-PACK-01",
+                DeviceAssetId = string.Empty,
+            },
+        }, CancellationToken.None);
 
-        Assert.Empty(dbContext.OeeProductionFacts);
+        var facts = dbContext.OeeProductionFacts.OrderBy(x => x.SourceReportNo).ToArray();
+        Assert.Equal(2, facts.Length);
+        Assert.Null(Assert.Single(facts, x => x.SourceReportNo.Contains("MISSING-WORK-CENTER", StringComparison.Ordinal)).WorkCenterId);
+        Assert.Null(Assert.Single(facts, x => x.SourceReportNo.Contains("MISSING-DEVICE", StringComparison.Ordinal)).DeviceAssetId);
+
+        var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.WorkCenter,
+                reportedAtUtc.AddMinutes(-1), reportedAtUtc.AddMinutes(1)),
+            CancellationToken.None);
+        var bucket = Assert.Single(result.Buckets, x => x.DimensionValue is null);
+        Assert.Null(bucket.DimensionValue);
+        Assert.Contains("work-center-dimension-missing", bucket.DegradedReasons);
+
+        var deviceResult = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Device,
+                reportedAtUtc.AddMinutes(-1), reportedAtUtc.AddMinutes(1)),
+            CancellationToken.None);
+        var deviceBucket = Assert.Single(deviceResult.Buckets, x => x.DimensionValue is null);
+        Assert.Contains("device-dimension-missing", deviceBucket.DegradedReasons);
     }
 
     [Fact]

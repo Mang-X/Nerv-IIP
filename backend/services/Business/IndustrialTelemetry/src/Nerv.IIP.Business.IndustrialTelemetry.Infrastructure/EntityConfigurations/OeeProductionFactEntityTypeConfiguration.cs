@@ -13,14 +13,15 @@ public sealed class OeeProductionFactEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id.");
         builder.Property(x => x.SourceReportNo).HasColumnName("source_report_no").IsRequired().HasMaxLength(100).HasComment("MES production report number used as the idempotent projection key.");
-        builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MES work center snapshot for the reported operation.");
-        builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").IsRequired().HasMaxLength(150).HasComment("MES assigned device asset used to scope OEE.");
+        builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").HasMaxLength(100).HasComment("MES work center snapshot for the reported operation; null is retained as an explicit degraded fact.");
+        builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(150).HasComment("MES assigned device asset used to scope OEE; null is retained as an explicit degraded fact.");
         builder.Property(x => x.GoodQuantity).HasColumnName("good_quantity").HasPrecision(18, 6).IsRequired().HasComment("Reported accepted output quantity; reversals are negative.");
         builder.Property(x => x.ScrapQuantity).HasColumnName("scrap_quantity").HasPrecision(18, 6).IsRequired().HasComment("Reported scrap output quantity; reversals are negative.");
         builder.Property(x => x.ReworkQuantity).HasColumnName("rework_quantity").HasPrecision(18, 6).IsRequired().HasComment("Reported rework output quantity; reversals are negative.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(30).HasComment("Output quantity unit copied from the MES operation snapshot.");
         builder.Property(x => x.TheoreticalRatePerHour).HasColumnName("theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Expected output per productive hour from the MES operation planning snapshot.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC instant assigned to the production report.");
+        builder.Property(x => x.AggregationOccurredAtUtc).HasColumnName("aggregation_occurred_at_utc").IsRequired().HasComment("Effective UTC instant used to select the historical aggregation window; reversals retain the original fact instant.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("MasterData site code snapshot captured by MES when the report was recorded.");
         builder.Property(x => x.WorkshopCode).HasColumnName("workshop_code").HasMaxLength(100).HasComment("MasterData workshop code snapshot captured by MES when the report was recorded.");
         builder.Property(x => x.LineCode).HasColumnName("line_code").HasMaxLength(100).HasComment("MasterData production line code snapshot captured by MES when the report was recorded.");
@@ -40,13 +41,13 @@ public sealed class OeeProductionFactEntityTypeConfiguration : IEntityTypeConfig
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceReportNo })
             .IsUnique()
             .HasDatabaseName("ux_oee_production_facts_scope_source_report_no");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.ReportedAtUtc })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AggregationOccurredAtUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_device_reported_at");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.ReportedAtUtc })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.AggregationOccurredAtUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_work_center_reported_at");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.LineCode, x.ReportedAtUtc })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.LineCode, x.AggregationOccurredAtUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_line_reported_at");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkshopCode, x.ReportedAtUtc })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkshopCode, x.AggregationOccurredAtUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_workshop_reported_at");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ShiftCode, x.ShiftBucketStartUtc })
             .HasDatabaseName("ix_oee_production_facts_scope_shift_bucket");
