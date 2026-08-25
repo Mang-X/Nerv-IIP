@@ -649,7 +649,10 @@ public sealed record MesOperationTaskRow(
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null,
     string? TeamId = null,
-    string? TeamName = null)
+    string? TeamName = null,
+    // 只在工序完成后返回已冻结的累计实绩；未完成或冲销后重新打开时为 null，单位为小时。
+    decimal? ActualLaborHours = null,
+    decimal? ActualMachineHours = null)
 {
     public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
@@ -817,7 +820,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.ScheduledAtUtc,
                 x.ScheduleInvalidationReasonCode,
                 x.TeamId,
-                x.TeamName));
+                x.TeamName,
+                x.Status == OperationTaskLifecycleStatus.Completed
+                    ? x.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour
+                    : null,
+                x.Status == OperationTaskLifecycleStatus.Completed
+                    ? x.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour
+                    : null));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -956,7 +965,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             task.ScheduledAtUtc,
             task.ScheduleInvalidationReasonCode,
             task.TeamId,
-            task.TeamName)
+            task.TeamName,
+            task.Status == OperationTaskLifecycleStatus.Completed
+                ? task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour
+                : null,
+            task.Status == OperationTaskLifecycleStatus.Completed
+                ? task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour
+                : null)
         {
             AllowedActions = readiness.AllowedActions,
             BlockReasons = readiness.BlockReasons,
