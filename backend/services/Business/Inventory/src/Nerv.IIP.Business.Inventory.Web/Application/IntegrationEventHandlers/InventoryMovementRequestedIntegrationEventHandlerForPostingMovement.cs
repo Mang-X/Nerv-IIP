@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggrega
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -15,7 +16,8 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
     ILogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement> logger,
     ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IIntegrationEventPublisher integrationEventPublisher)
+    IIntegrationEventPublisher integrationEventPublisher,
+    IInventoryUnitCostAuthorityResolver? unitCostAuthorityResolver = null)
     : IIntegrationEventHandler<InventoryMovementRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-inventory.movement-requested";
@@ -27,6 +29,9 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
             ConsumerName,
             InventoryIntegrationEventTypes.InventoryMovementRequested,
             InventoryIntegrationEventVersions.V1));
+
+    private readonly IInventoryUnitCostAuthorityResolver authorityResolver =
+        unitCostAuthorityResolver ?? new UnavailableInventoryUnitCostAuthorityResolver();
 
     public async Task HandleAsync(InventoryMovementRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
@@ -50,6 +55,18 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 return;
             }
 
+            var authority = await authorityResolver.ResolveAsync(integrationEvent, cancellationToken);
+            var unitCost = authority.Status switch
+            {
+                // V1 UnitCost remains deserializable for non-MES legacy producers only;
+                // MES finished-goods events are forced through the authority resolver.
+                InventoryUnitCostAuthorityStatuses.NotRequired => payload.UnitCost,
+                InventoryUnitCostAuthorityStatuses.Available when authority.UnitCost is > 0m => authority.UnitCost,
+                InventoryUnitCostAuthorityStatuses.Pending => throw new InventoryUnitCostAuthorityPendingException(
+                    authority.ReasonCode ?? "authority-pending"),
+                _ => throw InventoryPostingRejectedException.ForUnitCostAuthority(),
+            };
+
             await sender.Send(
                 new PostStockMovementCommand(
                     integrationEvent.OrganizationId,
@@ -69,7 +86,7 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                     payload.OwnerType,
                     payload.OwnerId,
                     payload.Quantity,
-                    payload.UnitCost,
+                    unitCost,
                     ReservationId: ParseReservationId(payload.InventoryReservationId),
                     ProductionDate: payload.ProductionDate,
                     ExpiryDate: payload.ExpiryDate,
