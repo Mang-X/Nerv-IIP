@@ -76,7 +76,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
-| Inventory           |      18 |      12 |        1 |        5 |
+| Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      50 |      41 |        5 |        4 |
 | Mes                 |      56 |      55 |        0 |        1 |

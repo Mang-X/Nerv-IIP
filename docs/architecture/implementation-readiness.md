@@ -1162,6 +1162,8 @@ Connector Host 现在向 IndustrialTelemetry 上报 replace-style tag manifest�
 
 Inventory 现在提供按组织、环境、来源服务、来源单据和来源单据行精确查询库存移动及当前余额的内部读面，并为同一精确来源键增加 PostgreSQL 组合索引；缺少精确来源事实时返回 `isEstablished=false`，不按批次、SKU 或相似单号猜测关联。BusinessGateway 已将 MES 完工入库请求与该 Inventory 来源读面聚合为 `getBusinessConsoleMesFinishedGoodsReceiptInventoryLink`，调用前同时校验 MES receipt read 与 Inventory ledger read 权限，并明确区分 `posted`、`partiallyPosted`、`notPosted`、`postingFailed` 和 `qualityRestricted`。该 facade 在 coverage matrix 中分类为 `exposed`，OpenAPI、generated client 和稳定导出已同步。真实基础设施验收由 `nerv.ps1 fullstack run -Scenario man-528` 在 PostgreSQL + Redis profile 下覆盖成功过账和显式失败回写；本切片只交付公开后端关联能力，页面消费仍由 MAN-518 负责。
 
+Inventory 现在还提供线边库存余额与生产日期账龄权威读面：只纳入 `locationType=line-side` 且当前 `OnHandQuantity > 0` 的库存维度，按站点、库位、物料与单位聚合在手、预留、可用和批次数。账龄取仍有余额维度的最早生产日期，并以 `complete`、`partial`、`unavailable` 明确说明生产日期完整性；缺失日期不会以台账更新时间或历史流水时间代替。BusinessGateway 通过 `business.mes.materials.read` 暴露分页 facade，Inventory HTTP、Gateway HTTP/OpenAPI 和生成客户端属于 #2228 的后端交付；Console 与 PDA 页面消费由 #2229 继续交付。
+
 ### 2026-07-24 设备健康评分演示切片记录（MAN-602 / #1087）
 
 IndustrialTelemetry 现在按请求从同一组织、环境和设备范围内的已启用报警规则、原始遥测、设备运行状态与报警生命周期事实计算 0–100 设备健康分，不新增评分表、migration 或后台调度。结果固定解释阈值接近度、近 24 小时生产运行时长、近 24 小时报警频次、持续超限和趋势恶化五项规则，并返回等级、新鲜度、命中风险项以及每项规则的当前值、阈值、来源标签、发生时间和证据；历史样本不足时，持续超限与趋势恶化保持 `accumulating`，页面明确显示“历史数据积累中”，不把尚未形成的结论误报为正常或风险。

@@ -6,6 +6,11 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessInventoryClient
 {
+    Task<BusinessConsoleMesLineSideInventoryBalancesResponse> ListLineSideBalancesAsync(
+        string internalBearerToken,
+        BusinessConsoleMesLineSideInventoryBalancesRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleInventoryDirectoryResponse> ListDirectoryAsync(
         string internalBearerToken,
         BusinessConsoleInventoryDirectoryRequest request,
@@ -83,6 +88,25 @@ public sealed class HttpBusinessInventoryClient(
     IOptions<BusinessGatewayInventoryForwardedPermissionOptions> forwardedPermissionOptions)
     : BusinessServiceHttpClient(httpClient), IBusinessInventoryClient
 {
+    public Task<BusinessConsoleMesLineSideInventoryBalancesResponse> ListLineSideBalancesAsync(
+        string internalBearerToken,
+        BusinessConsoleMesLineSideInventoryBalancesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesLineSideInventoryBalancesResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/line-side-balances?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("siteCode", request.SiteCode),
+                ("locationCode", request.LocationCode),
+                ("skuCode", request.SkuCode),
+                ("asOfDate", request.AsOfDate),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleInventoryDirectoryResponse> ListDirectoryAsync(
         string internalBearerToken,
         BusinessConsoleInventoryDirectoryRequest request,

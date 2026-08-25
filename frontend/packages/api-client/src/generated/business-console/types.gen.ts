@@ -4826,6 +4826,36 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     trigger?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalanceItem>;
+    totalCount?: number;
+    page?: number;
+    pageSize?: number;
+    asOfDate?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalanceItem = {
+    siteCode?: string;
+    locationCode?: string;
+    skuCode?: string;
+    uomCode?: string;
+    onHandQuantity?: number;
+    reservedQuantity?: number;
+    availableQuantity?: number;
+    lotCount?: number;
+    oldestProductionDate?: string | null;
+    ageDays?: number | null;
+    ageCompleteness?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceListResponse | null;
 };
@@ -16323,6 +16353,48 @@ export type RunBusinessConsoleMesScheduleResponses = {
 };
 
 export type RunBusinessConsoleMesScheduleResponse = RunBusinessConsoleMesScheduleResponses[keyof RunBusinessConsoleMesScheduleResponses];
+
+export type ListBusinessConsoleMesLineSideInventoryBalancesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        siteCode?: string | null;
+        locationCode?: string | null;
+        skuCode?: string | null;
+        asOfDate?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/mes/line-side-inventory-balances';
+};
+
+export type ListBusinessConsoleMesLineSideInventoryBalancesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesLineSideInventoryBalancesError = ListBusinessConsoleMesLineSideInventoryBalancesErrors[keyof ListBusinessConsoleMesLineSideInventoryBalancesErrors];
+
+export type ListBusinessConsoleMesLineSideInventoryBalancesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesLineSideInventoryBalancesResponse;
+};
+
+export type ListBusinessConsoleMesLineSideInventoryBalancesResponse = ListBusinessConsoleMesLineSideInventoryBalancesResponses[keyof ListBusinessConsoleMesLineSideInventoryBalancesResponses];
 
 export type ListBusinessConsoleMasterDataResourcesData = {
     body?: never;

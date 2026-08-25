@@ -207,9 +207,12 @@ try {
     Assert-Contract ($discoveredFactories.Contains($sharedGovernedFactory)) 'Discovery must always find the shared governed PostgreSqlTestDatabase helper.'
     Assert-Contract ($discoveredFactories.Count -ge 5) 'Inner-database factory discovery must enumerate the test tree, not a hand-maintained list.'
     $member = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'inventory-postgres-profile' -RepositoryRoot $repoRoot
-    # 拆解②的单条试点在 #1561 之后扩为两条：InventoryDirectory 的 external 用例形态与成员一致，已并入本成员；
-    # 同类的 Docker 夹具用例仍留在 deferred 条目里。
-    Assert-Contract (@($member.expectedTestIdentities).Count -eq 2) 'The Inventory member must freeze its profile test and the external directory test.'
+    # 拆解②的单条试点在 #1561 之后扩为两条；#2228 再加入线边余额聚合的真实 PostgreSQL 翻译证据。
+    # 两条 InventoryDirectory external 用例形态与成员一致，已并入本成员；同类 Docker 夹具仍留在 deferred 条目里。
+    Assert-Contract (@($member.expectedTestIdentities).Count -eq 3) 'The Inventory member must freeze its profile test and both external directory-backed PostgreSQL tests.'
+    Assert-Contract (
+        @($member.expectedTestIdentities).Contains('Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.Line_side_balance_grouping_and_age_completeness_execute_on_postgres')) `
+        'The Inventory member must freeze the #2228 line-side balance PostgreSQL translation proof.'
     Assert-MethodScopedFilter -Member $member
     Assert-Contract (@($member.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$member.diagnosticSchemas[0], 'inventory', [StringComparison]::Ordinal)) 'The pilot member must own its restricted diagnostic schema declaration.'
     $masterDataMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'masterdata-postgres-profile' -RepositoryRoot $repoRoot

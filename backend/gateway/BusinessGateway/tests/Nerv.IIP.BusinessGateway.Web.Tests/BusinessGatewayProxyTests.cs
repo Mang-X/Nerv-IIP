@@ -603,6 +603,41 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SKU-001", Assert.Single(items).GetProperty("skuCode").GetString());
     }
 
+    [Fact]
+    public async Task Mes_line_side_inventory_balances_forward_filters_and_preserve_age_completeness()
+    {
+        var inventory = new RecordingInventoryClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/line-side-inventory-balances?organizationId=org-001&environmentId=env-dev&siteCode=SITE-01&locationCode=LINE-01&skuCode=RM-001&asOfDate=2026-08-25&page=2&pageSize=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MesMaterialsRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal(1, inventory.LineSideBalanceCallCount);
+        Assert.Equal("SITE-01", inventory.LastLineSideBalanceRequest!.SiteCode);
+        Assert.Equal("LINE-01", inventory.LastLineSideBalanceRequest.LocationCode);
+        Assert.Equal("RM-001", inventory.LastLineSideBalanceRequest.SkuCode);
+        Assert.Equal(new DateOnly(2026, 8, 25), inventory.LastLineSideBalanceRequest.AsOfDate);
+        Assert.Equal(2, inventory.LastLineSideBalanceRequest.Page);
+        Assert.Equal(25, inventory.LastLineSideBalanceRequest.PageSize);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+        Assert.Equal("partial", item.GetProperty("ageCompleteness").GetString());
+        Assert.Equal(24, item.GetProperty("ageDays").GetInt32());
+    }
+
     /// <summary>库存移动读面 facade：此前只有 POST 过账，页面表格没有服务端数据来源。</summary>
     [Fact]
     public async Task Inventory_movement_list_forwards_query_context_with_internal_service_token()
@@ -8224,6 +8259,69 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Line_side_inventory_http_client_builds_bounded_downstream_query_and_reads_wire_fields()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        siteCode = "SITE-01",
+                        locationCode = "LINE-01",
+                        skuCode = "RM-001",
+                        uomCode = "EA",
+                        onHandQuantity = 12,
+                        reservedQuantity = 3,
+                        availableQuantity = 9,
+                        lotCount = 2,
+                        oldestProductionDate = "2026-08-01",
+                        ageDays = 24,
+                        ageCompleteness = "partial",
+                    },
+                },
+                totalCount = 26,
+                page = 2,
+                pageSize = 25,
+                asOfDate = "2026-08-25",
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var client = new HttpBusinessInventoryClient(
+            httpClient,
+            Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions()));
+
+        var response = await client.ListLineSideBalancesAsync(
+            "internal-token-001",
+            new BusinessConsoleMesLineSideInventoryBalancesRequest(
+                "org-001",
+                "env-dev",
+                "SITE-01",
+                "LINE-01",
+                "RM-001",
+                new DateOnly(2026, 8, 25),
+                2,
+                25),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("partial", item.AgeCompleteness);
+        Assert.Equal(24, item.AgeDays);
+        Assert.Equal(26, response.TotalCount);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(
+            "/api/inventory/v1/line-side-balances?organizationId=org-001&environmentId=env-dev&siteCode=SITE-01&locationCode=LINE-01&skuCode=RM-001&asOfDate=2026-08-25&page=2&pageSize=25",
+            request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
     public async Task Inventory_http_client_signs_forwarded_permissions_for_downstream_override()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -12267,6 +12365,10 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
 internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 {
+    public int LineSideBalanceCallCount { get; private set; }
+
+    public BusinessConsoleMesLineSideInventoryBalancesRequest? LastLineSideBalanceRequest { get; private set; }
+
     public int AvailabilityCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
@@ -12371,6 +12473,35 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
                 2,
                 8),
         ], 26, 8, 18, 6, request.Page, request.PageSize));
+    }
+
+    public Task<BusinessConsoleMesLineSideInventoryBalancesResponse> ListLineSideBalancesAsync(
+        string internalBearerToken,
+        BusinessConsoleMesLineSideInventoryBalancesRequest request,
+        CancellationToken cancellationToken)
+    {
+        LineSideBalanceCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastLineSideBalanceRequest = request;
+        return Task.FromResult(new BusinessConsoleMesLineSideInventoryBalancesResponse(
+        [
+            new BusinessConsoleMesLineSideInventoryBalanceItem(
+                request.SiteCode ?? "SITE-01",
+                request.LocationCode ?? "LINE-01",
+                request.SkuCode ?? "RM-001",
+                "EA",
+                12,
+                3,
+                9,
+                2,
+                new DateOnly(2026, 8, 1),
+                24,
+                "partial"),
+        ],
+        26,
+        request.Page,
+        request.PageSize,
+        request.AsOfDate ?? new DateOnly(2026, 8, 25)));
     }
 
     public int MovementListCallCount { get; private set; }

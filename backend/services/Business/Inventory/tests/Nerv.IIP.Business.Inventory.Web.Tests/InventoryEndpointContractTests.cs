@@ -34,7 +34,12 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(18, contracts.Length);
+        Assert.Equal(19, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/line-side-balances"
+            && x.PermissionCode == InventoryPermissionCodes.LedgerRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryLineSideBalances");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/inventory/v1/directory"
             && x.PermissionCode == InventoryPermissionCodes.LedgerRead
@@ -141,6 +146,7 @@ public sealed class InventoryEndpointContractTests
     [InlineData(typeof(ReleaseStockReservationEndpoint))]
     [InlineData(typeof(RenewStockReservationEndpoint))]
     [InlineData(typeof(ListStockExpiryAlertsEndpoint))]
+    [InlineData(typeof(ListLineSideInventoryBalancesEndpoint))]
     [InlineData(typeof(PostStockStatusTransferEndpoint))]
     public void Inventory_endpoints_route_through_mediator(Type endpointType)
     {
