@@ -50,6 +50,9 @@ public sealed class MasterDataResourceListHttpTests
         var items = data.GetProperty("items").EnumerateArray().ToArray();
         Assert.Single(items);
         Assert.Equal("CAT-PUMP-B", items[0].GetProperty("categoryCode").GetString());
+        var categoryCodes = items.Select(item => item.GetProperty("categoryCode").GetString()).ToArray();
+        Assert.DoesNotContain("CAT-PUMP-OTHER-ORG", categoryCodes);
+        Assert.DoesNotContain("CAT-PUMP-OTHER-ENV", categoryCodes);
     }
 
     [Fact]
@@ -82,6 +85,9 @@ public sealed class MasterDataResourceListHttpTests
         var items = data.GetProperty("items").EnumerateArray().ToArray();
         Assert.Single(items);
         Assert.Equal("SK-PUMP-B", items[0].GetProperty("skillCode").GetString());
+        var skillCodes = items.Select(item => item.GetProperty("skillCode").GetString()).ToArray();
+        Assert.DoesNotContain("SK-PUMP-OTHER-ORG", skillCodes);
+        Assert.DoesNotContain("SK-PUMP-OTHER-ENV", skillCodes);
     }
 
     [Fact]
@@ -126,6 +132,9 @@ public sealed class MasterDataResourceListHttpTests
             var resources = data.GetProperty("resources").EnumerateArray().ToArray();
             Assert.Equal(paging.ExpectedCount, resources.Length);
             Assert.Equal(paging.ExpectedFirstCode, resources[0].GetProperty("code").GetString());
+            var resourceCodes = resources.Select(resource => resource.GetProperty("code").GetString()).ToArray();
+            Assert.DoesNotContain("SKU-PUMP-OTHER-ORG", resourceCodes);
+            Assert.DoesNotContain("SKU-PUMP-OTHER-ENV", resourceCodes);
         }
     }
 

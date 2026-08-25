@@ -34,24 +34,20 @@ public sealed class ListSkillsQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<SkillListResponse> Handle(ListSkillsQuery request, CancellationToken cancellationToken)
     {
-        var criteria = ListMasterDataResourcesQueryCriteriaExtensions.ToCriteria(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.Skip,
-            request.Take,
-            request.Search);
-        var keyword = criteria.Keyword.Value;
+        var tenant = ListQueryNormalizationExtensions.ToTenantScope(request.OrganizationId, request.EnvironmentId);
+        var page = ListQueryNormalizationExtensions.ToPage(request.Skip, request.Take);
+        var keyword = ListQueryNormalizationExtensions.ToKeyword(request.Search).Value;
         var query = dbContext.Skills
             .AsNoTracking()
-            .Where(x => x.OrganizationId == criteria.Tenant.OrganizationId && x.EnvironmentId == criteria.Tenant.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => !request.Enabled.HasValue || x.Disabled != request.Enabled.Value)
             .Where(x => string.IsNullOrWhiteSpace(request.GroupName) || x.GroupName == request.GroupName)
             .Where(x => keyword == null || x.SkillCode.ToLower().Contains(keyword) || x.SkillName.ToLower().Contains(keyword) || x.GroupName.ToLower().Contains(keyword));
         var total = await query.CountAsync(cancellationToken);
         var skills = await query
             .OrderBy(x => x.SkillCode)
-            .Skip(criteria.Page.Skip)
-            .Take(criteria.Page.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToListAsync(cancellationToken);
 
         return new SkillListResponse(skills.Select(ToItem).ToArray(), total);

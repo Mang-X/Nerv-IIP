@@ -57,46 +57,35 @@ public sealed record SearchTerm
         new(string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant());
 }
 
-public sealed record MasterDataListQueryCriteria
+public static class ListQueryNormalizationExtensions
 {
-    private MasterDataListQueryCriteria(TenantScope tenant, OffsetPage page, SearchTerm keyword)
-    {
-        Tenant = tenant;
-        Page = page;
-        Keyword = keyword;
-    }
-
-    public TenantScope Tenant { get; }
-    public OffsetPage Page { get; }
-    public SearchTerm Keyword { get; }
-
-    public static MasterDataListQueryCriteria From(
-        TenantScope tenant,
-        OffsetPage page,
-        SearchTerm keyword) =>
-        new(tenant, page, keyword);
-}
-
-public static class ListMasterDataResourcesQueryCriteriaExtensions
-{
-    public static MasterDataListQueryCriteria ToCriteria(
+    public static TenantScope ToTenantScope(
         string organizationId,
-        string environmentId,
-        int skip,
-        int take,
-        string? keyword)
-    {
-        return MasterDataListQueryCriteria.From(
-            TenantScope.From(organizationId, environmentId),
-            OffsetPage.From(skip, take),
-            SearchTerm.From(keyword));
-    }
+        string environmentId) => TenantScope.From(organizationId, environmentId);
 
-    public static MasterDataListQueryCriteria ToCriteria(this ListMasterDataResourcesQuery query)
+    public static TenantScope ToTenantScope(this ListMasterDataResourcesQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        return ToCriteria(query.OrganizationId, query.EnvironmentId, query.Skip, query.Take, query.Keyword);
+        return ToTenantScope(query.OrganizationId, query.EnvironmentId);
+    }
+
+    public static OffsetPage ToPage(int skip, int take) => OffsetPage.From(skip, take);
+
+    public static OffsetPage ToPage(this ListMasterDataResourcesQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return ToPage(query.Skip, query.Take);
+    }
+
+    public static SearchTerm ToKeyword(string? keyword) => SearchTerm.From(keyword);
+
+    public static SearchTerm ToKeyword(this ListMasterDataResourcesQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return ToKeyword(query.Keyword);
     }
 }
 

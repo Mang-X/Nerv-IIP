@@ -147,7 +147,8 @@ public sealed class MasterDataOpenApiTests
             "listBusinessMasterDataResources",
             ["organizationId", "environmentId", "resourceType", "includeDisabled", "skip", "take", "codeSet", "parentCode", "siteCode", "lineCode", "workCenterCode", "category", "partnerType", "keyword", "all", "departmentCode", "shiftCode", "userId", "skillCode", "workshopCode"],
             "resources",
-            ["resourceType", "code", "displayName", "active", "snapshotVersion"]);
+            ["limit", "resources", "total", "truncated"],
+            ["resourceType", "code", "displayName", "active", "snapshotVersion", "partnerType", "partnerRoles", "siteCode", "plantCode", "lineCode", "workshopCode", "capacityMinutesPerDay", "workCenterCode", "status", "category", "materialType", "codeSet", "baseUomCode", "taxId", "parentDepartmentCode", "departmentCode", "shiftCode", "userId", "skillCode", "skillLevel", "effectiveFrom", "effectiveTo", "fromUomCode", "toUomCode", "factor", "offset", "precision", "roundingMode", "deviceAssetId", "purchaseDate", "purchaseCost", "purchaseCurrencyCode", "warrantyExpiresOn", "supplierPartnerCode", "stationCode", "parentDeviceId", "retiredOn", "creditLimit", "creditCurrencyCode", "jobTitle", "employmentStatus", "phone", "timezone", "startsAt", "endsAt", "crossesMidnight", "paidMinutes", "breakMinutes"]);
         AssertListContract(
             root,
             schemas,
@@ -155,6 +156,7 @@ public sealed class MasterDataOpenApiTests
             "listBusinessMasterDataProductCategories",
             ["organizationId", "environmentId", "enabled", "search", "parentCode", "skip", "take"],
             "items",
+            ["items", "total"],
             ["categoryCode", "categoryName", "parentCode", "path", "description", "enabled", "snapshotVersion"]);
         AssertListContract(
             root,
@@ -163,6 +165,7 @@ public sealed class MasterDataOpenApiTests
             "listBusinessMasterDataSkills",
             ["organizationId", "environmentId", "enabled", "search", "groupName", "skip", "take"],
             "items",
+            ["items", "total"],
             ["skillCode", "skillName", "groupName", "requiresCertification", "validityMonths", "description", "enabled", "snapshotVersion"]);
     }
 
@@ -173,6 +176,7 @@ public sealed class MasterDataOpenApiTests
         string operationId,
         string[] parameterNames,
         string collectionPropertyName,
+        string[] dataPropertyNames,
         string[] itemPropertyNames)
     {
         var operation = root.GetProperty("paths").GetProperty(path).GetProperty("get");
@@ -186,15 +190,40 @@ public sealed class MasterDataOpenApiTests
             operation.GetProperty("responses").GetProperty("200").GetProperty("content")
                 .GetProperty("application/json").GetProperty("schema"),
             schemas);
+        Assert.Equal(
+            ["code", "data", "errorData", "message", "success"],
+            GetSchemaPropertyNames(responseSchema, schemas));
         var dataProperty = GetSchemaProperty(responseSchema, "data", schemas);
         var dataSchema = ResolveSchema(dataProperty, schemas);
+        Assert.Equal(dataPropertyNames.Order(StringComparer.Ordinal), GetSchemaPropertyNames(dataSchema, schemas));
         var collectionSchema = ResolveSchema(GetSchemaProperty(dataSchema, collectionPropertyName, schemas), schemas);
         var itemSchema = ResolveSchema(collectionSchema.GetProperty("items"), schemas);
-        var actualPropertyNames = itemSchema.GetProperty("properties")
-            .EnumerateObject()
-            .Select(property => property.Name)
-            .ToArray();
-        Assert.All(itemPropertyNames, propertyName => Assert.Contains(propertyName, actualPropertyNames));
+        Assert.Equal(itemPropertyNames.Order(StringComparer.Ordinal), GetSchemaPropertyNames(itemSchema, schemas));
+    }
+
+    private static string[] GetSchemaPropertyNames(JsonElement schema, JsonElement schemas)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        if (schema.TryGetProperty("properties", out var properties))
+        {
+            foreach (var property in properties.EnumerateObject())
+            {
+                names.Add(property.Name);
+            }
+        }
+
+        if (schema.TryGetProperty("allOf", out var allOf))
+        {
+            foreach (var branch in allOf.EnumerateArray())
+            {
+                foreach (var propertyName in GetSchemaPropertyNames(ResolveSchema(branch, schemas), schemas))
+                {
+                    names.Add(propertyName);
+                }
+            }
+        }
+
+        return names.Order(StringComparer.Ordinal).ToArray();
     }
 
     private static JsonElement GetSchemaProperty(JsonElement schema, string propertyName, JsonElement schemas)
