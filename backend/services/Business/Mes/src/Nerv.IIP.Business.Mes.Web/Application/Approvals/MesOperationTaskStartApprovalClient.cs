@@ -33,9 +33,15 @@ public sealed class HttpMesOperationTaskStartApprovalClient(
         string workOrderId,
         CancellationToken cancellationToken)
     {
+        var canonicalApprovalChainId = approvalChainId.Trim();
+        if (string.IsNullOrWhiteSpace(canonicalApprovalChainId))
+        {
+            return null;
+        }
+
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(approvalChainId)}");
+            $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(canonicalApprovalChainId)}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -49,6 +55,8 @@ public sealed class HttpMesOperationTaskStartApprovalClient(
             cancellationToken);
         var chain = envelope?.Data;
         if (chain is null ||
+            string.IsNullOrWhiteSpace(chain.ChainId) ||
+            !string.Equals(chain.ChainId.Trim(), canonicalApprovalChainId, StringComparison.Ordinal) ||
             !string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal) ||
             !string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal) ||
@@ -70,7 +78,7 @@ public sealed class HttpMesOperationTaskStartApprovalClient(
     }
 
     private sealed record ApprovalChainResponse(
-        string ChainId,
+        string? ChainId,
         string OrganizationId,
         string EnvironmentId,
         string Status,

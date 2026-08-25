@@ -327,7 +327,7 @@ public sealed class MesIssue557ExecutionTests
     [Fact]
     public async Task Approval_http_client_requires_approved_exact_mes_scope_and_uses_internal_token()
     {
-        using var httpClient = new HttpClient(new ApprovalResponseHandler())
+        using var httpClient = new HttpClient(new ApprovalResponseHandler("approval-1960-http"))
         {
             BaseAddress = new Uri("http://approval.local"),
         };
@@ -352,6 +352,29 @@ public sealed class MesIssue557ExecutionTests
 
         Assert.Equal("user:supervisor-001", approved?.AuthorizedBy);
         Assert.Null(mismatched);
+
+        using var mismatchedHttpClient = new HttpClient(new ApprovalResponseHandler("approval-1960-other"))
+        {
+            BaseAddress = new Uri("http://approval.local"),
+        };
+        var mismatchedChain = await new HttpMesOperationTaskStartApprovalClient(
+            mismatchedHttpClient,
+            new TestInternalServiceTokenProvider("internal-token")).GetApprovedAsync(
+                "approval-1960-http", "org-001", "env-dev", "OP-20", "WO-001", CancellationToken.None);
+        Assert.Null(mismatchedChain);
+
+        foreach (var statusCode in new[] { HttpStatusCode.NotFound, HttpStatusCode.Forbidden })
+        {
+            using var rejectedHttpClient = new HttpClient(new ApprovalStatusHandler(statusCode))
+            {
+                BaseAddress = new Uri("http://approval.local"),
+            };
+            var rejected = await new HttpMesOperationTaskStartApprovalClient(
+                rejectedHttpClient,
+                new TestInternalServiceTokenProvider("internal-token")).GetApprovedAsync(
+                    "approval-1960-http", "org-001", "env-dev", "OP-20", "WO-001", CancellationToken.None);
+            Assert.Null(rejected);
+        }
     }
 
     [Fact]
@@ -1226,19 +1249,29 @@ public sealed class MesIssue557ExecutionTests
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
-    private sealed class ApprovalResponseHandler : HttpMessageHandler
+    private sealed class ApprovalResponseHandler(string chainId) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/api/business/v1/approvals/chains/approval-1960-http", request.RequestUri?.AbsolutePath);
             Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
             Assert.Equal("internal-token", request.Headers.Authorization?.Parameter);
+            Assert.Null(request.Content);
+            var json = """
+                {"data":{"chainId":"CHAIN_ID","organizationId":"org-001","environmentId":"env-dev","status":"approved","sourceService":"business-mes","documentType":"mes-operation-task-start-authorization","documentId":"OP-20","documentLineId":"WO-001","decisions":[{"decisionId":"decision-1","stepNo":1,"actorType":"user","actorRef":"supervisor-001","decision":"approve","decidedAtUtc":"2026-06-29T08:00:00Z"}]},"success":true,"message":"","code":0}
+                """.Replace("CHAIN_ID", chainId, StringComparison.Ordinal);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""
-                    {"data":{"chainId":"approval-1960-http","organizationId":"org-001","environmentId":"env-dev","status":"approved","sourceService":"business-mes","documentType":"mes-operation-task-start-authorization","documentId":"OP-20","documentLineId":"WO-001","decisions":[{"decisionId":"decision-1","stepNo":1,"actorType":"user","actorRef":"supervisor-001","decision":"approve","decidedAtUtc":"2026-06-29T08:00:00Z"}]},"success":true,"message":"","code":0}
-                    """, System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
             });
         }
+    }
+
+    private sealed class ApprovalStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(statusCode));
     }
 
     private sealed class NoopMediator : IMediator
