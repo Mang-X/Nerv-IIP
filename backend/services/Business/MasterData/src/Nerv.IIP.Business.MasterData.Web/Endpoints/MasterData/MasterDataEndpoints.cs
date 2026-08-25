@@ -1767,6 +1767,38 @@ public sealed class ValidateMasterDataReferencesEndpoint(ISender sender)
 public sealed record RegisterToolingAssetRequest(string OrganizationId, string EnvironmentId, string? Code, string Name, string ToolingType,
     IReadOnlyCollection<string> WorkCenterCodes, IReadOnlyCollection<string> SkuCodes, long? MaintenanceLifeCount, string? IdempotencyKey);
 
+public sealed record ListToolingAssetsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    ToolingAssetStatus? Status = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed class ListToolingAssetsEndpoint(ISender sender)
+    : MasterDataEndpoint<ListToolingAssetsRequest, ResponseData<ToolingAssetListResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ListToolingAssetsEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ListToolingAssetsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new ListToolingAssetsQuery(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.Keyword,
+                req.Status,
+                req.Skip,
+                req.Take),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed class RegisterToolingAssetEndpoint(ISender sender) : MasterDataEndpoint<RegisterToolingAssetRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<RegisterToolingAssetEndpoint>(); ConfigureMasterDataContract(contract); }
@@ -1843,6 +1875,7 @@ public static class MasterDataEndpointContracts
         new(typeof(CreateWorkCalendarEndpoint), "POST", "/api/business/v1/master-data/work-calendars", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCalendar"),
         new(typeof(CreateWorkCenterEndpoint), "POST", "/api/business/v1/master-data/work-centers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCenter"),
         new(typeof(RegisterDeviceAssetEndpoint), "POST", "/api/business/v1/master-data/device-assets", BusinessPermissionCodes.MasterDataResourcesManage, "registerBusinessMasterDataDeviceAsset"),
+        new(typeof(ListToolingAssetsEndpoint), "GET", "/api/business/v1/master-data/tooling-assets", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataToolingAssets"),
         new(typeof(RegisterToolingAssetEndpoint), "POST", "/api/business/v1/master-data/tooling-assets", BusinessPermissionCodes.MasterDataResourcesManage, "registerBusinessMasterDataToolingAsset"),
         new(typeof(ChangeToolingStatusEndpoint), "POST", "/api/business/v1/master-data/tooling-assets/status", BusinessPermissionCodes.MasterDataResourcesManage, "changeBusinessMasterDataToolingStatus"),
         new(typeof(RecordToolingUsageEndpoint), "POST", "/api/business/v1/master-data/tooling-assets/usage", BusinessPermissionCodes.MasterDataResourcesManage, "recordBusinessMasterDataToolingUsage"),

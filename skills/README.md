@@ -35,40 +35,30 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 
 ## 写作规范
 
-**REQUIRED BACKGROUND：** 通用技能写法由 `writing-skills` 技能拥有（来源
-`obra/superpowers`，经 `skills-lock.json` 装入 `.agents/skills/`，该目录 gitignored、
-需先跑一次安装），包括 TDD 式的基线测试、SDO 发现性优化、何时该用流程图、token 预算。
-本节只写**本仓库追加**的约定，不复述它。
+**REQUIRED BACKGROUND：** 通用技能写法归 `writing-skills` 技能（基线测试、发现性优化、
+何时该用流程图、token 预算）。本节只写**本仓库追加**的约定，不复述它。
 
-1. **`description` 只写触发条件，绝不概述工作流。** 这是 `writing-skills` 的实测结论：
-   描述里概述了流程，代理会照描述执行而跳过正文——一份描述写"任务之间做代码评审"，
-   导致代理只做了一次评审，而技能正文明确要求两次。写「当需要 X 时使用」，
-   不写「本技能先 A 再 B 最后 C」。
+1. **`description` 只写触发条件，绝不概述工作流。** 描述里出现流程，代理会照描述执行
+   而跳过正文。写「当需要 X 时使用」，不写「本技能先 A 再 B 最后 C」。
 
 2. **开头声明这是引导还是清单。** 需要执行者保留判断的技能，第一段写明
    「本技能是引导，不是清单」，并说清哪些判断留给执行者。否则代理会机械照单执行。
 
 3. **权威来源段：链接，不复述。** 规则的唯一住所是 ADR / DESIGN / AGENTS.md，
    技能只负责路由过去。设一段「权威依据（读，不要复述）」列出链接。
-   复述会产生第二个住所，规范一改技能就悄悄过期——这也是本规范
-   不再要求「规范变更时同 PR 检查技能是否同步」的原因：不复述就没有同步成本。
+   复述会产生第二个住所，规范一改技能就悄悄过期。
 
 4. **与其它技能重叠时写明所有权边界。** 例：「本技能拥有组件定名与实现约束；
    门禁命令归 `frontend-gate`；设计取向归 `frontend-design`。」
 
-5. **判据是「这个流程不该被自动纳入」，不是「它贵」。** 只有当一个流程即使在相关任务
-   中途也不该顺手启动时，才加 `disable-model-invocation: true`——例如需要用户在场
-   拍板、或会产生对外副作用的流程。**耗时本身不是理由**：deepseek-harness 的 11 个技能里
-   只有双语翻译一个设了该字段（理由是它「不纳入自动评审、只由用户点名调用」），而真机
-   录屏并发布分支这种更贵的流程照样是模型可触发的。审 PR、跑门禁这类「用户一说就该起来」
-   的流程不要加。
-   需要用户点名调用时配合 `argument-hint`。该字段在已安装的技能里广泛使用，
-   可用 `grep -rl 'disable-model-invocation' .agents/skills/` 查当前实例。
+5. **`disable-model-invocation` 的判据是「这个流程不该被自动纳入」，不是「它贵」。**
+   只有当一个流程即使在相关任务中途也不该顺手启动时才加——需要用户在场拍板、或会产生
+   对外副作用的流程。**耗时不是理由**：审 PR、跑门禁这类「用户一说就该起来」的流程不要加。
+   需要用户点名调用时配合 `argument-hint`。
 
-6. **多 harness 适配器放 `agents/`。** 让 codex 等消费同一份技能源。`openai.yaml`
-   当前的字段是 `display_name` / `short_description` / `default_prompt`，但**形状由消费方
-   CLI 决定、且已知存在包一层 `interface:` 的变体**——落地前照抄一个已安装实例，
-   不要凭记忆写：`cat .agents/skills/documentation/agents/openai.yaml`。
+6. **多 harness 适配器放 `agents/`。** 让 codex 等消费同一份技能源。`openai.yaml` 的形状
+   由消费方 CLI 决定，存在包一层 `interface:` 的变体——**照抄一个已安装实例，不要凭记忆写**：
+   `cat .agents/skills/documentation/agents/openai.yaml`。
 
 7. **引用仓库文件用仓库根相对路径**（`frontend/DESIGN/...`），且**不要写成 markdown 链接**。
    技能的源目录 `skills/<name>/` 与安装目录 `.agents/skills/<name>/` 到仓库根的深度**差一层**，
@@ -78,6 +68,11 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 8. **不要用 `@file` 语法引用其它技能**——它会立即强制加载并烧掉上下文。
    用技能名加显式标记（`REQUIRED BACKGROUND:` / `REQUIRED SUB-SKILL:`）。
 
+9. **只写规则，不写起因、出处、辩护、当下状态。** 判据：**删掉这句，读者的动作会变吗？**
+   不变就删。「这条是为了解决某次事故」「判据抄自某某」「当前仓库有 N 个文件如何如何」
+   都属此列——它们随时间失真，而技能每次调用都要付这份 token。这类记述归 PR 正文与
+   commit：那里是时点记录，技能是耐久件。本规范自身同样适用。
+
 ## 落地前检查
 
 - [ ] 定了层：确认这条流程换个仓库不成立，才放 `skills/`
@@ -85,7 +80,8 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 - [ ] `description` 只有触发条件，无工作流概述
 - [ ] 权威来源段只有链接，正文没有复述 ADR / DESIGN 的规则原文
 - [ ] 与相邻技能的所有权边界已写明
-- [ ] 昂贵流程已加 `disable-model-invocation: true`
+- [ ] 正文没有起因 / 出处 / 辩护 / 当下状态（判据见规则 9）
+- [ ] 不该被自动纳入的流程已加 `disable-model-invocation: true`（判据见规则 5，不是「贵」）
 - [ ] 按 `writing-skills` 的要求做过基线验证（无技能时代理怎么做，有技能后是否照做）
 - [ ] 安装后**新开一个会话**确认它可被发现和加载（技能列表在会话启动时固定，
       当前会话装的技能本会话内看不到；用系统技能列表里的 description 原文
@@ -95,13 +91,7 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 
 | 技能 | 做什么 |
 |---|---|
-| [`nerv-pr-review`](nerv-pr-review/SKILL.md) | 审本仓库的 PR：钉住 PR 事实源，按标准 / 规格 / 证据三轴各派一个隔离席位，结论分列不合并 |
-
-`new-component` 于 2026-08-18 删除，理由记在此处以免重演：内容约七成复述
-`frontend/packages/ui/AGENTS.md`（该文件按路径自动加载，投递机制严格更好）、
-ADR 0020 §1.2 与 `DESIGN/governance.md`；六件套 DoD 已由 `nvui-doc-coverage` 等契约测试
-强制（baseline shrink-only），属于上文「能校验就自动化」的范围；而且它从未接入任何安装
-通道，对 agent 从未可见，因此也没有「删掉会损失什么」的证据。
+| [`nerv-pr-review`](nerv-pr-review/SKILL.md) | 审本仓库的 PR：钉住 PR 事实源，按标准 / 规格 / 证据 / 质量四轴各派一个隔离席位，结论分列不合并 |
 
 ## 安装通道
 
@@ -109,13 +99,10 @@ ADR 0020 §1.2 与 `DESIGN/governance.md`；六件套 DoD 已由 `nvui-doc-cover
 `npx skills experimental_install` 还原。本地目录以 `sourceType: local` 登记，同样带
 `computedHash`。
 
-> **`computedHash` 不是版本锁。** 实测（2026-08-21）：把某个 github 来源条目的哈希改回
-> 旧值再跑 `experimental_install`，它会拉取上游最新版并把哈希改写回去；条目里也没有任何
-> ref/commit 字段可以表达"钉在某个版本"。该字段记录的是**装了什么**，不是**必须装什么**。
+> **`computedHash` 不是版本锁。** `experimental_install` 会拉取上游最新版并改写哈希；
+> 条目里没有 ref/commit 字段。该字段记录的是**装了什么**，不是**必须装什么**。
 >
-> 理论后果是不同时间初始化的 worktree 可能拿到不同版本。**owner 裁定不钉版本**
-> （2026-08-22）：`experimental_install` 只在 worktree 没有 payload 时才跑，实际触发面很窄，
-> 现行工作方式已足以保证技能稳定。此处只记录该性质，不要据此提出钉版本或 vendoring 方案。
+> **不钉版本是既定裁决**，不要提钉版本或 vendoring 方案。
 
 新增或修改技能后：
 
