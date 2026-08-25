@@ -4479,6 +4479,19 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request = {
+    organizationId?: string;
+    environmentId?: string;
+    workOrderId: string;
+    operationTaskId?: string | null;
+    defectCode: string;
+    quantity: number;
+    recordedAtUtc: string;
+    idempotencyKey: string;
+    scopeKind: string;
+    scopeId: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesRelatedQualityItemListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemListResponse | null;
 };
@@ -15645,6 +15658,39 @@ export type RecordBusinessConsoleMesDefectResponses = {
 };
 
 export type RecordBusinessConsoleMesDefectResponse = RecordBusinessConsoleMesDefectResponses[keyof RecordBusinessConsoleMesDefectResponses];
+
+export type RecordBusinessConsoleMesDefectV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/mes/defects';
+};
+
+export type RecordBusinessConsoleMesDefectV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesDefectV2Error = RecordBusinessConsoleMesDefectV2Errors[keyof RecordBusinessConsoleMesDefectV2Errors];
+
+export type RecordBusinessConsoleMesDefectV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesDefectV2Response = RecordBusinessConsoleMesDefectV2Responses[keyof RecordBusinessConsoleMesDefectV2Responses];
 
 export type ListBusinessConsoleMesRelatedQualityItemsData = {
     body?: never;
