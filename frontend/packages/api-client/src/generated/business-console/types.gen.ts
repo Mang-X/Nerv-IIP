@@ -2450,6 +2450,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonItem = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonItem | null;
 };
@@ -11717,6 +11721,45 @@ export type CreateBusinessConsoleQualityReasonCodeResponses = {
 };
 
 export type CreateBusinessConsoleQualityReasonCodeResponse = CreateBusinessConsoleQualityReasonCodeResponses[keyof CreateBusinessConsoleQualityReasonCodeResponses];
+
+export type ListBusinessConsoleQualityScrapReasonCodesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        search?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/scrap-reason-codes';
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesError = ListBusinessConsoleQualityScrapReasonCodesErrors[keyof ListBusinessConsoleQualityScrapReasonCodesErrors];
+
+export type ListBusinessConsoleQualityScrapReasonCodesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse;
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesResponse = ListBusinessConsoleQualityScrapReasonCodesResponses[keyof ListBusinessConsoleQualityScrapReasonCodesResponses];
 
 export type GetBusinessConsoleQualityReasonCodeData = {
     body?: never;
