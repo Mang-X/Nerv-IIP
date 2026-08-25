@@ -8757,7 +8757,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_http_client_forwards_finished_goods_receipt_unit_cost()
+    public async Task Mes_http_client_does_not_forward_finished_goods_receipt_unit_cost()
     {
         const string receiptRequestId = "019f88b9-1d59-7cb3-b4a0-37b88e78422e";
         var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
@@ -8779,7 +8779,6 @@ public sealed class BusinessGatewayProxyTests
                 8m,
                 "PCS",
                 requestedAtUtc,
-                12.34m,
                 "idem-fgr-001",
                 "LOT-FG-001"),
             CancellationToken.None);
@@ -8793,7 +8792,7 @@ public sealed class BusinessGatewayProxyTests
         var requestBody = Assert.Single(handler.RequestBodies);
         Assert.NotNull(requestBody);
         using var document = JsonDocument.Parse(requestBody);
-        Assert.Equal(12.34m, document.RootElement.GetProperty("unitCost").GetDecimal());
+        Assert.False(document.RootElement.TryGetProperty("unitCost", out _));
         Assert.Equal("idem-fgr-001", document.RootElement.GetProperty("idempotencyKey").GetString());
     }
 
@@ -9592,7 +9591,6 @@ public sealed class BusinessGatewayProxyTests
         1m,
         "PCS",
         DateTimeOffset.Parse("2026-07-22T07:00:00Z"),
-        12.34m,
         "wire-shape-001",
         "LOT-FG-WIRE-001");
 

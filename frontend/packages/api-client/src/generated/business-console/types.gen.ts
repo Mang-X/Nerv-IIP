@@ -4607,7 +4607,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     uomCode?: string;
     requestedAtUtc?: string;
-    unitCost?: number | null;
     idempotencyKey?: string;
     producedLotNo?: string | null;
     serialNo?: string | null;
