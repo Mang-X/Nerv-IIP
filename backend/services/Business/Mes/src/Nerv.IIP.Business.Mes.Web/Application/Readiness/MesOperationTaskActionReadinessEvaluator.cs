@@ -255,16 +255,11 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
                 materialWorkOrder.ProductionVersionId,
                 StringComparison.Ordinal);
-            var snapshotVersionMatchesReleasedRebind = automaticRebinds.Any(x =>
-                x.WorkOrderId == task.WorkOrderId
-                && string.Equals(
-                    x.ArchivedProductionVersionId,
-                    materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
-                    StringComparison.Ordinal)
-                && string.Equals(
-                    x.SupersededByProductionVersionId,
-                    materialWorkOrder.ProductionVersionId,
-                    StringComparison.Ordinal));
+            var snapshotVersionMatchesReleasedRebind = HasAutomaticRebindPath(
+                task.WorkOrderId,
+                materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
+                materialWorkOrder.ProductionVersionId,
+                automaticRebinds);
             materialSnapshotProven = snapshotVersionMatchesCurrent || snapshotVersionMatchesReleasedRebind;
         }
         if (!materialSnapshotProven)
@@ -305,6 +300,55 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             canonicalReasons.Length == 0 ? ["start"] : [],
             canonicalReasons,
             evaluatedAtUtc);
+    }
+
+    private static bool HasAutomaticRebindPath(
+        string workOrderId,
+        string? snapshotProductionVersionId,
+        string? currentProductionVersionId,
+        IReadOnlyCollection<AutomaticRebindFact> automaticRebinds)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotProductionVersionId)
+            || string.IsNullOrWhiteSpace(currentProductionVersionId))
+        {
+            return false;
+        }
+
+        var successorsByArchivedVersion = automaticRebinds
+            .Where(x => x.WorkOrderId == workOrderId && !string.IsNullOrWhiteSpace(x.SupersededByProductionVersionId))
+            .GroupBy(x => x.ArchivedProductionVersionId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(x => x.SupersededByProductionVersionId!)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal) { snapshotProductionVersionId };
+        var pending = new Queue<string>();
+        pending.Enqueue(snapshotProductionVersionId);
+        while (pending.TryDequeue(out var archivedVersionId))
+        {
+            if (!successorsByArchivedVersion.TryGetValue(archivedVersionId, out var successors))
+            {
+                continue;
+            }
+
+            foreach (var successor in successors)
+            {
+                if (string.Equals(successor, currentProductionVersionId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (visited.Add(successor))
+                {
+                    pending.Enqueue(successor);
+                }
+            }
+        }
+
+        return false;
     }
 
     private sealed record MaterialRequirementFact(
