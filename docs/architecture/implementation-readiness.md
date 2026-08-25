@@ -332,8 +332,11 @@ FileStorage 消费 adapter 对 metadata 的 fileId、organization/environment、
 `barcode-label-template` purpose、专用 content type、`.json`、`available`、64 KiB 上限和非空
 SHA-256 全部失败关闭；download grant 只接受以单个 `/` 开头的相对路径，不接受绝对或跨 origin URL，
 并拒绝 redirect、非 2xx、超时、空 body、超限、size 不一致、BOM、非法 UTF-8 与实际字节摘要不一致。
-metadata 与 download-grant typed client 通过 `FileStorage:ConnectTimeout` 和 `FileStorage:RequestTimeout`
-分别配置正数连接预算与单次 HTTP 请求总预算；下载字节 adapter 另有独立的 10 秒连接/下载预算，三段真实传输均有界。
+metadata、download-grant 与字节下载共用一份 `FileStorage` client options：`ConnectTimeout`（默认 5 秒）
+是受管 HTTP handler 的连接预算，`RequestTimeout`（默认 10 秒）覆盖 metadata/grant 单次请求，
+`DownloadTimeout`（默认 10 秒）覆盖下载响应头与 body 读取；三项都要求正数。字节下载使用受管 named client，
+禁用自动 redirect 且把 `HttpClient.Timeout` 设为无限，只由 adapter 的 `DownloadTimeout` linked token 承担下载总预算，
+不再自行创建第二套 handler/client 或硬编码 10 秒。
 失败诊断不记录 grant URL、header、token、模板字节或变量值。
 
 `zpl-v1` 只接受声明式 JSON 的 `text` / `barcode` fields，经冻结变量 Schema 完整校验后，确定性输出

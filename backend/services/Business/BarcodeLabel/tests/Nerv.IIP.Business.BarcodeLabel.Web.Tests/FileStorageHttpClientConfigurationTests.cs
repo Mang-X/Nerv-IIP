@@ -2,14 +2,17 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 using Nerv.IIP.Sdk.FileStorage;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
+[Collection(BarcodeLabelWebApplicationFactoryCollection.Name)]
 public sealed class FileStorageHttpClientConfigurationTests
 {
     [Fact]
-    public async Task Typed_client_applies_explicit_connection_and_request_budgets()
+    public async Task Managed_clients_apply_explicit_connection_request_and_download_budgets()
     {
         var capture = new FileStoragePrimaryHandlerCaptureFilter();
         await using var factory = new WebApplicationFactory<Program>()
@@ -19,22 +22,35 @@ public sealed class FileStorageHttpClientConfigurationTests
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 builder.UseSetting("FileStorage:ConnectTimeout", "00:00:00.250");
                 builder.UseSetting("FileStorage:RequestTimeout", "00:00:00.500");
+                builder.UseSetting("FileStorage:DownloadTimeout", "00:00:00.750");
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IHttpMessageHandlerBuilderFilter>(capture));
             });
 
-        var client = factory.Services
+        var metadataClient = factory.Services
             .GetRequiredService<IHttpClientFactory>()
             .CreateClient(nameof(IFileStorageClient));
+        var downloadClient = factory.Services
+            .GetRequiredService<IHttpClientFactory>()
+            .CreateClient(FileStorageClientOptions.DownloadClientName);
 
-        Assert.Equal(TimeSpan.FromMilliseconds(500), client.Timeout);
-        var handler = Assert.IsType<SocketsHttpHandler>(capture.PrimaryHandler);
-        Assert.Equal(TimeSpan.FromMilliseconds(250), handler.ConnectTimeout);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), metadataClient.Timeout);
+        var metadataHandler = Assert.IsType<SocketsHttpHandler>(capture.GetHandler(nameof(IFileStorageClient)));
+        Assert.Equal(TimeSpan.FromMilliseconds(250), metadataHandler.ConnectTimeout);
+        Assert.Equal(Timeout.InfiniteTimeSpan, downloadClient.Timeout);
+        var downloadHandler = Assert.IsType<SocketsHttpHandler>(capture.GetHandler(FileStorageClientOptions.DownloadClientName));
+        Assert.Equal(TimeSpan.FromMilliseconds(250), downloadHandler.ConnectTimeout);
+        Assert.False(downloadHandler.AllowAutoRedirect);
+        using var scope = factory.Services.CreateScope();
+        var adapter = Assert.IsType<HttpFileStorageLabelTemplateAssetAdapter>(
+            scope.ServiceProvider.GetRequiredService<ILabelTemplateAssetPort>());
+        Assert.Equal(TimeSpan.FromMilliseconds(750), adapter.DownloadTimeout);
     }
 
     [Theory]
     [InlineData("FileStorage:ConnectTimeout")]
     [InlineData("FileStorage:RequestTimeout")]
+    [InlineData("FileStorage:DownloadTimeout")]
     public void Client_budgets_must_be_positive(string setting)
     {
         using var factory = new WebApplicationFactory<Program>()
@@ -54,14 +70,17 @@ public sealed class FileStorageHttpClientConfigurationTests
 
 internal sealed class FileStoragePrimaryHandlerCaptureFilter : IHttpMessageHandlerBuilderFilter
 {
-    public HttpMessageHandler? PrimaryHandler { get; private set; }
+    private readonly Dictionary<string, HttpMessageHandler> primaryHandlers = new(StringComparer.Ordinal);
+
+    public HttpMessageHandler? GetHandler(string clientName) =>
+        primaryHandlers.GetValueOrDefault(clientName);
 
     public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
     {
         next(builder);
-        if (builder.Name == nameof(IFileStorageClient))
+        if (builder.Name is nameof(IFileStorageClient) or FileStorageClientOptions.DownloadClientName)
         {
-            PrimaryHandler = builder.PrimaryHandler;
+            primaryHandlers[builder.Name] = builder.PrimaryHandler;
         }
     };
 }

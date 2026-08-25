@@ -11,6 +11,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
+[Collection(BarcodeLabelWebApplicationFactoryCollection.Name)]
 public sealed class BarcodeLabelEndpointContractTests
 {
     [Fact]

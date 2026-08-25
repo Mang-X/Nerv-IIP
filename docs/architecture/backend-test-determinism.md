@@ -91,6 +91,11 @@ await TestTimeout.RunAsync(
 | 静态缓存（`static readonly` 字典/`Lazy<T>`/`ConcurrentDictionary` 记忆化缓存） | 已盘点：目标程序集内无跨测试可写静态缓存；被测缓存均随 DI 作用域或 `DbContext` 生命周期创建 | 新增可写静态缓存必须同时给出作用域化方案，不得靠测试顺序回避 |
 | 服务定位器（静态 `IServiceProvider` / `ServiceLocator` 单例） | 已盘点：本仓库不使用静态服务定位器，依赖一律构造函数注入 | 引入任何进程级提供程序单例前先改本表；`WebApplicationFactory` 的提供程序属于夹具生命周期，不是全局状态 |
 
+BarcodeLabel 的宿主测试统一进入 `BarcodeLabelWebApplicationFactoryCollection`：同一 collection 内不并发启动/
+停止 `Program`，但不关闭整个测试程序集并行。`BarcodeLabelWebHostCollectionTests` 从测试源码穷举所有
+`new WebApplicationFactory<Program>` 的归属类，任何新增宿主测试未标 canonical collection 都会判红，
+因此该约束不会只靠审核者记忆维护。
+
 隔离的两侧都有断言：`Nerv.IIP.FastEndpoints.ProcessIsolation.Tests` 证明变异确实进程级泄漏且不可恢复；`Nerv.IIP.Ops.Web.Tests` 的 `FastEndpointsStaticStateIsolationTests` 从普通执行通道反向证明该变异不可被观测。"一程序集一进程"因此是有断言支撑的结论，而不是散文。
 
 MAN-664 的 IndustrialTelemetry 顺序敏感宿主界面结构拆分仍明确延后。

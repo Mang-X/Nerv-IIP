@@ -235,7 +235,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     }
 
     [Fact]
-    public async Task GetVerifiedAsync_DefaultDownloadClient_DoesNotFollowRedirectOnLoopback()
+    public async Task GetVerifiedAsync_ManagedDownloadClient_DoesNotFollowRedirectOnLoopback()
     {
         var bytes = Encoding.UTF8.GetBytes(TemplateJson);
         var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
@@ -244,10 +244,15 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         var baseAddress = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/");
         using var serverCancellation = new CancellationTokenSource();
         var server = ServeRedirectAndPossibleFollowAsync(listener, bytes, serverCancellation.Token);
-        using var adapter = new HttpFileStorageLabelTemplateAssetAdapter(
+        using var adapter = CreateAdapter(
             fileStorage,
-            baseAddress,
-            TimeSpan.FromSeconds(2));
+            new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectTimeout = TimeSpan.FromSeconds(2),
+            },
+            TimeSpan.FromSeconds(2),
+            baseAddress);
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
@@ -435,12 +440,19 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     private static HttpFileStorageLabelTemplateAssetAdapter CreateAdapter(
         RecordingFileStorageClient fileStorage,
         HttpMessageHandler handler,
-        TimeSpan? timeout = null) =>
-        new(
+        TimeSpan? timeout = null,
+        Uri? baseAddress = null)
+    {
+        var downloadClient = new HttpClient(handler, disposeHandler: true)
+        {
+            BaseAddress = baseAddress ?? new Uri("https://file-storage.invalid/"),
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        return new HttpFileStorageLabelTemplateAssetAdapter(
             fileStorage,
-            handler,
-            new Uri("https://file-storage.invalid/"),
+            downloadClient,
             timeout ?? TimeSpan.FromSeconds(1));
+    }
 
     private static LabelTemplateAssetReference CreateReference() =>
         new("file-template-001", "org-001", "prod", "TPL-001");

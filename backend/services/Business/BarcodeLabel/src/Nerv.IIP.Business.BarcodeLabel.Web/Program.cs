@@ -81,6 +81,9 @@ try
         .Validate(
             options => options.RequestTimeout > TimeSpan.Zero,
             "FileStorage:RequestTimeout must be positive.")
+        .Validate(
+            options => options.DownloadTimeout > TimeSpan.Zero,
+            "FileStorage:DownloadTimeout must be positive.")
         .ValidateOnStart();
     builder.Services
         .AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
@@ -96,11 +99,23 @@ try
             ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
         })
         .UseHttpClientMetrics();
+    builder.Services
+        .AddHttpClient(FileStorageClientOptions.DownloadClientName, (_, client) =>
+        {
+            client.BaseAddress = fileStorageBaseAddress;
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
+        })
+        .UseHttpClientMetrics();
     builder.Services.AddScoped<ILabelTemplateAssetPort>(services =>
         new HttpFileStorageLabelTemplateAssetAdapter(
             services.GetRequiredService<IFileStorageClient>(),
-            fileStorageBaseAddress,
-            TimeSpan.FromSeconds(10)));
+            services.GetRequiredService<IHttpClientFactory>().CreateClient(FileStorageClientOptions.DownloadClientName),
+            services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.DownloadTimeout));
     builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
     builder.Services.AddSingleton<ZplTcpLabelPrinter>();
     builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();

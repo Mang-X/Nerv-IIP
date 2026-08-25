@@ -28,30 +28,18 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapter : ILabelTemplateAss
 
     public HttpFileStorageLabelTemplateAssetAdapter(
         IFileStorageClient fileStorageClient,
-        Uri downloadBaseAddress,
-        TimeSpan downloadTimeout)
-        : this(
-            fileStorageClient,
-            CreateDownloadHandler(downloadTimeout),
-            downloadBaseAddress,
-            downloadTimeout)
-    {
-    }
-
-    internal HttpFileStorageLabelTemplateAssetAdapter(
-        IFileStorageClient fileStorageClient,
-        HttpMessageHandler downloadHandler,
-        Uri downloadBaseAddress,
+        HttpClient downloadClient,
         TimeSpan downloadTimeout)
     {
         ArgumentNullException.ThrowIfNull(fileStorageClient);
-        ArgumentNullException.ThrowIfNull(downloadHandler);
-        ArgumentNullException.ThrowIfNull(downloadBaseAddress);
-        if (!downloadBaseAddress.IsAbsoluteUri
+        ArgumentNullException.ThrowIfNull(downloadClient);
+        var downloadBaseAddress = downloadClient.BaseAddress;
+        if (downloadBaseAddress is null
+            || !downloadBaseAddress.IsAbsoluteUri
             || (!string.Equals(downloadBaseAddress.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
                 && !string.Equals(downloadBaseAddress.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)))
         {
-            throw new ArgumentException("The FileStorage download base address must be an absolute HTTP(S) URI.", nameof(downloadBaseAddress));
+            throw new ArgumentException("The FileStorage download client must have an absolute HTTP(S) base address.", nameof(downloadClient));
         }
 
         if (downloadTimeout <= TimeSpan.Zero)
@@ -60,13 +48,11 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapter : ILabelTemplateAss
         }
 
         this.fileStorageClient = fileStorageClient;
+        this.downloadClient = downloadClient;
         this.downloadTimeout = downloadTimeout;
-        downloadClient = new HttpClient(downloadHandler, disposeHandler: true)
-        {
-            BaseAddress = downloadBaseAddress,
-            Timeout = Timeout.InfiniteTimeSpan,
-        };
     }
+
+    internal TimeSpan DownloadTimeout => downloadTimeout;
 
     public async Task<VerifiedLabelTemplateAsset> GetVerifiedAsync(
         LabelTemplateAssetReference reference,
@@ -189,20 +175,6 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapter : ILabelTemplateAss
     }
 
     public void Dispose() => downloadClient.Dispose();
-
-    private static SocketsHttpHandler CreateDownloadHandler(TimeSpan downloadTimeout)
-    {
-        if (downloadTimeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(downloadTimeout), "The FileStorage download timeout must be positive.");
-        }
-
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            ConnectTimeout = downloadTimeout,
-        };
-    }
 
     private static void ValidateReference(LabelTemplateAssetReference reference)
     {
