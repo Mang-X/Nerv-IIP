@@ -345,6 +345,38 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
         }
 
         dbContext.ProductionReports.Add(report);
+        if (request.CompletesOperation)
+        {
+            var participants = await dbContext.OperationTaskParticipants
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.OperationTaskId == request.OperationTaskId)
+                .ToArrayAsync(cancellationToken);
+            if (participants.Length == 0 && !string.IsNullOrWhiteSpace(operationTask.AssignedUserId))
+            {
+                participants =
+                [
+                    OperationTaskParticipant.Register(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.OperationTaskId,
+                        operationTask.AssignedUserId,
+                        operationTask.AssignedUserName,
+                        100m),
+                ];
+            }
+
+            dbContext.ProductionReportLaborAllocations.AddRange(
+                ProductionReportLaborAllocation.Allocate(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    report.ReportNo,
+                    request.WorkOrderId,
+                    request.OperationTaskId,
+                    operationTask.LaborTimeTicks,
+                    participants));
+        }
         dbContext.ProductionReportMaterialConsumptions.AddRange(materialConsumptions);
         if (isOutputOperation && request.GoodQuantity > 0m)
         {

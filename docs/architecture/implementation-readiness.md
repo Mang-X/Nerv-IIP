@@ -20,6 +20,12 @@ ProductEngineering 的路线发布契约允许发布方为工序显式提供可�
 
 BusinessMES 的 ProductEngineering routing snapshot adapter 已消费工序可选 `requiredSkillCode`，并在计划转工单时把规范化后的 code 冻结到 `operation_tasks.required_skill_code`。未声明技能要求的已发布工序、升级前既有任务以及手工指定工作中心创建的任务均保持 `null`，MES 不依据 `operationCode` 或工作中心推测技能。本切片不调用 MasterData，也不实施派工、普通开工或授权开工的实时资格门禁；这些行为仍由串行子项 #2227 承接。
 
+## MES 多人协同报工与工时分摊（#1967）
+
+MES 派工接口可在单个工序任务上登记 1 至 20 名参与者及工时占比；参与者由 BusinessGateway 逐一向 MasterData 校验在职状态并冻结姓名快照，占比必须唯一、合计 100%，且最多保留四位小数。未传参与者列表时继续把既有 `AssignedUserId` 作为单人 100% 快照，保持原派工调用兼容；显式空列表不等同于未提供，会被拒绝。
+
+阶段报工不会生成工时分摊。只有 `CompletesOperation=true` 的完工报工会读取该工序最终累计的 `LaborTimeTicks`，按派工快照持久化逐人分摊；不可整除时使用最大余数法并按工人标识稳定打破同余数平局，确保每人 ticks 非负且总和与工序最终工时完全一致。报工详情通过 `LaborAllocations` 返回不可变分摊快照；历史任务没有参与者快照时仍回退到 `AssignedUserId` 单人 100%。该批次只补后端持久事实、Gateway facade 与 OpenAPI 契约，不改变 Business Console 页面流程，因此产品文档站无页面同步项。
+
 ## Quality 周期巡检工序上下文（#1973 子项② / #2070）
 
 BusinessQuality 已消费 MES 现有 `WorkOrderReleasedIntegrationEvent`、`ProductionReportRecordedIntegrationEvent` 与 `MesOperationTaskCompletedIntegrationEvent`，在 Quality 自有 schema 内持久化工序来源事实、不可变报工事实和按巡检方案版本冻结的运行上下文。report/completion 可先于 release 暂存；release 到达后按组织、环境、SKU 与工作中心精确匹配当时激活的 operation 周期方案，并冻结版本、时间/数量间隔及个人/班组投递目标。相同身份同载荷重放为 no-op，冲突身份、UOM、工作中心或畸形事实进入持久 DLQ，不跨服务查询 MES，也不猜测 SKU/UOM。当前净良品量包含冲销，数量高水位只累计非冲销良品量，因此冲销既不推进也不回滚高水位；工序完成会关闭上下文。

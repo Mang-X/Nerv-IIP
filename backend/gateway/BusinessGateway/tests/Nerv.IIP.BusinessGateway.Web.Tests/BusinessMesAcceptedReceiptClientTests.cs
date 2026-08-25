@@ -216,16 +216,35 @@ public sealed class BusinessMesAcceptedReceiptClientTests
     public async Task Assign_dispatch_task_keeps_forwarding_the_authenticated_actor_header()
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var client = ClientReturning(AcceptedJson("OP-000210"), headers);
+        string? requestJson = null;
+        var client = ClientReturning(AcceptedJson("OP-000210"), headers, body => requestJson = body);
 
         var response = await client.AssignDispatchTaskAsync(
             "token",
             "OP-000210",
-            new BusinessConsoleMesAssignDispatchTaskForwardRequest("org", "env", "user-1", "张三", null, "SHIFT-A", "idem-assign"),
+            new BusinessConsoleMesAssignDispatchTaskForwardRequest(
+                "org",
+                "env",
+                "user-1",
+                "张三",
+                null,
+                "SHIFT-A",
+                "idem-assign",
+                Participants:
+                [
+                    new BusinessConsoleMesDispatchParticipantForwardInput("user-1", "张三", 60m),
+                    new BusinessConsoleMesDispatchParticipantForwardInput("user-2", "李四", 40m),
+                ]),
             "user:planner",
             CancellationToken.None);
 
         Assert.Equal("user:planner", headers["X-Authenticated-Actor"]);
+        using var requestDocument = JsonDocument.Parse(Assert.IsType<string>(requestJson));
+        var participants = requestDocument.RootElement.GetProperty("participants");
+        Assert.Equal(2, participants.GetArrayLength());
+        Assert.Equal("user-1", participants[0].GetProperty("workerId").GetString());
+        Assert.Equal("张三", participants[0].GetProperty("workerName").GetString());
+        Assert.Equal(60m, participants[0].GetProperty("sharePercent").GetDecimal());
         Assert.True(response.Accepted);
         Assert.Equal("OP-000210", response.DownstreamDocumentId);
     }
