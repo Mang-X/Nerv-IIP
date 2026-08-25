@@ -287,7 +287,8 @@ function Get-NervAspireDescribeObject {
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 60 `
         -Name 'fullstack-aspire-describe' `
-        -AllowPartialOutput
+        -AllowPartialOutput `
+        -Environment (Get-NervFullStackNonSeedEnvironment)
     return (Read-NervAspireJson -Text "$($result.Stdout)" -RequireResources)
 }
 
@@ -304,7 +305,8 @@ function Wait-NervAspireResource {
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds ($TimeoutSeconds + 30) `
         -Name "fullstack-aspire-wait-$ResourceName" `
-        -AllowPartialOutput | Out-Null
+        -AllowPartialOutput `
+        -Environment (Get-NervFullStackNonSeedEnvironment) | Out-Null
 }
 
 function Get-NervAspireDescribeObjectWithEndpoints {
@@ -499,17 +501,21 @@ function Invoke-NervFullStackProxyBrowserCheck {
     $browserEnvironment = @{}
     foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
     $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
-    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
-        Invoke-Pnpm `
-            -Arguments @(
-                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=json',
-                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
-            ) `
-            -WorkingDirectory "$($Manifest.worktreeRoot)" `
-            -TimeoutSeconds 300 `
-            -Name "fullstack-$($Manifest.sessionId)-playwright" | Out-Null
+    if (-not $browserEnvironment.ContainsKey('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')) {
+        $browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $null
     }
+    $browserEnvironment['Parameters__iam-seed-demo-worker-password'] = $null
+    Invoke-Pnpm `
+        -Arguments @(
+            '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+            'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=json',
+            '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+        ) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 300 `
+        -Name "fullstack-$($Manifest.sessionId)-playwright" `
+        -Environment $browserEnvironment `
+        -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     return Assert-NervPlaywrightJsonReport -ReportPath $reportPath
 }
 
@@ -597,17 +603,21 @@ function Invoke-NervLeaderDemoMainChainBrowserCheck {
     foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
     $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
     $browserEnvironment.NERV_IIP_MAIN_CHAIN_EVIDENCE_PATH = $evidencePath
-    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
-        Invoke-Pnpm `
-            -Arguments @(
-                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                'e2e/leader-demo-main-chain.spec.ts', '--project=desktop', '--reporter=json',
-                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
-            ) `
-            -WorkingDirectory "$($Manifest.worktreeRoot)" `
-            -TimeoutSeconds 1200 `
-            -Name "fullstack-$($Manifest.sessionId)-leader-demo-main-chain" | Out-Null
+    if (-not $browserEnvironment.ContainsKey('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')) {
+        $browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $null
     }
+    $browserEnvironment['Parameters__iam-seed-demo-worker-password'] = $null
+    Invoke-Pnpm `
+        -Arguments @(
+            '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+            'e2e/leader-demo-main-chain.spec.ts', '--project=desktop', '--reporter=json',
+            '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+        ) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 1200 `
+        -Name "fullstack-$($Manifest.sessionId)-leader-demo-main-chain" `
+        -Environment $browserEnvironment `
+        -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
     return Assert-NervLeaderDemoMainChainEvidence -EvidencePath $evidencePath
 }
@@ -855,17 +865,21 @@ function Invoke-NervLeaderDemoBranchBrowserCheck {
     foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
     $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
     $browserEnvironment[$EvidenceEnvironmentVariable] = $evidencePath
-    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
-        Invoke-Pnpm `
-            -Arguments @(
-                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                $SpecFile, '--project=desktop', '--reporter=json',
-                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
-            ) `
-            -WorkingDirectory "$($Manifest.worktreeRoot)" `
-            -TimeoutSeconds 900 `
-            -Name "fullstack-$($Manifest.sessionId)-$ArtifactSlug" | Out-Null
+    if (-not $browserEnvironment.ContainsKey('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')) {
+        $browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $null
     }
+    $browserEnvironment['Parameters__iam-seed-demo-worker-password'] = $null
+    Invoke-Pnpm `
+        -Arguments @(
+            '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+            $SpecFile, '--project=desktop', '--reporter=json',
+            '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+        ) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 900 `
+        -Name "fullstack-$($Manifest.sessionId)-$ArtifactSlug" `
+        -Environment $browserEnvironment `
+        -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
     return & $EvidenceAssertion $evidencePath
 }
@@ -1112,14 +1126,16 @@ function Invoke-NervFullStackGuardian {
     }
     if ($null -eq $StopAction) {
         $StopAction = {
-            Invoke-WithScopedEnvironment -Variables @{ NERV_IIP_FULLSTACK_CALLER_GUARDIAN_PID = "$PID" } -ScriptBlock {
-                Invoke-PwshScript `
-                    -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack-session.ps1') `
-                    -Arguments @('stop', '-SessionId', $SessionId) `
-                    -WorkingDirectory $runtimeLibraryRoot `
-                    -TimeoutSeconds 300 `
-                    -Name "fullstack-$SessionId-guardian-stop" | Out-Null
-            }
+            $stopEnvironment = Get-NervFullStackNonSeedEnvironment
+            $stopEnvironment.NERV_IIP_FULLSTACK_CALLER_GUARDIAN_PID = "$PID"
+            Invoke-PwshScript `
+                -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack-session.ps1') `
+                -Arguments @('stop', '-SessionId', $SessionId) `
+                -WorkingDirectory $runtimeLibraryRoot `
+                -TimeoutSeconds 300 `
+                -Name "fullstack-$SessionId-guardian-stop" `
+                -Environment $stopEnvironment `
+                -SensitiveValues @($effectiveSensitiveValues) | Out-Null
         }
     }
     if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
@@ -1369,12 +1385,14 @@ function Collect-NervFullStackDiagnostics {
 
     if ($null -eq $LogAction) {
         $LogAction = {
-            param($ResourceName, $InputManifest, $BoundedTimeoutSeconds)
+            param($ResourceName, $InputManifest, $BoundedTimeoutSeconds, $InputSensitiveValues)
             $result = Invoke-AspireOutput `
                 -Arguments @('logs', $ResourceName, '--tail', '500', '--format', 'Json', '--apphost', "$($InputManifest.appHostProject)", '--non-interactive', '--nologo') `
                 -WorkingDirectory "$($InputManifest.worktreeRoot)" `
                 -TimeoutSeconds $BoundedTimeoutSeconds `
-                -Name "fullstack-$($InputManifest.sessionId)-collect-$ResourceName"
+                -Name "fullstack-$($InputManifest.sessionId)-collect-$ResourceName" `
+                -Environment (Get-NervFullStackNonSeedEnvironment) `
+                -SensitiveValues @($InputSensitiveValues)
             return "$($result.Stdout)"
         }
     }
@@ -1396,7 +1414,7 @@ function Collect-NervFullStackDiagnostics {
     )
     foreach ($resourceName in $resourceNames) {
         try {
-            $raw = (& $LogAction $resourceName $Manifest $TimeoutSeconds) -join "`n"
+            $raw = (& $LogAction $resourceName $Manifest $TimeoutSeconds $SensitiveValues) -join "`n"
             $safe = Protect-NervFullStackDiagnosticText -Text $raw -SensitiveValues $SensitiveValues
             [System.IO.File]::WriteAllText(
                 (Join-Path $logDirectory "$resourceName.ndjson"),
@@ -1505,6 +1523,13 @@ function Get-NervFullStackEnvironment {
         NERV_IIP_REDIS_VOLUME = "nerv-iip-redis-$SessionId"
         NERV_IIP_MINIO_VOLUME = "nerv-iip-minio-$SessionId"
         NERV_IIP_VICTORIA_LOGS_VOLUME = "nerv-iip-victoria-logs-$SessionId"
+    }
+}
+
+function Get-NervFullStackNonSeedEnvironment {
+    return @{
+        'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' = $null
+        'Parameters__iam-seed-demo-worker-password' = $null
     }
 }
 
@@ -2103,7 +2128,8 @@ function Stop-NervFullStackSession {
                 -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot) `
                 -TimeoutSeconds 150 `
                 -Name "fullstack-$($Manifest.sessionId)-aspire-stop" `
-                -AllowPartialOutput | Out-Null
+                -AllowPartialOutput `
+                -Environment (Get-NervFullStackNonSeedEnvironment) | Out-Null
         }
     }
     if ($null -eq $ProcessStopAction) {

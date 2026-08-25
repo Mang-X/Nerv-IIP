@@ -324,10 +324,7 @@ function Start-NervFullStackGuardian {
     if ([string]::Equals([string]($Mode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments += @('-CoordinatorPid', "$CoordinatorPid", '-CoordinatorStartTimeUtc', $CoordinatorStartTimeUtc)
     }
-    $nonSeedEnvironment = @{
-        'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' = $null
-        'Parameters__iam-seed-demo-worker-password' = $null
-    }
+    $nonSeedEnvironment = Get-NervFullStackNonSeedEnvironment
     return (Start-DetachedManagedProcess `
         -Command (Get-Process -Id $PID).Path `
         -Arguments $arguments `
@@ -498,7 +495,8 @@ function Start-NervFullStackSession {
                             -WorkingDirectory $repoRoot `
                             -TimeoutSeconds 150 `
                             -Name "fullstack-$newSessionId-transient-start-stop" `
-                            -AllowPartialOutput | Out-Null
+                            -AllowPartialOutput `
+                            -Environment (Get-NervFullStackNonSeedEnvironment) | Out-Null
                     }
                     catch { }
                 }
@@ -685,7 +683,11 @@ elseif ([string]::Equals([string]($Action), [string]('logs'), [StringComparison]
             if (-not [string]::IsNullOrWhiteSpace($Target)) { $arguments += $Target }
             $arguments += @('--tail', "$Tail", '--apphost', "$($manifest.appHostProject)", '--non-interactive', '--nologo')
             if ($Follow) { $arguments += '--follow' }
-            Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory "$($manifest.worktreeRoot)" -Name "fullstack-$resolvedSessionId-logs"
+            Invoke-AspireInteractive `
+                -Arguments $arguments `
+                -WorkingDirectory "$($manifest.worktreeRoot)" `
+                -Name "fullstack-$resolvedSessionId-logs" `
+                -Environment (Get-NervFullStackNonSeedEnvironment)
         }
 elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]::OrdinalIgnoreCase)) {
             if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot }
