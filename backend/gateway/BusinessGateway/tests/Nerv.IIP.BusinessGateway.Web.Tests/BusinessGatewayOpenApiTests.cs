@@ -811,6 +811,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertSchemaProperties(document, "BusinessConsoleMesDispatchParticipantRequest", "workerId", "sharePercent");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks", "get", "listBusinessConsoleMesOperationTasks");
         AssertQueryParameters(paths, "/api/business-console/v1/mes/operation-tasks", "get", "operationTaskId");
+        AssertNullableDecimalSchemaProperties(
+            document,
+            "BusinessConsoleMesOperationTaskRow",
+            "actualLaborHours",
+            "actualMachineHours");
         AssertOperationId(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "listBusinessConsoleMesReportableOperationTasks");
         AssertNoQueryParameter(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "operationTaskId");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-sops/current", "get", "getBusinessConsoleMesCurrentOperationSops");
@@ -830,6 +835,16 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/wip", "get", "getBusinessConsoleMesWipSummary");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "get", "listBusinessConsoleMesProductionReports");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}", "get", "getBusinessConsoleMesProductionReport");
+        AssertNullableDecimalSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionReportRow",
+            "operationActualLaborHours",
+            "operationActualMachineHours");
+        AssertNullableDecimalSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionReportDetail",
+            "operationActualLaborHours",
+            "operationActualMachineHours");
         AssertSchemaProperties(document, "BusinessConsoleMesProductionReportDetailResponse", "laborAllocations");
         AssertSchemaProperties(document, "BusinessConsoleMesLaborAllocation", "workerId", "workerName", "sharePercent", "allocatedLaborTicks");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
@@ -1440,6 +1455,30 @@ public sealed class BusinessGatewayOpenApiTests
             Assert.True(
                 properties.TryGetProperty(propertyName, out _),
                 $"{schemaNameSuffix} must expose {propertyName}.");
+        }
+    }
+
+    private static void AssertNullableDecimalSchemaProperties(
+        JsonDocument document,
+        string schemaNameSuffix,
+        params string[] propertyNames)
+    {
+        var schemas = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .EnumerateObject()
+            .Where(schema =>
+                schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal)
+                && schema.Value.TryGetProperty("properties", out _))
+            .ToArray();
+        var properties = Assert.Single(schemas).Value.GetProperty("properties");
+        foreach (var propertyName in propertyNames)
+        {
+            var property = properties.GetProperty(propertyName);
+            Assert.Equal("number", property.GetProperty("type").GetString());
+            Assert.Equal("decimal", property.GetProperty("format").GetString());
+            Assert.True(property.GetProperty("nullable").GetBoolean());
+            Assert.Contains("小时", property.GetProperty("description").GetString(), StringComparison.Ordinal);
         }
     }
 

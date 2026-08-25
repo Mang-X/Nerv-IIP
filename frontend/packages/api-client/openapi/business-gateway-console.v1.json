@@ -44439,6 +44439,18 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "actualLaborHours": {
+            "type": "number",
+            "description": "工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
+          },
+          "actualMachineHours": {
+            "type": "number",
+            "description": "工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -45859,6 +45871,18 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "operationActualLaborHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
+          },
+          "operationActualMachineHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -45991,6 +46015,18 @@
           },
           "reversalReportNo": {
             "type": "string",
+            "nullable": true
+          },
+          "operationActualLaborHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
+          },
+          "operationActualMachineHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
             "nullable": true
           }
         }

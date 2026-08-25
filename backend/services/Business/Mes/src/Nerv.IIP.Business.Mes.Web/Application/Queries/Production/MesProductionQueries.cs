@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -48,7 +49,14 @@ public sealed record ProductionReportFact(
     // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
     string? ReversalReportNo = null,
     // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
-    [property: JsonIgnore] MesActualHours? OperationActualHours = null);
+    [property: JsonIgnore] MesActualHours? OperationActualHours = null)
+{
+    [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
+
+    [Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? OperationActualMachineHours => OperationActualHours?.MachineHours;
+}
 
 public sealed record GetProductionReportQuery(
     string OrganizationId,
