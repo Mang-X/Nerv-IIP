@@ -129,6 +129,10 @@ builder.Services.AddHttpClient<IBusinessBarcodeLabelClient, HttpBusinessBarcodeL
 {
     client.BaseAddress = barcodeLabelBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessBarcodeResolverClient, HttpBusinessBarcodeResolverClient>(client =>
+{
+    client.BaseAddress = barcodeLabelBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessNotificationClient, HttpBusinessNotificationClient>(client =>
 {
     client.BaseAddress = notificationBaseAddress;
