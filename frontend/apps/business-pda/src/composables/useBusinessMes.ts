@@ -1658,7 +1658,7 @@ export function useMesMaterialIssue() {
 
 export type CreateReceiptInput = Omit<
   BusinessConsoleMesCreateReceiptRequest,
-  'organizationId' | 'environmentId' | 'requestedAtUtc'
+  'organizationId' | 'environmentId' | 'requestedAtUtc' | 'unitCost'
 >
 
 export function useMesReceipts() {
@@ -1712,15 +1712,19 @@ export function useMesReceipts() {
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),
-    createReceipt: (input: CreateReceiptInput) =>
-      createMutation.mutateAsync({
+    createReceipt: (input: CreateReceiptInput) => {
+      // 兼容旧调用方的运行时对象：即使仍携带 client unitCost，也在 facade 调用边界丢弃。
+      const { unitCost: _clientUnitCost, ...safeInput } =
+        input as BusinessConsoleMesCreateReceiptRequest
+      return createMutation.mutateAsync({
         body: {
-          ...input,
+          ...safeInput,
           // org/env + timestamp injected LAST from principal scope — never the caller.
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           requestedAtUtc: new Date().toISOString(),
         } satisfies BusinessConsoleMesCreateReceiptRequest,
-      }),
+      })
+    },
   }
 }
