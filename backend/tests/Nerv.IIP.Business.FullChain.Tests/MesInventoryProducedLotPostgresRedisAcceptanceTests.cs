@@ -173,8 +173,11 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 failureEvent.EventId,
                 failureReplayEvent.EventId,
                 pendingEvent.EventId);
-            Assert.Equal(5L, transport.PublishedEventCount);
-            Assert.Equal(5L, transport.InventoryReceivedEventCount);
+            AssertEventTransport(transport, successEvent.EventId);
+            AssertEventTransport(transport, successReplayEvent.EventId);
+            AssertEventTransport(transport, failureEvent.EventId);
+            AssertEventTransport(transport, failureReplayEvent.EventId);
+            AssertEventTransport(transport, pendingEvent.EventId);
             Assert.True(transport.PendingEventRedisFact.IsPresent);
             Assert.Equal(pendingEvent.EventId, transport.PendingEventRedisFact.EventId);
             Assert.Equal(pendingEvent.IdempotencyKey, transport.PendingEventRedisFact.IdempotencyKey);
@@ -201,8 +204,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 pendingEvent.EventId);
             throw new TimeoutException(
                 $"{timeout.Message} " +
-                $"PublishedEvents={finalMessagingFacts.PublishedEventCount}, " +
-                $"InventoryReceivedEvents={finalMessagingFacts.InventoryReceivedEventCount}, " +
+                $"EventTransport={string.Join(",", finalMessagingFacts.EventFacts.Select(x => $"{x.Key}:published={x.Value.PublishedCount}/received={x.Value.ReceivedCount}"))}, " +
                 $"PendingEntry={finalMessagingFacts.PendingEventRedisFact.StreamEntryId}, " +
                 $"InventoryDeadLetters={finalMessagingFacts.InventoryDeadLetterCount}.",
                 timeout);
@@ -755,70 +757,55 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string pendingEventIdempotencyKey,
         params string[] eventIds)
     {
-        var eventParameters = eventIds.Select((_, index) => $"@event_id_{index}").ToArray();
-        var patternParameters = eventIds.Select((_, index) => $"@event_pattern_{index}").ToArray();
-        var contentPredicate = string.Join(" OR ", patternParameters.Select(parameter => $"\"Content\" LIKE {parameter}"));
-        var eventPredicate = string.Join(", ", eventParameters);
-        long publishedEventCount;
+        var eventFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
         await using (var mesConnection = new NpgsqlConnection(mesConnectionString))
         {
             await mesConnection.OpenAsync();
-            await using var published = mesConnection.CreateCommand();
-            published.CommandText = $"""
-                SELECT COUNT(*)
-                FROM mes.cap_published_messages
-                WHERE {contentPredicate};
-                """;
-            for (var index = 0; index < eventIds.Length; index++)
+            foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
             {
-                published.Parameters.AddWithValue(patternParameters[index], $"%{eventIds[index]}%");
+                await using var published = mesConnection.CreateCommand();
+                published.CommandText = """
+                    SELECT COUNT(*) FROM mes.cap_published_messages
+                    WHERE "Content" LIKE @event_pattern;
+                    """;
+                published.Parameters.AddWithValue("event_pattern", $"%{eventId}%");
+                var publishedCount = (long)(await published.ExecuteScalarAsync() ?? 0L);
+                eventFacts[eventId] = new EventMessageFact(publishedCount, 0L);
             }
-
-            publishedEventCount = (long)(await published.ExecuteScalarAsync() ?? 0L);
         }
 
-        long inventoryReceivedEventCount;
         long inventoryDeadLetterCount;
-        string? pendingAuthorityStatus;
-        string? pendingAuthorityReason;
+        string? pendingAuthorityStatus = null;
+        string? pendingAuthorityReason = null;
         await using (var inventoryConnection = new NpgsqlConnection(inventoryConnectionString))
         {
             await inventoryConnection.OpenAsync();
-            await using var consumed = inventoryConnection.CreateCommand();
-            consumed.CommandText = $"""
-                SELECT
-                    (SELECT COUNT(*) FROM inventory.cap_received_messages
-                     WHERE {contentPredicate}),
-                    (SELECT COUNT(*) FROM inventory.integration_event_dead_letters
-                     WHERE event_id IN ({eventPredicate})),
-                    (SELECT status FROM inventory.authority_resolution_pending_audits
-                     WHERE event_id = @pending_event_id
-                     LIMIT 1),
-                    (SELECT reason_code FROM inventory.authority_resolution_pending_audits
-                     WHERE event_id = @pending_event_id
-                     LIMIT 1);
-                """;
-            for (var index = 0; index < eventIds.Length; index++)
+            foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
             {
-                consumed.Parameters.AddWithValue(eventParameters[index], eventIds[index]);
-                consumed.Parameters.AddWithValue(patternParameters[index], $"%{eventIds[index]}%");
+                await using var consumed = inventoryConnection.CreateCommand();
+                consumed.CommandText = """
+                    SELECT COUNT(*) FROM inventory.cap_received_messages
+                    WHERE "Content" LIKE @event_pattern;
+                    """;
+                consumed.Parameters.AddWithValue("event_pattern", $"%{eventId}%");
+                var receivedCount = (long)(await consumed.ExecuteScalarAsync() ?? 0L);
+                eventFacts[eventId] = eventFacts[eventId] with { ReceivedCount = receivedCount };
             }
-            consumed.Parameters.AddWithValue("pending_event_id", pendingEventId);
-
-            await using var reader = await consumed.ExecuteReaderAsync();
+            await using var deadLetters = inventoryConnection.CreateCommand();
+            deadLetters.CommandText = "SELECT COUNT(*) FROM inventory.integration_event_dead_letters WHERE event_id = @event_id;";
+            deadLetters.Parameters.AddWithValue("event_id", pendingEventId);
+            inventoryDeadLetterCount = (long)(await deadLetters.ExecuteScalarAsync() ?? 0L);
+            await using var authority = inventoryConnection.CreateCommand();
+            authority.CommandText = """
+                SELECT status, reason_code FROM inventory.authority_resolution_pending_audits
+                WHERE event_id = @pending_event_id LIMIT 1;
+                """;
+            authority.Parameters.AddWithValue("pending_event_id", pendingEventId);
+            await using var reader = await authority.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
-                inventoryReceivedEventCount = reader.GetInt64(0);
-                inventoryDeadLetterCount = reader.GetInt64(1);
-                pendingAuthorityStatus = reader.IsDBNull(2) ? null : reader.GetString(2);
-                pendingAuthorityReason = reader.IsDBNull(3) ? null : reader.GetString(3);
-            }
-            else
-            {
-                inventoryReceivedEventCount = 0;
-                inventoryDeadLetterCount = 0;
-                pendingAuthorityStatus = null;
-                pendingAuthorityReason = null;
+                pendingAuthorityStatus = reader.GetString(0);
+                pendingAuthorityReason = reader.GetString(1);
             }
         }
 
@@ -833,12 +820,18 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             pendingEventIdempotencyKey);
 
         return new MessagingFacts(
-            publishedEventCount,
-            inventoryReceivedEventCount,
+            eventFacts,
             pendingEventRedisFact,
             pendingAuthorityStatus,
             pendingAuthorityReason,
             inventoryDeadLetterCount);
+    }
+
+    private static void AssertEventTransport(MessagingFacts facts, string eventId)
+    {
+        var eventFact = facts.EventFacts[eventId];
+        Assert.Equal(1L, eventFact.PublishedCount);
+        Assert.Equal(1L, eventFact.ReceivedCount);
     }
 
     private static async Task<PendingRedisFact> ReadPendingRedisFactAsync(
@@ -943,12 +936,13 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         decimal? LedgerInventoryValue);
 
     private sealed record MessagingFacts(
-        long PublishedEventCount,
-        long InventoryReceivedEventCount,
+        IReadOnlyDictionary<string, EventMessageFact> EventFacts,
         PendingRedisFact PendingEventRedisFact,
         string? PendingAuthorityStatus,
         string? PendingAuthorityReason,
         long InventoryDeadLetterCount);
+
+    private sealed record EventMessageFact(long PublishedCount, long ReceivedCount);
 
     private sealed record PendingRedisFact(
         bool IsPresent,
