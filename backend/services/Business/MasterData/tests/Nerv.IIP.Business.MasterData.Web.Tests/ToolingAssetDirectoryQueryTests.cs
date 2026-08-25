@@ -59,9 +59,9 @@ public sealed class ToolingAssetDirectoryQueryTests
         var maintenance = ToolingAsset.Register("org-001", "env-dev", "TOOL-003", "模具 3", "mould", ["WC-01"], ["SKU-A"], 1);
         maintenance.RecordUsage(1);
         dbContext.ToolingAssets.AddRange(
-            retired,
+            maintenance,
             ToolingAsset.Register("org-001", "env-dev", "TOOL-002", "模具 2", "mould", ["WC-01"], ["SKU-A"], null),
-            maintenance);
+            retired);
         await dbContext.SaveChangesAsync();
 
         var handler = new ListToolingAssetsQueryHandler(dbContext);
