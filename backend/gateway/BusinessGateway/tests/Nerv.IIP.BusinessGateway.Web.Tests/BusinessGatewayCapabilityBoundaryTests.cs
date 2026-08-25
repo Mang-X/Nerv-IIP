@@ -600,14 +600,16 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "Interface",
                 $"IBusiness{clientName}Client",
                 capability,
-                sourcePath);
+                sourcePath,
+                includeInLegacy: capability != "Inventory");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
                 "Class",
                 $"HttpBusiness{clientName}Client",
                 capability,
-                sourcePath);
+                sourcePath,
+                includeInLegacy: capability != "Inventory");
         }
 
         seedCapabilities.Add(
@@ -623,7 +625,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "Class",
             "BusinessGatewayInventoryForwardedPermissionOptions",
             "Inventory",
-            "BusinessServiceClients.cs");
+            "BusinessServiceClients.cs",
+            includeInLegacy: false);
 
         var capabilityDirectories = capabilities.Values
             .Distinct(StringComparer.Ordinal)
@@ -684,13 +687,17 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         string kind,
         string name,
         string capability,
-        string sourcePath)
+        string sourcePath,
+        bool includeInLegacy = true)
     {
         var identity = Identity(kind, name);
         seedCapabilities.Add(identity, capability);
-        legacyDeclarations.Add(
-            identity,
-            new LegacyDeclarationContract(capability, [sourcePath]));
+        if (includeInLegacy)
+        {
+            legacyDeclarations.Add(
+                identity,
+                new LegacyDeclarationContract(capability, [sourcePath]));
+        }
     }
 
     private static string Identity(string kind, string name) =>
