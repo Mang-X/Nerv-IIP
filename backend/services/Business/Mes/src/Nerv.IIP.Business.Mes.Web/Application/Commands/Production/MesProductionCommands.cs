@@ -132,10 +132,15 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class RecordProductionReportCommandHandler(
+    ApplicationDbContext dbContext,
+    MesCodingService? codingService = null,
+    IMesOeeDimensionSnapshotProvider? oeeDimensionSnapshotProvider = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+    private readonly IMesOeeDimensionSnapshotProvider _oeeDimensionSnapshotProvider =
+        oeeDimensionSnapshotProvider ?? new NullMesOeeDimensionSnapshotProvider();
 
     public async Task<ProductionReportCommandResult> Handle(RecordProductionReportCommand request, CancellationToken cancellationToken)
     {
@@ -229,6 +234,14 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             producedLotNo = $"{request.WorkOrderId}-{request.OperationTaskId}-{allocation.Code}";
         }
 
+        var dimensionSnapshot = await _oeeDimensionSnapshotProvider.CaptureAsync(
+            new MesOeeDimensionSnapshotRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                operationTask.WorkCenterId,
+                operationTask.DeviceAssetId,
+                operationTask.ShiftId),
+            cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
@@ -244,7 +257,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.DefectRecordNo,
             producedLotNo,
             request.SerialNo,
-            ProductionReportOeeProjectionFactory.Create(operationTask),
+            ProductionReportOeeProjectionFactory.Create(operationTask, dimensionSnapshot),
             request.Source,
             consumedMaterialLots.Count);
 
@@ -566,7 +579,9 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
 internal static class ProductionReportOeeProjectionFactory
 {
-    public static ProductionReportOeeProjection Create(OperationTask operationTask)
+    public static ProductionReportOeeProjection Create(
+        OperationTask operationTask,
+        MesOeeDimensionSnapshot? dimensionSnapshot = null)
     {
         ArgumentNullException.ThrowIfNull(operationTask);
         var durationHours = decimal.Divide(operationTask.DurationTicks, TimeSpan.TicksPerHour);
@@ -577,7 +592,17 @@ internal static class ProductionReportOeeProjectionFactory
             operationTask.WorkCenterId,
             operationTask.DeviceAssetId,
             operationTask.UomCode,
-            theoreticalRatePerHour);
+            theoreticalRatePerHour,
+            dimensionSnapshot?.SiteCode,
+            dimensionSnapshot?.WorkshopCode,
+            dimensionSnapshot?.LineCode,
+            dimensionSnapshot?.ShiftCode,
+            dimensionSnapshot?.SiteTimezone,
+            dimensionSnapshot?.ShiftStartsAt,
+            dimensionSnapshot?.ShiftEndsAt,
+            dimensionSnapshot?.ShiftCrossesMidnight,
+            dimensionSnapshot?.ShiftPaidMinutes,
+            dimensionSnapshot?.ShiftBreakMinutes);
     }
 }
 

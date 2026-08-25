@@ -2,6 +2,24 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProduc
 
 public partial record OeeProductionFactId : IGuidStronglyTypedId;
 
+public sealed record OeeHistoricalDimensionSnapshot(
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? LineCode = null,
+    string? ShiftCode = null,
+    string? SiteTimezone = null,
+    TimeOnly? ShiftStartsAt = null,
+    TimeOnly? ShiftEndsAt = null,
+    bool? ShiftCrossesMidnight = null,
+    int? ShiftPaidMinutes = null,
+    int? ShiftBreakMinutes = null,
+    DateOnly? BusinessDate = null,
+    DateTimeOffset? DayBucketStartUtc = null,
+    DateTimeOffset? DayBucketEndUtc = null,
+    DateOnly? ShiftBusinessDate = null,
+    DateTimeOffset? ShiftBucketStartUtc = null,
+    DateTimeOffset? ShiftBucketEndUtc = null);
+
 public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateRoot
 {
     private OeeProductionFact()
@@ -19,7 +37,8 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
         decimal reworkQuantity,
         string uomCode,
         decimal? theoreticalRatePerHour,
-        DateTimeOffset reportedAtUtc)
+        DateTimeOffset reportedAtUtc,
+        OeeHistoricalDimensionSnapshot? dimensionSnapshot)
     {
         Id = new OeeProductionFactId(Guid.CreateVersion7());
         OrganizationId = IndustrialTelemetryText.Required(organizationId, nameof(organizationId));
@@ -33,6 +52,22 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
         UomCode = IndustrialTelemetryText.Required(uomCode, nameof(uomCode));
         TheoreticalRatePerHour = theoreticalRatePerHour;
         ReportedAtUtc = reportedAtUtc;
+        SiteCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.SiteCode);
+        WorkshopCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.WorkshopCode);
+        LineCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.LineCode);
+        ShiftCode = IndustrialTelemetryText.Optional(dimensionSnapshot?.ShiftCode);
+        SiteTimezone = IndustrialTelemetryText.Optional(dimensionSnapshot?.SiteTimezone);
+        ShiftStartsAt = dimensionSnapshot?.ShiftStartsAt;
+        ShiftEndsAt = dimensionSnapshot?.ShiftEndsAt;
+        ShiftCrossesMidnight = dimensionSnapshot?.ShiftCrossesMidnight;
+        ShiftPaidMinutes = dimensionSnapshot?.ShiftPaidMinutes;
+        ShiftBreakMinutes = dimensionSnapshot?.ShiftBreakMinutes;
+        BusinessDate = dimensionSnapshot?.BusinessDate;
+        DayBucketStartUtc = dimensionSnapshot?.DayBucketStartUtc;
+        DayBucketEndUtc = dimensionSnapshot?.DayBucketEndUtc;
+        ShiftBusinessDate = dimensionSnapshot?.ShiftBusinessDate;
+        ShiftBucketStartUtc = dimensionSnapshot?.ShiftBucketStartUtc;
+        ShiftBucketEndUtc = dimensionSnapshot?.ShiftBucketEndUtc;
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -46,6 +81,22 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
     public string UomCode { get; private set; } = string.Empty;
     public decimal? TheoreticalRatePerHour { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
+    public string? SiteCode { get; private set; }
+    public string? WorkshopCode { get; private set; }
+    public string? LineCode { get; private set; }
+    public string? ShiftCode { get; private set; }
+    public string? SiteTimezone { get; private set; }
+    public TimeOnly? ShiftStartsAt { get; private set; }
+    public TimeOnly? ShiftEndsAt { get; private set; }
+    public bool? ShiftCrossesMidnight { get; private set; }
+    public int? ShiftPaidMinutes { get; private set; }
+    public int? ShiftBreakMinutes { get; private set; }
+    public DateOnly? BusinessDate { get; private set; }
+    public DateTimeOffset? DayBucketStartUtc { get; private set; }
+    public DateTimeOffset? DayBucketEndUtc { get; private set; }
+    public DateOnly? ShiftBusinessDate { get; private set; }
+    public DateTimeOffset? ShiftBucketStartUtc { get; private set; }
+    public DateTimeOffset? ShiftBucketEndUtc { get; private set; }
 
     public static OeeProductionFact Project(
         string organizationId,
@@ -58,7 +109,8 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
         decimal reworkQuantity,
         string uomCode,
         decimal? theoreticalRatePerHour,
-        DateTimeOffset reportedAtUtc)
+        DateTimeOffset reportedAtUtc,
+        OeeHistoricalDimensionSnapshot? dimensionSnapshot = null)
     {
         return new OeeProductionFact(
             organizationId,
@@ -71,6 +123,7 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
             reworkQuantity,
             uomCode,
             theoreticalRatePerHour,
-            reportedAtUtc);
+            reportedAtUtc,
+            dimensionSnapshot);
     }
 }

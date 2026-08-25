@@ -410,7 +410,21 @@ public sealed class MesIntegrationEventTests
             false,
             reportedAtUtc,
             10m,
-            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m));
+            oeeProjection: new ProductionReportOeeProjection(
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                "PCS",
+                100m,
+                SiteCode: "SITE-SH",
+                WorkshopCode: "WS-ASSEMBLY",
+                LineCode: "LINE-A",
+                ShiftCode: "NIGHT",
+                SiteTimezone: "Asia/Shanghai",
+                ShiftStartsAt: new TimeOnly(20, 0),
+                ShiftEndsAt: new TimeOnly(4, 0),
+                ShiftCrossesMidnight: true,
+                ShiftPaidMinutes: 450,
+                ShiftBreakMinutes: 30));
 
         var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
         var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);
@@ -422,6 +436,53 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(80m, integrationEvent.Payload.GoodQuantity);
         Assert.Equal(10m, integrationEvent.Payload.ScrapQuantity);
         Assert.Equal(10m, integrationEvent.Payload.ReworkQuantity);
+    }
+
+    [Fact]
+    public void Production_report_converter_emits_v2_historical_dimension_and_shift_window_snapshot()
+    {
+        var reportedAtUtc = DateTimeOffset.Parse("2026-07-10T17:30:00Z");
+        var report = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OEE-DIMENSION-001",
+            "WO-001",
+            "OP-10",
+            80m,
+            10m,
+            false,
+            reportedAtUtc,
+            10m,
+            oeeProjection: new ProductionReportOeeProjection(
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                "PCS",
+                100m,
+                SiteCode: "SITE-SH",
+                WorkshopCode: "WS-ASSEMBLY",
+                LineCode: "LINE-A",
+                ShiftCode: "NIGHT",
+                SiteTimezone: "Asia/Shanghai",
+                ShiftStartsAt: new TimeOnly(20, 0),
+                ShiftEndsAt: new TimeOnly(4, 0),
+                ShiftCrossesMidnight: true,
+                ShiftPaidMinutes: 450,
+                ShiftBreakMinutes: 30));
+
+        var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
+        var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
+        Assert.Equal("SITE-SH", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WS-ASSEMBLY", integrationEvent.Payload.WorkshopCode);
+        Assert.Equal("LINE-A", integrationEvent.Payload.LineCode);
+        Assert.Equal("NIGHT", integrationEvent.Payload.ShiftCode);
+        Assert.Equal("Asia/Shanghai", integrationEvent.Payload.SiteTimezone);
+        Assert.Equal(new TimeOnly(20, 0), integrationEvent.Payload.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(4, 0), integrationEvent.Payload.ShiftEndsAt);
+        Assert.True(integrationEvent.Payload.ShiftCrossesMidnight);
+        Assert.Equal(450, integrationEvent.Payload.ShiftPaidMinutes);
+        Assert.Equal(30, integrationEvent.Payload.ShiftBreakMinutes);
     }
 
     [Fact]
@@ -438,7 +499,21 @@ public sealed class MesIntegrationEventTests
             false,
             DateTimeOffset.Parse("2026-07-10T08:45:00Z"),
             10m,
-            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m));
+            oeeProjection: new ProductionReportOeeProjection(
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                "PCS",
+                100m,
+                SiteCode: "SITE-SH",
+                WorkshopCode: "WS-ASSEMBLY",
+                LineCode: "LINE-A",
+                ShiftCode: "NIGHT",
+                SiteTimezone: "Asia/Shanghai",
+                ShiftStartsAt: new TimeOnly(20, 0),
+                ShiftEndsAt: new TimeOnly(4, 0),
+                ShiftCrossesMidnight: true,
+                ShiftPaidMinutes: 450,
+                ShiftBreakMinutes: 30));
         var reversal = ProductionReport.Reverse(
             original,
             "PRPT-OEE-REVERSAL-001",
@@ -455,6 +530,14 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
         Assert.Equal("PCS", integrationEvent.Payload.UomCode);
         Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
+        Assert.Equal("SITE-SH", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WS-ASSEMBLY", integrationEvent.Payload.WorkshopCode);
+        Assert.Equal("LINE-A", integrationEvent.Payload.LineCode);
+        Assert.Equal("NIGHT", integrationEvent.Payload.ShiftCode);
+        Assert.Equal("Asia/Shanghai", integrationEvent.Payload.SiteTimezone);
+        Assert.Equal(new TimeOnly(20, 0), integrationEvent.Payload.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(4, 0), integrationEvent.Payload.ShiftEndsAt);
+        Assert.True(integrationEvent.Payload.ShiftCrossesMidnight);
     }
 
     [Fact]

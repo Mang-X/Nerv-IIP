@@ -1487,6 +1487,14 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/oee/aggregates",
+      "operationId": "queryBusinessIiotOeeAggregates",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade、generated client 与 Business Console OEE 看板由 #2232 交付。"
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/runtime-availability",
       "operationId": "queryBusinessIiotRuntimeAvailability",
       "classification": "exposed",

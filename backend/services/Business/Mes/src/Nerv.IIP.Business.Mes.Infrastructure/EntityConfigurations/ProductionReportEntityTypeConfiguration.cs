@@ -31,6 +31,16 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.OeeDeviceAssetId).HasColumnName("oee_device_asset_id").HasMaxLength(150).HasComment("Assigned device snapshot carried with the report for OEE projection and reversal consistency.");
         builder.Property(x => x.OeeUomCode).HasColumnName("oee_uom_code").HasMaxLength(30).HasComment("Output unit snapshot carried with the report for OEE projection and reversal consistency.");
         builder.Property(x => x.OeeTheoreticalRatePerHour).HasColumnName("oee_theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Theoretical output-rate snapshot carried with the report for OEE projection and reversal consistency.");
+        builder.Property(x => x.OeeSiteCode).HasColumnName("oee_site_code").HasMaxLength(100).HasComment("MasterData site code snapshot captured when the production report was recorded.");
+        builder.Property(x => x.OeeWorkshopCode).HasColumnName("oee_workshop_code").HasMaxLength(100).HasComment("MasterData workshop code snapshot captured when the production report was recorded.");
+        builder.Property(x => x.OeeLineCode).HasColumnName("oee_line_code").HasMaxLength(100).HasComment("MasterData production line code snapshot captured when the production report was recorded.");
+        builder.Property(x => x.OeeShiftCode).HasColumnName("oee_shift_code").HasMaxLength(100).HasComment("Assigned MasterData shift code snapshot captured when the production report was recorded.");
+        builder.Property(x => x.OeeSiteTimezone).HasColumnName("oee_site_timezone").HasMaxLength(100).HasComment("IANA site timezone snapshot used to derive historical OEE business-day boundaries.");
+        builder.Property(x => x.OeeShiftStartsAt).HasColumnName("oee_shift_starts_at").HasComment("Local shift start time snapshot used to derive the historical shift window.");
+        builder.Property(x => x.OeeShiftEndsAt).HasColumnName("oee_shift_ends_at").HasComment("Local shift end time snapshot used to derive the historical shift window.");
+        builder.Property(x => x.OeeShiftCrossesMidnight).HasColumnName("oee_shift_crosses_midnight").HasComment("Whether the captured shift definition crosses local midnight.");
+        builder.Property(x => x.OeeShiftPaidMinutes).HasColumnName("oee_shift_paid_minutes").HasComment("Paid minutes from the captured shift definition.");
+        builder.Property(x => x.OeeShiftBreakMinutes).HasColumnName("oee_shift_break_minutes").HasComment("Break minutes from the captured shift definition.");
         builder.Property(x => x.Source).HasColumnName("source").IsRequired().HasMaxLength(50).HasDefaultValue("manual").HasComment("Report origin: manual operator entry or telemetry count automation.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");

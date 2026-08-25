@@ -25,6 +25,7 @@ public static class MesSourceDocumentTypes
 public static class MesIntegrationEventVersions
 {
     public const int V1 = 1;
+    public const int V2 = 2;
 }
 
 public static class MesIntegrationEventSources
@@ -242,7 +243,17 @@ public sealed record ProductionReportRecordedPayload(
     DateTimeOffset ReportedAtUtc,
     bool IsReversal,
     string? ReversedReportNo = null,
-    int MaterialMovementCount = 0);
+    int MaterialMovementCount = 0,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? LineCode = null,
+    string? ShiftCode = null,
+    string? SiteTimezone = null,
+    TimeOnly? ShiftStartsAt = null,
+    TimeOnly? ShiftEndsAt = null,
+    bool? ShiftCrossesMidnight = null,
+    int? ShiftPaidMinutes = null,
+    int? ShiftBreakMinutes = null);
 
 public sealed record FinishedGoodsReceiptRequestedIntegrationEvent(
     string EventId,

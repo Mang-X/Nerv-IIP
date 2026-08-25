@@ -16,14 +16,22 @@ public sealed class ProductionReportOeeProjectionHandler(
 {
     public const string ConsumerName = "business-industrial-telemetry.production-report-oee-projection";
 
-    private readonly IntegrationEventConsumerGuard<ProductionReportRecordedIntegrationEvent> consumerGuard = new(
+    private readonly IntegrationEventConsumerGuard<ProductionReportRecordedIntegrationEvent> v1ConsumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
         deadLetterStore,
         new IntegrationEventConsumerOptions(ConsumerName, MesIntegrationEventTypes.ProductionReportRecorded, MesIntegrationEventVersions.V1));
 
+    private readonly IntegrationEventConsumerGuard<ProductionReportRecordedIntegrationEvent> v2ConsumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(ConsumerName, MesIntegrationEventTypes.ProductionReportRecorded, MesIntegrationEventVersions.V2));
+
     public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+        var guard = integrationEvent.EventVersion == MesIntegrationEventVersions.V1
+            ? v1ConsumerGuard
+            : v2ConsumerGuard;
+        return guard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
     [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
@@ -66,7 +74,8 @@ public sealed class ProductionReportOeeProjectionHandler(
             payload.ReworkQuantity,
             payload.UomCode,
             payload.TheoreticalRatePerHour,
-            payload.ReportedAtUtc));
+            payload.ReportedAtUtc,
+            OeeHistoricalBucketResolver.Resolve(payload)));
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

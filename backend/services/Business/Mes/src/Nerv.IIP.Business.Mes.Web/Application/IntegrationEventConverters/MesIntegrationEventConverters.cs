@@ -26,7 +26,7 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
         return new ProductionReportRecordedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.ProductionReportRecorded,
-            MesIntegrationEventVersions.V1,
+            MesIntegrationEventVersions.V2,
             report.ReportedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             report.ReportNo,
@@ -51,7 +51,17 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
                 // retain correction lineage for audit and downstream projections that need it.
                 report.IsReversal,
                 report.ReversedReportNo,
-                report.MaterialMovementCount));
+                report.MaterialMovementCount,
+                projection?.SiteCode,
+                projection?.WorkshopCode,
+                projection?.LineCode,
+                projection?.ShiftCode,
+                projection?.SiteTimezone,
+                projection?.ShiftStartsAt,
+                projection?.ShiftEndsAt,
+                projection?.ShiftCrossesMidnight,
+                projection?.ShiftPaidMinutes,
+                projection?.ShiftBreakMinutes));
     }
 }
 

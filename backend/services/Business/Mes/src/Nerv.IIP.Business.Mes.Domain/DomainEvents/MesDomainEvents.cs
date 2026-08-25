@@ -59,7 +59,17 @@ public sealed record ProductionReportOeeProjection(
     string WorkCenterId,
     string? DeviceAssetId,
     string UomCode,
-    decimal? TheoreticalRatePerHour);
+    decimal? TheoreticalRatePerHour,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? LineCode = null,
+    string? ShiftCode = null,
+    string? SiteTimezone = null,
+    TimeOnly? ShiftStartsAt = null,
+    TimeOnly? ShiftEndsAt = null,
+    bool? ShiftCrossesMidnight = null,
+    int? ShiftPaidMinutes = null,
+    int? ShiftBreakMinutes = null);
 
 public sealed record ProductionReportRecordedDomainEvent(
     ProductionReport ProductionReport,

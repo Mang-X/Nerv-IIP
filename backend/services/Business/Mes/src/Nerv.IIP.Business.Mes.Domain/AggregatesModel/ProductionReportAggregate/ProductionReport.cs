@@ -62,6 +62,16 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         OeeDeviceAssetId = string.IsNullOrWhiteSpace(oeeProjection?.DeviceAssetId) ? null : oeeProjection.DeviceAssetId.Trim();
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
         OeeTheoreticalRatePerHour = oeeProjection?.TheoreticalRatePerHour;
+        OeeSiteCode = NormalizeOptional(oeeProjection?.SiteCode);
+        OeeWorkshopCode = NormalizeOptional(oeeProjection?.WorkshopCode);
+        OeeLineCode = NormalizeOptional(oeeProjection?.LineCode);
+        OeeShiftCode = NormalizeOptional(oeeProjection?.ShiftCode);
+        OeeSiteTimezone = NormalizeOptional(oeeProjection?.SiteTimezone);
+        OeeShiftStartsAt = oeeProjection?.ShiftStartsAt;
+        OeeShiftEndsAt = oeeProjection?.ShiftEndsAt;
+        OeeShiftCrossesMidnight = oeeProjection?.ShiftCrossesMidnight;
+        OeeShiftPaidMinutes = oeeProjection?.ShiftPaidMinutes;
+        OeeShiftBreakMinutes = oeeProjection?.ShiftBreakMinutes;
         Source = NormalizeSource(source);
         MaterialMovementCount = materialMovementCount >= 0 ? materialMovementCount : throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
     }
@@ -85,6 +95,16 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? OeeDeviceAssetId { get; private set; }
     public string? OeeUomCode { get; private set; }
     public decimal? OeeTheoreticalRatePerHour { get; private set; }
+    public string? OeeSiteCode { get; private set; }
+    public string? OeeWorkshopCode { get; private set; }
+    public string? OeeLineCode { get; private set; }
+    public string? OeeShiftCode { get; private set; }
+    public string? OeeSiteTimezone { get; private set; }
+    public TimeOnly? OeeShiftStartsAt { get; private set; }
+    public TimeOnly? OeeShiftEndsAt { get; private set; }
+    public bool? OeeShiftCrossesMidnight { get; private set; }
+    public int? OeeShiftPaidMinutes { get; private set; }
+    public int? OeeShiftBreakMinutes { get; private set; }
     public string Source { get; private set; } = ManualSource;
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
@@ -96,7 +116,21 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     {
         return string.IsNullOrWhiteSpace(OeeWorkCenterId) || string.IsNullOrWhiteSpace(OeeUomCode)
             ? null
-            : new ProductionReportOeeProjection(OeeWorkCenterId, OeeDeviceAssetId, OeeUomCode, OeeTheoreticalRatePerHour);
+            : new ProductionReportOeeProjection(
+                OeeWorkCenterId,
+                OeeDeviceAssetId,
+                OeeUomCode,
+                OeeTheoreticalRatePerHour,
+                OeeSiteCode,
+                OeeWorkshopCode,
+                OeeLineCode,
+                OeeShiftCode,
+                OeeSiteTimezone,
+                OeeShiftStartsAt,
+                OeeShiftEndsAt,
+                OeeShiftCrossesMidnight,
+                OeeShiftPaidMinutes,
+                OeeShiftBreakMinutes);
     }
 
     public static ProductionReport Record(
@@ -199,6 +233,9 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public static bool IsSupportedSource(string source) =>
         string.Equals(source, ManualSource, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(source, TelemetrySource, StringComparison.OrdinalIgnoreCase);
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string NormalizeSource(string source)
     {

@@ -188,6 +188,15 @@ public sealed record ListAlarmEventsRequest(
     AlarmEventId? AlarmEventId = null);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
+public sealed record QueryOeeAggregateBucketsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetId,
+    string? WorkCenterId,
+    string? ShiftCode);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
@@ -564,6 +573,27 @@ public sealed class QueryOeeEndpoint(ISender sender) : IndustrialTelemetryEndpoi
     }
 }
 
+public sealed class QueryOeeAggregateBucketsEndpoint(ISender sender)
+    : IndustrialTelemetryEndpoint<QueryOeeAggregateBucketsRequest, ResponseData<OeeAggregateBucketsResponse>>
+{
+    public override void Configure() =>
+        ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<QueryOeeAggregateBucketsEndpoint>());
+
+    public override async Task HandleAsync(QueryOeeAggregateBucketsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryOeeAggregateBucketsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Dimension,
+            req.WindowStartUtc,
+            req.WindowEndUtc,
+            req.DeviceAssetId,
+            req.WorkCenterId,
+            req.ShiftCode), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class QueryRuntimeHoursEndpoint(ISender sender) : IndustrialTelemetryEndpoint<QueryRuntimeHoursRequest, ResponseData<RuntimeHoursResponse>>
 {
     public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<QueryRuntimeHoursEndpoint>());
@@ -757,6 +787,7 @@ public static class IndustrialTelemetryEndpointContracts
         new(typeof(RunAlarmEscalationsEndpoint), "POST", "/api/business/v1/iiot/alarms/escalations/run", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "runBusinessIiotAlarmEscalations"),
         new(typeof(QueryDeviceTimelineEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotDeviceTimeline"),
         new(typeof(QueryOeeEndpoint), "GET", "/api/business/v1/iiot/oee", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotOee"),
+        new(typeof(QueryOeeAggregateBucketsEndpoint), "GET", "/api/business/v1/iiot/oee/aggregates", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotOeeAggregates"),
         new(typeof(QueryRuntimeHoursEndpoint), "GET", "/api/business/v1/iiot/runtime-hours", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeHours"),
         new(typeof(GetDeviceRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceRuntimeAvailability"),
         new(typeof(QueryRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeAvailability"),
