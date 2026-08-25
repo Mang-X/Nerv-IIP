@@ -217,7 +217,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
             using NetCorePal.Extensions.Primitives;
             partial class ExplicitHandler
             {
-                Task<string> ICommandHandler<ExplicitCommand, string>.Handle(
+                Task<string> MediatR.IRequestHandler<ExplicitCommand, string>.Handle(
                     ExplicitCommand command,
                     CancellationToken cancellationToken) =>
                     throw new KnownException("显式处理失败。");
@@ -234,6 +234,58 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Assert.Equal("B_explicit_handle.cs|ExplicitHandler|Handle", handler.Key);
         Assert.Equal(1, handler.DirectKnownExceptionCount);
         Assert.True(handler.IsCommandHandler);
+    }
+
+    [Theory]
+    [InlineData("A_contract.cs", "Z_overload.cs")]
+    [InlineData("Z_contract.cs", "A_overload.cs")]
+    public void Discovery_marks_only_the_interface_contract_handle_when_an_unrelated_overload_sorts_on_either_side(
+        string contractPath,
+        string overloadPath)
+    {
+        const string declarationSource = """
+            using NetCorePal.Extensions.Primitives;
+            sealed record OverloadedCommand : ICommand<string>;
+            partial class OverloadedHandler : ICommandHandler<OverloadedCommand, string> { }
+            """;
+        const string contractSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            partial class OverloadedHandler
+            {
+                public Task<string> Handle(OverloadedCommand command, CancellationToken cancellationToken) =>
+                    throw new KnownException("合同处理失败。");
+            }
+            """;
+        const string overloadSource = """
+            partial class OverloadedHandler
+            {
+                public string Handle(string value) =>
+                    throw new KnownException("重载处理失败。");
+            }
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [
+                new BarcodeLabelSourceDocument("M_declaration.cs", declarationSource),
+                new BarcodeLabelSourceDocument(contractPath, contractSource),
+                new BarcodeLabelSourceDocument(overloadPath, overloadSource),
+            ]);
+
+        Assert.Collection(
+            discovered.Where(site => site.TypeName == "OverloadedHandler"),
+            first =>
+            {
+                var expectedIsContract = first.Path == contractPath;
+                Assert.Equal(expectedIsContract, first.IsCommandHandler);
+                Assert.Equal(1, first.DirectKnownExceptionCount);
+            },
+            second =>
+            {
+                var expectedIsContract = second.Path == contractPath;
+                Assert.Equal(expectedIsContract, second.IsCommandHandler);
+                Assert.Equal(1, second.DirectKnownExceptionCount);
+            });
     }
 
     [Fact]
@@ -325,6 +377,23 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Assert.Contains(violations, violation => violation.Contains("用户消息必须包含中文", StringComparison.Ordinal));
         Assert.Contains(violations, violation => violation.Contains("用户消息不能包含不安全字符", StringComparison.Ordinal));
         Assert.Contains(violations, violation => violation.Contains("用户消息必须是可静态分析", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Discovery_uses_type_identity_for_a_known_exception_created_in_a_primary_base_argument()
+    {
+        const string source = """
+            using NetCorePal.Extensions.Primitives;
+            class Parent(Exception reason);
+            sealed class Probe() : Parent(new KnownException("类型初始化失败。"));
+            """;
+
+        var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(
+            [new BarcodeLabelSourceDocument("Type.cs", source)]);
+
+        var site = Assert.Single(discovered);
+        Assert.Equal("Type.cs|Probe|.type", site.Key);
+        Assert.Equal(1, site.DirectKnownExceptionCount);
     }
 
     [Fact]

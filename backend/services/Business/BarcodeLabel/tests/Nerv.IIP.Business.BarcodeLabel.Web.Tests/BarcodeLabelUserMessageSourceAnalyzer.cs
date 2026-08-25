@@ -102,41 +102,40 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             }
 
             var handlerInterfaceMembers = handlerInterfaces
+                .SelectMany(@interface => @interface.AllInterfaces.Prepend(@interface))
                 .SelectMany(@interface => @interface.GetMembers("Handle"))
                 .OfType<IMethodSymbol>()
                 .ToArray();
-            var implementedHandleMethods = handlerInterfaceMembers
+            var handleDeclarations = handlerInterfaceMembers
                 .Select(member => typeSymbol.FindImplementationForInterfaceMember(member))
-                .OfType<IMethodSymbol>();
-            var declaredHandleDeclarations = typeSymbol.DeclaringSyntaxReferences
+                .OfType<IMethodSymbol>()
+                .SelectMany(method => method.DeclaringSyntaxReferences)
                 .Select(reference => reference.GetSyntax())
-                .OfType<TypeDeclarationSyntax>()
-                .SelectMany(declaration => declaration.Members.OfType<MethodDeclarationSyntax>())
-                .Where(method => method.Identifier.ValueText == "Handle");
-            var handleDeclaration = declaredHandleDeclarations
-                .Concat(implementedHandleMethods
-                    .SelectMany(method => method.DeclaringSyntaxReferences)
-                    .Select(reference => reference.GetSyntax()))
-                .Where(node => sourceTrees.Contains(node.SyntaxTree))
+                .OfType<MethodDeclarationSyntax>()
+                .DistinctBy(node => (node.SyntaxTree.FilePath, node.SpanStart))
                 .OrderBy(node => NormalizePath(node.SyntaxTree.FilePath), StringComparer.Ordinal)
                 .ThenBy(node => node.SpanStart)
-                .FirstOrDefault();
-            var path = NormalizePath((handleDeclaration ?? syntax).SyntaxTree.FilePath);
-            var key = $"{path}|{typeSymbol.Name}|Handle";
-            if (sites.TryGetValue(key, out var existing))
+                .Cast<SyntaxNode>()
+                .DefaultIfEmpty(syntax);
+            foreach (var handleDeclaration in handleDeclarations)
             {
-                sites[key] = existing with { IsCommandHandler = true };
-            }
-            else
-            {
-                sites.Add(key, new BarcodeLabelKnownExceptionSite(
-                    path,
-                    typeSymbol.Name,
-                    "Handle",
-                    0,
-                    BarcodeLabelKnownExceptionSiteKind.Target,
-                    "discovered BarcodeLabel command handler",
-                    true));
+                var path = NormalizePath(handleDeclaration.SyntaxTree.FilePath);
+                var key = $"{path}|{typeSymbol.Name}|Handle";
+                if (sites.TryGetValue(key, out var existing))
+                {
+                    sites[key] = existing with { IsCommandHandler = true };
+                }
+                else
+                {
+                    sites.Add(key, new BarcodeLabelKnownExceptionSite(
+                        path,
+                        typeSymbol.Name,
+                        "Handle",
+                        0,
+                        BarcodeLabelKnownExceptionSiteKind.Target,
+                        "discovered BarcodeLabel command handler",
+                        true));
+                }
             }
         }
 

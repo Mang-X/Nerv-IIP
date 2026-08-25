@@ -44,6 +44,34 @@ public sealed class PrintLabelLifecycleCommandTests
         }
     }
 
+    [Theory]
+    [InlineData(17)]
+    [InlineData(42)]
+    public void Print_item_not_found_mapping_preserves_the_actual_sequence_number(int sequenceNo)
+    {
+        var rejection = new LabelPrintLifecycleRejectedException(
+            LabelPrintLifecycleRejectionReason.PrintItemNotFound,
+            "领域拒绝。");
+
+        var exception = LabelPrintLifecycleKnownExceptionMapper.Create(rejection, sequenceNo);
+
+        Assert.Equal($"未找到打印项，序号 = {sequenceNo}。", exception.Message);
+        Assert.Same(rejection, exception.InnerException);
+    }
+
+    [Fact]
+    public void Unregistered_lifecycle_rejection_reason_fails_closed_as_a_programming_error()
+    {
+        var unknownReason = (LabelPrintLifecycleRejectionReason)int.MaxValue;
+        var rejection = new LabelPrintLifecycleRejectedException(unknownReason, "领域拒绝。");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            LabelPrintLifecycleKnownExceptionMapper.Create(rejection, sequenceNo: 7));
+
+        Assert.Equal($"未登记的打印生命周期拒绝原因：{unknownReason}。", exception.Message);
+        Assert.Same(rejection, exception.InnerException);
+    }
+
     [Fact]
     public async Task Dispatch_sent_to_printer_records_delivery_without_claiming_items_were_printed()
     {
