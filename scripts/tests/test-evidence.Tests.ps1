@@ -1260,6 +1260,20 @@ Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnec
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
 Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
+$mesCollaborationPostgresIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
+$mesCollaborationPostgresSkip = @([pscustomobject]@{
+    lane = 'backend-shard-3'
+    outcome = 'skipped'
+    testName = $mesCollaborationPostgresIdentity
+    skipReason = 'Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof.'
+})
+$mesCollaborationPostgresViolations = @(Get-NervTestEvidenceViolations `
+    -Records $mesCollaborationPostgresSkip `
+    -Policy $livePolicy `
+    -SelectedLanes @('backend-shard-3') `
+    -RunnerOs 'Linux')
+Assert-Equal 0 $mesCollaborationPostgresViolations.Count 'The MES collaboration PostgreSQL runtime skip must match exactly one applicable evidence-policy rule in a backend shard.'
+Assert-Equal 'mes-production-candidate' $mesCollaborationPostgresSkip[0].skipPolicyId 'The MES collaboration PostgreSQL runtime skip must be owned by the MES production-candidate rule.'
 $redisCapLanes = @($livePolicy.lanes | Where-Object { [string]::Equals([string]$_.namePattern, '^redis-cap(?:-shard-[1-9][0-9]*)?$', [StringComparison]::Ordinal) -and [bool]$_.realDependency })
 Assert-Equal 1 $redisCapLanes.Count 'MAN-661 must register exactly one real-dependency Redis/CAP evidence lane pattern.'
 $demandPlanningRedisRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'demandplanning-postgres-redis', [StringComparison]::Ordinal) })
