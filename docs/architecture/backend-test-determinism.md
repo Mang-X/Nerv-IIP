@@ -94,8 +94,8 @@ await TestTimeout.RunAsync(
 BarcodeLabel 的宿主测试统一进入 `BarcodeLabelWebApplicationFactoryCollection`：同一 collection 内不并发启动/
 停止 `Program`，但不关闭整个测试程序集并行。`BarcodeLabelWebHostCollectionTests` 编译测试源码并按 Roslyn
 类型系统求宿主依赖闭包：显式/target-typed 构造、别名或 `global::Program`、派生 factory，以及经成员、构造参数、
-`IClassFixture<T>` 或静态可解析方法调用图传递的 helper/fixture 消费都归属到最终测试类；canonical collection 也按
-attribute 类型和常量值判定。
+`IClassFixture<T>` 或静态可解析方法调用图传递的 helper/fixture 消费都归属到最终测试类；构造泛型 helper 同时归一到
+其原始声明，且不受源码声明顺序影响。canonical collection 也按 attribute 类型和常量值判定。
 源码无法编译、宿主依赖无法归入 canonical collection 或新增上述任一形状未登记都会判红，因此该约束不靠语法文本
 特例或审核者记忆维护。
 

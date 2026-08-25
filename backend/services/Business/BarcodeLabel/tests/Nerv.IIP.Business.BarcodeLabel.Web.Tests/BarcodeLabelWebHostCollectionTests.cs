@@ -33,6 +33,7 @@ public sealed class BarcodeLabelWebHostCollectionTests
             "BypassMatrix.cs:AliasTests",
             "BypassMatrix.cs:DerivedTests",
             "BypassMatrix.cs:FixtureTests",
+            "BypassMatrix.cs:GenericHelperInvocationTests",
             "BypassMatrix.cs:GlobalProgramTests",
             "BypassMatrix.cs:HelperInvocationTests",
             "BypassMatrix.cs:RecordTests",
@@ -120,6 +121,22 @@ public sealed class BarcodeLabelWebHostCollectionTests
         {
             [Fact]
             public void StartsHost() => StaticHostStarter.Start();
+        }
+
+        public sealed class GenericHelperInvocationTests
+        {
+            [Fact]
+            public void StartsHost() => GenericHostForwarder<int>.Start();
+        }
+
+        public static class GenericHostForwarder<T>
+        {
+            public static void Start() => GenericHostHelper<T>.Start();
+        }
+
+        public static class GenericHostHelper<T>
+        {
+            public static void Start() => _ = new WebApplicationFactory<Program>();
         }
 
         namespace Microsoft.AspNetCore.Mvc.Testing

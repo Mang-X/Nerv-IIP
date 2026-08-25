@@ -167,6 +167,7 @@ public static class BarcodeLabelWebHostCollectionAnalyzer
                 return;
             case INamedTypeSymbol named:
                 destination.Add(named);
+                destination.Add(named.OriginalDefinition);
                 foreach (var argument in named.TypeArguments)
                 {
                     AddType(argument, destination);
