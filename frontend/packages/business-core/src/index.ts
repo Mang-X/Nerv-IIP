@@ -120,6 +120,12 @@ export {
   isNearOrExpired,
 } from './inventory/expiry'
 export type { ExpiryAlertLike, ExpiryTone } from './inventory/expiry'
+export { lineSideInventoryAgePresentation } from './inventory/lineSideAge'
+export type {
+  LineSideInventoryAgeCompleteness,
+  LineSideInventoryAgeLike,
+  LineSideInventoryAgePresentation,
+} from './inventory/lineSideAge'
 export {
   aggregateReceivingGateStatus,
   isReleasedForPutaway,

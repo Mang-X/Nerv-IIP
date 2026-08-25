@@ -13,6 +13,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionReportsQueryOptions,
@@ -36,6 +37,8 @@ import {
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
+  type BusinessConsoleMesLineSideInventoryBalanceItem,
+  type BusinessConsoleMesLineSideInventoryBalancesEnvelope,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
@@ -1592,6 +1595,47 @@ export type CreateIssueInput = BusinessConsoleMesCreateMaterialIssueRequest
 
 export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideReceiptRequest
 export type ReturnLineSideMaterialInput = BusinessConsoleMesReturnLineSideMaterialRequest
+
+export function useMesLineSideInventoryBalances() {
+  const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const scopeReady = computed(() => hasScope(scope))
+  const identity = computed(() => (scopeReady.value ? scopeKey(scope) : ''))
+  const query = useQuery(() => ({
+    ...listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
+      query: {
+        organizationId: scope.organizationId,
+        environmentId: scope.environmentId,
+        page: 1,
+        pageSize: 200,
+      },
+    }),
+    enabled: scopeReady.value,
+  }))
+  const currentResponse = useScopeBoundListResponse(() => query.data.value, identity, scopeReady)
+  const failure = computed(() =>
+    query.error.value != null
+      ? query.error.value
+      : currentResponse.value !== undefined && currentResponse.value.success !== true
+        ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
+        : null,
+  )
+
+  return {
+    balances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesLineSideInventoryBalanceItem,
+        BusinessConsoleMesLineSideInventoryBalancesEnvelope
+      >(currentResponse.value),
+    ),
+    total: computed(() =>
+      currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
+    ),
+    pending: query.isLoading,
+    error: failure,
+    ready: computed(() => currentResponse.value?.success === true),
+    refresh: () => (scopeReady.value ? query.refetch() : Promise.resolve()),
+  }
+}
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()

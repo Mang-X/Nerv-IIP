@@ -152,6 +152,24 @@ test('领料与齐套：领料申请渲染收料进度与「查看出库」闭�
     'href',
     /\/wms\/outbound/,
   )
+  await expect(page.getByRole('heading', { name: '线边库存余额与账龄' })).toBeVisible()
+  await expect(
+    page.getByText('SKU-DAMPER-001', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(page.getByText(/在手 120 pcs/).filter({ visible: true })).toBeVisible()
+  await expect(
+    page.getByText(/4 天（部分批次缺少生产日期）/).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('账龄未知（批次缺少生产日期）', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  const mobileInventory = page.getByTestId('line-side-inventory-mobile')
+  if ((page.viewportSize()?.width ?? 0) < 768) {
+    await expect(mobileInventory).toBeVisible()
+    await expect(mobileInventory).toContainText('4 天（部分批次缺少生产日期）')
+  } else {
+    await expect(mobileInventory).toBeHidden()
+  }
 })
 
 test('工序执行：队列渲染、可报工行直显「报工」按钮且能进报工弹窗', async ({ page }) => {
@@ -542,6 +560,59 @@ async function routeBusinessConsoleApi(route: Route) {
           },
         ],
         total: 1,
+      }),
+    )
+  }
+
+  if (pathname === '/api/business-console/v1/mes/line-side-inventory-balances') {
+    return fulfillJson(
+      route,
+      envelope({
+        items: [
+          {
+            siteCode: 'SITE-SH',
+            locationCode: 'LINE-A01',
+            skuCode: 'SKU-DAMPER-001',
+            uomCode: 'pcs',
+            onHandQuantity: 120,
+            reservedQuantity: 20,
+            availableQuantity: 100,
+            lotCount: 3,
+            oldestProductionDate: '2026-08-20',
+            ageDays: 6,
+            ageCompleteness: 'complete',
+          },
+          {
+            siteCode: 'SITE-SH',
+            locationCode: 'LINE-A02',
+            skuCode: 'SKU-SEAL-008',
+            uomCode: 'pcs',
+            onHandQuantity: 45,
+            reservedQuantity: 5,
+            availableQuantity: 40,
+            lotCount: 2,
+            oldestProductionDate: '2026-08-22',
+            ageDays: 4,
+            ageCompleteness: 'partial',
+          },
+          {
+            siteCode: 'SITE-SH',
+            locationCode: 'LINE-A03',
+            skuCode: 'SKU-OIL-012',
+            uomCode: 'l',
+            onHandQuantity: 18,
+            reservedQuantity: 0,
+            availableQuantity: 18,
+            lotCount: 1,
+            oldestProductionDate: null,
+            ageDays: null,
+            ageCompleteness: 'unavailable',
+          },
+        ],
+        totalCount: 3,
+        page: 1,
+        pageSize: 200,
+        asOfDate: '2026-08-26',
       }),
     )
   }

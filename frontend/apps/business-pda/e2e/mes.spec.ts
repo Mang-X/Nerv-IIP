@@ -777,6 +777,11 @@ test('领料：列表渲染领料申请行（不退化为空态）', async ({ pa
   await expect(page.getByText('WO-1 · 物料 MAT-1')).toBeVisible()
   await expect(page.getByText('WO-1 · 物料 MAT-2')).toBeVisible()
   await expect(page.getByText('暂无领料申请')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '线边库存' })).toBeVisible()
+  await expect(page.getByText('SKU-DAMPER-001', { exact: true })).toBeVisible()
+  await expect(page.getByText(/可用 100 pcs/)).toBeVisible()
+  await expect(page.getByText(/6 天 · 账龄完整/)).toBeVisible()
+  await expect(page.getByText(/账龄未知（批次缺少生产日期）/)).toBeVisible()
 })
 
 test('完工入库：列表渲染入库申请行（不退化为空态）', async ({ page }) => {

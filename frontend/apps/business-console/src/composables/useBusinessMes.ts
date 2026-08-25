@@ -38,6 +38,7 @@ import {
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionPlansQueryOptions,
@@ -75,6 +76,8 @@ import {
   type BusinessConsoleMesFoundationReadinessEnvelope,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
+  type BusinessConsoleMesLineSideInventoryBalanceItem,
+  type BusinessConsoleMesLineSideInventoryBalancesEnvelope,
   type BusinessConsoleMesMaterialReadinessEnvelope,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
@@ -2011,6 +2014,47 @@ export function useMesMaterialIssueRequests() {
     materialIssueRequestsState: businessReadState(requestsQuery, () => hasBusinessContext(filters)),
     materialIssueRequestsTotal: computed(() => envelopeTotal(requestsQuery.data.value)),
     refreshMaterialIssueRequests: () => refetchWithBusinessContext(filters, requestsQuery),
+  }
+}
+
+export function useMesLineSideInventoryBalances() {
+  const filters = defaultContext()
+  const query = useQuery(() =>
+    withBusinessContextEnabled(
+      listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          page: 1,
+          pageSize: 200,
+        },
+      }),
+      filters,
+    ),
+  )
+  const state = businessReadState(query, () => hasBusinessContext(filters))
+  const failure = computed(() =>
+    query.error.value != null
+      ? query.error.value
+      : query.data.value !== undefined && query.data.value.success !== true
+        ? new Error(query.data.value.message ?? '线边库存服务未返回成功结果，请重试。')
+        : null,
+  )
+
+  return {
+    lineSideInventoryBalances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesLineSideInventoryBalanceItem,
+        BusinessConsoleMesLineSideInventoryBalancesEnvelope
+      >(query.data.value),
+    ),
+    lineSideInventoryTotal: computed(() =>
+      query.data.value?.success ? (query.data.value.data?.totalCount ?? 0) : 0,
+    ),
+    lineSideInventoryPending: query.isLoading,
+    lineSideInventoryError: failure,
+    lineSideInventoryReady: computed(() => state.value === 'ready'),
+    refreshLineSideInventory: () => refetchWithBusinessContext(filters, query),
   }
 }
 
