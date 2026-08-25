@@ -5005,10 +5005,11 @@ public sealed record BusinessConsoleMesRecordDefectRequest(
     string WorkOrderId,
     string OperationTaskId,
     string DefectCode,
-    decimal DefectQuantity,
-    string? MaterialLotId,
-    string? BatchOrSerial,
-    string IdempotencyKey);
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId);
 
 public sealed record BusinessConsoleMesRelatedQualityItemListResponse(
     IReadOnlyCollection<BusinessConsoleMesRelatedQualityItemRow> Items,

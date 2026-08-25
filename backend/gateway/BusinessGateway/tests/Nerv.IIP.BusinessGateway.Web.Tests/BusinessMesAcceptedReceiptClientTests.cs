@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -102,8 +103,30 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "Defect",
             client => client.RecordDefectAsync(
                 "token",
-                new BusinessConsoleMesRecordDefectRequest("org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m, null, null, "idem-defect"),
+                new BusinessConsoleMesRecordDefectRequest(
+                    "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m,
+                    DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect", "work-center", "WC-A"),
                 CancellationToken.None));
+
+    [Fact]
+    public async Task Record_defect_maps_the_public_contract_to_the_exact_mes_wire_payload()
+    {
+        string? capturedBody = null;
+        var client = ClientReturning(AcceptedJson("DEF-000031"), capturedBody: body => capturedBody = body);
+        var request = new BusinessConsoleMesRecordDefectRequest(
+            "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2.5m,
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect", "work-center", "WC-A");
+
+        await client.RecordDefectAsync("token", request, CancellationToken.None);
+
+        using var document = JsonDocument.Parse(capturedBody!);
+        var body = document.RootElement;
+        Assert.Equal(2.5m, body.GetProperty("quantity").GetDecimal());
+        Assert.Equal("2026-08-25T14:30:00+00:00", body.GetProperty("recordedAtUtc").GetString());
+        Assert.False(body.TryGetProperty("defectQuantity", out _));
+        Assert.False(body.TryGetProperty("scopeKind", out _));
+        Assert.False(body.TryGetProperty("scopeId", out _));
+    }
 
     [Fact]
     public async Task Record_downtime_event_returns_an_accepted_receipt_carrying_the_downtime_no() =>
@@ -156,7 +179,9 @@ public sealed class BusinessMesAcceptedReceiptClientTests
 
         var response = await client.RecordDefectAsync(
             "token",
-            new BusinessConsoleMesRecordDefectRequest("org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m, null, null, "idem-defect"),
+            new BusinessConsoleMesRecordDefectRequest(
+                "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m,
+                DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect", "work-center", "WC-A"),
             CancellationToken.None);
 
         Assert.True(response.Accepted);
@@ -224,12 +249,18 @@ public sealed class BusinessMesAcceptedReceiptClientTests
     private static string AcceptedJson(string referenceId, string status = "Accepted") =>
         "{\"data\":{\"status\":\"" + status + "\",\"referenceId\":\"" + referenceId + "\",\"acceptedAtUtc\":\"2026-07-31T08:00:00Z\"}}";
 
-    private static HttpBusinessMesClient ClientReturning(string json, IDictionary<string, string>? capturedHeaders = null) =>
-        new(new HttpClient(new StubHandler(json, capturedHeaders)) { BaseAddress = new Uri("http://mes") });
+    private static HttpBusinessMesClient ClientReturning(
+        string json,
+        IDictionary<string, string>? capturedHeaders = null,
+        Action<string>? capturedBody = null) =>
+        new(new HttpClient(new StubHandler(json, capturedHeaders, capturedBody)) { BaseAddress = new Uri("http://mes") });
 
-    private sealed class StubHandler(string json, IDictionary<string, string>? capturedHeaders) : HttpMessageHandler
+    private sealed class StubHandler(
+        string json,
+        IDictionary<string, string>? capturedHeaders,
+        Action<string>? capturedBody) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (capturedHeaders is not null)
             {
@@ -239,10 +270,15 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 }
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            if (capturedBody is not null && request.Content is not null)
+            {
+                capturedBody(await request.Content.ReadAsStringAsync(cancellationToken));
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
-            });
+            };
         }
     }
 }

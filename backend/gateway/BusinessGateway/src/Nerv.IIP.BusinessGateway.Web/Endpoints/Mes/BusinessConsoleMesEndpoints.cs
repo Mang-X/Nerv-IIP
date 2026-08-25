@@ -1572,20 +1572,56 @@ public sealed class DismissBusinessConsoleMesTelemetryCandidateEndpoint(IBusines
 public sealed class RecordBusinessConsoleMesDefectEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDefectRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesQualityWrite)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesRecordDefectRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesRecordDefectRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesRecordDefectRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.RecordDefectAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesQualityWrite,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.RecordDefectAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesRecordDefectRequestValidator
+    : Validator<BusinessConsoleMesRecordDefectRequest>
+{
+    public BusinessConsoleMesRecordDefectRequestValidator()
+    {
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DefectCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.RecordedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(Endpoints.Principal.BusinessGatewayWorkScopeKinds.Contains);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+    }
 }
 
 [Tags("Business Console MES")]
