@@ -17,7 +17,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch', 'issue-1912-real-machine-walkthrough')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [switch] $EnableWmsDemoWorker,
@@ -44,6 +44,7 @@ Usage:
   .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
   .\nerv.ps1 fullstack run -Scenario leader-demo-quality-branch [-NoBuild]
   .\nerv.ps1 fullstack run -Scenario leader-demo-equipment-branch [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough [-NoBuild]
   .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
   .\nerv.ps1 fullstack url <gateway|business-gateway|console|business-console|screen> [-SessionId ...]
   .\nerv.ps1 fullstack status [-SessionId ...]
@@ -402,6 +403,15 @@ function Start-NervFullStackSession {
         $sessionEnvironment['Maintenance__PmGeneration__EnvironmentId'] = 'env-man440'
         $sessionEnvironment['Maintenance__PmGeneration__Interval'] = '00:00:01'
     }
+    elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
+        # GitHub #1912 owns an isolated walkthrough stack: retain only the walkthrough seed and
+        # make the old full-world/history/scale switches explicit before AppHost is started.
+        $sessionEnvironment['NERV_IIP_WALKTHROUGH_SEED'] = 'true'
+        $sessionEnvironment['NERV_IIP_LEADER_DEMO'] = 'false'
+        $sessionEnvironment['NERV_IIP_LEADER_DEMO_WORLD'] = 'false'
+        $sessionEnvironment['NERV_IIP_LEADER_DEMO_HISTORY'] = 'false'
+        $sessionEnvironment['NERV_IIP_LEADER_DEMO_SCALE_ORDERS'] = '0'
+    }
     $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
     $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
     $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
@@ -743,6 +753,11 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-main-chain')
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword `
                                     -SessionWorkerPassword $sessionWorkerPassword | Out-Null
+                            }
+elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
+                                Invoke-NervIssue1912WalkthroughScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
 elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-quality-branch'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoQualityBranchScenario `
