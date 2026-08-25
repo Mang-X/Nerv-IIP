@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { createSessionCredentialTracker } from '../e2e/session-credential-tracker'
 
 const scenarioSource = readFileSync(
   resolve(
@@ -12,6 +13,17 @@ const scenarioSource = readFileSync(
 )
 
 describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
+  it('uses the credential observed after a refresh rotation for subsequent calls', () => {
+    const tracker = createSessionCredentialTracker()
+
+    tracker.observe({ headers: () => ({ authorization: 'fixture-before-refresh' }) })
+    tracker.observe({ headers: () => ({ authorization: 'fixture-after-refresh' }) })
+
+    expect(tracker.headers()).toEqual({ authorization: 'fixture-after-refresh' })
+    expect(scenarioSource).toContain('sessionCredentialTracker.observe(request)')
+    expect(scenarioSource).toContain('headers: sessionCredentialTracker.headers()')
+  })
+
   it('starts only from the reserved walkthrough facts and keeps downstream numbers stable', () => {
     expect(scenarioSource).toContain("const RFQ_NO = 'RFQ-WALK-001'")
     expect(scenarioSource).toContain("const SUPPLIER_QUOTATION_NO = 'SQ-WALK-001'")
