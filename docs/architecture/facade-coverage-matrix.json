@@ -2932,6 +2932,14 @@
     },
     {
       "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start",
+      "operationId": "authorizeAndStartBusinessMesOperationTask",
+      "classification": "internal",
+      "rationale": "MES 内部受保护的授权跳站入口，仅由受信服务调用；按设计不通过 BusinessGateway facade 暴露。"
+    },
+    {
+      "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/overview",
       "operationId": "getBusinessMesOverview",
