@@ -6,7 +6,13 @@ public partial record PeriodicInspectionOperationId : IGuidStronglyTypedId;
 
 public partial record PeriodicInspectionProductionReportId : IGuidStronglyTypedId;
 
-public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId;
+public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId, IComparable<PeriodicInspectionRuntimeContextId>
+{
+    public int CompareTo(PeriodicInspectionRuntimeContextId? other)
+        => Id.CompareTo(other?.Id ?? Guid.Empty);
+}
+
+public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
 
 public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOperationId>, IAggregateRoot
 {
@@ -420,6 +426,9 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     public string? UomCode { get; private set; }
     public decimal CumulativeGoodQuantity { get; private set; }
     public decimal QuantityHighWater { get; private set; }
+    public DateTime? TimeScheduleAnchorAtUtc { get; private set; }
+    public long LastGeneratedTimeWindowSequence { get; private set; }
+    public DateTime? NextTimeWindowAtUtc { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public DateTime? CompletedAtUtc { get; private set; }
 
@@ -456,5 +465,82 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         QuantityHighWater = reports.Where(x => !x.IsReversal).Sum(x => x.GoodQuantity);
         CompletedAtUtc = completedAtUtc;
         Status = completedAtUtc.HasValue ? "closed" : "active";
+        if (completedAtUtc.HasValue)
+        {
+            NextTimeWindowAtUtc = null;
+        }
+        else if (LastGeneratedTimeWindowSequence == 0 && TimeIntervalHours.HasValue && FirstActivityAtUtc.HasValue)
+        {
+            NextTimeWindowAtUtc = TryAddTicks(FirstActivityAtUtc.Value, GetIntervalTicks());
+        }
+    }
+
+    public IReadOnlyList<PeriodicInspectionTimeWindow> TakeDueTimeWindows(DateTime nowUtc, int maxWindows)
+    {
+        if (nowUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Current time must be UTC.", nameof(nowUtc));
+        }
+
+        if (maxWindows <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWindows), "Maximum windows must be positive.");
+        }
+
+        // Reconcile closes a context by clearing the watermark. Keep the status check as a
+        // fail-closed depth defense for malformed or legacy persisted rows that violate that invariant.
+        if (Status != "active"
+            || !TimeIntervalHours.HasValue
+            || !FirstActivityAtUtc.HasValue
+            || !NextTimeWindowAtUtc.HasValue)
+        {
+            return [];
+        }
+
+        var intervalTicks = GetIntervalTicks();
+        var anchor = TimeScheduleAnchorAtUtc ?? FirstActivityAtUtc.Value;
+        var windows = new List<PeriodicInspectionTimeWindow>(maxWindows);
+        var sequence = checked(LastGeneratedTimeWindowSequence + 1);
+        var dueAtUtc = NextTimeWindowAtUtc.Value;
+        while (windows.Count < maxWindows && dueAtUtc <= nowUtc)
+        {
+            windows.Add(new PeriodicInspectionTimeWindow(sequence, dueAtUtc));
+            sequence = checked(sequence + 1);
+            var nextDueAtUtc = TryAddTicks(dueAtUtc, intervalTicks);
+            if (!nextDueAtUtc.HasValue)
+            {
+                NextTimeWindowAtUtc = null;
+                break;
+            }
+
+            dueAtUtc = nextDueAtUtc.Value;
+            NextTimeWindowAtUtc = dueAtUtc;
+        }
+
+        if (windows.Count > 0)
+        {
+            TimeScheduleAnchorAtUtc ??= anchor;
+            LastGeneratedTimeWindowSequence = windows[^1].Sequence;
+        }
+
+        return windows;
+    }
+
+    private long GetIntervalTicks()
+        => checked((long)decimal.Round(
+            TimeIntervalHours!.Value * TimeSpan.TicksPerHour,
+            decimals: 0,
+            MidpointRounding.AwayFromZero));
+
+    private static DateTime? TryAddTicks(DateTime value, long ticks)
+    {
+        try
+        {
+            return value.AddTicks(ticks);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
     }
 }
