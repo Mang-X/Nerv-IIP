@@ -1614,22 +1614,29 @@ describe('business MES composables', () => {
     })
 
     expect(
-      vi.mocked(closeBusinessConsoleMesWorkOrderMutationOptions).mock.results.at(-1)?.value.mutation,
-    ).toHaveBeenCalledWith(expect.objectContaining({
-      path: { workOrderId: 'WO-1953' },
-      query: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-A' }),
-      body: {},
-    }))
+      vi.mocked(closeBusinessConsoleMesWorkOrderMutationOptions).mock.results.at(-1)?.value
+        .mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1953' },
+        query: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-A' }),
+        body: {},
+      }),
+    )
     expect(
-      vi.mocked(recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions).mock.results.at(-1)?.value.mutation,
-    ).toHaveBeenCalledWith(expect.objectContaining({
-      path: { workOrderId: 'WO-1953' },
-      body: {
-        changeNumber: 'ECO-1953-001',
-        decision: 'continue-with-archived-version',
-        reason: '当前批次继续使用现行版本，待下批次切换。',
-      },
-    }))
+      vi
+        .mocked(recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions)
+        .mock.results.at(-1)?.value.mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1953' },
+        body: {
+          changeNumber: 'ECO-1953-001',
+          decision: 'continue-with-archived-version',
+          reason: '当前批次继续使用现行版本，待下批次切换。',
+        },
+      }),
+    )
   })
 
   it('scopes the cancel compensation preview receipts to the current work order', () => {

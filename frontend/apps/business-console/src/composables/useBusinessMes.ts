@@ -1372,7 +1372,9 @@ export function useMesWorkOrderDetail() {
     },
   })
 
-  async function closeWorkOrder(body: Pick<BusinessConsoleMesCloseWorkOrderRequest, 'closedAtUtc'> = {}) {
+  async function closeWorkOrder(
+    body: Pick<BusinessConsoleMesCloseWorkOrderRequest, 'closedAtUtc'> = {},
+  ) {
     const selectedManageScope = workOrderManageScope.requireSelectedScope()
     return closeWorkOrderMutation.mutateAsync({
       path: { workOrderId: filters.workOrderId },
@@ -1387,7 +1389,10 @@ export function useMesWorkOrderDetail() {
   }
 
   async function recordEngineeringChangeDecision(
-    body: Pick<BusinessConsoleMesEngineeringChangeDecisionRequest, 'changeNumber' | 'decision' | 'reason'>,
+    body: Pick<
+      BusinessConsoleMesEngineeringChangeDecisionRequest,
+      'changeNumber' | 'decision' | 'reason'
+    >,
   ) {
     const selectedManageScope = workOrderManageScope.requireSelectedScope()
     return engineeringChangeDecisionMutation.mutateAsync({

@@ -482,7 +482,9 @@ async function submitDecision() {
       reason: decisionForm.reason.trim(),
     })
     decisionOpen.value = false
-    notifySuccess(`工程变更决策已记录：${decisionForm.decision === 'continue-with-archived-version' ? '继续使用现行版本' : '停止工单'}。`)
+    notifySuccess(
+      `工程变更决策已记录：${decisionForm.decision === 'continue-with-archived-version' ? '继续使用现行版本' : '停止工单'}。`,
+    )
     await refreshDetail()
   } catch (error) {
     notifyOperationFailure('记录工程变更决策失败', error, '记录工程变更决策失败，请稍后重试。')
@@ -1448,10 +1450,20 @@ function formatError(error: unknown) {
           ]"
         />
         <NvAlertDialogFooter>
-          <NvButton type="button" variant="outline" :disabled="closeWorkOrderPending" @click="closeOpen = false">
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="closeWorkOrderPending"
+            @click="closeOpen = false"
+          >
             返回
           </NvButton>
-          <NvButton type="button" :disabled="closeWorkOrderPending" data-testid="confirm-close-work-order" @click="submitClose">
+          <NvButton
+            type="button"
+            :disabled="closeWorkOrderPending"
+            data-testid="confirm-close-work-order"
+            @click="submitClose"
+          >
             <Spinner v-if="closeWorkOrderPending" aria-hidden="true" />
             确认关闭
           </NvButton>
@@ -1463,17 +1475,29 @@ function formatError(error: unknown) {
       <NvAlertDialogContent class="sm:max-w-md">
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>记录工程变更决策 · {{ workOrderLabel }}</NvAlertDialogTitle>
-          <NvAlertDialogDescription>填写变更单号和处理意见，决策会回写到该工单。</NvAlertDialogDescription>
+          <NvAlertDialogDescription
+            >填写变更单号和处理意见，决策会回写到该工单。</NvAlertDialogDescription
+          >
         </NvAlertDialogHeader>
         <NvFieldGroup class="grid gap-3">
           <NvField>
-            <NvFieldLabel for="engineering-change-number">变更单号 <span class="text-destructive">*</span></NvFieldLabel>
-            <NvInput id="engineering-change-number" v-model="decisionForm.changeNumber" placeholder="请输入变更单号" />
+            <NvFieldLabel for="engineering-change-number"
+              >变更单号 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvInput
+              id="engineering-change-number"
+              v-model="decisionForm.changeNumber"
+              placeholder="请输入变更单号"
+            />
           </NvField>
           <NvField>
-            <NvFieldLabel for="engineering-change-decision">处理意见 <span class="text-destructive">*</span></NvFieldLabel>
+            <NvFieldLabel for="engineering-change-decision"
+              >处理意见 <span class="text-destructive">*</span></NvFieldLabel
+            >
             <NvSelect v-model="decisionForm.decision">
-              <NvSelectTrigger id="engineering-change-decision"><NvSelectValue placeholder="请选择处理意见" /></NvSelectTrigger>
+              <NvSelectTrigger id="engineering-change-decision"
+                ><NvSelectValue placeholder="请选择处理意见"
+              /></NvSelectTrigger>
               <NvSelectContent>
                 <NvSelectItem value="continue-with-archived-version">继续使用现行版本</NvSelectItem>
                 <NvSelectItem value="abort-work-order">停止工单</NvSelectItem>
@@ -1481,13 +1505,30 @@ function formatError(error: unknown) {
             </NvSelect>
           </NvField>
           <NvField>
-            <NvFieldLabel for="engineering-change-reason">决策说明 <span class="text-destructive">*</span></NvFieldLabel>
-            <NvInput id="engineering-change-reason" v-model="decisionForm.reason" placeholder="请说明决策依据" />
+            <NvFieldLabel for="engineering-change-reason"
+              >决策说明 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvInput
+              id="engineering-change-reason"
+              v-model="decisionForm.reason"
+              placeholder="请说明决策依据"
+            />
           </NvField>
         </NvFieldGroup>
         <NvAlertDialogFooter>
-          <NvButton type="button" variant="outline" :disabled="recordEngineeringChangeDecisionPending" @click="decisionOpen = false">返回</NvButton>
-          <NvButton type="button" :disabled="!canSubmitDecision || recordEngineeringChangeDecisionPending" data-testid="confirm-engineering-change-decision" @click="submitDecision">
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="recordEngineeringChangeDecisionPending"
+            @click="decisionOpen = false"
+            >返回</NvButton
+          >
+          <NvButton
+            type="button"
+            :disabled="!canSubmitDecision || recordEngineeringChangeDecisionPending"
+            data-testid="confirm-engineering-change-decision"
+            @click="submitDecision"
+          >
             <Spinner v-if="recordEngineeringChangeDecisionPending" aria-hidden="true" />
             保存决策
           </NvButton>
