@@ -81,12 +81,9 @@ public sealed class ZplTcpLabelPrinterTests
                 using var receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(testCancellationToken);
                 var receive = ReadUntilEofAsync(serverPeer, receiveCancellation.Token);
                 receiveCancellation.Cancel();
-                var watchdog = Task.Delay(TimeSpan.FromSeconds(1), testCancellationToken);
 
-                var completed = await Task.WhenAny(receive, watchdog);
-
-                Assert.Same(receive, completed);
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receive);
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                    receive.WaitAsync(TimeSpan.FromSeconds(1), testCancellationToken));
             },
             TimeSpan.FromSeconds(3));
     }
