@@ -2,6 +2,16 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## OEE 报表维度只读契约（#1965 子项① / #2230）
+
+BusinessMasterData 通用资源目录现已向后兼容地公开 OEE 多维报表所需的权威只读字段：Site 返回
+`timezone`，Shift 返回 `startsAt`、`endsAt`、`crossesMidnight`、`paidMinutes` 与
+`breakMinutes`，DeviceAsset 继续返回既有 `siteCode/workshopCode/lineCode/workCenterCode`
+层级。BusinessGateway 原样转发这些字段并纳入 Console OpenAPI 与生成客户端；字段均为可选，避免破坏
+既有资源目录消费者。本子项只交付维度来源契约，不计算 OEE、不新增数据库结构，也不把查询时的当前层级
+冒充历史快照；MES 报工事件、IndustrialTelemetry 历史投影与 PostgreSQL 聚合核心由 #2231 交付，
+授权门面和趋势/横比页面由 #2232 交付。
+
 ## ProductEngineering 工序所需技能发布快照（#1955 子项 A / #2225）
 
 ProductEngineering 的路线发布契约允许发布方为工序显式提供可选 `requiredSkillCode`，并将规范化后的 code 作为不可变发布快照持久化到 `routing_operations.required_skill_code`，同时在路线详情和生产版本路线快照中返回。既有路线保持 `null`，本切片不跨服务校验 MasterData 技能目录，也不实施 MES 派工资格拦截；MES 冻结所需技能与人员实时资格拦截分别由串行子项 #2226、#2227 承接。
