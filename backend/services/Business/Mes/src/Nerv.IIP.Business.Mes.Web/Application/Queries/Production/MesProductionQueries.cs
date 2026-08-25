@@ -57,7 +57,8 @@ public sealed record GetProductionReportQuery(
 
 public sealed record GetProductionReportResponse(
     ProductionReportFact Report,
-    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots);
+    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots,
+    IReadOnlyCollection<ProductionLaborAllocationFact> LaborAllocations);
 
 public sealed record ConsumedMaterialLotFact(
     string MaterialId,
@@ -65,6 +66,12 @@ public sealed record ConsumedMaterialLotFact(
     decimal ConsumedQuantity,
     string UomCode,
     string MaterialIssueRequestNo);
+
+public sealed record ProductionLaborAllocationFact(
+    string WorkerId,
+    string? WorkerName,
+    decimal SharePercent,
+    long AllocatedLaborTicks);
 
 internal static class ProductionReportFactProjection
 {
@@ -160,7 +167,17 @@ public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbConte
                 x.MaterialId, x.MaterialLotId, x.ConsumedQuantity, x.UomCode, x.MaterialIssueRequestNo))
             .ToArrayAsync(cancellationToken);
 
-        return new GetProductionReportResponse(report, consumedMaterialLots);
+        var laborAllocations = await dbContext.ProductionReportLaborAllocations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == request.ReportNo)
+            .OrderBy(x => x.WorkerId)
+            .Select(x => new ProductionLaborAllocationFact(
+                x.WorkerId, x.WorkerName, x.SharePercent, x.AllocatedLaborTicks))
+            .ToArrayAsync(cancellationToken);
+
+        return new GetProductionReportResponse(report, consumedMaterialLots, laborAllocations);
     }
 }
 

@@ -1221,6 +1221,11 @@ public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext db
     }
 }
 
+public sealed record DispatchParticipantInput(
+    string WorkerId,
+    string? WorkerName,
+    decimal SharePercent);
+
 public sealed record AssignDispatchTaskCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -1232,7 +1237,56 @@ public sealed record AssignDispatchTaskCommand(
     string Actor = "system:mes",
     string? AssignedUserName = null,
     string? TeamId = null,
-    string? TeamName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+    string? TeamName = null,
+    IReadOnlyCollection<DispatchParticipantInput>? Participants = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+
+public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<AssignDispatchTaskCommand>
+{
+    public AssignDispatchTaskCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId)
+            .NotEmpty().WithMessage("组织 ID 不能为空。")
+            .MaximumLength(100).WithMessage("组织 ID 长度不能超过 100 个字符。");
+        RuleFor(x => x.EnvironmentId)
+            .NotEmpty().WithMessage("环境 ID 不能为空。")
+            .MaximumLength(100).WithMessage("环境 ID 长度不能超过 100 个字符。");
+        RuleFor(x => x.OperationTaskId)
+            .NotEmpty().WithMessage("工序任务 ID 不能为空。")
+            .MaximumLength(100).WithMessage("工序任务 ID 长度不能超过 100 个字符。");
+        RuleFor(x => x.Participants).Must(participants => participants is null || participants.Count is > 0 and <= 20)
+            .WithMessage("提供参与者时，工序任务必须登记 1 至 20 名参与者。");
+        RuleForEach(x => x.Participants).ChildRules(participant =>
+        {
+            participant.RuleFor(x => x.WorkerId)
+                .NotEmpty().WithMessage("参与者人员 ID 不能为空。")
+                .MaximumLength(100).WithMessage("参与者人员 ID 长度不能超过 100 个字符。");
+            participant.RuleFor(x => x.WorkerName)
+                .MaximumLength(200).WithMessage("参与者姓名长度不能超过 200 个字符。");
+            participant.RuleFor(x => x.SharePercent)
+                .GreaterThan(0m).WithMessage("参与者工时占比必须大于 0。")
+                .LessThanOrEqualTo(100m).WithMessage("参与者工时占比不能超过 100。")
+                .Must(HasPersistableSharePrecision)
+                .WithMessage("参与者工时占比最多保留四位小数。");
+        });
+        RuleFor(x => x.Participants).Must(HaveUniqueWorkersAndBalancedShares)
+            .WithMessage("工序任务参与者的人员 ID 必须唯一，且占比合计必须为 100%。");
+    }
+
+    private static bool HaveUniqueWorkersAndBalancedShares(IReadOnlyCollection<DispatchParticipantInput>? participants)
+    {
+        if (participants is null || participants.Count == 0)
+        {
+            return true;
+        }
+
+        return participants.All(x => !string.IsNullOrWhiteSpace(x.WorkerId)) &&
+            participants.Select(x => x.WorkerId.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() == participants.Count &&
+            participants.Sum(x => x.SharePercent) == 100m;
+    }
+
+    private static bool HasPersistableSharePrecision(decimal sharePercent) =>
+        decimal.Round(sharePercent, 4) == sharePercent;
+}
 
 public sealed class AssignDispatchTaskCommandHandler(
     ApplicationDbContext dbContext,
@@ -1299,6 +1353,23 @@ public sealed class AssignDispatchTaskCommandHandler(
                 request.AssignedUserName,
                 request.TeamId,
                 request.TeamName));
+        var existingParticipants = await dbContext.OperationTaskParticipants
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskId == request.OperationTaskId)
+            .ToArrayAsync(cancellationToken);
+        dbContext.OperationTaskParticipants.RemoveRange(existingParticipants);
+        var participants = request.Participants is null && !string.IsNullOrWhiteSpace(request.AssignedUserId)
+            ? [new DispatchParticipantInput(request.AssignedUserId, request.AssignedUserName, 100m)]
+            : request.Participants ?? [];
+        dbContext.OperationTaskParticipants.AddRange(participants.Select(participant =>
+            OperationTaskParticipant.Register(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.OperationTaskId,
+                participant.WorkerId,
+                participant.WorkerName,
+                participant.SharePercent)));
         dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
         dbContext.Entry(task).Property(x => x.AssignedUserName).IsModified = true;
         dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
@@ -1771,15 +1842,15 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
 
     private static AuthorizeAndStartOperationTaskCommand Canonicalize(
         AuthorizeAndStartOperationTaskCommand request) => request with
-    {
-        OrganizationId = request.OrganizationId.Trim(),
-        EnvironmentId = request.EnvironmentId.Trim(),
-        OperationTaskId = request.OperationTaskId.Trim(),
-        Reason = request.Reason.Trim(),
-        ApprovalChainId = request.ApprovalChainId.Trim(),
-        CorrelationId = request.CorrelationId.Trim(),
-        IdempotencyKey = request.IdempotencyKey.Trim(),
-    };
+        {
+            OrganizationId = request.OrganizationId.Trim(),
+            EnvironmentId = request.EnvironmentId.Trim(),
+            OperationTaskId = request.OperationTaskId.Trim(),
+            Reason = request.Reason.Trim(),
+            ApprovalChainId = request.ApprovalChainId.Trim(),
+            CorrelationId = request.CorrelationId.Trim(),
+            IdempotencyKey = request.IdempotencyKey.Trim(),
+        };
 }
 
 internal static class MaterialReadinessGuards

@@ -915,7 +915,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             var values = SplitCanonicalCsv(assignedUserIds);
             query = values.Length == 0
                 ? query.Where(_ => false)
-                : query.Where(x => values.Contains(x.AssignedUserId));
+                : query.Where(x =>
+                    values.Contains(x.AssignedUserId)
+                    || dbContext.OperationTaskParticipants.Any(participant =>
+                        participant.OrganizationId == x.OrganizationId
+                        && participant.EnvironmentId == x.EnvironmentId
+                        && participant.OperationTaskId == x.OperationTaskIdValue
+                        && values.Contains(participant.WorkerId)));
         }
 
         if (teamIds is not null)
