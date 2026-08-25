@@ -45,6 +45,7 @@ public sealed class RoutingEntityTypeConfiguration : IEntityTypeConfiguration<Ro
         builder.Property(x => x.RequiresReporting).HasColumnName("requires_reporting").IsRequired().HasComment("Whether MES reporting is expected for this routing operation.");
         builder.Property(x => x.RequiresQualityInspection).HasColumnName("requires_quality_inspection").IsRequired().HasComment("Whether quality inspection is expected for this routing operation.");
         builder.Property(x => x.IsOutsourced).HasColumnName("is_outsourced").IsRequired().HasComment("Whether this routing operation is outsourced.");
+        builder.Property(x => x.RequiredSkillCode).HasColumnName("required_skill_code").HasMaxLength(100).HasComment("Optional MasterData skill code required to perform the routing operation, captured at routing release.");
         builder.HasIndex("routing_id", nameof(RoutingOperation.Sequence)).IsUnique();
     }
 }
