@@ -577,11 +577,14 @@ public sealed class InventoryDirectoryExternalPostgresFactAttribute : FactAttrib
 
 public sealed class LineSideInventoryBalanceExternalPostgresFactAttribute : FactAttribute
 {
+    internal const string MissingPostgresReason =
+        "Set NERV_IIP_TEST_POSTGRES to run the Inventory line-side balance external PostgreSQL test.";
+
     public LineSideInventoryBalanceExternalPostgresFactAttribute()
     {
-        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
-        {
-            Skip = "Set NERV_IIP_TEST_POSTGRES to run the Inventory line-side balance external PostgreSQL test.";
-        }
+        Skip = GetSkipReason(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"));
     }
+
+    internal static string? GetSkipReason(string? connectionString) =>
+        string.IsNullOrWhiteSpace(connectionString) ? MissingPostgresReason : null;
 }
