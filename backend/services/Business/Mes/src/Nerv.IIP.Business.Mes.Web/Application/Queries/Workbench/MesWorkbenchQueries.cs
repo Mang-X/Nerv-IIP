@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using ScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -50,7 +51,9 @@ public sealed class GetMesFoundationReadinessAreaQueryHandler(MesFoundationReadi
     }
 }
 
-public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext)
+public sealed class MesFoundationReadinessService(
+    ApplicationDbContext dbContext,
+    IMesQualityInspectionPlanReader qualityInspectionPlanReader)
 {
     public async Task<MesReadinessArea> GetAreaAsync(
         GetMesFoundationReadinessAreaQuery request,
@@ -59,7 +62,7 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
         var normalizedAreaCode = NormalizeAreaCode(request.AreaCode);
         var issues = normalizedAreaCode switch
         {
-            "quality" => BuildQualityIssues(request),
+            "quality" => await BuildQualityIssuesAsync(request, cancellationToken),
             "equipment" => await BuildEquipmentIssuesAsync(request, cancellationToken),
             _ => [],
         };
@@ -70,7 +73,9 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
     private static string NormalizeAreaCode(string areaCode) =>
         string.IsNullOrWhiteSpace(areaCode) ? "unknown" : areaCode.Trim().ToLowerInvariant();
 
-    private static IReadOnlyCollection<MesReadinessIssue> BuildQualityIssues(GetMesFoundationReadinessAreaQuery request)
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildQualityIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.SkuId) && string.IsNullOrWhiteSpace(request.ProductionVersionId))
         {
@@ -78,15 +83,30 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
             return [];
         }
 
+        var skuId = request.SkuId?.Trim();
+        // Quality 的现有列表读面只接受 skuCode，不接受 productionVersionId。
+        // 没有 SKU 时不能猜测生产版本对应的 SKU，因此按合同 fail-closed，不发起无范围查询。
+        var hasPublishedPlan = !string.IsNullOrWhiteSpace(skuId) &&
+            await qualityInspectionPlanReader.HasActiveOperationPlanAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                skuId,
+                request.WorkCenterCode,
+                cancellationToken);
+        if (hasPublishedPlan)
+        {
+            return [];
+        }
+
         return
         [
             NewIssue(
                 MesReadinessReasonCodes.QualityPlanMissing,
-                "未解析到已发布的 SKU/工序检验方案，首检、巡检和终检要求不能放行。",
+                "未找到当前组织、环境、SKU 与工序工作中心适用的已发布检验方案。",
                 "Quality",
                 "InspectionPlan",
                 request.ProductionVersionId ?? request.SkuId,
-                "维护并启用对应 SKU 与工序的检验方案"),
+                "维护并启用对应 SKU 与工序工作中心的检验方案"),
         ];
     }
 
