@@ -24,20 +24,20 @@ function Get-NervGeneratedSourceReason {
     $extension = [IO.Path]::GetExtension($fileName)
 
     foreach ($segment in $segments) {
-        if ([string]::Equals($segment, 'vendor', [StringComparison]::OrdinalIgnoreCase)) { return 'vendor-directory' }
+        if ([string]::Equals($segment, 'vendor', [StringComparison]::Ordinal)) { return 'vendor-directory' }
         foreach ($excludedSegment in @('bin', 'obj', 'node_modules', 'dist', 'coverage', 'artifacts')) {
-            if ([string]::Equals($segment, $excludedSegment, [StringComparison]::OrdinalIgnoreCase)) {
+            if ([string]::Equals($segment, $excludedSegment, [StringComparison]::Ordinal)) {
                 return 'build-or-dependency-directory'
             }
         }
     }
 
-    if ($normalizedPath.StartsWith('frontend/packages/api-client/src/generated/', [StringComparison]::OrdinalIgnoreCase)) {
+    if ($normalizedPath.StartsWith('frontend/packages/api-client/src/generated/', [StringComparison]::Ordinal)) {
         return 'generated-api-client'
     }
     if ([string]::Equals($extension, '.cs', [StringComparison]::OrdinalIgnoreCase)) {
         foreach ($segment in $segments) {
-            if ([string]::Equals($segment, 'Migrations', [StringComparison]::OrdinalIgnoreCase)) {
+            if ([string]::Equals($segment, 'Migrations', [StringComparison]::Ordinal)) {
                 return 'entity-framework-migration'
             }
         }

@@ -1055,6 +1055,10 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 8. 2026-06-03 PlatformGateway 已新增 `/api/console/v1/files/**` 管理 facade，覆盖上传会话创建、上传会话 complete、文件元数据列表/详情、download grant 创建和 2026-07-05 补入的用量查询；文件列表支持 purpose、uploader、created range、status、skip/take；Gateway 对外仍返回 `ResponseData<T>`，下游通过 internal service token 调用 FileStorage，并将 tus/download grant 相对传输 URL 重写为 Console facade 相对路径，不暴露内部 object key 或直连对象存储 URL。
 9. 2026-07-05 FileStorage 安全 hardening 已补齐：上传会话创建按 `FileStorage:PurposePolicies:{purpose}` 做 content type/扩展名 allowlist/blocklist 校验，按组织/环境/用途级 quota 拒绝超额上传；complete 会对 tus 本地字节执行实际大小、可选 checksum 和常见魔数复核；只有 `status == available` 的文件可通过 download grant content 兑换；正式文件可按用途 retention 先软删再按 `FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds` 物理清理。把 MinIO/S3 multipart 留待 post-MVP 部署联调是已被 ADR 0023 取代的历史阶段表述；现行已批准目标仍未实现，见本文件 #992 四层状态。2026-08-17 起 `FileStorage:PurposePolicies` 直接子键同时定义配置驱动的 purpose 注册目录，内置 `application-package`、`avatar`、`attachment`、`diagnostic-log`、`quality-evidence`、`maintenance-photo`、`engineering-document`；Domain 硬编码数组已移除，PostgreSQL metadata 实现、内部边界端点与 NvUI fixture 对齐同一目录，未注册值稳定返回 `file-purpose-not-registered` 及包含实际 purpose/配置路径的诊断。同日已按 owner 裁决删除病毒扫描运行时、公开契约字段和持久化列。2026-08-23 新增 `barcode-label-template`：只接受专用 JSON content type 与 `.json`，单文件上限 65,536 bytes、用途默认总量上限 8,388,608 bytes，owner 固定为 `business-barcode-label / label-template / {templateCode}`，并在创建与 complete 阶段要求相同 SHA-256 声明摘要；该 purpose 不配置自动 retention。UTF-8、无 BOM 与下载后实际字节摘要复核由 #2066 的 BarcodeLabel 消费链负责；FileStorage 仅在 tus lane 重算实际字节摘要，默认 `server-proxy` 没有字节 `PUT` endpoint。此项只扩展 FileStorage 配置策略与 metadata 合同，不交付 BarcodeLabel renderer、Gateway、打印配置或通用 provider 字节证明。
 
+### 源码规模增量治理
+
+运行 `pwsh scripts/check-source-size-governance.ps1 -BaseCommit "$(git merge-base origin/main HEAD)"` 可检查 C#、PowerShell、JavaScript、TypeScript 与 Vue 源码：新增文件不得超过 1000 物理行，阈值内存量不得越线，已超限存量不得继续增长；rename 保留 base 身份，未跟踪未忽略文件按新增处理。CI `Script Governance` 对 PR 使用 base SHA、对 main push 使用 before SHA，以完整 Git history 运行，并覆盖 scripts、backend、frontend、connector-hosts 与 infra 路由；base 缺失或全零时失败关闭。该能力不包含存量大文件拆分，也不证明 #1222 的 `BusinessServiceClients.cs`、#1224 的 `BusinessConsoleModels.cs` 或 #1923 的 `FullStackSessionRuntime.ps1` 已完成治理；这些 owner 票继续独立交付。门禁不提供 allowlist，存量文件需要增长时应先拆分或新增窄文件。
+
 ### 当前初步使用方式
 
 1. 根目录 `.\nerv.ps1 bootstrap` 已成为有网空白机器的预检/restore/本地 secrets 初始化入口；Windows 有网机器可用 `.\nerv.ps1 bootstrap -InstallMissing` 补齐缺失工具链，Docker Desktop 首次安装后仍需人工启动 daemon。根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出标准本地端口矩阵。
@@ -1068,8 +1072,6 @@ Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证�
 9. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
 10. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。
 11. 运行 `pwsh scripts/check-script-governance.ps1` 可验证脚本解析、分类声明、高风险命令 wrapper 和 legacy exemption 是否仍受控。
-
-源码规模增量治理可运行 `pwsh scripts/check-source-size-governance.ps1 -BaseCommit "$(git merge-base origin/main HEAD)"`：C#、PowerShell、JavaScript、TypeScript 与 Vue 新增文件不得超过 1000 物理行，阈值内存量不得越线，已超限存量不得继续增长；rename 保留 base 身份，未跟踪未忽略文件按新增处理。CI `Script Governance` 对 PR 使用 base SHA、对 main push 使用 before SHA，并以完整 Git history 失败关闭。该能力不包含存量大文件拆分，也不证明 #1222 的 `BusinessServiceClients.cs`、#1224 的 `BusinessConsoleModels.cs` 或 #1923 的 `FullStackSessionRuntime.ps1` 已完成治理；这些 owner 票继续独立交付。
 
 12. 运行 `pwsh scripts/verify-openapi-client-drift.ps1` 可重跑 Gateway OpenAPI 导出和前端 api-client 生成，并对 `frontend/packages/api-client/openapi/*.v1.json` 与 `frontend/packages/api-client/src/generated/**` 做 drift 门禁；GitHub CI 的 `OpenAPI/api-client Drift` job 使用同一入口。
 13. 运行 `pwsh scripts/check-script-compatibility.ps1` 可在 macOS/Linux 上记录脚本兼容门禁证据；Windows 本地只能使用 `-AllowWindows -FastOnly` 做 smoke，不作为兼容性声明依据。

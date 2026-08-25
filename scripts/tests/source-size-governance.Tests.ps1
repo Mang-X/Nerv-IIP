@@ -2,12 +2,14 @@
 #   Category: check
 #   SideEffects:
 #     - Loads the source-size governance policy library
+#     - Creates real Git repositories and child processes for contract fixtures
 #   Writes:
-#     - None
+#     - Operating-system temporary source-size fixture directories
 #   Cleanup:
-#     - None
+#     - Removes owned temporary fixtures in finally
 #   Requires:
 #     - PowerShell 7
+#     - Git
 
 $ErrorActionPreference = 'Stop'
 
@@ -23,7 +25,13 @@ function Assert-Equal {
         [Parameter(Mandatory)] [string] $Message
     )
 
-    if ($Actual -ne $Expected) {
+    $equal = if ($Actual -is [string] -and $Expected -is [string]) {
+        [string]::Equals([string]$Actual, [string]$Expected, [StringComparison]::Ordinal)
+    }
+    else {
+        [object]::Equals($Actual, $Expected)
+    }
+    if (-not $equal) {
         throw "$Message. Expected '$Expected', actual '$Actual'."
     }
 }
@@ -47,6 +55,8 @@ Assert-Equal (Get-NervSourcePhysicalLineCount -Text "one`n") 1 'Trailing LF does
 Assert-Equal (Get-NervSourcePhysicalLineCount -Text "one`r`ntwo") 2 'CRLF is one line boundary'
 # Mutation killed: ignoring classic-Mac CR line boundaries.
 Assert-Equal (Get-NervSourcePhysicalLineCount -Text "one`rtwo`r") 2 'CR boundaries are physical lines'
+# Mutation killed: replacing physical-line counting with non-empty-line counting.
+Assert-Equal (Get-NervSourcePhysicalLineCount -Text "one`n`n `ntwo") 4 'Empty and whitespace-only physical lines count'
 
 # Mutation killed: changing the new-file comparison from greater-than to greater-than-or-equal.
 Assert-True ($null -eq (Get-NervSourceSizeViolation -Status A -Path 'src/New.cs' -BaseLineCount $null -HeadLineCount 1000 -MaximumLines 1000)) 'New file at the limit must pass'
@@ -57,6 +67,12 @@ Assert-True ($null -eq (Get-NervSourceSizeViolation -Status M -Path 'src/Legacy.
 Assert-True ($null -eq (Get-NervSourceSizeViolation -Status M -Path 'src/Legacy.cs' -BaseLineCount 1200 -HeadLineCount 1100 -MaximumLines 1000)) 'Oversized legacy shrink must pass'
 # Mutation killed: allowing a file that starts within the limit to cross it.
 Assert-Equal (Get-NervSourceSizeViolation -Status M -Path 'src/Crosses.cs' -BaseLineCount 999 -HeadLineCount 1001 -MaximumLines 1000).Rule 'file-crosses-limit' 'Threshold crossing must fail'
+# Mutation killed: changing head > maximum to head >= maximum for existing files.
+Assert-True ($null -eq (Get-NervSourceSizeViolation -Status M -Path 'src/AtLimit.cs' -BaseLineCount 999 -HeadLineCount 1000 -MaximumLines 1000)) 'Modified file ending at the limit must pass'
+Assert-True ($null -eq (Get-NervSourceSizeViolation -Status R -Path 'src/RenamedAtLimit.cs' -BaseLineCount 999 -HeadLineCount 1000 -MaximumLines 1000)) 'Renamed file ending at the limit must pass'
+# Mutation killed: changing base <= maximum to base < maximum.
+Assert-Equal (Get-NervSourceSizeViolation -Status M -Path 'src/CrossesFromLimit.cs' -BaseLineCount 1000 -HeadLineCount 1001 -MaximumLines 1000).Rule 'file-crosses-limit' 'Modified file crossing from the exact limit must fail'
+Assert-Equal (Get-NervSourceSizeViolation -Status R -Path 'src/RenamedCrossesFromLimit.cs' -BaseLineCount 1000 -HeadLineCount 1001 -MaximumLines 1000).Rule 'file-crosses-limit' 'Renamed file crossing from the exact limit must fail'
 
 function Invoke-FixtureGit {
     param(
@@ -124,11 +140,25 @@ function Invoke-SourceSizeChecker {
             -Arguments (@('-NoProfile', '-File', $entrypointPath, '-BaseCommit', $BaseCommit, '-RepositoryRoot', $FixtureRoot) + $AdditionalArguments) `
             -WorkingDirectory $fixtureRoot `
             -Name 'source-size-checker-fixture'
-        return [pscustomobject]@{ Passed = $true; Message = [string]$result.Stdout }
+        return [pscustomobject]@{ Passed = $true; ExitCode = 0; Message = [string]$result.Stdout }
     }
     catch {
-        return [pscustomobject]@{ Passed = $false; Message = [string]$_.Exception.Message }
+        $rawExitCode = $_.Exception.Data['ExitCode']
+        $exitCode = if ([object]::ReferenceEquals($null, $rawExitCode)) { -1 } else { [int]$rawExitCode }
+        return [pscustomobject]@{ Passed = $false; ExitCode = $exitCode; Message = [string]$_.Exception.Message }
     }
+}
+
+function Assert-CheckerFailure {
+    param(
+        [Parameter(Mandatory)] [object] $Result,
+        [Parameter(Mandatory)] [string] $ExpectedFragment,
+        [Parameter(Mandatory)] [string] $Message
+    )
+
+    Assert-True (-not $Result.Passed) "$Message The checker unexpectedly passed."
+    Assert-True ($Result.ExitCode -ne 0) "$Message The checker did not preserve a nonzero exit code."
+    Assert-True $Result.Message.Contains($ExpectedFragment, [StringComparison]::Ordinal) "$Message Missing diagnostic '$ExpectedFragment'. Observed: $($Result.Message)"
 }
 
 function New-EmptySourceSizeGitFixture {
@@ -141,6 +171,9 @@ function New-EmptySourceSizeGitFixture {
 foreach ($governedPath in @(
     'src/MigrationsSupport.cs',
     'src/vendorized.ts',
+    'src/Bin/Domain.cs',
+    'src/Dist/Domain.ts',
+    'src/Artifacts/Domain.cs',
     'frontend/packages/api-client/src/business-console.ts',
     'src/Manual.cs'
 )) {
@@ -175,6 +208,8 @@ function Assert-SourceSizeWorkflowContract {
     Assert-True ([regex]::IsMatch($job, '(?ms)- name: Run source size governance check\s+timeout-minutes: 5\s+shell: pwsh\s+env:\s+BASE_SHA: \$\{\{ github.event_name == ''pull_request'' && github.event.pull_request.base.sha \|\| github.event.before \}\}\s+run: ./scripts/check-source-size-governance.ps1 -BaseCommit \$env:BASE_SHA')) 'Script Governance must run the live checker against the event base in an independent step'
     # Mutation killed: omitting frontend would let a frontend-only oversized source bypass the owner job.
     Assert-True $job.Contains("needs.impact-plan.outputs.frontend != 'false'", [StringComparison]::Ordinal) 'Script Governance routing must include frontend impact'
+    Assert-True $job.Contains("needs.impact-plan.outputs.connector_hosts != 'false'", [StringComparison]::Ordinal) 'Script Governance routing must include connector-host impact'
+    Assert-True $job.Contains("needs.impact-plan.outputs.infra != 'false'", [StringComparison]::Ordinal) 'Script Governance routing must include infrastructure impact'
     Assert-True $job.Contains('33 个 step', [StringComparison]::Ordinal) 'Script Governance budget must record 33 steps'
     Assert-True $job.Contains('3m checkout', [StringComparison]::Ordinal) 'Script Governance budget must retain the checkout component'
     Assert-True $job.Contains('32 × 5m', [StringComparison]::Ordinal) 'Script Governance budget must record 32 five-minute steps'
@@ -194,11 +229,27 @@ $fixtures = [Collections.Generic.List[string]]::new()
 try {
     $newOversized = New-SourceSizeGitFixture -BaseLineCount $null -HeadLineCount 1001
     $fixtures.Add($newOversized.Root)
-    Assert-True (-not (Invoke-SourceSizeChecker -FixtureRoot $newOversized.Root -BaseCommit $newOversized.BaseCommit).Passed) 'A new 1001-line source file must fail'
+    $newOversizedResult = Invoke-SourceSizeChecker -FixtureRoot $newOversized.Root -BaseCommit $newOversized.BaseCommit
+    Assert-CheckerFailure -Result $newOversizedResult -ExpectedFragment 'rule=new-file-over-limit' -Message 'A new 1001-line source file must fail.'
+
+    $defaultExtensionFixture = New-EmptySourceSizeGitFixture
+    $fixtures.Add($defaultExtensionFixture.Root)
+    foreach ($extension in @('.cs', '.ps1', '.psm1', '.js', '.jsx', '.ts', '.tsx', '.vue')) {
+        $defaultExtensionPath = Join-Path $defaultExtensionFixture.Root "src/Governed$extension"
+        Write-FixtureSource -Path $defaultExtensionPath -LineCount 1001
+        $defaultExtensionResult = Invoke-SourceSizeChecker -FixtureRoot $defaultExtensionFixture.Root -BaseCommit $defaultExtensionFixture.BaseCommit
+        Assert-CheckerFailure -Result $defaultExtensionResult -ExpectedFragment "path=src/Governed$extension" -Message "Production default extension must be governed: $extension."
+        Remove-Item -LiteralPath $defaultExtensionPath -Force
+    }
+
+    $newAtLimit = New-SourceSizeGitFixture -BaseLineCount $null -HeadLineCount 1000
+    $fixtures.Add($newAtLimit.Root)
+    Assert-True (Invoke-SourceSizeChecker -FixtureRoot $newAtLimit.Root -BaseCommit $newAtLimit.BaseCommit).Passed 'An untracked source at exactly 1000 lines must pass'
 
     $legacyGrowth = New-SourceSizeGitFixture -BaseLineCount 1200 -HeadLineCount 1201
     $fixtures.Add($legacyGrowth.Root)
-    Assert-True (-not (Invoke-SourceSizeChecker -FixtureRoot $legacyGrowth.Root -BaseCommit $legacyGrowth.BaseCommit).Passed) 'An oversized legacy source file must not grow'
+    $legacyGrowthResult = Invoke-SourceSizeChecker -FixtureRoot $legacyGrowth.Root -BaseCommit $legacyGrowth.BaseCommit
+    Assert-CheckerFailure -Result $legacyGrowthResult -ExpectedFragment 'rule=oversized-file-growth' -Message 'An oversized legacy source file must not grow.'
 
     $legacyHold = New-SourceSizeGitFixture -BaseLineCount 1200 -HeadLineCount 1200
     $fixtures.Add($legacyHold.Root)
@@ -207,7 +258,8 @@ try {
 
     $thresholdCrossing = New-SourceSizeGitFixture -BaseLineCount 999 -HeadLineCount 1001
     $fixtures.Add($thresholdCrossing.Root)
-    Assert-True (-not (Invoke-SourceSizeChecker -FixtureRoot $thresholdCrossing.Root -BaseCommit $thresholdCrossing.BaseCommit).Passed) 'A source file must not cross the threshold'
+    $thresholdCrossingResult = Invoke-SourceSizeChecker -FixtureRoot $thresholdCrossing.Root -BaseCommit $thresholdCrossing.BaseCommit
+    Assert-CheckerFailure -Result $thresholdCrossingResult -ExpectedFragment 'rule=file-crosses-limit' -Message 'A source file must not cross the threshold.'
 
     $excludedSources = New-EmptySourceSizeGitFixture
     $fixtures.Add($excludedSources.Root)
@@ -235,14 +287,15 @@ try {
     Write-FixtureSource -Path $manualPath -LineCount 1001
     $manualText = [IO.File]::ReadAllText($manualPath)
     [IO.File]::WriteAllText($manualPath, "// <auto-generated>`n" + $manualText, [Text.UTF8Encoding]::new($false))
-    Assert-True (-not (Invoke-SourceSizeChecker -FixtureRoot $manualHeader.Root -BaseCommit $manualHeader.BaseCommit).Passed) 'A generated header alone must not exempt ordinary source'
+    $manualHeaderResult = Invoke-SourceSizeChecker -FixtureRoot $manualHeader.Root -BaseCommit $manualHeader.BaseCommit
+    Assert-CheckerFailure -Result $manualHeaderResult -ExpectedFragment 'path=src/Manual.cs' -Message 'A generated header alone must not exempt ordinary source.'
 
     $renameGrowth = New-SourceSizeGitFixture -BaseLineCount 1200 -HeadLineCount 1200
     $fixtures.Add($renameGrowth.Root)
     Invoke-FixtureGit -WorkingDirectory $renameGrowth.Root -Arguments @('mv', 'src/Governed.cs', 'src/Renamed.cs') -Name 'source-size-git-rename' | Out-Null
     Write-FixtureSource -Path (Join-Path $renameGrowth.Root 'src/Renamed.cs') -LineCount 1201
     $renameResult = Invoke-SourceSizeChecker -FixtureRoot $renameGrowth.Root -BaseCommit $renameGrowth.BaseCommit
-    Assert-True (-not $renameResult.Passed) 'Rename must retain base identity and reject growth'
+    Assert-CheckerFailure -Result $renameResult -ExpectedFragment 'rule=oversized-file-growth' -Message 'Rename must retain base identity and reject growth.'
     Assert-True $renameResult.Message.Contains('status=R', [StringComparison]::Ordinal) 'Rename violation must report status R'
 
     $deletedSource = New-SourceSizeGitFixture -BaseLineCount 1200 -HeadLineCount 1200
@@ -258,27 +311,27 @@ try {
     $orderedViolations = New-EmptySourceSizeGitFixture
     $fixtures.Add($orderedViolations.Root)
     Write-FixtureSource -Path (Join-Path $orderedViolations.Root 'src/Zed.cs') -LineCount 1001
-    Write-FixtureSource -Path (Join-Path $orderedViolations.Root 'src/Alpha.cs') -LineCount 1001
+    Write-FixtureSource -Path (Join-Path $orderedViolations.Root 'src/alpha.cs') -LineCount 1001
     $orderedResult = Invoke-SourceSizeChecker -FixtureRoot $orderedViolations.Root -BaseCommit $orderedViolations.BaseCommit
-    Assert-True (-not $orderedResult.Passed) 'Multiple oversized sources must fail'
-    Assert-True ($orderedResult.Message.IndexOf('src/Alpha.cs', [StringComparison]::Ordinal) -lt $orderedResult.Message.IndexOf('src/Zed.cs', [StringComparison]::Ordinal)) 'Violation diagnostics must use ordinal path order'
+    Assert-CheckerFailure -Result $orderedResult -ExpectedFragment 'rule=new-file-over-limit' -Message 'Multiple oversized sources must fail.'
+    Assert-True ($orderedResult.Message.IndexOf('src/Zed.cs', [StringComparison]::Ordinal) -lt $orderedResult.Message.IndexOf('src/alpha.cs', [StringComparison]::Ordinal)) 'Violation diagnostics must use ordinal path order'
 
     $secretFixture = New-EmptySourceSizeGitFixture
     $fixtures.Add($secretFixture.Root)
     Write-FixtureSource -Path (Join-Path $secretFixture.Root 'src/Secret.cs') -LineCount 1001
     [IO.File]::AppendAllText((Join-Path $secretFixture.Root 'src/Secret.cs'), "token=super-secret`n", [Text.UTF8Encoding]::new($false))
     $secretResult = Invoke-SourceSizeChecker -FixtureRoot $secretFixture.Root -BaseCommit $secretFixture.BaseCommit
-    Assert-True (-not $secretResult.Passed) 'Oversized secret fixture must fail'
+    Assert-CheckerFailure -Result $secretResult -ExpectedFragment 'path=src/Secret.cs' -Message 'Oversized secret fixture must fail.'
     Assert-True (-not $secretResult.Message.Contains('super-secret', [StringComparison]::Ordinal)) 'Diagnostics must not disclose source content'
 
     $missingBase = Invoke-SourceSizeChecker -FixtureRoot $markdownOnly.Root -BaseCommit ('0' * 40)
-    Assert-True (-not $missingBase.Passed) 'A missing base commit must fail closed'
+    Assert-CheckerFailure -Result $missingBase -ExpectedFragment 'Source size governance check failed closed' -Message 'A missing base commit must fail closed.'
 
     $invalidMaximum = Invoke-SourceSizeChecker -FixtureRoot $markdownOnly.Root -BaseCommit $markdownOnly.BaseCommit -AdditionalArguments @('-MaximumLines', '0')
-    Assert-True (-not $invalidMaximum.Passed) 'A non-positive maximum must fail closed'
+    Assert-CheckerFailure -Result $invalidMaximum -ExpectedFragment 'minimum allowed range of 1' -Message 'A non-positive maximum must fail closed.'
 
     $emptyExtension = Invoke-SourceSizeChecker -FixtureRoot $markdownOnly.Root -BaseCommit $markdownOnly.BaseCommit -AdditionalArguments @('-GovernedExtension', '')
-    Assert-True (-not $emptyExtension.Passed) 'An empty extension configuration must fail closed'
+    Assert-CheckerFailure -Result $emptyExtension -ExpectedFragment 'argument is null, empty' -Message 'An empty extension configuration must fail closed.'
 }
 finally {
     foreach ($fixture in $fixtures) {

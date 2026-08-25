@@ -339,9 +339,9 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 `scripts/check-source-size-governance.ps1 -BaseCommit <sha>` 对 C#、PowerShell、JavaScript、TypeScript 和 Vue 源码执行 1000 物理行增量门禁。它不提交存量 baseline 或 allowlist，而是直接比较 Git base 与当前工作树：新增文件超过 1000 行失败；原本不超过 1000 行的文件越线失败；原本已经超过 1000 行的文件允许持平或缩小，但继续增长失败。rename 保留旧路径的 base 身份，删除忽略，未跟踪且未被 `.gitignore` 排除的文件按新增文件处理。
 
-排除只接受可审计的精确形态：EF `Migrations` 路径、`*.Designer.cs`、`*.g.cs`、`*.generated.*`、`frontend/packages/api-client/src/generated/**`，以及完整的 `vendor`、`bin`、`obj`、`node_modules`、`dist`、`coverage`、`artifacts` 路径段。`MigrationsSupport.cs`、`vendorized.ts`、稳定 barrel `frontend/packages/api-client/src/business-console.ts` 仍受管；普通文件仅添加 `auto-generated` 头不能自我豁免。base 不存在、Git diff/读取失败、rename 结构冲突、重复 head path 或扩展名配置为空均失败关闭；诊断按 ordinal 路径排序，只输出规则、路径与行数，不输出源码内容。
+排除只接受可审计的精确形态：EF `Migrations` 路径、`*.Designer.cs`、`*.g.cs`、`*.generated.*`、`frontend/packages/api-client/src/generated/**`，以及完整且小写精确匹配的 `vendor`、`bin`、`obj`、`node_modules`、`dist`、`coverage`、`artifacts` 路径段。`MigrationsSupport.cs`、`vendorized.ts`、`Bin`/`Dist`/`Artifacts` 业务目录、稳定 barrel `frontend/packages/api-client/src/business-console.ts` 仍受管；检查器不读取文件头，普通文件仅添加 `auto-generated` 头不能自我豁免。base 不存在、全零 base、Git diff/读取失败、rename 结构冲突、重复 head path 或扩展名配置为空均失败关闭；main ref 新建或 force-push 若使 `github.event.before` 为全零 SHA，也会按此规则把门禁置红，而不是退化为无 base 检查。诊断按 ordinal 路径排序，只输出规则、路径与行数，不输出源码内容。
 
-`.github/workflows/ci.yml` 的 `Script Governance` job 以 `fetch-depth: 0` checkout，在独立 step 先运行 `scripts/tests/source-size-governance.Tests.ps1`，再以 PR 的 `github.event.pull_request.base.sha` 或 main push 的 `github.event.before` 运行生产 checker。job 同时消费 scripts、backend 与 frontend 影响信号；测试 step 与生产检查 step 都不得吞退出码。该门禁只阻止新增规模债务和存量继续恶化，不证明既有 God Class、巨型测试或巨型脚本已拆分。
+`.github/workflows/ci.yml` 的 `Script Governance` job 以 `fetch-depth: 0` checkout，在独立 step 先运行 `scripts/tests/source-size-governance.Tests.ps1`，再以 PR 的 `github.event.pull_request.base.sha` 或 main push 的 `github.event.before` 运行生产 checker。job 同时消费 scripts、backend、frontend、connector-hosts 与 infra 影响信号；测试 step 与生产检查 step 都不得吞退出码。该门禁只阻止新增规模债务和存量继续恶化，不证明既有 God Class、巨型测试或巨型脚本已拆分。它有意不提供 baseline、allowlist 或 owner-issue 豁免；存量超限文件需要新增源码时，正解是先拆分文件或把新增职责落到新的窄文件，而不是扩充豁免。
 
 ## 跨平台兼容门禁
 

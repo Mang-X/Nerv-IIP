@@ -62,7 +62,9 @@ function ConvertFrom-SourceSizeGitDiff {
             $index += 2
             $status = 'R'
         }
-        elseif (@('A', 'M', 'D') -contains $statusToken) {
+        elseif ([string]::Equals($statusToken, 'A', [StringComparison]::Ordinal) -or
+            [string]::Equals($statusToken, 'M', [StringComparison]::Ordinal) -or
+            [string]::Equals($statusToken, 'D', [StringComparison]::Ordinal)) {
             if ($index -ge $tokens.Count) { throw "Status '$statusToken' is missing a path." }
             $headPath = [string]$tokens[$index]
             $basePath = $headPath
@@ -153,6 +155,6 @@ try {
 }
 catch {
     $safeMessage = Protect-ScriptAutomationText ([string]$_.Exception.Message)
-    Write-Error "Source size governance check failed closed: $safeMessage"
+    [Console]::Error.WriteLine("Source size governance check failed closed: $safeMessage")
     exit 1
 }

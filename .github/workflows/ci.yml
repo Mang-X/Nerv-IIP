@@ -2109,7 +2109,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.frontend != 'false') }}
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.frontend != 'false' || needs.impact-plan.outputs.connector_hosts != 'false' || needs.impact-plan.outputs.infra != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3

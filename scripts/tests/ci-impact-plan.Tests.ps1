@@ -78,7 +78,7 @@ function Assert-ConditionalRoutingWorkflow {
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
         'redis-cap-transport-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}"
-        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.frontend != 'false') }}"
+        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.frontend != 'false' || needs.impact-plan.outputs.connector_hosts != 'false' || needs.impact-plan.outputs.infra != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
