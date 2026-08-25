@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825150932_AddMesCollaborativeLaborAllocation")]
+    partial class AddMesCollaborativeLaborAllocation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -492,12 +495,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Material issue lifecycle status within MES.");
 
-                    b.Property<string>("SubstitutedMaterialId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("substituted_material_id")
-                        .HasComment("Optional primary material SKU replaced by the actually issued material; reserved for substitute issue audit activation.");
-
                     b.Property<string>("TargetLocationCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -647,14 +644,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("staged_quantity")
                         .HasComment("WMS staged quantity snapshot for this requirement.");
-
-                    b.Property<string>("SubstituteMaterialIdsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("[]")
-                        .HasColumnName("substitute_material_ids_json")
-                        .HasComment("JSON array of normalized substitute material ids produced by the MES MBOM snapshot adapter; consumers are MES readiness and material issue flows; compatibility is an append-only candidate list.");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -817,12 +806,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("planned_quantity")
                         .HasComment("Planned operation quantity used as the default good quantity for operation completion inspection triggers.");
-
-                    b.Property<string>("RequiredSkillCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("required_skill_code")
-                        .HasComment("Optional MasterData skill code frozen from the published routing snapshot when the work order is converted.");
 
                     b.Property<bool>("RequiresQualityInspection")
                         .HasColumnType("boolean")

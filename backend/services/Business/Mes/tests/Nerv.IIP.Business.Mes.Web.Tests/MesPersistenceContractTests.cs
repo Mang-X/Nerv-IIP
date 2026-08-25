@@ -18,6 +18,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
@@ -2288,6 +2289,103 @@ public sealed class MesPersistenceContractTests
 
         Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
         Assert.Equal(now.AddMinutes(40), task.ExistingEndUtc);
+    }
+
+    [Fact]
+    public async Task Completed_production_report_persists_registered_participant_labor_allocations()
+    {
+        var services = CreateServices(nameof(Completed_production_report_persists_registered_participant_labor_allocations));
+        var now = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-COLLAB-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8)));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
+                TimeSpan.FromMinutes(40), now, null));
+            await dbContext.SaveChangesAsync();
+
+            await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand(
+                    "org-001", "env-dev", "OP-COLLAB-10", "worker-a", null, "shift-a", now,
+                    AssignedUserName: "Alice",
+                    Participants:
+                    [
+                        new DispatchParticipantInput("worker-a", "Alice", 60m),
+                        new DispatchParticipantInput("worker-b", "Bob", 40m),
+                    ]),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+
+            await new RecordProductionReportCommandHandler(dbContext).Handle(
+                new RecordProductionReportCommand(
+                    "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
+                    10m, 0m, true, now.AddMinutes(40), "report-collab-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var participants = await recreatedDbContext.OperationTaskParticipants
+            .OrderBy(x => x.WorkerId)
+            .ToArrayAsync();
+        Assert.Collection(
+            participants,
+            first => Assert.Equal(("worker-a", 60m), (first.WorkerId, first.SharePercent)),
+            second => Assert.Equal(("worker-b", 40m), (second.WorkerId, second.SharePercent)));
+
+        var reportNo = await recreatedDbContext.ProductionReports.Select(x => x.ReportNo).SingleAsync();
+        var detail = await new GetProductionReportQueryHandler(recreatedDbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", reportNo),
+            CancellationToken.None);
+        Assert.Collection(
+            detail.LaborAllocations,
+            first => Assert.Equal(("worker-a", TimeSpan.FromMinutes(24).Ticks), (first.WorkerId, first.AllocatedLaborTicks)),
+            second => Assert.Equal(("worker-b", TimeSpan.FromMinutes(16).Ticks), (second.WorkerId, second.AllocatedLaborTicks)));
+        Assert.Equal(TimeSpan.FromMinutes(40).Ticks, detail.LaborAllocations.Sum(x => x.AllocatedLaborTicks));
+    }
+
+    [Fact]
+    public async Task Stage_production_report_does_not_allocate_labor_and_legacy_assignee_falls_back_to_full_share_on_completion()
+    {
+        var services = CreateServices(nameof(Stage_production_report_does_not_allocate_labor_and_legacy_assignee_falls_back_to_full_share_on_completion));
+        var now = DateTimeOffset.Parse("2026-08-25T09:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-LEGACY-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8)));
+        var task = OperationTask.Create(
+            "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+            OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
+            TimeSpan.FromMinutes(40), now, null);
+        task.Assign("legacy-worker", null, "shift-a", now, assignedUserName: "Legacy Worker");
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordProductionReportCommandHandler(dbContext);
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+                4m, 0m, false, now.AddMinutes(10), "report-stage-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Empty(await dbContext.ProductionReportLaborAllocations.ToArrayAsync());
+
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+                6m, 0m, true, now.AddMinutes(40), "report-complete-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var allocation = Assert.Single(await dbContext.ProductionReportLaborAllocations.ToArrayAsync());
+        Assert.Equal("legacy-worker", allocation.WorkerId);
+        Assert.Equal("Legacy Worker", allocation.WorkerName);
+        Assert.Equal(100m, allocation.SharePercent);
+        Assert.Equal(TimeSpan.FromMinutes(40).Ticks, allocation.AllocatedLaborTicks);
     }
 
     [Fact]

@@ -4857,7 +4857,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? ShiftId,
     string IdempotencyKey,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4866,7 +4867,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
 public sealed record BusinessConsoleMesOperationTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,
@@ -4944,7 +4946,8 @@ public sealed record BusinessConsoleMesProductionReportDetailRequest(
 
 public sealed record BusinessConsoleMesProductionReportDetailResponse(
     BusinessConsoleMesProductionReportDetail Report,
-    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots,
+    IReadOnlyCollection<BusinessConsoleMesLaborAllocation> LaborAllocations);
 
 public sealed record BusinessConsoleMesProductionReportDetail(
     string ProductionReportId,
