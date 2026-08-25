@@ -3,6 +3,7 @@ using FluentValidation;
 using System.Net;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.Quality;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.ServiceAuth;
 
@@ -1309,7 +1310,7 @@ public sealed class ListBusinessConsoleQualityReasonCodesEndpoint(
 [BusinessGatewayOperationId("listBusinessConsoleQualityScrapReasonCodes")]
 public sealed class ListBusinessConsoleQualityScrapReasonCodesEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessQualityClient quality,
+    IBusinessQualityScrapReasonCodeClient quality,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleScrapQualityReasonCodeListRequest, BusinessConsoleQualityReasonListResponse>(
         auth,

@@ -339,13 +339,16 @@ try {
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 15) 'The Quality member must freeze exactly its fifteen governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
-    foreach ($qualitySource in @(
+    $qualityLaneSources = @(
             'PeriodicInspectionPostgresProfileTests.cs',
             'QualityCalibrationRecordQueryTests.cs',
             'QualityCapaRedrivePostgresProfileTests.cs',
             'QualityInspectionTaskPostgresProfileTests.cs',
+            'QualityReasonPostgresProfileTests.cs',
             'QualityReinspectionPostgresProfileTests.cs',
-            'QualitySpcAnalysisTests.cs')) {
+            'QualitySpcAnalysisTests.cs')
+    Assert-Contract ($qualityLaneSources -contains 'QualityReasonPostgresProfileTests.cs') 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
+    foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
         Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $qualitySourcePath -InnerDatabaseFactory 'QualityPostgresTestDatabase.CreateAsync'
@@ -354,16 +357,10 @@ try {
     # 直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
     # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
     # 只扫 InspectionTask 一个文件会留下盲区：SpcAnalysis 的 CreatePostgresProvider 与 Calibration 的
-    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部六个
+    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部七个
     # Quality lane 源，正则同时接受常量与字面量两种钉法。
     $qualityPinnedBuilders = 0
-    foreach ($qualitySource in @(
-            'PeriodicInspectionPostgresProfileTests.cs',
-            'QualityCalibrationRecordQueryTests.cs',
-            'QualityCapaRedrivePostgresProfileTests.cs',
-            'QualityInspectionTaskPostgresProfileTests.cs',
-            'QualityReinspectionPostgresProfileTests.cs',
-            'QualitySpcAnalysisTests.cs')) {
+    foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourceText = [IO.File]::ReadAllText((Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"))
         $historyOverrides = ([regex]::Matches($qualitySourceText, 'MigrationsHistoryTable\("__EFMigrationsHistory", (?:QualityFacts\.Schema|"quality")\)')).Count
         $rawNpgsqlBuilders = ([regex]::Matches($qualitySourceText, 'UseNpgsql\(')).Count

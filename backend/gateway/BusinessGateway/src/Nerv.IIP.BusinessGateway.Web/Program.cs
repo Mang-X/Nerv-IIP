@@ -11,6 +11,7 @@ using Microsoft.Extensions.Http.Resilience;
 using Nerv.IIP.BusinessGateway.Web;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.Quality;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
@@ -98,6 +99,10 @@ builder.Services.AddHttpClient<IBusinessInventoryClient, HttpBusinessInventoryCl
     client.BaseAddress = inventoryBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessQualityClient, HttpBusinessQualityClient>(client =>
+{
+    client.BaseAddress = qualityBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessQualityScrapReasonCodeClient, HttpBusinessQualityScrapReasonCodeClient>(client =>
 {
     client.BaseAddress = qualityBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();

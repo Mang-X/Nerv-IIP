@@ -26,6 +26,8 @@ public sealed class QualityReasonPostgresProfileTests
         dbContext.QualityReasons.AddRange(
             QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-A", "Surface A", "Appearance", "major", "scrap", true),
             QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-B", "Surface B", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-DISABLED", "Surface Disabled", "Appearance", "major", "scrap", false),
+            QualityReason.Create("org-001", "env-dev", "SCRAP-DENT", "Dent", "Appearance", "major", "scrap", true),
             QualityReason.Create("org-001", "env-dev", "REWORK-SURFACE", "Surface Rework", "Appearance", "minor", "rework", true),
             QualityReason.Create("org-001", "env-test", "SCRAP-SURFACE-ENV", "Surface Other Environment", "Appearance", "major", "scrap", true),
             QualityReason.Create("org-002", "env-dev", "SCRAP-SURFACE-ORG", "Surface Other Organization", "Appearance", "major", "scrap", true));
@@ -40,5 +42,14 @@ public sealed class QualityReasonPostgresProfileTests
         Assert.Equal(2, response.Total);
         Assert.Equal("scrap", item.DefaultDisposition);
         Assert.True(item.Enabled);
+        Assert.DoesNotContain(response.Items, x => x.ReasonCode == "SCRAP-SURFACE-DISABLED");
+        Assert.DoesNotContain(response.Items, x => x.ReasonCode == "SCRAP-DENT");
+
+        var emptyPage = await new ListScrapQualityReasonCodesQueryHandler(dbContext).Handle(
+            new ListScrapQualityReasonCodesQuery("org-001", "env-dev", "surface", Skip: 2, Take: 1),
+            CancellationToken.None);
+
+        Assert.Empty(emptyPage.Items);
+        Assert.Equal(2, emptyPage.Total);
     }
 }

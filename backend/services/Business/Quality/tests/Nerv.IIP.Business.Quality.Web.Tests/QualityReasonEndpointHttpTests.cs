@@ -32,6 +32,8 @@ public sealed class QualityReasonEndpointHttpTests
             dbContext.QualityReasons.AddRange(
                 QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-A", "Surface A", "Appearance", "major", "scrap", true),
                 QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-B", "Surface B", "Appearance", "major", "scrap", true),
+                QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-DISABLED", "Surface Disabled", "Appearance", "major", "scrap", false),
+                QualityReason.Create("org-001", "env-dev", "SCRAP-DENT", "Dent", "Appearance", "major", "scrap", true),
                 QualityReason.Create("org-001", "env-dev", "REWORK-SURFACE", "Surface Rework", "Appearance", "minor", "rework", true),
                 QualityReason.Create("org-001", "env-test", "SCRAP-SURFACE-ENV", "Surface Other Environment", "Appearance", "major", "scrap", true),
                 QualityReason.Create("org-002", "env-dev", "SCRAP-SURFACE-ORG", "Surface Other Organization", "Appearance", "major", "scrap", true));
@@ -50,6 +52,17 @@ public sealed class QualityReasonEndpointHttpTests
         Assert.Equal(2, data.Total);
         Assert.Equal("scrap", item.DefaultDisposition);
         Assert.True(item.Enabled);
+        Assert.DoesNotContain(data.Items, x => x.ReasonCode == "SCRAP-SURFACE-DISABLED");
+        Assert.DoesNotContain(data.Items, x => x.ReasonCode == "SCRAP-DENT");
+
+        using var emptyPageResponse = await client.GetAsync(
+            "/api/business/v1/quality/scrap-reason-codes?organizationId=org-001&environmentId=env-dev&search=surface&skip=2&take=1");
+
+        Assert.Equal(HttpStatusCode.OK, emptyPageResponse.StatusCode);
+        var emptyPageEnvelope = await emptyPageResponse.Content.ReadFromJsonAsync<ResponseDataEnvelope<QualityReasonListResponse>>();
+        Assert.NotNull(emptyPageEnvelope?.Data);
+        Assert.Empty(emptyPageEnvelope!.Data!.Items);
+        Assert.Equal(2, emptyPageEnvelope.Data.Total);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

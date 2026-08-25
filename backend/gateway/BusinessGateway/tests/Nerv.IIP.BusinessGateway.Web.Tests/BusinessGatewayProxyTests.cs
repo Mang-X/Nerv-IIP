@@ -12,6 +12,7 @@ using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.Quality;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
@@ -1383,6 +1384,8 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessQualityClient>();
             services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessQualityScrapReasonCodeClient>();
+            services.AddSingleton<IBusinessQualityScrapReasonCodeClient>(quality);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -7510,7 +7513,7 @@ public sealed class BusinessGatewayProxyTests
             code = 0,
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
-        var client = new HttpBusinessQualityClient(httpClient);
+        var client = new HttpBusinessQualityScrapReasonCodeClient(httpClient);
 
         var response = await client.ListScrapQualityReasonCodesAsync(
             "internal-token-001",
@@ -11395,7 +11398,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     }
 }
 
-internal sealed class RecordingQualityClient : IBusinessQualityClient
+internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusinessQualityScrapReasonCodeClient
 {
     public BusinessConsoleNcrCloseRequest? LastCloseNcrRequest { get; private set; }
     public string? LastCloseNcrActor { get; private set; }
