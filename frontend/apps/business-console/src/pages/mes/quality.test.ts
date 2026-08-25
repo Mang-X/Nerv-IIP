@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   operationTasks: [] as Array<Record<string, unknown>>,
   qualityItems: [] as Array<Record<string, unknown>>,
   routeQuery: {} as Record<string, string>,
+  organizationId: 'org-1',
+  environmentId: 'prod',
   writeScopeReady: true,
   writeScopeId: 'WC-WRITE',
   writeScopeMessage: '',
@@ -76,7 +78,16 @@ vi.mock('@/composables/useBusinessMes', () => ({
   useMesOperationTasks: () => {
     const operationTasks = shallowRef([...state.operationTasks])
     return {
-      filters: reactive({ organizationId: 'org-1', environmentId: 'prod', skip: 0, take: 20 }),
+      filters: reactive({
+        get organizationId() {
+          return state.organizationId
+        },
+        get environmentId() {
+          return state.environmentId
+        },
+        skip: 0,
+        take: 20,
+      }),
       operationTasks,
       operationTasksError: shallowRef(undefined),
       operationTasksPending: shallowRef(false),
@@ -90,7 +101,16 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }
   },
   useMesRelatedQualityItems: () => ({
-    filters: reactive({ organizationId: 'org-1', environmentId: 'prod', skip: 0, take: 20 }),
+    filters: reactive({
+      get organizationId() {
+        return state.organizationId
+      },
+      get environmentId() {
+        return state.environmentId
+      },
+      skip: 0,
+      take: 20,
+    }),
     qualityItems: computed(() => state.qualityItems),
     qualityItemsError: shallowRef(undefined),
     qualityItemsPending: shallowRef(false),
@@ -233,6 +253,8 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     ]
     state.qualityItems = []
     state.routeQuery = {}
+    state.organizationId = 'org-1'
+    state.environmentId = 'prod'
     state.writeScopeReady = true
     state.writeScopeId = 'WC-WRITE'
     state.writeScopeMessage = ''
@@ -429,6 +451,42 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       expect(firstPayload.recordedAtUtc).toBe('2026-08-26T01:02:03.000Z')
       expect(firstPayload.idempotencyKey).toBe('defect-intent-key')
       expect(makeIdempotencyKey).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('starts a new frozen intent when Business Context changes after a lost response', async () => {
+    vi.useFakeTimers()
+    try {
+      makeIdempotencyKey
+        .mockReturnValueOnce('defect-intent-org-a')
+        .mockReturnValueOnce('defect-intent-org-b')
+      vi.setSystemTime(new Date('2026-08-26T01:02:03.000Z'))
+      recordDefect.mockRejectedValueOnce({ message: '响应丢失', status: 0 })
+      const wrapper = mountPage()
+      await button(wrapper, '登记缺陷').trigger('click')
+      await fillValidForm(wrapper, 'operation:OP-2')
+
+      await submitForm(wrapper)
+      await flushPromises()
+
+      state.organizationId = 'org-2'
+      state.environmentId = 'staging'
+      vi.setSystemTime(new Date('2026-08-26T02:02:03.000Z'))
+      await submitForm(wrapper)
+      await flushPromises()
+
+      expect(recordDefect).toHaveBeenCalledTimes(2)
+      expect(recordDefect.mock.calls[0]?.[0]).toMatchObject({
+        idempotencyKey: 'defect-intent-org-a',
+        recordedAtUtc: '2026-08-26T01:02:03.000Z',
+      })
+      expect(recordDefect.mock.calls[1]?.[0]).toMatchObject({
+        idempotencyKey: 'defect-intent-org-b',
+        recordedAtUtc: '2026-08-26T02:02:03.000Z',
+      })
+      expect(makeIdempotencyKey).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }

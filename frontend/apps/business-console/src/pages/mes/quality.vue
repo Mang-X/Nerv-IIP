@@ -326,6 +326,8 @@ async function submitDefect() {
   }
 
   const fingerprint = JSON.stringify({
+    organizationId: filters.organizationId.trim(),
+    environmentId: filters.environmentId.trim(),
     workOrderId: latestTarget.workOrderId,
     operationTaskId: latestTarget.operationTaskId ?? null,
     defectCode,
