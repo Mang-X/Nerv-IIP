@@ -209,6 +209,8 @@ function readReceiptOutcome(response: unknown, action: string): 'accepted' | 'co
   }
 
   const receipt = response.data.operationReceipt
+  // 当前 handover gateway 只保证 accepted=true，operationReceipt 仍可能为空；此响应本身就是受理回执。
+  if (receipt == null) return 'accepted'
   if (!isRecord(receipt) || (receipt.outcome !== 'accepted' && receipt.outcome !== 'confirmed')) {
     throw new Error(`${action}未返回有效回执，请刷新列表核实后再重试。`)
   }
@@ -226,8 +228,10 @@ function receiptMessage(action: 'create' | 'accept', outcome: 'accepted' | 'conf
 async function refreshAfterWrite() {
   try {
     await refreshHandovers()
+    return true
   } catch (error) {
     notifyError(error, '班次交接列表刷新失败，请稍后手动刷新。')
+    return false
   }
 }
 
@@ -265,18 +269,22 @@ const acceptDialogOpen = ref(false)
 const acceptTarget = ref<HandoverRow | null>(null)
 const acceptPendingId = ref<string | null>(null)
 const acceptIdempotencyKeys = new Map<string, string>()
+// accept 当前没有服务端 replay 回执；网络结果不确定时锁住该行，避免再次触发状态机。
+const acceptOutcomeUnknownIds = new Set<string>()
 
 function isOpenHandover(row: HandoverRow) {
   return (row.handoverStatus ?? '').toLowerCase() === 'open'
 }
 
 function canAcceptRow(row: HandoverRow) {
+  const handoverId = row.handoverId?.trim()
   return (
     canManageHandovers.value &&
     handoverContextReady.value &&
     isOpenHandover(row) &&
-    Boolean(row.handoverId?.trim()) &&
-    acceptPendingId.value !== row.handoverId
+    Boolean(handoverId) &&
+    acceptPendingId.value !== handoverId &&
+    !acceptOutcomeUnknownIds.has(handoverId ?? '')
   )
 }
 
@@ -319,10 +327,26 @@ async function submitAccept() {
     acceptDialogOpen.value = false
     acceptTarget.value = null
     acceptIdempotencyKeys.delete(handoverId)
+    acceptOutcomeUnknownIds.delete(handoverId)
     notifySuccess(receiptMessage('accept', outcome))
     await refreshAfterWrite()
   } catch (error) {
-    notifyOperationFailure('接班失败', error, '接班失败，请稍后重试。')
+    acceptOutcomeUnknownIds.add(handoverId)
+    const refreshed = await refreshAfterWrite()
+    const refreshedTarget = handovers.value.find((row) => row.handoverId?.trim() === handoverId)
+    if (refreshed && refreshedTarget && !isOpenHandover(refreshedTarget)) {
+      acceptDialogOpen.value = false
+      acceptTarget.value = null
+      acceptIdempotencyKeys.delete(handoverId)
+      acceptOutcomeUnknownIds.delete(handoverId)
+      notifySuccess('接班已受理，列表已确认。')
+    } else {
+      notifyOperationFailure(
+        '接班结果待确认',
+        error,
+        '接班结果尚未确认，请刷新页面核实；本页已阻止重复提交。',
+      )
+    }
   } finally {
     acceptPendingId.value = null
   }

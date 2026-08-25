@@ -159,11 +159,10 @@ const stubs = {
   Spinner: { template: '<span />' },
 }
 
-function acceptedResponse(outcome: 'accepted' | 'confirmed' = 'accepted') {
+function acceptedResponse() {
   return {
     data: {
       accepted: true,
-      operationReceipt: { outcome },
     },
   }
 }
@@ -294,6 +293,47 @@ describe('MES handovers read-face guard', () => {
     })
     expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
     expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，服务端已受理。')
+  })
+
+  it('does not repeat an uncertain accept after the refreshed list confirms the state change', async () => {
+    mutations.acceptShiftHandover.mockRejectedValueOnce(new Error('request timed out'))
+    mutations.refreshHandovers.mockImplementationOnce(async () => {
+      state.row.handoverStatus = 'accepted'
+    })
+    const wrapper = mountPage()
+
+    await wrapper.get('[data-testid="accept-handover"]').trigger('click')
+    await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
+    expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
+    expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，列表已确认。')
+
+    await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+    await flushPromises()
+    expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks a second accept when the refreshed list still cannot confirm the outcome', async () => {
+    mutations.acceptShiftHandover.mockRejectedValueOnce(new Error('request timed out'))
+    const wrapper = mountPage()
+
+    await wrapper.get('[data-testid="accept-handover"]').trigger('click')
+    await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
+    expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
+    expect(mutations.notifyOperationFailure).toHaveBeenCalledWith(
+      '接班结果待确认',
+      expect.any(Error),
+      '接班结果尚未确认，请刷新页面核实；本页已阻止重复提交。',
+    )
+
+    await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+    await flushPromises()
+    expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
   })
 
   it.each([
