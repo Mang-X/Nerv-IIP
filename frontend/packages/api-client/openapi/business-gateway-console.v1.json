@@ -44756,6 +44756,13 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "isSupplementary": {
+            "type": "boolean"
+          },
+          "originalMaterialIssueRequestNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -44791,6 +44798,10 @@
             }
           },
           "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supplementaryCount": {
             "type": "integer",
             "format": "int32"
           }
@@ -44883,6 +44894,13 @@
             "nullable": true
           },
           "materialCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isSupplementary": {
+            "type": "boolean"
+          },
+          "originalMaterialIssueRequestNo": {
             "type": "string",
             "nullable": true
           }
