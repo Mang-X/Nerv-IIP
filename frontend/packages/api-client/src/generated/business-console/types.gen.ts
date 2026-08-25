@@ -5625,6 +5625,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     code: string;
     status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus;
     reason: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest = {
@@ -5632,6 +5633,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     environmentId: string;
     code: string;
     count?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -17647,6 +17649,12 @@ export type ListBusinessConsoleToolingAssetsResponse = ListBusinessConsoleToolin
 
 export type RegisterBusinessConsoleToolingAssetData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/master-data/tooling-assets';
@@ -17665,6 +17673,7 @@ export type RegisterBusinessConsoleToolingAssetErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type RegisterBusinessConsoleToolingAssetError = RegisterBusinessConsoleToolingAssetErrors[keyof RegisterBusinessConsoleToolingAssetErrors];
@@ -17680,6 +17689,12 @@ export type RegisterBusinessConsoleToolingAssetResponse = RegisterBusinessConsol
 
 export type ChangeBusinessConsoleToolingStatusData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/master-data/tooling-assets/status';
@@ -17698,6 +17713,7 @@ export type ChangeBusinessConsoleToolingStatusErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type ChangeBusinessConsoleToolingStatusError = ChangeBusinessConsoleToolingStatusErrors[keyof ChangeBusinessConsoleToolingStatusErrors];
@@ -17713,6 +17729,12 @@ export type ChangeBusinessConsoleToolingStatusResponse = ChangeBusinessConsoleTo
 
 export type RecordBusinessConsoleToolingUsageData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/master-data/tooling-assets/usage';
@@ -17731,6 +17753,7 @@ export type RecordBusinessConsoleToolingUsageErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type RecordBusinessConsoleToolingUsageError = RecordBusinessConsoleToolingUsageErrors[keyof RecordBusinessConsoleToolingUsageErrors];

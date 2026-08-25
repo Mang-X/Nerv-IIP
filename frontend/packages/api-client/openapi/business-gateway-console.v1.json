@@ -22224,6 +22224,17 @@
           "Api"
         ],
         "operationId": "registerBusinessConsoleToolingAsset",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleRegisterToolingAssetRequest",
           "description": "",
@@ -22263,6 +22274,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -22279,6 +22300,17 @@
           "Api"
         ],
         "operationId": "changeBusinessConsoleToolingStatus",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleChangeToolingStatusRequest",
           "description": "",
@@ -22318,6 +22350,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -22334,6 +22376,17 @@
           "Api"
         ],
         "operationId": "recordBusinessConsoleToolingUsage",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleRecordToolingUsageRequest",
           "description": "",
@@ -22373,6 +22426,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -50863,6 +50926,10 @@
             "type": "string",
             "minLength": 1,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -50897,6 +50964,10 @@
             "format": "int64",
             "minimum": 0.0,
             "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

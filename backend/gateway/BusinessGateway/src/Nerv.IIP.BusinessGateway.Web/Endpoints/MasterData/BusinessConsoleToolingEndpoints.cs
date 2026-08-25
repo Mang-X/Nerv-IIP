@@ -32,6 +32,7 @@ public sealed class ListBusinessConsoleToolingAssetsEndpoint(
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/tooling-assets")]
 [BusinessGatewayOperationId("registerBusinessConsoleToolingAsset")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
@@ -40,6 +41,8 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleRegisterToolingAssetRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleRegisterToolingAssetRequest request) => request.EnvironmentId;
@@ -48,12 +51,17 @@ public sealed class RegisterBusinessConsoleToolingAssetEndpoint(
         BusinessConsoleRegisterToolingAssetRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RegisterToolingAssetAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
+        masterData.RegisterToolingAssetAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireIdempotentAuditContext(request),
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/tooling-assets/status")]
 [BusinessGatewayOperationId("changeBusinessConsoleToolingStatus")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
@@ -62,6 +70,8 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleChangeToolingStatusRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleChangeToolingStatusRequest request) => request.EnvironmentId;
@@ -70,12 +80,17 @@ public sealed class ChangeBusinessConsoleToolingStatusEndpoint(
         BusinessConsoleChangeToolingStatusRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.ChangeToolingStatusAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
+        masterData.ChangeToolingStatusAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireIdempotentAuditContext(request),
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/tooling-assets/usage")]
 [BusinessGatewayOperationId("recordBusinessConsoleToolingUsage")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RecordBusinessConsoleToolingUsageEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
@@ -84,6 +99,8 @@ public sealed class RecordBusinessConsoleToolingUsageEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleRecordToolingUsageRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleRecordToolingUsageRequest request) => request.EnvironmentId;
@@ -92,7 +109,11 @@ public sealed class RecordBusinessConsoleToolingUsageEndpoint(
         BusinessConsoleRecordToolingUsageRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RecordToolingUsageAsync(tokenProvider.BearerToken, request, ResolveCorrelationId(), cancellationToken);
+        masterData.RecordToolingUsageAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireIdempotentAuditContext(request),
+            cancellationToken);
 }
 
 public sealed class BusinessConsoleListToolingAssetsRequestValidator : Validator<BusinessConsoleListToolingAssetsRequest>

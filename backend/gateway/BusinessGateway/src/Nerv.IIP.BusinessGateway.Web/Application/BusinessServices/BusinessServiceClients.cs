@@ -255,19 +255,19 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
         string internalBearerToken,
         BusinessConsoleRegisterToolingAssetRequest request,
-        string correlationId,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
         string internalBearerToken,
         BusinessConsoleChangeToolingStatusRequest request,
-        string correlationId,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
         string internalBearerToken,
         BusinessConsoleRecordToolingUsageRequest request,
-        string correlationId,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 }
 
@@ -2917,7 +2917,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public async Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
         string internalBearerToken,
         BusinessConsoleRegisterToolingAssetRequest request,
-        string correlationId,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<BusinessConsoleToolingRegistrationResponse>(
@@ -2927,7 +2927,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            configureRequest: message => ConfigureCorrelationHeader(message, correlationId),
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext),
             failClosedOnFailureEnvelope: true);
         if (string.IsNullOrWhiteSpace(response.ResourceType) ||
             string.IsNullOrWhiteSpace(response.Code) ||
@@ -2943,7 +2943,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public async Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
         string internalBearerToken,
         BusinessConsoleChangeToolingStatusRequest request,
-        string correlationId,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         await SendNoContentAsync(
@@ -2953,14 +2953,14 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            configureRequest: message => ConfigureCorrelationHeader(message, correlationId));
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext));
         return new BusinessConsoleAcceptedResponse(true);
     }
 
     public async Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
         string internalBearerToken,
         BusinessConsoleRecordToolingUsageRequest request,
-        string correlationId,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         await SendNoContentAsync(
@@ -2970,7 +2970,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            configureRequest: message => ConfigureCorrelationHeader(message, correlationId));
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext));
         return new BusinessConsoleAcceptedResponse(true);
     }
 
