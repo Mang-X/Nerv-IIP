@@ -259,7 +259,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     {
         await using var mesDb = CreateMesContext();
         await using var inventoryDb = CreateInventoryContext();
-        SeedMesWorkOrder(mesDb, "WO-483", "SKU-FG-483");
+        SeedMesWorkOrder(mesDb, "WO-483", "SKU-FG-483", capitalizedUnitCost: 12.34m);
         await mesDb.SaveChangesAsync();
         await RecordMesOutputLotAsync(mesDb, "WO-483", "LOT-FG-483", 8m, DateTimeOffset.Parse("2026-06-23T07:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
@@ -275,7 +275,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 8m,
                 "PCS",
                 requestedAtUtc,
-                UnitCost: 12.34m,
+                // 等价旧调用仍可能携带客户端成本；库存价值必须来自 ERP 资本化读面。
+                UnitCost: 99.99m,
                 IdempotencyKey: "receipt-483",
                 ProducedLotNo: "LOT-FG-483"),
             CancellationToken.None);
@@ -286,6 +287,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
 
         Assert.Empty(inventoryPublisher.Published);
+        Assert.Equal(12.34m, receiptRequest.UnitCost);
         Assert.Equal(12.34m, receiptEvent.Payload.UnitCost);
         var movement = Assert.Single(inventoryDb.StockMovements);
         var ledger = Assert.Single(inventoryDb.StockLedgers);
@@ -790,7 +792,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     {
         await using var mesDb = CreateMesContext();
         await using var inventoryDb = CreateInventoryContext();
-        SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541");
+        SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541", capitalizedUnitCost: 12.34m);
         await mesDb.SaveChangesAsync();
         await RecordMesOutputLotAsync(mesDb, "WO-541", "LOT-FG-541", 8m, DateTimeOffset.Parse("2026-06-18T08:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
@@ -808,7 +810,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 8m,
                 "PCS",
                 DateTimeOffset.Parse("2026-06-18T09:00:00Z"),
-                UnitCost: 12.34m,
+                // 失败路径同样只能使用 ERP 资本化读面，不能回退到客户端成本。
+                UnitCost: 99.99m,
                 IdempotencyKey: "receipt-541",
                 ProducedLotNo: "LOT-FG-541"),
             CancellationToken.None);
@@ -832,6 +835,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
         await mesDb.SaveChangesAsync();
 
+        Assert.Equal(12.34m, receiptRequest.UnitCost);
         var persistedReceipt = await mesDb.FinishedGoodsReceiptRequests.SingleAsync();
         Assert.Equal(FinishedGoodsReceiptRequest.InventoryPostingFailedStatus, persistedReceipt.Status);
         Assert.Null(persistedReceipt.PostedInventoryMovementId);
@@ -1087,12 +1091,20 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             new InMemoryIntegrationEventDeadLetterStore());
     }
 
-    private static void SeedMesWorkOrder(MesDbContext mesDb, string workOrderId = "WO-446", string skuId = "SKU-FG")
+    private static void SeedMesWorkOrder(
+        MesDbContext mesDb,
+        string workOrderId = "WO-446",
+        string skuId = "SKU-FG",
+        decimal? capitalizedUnitCost = null)
     {
         var now = DateTimeOffset.Parse("2026-06-18T07:00:00Z");
         var workOrder = WorkOrder.Create("org-001", "env-dev", workOrderId, skuId, "PV-001", 10m, 10, now.AddHours(8));
         workOrder.MarkReleased();
         workOrder.Start(now);
+        if (capitalizedUnitCost.HasValue)
+        {
+            workOrder.ApplyCapitalizedUnitCost(capitalizedUnitCost.Value);
+        }
         mesDb.WorkOrders.Add(workOrder);
         var operationTask = OperationTask.Create(
             "org-001",

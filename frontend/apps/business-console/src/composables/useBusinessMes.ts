@@ -2193,10 +2193,20 @@ export function useMesFinishedGoodsReceipts() {
   const retryingRequestNos = reactive(new Set<string>())
 
   return {
-    createReceiptRequest: (body: Omit<BusinessConsoleMesCreateReceiptRequest, 'unitCost'>) => {
-      // 兼容旧调用方的运行时对象：即使仍携带 client unitCost，也在 facade 调用边界丢弃。
-      const { unitCost: _clientUnitCost, ...safeBody } =
-        body as BusinessConsoleMesCreateReceiptRequest
+    createReceiptRequest: (body: BusinessConsoleMesCreateReceiptRequest) => {
+      // 只组装公共写契约字段，旧运行时对象中的未知字段不会进入请求体。
+      const safeBody: BusinessConsoleMesCreateReceiptRequest = {
+        organizationId: body.organizationId,
+        environmentId: body.environmentId,
+        workOrderId: body.workOrderId,
+        skuId: body.skuId,
+        quantity: body.quantity,
+        uomCode: body.uomCode,
+        requestedAtUtc: body.requestedAtUtc,
+        idempotencyKey: body.idempotencyKey,
+        producedLotNo: body.producedLotNo,
+        serialNo: body.serialNo,
+      }
       return createReceiptMutation.mutateAsync({ body: safeBody })
     },
     createReceiptRequestError: createReceiptMutation.error,

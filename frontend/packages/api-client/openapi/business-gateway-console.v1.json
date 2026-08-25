@@ -46608,11 +46608,6 @@
             "type": "string",
             "format": "date-time"
           },
-          "unitCost": {
-            "type": "number",
-            "format": "decimal",
-            "nullable": true
-          },
           "idempotencyKey": {
             "type": "string"
           },

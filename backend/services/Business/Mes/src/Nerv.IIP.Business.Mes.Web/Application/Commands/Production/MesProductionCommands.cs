@@ -616,7 +616,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -714,7 +714,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
                     request.RequestedAtUtc,
                     request.ProducedLotNo,
                     request.SerialNo,
-                    request.UnitCost ?? workOrder.CapitalizedUnitCost,
+                    workOrder.CapitalizedUnitCost,
                     request.ProductionDate,
                     request.ExpiryDate);
                 dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
