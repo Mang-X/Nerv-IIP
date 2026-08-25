@@ -1,3 +1,5 @@
+using System.Runtime.Serialization;
+
 namespace Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
 public partial record ToolingAssetId : IGuidStronglyTypedId;
@@ -9,8 +11,11 @@ public enum ChangeoverSourceType { Sku = 0, ProductCategory = 1 }
 
 public enum ToolingAssetStatus
 {
+    [EnumMember(Value = "available")]
     Available = 0,
+    [EnumMember(Value = "maintenance")]
     Maintenance = 1,
+    [EnumMember(Value = "retired")]
     Retired = 2
 }
 

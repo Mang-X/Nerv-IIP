@@ -2088,6 +2088,14 @@
     },
     {
       "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/tooling-assets",
+      "operationId": "listBusinessMasterDataToolingAssets",
+      "classification": "deferred",
+      "followUp": "BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。"
+    },
+    {
+      "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/code-rules/{ruleKey}/preview",
       "operationId": "previewBusinessMasterDataCodeRule",

@@ -82,7 +82,7 @@
     "nerv-pr-review": {
       "source": "./skills/nerv-pr-review",
       "sourceType": "local",
-      "computedHash": "3aae99d5fe6e34d0938177381755cc1a1242476589f58fd24c348196ac26dd84"
+      "computedHash": "5cba8bf15f80dc19a0b43f897d79e6e6f4b39b2ed0067a65c97aa7e8d8ad3d02"
     },
     "obscura-browser": {
       "source": "MangMax/obscura-browser-skill",
