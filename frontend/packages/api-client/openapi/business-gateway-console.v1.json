@@ -18614,16 +18614,6 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
-                }
-              }
-            }
-          },
           "401": {
             "description": "Unauthorized"
           },
@@ -47156,62 +47146,33 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "organizationId",
-          "environmentId",
-          "workOrderId",
-          "reasonCode",
-          "startedAtUtc",
-          "idempotencyKey"
-        ],
         "properties": {
           "organizationId": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
+            "type": "string"
           },
           "environmentId": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
+            "type": "string"
           },
           "workOrderId": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 0,
-            "nullable": false
+            "type": "string"
           },
           "operationTaskId": {
             "type": "string",
-            "maxLength": 200,
-            "minLength": 0,
             "nullable": true
           },
           "deviceAssetId": {
             "type": "string",
-            "maxLength": 200,
-            "minLength": 0,
             "nullable": true
           },
           "reasonCode": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
+            "type": "string"
           },
           "startedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1,
-            "nullable": false
+            "format": "date-time"
           },
           "idempotencyKey": {
-            "type": "string",
-            "maxLength": 150,
-            "minLength": 0,
-            "nullable": false
+            "type": "string"
           }
         }
       },

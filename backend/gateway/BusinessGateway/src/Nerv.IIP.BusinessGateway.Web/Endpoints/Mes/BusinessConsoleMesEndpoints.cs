@@ -1963,22 +1963,6 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
             "work-center-required-use-v2");
 }
 
-public sealed class BusinessConsoleMesRecordDowntimeEventRequestValidator
-    : Validator<BusinessConsoleMesRecordDowntimeEventRequest>
-{
-    public BusinessConsoleMesRecordDowntimeEventRequestValidator()
-    {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.OperationTaskId).MaximumLength(200);
-        RuleFor(x => x.DeviceAssetId).MaximumLength(200);
-        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.StartedAtUtc).NotEmpty();
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
-    }
-}
-
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v2/mes/downtime-events")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesDowntimeEventV2")]

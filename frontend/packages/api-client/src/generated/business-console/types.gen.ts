@@ -4673,14 +4673,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {
-    organizationId: string;
-    environmentId: string;
-    workOrderId: string;
+    organizationId?: string;
+    environmentId?: string;
+    workOrderId?: string;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
-    reasonCode: string;
-    startedAtUtc: string;
-    idempotencyKey: string;
+    reasonCode?: string;
+    startedAtUtc?: string;
+    idempotencyKey?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request = {
@@ -15944,10 +15944,6 @@ export type RecordBusinessConsoleMesDowntimeEventData = {
 
 export type RecordBusinessConsoleMesDowntimeEventErrors = {
     /**
-     * Bad Request
-     */
-    400: FastEndpointsErrorResponse;
-    /**
      * Unauthorized
      */
     401: unknown;
@@ -15956,8 +15952,6 @@ export type RecordBusinessConsoleMesDowntimeEventErrors = {
      */
     403: unknown;
 };
-
-export type RecordBusinessConsoleMesDowntimeEventError = RecordBusinessConsoleMesDowntimeEventErrors[keyof RecordBusinessConsoleMesDowntimeEventErrors];
 
 export type RecordBusinessConsoleMesDowntimeEventResponses = {
     /**

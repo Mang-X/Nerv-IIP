@@ -158,7 +158,8 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "DEV-1",
             "MECH-FAULT",
             startedAtUtc,
-            "idem-downtime-v2");
+            "idem-downtime-v2",
+            DateTimeOffset.Parse("2026-08-25T15:00:00Z"));
 
         await client.RecordDowntimeEventAsync("token", request, CancellationToken.None);
 
@@ -167,6 +168,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal("WC-CNC-01", body.GetProperty("workCenterId").GetString());
         Assert.Equal("MECH-FAULT", body.GetProperty("reasonCode").GetString());
         Assert.Equal("2026-08-25T14:30:00+00:00", body.GetProperty("startedAtUtc").GetString());
+        Assert.Equal("2026-08-25T15:00:00+00:00", body.GetProperty("toUtc").GetString());
         Assert.Equal("idem-downtime-v2", body.GetProperty("idempotencyKey").GetString());
         Assert.False(body.TryGetProperty("reason", out _));
         Assert.False(body.TryGetProperty("fromUtc", out _));

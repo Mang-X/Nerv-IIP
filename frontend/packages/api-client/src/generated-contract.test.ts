@@ -224,14 +224,14 @@ describe('generated API client contract', () => {
 
   it('keeps the legacy downtime request shape separate from the strict v2 context contract', () => {
     expectTypeOf<BusinessConsoleMesRecordDowntimeEventRequest>().toEqualTypeOf<{
-      organizationId: string
-      environmentId: string
-      workOrderId: string
+      organizationId?: string
+      environmentId?: string
+      workOrderId?: string
       operationTaskId?: string | null
       deviceAssetId?: string | null
-      reasonCode: string
-      startedAtUtc: string
-      idempotencyKey: string
+      reasonCode?: string
+      startedAtUtc?: string
+      idempotencyKey?: string
     }>()
     expectTypeOf<BusinessConsoleMesRecordDowntimeEventV2Request>().toEqualTypeOf<{
       organizationId: string

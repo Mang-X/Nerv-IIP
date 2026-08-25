@@ -909,12 +909,12 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterId",
             "scopeKind",
             "scopeId");
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "organizationId", 100);
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "environmentId", 100);
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "workOrderId", 200);
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "reasonCode", 100);
-        AssertRequiredBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "startedAtUtc");
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "idempotencyKey", 150);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "organizationId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "environmentId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "workOrderId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "reasonCode");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "startedAtUtc");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "idempotencyKey");
         AssertOperationId(paths, "/api/business-console/v2/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEventV2");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "organizationId", 100);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "environmentId", 100);
