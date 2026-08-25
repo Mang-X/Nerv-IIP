@@ -20,6 +20,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<StockCountTask> StockCountTasks => Set<StockCountTask>();
     public DbSet<StockCountAdjustment> StockCountAdjustments => Set<StockCountAdjustment>();
+    public DbSet<InventoryAuthorityResolutionPendingAudit> AuthorityResolutionPendingAudits =>
+        Set<InventoryAuthorityResolutionPendingAudit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

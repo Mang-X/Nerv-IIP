@@ -96,6 +96,7 @@ try
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IInventoryIntegrationEventContextAccessor, HttpInventoryIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -119,6 +120,7 @@ try
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseDashboard();
         });
     }
