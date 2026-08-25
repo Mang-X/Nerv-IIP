@@ -11,7 +11,11 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import { useMesOperationTasks, useMesWorkOrders } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReason,
+  useMesOperationTasks,
+  useMesWorkOrders,
+} from '@/composables/useBusinessMes'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -98,6 +102,7 @@ const {
   workOrdersLastUpdatedAt,
   workOrdersPending,
   workOrdersTotal,
+  workOrderManageScope,
   workOrderReadScope,
   workOrderReadScopeMessage,
   workOrderReadScopeReady,
@@ -200,6 +205,12 @@ type ReleaseIntent = {
 }
 
 const RELEASEABLE_STATUSES = new Set(['created', 'started', 'hold'])
+const RELEASE_IGNORED_TASK_BLOCKERS = new Set([
+  // 下达命令会生成物料需求快照；列表中的“快照缺失”是下达前的正常状态。
+  'MATERIAL_REQUIREMENT_SNAPSHOT_MISSING',
+  // 后序任务尚不可开工不影响整个工单下达。
+  'PREVIOUS_OPERATION_INCOMPLETE',
+])
 const releaseIntent = shallowRef<ReleaseIntent | null>(null)
 const releaseWarningsConfirmed = shallowRef(false)
 const releaseDialogOpen = computed({
@@ -233,6 +244,16 @@ function releaseBlocker(order: Row) {
   if (!workOrderManageScopeReady.value) {
     return workOrderManageScopeMessage.value || '主体授权工单范围未就绪'
   }
+  const readScope = workOrderReadScope.value
+  const manageScope = workOrderManageScope.value
+  if (
+    !readScope ||
+    !manageScope ||
+    readScope.kind !== manageScope.kind ||
+    readScope.id !== manageScope.id
+  ) {
+    return '当前读取范围与管理范围不一致，不能下达'
+  }
   if (!order.workOrderId) return '工单标识缺失，不能下达'
   if (!RELEASEABLE_STATUSES.has((order.status ?? '').toLowerCase())) {
     return '当前状态不能下达'
@@ -240,6 +261,19 @@ function releaseBlocker(order: Row) {
   if (!order.productionVersionId?.trim()) return '缺少生产版本，不能下达'
   if (!order.operationTasks?.length) return '尚未生成工序任务，不能下达'
   if (order.hasActiveQualityHold) return '存在有效质量保留，不能下达'
+  for (const task of order.operationTasks) {
+    if (!task.evaluatedAtUtc?.trim() || !Array.isArray(task.blockReasons)) {
+      return '工序就绪状态尚未取得，不能下达'
+    }
+    const reason = task.blockReasons.find((candidate) => {
+      const { code } = describeMesReadinessReason(candidate)
+      return !RELEASE_IGNORED_TASK_BLOCKERS.has(code)
+    })
+    if (reason) {
+      const display = describeMesReadinessReason(reason)
+      return `${display.label}，不能下达${display.detail ? `：${display.detail}` : ''}`
+    }
+  }
   return null
 }
 
@@ -774,6 +808,7 @@ function isNonEmpty(value: string) {
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
           </NvDropdownMenuItem>
           <NvDropdownMenuItem
+            :aria-label="`下达工单 ${row.workOrderNo || row.workOrderId || ''}`"
             :disabled="Boolean(releaseBlocker(row))"
             :title="releaseBlocker(row) ?? '下达当前工单'"
             @click="openReleaseDialog(row)"

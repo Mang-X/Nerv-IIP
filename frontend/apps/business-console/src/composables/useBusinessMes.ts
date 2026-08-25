@@ -986,6 +986,7 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     workOrdersLastUpdatedAt,
     workOrdersHasSuccessfulResponse,
     workOrdersHasFailedResponse,
+    workOrderManageScope: workOrderManageScope.selectedScope,
     workOrderReadScope: workOrderReadScope.selectedScope,
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,

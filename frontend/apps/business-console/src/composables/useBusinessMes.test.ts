@@ -1585,6 +1585,11 @@ describe('business MES composables', () => {
     )
     const workOrders = useMesWorkOrders()
 
+    expect(workOrders.workOrderManageScope.value).toEqual({
+      kind: 'work-center',
+      id: 'WC-MANAGE',
+    })
+
     await workOrders.releaseWorkOrder('WO-RELEASE', {
       organizationId: 'org-001',
       environmentId: 'env-dev',

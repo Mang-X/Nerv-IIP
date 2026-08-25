@@ -8,6 +8,8 @@ import WorkOrdersListPage from './index.vue'
 
 const releaseState = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
+  manageScope: { kind: 'work-center', id: 'WC-1', displayName: '一号线' },
+  readScope: { kind: 'work-center', id: 'WC-1', displayName: '一号线' },
   scopeMessage: '',
   scopeReady: true,
 }))
@@ -57,6 +59,12 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
+  describeMesReadinessReason: (reason: string) => ({
+    code: reason.split(':')[0],
+    detail: reason,
+    label: reason.includes('MATERIAL') ? '物料就绪条件未满足' : '设备就绪条件未满足',
+    nextStep: '',
+  }),
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
@@ -95,10 +103,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
     workOrdersLastUpdatedAt: ref('2026-08-25T00:00:00.000Z'),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(releaseState.items.length),
+    workOrderManageScope: ref(releaseState.manageScope),
     workOrderManageScopeMessage: ref(releaseState.scopeMessage),
     workOrderManageScopePending: ref(false),
     workOrderManageScopeReady: ref(releaseState.scopeReady),
-    workOrderReadScope: ref({ kind: 'work-center', id: 'WC-1', displayName: '一号线' }),
+    workOrderReadScope: ref(releaseState.readScope),
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
   }),
@@ -123,11 +132,11 @@ const uiStubs = {
   RowActions: { template: '<div><slot /></div>' },
   NvDropdownMenuItem: {
     props: ['disabled'],
-    template: '<button type="button" :disabled="disabled"><slot /></button>',
+    template: '<button v-bind="$attrs" type="button" :disabled="disabled"><slot /></button>',
   },
   DropdownMenuItem: {
     props: ['disabled'],
-    template: '<button type="button" :disabled="disabled"><slot /></button>',
+    template: '<button v-bind="$attrs" type="button" :disabled="disabled"><slot /></button>',
   },
   NvDropdownMenuSeparator: true,
   NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
@@ -170,7 +179,15 @@ function workOrder(overrides: Record<string, unknown> = {}) {
     productionVersionId: 'PV-1',
     quantity: 10,
     status: 'created',
-    operationTasks: [{ operationTaskId: 'OP-1', operationSequence: 10, status: 'queued' }],
+    operationTasks: [
+      {
+        operationTaskId: 'OP-1',
+        operationSequence: 10,
+        status: 'queued',
+        blockReasons: [],
+        evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+      },
+    ],
     ...overrides,
   }
 }
@@ -211,6 +228,8 @@ function button(wrapper: VueWrapper, label: string) {
 describe('work-order list — release entry', () => {
   beforeEach(() => {
     releaseState.items = [workOrder()]
+    releaseState.manageScope = { kind: 'work-center', id: 'WC-1', displayName: '一号线' }
+    releaseState.readScope = { kind: 'work-center', id: 'WC-1', displayName: '一号线' }
     releaseState.scopeMessage = ''
     releaseState.scopeReady = true
     releaseWorkOrder.mockReset()
@@ -224,11 +243,27 @@ describe('work-order list — release entry', () => {
   })
 
   it('submits the selected work order with warning confirmation and no actor or scope claims', async () => {
+    releaseState.items = [
+      workOrder(),
+      workOrder({
+        workOrderId: 'WO-2',
+        workOrderNo: 'WO-20260825-002',
+        operationTasks: [
+          {
+            operationTaskId: 'OP-2',
+            operationSequence: 20,
+            status: 'queued',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+      }),
+    ]
     const wrapper = mountPage()
 
-    await button(wrapper, '下达工单').trigger('click')
+    await wrapper.get('[aria-label="下达工单 WO-20260825-002"]').trigger('click')
     expect(wrapper.text()).toContain('确认下达工单')
-    expect(wrapper.text()).toContain('WO-20260825-001')
+    expect(wrapper.text()).toContain('WO-20260825-002')
 
     await wrapper.get('input[type="checkbox"]').setValue(true)
     const submit = button(wrapper, '确认下达')
@@ -237,11 +272,11 @@ describe('work-order list — release entry', () => {
     await flushPromises()
 
     expect(releaseWorkOrder).toHaveBeenCalledTimes(1)
-    expect(releaseWorkOrder).toHaveBeenCalledWith('WO-1', {
+    expect(releaseWorkOrder).toHaveBeenCalledWith('WO-2', {
       organizationId: 'org-1',
       environmentId: 'prod',
       confirmWarnings: true,
-      idempotencyKey: expect.stringMatching(/^release-work-order-WO-1-/),
+      idempotencyKey: expect.stringMatching(/^release-work-order-WO-2-/),
     })
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('actor')
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('principalId')
@@ -249,7 +284,68 @@ describe('work-order list — release entry', () => {
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('scopeKind')
     expect(refreshWorkOrders).toHaveBeenCalledTimes(1)
     expect(refreshOperationTasks).toHaveBeenCalledTimes(1)
-    expect(notifySuccess).toHaveBeenCalledWith(expect.stringContaining('WO-20260825-001'))
+    expect(notifySuccess).toHaveBeenCalledWith(expect.stringContaining('WO-20260825-002'))
+  })
+
+  it('does not send when the read and manage scopes identify different authorized ranges', async () => {
+    releaseState.manageScope = { kind: 'work-center', id: 'WC-2', displayName: '二号线' }
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeDefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(releaseWorkOrder).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['设备不可用', 'equipment.downtime: 工作中心停机'],
+    ['物料短缺', 'MATERIAL_SHORTAGE: 物料 MAT-1 缺口 5'],
+  ])('does not send when the authoritative task readiness reports %s', async (_name, reason) => {
+    releaseState.items = [
+      workOrder({
+        operationTasks: [
+          {
+            operationTaskId: 'OP-1',
+            operationSequence: 10,
+            status: 'queued',
+            blockReasons: [reason],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+      }),
+    ]
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeDefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(releaseWorkOrder).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the task readiness snapshot is missing', async () => {
+    releaseState.items = [
+      workOrder({
+        operationTasks: [
+          {
+            operationTaskId: 'OP-1',
+            operationSequence: 10,
+            status: 'queued',
+          },
+        ],
+      }),
+    ]
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeDefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(releaseWorkOrder).not.toHaveBeenCalled()
   })
 
   it.each([
