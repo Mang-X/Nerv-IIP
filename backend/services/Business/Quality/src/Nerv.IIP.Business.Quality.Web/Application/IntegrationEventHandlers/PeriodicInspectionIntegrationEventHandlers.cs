@@ -333,11 +333,15 @@ internal static class PeriodicInspectionQuantityTaskGeneration
         ApplicationDbContext dbContext,
         IReadOnlyCollection<PeriodicInspectionRuntimeContext> contexts,
         DateTimeOffset occurredAtUtc,
-        int maxWindows = MaxWindowsPerTransaction)
+        int maxWindows = MaxWindowsPerTransaction,
+        DateTime? continuationNextAttemptAtUtc = null)
     {
         foreach (var context in contexts.OrderBy(x => x.Id))
         {
-            foreach (var window in context.TakeDueQuantityWindows(occurredAtUtc.UtcDateTime, maxWindows))
+            foreach (var window in context.TakeDueQuantityWindows(
+                         occurredAtUtc.UtcDateTime,
+                         maxWindows,
+                         continuationNextAttemptAtUtc))
             {
                 var generatedAtUtc = new DateTimeOffset(window.GeneratedAtUtc);
                 var task = InspectionTask.CreatePending(
@@ -379,37 +383,40 @@ internal static class QualityProcessedIntegrationEventInbox
         IIntegrationEventEnvelope integrationEvent,
         CancellationToken cancellationToken)
     {
-        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
-        if (dbContext.Database.IsNpgsql())
-        {
-            var lockKey = $"quality-integration-event-inbox:{consumerName}:{eventId}";
-            await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
-                cancellationToken);
-        }
-
-        if (dbContext.ProcessedIntegrationEvents.Local.Any(
-                record => record.ConsumerName == consumerName && record.EventId == eventId)
-            || await dbContext.ProcessedIntegrationEvents.AnyAsync(
-                record => record.ConsumerName == consumerName && record.EventId == eventId,
-                cancellationToken))
-        {
-            return false;
-        }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+        return await ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
             consumerName,
-            eventId,
-            Required(integrationEvent.EventType, "Integration event type is required."),
-            integrationEvent.EventVersion,
-            Required(integrationEvent.SourceService, "Integration event source service is required."),
-            Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required."),
-            DateTimeOffset.UtcNow));
-        return true;
+            integrationEvent,
+            record => new ProcessedIntegrationEvent(
+                record.ConsumerName,
+                record.EventId,
+                record.EventType,
+                record.EventVersion,
+                record.SourceService,
+                record.IdempotencyKey,
+                record.ProcessedAtUtc),
+            ProcessedIntegrationEventInboxIdentity.EventId,
+            AcquireEventIdentityLockAsync,
+            cancellationToken);
     }
 
-    private static string Required(string? value, string message)
-        => string.IsNullOrWhiteSpace(value) ? throw new ArgumentException(message) : value;
+    private static async Task AcquireEventIdentityLockAsync(
+        DbContext dbContext,
+        string consumerName,
+        string eventId,
+        CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsNpgsql())
+        {
+            return;
+        }
+
+        var lockKey = $"quality-integration-event-inbox:{consumerName}:{eventId}";
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
+            cancellationToken);
+    }
 }
 
 internal static class PeriodicInspectionOperationEventProcessing

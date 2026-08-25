@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperati
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
@@ -21,6 +22,75 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 [Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class PeriodicInspectionPostgresProfileTests
 {
+    [QualityPostgresFact]
+    public async Task Quantity_continuation_fairness_migration_backfills_due_cursor_and_allows_terminal_pending_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.GetService<IMigrator>().MigrateAsync("20260825064909_AddPeriodicInspectionQuantityContinuationInbox");
+        }
+
+        await using (var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await ExecuteSqlAsync(connection, """
+                INSERT INTO quality.periodic_inspection_operations
+                    (id, organization_id, environment_id, work_order_id, operation_id,
+                     sku_code, operation_sequence, work_center_id, released_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000901', 'org-001', 'env-dev', 'WO-MIGRATE', 'OP-001',
+                     'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z');
+
+                INSERT INTO quality.periodic_inspection_runtime_contexts
+                    (id, operation_context_id, organization_id, environment_id, work_order_id, operation_id,
+                     sku_code, operation_sequence, work_center_id, released_at_utc, inspection_plan_id,
+                     inspection_plan_version, quantity_interval, assigned_team_id, first_activity_at_utc, uom_code,
+                     cumulative_good_quantity, quantity_high_water, last_generated_quantity_window_sequence,
+                     quantity_generation_anchor_at_utc, status)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000902', '00000000-0000-0000-0000-000000000901',
+                     'org-001', 'env-dev', 'WO-MIGRATE', 'OP-001', 'SKU-FG-1000', 10, 'WC-001',
+                     '2026-08-24T01:00:00Z', '00000000-0000-0000-0000-000000000903', 1, 1,
+                     'team-quality-001', '2026-08-24T01:10:00Z', 'EA', 257, 257, 256,
+                     '2026-08-24T01:10:00Z', 'active');
+                """);
+        }
+
+        await using (var migrate = CreateContext(options))
+        {
+            await migrate.Database.MigrateAsync();
+        }
+
+        await using var assertion = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString);
+        await assertion.OpenAsync();
+        await using (var cursorCommand = new NpgsqlCommand(
+            "SELECT quantity_continuation_next_attempt_at_utc FROM quality.periodic_inspection_runtime_contexts WHERE id = '00000000-0000-0000-0000-000000000902'",
+            assertion))
+        {
+            Assert.Equal(
+                DateTimeOffset.Parse("2026-08-24T01:10:00Z").UtcDateTime,
+                await cursorCommand.ExecuteScalarAsync());
+        }
+
+        await ExecuteSqlAsync(assertion, """
+            UPDATE quality.periodic_inspection_runtime_contexts
+            SET status = 'closed', completed_at_utc = '2026-08-24T02:00:00Z'
+            WHERE id = '00000000-0000-0000-0000-000000000902';
+            """);
+
+        await using var restartedScan = CreateContext(options);
+        var terminalCandidate = Assert.Single(
+            await new ListPendingPeriodicInspectionQuantityContextsQueryHandler(restartedScan).Handle(
+                new ListPendingPeriodicInspectionQuantityContextsQuery(
+                    DateTimeOffset.Parse("2026-08-24T02:00:00Z").UtcDateTime,
+                    100),
+                CancellationToken.None));
+        Assert.Equal("WO-MIGRATE", terminalCandidate.WorkOrderId);
+    }
+
     [QualityPostgresFact]
     public async Task Time_watermark_migration_backfills_the_next_due_window_for_existing_active_contexts()
     {
@@ -300,7 +370,7 @@ public sealed class PeriodicInspectionPostgresProfileTests
     }
 
     [QualityPostgresFact]
-    public async Task Concurrent_same_event_id_at_int32_boundary_uses_one_inbox_fact_and_resumes_bounded_batches_on_postgres()
+    public async Task Concurrent_same_event_id_uses_one_inbox_fact_and_resumes_a_supported_bounded_backlog_on_postgres()
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();
         var options = CreateOptions();
@@ -308,20 +378,20 @@ public sealed class PeriodicInspectionPostgresProfileTests
         {
             QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync();
-            setup.InspectionPlans.Add(NewPeriodicPlan(quantityInterval: 0.000001m));
+            setup.InspectionPlans.Add(NewPeriodicPlan(quantityInterval: 1m));
             await setup.SaveChangesAsync();
         }
 
         await HandleReleaseAsync(options);
         var first = ProductionReport(
             "RPT-BOUNDARY-A",
-            2147.483648m,
+            257m,
             false,
             null,
             "2026-08-24T01:30:00Z");
         var second = ProductionReport(
             "RPT-BOUNDARY-B",
-            2147.483648m,
+            257m,
             false,
             null,
             "2026-08-24T01:31:00Z") with
@@ -334,6 +404,7 @@ public sealed class PeriodicInspectionPostgresProfileTests
             HandleReportAsync(options, second));
 
         PeriodicInspectionRuntimeContextId runtimeContextId;
+        DateTime observedNextAttemptAtUtc;
         await using (var firstAssertion = CreateContext(options))
         {
             var operation = await firstAssertion.PeriodicInspectionOperations
@@ -344,6 +415,7 @@ public sealed class PeriodicInspectionPostgresProfileTests
             Assert.Single(operation.ProductionReports);
             var runtimeContext = Assert.Single(operation.RuntimeContexts);
             runtimeContextId = runtimeContext.Id;
+            observedNextAttemptAtUtc = runtimeContext.QuantityContinuationNextAttemptAtUtc!.Value;
             Assert.Equal(256, runtimeContext.LastGeneratedQuantityWindowSequence);
             Assert.NotNull(runtimeContext.QuantityGenerationAnchorAtUtc);
             Assert.Equal(256, await firstAssertion.InspectionTasks.CountAsync());
@@ -361,23 +433,277 @@ public sealed class PeriodicInspectionPostgresProfileTests
                         "WO-001",
                         "OP-001",
                         runtimeContextId,
+                        observedNextAttemptAtUtc,
+                        observedNextAttemptAtUtc.AddMinutes(1),
                         256),
                     CancellationToken.None);
-            Assert.Equal(256, generated);
+            Assert.Equal(1, generated);
         }
 
         await using var finalAssertion = CreateContext(options);
         var finalContext = await finalAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
-        Assert.Equal(512, finalContext.LastGeneratedQuantityWindowSequence);
-        Assert.NotNull(finalContext.QuantityGenerationAnchorAtUtc);
-        Assert.Equal(512, await finalAssertion.InspectionTasks.CountAsync());
+        Assert.Equal(257, finalContext.LastGeneratedQuantityWindowSequence);
+        Assert.Null(finalContext.QuantityGenerationAnchorAtUtc);
+        Assert.Null(finalContext.QuantityContinuationNextAttemptAtUtc);
+        Assert.Equal(257, await finalAssertion.InspectionTasks.CountAsync());
         Assert.Equal(
-            [0.000001m, 0.000512m],
+            [1m, 257m],
             await finalAssertion.InspectionTasks
                 .OrderBy(x => x.Quantity)
                 .Select(x => x.Quantity)
-                .Where(x => x == 0.000001m || x == 0.000512m)
+                .Where(x => x == 1m || x == 257m)
                 .ToArrayAsync());
+    }
+
+    [QualityPostgresFact]
+    public async Task Completion_preserves_and_commits_the_terminal_257th_quantity_window_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan(quantityInterval: 1m));
+            await setup.SaveChangesAsync();
+        }
+
+        await HandleReleaseAsync(options);
+        await HandleReportAsync(options, ProductionReport("RPT-257-COMPLETE", 257m, false, null, "2026-08-24T01:30:00Z"));
+        await HandleCompletionAsync(options);
+
+        PeriodicInspectionRuntimeContextId runtimeContextId;
+        DateTime observedNextAttemptAtUtc;
+        await using (var pendingAssertion = CreateContext(options))
+        {
+            var context = await pendingAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+            runtimeContextId = context.Id;
+            observedNextAttemptAtUtc = context.QuantityContinuationNextAttemptAtUtc!.Value;
+            Assert.Equal("closed", context.Status);
+            Assert.Equal(256, context.LastGeneratedQuantityWindowSequence);
+            Assert.NotNull(context.QuantityGenerationAnchorAtUtc);
+        }
+
+        await using (var continuation = CreateContext(options))
+        {
+            var generated = await new GeneratePeriodicInspectionQuantityTaskBatchForContextCommandHandler(
+                continuation,
+                new PeriodicInspectionOperationScopeCoordinator(continuation)).Handle(
+                    new GeneratePeriodicInspectionQuantityTaskBatchForContextCommand(
+                        "org-001",
+                        "env-dev",
+                        "WO-001",
+                        "OP-001",
+                        runtimeContextId,
+                        observedNextAttemptAtUtc,
+                        observedNextAttemptAtUtc.AddMinutes(1),
+                        256),
+                    CancellationToken.None);
+            Assert.Equal(1, generated);
+        }
+
+        await using var finalAssertion = CreateContext(options);
+        var finalContext = await finalAssertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+        Assert.Equal("closed", finalContext.Status);
+        Assert.Equal(257, finalContext.LastGeneratedQuantityWindowSequence);
+        Assert.Null(finalContext.QuantityGenerationAnchorAtUtc);
+        Assert.Null(finalContext.QuantityContinuationNextAttemptAtUtc);
+        Assert.Equal(257, await finalAssertion.InspectionTasks.CountAsync());
+    }
+
+    [QualityPostgresFact]
+    public async Task Persisted_failure_deferral_exposes_the_101st_quantity_context_after_restart_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+        }
+
+        await using (var connection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await ExecuteSqlAsync(connection, """
+                INSERT INTO quality.periodic_inspection_operations
+                    (id, organization_id, environment_id, work_order_id, operation_id,
+                     sku_code, operation_sequence, work_center_id, released_at_utc)
+                SELECT lpad(i::text, 32, '0')::uuid,
+                       'org-001', 'env-dev', format('WO-FAIR-%s', lpad(i::text, 3, '0')), 'OP-001',
+                       'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z'
+                FROM generate_series(1, 101) AS series(i);
+
+                INSERT INTO quality.periodic_inspection_runtime_contexts
+                    (id, operation_context_id, organization_id, environment_id, work_order_id, operation_id,
+                     sku_code, operation_sequence, work_center_id, released_at_utc, inspection_plan_id,
+                     inspection_plan_version, quantity_interval, assigned_team_id, first_activity_at_utc, uom_code,
+                     cumulative_good_quantity, quantity_high_water, last_generated_quantity_window_sequence,
+                     quantity_generation_anchor_at_utc, quantity_continuation_next_attempt_at_utc, status)
+                SELECT lpad((i + 1000)::text, 32, '0')::uuid, lpad(i::text, 32, '0')::uuid,
+                       'org-001', 'env-dev', format('WO-FAIR-%s', lpad(i::text, 3, '0')), 'OP-001',
+                       'SKU-FG-1000', 10, 'WC-001', '2026-08-24T01:00:00Z',
+                       lpad((i + 2000)::text, 32, '0')::uuid, 1, 1, 'team-quality-001',
+                       '2026-08-24T01:10:00Z', 'EA', 257, 257, 256,
+                       '2026-08-24T01:10:00Z', '2026-08-24T02:00:00Z', 'active'
+                FROM generate_series(1, 101) AS series(i);
+                """);
+        }
+
+        var nowUtc = DateTimeOffset.Parse("2026-08-24T02:00:00Z").UtcDateTime;
+        PendingPeriodicInspectionQuantityContext poison;
+        await using (var firstScan = CreateContext(options))
+        {
+            var candidates = await new ListPendingPeriodicInspectionQuantityContextsQueryHandler(firstScan).Handle(
+                new ListPendingPeriodicInspectionQuantityContextsQuery(nowUtc, 100),
+                CancellationToken.None);
+            Assert.Equal(100, candidates.Count);
+            Assert.DoesNotContain(candidates, candidate => candidate.WorkOrderId == "WO-FAIR-101");
+            poison = candidates[0];
+        }
+
+        await using (var defer = CreateContext(options))
+        {
+            await new DeferPeriodicInspectionQuantityContinuationCommandHandler(
+                defer,
+                new PeriodicInspectionOperationScopeCoordinator(defer)).Handle(
+                    new DeferPeriodicInspectionQuantityContinuationCommand(
+                        poison.OrganizationId,
+                        poison.EnvironmentId,
+                        poison.WorkOrderId,
+                        poison.OperationId,
+                        poison.RuntimeContextId,
+                        poison.ObservedNextAttemptAtUtc,
+                        nowUtc.AddMinutes(1)),
+                    CancellationToken.None);
+        }
+
+        await using var restartedScan = CreateContext(options);
+        var restartedCandidates = await new ListPendingPeriodicInspectionQuantityContextsQueryHandler(restartedScan).Handle(
+            new ListPendingPeriodicInspectionQuantityContextsQuery(nowUtc, 100),
+            CancellationToken.None);
+        Assert.Equal(100, restartedCandidates.Count);
+        Assert.DoesNotContain(restartedCandidates, candidate => candidate.RuntimeContextId == poison.RuntimeContextId);
+        Assert.Contains(restartedCandidates, candidate => candidate.WorkOrderId == "WO-FAIR-101");
+    }
+
+    [QualityPostgresFact]
+    public async Task Same_event_id_for_different_operations_waits_on_the_inbox_lock_and_commits_one_payload_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan());
+            await setup.SaveChangesAsync();
+        }
+
+        var release = WorkOrderReleased() with
+        {
+            EventId = "evt-release-two-operations",
+            IdempotencyKey = "mes:work-order-released:org-001:env-dev:WO-001:two-operations",
+            Payload = WorkOrderReleased().Payload with
+            {
+                Operations =
+                [
+                    new ReleasedOperationPayload("OP-001", 10, "WC-001"),
+                    new ReleasedOperationPayload("OP-002", 20, "WC-001"),
+                ],
+            },
+        };
+        await using (var releaseDb = CreateContext(options))
+        {
+            await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+                releaseDb,
+                new PeriodicInspectionOperationScopeCoordinator(releaseDb),
+                new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(release, CancellationToken.None);
+        }
+
+        var first = ProductionReport("RPT-EVENT-LOCK-A", 100m, false, null, "2026-08-24T01:30:00Z") with
+        {
+            EventId = "evt-report-shared-across-operations",
+        };
+        var second = ProductionReport("RPT-EVENT-LOCK-B", 100m, false, null, "2026-08-24T01:31:00Z") with
+        {
+            EventId = first.EventId,
+            Payload = ProductionReport("RPT-EVENT-LOCK-B", 100m, false, null, "2026-08-24T01:31:00Z").Payload with
+            {
+                OperationTaskId = "OP-002",
+            },
+        };
+
+        await using var gateConnection = new NpgsqlConnection(QualityPostgresLaneDatabase.ConnectionString);
+        await gateConnection.OpenAsync();
+        await using var gateTransaction = await gateConnection.BeginTransactionAsync();
+        await using (var gateCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))",
+            gateConnection,
+            gateTransaction))
+        {
+            gateCommand.Parameters.AddWithValue(
+                "key",
+                $"quality-integration-event-inbox:{ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection.ConsumerName}:{first.EventId}");
+            await gateCommand.ExecuteNonQueryAsync();
+        }
+
+        var firstTask = HandleReportAsync(options, first);
+        var secondTask = HandleReportAsync(options, second);
+        await WaitForAdvisoryWaitersAsync(expected: 2, competingTasks: [firstTask, secondTask]);
+        Assert.False(firstTask.IsCompleted);
+        Assert.False(secondTask.IsCompleted);
+        await gateTransaction.CommitAsync();
+        await Task.WhenAll(firstTask, secondTask);
+
+        await using var assertion = CreateContext(options);
+        Assert.Equal(1, await assertion.PeriodicInspectionProductionReports.CountAsync());
+        Assert.Equal(1, await assertion.InspectionTasks.CountAsync());
+        Assert.Equal(2, await assertion.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(1, await assertion.PeriodicInspectionRuntimeContexts.CountAsync(x => x.LastGeneratedQuantityWindowSequence == 1));
+        Assert.Equal(1, await assertion.PeriodicInspectionRuntimeContexts.CountAsync(x => x.LastGeneratedQuantityWindowSequence == 0));
+    }
+
+    [QualityPostgresFact]
+    public async Task Oversized_legal_quantity_backlog_fails_closed_without_partial_state_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var options = CreateOptions();
+        await using (var setup = CreateContext(options))
+        {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.InspectionPlans.Add(NewPeriodicPlan(quantityInterval: 0.000001m));
+            await setup.SaveChangesAsync();
+        }
+
+        await HandleReleaseAsync(options);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var report = ProductionReport(
+            "RPT-OVERSIZED-LEGAL",
+            2147.483648m,
+            false,
+            null,
+            "2026-08-24T01:30:00Z");
+        await using (var reportDb = CreateContext(options))
+        {
+            await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+                reportDb,
+                new PeriodicInspectionOperationScopeCoordinator(reportDb),
+                deadLetters).HandleAsync(report, CancellationToken.None);
+        }
+
+        await using var assertion = CreateContext(options);
+        var context = await assertion.PeriodicInspectionRuntimeContexts.AsNoTracking().SingleAsync();
+        Assert.Empty(await assertion.PeriodicInspectionProductionReports.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await assertion.InspectionTasks.AsNoTracking().ToArrayAsync());
+        Assert.Equal(0m, context.QuantityHighWater);
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+        Assert.Equal(1, await assertion.ProcessedIntegrationEvents.CountAsync());
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Contains("supported pending-window limit", deadLetter.FailureMessage, StringComparison.Ordinal);
     }
 
     [QualityPostgresFact]
@@ -690,6 +1016,16 @@ public sealed class PeriodicInspectionPostgresProfileTests
                 """
                 UPDATE quality.periodic_inspection_runtime_contexts
                 SET last_generated_quantity_window_sequence = -1
+                WHERE id = '00000000-0000-0000-0000-000000000201';
+                """),
+            new ConstraintViolationCase(
+                "runtime quantity continuation pairing",
+                PostgresErrorCodes.CheckViolation,
+                "ck_periodic_inspection_runtime_quantity_continuation",
+                """
+                UPDATE quality.periodic_inspection_runtime_contexts
+                SET quantity_generation_anchor_at_utc = '2026-08-24T01:10:00Z',
+                    quantity_continuation_next_attempt_at_utc = NULL
                 WHERE id = '00000000-0000-0000-0000-000000000201';
                 """)
         };

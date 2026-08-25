@@ -79,7 +79,7 @@ public sealed class PeriodicInspectionOperationTests
     }
 
     [Fact]
-    public void Quantity_window_generation_is_bounded_and_resumable_at_the_int32_overflow_boundary()
+    public void Quantity_window_generation_fails_closed_before_partial_work_at_the_int32_overflow_boundary()
     {
         var operation = ReleasedOperation(quantityInterval: 0.000001m);
         operation.RecordProductionReport(
@@ -92,17 +92,13 @@ public sealed class PeriodicInspectionOperationTests
             null);
         var context = Assert.Single(operation.RuntimeContexts);
 
-        var firstBatch = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256);
-        var secondBatch = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(20), maxWindows: 256);
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256));
 
-        Assert.Equal(256, firstBatch.Count);
-        Assert.Equal((1L, 0.000001m), (firstBatch[0].Sequence, firstBatch[0].ThresholdQuantity));
-        Assert.Equal((256L, 0.000256m), (firstBatch[^1].Sequence, firstBatch[^1].ThresholdQuantity));
-        Assert.Equal(256, secondBatch.Count);
-        Assert.Equal((257L, 0.000257m), (secondBatch[0].Sequence, secondBatch[0].ThresholdQuantity));
-        Assert.Equal((512L, 0.000512m), (secondBatch[^1].Sequence, secondBatch[^1].ThresholdQuantity));
-        Assert.Equal(512, context.LastGeneratedQuantityWindowSequence);
-        Assert.NotNull(context.QuantityGenerationAnchorAtUtc);
+        Assert.Contains("supported pending-window limit", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
     }
 
     [Fact]
@@ -119,13 +115,63 @@ public sealed class PeriodicInspectionOperationTests
             null);
         var context = Assert.Single(operation.RuntimeContexts);
 
-        var batch = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256);
+        Assert.Throws<InvalidOperationException>(() =>
+            context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256));
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+    }
 
-        Assert.Equal(256, batch.Count);
-        Assert.Equal((1L, 0.000001m), (batch[0].Sequence, batch[0].ThresholdQuantity));
-        Assert.Equal((256L, 0.000256m), (batch[^1].Sequence, batch[^1].ThresholdQuantity));
-        Assert.Equal(256, context.LastGeneratedQuantityWindowSequence);
+    [Fact]
+    public void Maximum_supported_quantity_backlog_drains_without_truncation_and_clears_continuation_state()
+    {
+        var operation = ReleasedOperation(quantityInterval: 1m);
+        operation.RecordProductionReport(
+            "RPT-SUPPORTED-MAX",
+            "WC-001",
+            PeriodicInspectionRuntimeContext.MaximumSupportedPendingQuantityWindows,
+            "EA",
+            ReleasedAtUtc.AddMinutes(10),
+            false,
+            null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        var generated = new List<PeriodicInspectionQuantityWindow>();
+
+        while (context.QuantityGenerationAnchorAtUtc.HasValue || generated.Count == 0)
+        {
+            generated.AddRange(context.TakeDueQuantityWindows(
+                ReleasedAtUtc.AddMinutes(10),
+                maxWindows: 256,
+                ReleasedAtUtc.AddMinutes(11)));
+        }
+
+        Assert.Equal(10_000, generated.Count);
+        Assert.Equal((1L, 1m), (generated[0].Sequence, generated[0].ThresholdQuantity));
+        Assert.Equal((10_000L, 10_000m), (generated[^1].Sequence, generated[^1].ThresholdQuantity));
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+    }
+
+    [Fact]
+    public void Completion_preserves_a_257th_pending_window_until_the_terminal_batch_commits()
+    {
+        var operation = ReleasedOperation(quantityInterval: 1m);
+        operation.RecordProductionReport(
+            "RPT-257", "WC-001", 257m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Equal(256, context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256).Count);
+        Assert.True(operation.Complete(
+            "SKU-FG-1000", 10, "WC-001", "EA", ReleasedAtUtc.AddMinutes(20)));
+
+        Assert.Equal("closed", context.Status);
         Assert.NotNull(context.QuantityGenerationAnchorAtUtc);
+        Assert.NotNull(context.QuantityContinuationNextAttemptAtUtc);
+        var terminal = Assert.Single(context.TakeDueQuantityWindows(
+            ReleasedAtUtc.AddMinutes(21), maxWindows: 256));
+        Assert.Equal((257L, 257m), (terminal.Sequence, terminal.ThresholdQuantity));
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
     }
 
     [Fact]

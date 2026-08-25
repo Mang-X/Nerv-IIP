@@ -111,7 +111,9 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
                     "last_generated_quantity_window_sequence >= 0");
                 table.HasCheckConstraint(
                     "ck_periodic_inspection_runtime_quantity_continuation",
-                    "quantity_generation_anchor_at_utc IS NULL OR (status = 'active' AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
+                    "(quantity_generation_anchor_at_utc IS NULL AND quantity_continuation_next_attempt_at_utc IS NULL) OR "
+                    + "(quantity_generation_anchor_at_utc IS NOT NULL AND quantity_continuation_next_attempt_at_utc IS NOT NULL "
+                    + "AND status IN ('active', 'closed') AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
                 table.HasCheckConstraint(
                     "ck_periodic_inspection_runtime_time_watermark",
                     "(last_generated_time_window_sequence = 0 AND time_schedule_anchor_at_utc IS NULL) OR "
@@ -140,6 +142,7 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
         builder.Property(x => x.QuantityHighWater).HasColumnName("quantity_high_water").IsRequired().HasPrecision(18, 6).HasComment("Monotonic accepted good-quantity high water; reversal facts neither advance nor roll it back.");
         builder.Property(x => x.LastGeneratedQuantityWindowSequence).HasColumnName("last_generated_quantity_window_sequence").IsRequired().HasComment("Last atomically generated cumulative quantity-window sequence; zero before generation.");
         builder.Property(x => x.QuantityGenerationAnchorAtUtc).HasColumnName("quantity_generation_anchor_at_utc").HasComment("UTC triggering event time retained while bounded quantity-window continuation remains pending.");
+        builder.Property(x => x.QuantityContinuationNextAttemptAtUtc).HasColumnName("quantity_continuation_next_attempt_at_utc").HasComment("Persisted fair-scheduling time after which the pending quantity backlog may claim another bounded batch.");
         builder.Property(x => x.TimeScheduleAnchorAtUtc).HasColumnName("time_schedule_anchor_at_utc").HasComment("Frozen UTC first-production anchor after the first time window is generated.");
         builder.Property(x => x.LastGeneratedTimeWindowSequence).HasColumnName("last_generated_time_window_sequence").IsRequired().HasComment("Last atomically generated time-window sequence; zero before generation.");
         builder.Property(x => x.NextTimeWindowAtUtc).HasColumnName("next_time_window_at_utc").HasComment("Persisted UTC due time for the next ungenerated time window; null before activity or after closure.");
@@ -150,7 +153,7 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
             .HasDatabaseName("ux_periodic_inspection_runtime_scope_plan_operation");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.NextTimeWindowAtUtc })
             .HasDatabaseName("ix_periodic_inspection_runtime_scope_status_next_time");
-        builder.HasIndex(x => new { x.Status, x.QuantityGenerationAnchorAtUtc })
-            .HasDatabaseName("ix_periodic_inspection_runtime_status_quantity_continuation");
+        builder.HasIndex(x => new { x.QuantityContinuationNextAttemptAtUtc, x.Id })
+            .HasDatabaseName("ix_periodic_inspection_runtime_quantity_continuation_due");
     }
 }

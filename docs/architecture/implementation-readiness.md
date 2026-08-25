@@ -18,13 +18,15 @@ BusinessQuality 已新增职责独立的时间巡检扫描器。`Quality:Periodi
 
 ## Quality 数量间隔巡检任务生成（#1973 子项④ / #2072）
 
-BusinessQuality 在现有 release/report 消费链路内，按运行上下文冻结的 `QuantityInterval` 和非冲销良品数量高水位逐桶生成 `operation/mes` 巡检任务。窗口序号从 1 开始，任务 `Quantity` 保存累计阈值，例如间隔 100 且一次报工跨到 250 时生成 100、200 两条任务；后续累计达到 300 时只补第 3 条。报工先于 release 时，release 创建并回放冻结上下文后立即补齐所有已跨窗口。只有 active、UOM 已知且冻结数量间隔为正的上下文参与生成；completion 关闭上下文后不再补发。冲销只降低净良品量，不推进、不回收已生成窗口，后续乱序的非冲销报工继续从单调高水位追加窗口。
+BusinessQuality 在现有 release/report 消费链路内，按运行上下文冻结的 `QuantityInterval` 和非冲销良品数量高水位逐桶生成 `operation/mes` 巡检任务。窗口序号从 1 开始，任务 `Quantity` 保存累计阈值，例如间隔 100 且一次报工跨到 250 时生成 100、200 两条任务；后续累计达到 300 时只补第 3 条。报工先于 release 时，release 创建并回放冻结上下文后立即补齐所有已跨窗口。只有 active、UOM 已知且冻结数量间隔为正的上下文会由 release/report 启动生成；completion 不会为从未领取过的窗口新建 backlog，但若完成前已经持久化续批锚点，则 closed 上下文会保留该终态欠桶，直到最后一批与水位提交后才清理续批状态。冲销只降低净良品量，不推进、不回收已生成窗口，后续乱序的非冲销报工继续从单调高水位追加窗口。
 
-每个数量窗口使用运行上下文 ID 与窗口序号形成稳定身份：来源行是 `operationId:periodic-quantity:runtimeContextId:sequence`，触发幂等键是 `quality:periodic-quantity:runtimeContextId:sequence`。任务沿用冻结的工单、工序、SKU、UOM、方案版本和个人/班组投递目标；创建时间采用首次触发尚未追平 backlog 的 release/report 事件时间，期限为其后 24 小时，续批期间不会因后来事件改写该锚点。单事务每上下文最多生成 256 个窗口；未追平时持久化 `quantity_generation_anchor_at_utc`，常驻续批扫描器每分钟按稳定顺序最多选择 100 个上下文，并让每个候选以独立 scope、工序 advisory lock 和 UoW 再生成一批，不设累计丢弃上限。`numeric(18,6)` 可持久化的最大高水位除以最小合法间隔 `0.000001` 得到的窗口数仍小于 `long.MaxValue`，因此序号与目标计算不会经过 `int` 溢出或按总 backlog 预分配内存。
+每个数量窗口使用运行上下文 ID 与窗口序号形成稳定身份：来源行是 `operationId:periodic-quantity:runtimeContextId:sequence`，触发幂等键是 `quality:periodic-quantity:runtimeContextId:sequence`。任务沿用冻结的工单、工序、SKU、UOM、方案版本和个人/班组投递目标；创建时间采用首次触发尚未追平 backlog 的 release/report 事件时间，期限为其后 24 小时，续批期间不会因后来事件改写该锚点。单事务每上下文最多生成 256 个窗口；未追平时同时持久化 `quantity_generation_anchor_at_utc` 与 `quantity_continuation_next_attempt_at_utc`。扫描器每分钟按 next-attempt、scope 和 ID 选择最多 100 个已到期上下文；成功领取或毒候选失败都会把 next-attempt 持久推后，使尚未入选的旧候选在重启和超过 100 个上下文时仍能前移，候选观察值还用于拒绝过期领取。每个候选以独立 scope、工序 advisory lock 和 UoW 生成一批。
 
-release、report、completion 三个消费者按 ADR 0011 使用 `(eventId, consumerName)` 持久 inbox；schema/上下文校验后、业务副作用前登记，同一 event ID 即使携带不同合法载荷也 no-op。生成复用 #2070 的工序级 PostgreSQL transaction-scoped advisory lock，并在同一 UoW 中原子写入 inbox、report、任务、数量高水位、窗口水位与续批锚点；重放、乱序及并发消费者只会留下每窗口一条任务。真实 PostgreSQL 故障注入验证任务写入失败时 inbox、report、任务、高水位、窗口水位及续批锚点全部回滚，重放后可正常生成。
+单次进入生成前允许的待生成窗口上限为 10,000，即按 256 个窗口一批最多 40 批追平；这是容量合同，不是静默截断点。合法事件若以最小间隔 `0.000001` 形成 10,001 个或更多待生成窗口（包括精确 `2^31` 边界及 `numeric(18,6)` 最大高水位），会失败关闭并进入 DLQ，数据库不会提交 inbox、report、任务或任何水位/续批状态，也不会溢出 `int`、预分配总 backlog、长期持锁或留下部分状态。运维应拆分或修正该来源事件后再重放，不能把受治理上限解释为累计丢桶。
 
-两次迁移分别新增默认值 0 的非负数量窗口水位，以及 nullable 续批锚点、待续批索引、配对约束和 Quality inbox；迁移期间都不创建巡检任务。既有 active 上下文会在下一次被接受的 release/report 消费时按当前数量高水位启动有界补齐；没有新事件的既有 backlog 不会被无来源锚点的扫描器猜测触发。开始生成数量任务后不建议执行这些迁移的 `Down`：降级会丢失水位、恢复锚点或消费去重事实，应使用前滚修复。该能力不新增 HTTP API、MES 事件、PDA/SPC 页面或用户配置。真实 PostgreSQL profile 继续由 `quality-postgres-profile` lane 承载，登记 17 条冻结身份；测试 evidence policy 另计既有 world-history provider 身份后为 18 条。
+release、report、completion 三个消费者复用共享 canonical inbox helper，按 ADR 0011 使用 `(eventId, consumerName)` 持久 inbox；schema/上下文校验后、业务副作用前登记，同一 event ID 即使携带不同合法载荷也 no-op。Quality 在 PostgreSQL 事务内先取得该身份的 advisory lock，再查询 inbox；它与工序锁、事实、任务、水位和续批状态处于同一 UoW。真实 PostgreSQL 的跨工序受控交错证明删除该 event lock 会发生唯一键冲突，而保留锁时只提交一个 payload。生成复用 #2070 的工序锁；重放、乱序及并发消费者只会留下每窗口一条任务。真实 PostgreSQL 故障注入验证任务写入失败时 inbox、report、任务、高水位、窗口水位及续批状态全部回滚，重放后可正常生成。
+
+三次迁移分别新增默认值 0 的非负数量窗口水位；nullable 续批锚点、Quality inbox；以及持久 next-attempt、公平到期索引与 active/closed pending 配对约束。第三次迁移把既有非空续批锚点回填为首次 next-attempt，不创建巡检任务。既有 active 上下文会在下一次被接受的 release/report 消费时按当前数量高水位启动有界补齐；没有新事件的既有 backlog 不会被无来源锚点的扫描器猜测触发。开始生成数量任务后不建议执行这些迁移的 `Down`：降级会丢失水位、恢复锚点、公平调度状态或消费去重事实，应使用前滚修复。该能力不新增 HTTP API、MES 事件、PDA/SPC 页面或用户配置。真实 PostgreSQL profile 继续由 `quality-postgres-profile` lane 承载；冻结身份与 evidence policy 数量以 `scripts/postgres-test-lane.json` 和 `scripts/test-evidence-policy.json` 的 current tree 为准。
 
 ## FullChain man-440 SIGKILL 调查结论（#1878）
 

@@ -25,12 +25,14 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
 
     private async Task TryContinueAsync(CancellationToken cancellationToken)
     {
+        var attemptedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        var nextAttemptAtUtc = attemptedAtUtc.Add(ScanInterval);
         IReadOnlyList<PendingPeriodicInspectionQuantityContext> candidates;
         try
         {
             using var queryScope = scopeFactory.CreateScope();
             candidates = await queryScope.ServiceProvider.GetRequiredService<ISender>().Send(
-                new ListPendingPeriodicInspectionQuantityContextsQuery(ContextBatchSize),
+                new ListPendingPeriodicInspectionQuantityContextsQuery(attemptedAtUtc, ContextBatchSize),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -55,6 +57,8 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
                         candidate.WorkOrderId,
                         candidate.OperationId,
                         candidate.RuntimeContextId,
+                        candidate.ObservedNextAttemptAtUtc,
+                        nextAttemptAtUtc,
                         PeriodicInspectionQuantityTaskGeneration.MaxWindowsPerTransaction),
                     cancellationToken);
             }
@@ -72,7 +76,40 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
                     candidate.WorkOrderId,
                     candidate.OperationId,
                     candidate.RuntimeContextId);
+                await TryDeferFailedCandidateAsync(candidate, nextAttemptAtUtc, cancellationToken);
             }
+        }
+    }
+
+    private async Task TryDeferFailedCandidateAsync(
+        PendingPeriodicInspectionQuantityContext candidate,
+        DateTime nextAttemptAtUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var deferScope = scopeFactory.CreateScope();
+            await deferScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new DeferPeriodicInspectionQuantityContinuationCommand(
+                    candidate.OrganizationId,
+                    candidate.EnvironmentId,
+                    candidate.WorkOrderId,
+                    candidate.OperationId,
+                    candidate.RuntimeContextId,
+                    candidate.ObservedNextAttemptAtUtc,
+                    nextAttemptAtUtc),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Could not persist the periodic quantity continuation deferral for {RuntimeContextId}; the candidate remains due.",
+                candidate.RuntimeContextId);
         }
     }
 }

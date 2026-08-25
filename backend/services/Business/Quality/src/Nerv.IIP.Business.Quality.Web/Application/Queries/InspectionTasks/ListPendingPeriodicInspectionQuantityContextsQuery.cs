@@ -9,9 +9,10 @@ public sealed record PendingPeriodicInspectionQuantityContext(
     string EnvironmentId,
     string WorkOrderId,
     string OperationId,
-    PeriodicInspectionRuntimeContextId RuntimeContextId);
+    PeriodicInspectionRuntimeContextId RuntimeContextId,
+    DateTime ObservedNextAttemptAtUtc);
 
-public sealed record ListPendingPeriodicInspectionQuantityContextsQuery(int ContextBatchSize)
+public sealed record ListPendingPeriodicInspectionQuantityContextsQuery(DateTime NowUtc, int ContextBatchSize)
     : IQuery<IReadOnlyList<PendingPeriodicInspectionQuantityContext>>;
 
 public sealed class ListPendingPeriodicInspectionQuantityContextsQueryValidator
@@ -19,6 +20,7 @@ public sealed class ListPendingPeriodicInspectionQuantityContextsQueryValidator
 {
     public ListPendingPeriodicInspectionQuantityContextsQueryValidator()
     {
+        RuleFor(x => x.NowUtc.Kind).Equal(DateTimeKind.Utc);
         RuleFor(x => x.ContextBatchSize).InclusiveBetween(1, 1000);
     }
 }
@@ -34,9 +36,10 @@ public sealed class ListPendingPeriodicInspectionQuantityContextsQueryHandler(Ap
         => await dbContext.PeriodicInspectionRuntimeContexts
             .AsNoTracking()
             .Where(context =>
-                context.Status == "active"
-                && context.QuantityGenerationAnchorAtUtc != null)
-            .OrderBy(context => context.QuantityGenerationAnchorAtUtc)
+                context.QuantityGenerationAnchorAtUtc != null
+                && context.QuantityContinuationNextAttemptAtUtc != null
+                && context.QuantityContinuationNextAttemptAtUtc <= request.NowUtc)
+            .OrderBy(context => context.QuantityContinuationNextAttemptAtUtc)
             .ThenBy(context => context.OrganizationId)
             .ThenBy(context => context.EnvironmentId)
             .ThenBy(context => context.WorkOrderId)
@@ -47,7 +50,8 @@ public sealed class ListPendingPeriodicInspectionQuantityContextsQueryHandler(Ap
                 context.EnvironmentId,
                 context.WorkOrderId,
                 context.OperationId,
-                context.Id))
+                context.Id,
+                context.QuantityContinuationNextAttemptAtUtc!.Value))
             .Take(request.ContextBatchSize)
             .ToArrayAsync(cancellationToken);
 }
