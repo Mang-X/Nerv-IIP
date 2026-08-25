@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
@@ -38,7 +39,7 @@ public sealed class MesQualityInspectionPlanClient(
             $"environmentId={Uri.EscapeDataString(environmentId)}",
             "category=operation",
             $"skuCode={Uri.EscapeDataString(skuCode)}",
-            "status=active",
+            $"status={Uri.EscapeDataString(ProductionEngineeringContractStatuses.Active)}",
             "skip=0",
             "take=1",
         };
@@ -89,7 +90,7 @@ public sealed class MesQualityInspectionPlanClient(
                 data.Items.Any(x =>
                     string.Equals(x.OrganizationId, organizationId, StringComparison.Ordinal) &&
                     string.Equals(x.EnvironmentId, environmentId, StringComparison.Ordinal) &&
-                    string.Equals(x.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(x.Status, ProductionEngineeringContractStatuses.Active, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(x.SkuCode, skuCode, StringComparison.Ordinal) &&
                     string.Equals(x.Category, "operation", StringComparison.Ordinal) &&
                     string.Equals(x.WorkCenterId, workCenterId, StringComparison.Ordinal));
