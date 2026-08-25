@@ -233,20 +233,44 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Single(successReceipt.GetDomainEvents()));
         var failureDomainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(
             Assert.Single(failureReceipt.GetDomainEvents()));
-        var successEvent = converter.Convert(successDomainEvent);
-        var successReplayEvent = converter.Convert(successDomainEvent);
-        var failureEvent = converter.Convert(failureDomainEvent) with
+        var generatedSuccessEvent = converter.Convert(successDomainEvent);
+        var generatedFailureEvent = converter.Convert(failureDomainEvent);
+        Assert.Equal(source.ErpCapitalizedUnitCost, generatedSuccessEvent.Payload.UnitCost);
+        Assert.Equal(
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            generatedSuccessEvent.Payload.UnitCostAuthorityReference);
+        var successEvent = generatedSuccessEvent with
         {
-            Payload = converter.Convert(failureDomainEvent).Payload with
+            Payload = generatedSuccessEvent.Payload with
             {
+                UnitCost = source.ClientSuppliedUnitCost,
+                UnitCostAuthorityReference = InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            },
+        };
+        var successReplayEvent = converter.Convert(successDomainEvent) with
+        {
+            Payload = generatedSuccessEvent.Payload with
+            {
+                UnitCost = source.ClientSuppliedUnitCost,
+                UnitCostAuthorityReference = InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            },
+        };
+        var failureEvent = generatedFailureEvent with
+        {
+            Payload = generatedFailureEvent.Payload with
+            {
+                UnitCost = source.ClientSuppliedUnitCost,
                 InventoryReservationId = "not-a-guid",
+                UnitCostAuthorityReference = InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
             },
         };
         var failureReplayEvent = converter.Convert(failureDomainEvent) with
         {
-            Payload = converter.Convert(failureDomainEvent).Payload with
+            Payload = generatedFailureEvent.Payload with
             {
+                UnitCost = source.ClientSuppliedUnitCost,
                 InventoryReservationId = "not-a-guid",
+                UnitCostAuthorityReference = InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
             },
         };
 
@@ -255,6 +279,10 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.Null(pendingReceipt.UnitCost);
         Assert.Empty(pendingReceipt.GetDomainEvents());
         Assert.NotEqual(source.ClientSuppliedUnitCost, successReceipt.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, successReplayEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, failureEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, failureReplayEvent.Payload.UnitCost);
 
         return new ReceiptBoundaryFacts(
             source with
