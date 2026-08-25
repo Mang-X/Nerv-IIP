@@ -297,8 +297,7 @@ const receiveForm = reactive({
   idempotencyKey: '',
 })
 const returnOpen = ref(false)
-const returnError = ref('')
-const returnForm = reactive({ requestId: '', quantity: '' })
+const returnForm = reactive({ requestId: '', quantity: '', idempotencyKey: '' })
 
 function newMaterialIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -372,6 +371,11 @@ function returnableQuantityOfRow(row: MaterialIssueRow) {
   return Math.max(0, (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0))
 }
 
+const returnFormMaxQuantity = computed(() => {
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  return row ? returnableQuantityOfRow(row) : undefined
+})
+
 function canReturn(row: MaterialIssueRow) {
   return (
     canManageMaterials.value &&
@@ -393,9 +397,9 @@ function openReceiveDialog(row: MaterialIssueRow) {
 
 function openReturnDialog(row: MaterialIssueRow) {
   if (!canReturn(row)) return
-  returnError.value = ''
   returnForm.requestId = row.requestId ?? ''
   returnForm.quantity = String(returnableQuantityOfRow(row))
+  returnForm.idempotencyKey = newMaterialIdempotencyKey(`return-${row.requestId ?? 'request'}`)
   returnOpen.value = true
 }
 
@@ -444,17 +448,25 @@ async function submitReceipt() {
 async function submitReturn() {
   if (!returnForm.requestId || returnLineSideMaterialPending.value) return
   const returnedQuantity = Number(returnForm.quantity)
-  if (!Number.isFinite(returnedQuantity) || returnedQuantity <= 0) return
-  returnError.value = ''
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  const returnableQuantity = row ? returnableQuantityOfRow(row) : 0
+  if (!Number.isFinite(returnedQuantity) || returnedQuantity <= 0) {
+    notifyError('退料数量必须大于 0。')
+    return
+  }
+  if (returnedQuantity > returnableQuantity) {
+    notifyError(`退料数量不能超过当前可退数量 ${returnableQuantity}。`)
+    return
+  }
   try {
     await returnLineSideMaterial(returnForm.requestId, {
       returnedQuantity,
+      idempotencyKey: returnForm.idempotencyKey,
     })
     returnOpen.value = false
     notifySuccess('已提交线边退料，线边可用量将随库存过账回读更新。')
     void refreshMaterialReadiness()
   } catch (error) {
-    returnError.value = inlineErrorMessage(error, '线边退料失败，请稍后重试。')
     notifyOperationFailure('线边退料失败', error, '线边退料失败，请稍后重试。')
   }
 }
@@ -1174,7 +1186,9 @@ function formatError(error: unknown) {
           >
             线边退料
           </NvButton>
-          <span v-if="!canReceive(row) && !canReturn(row)" class="text-xs text-muted-foreground">无需操作</span>
+          <span v-if="!canReceive(row) && !canReturn(row)" class="text-xs text-muted-foreground"
+            >无需操作</span
+          >
         </template>
       </NvDataTable>
     </div>
@@ -1309,27 +1323,31 @@ function formatError(error: unknown) {
     <NvAlertDialog v-model:open="returnOpen">
       <NvAlertDialogContent class="sm:max-w-md">
         <NvAlertDialogHeader>
-          <NvAlertDialogTitle>线边退料 · {{ readFaceText(returnForm.requestId) }}</NvAlertDialogTitle>
+          <NvAlertDialogTitle
+            >线边退料 · {{ readFaceText(returnForm.requestId) }}</NvAlertDialogTitle
+          >
           <NvAlertDialogDescription>
             退料会把当前线边物料退回仓库；数量不得超过当前可退余额。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvFieldGroup class="grid gap-3">
-          <p
-            v-if="returnError"
-            class="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
-            data-testid="line-side-return-error"
-            role="alert"
-          >
-            {{ returnError }}
-          </p>
           <NvField>
             <NvFieldLabel for="return-quantity">退料数量</NvFieldLabel>
-            <NvInput id="return-quantity" v-model="returnForm.quantity" inputmode="decimal" />
+            <NvInput
+              id="return-quantity"
+              v-model="returnForm.quantity"
+              inputmode="decimal"
+              :max="returnFormMaxQuantity"
+            />
           </NvField>
         </NvFieldGroup>
         <NvAlertDialogFooter>
-          <NvButton type="button" variant="outline" :disabled="returnLineSideMaterialPending" @click="returnOpen = false">
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="returnLineSideMaterialPending"
+            @click="returnOpen = false"
+          >
             返回
           </NvButton>
           <NvButton

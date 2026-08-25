@@ -80,15 +80,17 @@ public sealed class BusinessMesMaterialIssueClientTests
     [Fact]
     public async Task Return_line_side_material_returns_an_accepted_receipt_carrying_the_request_number()
     {
-        var client = ClientReturning(
+        var handler = new StubHandler(
             """{"data":{"status":"Accepted","referenceId":"MIR-000123","acceptedAtUtc":"2026-07-31T08:10:00Z"}}""");
+        var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
         var request = new BusinessConsoleMesReturnLineSideMaterialRequest(
-            "MIR-000123", "org", "env", null, 2m);
+            "MIR-000123", "org", "env", null, 2m, "mes-return-intent-1");
 
         var response = await client.ReturnLineSideMaterialAsync("token", "MIR-000123", request, CancellationToken.None);
 
         Assert.True(response.Accepted);
         Assert.Equal("MIR-000123", response.DownstreamDocumentId);
+        Assert.Equal("mes-return-intent-1", handler.LastRequest!.Headers.GetValues("Idempotency-Key").Single());
     }
 
     private static HttpBusinessMesClient ClientReturning(string json) =>
@@ -96,11 +98,16 @@ public sealed class BusinessMesMaterialIssueClientTests
 
     private sealed class StubHandler(string json) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
             });
+        }
     }
 
     private sealed class RecordingHandler(string json) : HttpMessageHandler

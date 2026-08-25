@@ -45028,6 +45028,10 @@
           "returnedQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

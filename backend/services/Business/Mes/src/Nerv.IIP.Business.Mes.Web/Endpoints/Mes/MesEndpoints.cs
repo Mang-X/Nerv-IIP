@@ -987,7 +987,9 @@ public sealed class ReturnLineSideMaterialEndpoint(ISender sender, TimeProvider 
             req.EnvironmentId,
             req.RequestId,
             req.ReturnedAtUtc ?? timeProvider.GetUtcNow(),
-            req.ReturnedQuantity), ct);
+            req.ReturnedQuantity,
+            HttpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ??
+            HttpContext.Request.Headers["X-Idempotency-Key"].FirstOrDefault()), ct);
         await Send.OkAsync(response, ct);
     }
 }

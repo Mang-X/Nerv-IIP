@@ -4184,6 +4184,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest = {
     returnedAtUtc?: string | null;
     returnedQuantity?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDispatchTaskListResponse = NetCorePalExtensionsDtoResponseData & {

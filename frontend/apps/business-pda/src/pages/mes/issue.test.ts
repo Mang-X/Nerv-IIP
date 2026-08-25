@@ -377,7 +377,9 @@ describe('PDA MES material issue page', () => {
 
     await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
     await flushPromises()
-    const quantity = document.body.querySelector<HTMLInputElement>('[data-testid="returned-quantity"]')!
+    const quantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="returned-quantity"]',
+    )!
     quantity.value = '10'
     quantity.dispatchEvent(new Event('input'))
     await flushPromises()
@@ -390,6 +392,45 @@ describe('PDA MES material issue page', () => {
       { workOrderId: 'WO-2026-0002' },
     )
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('blocks an over-limit return with visible feedback before submitting', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    const quantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="returned-quantity"]',
+    )!
+    quantity.value = '51'
+    quantity.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('退料数量不能超过当前可退数量 50')
+    expect(
+      document.body
+        .querySelector<HTMLElement>('[data-testid="submit-return"]')!
+        .hasAttribute('disabled'),
+    ).toBe(true)
+    expect(returnLineSideMaterial).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows a structured MES rejection and reuses the return idempotency key on retry', async () => {
+    returnLineSideMaterial.mockRejectedValueOnce({ detail: '当前可退数量不足。' })
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-return"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').text()).toContain('当前可退数量不足')
+    const firstKey = returnLineSideMaterial.mock.calls[0][1].idempotencyKey
+    await wrapper.get('[data-testid="retry-issue"]').trigger('click')
+    await flushPromises()
+    expect(returnLineSideMaterial.mock.calls[1][1].idempotencyKey).toBe(firstKey)
     wrapper.unmount()
   })
 })

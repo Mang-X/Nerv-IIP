@@ -1131,7 +1131,8 @@ public sealed record ReturnLineSideMaterialCommand(
     string EnvironmentId,
     string RequestId,
     DateTimeOffset ReturnedAtUtc,
-    decimal ReturnedQuantity) : ICommand<MesAcceptedResponse>;
+    decimal ReturnedQuantity,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<ReturnLineSideMaterialCommand>
 {
@@ -1141,6 +1142,7 @@ public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<R
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.RequestId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReturnedQuantity).GreaterThan(0);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1171,7 +1173,11 @@ public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext db
                     x.MaterialId == materialRequest.MaterialId &&
                     x.MaterialLotId == materialRequest.MaterialLotId)
                 .SumAsync(x => x.ConsumedQuantity, cancellationToken);
-            materialRequest.ReturnLineSideMaterial(request.ReturnedAtUtc, request.ReturnedQuantity, consumedQuantity);
+            materialRequest.ReturnLineSideMaterial(
+                request.ReturnedAtUtc,
+                request.ReturnedQuantity,
+                consumedQuantity,
+                request.IdempotencyKey);
         }
         catch (InvalidOperationException exception)
         {

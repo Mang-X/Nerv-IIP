@@ -668,6 +668,50 @@ public sealed class MesIssue557ExecutionTests
     }
 
     [Fact]
+    public async Task Return_line_side_material_replays_same_idempotency_key_without_a_second_return()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_replays_same_idempotency_key_without_a_second_return));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+        var first = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 2m, "mes-return-intent-1");
+
+        await handler.Handle(first, CancellationToken.None);
+        materialRequest.ClearDomainEvents();
+        await dbContext.SaveChangesAsync();
+
+        await handler.Handle(first, CancellationToken.None);
+
+        Assert.Equal(3m, materialRequest.ReceivedQuantity);
+        Assert.Empty(materialRequest.GetDomainEvents());
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_rejects_reusing_idempotency_key_for_different_quantity()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_rejects_reusing_idempotency_key_for_different_quantity));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+        const string key = "mes-return-intent-2";
+
+        await handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 2m, key),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:01:00Z"), 1m, key),
+            CancellationToken.None));
+
+        Assert.Contains("幂等键", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(3m, materialRequest.ReceivedQuantity);
+    }
+
+    [Fact]
     public async Task Return_line_side_material_rejects_quantity_already_consumed_by_production_report()
     {
         await using var dbContext = CreateDbContext(nameof(Return_line_side_material_rejects_quantity_already_consumed_by_production_report));

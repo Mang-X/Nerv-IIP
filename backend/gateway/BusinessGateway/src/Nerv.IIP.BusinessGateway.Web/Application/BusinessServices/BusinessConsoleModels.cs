@@ -4787,7 +4787,8 @@ public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     DateTimeOffset? ReturnedAtUtc,
-    decimal ReturnedQuantity);
+    decimal ReturnedQuantity,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMesDispatchTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items,
