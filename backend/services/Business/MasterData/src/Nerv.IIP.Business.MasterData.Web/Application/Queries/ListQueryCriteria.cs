@@ -61,10 +61,8 @@ public static class ListQueryValidationExtensions
         Expression<Func<T, string>> environmentId)
     {
         validator.RuleFor(organizationId)
-            .NotEmpty().WithMessage("组织标识不能为空。")
-            .MaximumLength(64).WithMessage("组织标识不能超过 64 个字符。");
+            .NotEmpty().WithMessage("组织标识不能为空。");
         validator.RuleFor(environmentId)
-            .NotEmpty().WithMessage("环境标识不能为空。")
-            .MaximumLength(64).WithMessage("环境标识不能超过 64 个字符。");
+            .NotEmpty().WithMessage("环境标识不能为空。");
     }
 }

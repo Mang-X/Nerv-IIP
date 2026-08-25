@@ -51,20 +51,47 @@ public sealed class MasterDataResourceListHttpTests
     }
 
     [Fact]
-    public async Task Get_resources_without_organization_returns_response_data_error()
+    public async Task Get_resources_accepts_existing_tenant_identifier_length()
+    {
+        var organizationId = "org-" + "x".PadRight(61, 'x');
+
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.Skus.Add(Sku.Create(organizationId, "env-dev", "SKU-LONG-TENANT", "Long tenant", "pcs", "finished-goods"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "master-data-resource-list-http-test-token");
+
+        var response = await client.GetAsync(
+            $"/api/business/v1/master-data/resources?organizationId={organizationId}&environmentId=env-dev&resourceType=sku");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+    }
+
+    [Theory]
+    [InlineData("?environmentId=env-dev&resourceType=sku", "组织标识不能为空")]
+    [InlineData("?organizationId=org-001&resourceType=sku", "环境标识不能为空")]
+    public async Task Get_resources_without_tenant_value_returns_response_data_error(string query, string expectedMessage)
     {
         await using var factory = new MasterDataResourceListHttpTestFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "master-data-resource-list-http-test-token");
 
-        var response = await client.GetAsync(
-            "/api/business/v1/master-data/resources?environmentId=env-dev&resourceType=sku");
+        var response = await client.GetAsync("/api/business/v1/master-data/resources" + query);
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(body);
         Assert.False(document.RootElement.GetProperty("success").GetBoolean());
-        Assert.Contains("组织标识不能为空", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Contains(expectedMessage, document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
         Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
         var errorData = document.RootElement.GetProperty("errorData");
         Assert.Equal(JsonValueKind.Array, errorData.ValueKind);
