@@ -321,7 +321,9 @@ public sealed record CreateMaterialIssueRequestRequest(
     string UomCode,
     decimal? Quantity,
     DateTimeOffset? RequestedAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record ListMaterialIssueRequestsRequest(
     string OrganizationId,
@@ -924,7 +926,9 @@ public sealed class CreateMaterialIssueRequestEndpoint(ISender sender, TimeProvi
             req.UomCode,
             req.Quantity,
             req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.IsSupplementary,
+            req.OriginalMaterialIssueRequestNo), ct);
         await Send.OkAsync(response, ct);
     }
 }
