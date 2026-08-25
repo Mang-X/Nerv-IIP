@@ -5016,6 +5016,28 @@ public sealed record BusinessConsoleMesRecordDefectRequest(
     string? BatchOrSerial,
     string IdempotencyKey);
 
+public sealed record BusinessConsoleMesRecordDefectV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId);
+
+public sealed record BusinessMesRecordDefectRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey);
+
 public sealed record BusinessConsoleMesRelatedQualityItemListResponse(
     IReadOnlyCollection<BusinessConsoleMesRelatedQualityItemRow> Items,
     int Total);
