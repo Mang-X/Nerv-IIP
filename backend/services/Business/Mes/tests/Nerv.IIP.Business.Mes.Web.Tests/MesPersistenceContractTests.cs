@@ -30,6 +30,37 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesPersistenceContractTests
 {
     [Fact]
+    public async Task Supplementary_material_issue_semantics_survive_persistence_scope_recreation()
+    {
+        var services = CreateServices(nameof(Supplementary_material_issue_semantics_survive_persistence_scope_recreation));
+        var now = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001", "env-dev", "WO-SUPPLEMENTARY-001", "FG-001", "PV-001", 10m, 10, now));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001", "env-dev", "MIR-ORIGINAL-001", "WO-SUPPLEMENTARY-001", "OP-10", "MAT-001", "PCS", 4m, now));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001", "env-dev", "MIR-SUPPLEMENTARY-001", "WO-SUPPLEMENTARY-001", "OP-10", "MAT-001", "PCS", 2m, now.AddMinutes(1),
+                isSupplementary: true,
+                originalMaterialIssueRequestNo: "MIR-ORIGINAL-001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var original = await recreatedDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-ORIGINAL-001");
+        var supplementary = await recreatedDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-SUPPLEMENTARY-001");
+
+        Assert.False(original.IsSupplementary);
+        Assert.Null(original.OriginalMaterialIssueRequestNo);
+        Assert.True(supplementary.IsSupplementary);
+        Assert.Equal("MIR-ORIGINAL-001", supplementary.OriginalMaterialIssueRequestNo);
+    }
+
+    [Fact]
     public async Task Rush_work_order_survives_service_scope_recreation_when_persistence_is_enabled()
     {
         var services = CreateServices(nameof(Rush_work_order_survives_service_scope_recreation_when_persistence_is_enabled));

@@ -470,10 +470,56 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
+        Assert.False(request.IsSupplementary);
+        Assert.Null(request.OriginalMaterialIssueRequestNo);
         // 创建只发「领料已申请」（仓库据此建出库/拣货，#1324）；库存移动仍然只在收料/退料时发生。
         Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_tracks_supplementary_semantics_and_original_request_no()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-002",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"),
+            isSupplementary: true,
+            originalMaterialIssueRequestNo: "MIR-001");
+
+        Assert.True(request.IsSupplementary);
+        Assert.Equal("MIR-001", request.OriginalMaterialIssueRequestNo);
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_rejects_inconsistent_supplementary_semantics()
+    {
+        var timestamp = DateTimeOffset.Parse("2026-05-23T08:10:00Z");
+
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-003", "WO-001", "OP-10", "MAT-001", "PCS", 3m, timestamp,
+            isSupplementary: true));
+
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-004", "WO-001", "OP-10", "MAT-001", "PCS", 3m, timestamp,
+            originalMaterialIssueRequestNo: "MIR-001"));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_rejects_self_reference()
+    {
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-005", "WO-001", "OP-10", "MAT-001", "PCS", 3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"),
+            isSupplementary: true,
+            originalMaterialIssueRequestNo: "MIR-005"));
     }
 
     [Fact]
