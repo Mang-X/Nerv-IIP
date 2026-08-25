@@ -34,6 +34,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReport,
+  recordBusinessConsoleMesDefectMutationOptions,
   recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -1216,6 +1217,59 @@ describe('business MES composables', () => {
     expect(useMesProductionReports().productionReportsTotal.value).toBe(16)
     expect(useMesQualityContext().qualityItemsTotal.value).toBe(17)
     expect(useMesShiftHandovers().handoversTotal.value).toBe(18)
+  })
+
+  it('forwards only the public defect contract and invalidates every related MES read model', async () => {
+    const quality = useMesQualityContext()
+    const body = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'WO-2',
+      operationTaskId: 'OP-2',
+      defectCode: 'SCRATCH',
+      defectQuantity: 2.5,
+      materialLotId: null,
+      batchOrSerial: null,
+      idempotencyKey: 'defect-key',
+      actor: 'forged-user',
+      scopeKind: 'organization',
+      scopeId: 'other-org',
+    }
+
+    await quality.recordDefect(body as never)
+
+    const mutation = vi.mocked(recordBusinessConsoleMesDefectMutationOptions).mock.results.at(-1)
+      ?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'WO-2',
+        operationTaskId: 'OP-2',
+        defectCode: 'SCRATCH',
+        defectQuantity: 2.5,
+        materialLotId: null,
+        batchOrSerial: null,
+        idempotencyKey: 'defect-key',
+      },
+    })
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls as unknown as Array<
+      [{ predicate: (entry: { key: Array<{ _id: string }> }) => boolean }]
+    >
+    const invalidatedIds = [
+      'listBusinessConsoleMesRelatedQualityItems',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ].filter((id) =>
+      invalidationCalls.some(([options]) => options.predicate({ key: [{ _id: id }] })),
+    )
+    expect(invalidatedIds).toEqual([
+      'listBusinessConsoleMesRelatedQualityItems',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ])
   })
 
   it('sends MES list search and structured filters as server query parameters', () => {

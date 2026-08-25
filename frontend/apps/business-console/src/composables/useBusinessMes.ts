@@ -2443,9 +2443,12 @@ export function useMesQualityContext() {
   const defectMutation = useMutation({
     ...recordBusinessConsoleMesDefectMutationOptions(),
     onSuccess: () =>
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesRelatedQualityItems']).catch(
-        ignoreBackgroundError,
-      ),
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesRelatedQualityItems',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesWorkOrderDetail',
+      ]).catch(ignoreBackgroundError),
   })
 
   return {
@@ -2460,8 +2463,21 @@ export function useMesQualityContext() {
     qualityItemsPending: qualityQuery.isLoading,
     qualityItemsState: businessReadState(qualityQuery, () => hasBusinessContext(filters)),
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
-    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) =>
-      defectMutation.mutateAsync({ body }),
+    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) => {
+      // 公共 facade 不接受 actor 或授权范围声明；显式重建请求，避免运行时扩展字段越界透传。
+      const safeBody: BusinessConsoleMesRecordDefectRequest = {
+        organizationId: body.organizationId,
+        environmentId: body.environmentId,
+        workOrderId: body.workOrderId,
+        operationTaskId: body.operationTaskId,
+        defectCode: body.defectCode,
+        defectQuantity: body.defectQuantity,
+        materialLotId: body.materialLotId,
+        batchOrSerial: body.batchOrSerial,
+        idempotencyKey: body.idempotencyKey,
+      }
+      return defectMutation.mutateAsync({ body: safeBody })
+    },
     recordDefectPending: defectMutation.isLoading,
     refreshQualityItems: () => refetchWithBusinessContext(filters, qualityQuery),
   }
