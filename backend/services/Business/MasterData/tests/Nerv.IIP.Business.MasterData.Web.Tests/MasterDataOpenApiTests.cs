@@ -54,6 +54,12 @@ public sealed class MasterDataOpenApiTests
         var statusResponseSchema = ResolveSchema(
             toolingItemSchema.GetProperty("properties").GetProperty("status"),
             schemas);
+        var statusRequestSchema = ResolveSchema(
+            operation.GetProperty("parameters")
+                .EnumerateArray()
+                .Single(parameter => parameter.GetProperty("name").GetString() == "status")
+                .GetProperty("schema"),
+            schemas);
 
         Assert.Equal("listBusinessMasterDataToolingAssets", operation.GetProperty("operationId").GetString());
         Assert.Contains("organizationId", parameterNames);
@@ -77,6 +83,7 @@ public sealed class MasterDataOpenApiTests
             ],
             responsePropertyNames);
         AssertStringToolingStatusSchema(statusResponseSchema);
+        AssertStringToolingStatusSchema(statusRequestSchema);
     }
 
     private static JsonElement ResolveSchema(JsonElement schema, JsonElement schemas)
