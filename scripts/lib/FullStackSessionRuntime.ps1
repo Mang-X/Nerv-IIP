@@ -46,7 +46,8 @@ function Wait-NervFullStackPostgresRelations {
                 ) `
                 -WorkingDirectory $runtimeLibraryRoot `
                 -TimeoutSeconds 30 `
-                -Name "fullstack-postgres-relations-$OwnedDatabase"
+                -Name "fullstack-postgres-relations-$OwnedDatabase" `
+                -Environment (Get-NervFullStackNonSeedEnvironment)
             $count = 0
             if (-not [int]::TryParse("$($result.Stdout)".Trim(), [ref] $count)) {
                 throw "PostgreSQL relation readiness returned a non-integer result for '$OwnedDatabase'."
@@ -1623,15 +1624,19 @@ function Get-NervDockerListedValues {
     param(
         [Parameter(Mandatory)] [string[]] $Arguments,
         [Parameter(Mandatory)] [string] $WorkingDirectory,
-        [Parameter(Mandatory)] [string] $Name
+        [Parameter(Mandatory)] [string] $Name,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $result = Invoke-NativeCommandOutput `
         -Command 'docker' `
         -Arguments $Arguments `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 30 `
-        -Name $Name
+        -Name $Name `
+        -Environment $Environment
 
     return @($result.Stdout -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
@@ -1641,8 +1646,11 @@ function Get-NervDockerInspectObjects {
         [Parameter(Mandatory)] [ValidateSet('container', 'network', 'volume')] [string] $Kind,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Identifiers,
         [Parameter(Mandatory)] [string] $WorkingDirectory,
-        [Parameter(Mandatory)] [string] $Name
+        [Parameter(Mandatory)] [string] $Name,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     if ($Identifiers.Count -eq 0) {
         return @()
@@ -1653,25 +1661,31 @@ function Get-NervDockerInspectObjects {
         -Arguments (@($Kind, 'inspect') + $Identifiers) `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 30 `
-        -Name $Name
+        -Name $Name `
+        -Environment $Environment
     return @($result.Stdout | ConvertFrom-Json -Depth 30)
 }
 
 function Get-NervFullStackContainerRecords {
     param(
         [Parameter(Mandatory)] [string] $OwnedSessionId,
-        [string] $WorkingDirectory = (Get-Location).Path
+        [string] $WorkingDirectory = (Get-Location).Path,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $ids = @(Get-NervDockerListedValues `
         -Arguments @('container', 'ls', '-a', '--no-trunc', '--filter', "label=com.nerv-iip.session=$OwnedSessionId", '--format', '{{.ID}}') `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$OwnedSessionId-container-discovery")
+        -Name "fullstack-$OwnedSessionId-container-discovery" `
+        -Environment $Environment)
     $objects = @(Get-NervDockerInspectObjects `
         -Kind container `
         -Identifiers $ids `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$OwnedSessionId-container-discovery-inspect")
+        -Name "fullstack-$OwnedSessionId-container-discovery-inspect" `
+        -Environment $Environment)
     return @($objects | ForEach-Object {
         $containerName = "$($_.Name)".TrimStart('/')
         $resourceName = @('postgres', 'redis', 'minio', 'victoria-logs') |
@@ -1747,8 +1761,11 @@ function Get-NervFullStackDcpNetworkIds {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
         [object[]] $ContainerRecords = @(),
-        [Parameter(Mandatory)] [string] $WorkingDirectory
+        [Parameter(Mandatory)] [string] $WorkingDirectory,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $recordedContainerIds = @($ContainerRecords | ForEach-Object { "$($_.id)" })
     if ($recordedContainerIds.Count -eq 0) { return @() }
@@ -1757,7 +1774,8 @@ function Get-NervFullStackDcpNetworkIds {
         -Kind container `
         -Identifiers $recordedContainerIds `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$SessionId-startup-container-inspect")
+        -Name "fullstack-$SessionId-startup-container-inspect" `
+        -Environment $Environment)
     $ownedContainers = @($containerInspect | Where-Object {
         Test-NervDockerResourceOwnership -InspectObject $_ -SessionId $SessionId -RecordedIds $recordedContainerIds
     })
@@ -1769,15 +1787,19 @@ function Get-NervFullStackDcpNetworkIds {
         -Kind network `
         -Identifiers $candidateNetworkIds `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$SessionId-startup-network-inspect")
+        -Name "fullstack-$SessionId-startup-network-inspect" `
+        -Environment $Environment)
     return @(Get-NervRecordableDcpNetworkIds -Networks $networkInspect -OwnedContainerIds $ownedContainerIds)
 }
 
 function Get-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
-        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory)
+        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $sessionId = "$($Manifest.sessionId)"
     if ($sessionId -notmatch $script:NervFullStackSessionIdPattern) {
@@ -1791,12 +1813,12 @@ function Get-NervSessionDockerResources {
     $discoveredNetworkIds = @()
 
     try {
-        $discoveredContainers = @(Get-NervFullStackContainerRecords -OwnedSessionId $sessionId -WorkingDirectory $WorkingDirectory)
+        $discoveredContainers = @(Get-NervFullStackContainerRecords -OwnedSessionId $sessionId -WorkingDirectory $WorkingDirectory -Environment $Environment)
         $candidateContainerIds = @(Merge-NervSessionContainerIds -RecordedIds $recordedContainerIds -DiscoveredRecords $discoveredContainers)
-        $listedContainerIds = Get-NervDockerListedValues -Arguments @('container', 'ls', '-a', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-list"
+        $listedContainerIds = Get-NervDockerListedValues -Arguments @('container', 'ls', '-a', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-list" -Environment $Environment
         $presentContainerIds = @($candidateContainerIds | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedContainerIds), [StringComparer]::Ordinal).Contains([string]$_) })
         $containerInspect = if ($presentContainerIds.Count -gt 0) {
-            @(Get-NervDockerInspectObjects -Kind container -Identifiers $presentContainerIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-inspect")
+            @(Get-NervDockerInspectObjects -Kind container -Identifiers $presentContainerIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-inspect" -Environment $Environment)
         }
         else { @() }
         $containers = @($containerInspect | Where-Object {
@@ -1815,10 +1837,10 @@ function Get-NervSessionDockerResources {
 
     try {
         $candidateNetworkIds = @(Get-NervStringsSorted -Values @($recordedNetworkIds + $discoveredNetworkIds) -Comparer ([StringComparer]::Ordinal) -Unique)
-        $listedNetworkIds = Get-NervDockerListedValues -Arguments @('network', 'ls', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-list"
+        $listedNetworkIds = Get-NervDockerListedValues -Arguments @('network', 'ls', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-list" -Environment $Environment
         $presentNetworkIds = @($candidateNetworkIds | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedNetworkIds), [StringComparer]::Ordinal).Contains([string]$_) })
         $networkInspect = if ($presentNetworkIds.Count -gt 0) {
-            @(Get-NervDockerInspectObjects -Kind network -Identifiers $presentNetworkIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-inspect")
+            @(Get-NervDockerInspectObjects -Kind network -Identifiers $presentNetworkIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-inspect" -Environment $Environment)
         }
         else { @() }
         $networks = @($networkInspect | Where-Object {
@@ -1835,10 +1857,10 @@ function Get-NervSessionDockerResources {
     }
 
     try {
-        $listedVolumeNames = Get-NervDockerListedValues -Arguments @('volume', 'ls', '--format', '{{.Name}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-list"
+        $listedVolumeNames = Get-NervDockerListedValues -Arguments @('volume', 'ls', '--format', '{{.Name}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-list" -Environment $Environment
         $presentVolumeNames = @($recordedVolumeNames | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedVolumeNames), [StringComparer]::Ordinal).Contains([string]$_) })
         $volumeInspect = if ($presentVolumeNames.Count -gt 0) {
-            @(Get-NervDockerInspectObjects -Kind volume -Identifiers $presentVolumeNames -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-inspect")
+            @(Get-NervDockerInspectObjects -Kind volume -Identifiers $presentVolumeNames -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-inspect" -Environment $Environment)
         }
         else { @() }
         $volumes = @($volumeInspect | Where-Object {
@@ -1868,11 +1890,14 @@ function Remove-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
-        [ValidateRange(1, 600)] [int] $TimeoutSeconds = 120
+        [ValidateRange(1, 600)] [int] $TimeoutSeconds = 120,
+        [System.Collections.IDictionary] $Environment
     )
 
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
+
     $sessionId = "$($Manifest.sessionId)"
-    $resources = Get-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory $WorkingDirectory
+    $resources = Get-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory $WorkingDirectory -Environment $Environment
     $unresolved = [System.Collections.Generic.List[string]]::new()
     foreach ($item in $resources.Unresolved) { $unresolved.Add("$item") }
 
@@ -1889,7 +1914,8 @@ function Remove-NervSessionDockerResources {
                 -Arguments ($removal.Arguments + $removal.Values) `
                 -WorkingDirectory $WorkingDirectory `
                 -TimeoutSeconds $TimeoutSeconds `
-                -Name "fullstack-$sessionId-$($removal.Kind)-remove" | Out-Null
+                -Name "fullstack-$sessionId-$($removal.Kind)-remove" `
+                -Environment $Environment | Out-Null
         }
         catch {
             foreach ($value in $removal.Values) { $unresolved.Add("$($removal.Kind):$value") }
@@ -1906,17 +1932,20 @@ function Get-NervFullStackStatusSummary {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
-        [scriptblock] $DockerResourcesAction
+        [scriptblock] $DockerResourcesAction,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     if ($null -eq $DockerResourcesAction) {
         $DockerResourcesAction = {
-            param($InputManifest, $InputWorkingDirectory)
-            Get-NervSessionDockerResources -Manifest $InputManifest -WorkingDirectory $InputWorkingDirectory
+            param($InputManifest, $InputWorkingDirectory, $InputEnvironment)
+            Get-NervSessionDockerResources -Manifest $InputManifest -WorkingDirectory $InputWorkingDirectory -Environment $InputEnvironment
         }
     }
 
-    $resources = & $DockerResourcesAction $Manifest $WorkingDirectory
+    $resources = & $DockerResourcesAction $Manifest $WorkingDirectory $Environment
     if ($null -eq $resources) {
         throw "Full-stack status Docker ownership inspection returned no result for '$($Manifest.sessionId)'."
     }
@@ -2116,8 +2145,11 @@ function Stop-NervFullStackSession {
         [string] $StateRoot = (Get-NervFullStackStateRoot),
         [scriptblock] $AspireStopAction,
         [scriptblock] $ProcessStopAction,
-        [scriptblock] $DockerRemoveAction
+        [scriptblock] $DockerRemoveAction,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     if ($null -eq $AspireStopAction) {
         $AspireStopAction = {
@@ -2164,7 +2196,7 @@ function Stop-NervFullStackSession {
     if ($null -eq $DockerRemoveAction) {
         $DockerRemoveAction = {
             param($Manifest)
-            Remove-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot)
+            Remove-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot) -Environment $Environment
         }
     }
 

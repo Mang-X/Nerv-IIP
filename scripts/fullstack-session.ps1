@@ -106,7 +106,8 @@ function Invoke-NervMan528MesInventoryAcceptance {
         -Arguments (@('container', 'inspect') + $containerIds) `
         -WorkingDirectory "$($Manifest.worktreeRoot)" `
         -TimeoutSeconds 30 `
-        -Name "fullstack-$($Manifest.sessionId)-man-528-container-inspect"
+        -Name "fullstack-$($Manifest.sessionId)-man-528-container-inspect" `
+        -Environment (Get-NervFullStackNonSeedEnvironment)
     $containers = @($inspectResult.Stdout | ConvertFrom-Json -Depth 100)
     $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
     $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
@@ -178,11 +179,13 @@ function Invoke-NervMan528MesInventoryAcceptance {
                 [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
                 $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
             }
-            Invoke-DotNet `
-                -Arguments $testArguments `
-                -WorkingDirectory "$($Manifest.worktreeRoot)" `
-                -TimeoutSeconds 600 `
-                -Name "fullstack-$($Manifest.sessionId)-man-528-postgres-redis" | Out-Null
+            Invoke-WithScopedEnvironment -Variables (Get-NervFullStackNonSeedEnvironment) -ScriptBlock {
+                Invoke-DotNet `
+                    -Arguments $testArguments `
+                    -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                    -TimeoutSeconds 600 `
+                    -Name "fullstack-$($Manifest.sessionId)-man-528-postgres-redis" | Out-Null
+            }
         }
     }
     finally {
@@ -217,7 +220,8 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
         -Arguments (@('container', 'inspect') + $containerIds) `
         -WorkingDirectory "$($Manifest.worktreeRoot)" `
         -TimeoutSeconds 30 `
-        -Name "fullstack-$($Manifest.sessionId)-man-440-container-inspect"
+        -Name "fullstack-$($Manifest.sessionId)-man-440-container-inspect" `
+        -Environment (Get-NervFullStackNonSeedEnvironment)
     $containers = @($inspectResult.Stdout | ConvertFrom-Json -Depth 100)
     $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
     $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
@@ -293,11 +297,13 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
                 [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
                 $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
             }
-            Invoke-DotNet `
-                -Arguments $testArguments `
-                -WorkingDirectory "$($Manifest.worktreeRoot)" `
-                -TimeoutSeconds 600 `
-                -Name "fullstack-$($Manifest.sessionId)-man-440-postgres-redis" | Out-Null
+            Invoke-WithScopedEnvironment -Variables (Get-NervFullStackNonSeedEnvironment) -ScriptBlock {
+                Invoke-DotNet `
+                    -Arguments $testArguments `
+                    -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                    -TimeoutSeconds 600 `
+                    -Name "fullstack-$($Manifest.sessionId)-man-440-postgres-redis" | Out-Null
+            }
         }
     }
     finally {
@@ -347,7 +353,7 @@ function Start-NervFullStackSession {
 
     $staleSessionIds = @(Claim-NervStaleFullStackSessions -TimeoutSeconds 300)
     foreach ($staleSessionId in $staleSessionIds) {
-        [void] (Stop-NervFullStackSession -SessionId $staleSessionId)
+        [void] (Stop-NervFullStackSession -SessionId $staleSessionId -Environment (Get-NervFullStackNonSeedEnvironment))
     }
 
     $createdManifest = Invoke-WithNervFullStackSessionLock -TimeoutSeconds 300 -ScriptBlock {
@@ -486,7 +492,8 @@ function Start-NervFullStackSession {
                         -WorkingDirectory $repoRoot `
                         -TimeoutSeconds 660 `
                         -Name "fullstack-$newSessionId-aspire-start" `
-                        -Environment $aspireEnvironment
+                        -Environment $aspireEnvironment `
+                        -SensitiveValues (@($suppliedAdminPassword, $suppliedWorkerPassword) + @($secretSet.Environment.Values))
                 } `
                 -CleanupAction {
                     try {
@@ -535,11 +542,12 @@ function Start-NervFullStackSession {
                     -ResourceName $resourceName `
                     -WorkingDirectory $repoRoot
             }
-            $containerRecords = @(Get-NervFullStackContainerRecords -OwnedSessionId $newSessionId)
+            $containerRecords = @(Get-NervFullStackContainerRecords -OwnedSessionId $newSessionId -Environment (Get-NervFullStackNonSeedEnvironment))
             $networkIds = @(Get-NervFullStackDcpNetworkIds `
                 -SessionId $newSessionId `
                 -ContainerRecords $containerRecords `
-                -WorkingDirectory $repoRoot)
+                -WorkingDirectory $repoRoot `
+                -Environment (Get-NervFullStackNonSeedEnvironment))
             $describe = if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
                 $null
             }
@@ -609,7 +617,7 @@ function Start-NervFullStackSession {
                     return $latest
                 }
             try {
-                $cleanupResult = Stop-NervFullStackSession -SessionId $newSessionId
+                $cleanupResult = Stop-NervFullStackSession -SessionId $newSessionId -Environment (Get-NervFullStackNonSeedEnvironment)
                 if (-not $cleanupResult.Complete) {
                     throw "Startup cleanup remains incomplete: $($cleanupResult.Remaining -join ', ')."
                 }
@@ -664,7 +672,7 @@ elseif ([string]::Equals([string]($Action), [string]('list'), [StringComparison]
 elseif ([string]::Equals([string]($Action), [string]('status'), [StringComparison]::OrdinalIgnoreCase)) {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            $statusSummary = Get-NervFullStackStatusSummary -Manifest $manifest
+            $statusSummary = Get-NervFullStackStatusSummary -Manifest $manifest -Environment (Get-NervFullStackNonSeedEnvironment)
             Write-Output "$resolvedSessionId state=$($manifest.state) containers=$($statusSummary.ContainerCount) recordedContainers=$($statusSummary.RecordedContainerCount) unresolved=$($statusSummary.UnresolvedCount)"
         }
 elseif ([string]::Equals([string]($Action), [string]('url'), [StringComparison]::OrdinalIgnoreCase)) {
@@ -794,7 +802,7 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                     } `
                     -StopAction {
                         param($InputManifest)
-                        Stop-NervFullStackSession -SessionId "$($InputManifest.sessionId)"
+                        Stop-NervFullStackSession -SessionId "$($InputManifest.sessionId)" -Environment (Get-NervFullStackNonSeedEnvironment)
                     }
                 }
                 $manifest = $runResult.Manifest
@@ -807,7 +815,7 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
         }
 elseif ([string]::Equals([string]($Action), [string]('stop'), [StringComparison]::OrdinalIgnoreCase)) {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
-            $result = Stop-NervFullStackSession -SessionId $resolvedSessionId
+            $result = Stop-NervFullStackSession -SessionId $resolvedSessionId -Environment (Get-NervFullStackNonSeedEnvironment)
             Write-Output "$resolvedSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
             if (-not $result.Complete) { throw "Session '$resolvedSessionId' cleanup remains incomplete: $($result.Remaining -join ', ')." }
         }
@@ -816,7 +824,7 @@ elseif ([string]::Equals([string]($Action), [string]('gc'), [StringComparison]::
             $failures = [System.Collections.Generic.List[string]]::new()
             foreach ($staleSessionId in $staleSessionIds) {
                 try {
-                    $result = Stop-NervFullStackSession -SessionId $staleSessionId
+                    $result = Stop-NervFullStackSession -SessionId $staleSessionId -Environment (Get-NervFullStackNonSeedEnvironment)
                     Write-Output "$staleSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
                     if (-not $result.Complete) { $failures.Add($staleSessionId) }
                 }

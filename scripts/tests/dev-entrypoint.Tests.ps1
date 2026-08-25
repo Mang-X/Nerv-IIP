@@ -145,6 +145,12 @@ param(
         throw "WMS demo worker opt-in was not forwarded. Output: $($fullStackWmsRun.Output)"
     }
 
+    $fullStackWmsDisabled = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-EnableWmsDemoWorker:$false')
+    $wmsDisabledCapture = $fullStackWmsDisabled.Output | ConvertFrom-Json
+    if ($fullStackWmsDisabled.ExitCode -ne 0 -or $wmsDisabledCapture.enableWmsDemoWorker) {
+        throw "Explicitly disabled WMS demo worker opt-in was not preserved. Output: $($fullStackWmsDisabled.Output)"
+    }
+
     $forwardedSessionId = 'nerv-abcd-123456'
     $fullStackStop = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'stop', '-SessionId', $forwardedSessionId)
     $stopCapture = $fullStackStop.Output | ConvertFrom-Json

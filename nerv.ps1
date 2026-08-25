@@ -162,7 +162,7 @@ switch ($Command.ToLowerInvariant()) {
         if ($PSBoundParameters.ContainsKey('Scenario')) { $fullStackParameters['Scenario'] = $Scenario }
         if ($PSBoundParameters.ContainsKey('SessionId')) { $fullStackParameters['SessionId'] = $SessionId }
         if ($PSBoundParameters.ContainsKey('NoBuild')) { $fullStackParameters['NoBuild'] = $true }
-        if ($PSBoundParameters.ContainsKey('EnableWmsDemoWorker')) { $fullStackParameters['EnableWmsDemoWorker'] = $true }
+        if ($PSBoundParameters.ContainsKey('EnableWmsDemoWorker')) { $fullStackParameters['EnableWmsDemoWorker'] = [bool] $EnableWmsDemoWorker }
         if ($PSBoundParameters.ContainsKey('Tail')) { $fullStackParameters['Tail'] = $Tail }
         if ($PSBoundParameters.ContainsKey('Follow')) { $fullStackParameters['Follow'] = $true }
         & $fullStackScript @fullStackParameters @fullStackArguments

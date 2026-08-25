@@ -70,7 +70,21 @@ foreach ($runtimeFunctionName in @('Get-NervAspireDescribeObject', 'Wait-NervAsp
     $runtimeFunctionDefinition = (Get-Command $runtimeFunctionName -ErrorAction Stop).Definition
     Assert-True ($runtimeFunctionDefinition.Contains('Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) "$runtimeFunctionName must pass the non-seed environment to its child process operations."
 }
+foreach ($runtimeFunctionName in @(
+    'Get-NervDockerListedValues',
+    'Get-NervDockerInspectObjects',
+    'Get-NervFullStackContainerRecords',
+    'Get-NervFullStackDcpNetworkIds',
+    'Get-NervSessionDockerResources',
+    'Remove-NervSessionDockerResources',
+    'Get-NervFullStackStatusSummary'
+)) {
+    $runtimeFunctionDefinition = (Get-Command $runtimeFunctionName -ErrorAction Stop).Definition
+    Assert-True ($runtimeFunctionDefinition.Contains('Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) "$runtimeFunctionName must establish a non-seed environment boundary for lifecycle and Docker child processes."
+    Assert-True ($runtimeFunctionDefinition.Contains('-Environment', [StringComparison]::Ordinal)) "$runtimeFunctionName must pass its non-seed environment to the child process operation."
+}
 Assert-True ($fullStackSessionText.Contains('Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) 'Full-stack entrypoint lifecycle actions must use the non-seed environment boundary.'
+Assert-True ($fullStackSessionText.Contains('-Environment (Get-NervFullStackNonSeedEnvironment)', [StringComparison]::Ordinal)) 'Full-stack MAN acceptance Docker helpers must use a non-seed environment boundary.'
 Assert-True ($fullStackSessionText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
 Assert-True ($nervEntrypointText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
 Assert-True ($fullStackSessionText -match '(?m)^function Invoke-NervMan440RuntimeHoursAcceptance\s*\{') 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
@@ -271,6 +285,7 @@ Assert-True ($startActionIndex -ge 0 -and $cleanupActionIndex -gt $startActionIn
 $startActionText = $fullStackSessionText.Substring($startActionIndex, $cleanupActionIndex - $startActionIndex)
 Assert-True (-not $startActionText.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Parse-critical Aspire start must reject partial redirected output.'
 Assert-True ($startActionText.Contains('-Environment $aspireEnvironment', [StringComparison]::Ordinal)) 'Aspire seed must receive its worker secret through an explicit child environment.'
+Assert-True ($startActionText.Contains('-SensitiveValues', [StringComparison]::Ordinal)) 'Aspire start diagnostics must redact the worker secret from child output, timeout, and exception paths.'
 $transientStopText = $fullStackSessionText.Substring($cleanupActionIndex, $startParseIndex - $cleanupActionIndex)
 Assert-True ($transientStopText.Contains("@('stop'", [StringComparison]::Ordinal)) 'Transient Aspire start cleanup must invoke stop.'
 Assert-True ($transientStopText.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Transient Aspire start cleanup must allow partial discarded stop output.'
