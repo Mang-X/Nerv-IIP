@@ -8,11 +8,7 @@
 
 受管对象是 #2191 B 已归属的 BusinessGateway client 类型：`IBusiness<Capability>Client`、`HttpBusiness<Capability>Client` 以及其语义闭包中的 client 声明。wire DTO、普通 config 类型、`Shared/` 基础类和 private implementation 不成为 C 的独立 API owner；受管类型的 base/interface 身份仍记录在公开形状中。
 
-合同来源按以下优先级解释：
-
-1. GitHub Issue [#2192](https://github.com/Mang-X/Nerv-IIP/issues/2192) 的 Scope Gate 与验收合同；
-2. 本文冻结的字段、排序、编码、编译输入和排除规则；
-3. `docs/architecture/api-contract-and-codegen.md` 中关于公开契约、兼容性和 Gateway 边界的规则。
+GitHub Issue [#2192](https://github.com/Mang-X/Nerv-IIP/issues/2192) 的受控 spec 区块与本文是同等权威的 normative sources，不存在一方优先于另一方的解释顺序。两者必须对来源、字段、排序、编码、编译输入、版本和排除规则保持语义一致；任一差异、缺失或无法逐项对应都是阻断，实施者和审核者不得自行择一解释。`docs/architecture/api-contract-and-codegen.md` 只提供不冲突的公开契约背景约束，不能覆盖或补写本合同。
 
 当前 source tree、编译器输出、运行时 reflection、既有 snapshot 或自动生成结果只能作为被测对象或诊断材料，不能反向定义 baseline。
 
@@ -44,15 +40,34 @@ manifest 的 item 集合必须与加入 `CSharpCompilation` 的 syntax tree 集�
 | `Microsoft.CodeAnalysis.CSharp` / `Microsoft.CodeAnalysis` | NuGet `5.0.0`，版本由 `backend/Directory.Packages.props` 锁定 |
 | 输出 | `CSharpCompilation`，`OutputKind.DynamicallyLinkedLibrary` |
 
-### 可重放 restore inputs 与 lock
+### 可重放 restore inputs、lock 与 producer artifact
 
-Roslyn/reference closure 的 authority 还包括一套提交到仓库、可复核的 restore inputs；运行时自报本次下载得到的 hash 不能替代预期 lock。后续 baseline PR 在生成任何 snapshot 前必须提交并校验：
+Roslyn/reference closure 的 authority 还包括提交到仓库、可复核的 restore inputs；运行时自报本次下载得到的 hash 不能替代批准 artifact。C 本 PR 提交 manifest 和 evaluated ProjectReference 全图的 per-project lock fixture；它们是合同的一部分而不是 reviewer 在隔离副本中临时生成的文件：
 
-- 根 `NuGet.config`（清空默认 sources，只允许 `https://api.nuget.org/v3/index.json` 及其 `nuget.org/*` mapping）、`backend/Directory.Packages.props`、`backend/Directory.Build.props` 和 `Nerv.IIP.BusinessGateway.Web.csproj` 的 exact bytes/SHA-256；
-- `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json`，NuGet lock schema `version=1`，target 仅为 `net10.0`，每个 direct/transitive package 都必须有 requested/resolved/version/contentHash；禁止 floating version、无 content hash 的 entry 或未登记 transitive dependency；
-- 与该 lock 配套的 `project.assets.json` target graph：每个 package identity/version/contentHash、project reference 和 compile asset 必须逐项等于 lock，不能只比较本次生成的 assets 自身 hash。
+- `docs/architecture/business-gateway-api-surface-restore.manifest.json` 固定 SDK、TFM、reference pack、Roslyn package 和输入文件的 SHA-256；输入包括根 `NuGet.config`（清空默认 sources，只允许 `https://api.nuget.org/v3/index.json` 及其 `nuget.org/*` mapping）、`backend/Directory.Packages.props`、`backend/Directory.Build.props`、`Nerv.IIP.BusinessGateway.Web.csproj` 以及完整 ProjectReference closure 的 lock files；manifest 自己列出每个 lock 的路径与 hash，禁止遗漏或重复。
+- 每个 evaluated ProjectReference 项目的 `packages.lock.json` 都已按 SDK `10.0.302` 实际生成并提交，所有 lock schema 均为 `version=2`，target 仅为 `net10.0`。Direct package entry 必须有 `requested`、`resolved`、`contentHash`；CentralTransitive/Transitive package entry 必须有 `resolved`、`contentHash`；Project entry 必须绑定 evaluated project reference。禁止 floating version、额外 source、无 content hash 的 package entry 或未登记 transitive dependency。每个 lock 的 SHA-256 必须与 manifest 一致。
 
-固定 restore 流程是使用空的 isolated package/cache staging（staging 路径不进入 identity），并以 `dotnet restore Nerv.IIP.BusinessGateway.Web.csproj --configfile NuGet.config --locked-mode --packages <isolated-package-cache>` 配合 `RestorePackagesWithLockFile=true`、`RestoreLockedMode=true`、`RestoreForceEvaluate=false`、`RestoreIgnoreFailedSources=false`；禁止隐式搜索其他 `NuGet.config`、用户 cache、runtime TPA 或未锁定的 restore。lock 缺失、NuGet source/config/props/project hash 漂移、lock 与 assets graph 不一致、package contentHash 不匹配、额外 package/source 或 restore diagnostic 非空，都必须 fail closed；不得通过刷新 lock 或记录新的运行时 hash 自动接受漂移。SDK、TFM、reference pack 和 Roslyn 版本仍按上表固定，任何升级必须先修订本合同和 lock。
+固定 restore 流程必须在仓库根目录使用空的 isolated package/cache staging（staging 路径不进入 identity），并把 lock path 明确指向已提交 artifact：
+
+```text
+dotnet restore <repo-root>/backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj \
+  --configfile <repo-root>/NuGet.config --locked-mode --packages <isolated-package-cache> \
+  -p:RestorePackagesWithLockFile=true -p:RestoreLockedMode=true \
+  -p:RestoreForceEvaluate=false -p:RestoreIgnoreFailedSources=false
+```
+
+禁止隐式搜索其他 `NuGet.config`、用户 cache、runtime TPA 或未锁定的 restore；禁止在缺 artifact 时现场生成 lock。任一 evaluated ProjectReference 的 lock 缺失、schema/target 漂移、manifest 输入 hash 漂移、NuGet source/config/props/project hash 漂移、任一 lock 与生成的 `project.assets.json` target graph 不一致、package contentHash/reference pack hash 漂移、额外 package/source 或 restore diagnostic 非空，都必须 fail closed。SDK、TFM、reference pack 和 Roslyn 版本仍按 manifest 固定，任何升级必须先修订本文、Issue 受控区块和 lock fixture set。
+
+`project.assets.json` 不是批准来源，而是上述命令的派生结果。后续 baseline/mutation PR 在写 snapshot 前必须执行同一 locked restore，并运行：
+
+```text
+dotnet msbuild <repo-root>/backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj \
+  -getProperty:ProjectAssetsFile -getItem:ReferencePath -getItem:ProjectReference -nologo
+```
+
+producer 必须从该次 exact-head 的 `ProjectAssetsFile`、evaluated `ReferencePath`/`ProjectReference` 和固定 reference pack 生成带 exact head、每个 lock SHA、package identity/version/contentHash、project-reference、compile-asset、reference-file SHA-256 的 canonical `restore-graph` artifact，再逐项与 manifest 和 lock fixture set 比较。任何诊断、目标图、引用或 hash 不一致都不得写 snapshot。该 producer artifact 及其 required semantic restore lane 是后续实现 PR 的 Ready 前置条件，不能由当前 C 文档 PR 自行伪造。
+
+C 当前只证明 manifest 与 lock fixture set 的静态可审阅性和文档一致性；本 PR 的 docs-only CI 没有执行上述 semantic restore，也不对它作绿灯宣称，更不外推为 canonicalizer、provider、FullChain 或真实基础设施证据。后续实现 PR 必须把 semantic restore lane、producer artifact 和 exact-head 结果作为 required evidence；若 lane 未执行或 artifact 不可复核，门禁保持阻断。
 
 实现必须使用显式而非默认的 Roslyn 选项：
 
