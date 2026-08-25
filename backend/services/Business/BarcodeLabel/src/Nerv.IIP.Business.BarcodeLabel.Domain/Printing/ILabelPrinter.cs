@@ -56,6 +56,22 @@ public sealed record LabelPrinterFailedResult : LabelPrinterDispatchResult
     public override string FailureReason { get; }
 }
 
+public sealed class LabelPrinterDispatchCanceledException : OperationCanceledException
+{
+    public LabelPrinterDispatchCanceledException(
+        LabelPrinterDispatchResult attemptResult,
+        OperationCanceledException cancellation,
+        CancellationToken cancellationToken)
+        : base(cancellation.Message, cancellation, cancellationToken)
+    {
+        AttemptResult = attemptResult is LabelPrinterSentResult
+            ? throw new ArgumentException("A canceled printer attempt cannot be classified as sent.", nameof(attemptResult))
+            : attemptResult;
+    }
+
+    public LabelPrinterDispatchResult AttemptResult { get; }
+}
+
 public interface ILabelPrinter
 {
     Task<LabelPrinterDispatchResult> PrintAsync(

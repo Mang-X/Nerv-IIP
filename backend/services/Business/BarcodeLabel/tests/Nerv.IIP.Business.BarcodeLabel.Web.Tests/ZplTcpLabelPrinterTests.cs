@@ -127,15 +127,18 @@ public sealed class ZplTcpLabelPrinterTests
     }
 
     [Fact]
-    public async Task Caller_cancellation_before_the_first_byte_is_propagated()
+    public async Task Caller_cancellation_before_the_first_byte_propagates_with_a_failed_attempt_for_persistence()
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var factory = new ScriptedConnectionFactory { HonorCancellationDuringConnect = true };
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateScriptedPrinter(factory).PrintAsync(
-            "printer-01", CompileDocuments(1), cancellation.Token));
+        var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() =>
+            CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), cancellation.Token));
 
+        var result = exception.AttemptResult;
+        Assert.Equal("failed", result.Status);
+        Assert.Equal("TCP 传输在首字节写入前失败。", result.FailureReason);
         Assert.Equal(1, factory.ConnectCalls);
     }
 
@@ -148,8 +151,10 @@ public sealed class ZplTcpLabelPrinterTests
             _ => throw new OperationCanceledException(cancellation.Token));
         var factory = new ScriptedConnectionFactory { Connection = connection };
 
-        var result = await CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), cancellation.Token);
+        var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() =>
+            CreateScriptedPrinter(factory).PrintAsync("printer-01", CompileDocuments(1), cancellation.Token));
 
+        var result = exception.AttemptResult;
         Assert.Equal("delivery-unknown", result.Status);
         Assert.Equal(1, factory.ConnectCalls);
         Assert.Equal(2, connection.SendCalls);

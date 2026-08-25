@@ -145,6 +145,31 @@ public sealed class PrintLabelLifecycleCommandTests
     }
 
     [Fact]
+    public async Task Dispatch_caller_cancellation_persists_the_pre_write_attempt_then_propagates_cancellation()
+    {
+        var databaseName = Guid.NewGuid().ToString("N");
+        await using var dbContext = CreateDbContext(databaseName);
+        var (batch, _) = AddReplayableBatch(dbContext, 1);
+        await dbContext.SaveChangesAsync();
+        using var cancellation = new CancellationTokenSource();
+        var printer = new CancelingPrinter(
+            cancellation,
+            LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+                new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-canceled"),
+                cancellation.Token));
+
+        dbContext.ChangeTracker.Clear();
+        var persisted = await dbContext.LabelPrintBatches.SingleAsync(candidate => candidate.Id == batch.Id);
+        Assert.Equal("failed", persisted.Status);
+        Assert.Equal("printer-canceled", persisted.PrinterId);
+        Assert.Null(persisted.PrintJobId);
+        Assert.Equal("TCP 传输在首字节写入前失败。", persisted.FailureReason);
+    }
+
+    [Fact]
     public async Task Reprint_sent_to_printer_records_the_new_dispatch_without_claiming_the_item_reprinted()
     {
         await using var dbContext = CreateDbContext();
@@ -242,6 +267,32 @@ public sealed class PrintLabelLifecycleCommandTests
         Assert.Equal("retry-job", batch.PrintJobId);
         Assert.Equal("created", batch.Items.Single().Status);
         Assert.Single(retryPrinter.Calls);
+    }
+
+    [Fact]
+    public async Task Reprint_caller_cancellation_persists_attempt_facts_without_changing_batch_status_then_propagates()
+    {
+        var databaseName = Guid.NewGuid().ToString("N");
+        await using var dbContext = CreateDbContext(databaseName);
+        var (batch, _) = AddReplayableBatch(dbContext, 1);
+        batch.RecordSentToPrinter("printer-original", "initial-job");
+        await dbContext.SaveChangesAsync();
+        using var cancellation = new CancellationTokenSource();
+        var printer = new CancelingPrinter(
+            cancellation,
+            LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new ReprintLabelCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+                new ReprintLabelCommand("org-001", "env-dev", batch.Id, 1, "printer-canceled"),
+                cancellation.Token));
+
+        dbContext.ChangeTracker.Clear();
+        var persisted = await dbContext.LabelPrintBatches.SingleAsync(candidate => candidate.Id == batch.Id);
+        Assert.Equal("sent-to-printer", persisted.Status);
+        Assert.Equal("printer-canceled", persisted.PrinterId);
+        Assert.Null(persisted.PrintJobId);
+        Assert.Equal("TCP 传输在首字节写入前失败。", persisted.FailureReason);
     }
 
     [Fact]
@@ -735,9 +786,11 @@ public sealed class PrintLabelLifecycleCommandTests
     private static LabelTemplate ActiveTemplate() =>
         LabelTemplate.Create("org-001", "env-dev", "FG_BOX", "Finished goods box", "file-template-001", VariableSchemaJson, "active");
 
-    private static ApplicationDbContext CreateDbContext()
+    private static ApplicationDbContext CreateDbContext(string? databaseName = null)
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName ?? Guid.NewGuid().ToString("N"))
+            .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
@@ -769,6 +822,23 @@ public sealed class PrintLabelLifecycleCommandTests
         {
             Calls.Add(documents.Select(document => document.Payload.ToArray()).ToArray());
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class CancelingPrinter(
+        CancellationTokenSource cancellation,
+        LabelPrinterDispatchResult result) : ILabelPrinter
+    {
+        public Task<LabelPrinterDispatchResult> PrintAsync(
+            string printerId,
+            IReadOnlyCollection<CompiledLabelDocument> documents,
+            CancellationToken cancellationToken)
+        {
+            cancellation.Cancel();
+            throw new LabelPrinterDispatchCanceledException(
+                result,
+                new OperationCanceledException(cancellation.Token),
+                cancellation.Token);
         }
     }
 

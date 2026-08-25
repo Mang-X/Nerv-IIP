@@ -88,7 +88,18 @@ public sealed class DispatchLabelPrintBatchCommandHandler(
             templateAssetPort,
             batch,
             cancellationToken);
-        var result = await printer.PrintAsync(request.PrinterId, documents, cancellationToken);
+        LabelPrinterDispatchResult result;
+        try
+        {
+            result = await printer.PrintAsync(request.PrinterId, documents, cancellationToken);
+        }
+        catch (LabelPrinterDispatchCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            LabelPrintLifecycle.ApplyResult(batch, request.PrinterId, exception.AttemptResult);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+
         LabelPrintLifecycle.ApplyResult(batch, request.PrinterId, result);
         return batch.Id;
     }
@@ -127,7 +138,19 @@ public sealed class ReprintLabelCommandHandler(
             batch,
             cancellationToken);
 
-        var result = await printer.PrintAsync(request.PrinterId, [documents[selectedIndex]], cancellationToken);
+        LabelPrinterDispatchResult result;
+        try
+        {
+            result = await printer.PrintAsync(request.PrinterId, [documents[selectedIndex]], cancellationToken);
+        }
+        catch (LabelPrinterDispatchCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            var canceledResult = LabelPrintLifecycle.AddReprintOperatorGuidance(exception.AttemptResult);
+            LabelPrintLifecycle.ApplyReprintResult(batch, request.PrinterId, canceledResult);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+
         result = LabelPrintLifecycle.AddReprintOperatorGuidance(result);
         LabelPrintLifecycle.ApplyReprintResult(batch, request.PrinterId, result);
         return result;

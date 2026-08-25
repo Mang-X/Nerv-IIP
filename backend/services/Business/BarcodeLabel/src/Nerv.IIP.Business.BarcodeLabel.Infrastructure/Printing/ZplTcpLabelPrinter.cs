@@ -157,9 +157,12 @@ public sealed class ZplTcpLabelPrinter : ILabelPrinter
             connection.ShutdownSend();
             return LabelPrinterDispatchResult.Sent(printJobId);
         }
-        catch (OperationCanceledException) when (confirmedBytesWritten == 0 && cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
         {
-            throw;
+            var attemptResult = confirmedBytesWritten > 0
+                ? LabelPrinterDispatchResult.DeliveryUnknown(printJobId, "TCP 写入已开始但未确认完整交付，禁止自动重试。")
+                : LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。");
+            throw new LabelPrinterDispatchCanceledException(attemptResult, exception, cancellationToken);
         }
         catch (Exception)
         {

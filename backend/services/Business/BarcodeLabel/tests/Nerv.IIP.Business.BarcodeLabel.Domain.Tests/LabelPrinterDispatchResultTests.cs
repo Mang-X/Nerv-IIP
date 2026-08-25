@@ -44,4 +44,32 @@ public sealed class LabelPrinterDispatchResultTests
         Assert.Throws<ArgumentException>(() => LabelPrinterDispatchResult.Failed(" "));
         Assert.Throws<ArgumentException>(() => LabelPrinterDispatchResult.DeliveryUnknown("job-001", " "));
     }
+
+    [Fact]
+    public void Dispatch_cancellation_preserves_the_non_sent_attempt_and_original_cancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var attempt = LabelPrinterDispatchResult.Failed("pre-write cancellation");
+        var original = new OperationCanceledException("request canceled", cancellation.Token);
+
+        var exception = new LabelPrinterDispatchCanceledException(attempt, original, cancellation.Token);
+
+        Assert.Same(attempt, exception.AttemptResult);
+        Assert.Same(original, exception.InnerException);
+        Assert.Equal(cancellation.Token, exception.CancellationToken);
+    }
+
+    [Fact]
+    public void Dispatch_cancellation_rejects_a_sent_attempt()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var original = new OperationCanceledException(cancellation.Token);
+
+        Assert.Throws<ArgumentException>(() => new LabelPrinterDispatchCanceledException(
+            LabelPrinterDispatchResult.Sent("job-001"),
+            original,
+            cancellation.Token));
+    }
 }

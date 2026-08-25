@@ -56,6 +56,12 @@ await TestTimeout.RunAsync(
 
 `NetworkFailureClassifier.FromException` 强制传入调用方的 `CancellationToken`：令牌已取消时原样重抛原异常（`ExceptionDispatchInfo`），只有辅助程序自己的超时才归类为 `RequestTimeout`。分类器不允许有"猜"调用方意图的默认参数。
 
+BarcodeLabel 裸 socket 打印是一个有持久化 attempt facts 的特例：打印尝试开始后，调用方取消仍必须以
+`OperationCanceledException` 语义和原 `CancellationToken` 向上传播，但 adapter 会用
+`LabelPrinterDispatchCanceledException` 包装原异常并携带首字节边界对应的 `failed` / `delivery-unknown`
+结果，使 handler 能在不复用已取消请求令牌的情况下独立保存该次尝试后再重抛。该包装不把取消归为辅助程序超时，也不适用于
+尚未调用 printer 的前置阶段；测试必须分别证明 attempt facts 已提交和调用方仍观察到取消。
+
 **分类优先级：取消/超时语义先于内层 socket 错误码。** 一个 `OperationCanceledException` 完全可能裹着一个 `SocketException`（放弃的那一刻恰好有一跳在飞）。此时按**取消**定论，不去读内层错误码：调用方令牌已取消则原样重抛，未取消则归 `RequestTimeout`，哪怕内层写着 `ConnectionRefused`。理由是四分法保留的判据是**谁拥有这次放弃**——放弃的是辅助程序自己，内层那个错误码只是放弃时刻的一个实现细节，不是本次失败的结论；让它胜出等于用一个更靠里的偶然事实盖掉调用方唯一能据以决策的信息。两侧行为一致但落点不同：测试侧 `FromException` 把取消判定**前置**于 socket 搜索；生产侧 `IamOpsConnectorCredentialValidator` 的 `OperationCanceledException` 捕获块根本不进 `ClassifyTransportFailure`（后者只接 `HttpRequestException`）。该优先级由 `NetworkFailureClassifierTests.FromException_RanksHelperOwnedCancellationAboveANestedTransportError` 与生产侧镜像 `OpsConnectorCredentialValidationTests.CancellationsWrappingATransportError` 逐行钉住。
 
 非 HTTP 客户端（Npgsql、裸 socket）不另立一套词汇：它们的传输失败以 `SocketException` 呈现，按 `SocketErrorCode` 归入同一四分法。两侧的 socket 搜索都从**异常自身**起步而不是从 `InnerException` 起步，因此裸 `SocketException` 与被驱动异常包裹的 `SocketException` 分类一致。
