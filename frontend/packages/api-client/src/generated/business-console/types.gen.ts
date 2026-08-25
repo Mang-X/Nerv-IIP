@@ -4174,7 +4174,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     originalMaterialIssueRequestNo?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest = {
     [key: string]: never;
 };
 
@@ -4290,6 +4290,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTaskNo?: string | null;
     workCenterCode?: string | null;
     workCenterName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -14914,6 +14918,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         workOrderId?: string | null;
         skip?: number;
         take?: number;
+        operationTaskId?: string | null;
     };
     url: '/api/business-console/v1/mes/material-issue-requests';
 };
