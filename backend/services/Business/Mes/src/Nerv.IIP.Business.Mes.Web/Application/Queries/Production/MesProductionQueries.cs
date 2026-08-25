@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -47,8 +48,12 @@ public sealed record ProductionReportFact(
     // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
     string? ReversalReportNo = null,
     // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
-    decimal? OperationActualLaborHours = null,
-    decimal? OperationActualMachineHours = null);
+    [property: JsonIgnore] MesActualHours? OperationActualHours = null)
+{
+    public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
+
+    public decimal? OperationActualMachineHours => OperationActualHours?.MachineHours;
+}
 
 public sealed record GetProductionReportQuery(
     string OrganizationId,
@@ -124,20 +129,26 @@ internal static class ProductionReportFactProjection
                     && reversal.ReversedReportNo == x.ReportNo)
                 .Select(reversal => reversal.ReportNo)
                 .FirstOrDefault(),
-            dbContext.OperationTasks
-                .Where(task => task.OrganizationId == x.OrganizationId
-                    && task.EnvironmentId == x.EnvironmentId
-                    && task.OperationTaskIdValue == x.OperationTaskId
-                    && task.Status == OperationTaskLifecycleStatus.Completed)
-                .Select(task => (decimal?)(task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour))
-                .FirstOrDefault(),
-            dbContext.OperationTasks
-                .Where(task => task.OrganizationId == x.OrganizationId
-                    && task.EnvironmentId == x.EnvironmentId
-                    && task.OperationTaskIdValue == x.OperationTaskId
-                    && task.Status == OperationTaskLifecycleStatus.Completed)
-                .Select(task => (decimal?)(task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
-                .FirstOrDefault()));
+            dbContext.OperationTasks.Any(task => task.OrganizationId == x.OrganizationId
+                && task.EnvironmentId == x.EnvironmentId
+                && task.OperationTaskIdValue == x.OperationTaskId
+                && task.Status == OperationTaskLifecycleStatus.Completed)
+                ? new MesActualHours(
+                    dbContext.OperationTasks
+                        .Where(task => task.OrganizationId == x.OrganizationId
+                            && task.EnvironmentId == x.EnvironmentId
+                            && task.OperationTaskIdValue == x.OperationTaskId
+                            && task.Status == OperationTaskLifecycleStatus.Completed)
+                        .Select(task => task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour)
+                        .First(),
+                    dbContext.OperationTasks
+                        .Where(task => task.OrganizationId == x.OrganizationId
+                            && task.EnvironmentId == x.EnvironmentId
+                            && task.OperationTaskIdValue == x.OperationTaskId
+                            && task.Status == OperationTaskLifecycleStatus.Completed)
+                        .Select(task => task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
+                        .First())
+                : null));
 }
 
 public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -651,9 +652,12 @@ public sealed record MesOperationTaskRow(
     string? TeamId = null,
     string? TeamName = null,
     // 只在工序完成后返回已冻结的累计实绩；未完成或冲销后重新打开时为 null，单位为小时。
-    decimal? ActualLaborHours = null,
-    decimal? ActualMachineHours = null)
+    [property: JsonIgnore] MesActualHours? ActualHours = null)
 {
+    public decimal? ActualLaborHours => ActualHours?.LaborHours;
+
+    public decimal? ActualMachineHours => ActualHours?.MachineHours;
+
     public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
     public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
@@ -822,10 +826,9 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.TeamId,
                 x.TeamName,
                 x.Status == OperationTaskLifecycleStatus.Completed
-                    ? x.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour
-                    : null,
-                x.Status == OperationTaskLifecycleStatus.Completed
-                    ? x.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour
+                    ? new MesActualHours(
+                        x.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                        x.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
                     : null));
     }
 
@@ -967,10 +970,9 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             task.TeamId,
             task.TeamName,
             task.Status == OperationTaskLifecycleStatus.Completed
-                ? task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour
-                : null,
-            task.Status == OperationTaskLifecycleStatus.Completed
-                ? task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour
+                ? new MesActualHours(
+                    task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                    task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
                 : null)
         {
             AllowedActions = readiness.AllowedActions,
