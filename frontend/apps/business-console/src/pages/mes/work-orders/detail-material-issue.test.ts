@@ -52,6 +52,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
 const state = vi.hoisted(() => ({
   createMaterialIssueRequest: vi.fn(),
   confirmLineSideReceipt: vi.fn(),
+  returnLineSideMaterial: vi.fn(),
   recordEngineeringChangeDecision: vi.fn(),
   materialIssueRequests: [] as Record<string, unknown>[],
   baseUomBySku: new Map<string, string>(),
@@ -107,6 +108,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     materialReadiness: ref(state.materialReadiness),
     materialReadinessError: ref(undefined),
     materialReadinessPending: ref(false),
+    returnLineSideMaterial: state.returnLineSideMaterial,
+    returnLineSideMaterialPending: ref(false),
     refreshDetail: vi.fn(),
     refreshMaterialIssueRequests: vi.fn(),
     refreshMaterialReadiness: vi.fn(),
@@ -200,6 +203,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     routeState.params.workOrderId = 'WO-1'
     state.createMaterialIssueRequest.mockReset()
     state.confirmLineSideReceipt.mockReset()
+    state.returnLineSideMaterial.mockReset()
     state.recordEngineeringChangeDecision.mockReset()
     state.materialIssueRequests.length = 0
     state.baseUomBySku.clear()
@@ -455,5 +459,38 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     expect(wrapper.text()).toContain('变更单号不能超过 100 个字符。')
     expect(wrapper.text()).toContain('决策说明不能超过 500 个字符。')
     expect(state.recordEngineeringChangeDecision).not.toHaveBeenCalled()
+  })
+
+  it('线边退料提交前阻断超过当前可退数量并携带稳定幂等键', async () => {
+    state.materialIssueRequests.push({
+      requestId: 'MIR-RETURN-001',
+      workOrderId: 'WO-1',
+      materialId: 'MAT-OIL',
+      requestedQuantity: 10,
+      receivedQuantity: 5,
+      consumedQuantity: 1,
+      status: 'Received',
+      materialLotId: 'LOT-RETURN-001',
+    })
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+    await wrapper.find('[data-testid="return-material-MIR-RETURN-001"]').trigger('click')
+    const vm = wrapper.vm as unknown as {
+      returnForm: { quantity: string }
+      submitReturn: () => Promise<void>
+    }
+    vm.returnForm.quantity = '4'
+    await vm.submitReturn()
+
+    expect(state.returnLineSideMaterial).toHaveBeenCalledTimes(1)
+    expect(state.returnLineSideMaterial.mock.calls[0][0]).toBe('MIR-RETURN-001')
+    expect(state.returnLineSideMaterial.mock.calls[0][1]).toMatchObject({
+      returnedQuantity: 4,
+      idempotencyKey: expect.any(String),
+    })
+
+    state.returnLineSideMaterial.mockClear()
+    vm.returnForm.quantity = '5'
+    await vm.submitReturn()
+    expect(state.returnLineSideMaterial).not.toHaveBeenCalled()
   })
 })

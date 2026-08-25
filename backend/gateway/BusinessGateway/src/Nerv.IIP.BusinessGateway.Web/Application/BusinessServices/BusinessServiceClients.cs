@@ -1600,6 +1600,12 @@ public interface IBusinessMesClient
         BusinessConsoleMesConfirmLineSideReceiptRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> ReturnLineSideMaterialAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesReturnLineSideMaterialRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
         string internalBearerToken,
         BusinessConsoleMesDispatchTaskListRequest request,
@@ -8095,6 +8101,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         SendAcceptedAsync(
             internalBearerToken,
             $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-receipts",
+            request,
+            MesMaterialIssueRequestDocumentType,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ReturnLineSideMaterialAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesReturnLineSideMaterialRequest request,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-returns",
             request,
             MesMaterialIssueRequestDocumentType,
             cancellationToken);

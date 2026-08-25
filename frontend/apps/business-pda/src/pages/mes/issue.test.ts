@@ -12,6 +12,9 @@ const createIssue = vi.fn(async (_workOrderId: string, _body: Record<string, unk
 const confirmLineSideReceipt = vi.fn(
   async (_requestId: string, _body: Record<string, unknown>) => {},
 )
+const returnLineSideMaterial = vi.fn(
+  async (_requestId: string, _body: Record<string, unknown>) => {},
+)
 const refreshRequests = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
@@ -42,6 +45,7 @@ const requests = [
     requestedQuantity: 50,
     receivedQuantity: 50,
     status: 'Received',
+    materialLotId: 'LOT-B',
   },
 ]
 
@@ -71,6 +75,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refresh: refreshRequests,
     createIssue,
     confirmLineSideReceipt,
+    returnLineSideMaterial,
   }),
   useMesWorkOrders: () => ({
     filters: workOrderFilters,
@@ -90,6 +95,8 @@ describe('PDA MES material issue page', () => {
     createIssue.mockResolvedValue(undefined)
     confirmLineSideReceipt.mockClear()
     confirmLineSideReceipt.mockResolvedValue(undefined)
+    returnLineSideMaterial.mockClear()
+    returnLineSideMaterial.mockResolvedValue(undefined)
     push.mockClear()
     issueFilters.keyword = undefined
     issueFilters.organizationId = 'org-001'
@@ -362,6 +369,68 @@ describe('PDA MES material issue page', () => {
     const newKey = confirmLineSideReceipt.mock.calls[2][1].idempotencyKey
     expect(newKey).toBeTruthy()
     expect(newKey).not.toBe(firstKey)
+    wrapper.unmount()
+  })
+
+  it('returns received line-side material from the same issue list', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    const quantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="returned-quantity"]',
+    )!
+    quantity.value = '10'
+    quantity.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-return"]')!.click()
+    await flushPromises()
+
+    expect(returnLineSideMaterial).toHaveBeenCalledWith(
+      'REQ-2',
+      expect.objectContaining({ returnedQuantity: 10 }),
+      { workOrderId: 'WO-2026-0002' },
+    )
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('blocks an over-limit return with visible feedback before submitting', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    const quantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="returned-quantity"]',
+    )!
+    quantity.value = '51'
+    quantity.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('退料数量不能超过当前可退数量 50')
+    expect(
+      document.body
+        .querySelector<HTMLElement>('[data-testid="submit-return"]')!
+        .hasAttribute('disabled'),
+    ).toBe(true)
+    expect(returnLineSideMaterial).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows a structured MES rejection and reuses the return idempotency key on retry', async () => {
+    returnLineSideMaterial.mockRejectedValueOnce({ detail: '当前可退数量不足。' })
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-return"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').text()).toContain('当前可退数量不足')
+    const firstKey = returnLineSideMaterial.mock.calls[0][1].idempotencyKey
+    await wrapper.get('[data-testid="retry-issue"]').trigger('click')
+    await flushPromises()
+    expect(returnLineSideMaterial.mock.calls[1][1].idempotencyKey).toBe(firstKey)
     wrapper.unmount()
   })
 })

@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.DemandPlanning;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -1131,7 +1132,8 @@ public sealed record ReturnLineSideMaterialCommand(
     string EnvironmentId,
     string RequestId,
     DateTimeOffset ReturnedAtUtc,
-    decimal ReturnedQuantity) : ICommand<MesAcceptedResponse>;
+    decimal ReturnedQuantity,
+    string IdempotencyKey) : ICommand<MesAcceptedResponse>;
 
 public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<ReturnLineSideMaterialCommand>
 {
@@ -1141,6 +1143,33 @@ public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<R
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.RequestId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReturnedQuantity).GreaterThan(0);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class ReturnLineSideMaterialCommandLock(ApplicationDbContext dbContext)
+    : ICommandLock<ReturnLineSideMaterialCommand>
+{
+    public async Task<CommandLockSettings> GetLockKeysAsync(
+        ReturnLineSideMaterialCommand command,
+        CancellationToken cancellationToken)
+    {
+        var scopedQuery = dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == command.OrganizationId &&
+                x.EnvironmentId == command.EnvironmentId);
+        var materialRequest = Guid.TryParse(command.RequestId, out var requestGuid)
+            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
+            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == command.RequestId, cancellationToken);
+        if (materialRequest is null)
+        {
+            throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
+        }
+
+        return new CommandLockSettings(
+            $"business-mes:material-issue-return:{materialRequest.OrganizationId}:{materialRequest.EnvironmentId}:{materialRequest.Id.Id:D}",
+            30);
     }
 }
 
@@ -1171,7 +1200,11 @@ public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext db
                     x.MaterialId == materialRequest.MaterialId &&
                     x.MaterialLotId == materialRequest.MaterialLotId)
                 .SumAsync(x => x.ConsumedQuantity, cancellationToken);
-            materialRequest.ReturnLineSideMaterial(request.ReturnedAtUtc, request.ReturnedQuantity, consumedQuantity);
+            materialRequest.ReturnLineSideMaterial(
+                request.ReturnedAtUtc,
+                request.ReturnedQuantity,
+                consumedQuantity,
+                request.IdempotencyKey);
         }
         catch (InvalidOperationException exception)
         {

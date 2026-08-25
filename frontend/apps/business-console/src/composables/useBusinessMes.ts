@@ -8,6 +8,7 @@ import {
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  returnBusinessConsoleMesLineSideMaterialMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -62,6 +63,7 @@ import {
   type BusinessConsoleMesCapacityImpactListEnvelope,
   type BusinessConsoleMesCapacityImpactRow,
   type BusinessConsoleMesConfirmLineSideReceiptRequest,
+  type BusinessConsoleMesReturnLineSideMaterialRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesDispatchTaskListEnvelope,
@@ -1283,6 +1285,9 @@ export function useMesWorkOrderDetail() {
   const confirmLineSideReceiptMutation = useMutation(
     confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
   )
+  const returnLineSideMaterialMutation = useMutation(
+    returnBusinessConsoleMesLineSideMaterialMutationOptions(),
+  )
   const refreshMaterialIssueQueries = () =>
     invalidateMesQueries(queryCache, [
       'listBusinessConsoleMesMaterialIssueRequests',
@@ -1512,6 +1517,19 @@ export function useMesWorkOrderDetail() {
       return result
     },
     confirmLineSideReceiptPending: confirmLineSideReceiptMutation.isLoading,
+    returnLineSideMaterial: async (
+      requestId: string,
+      body: BusinessConsoleMesReturnLineSideMaterialRequest,
+    ) => {
+      const result = await returnLineSideMaterialMutation.mutateAsync({
+        path: { requestId },
+        query: toContextQuery(filters),
+        body,
+      })
+      await refreshMaterialIssueQueries()
+      return result
+    },
+    returnLineSideMaterialPending: returnLineSideMaterialMutation.isLoading,
   }
 }
 

@@ -141,6 +141,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: mockMutationOptions(
     'confirmBusinessConsoleMesLineSideMaterialReceipt',
   ),
+  returnBusinessConsoleMesLineSideMaterialMutationOptions: mockMutationOptions(
+    'returnBusinessConsoleMesLineSideMaterial',
+  ),
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions(
     'createBusinessConsoleMesFinishedGoodsReceiptRequest',
   ),
@@ -1704,6 +1707,55 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.path).toEqual({ requestId: 'req-2' })
     expect(payload.body).toMatchObject({ receivedQuantity: 4 })
     expect(payload.body.idempotencyKey).toBe('op-confirm-1')
+  })
+
+  it('replays a return with the same key after the authoritative list shows zero returnable quantity', async () => {
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                requestId: 'req-return-1',
+                receivedQuantity: 5,
+                consumedQuantity: 0,
+                materialLotId: 'LOT-1',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                requestId: 'req-return-1',
+                receivedQuantity: 0,
+                consumedQuantity: 0,
+                materialLotId: null,
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+
+    const { returnLineSideMaterial } = useMesMaterialIssue()
+    const body = { returnedQuantity: 5, idempotencyKey: 'return-replay-1' }
+
+    await returnLineSideMaterial('req-return-1', body)
+    await returnLineSideMaterial('req-return-1', body)
+
+    expect(
+      coladaState.mutateById.get('returnBusinessConsoleMesLineSideMaterial'),
+    ).toHaveBeenCalledTimes(2)
+    expect(
+      coladaState.mutateById.get('returnBusinessConsoleMesLineSideMaterial')!.mock.calls[1][0].body,
+    ).toEqual(body)
   })
 
   it('forwards the caller-supplied key + injects business fields when creating a finished-goods receipt', async () => {

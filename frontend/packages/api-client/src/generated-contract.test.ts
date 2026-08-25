@@ -570,6 +570,7 @@ describe('generated API client contract', () => {
       'cancelBusinessConsoleMesWorkOrder',
       'recordBusinessConsoleMesProductionReport',
       'confirmBusinessConsoleMesLineSideMaterialReceipt',
+      'returnBusinessConsoleMesLineSideMaterial',
       'completeBusinessConsoleWmsInboundOrder',
       'completeBusinessConsoleWmsOutboundOrder',
       'completeBusinessConsoleWmsCountExecution',

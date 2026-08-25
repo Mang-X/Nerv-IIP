@@ -4181,6 +4181,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest = {
+    returnedAtUtc?: string | null;
+    returnedQuantity?: number;
+    idempotencyKey: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDispatchTaskListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskListResponse | null;
 };
@@ -14876,6 +14882,41 @@ export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses = {
 };
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponse = ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses[keyof ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses];
+
+export type ReturnBusinessConsoleMesLineSideMaterialData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest;
+    path: {
+        requestId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns';
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialError = ReturnBusinessConsoleMesLineSideMaterialErrors[keyof ReturnBusinessConsoleMesLineSideMaterialErrors];
+
+export type ReturnBusinessConsoleMesLineSideMaterialResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialResponse = ReturnBusinessConsoleMesLineSideMaterialResponses[keyof ReturnBusinessConsoleMesLineSideMaterialResponses];
 
 export type ListBusinessConsoleMesDispatchTasksData = {
     body?: never;

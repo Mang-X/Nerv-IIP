@@ -152,6 +152,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
     public string? InventoryPostingRollbackKey { get; private set; }
 
+    /// <summary>已处理的线边退料幂等键及数量，支持客户端超时后的同意图回放。</summary>
+    public string LineSideReturnIdempotencyKeysJson { get; private set; } = "{}";
+
+    /// <summary>退料幂等记录与数量变更共用的乐观并发令牌。</summary>
+    public long LineSideReturnConcurrencyToken { get; private set; }
+
     /// <summary>本次收料尝试的在途数量：已提交给库存、尚未双腿回执，齐套不计。</summary>
     public decimal PendingReceiptQuantity { get; private set; }
 
@@ -687,10 +693,30 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     private bool HasAnyPostedLeg() =>
         PendingIssueLegPosted || PendingReceiptLegPosted || PostedIssueIndexes().Count > 0;
 
-    public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity, decimal consumedQuantity = 0m)
+    public bool ReturnLineSideMaterial(
+        DateTimeOffset returnedAtUtc,
+        decimal returnedQuantity,
+        decimal consumedQuantity = 0m,
+        string? idempotencyKey = null)
     {
         DomainGuard.Positive(returnedQuantity, nameof(returnedQuantity));
         DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
+
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var key = idempotencyKey.Trim();
+            var recorded = JsonSerializer.Deserialize<Dictionary<string, decimal>>(LineSideReturnIdempotencyKeysJson)
+                ?? new Dictionary<string, decimal>(StringComparer.Ordinal);
+            if (recorded.TryGetValue(key, out var recordedQuantity))
+            {
+                if (recordedQuantity != returnedQuantity)
+                {
+                    throw new InvalidOperationException("同一退料幂等键不能用于不同数量。");
+                }
+
+                return false;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(MaterialLotId))
         {
@@ -720,8 +746,19 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
         }
 
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var recorded = JsonSerializer.Deserialize<Dictionary<string, decimal>>(LineSideReturnIdempotencyKeysJson)
+                ?? new Dictionary<string, decimal>(StringComparer.Ordinal);
+            recorded[idempotencyKey.Trim()] = returnedQuantity;
+            LineSideReturnIdempotencyKeysJson = JsonSerializer.Serialize(recorded);
+        }
+
+        LineSideReturnConcurrencyToken++;
+
         AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
         AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+        return true;
     }
 
     public void CancelForWorkOrderCancellation(DateTimeOffset cancelledAtUtc, decimal consumedQuantity = 0m)

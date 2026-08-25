@@ -15012,6 +15012,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    public Task<BusinessConsoleAcceptedResponse> ReturnLineSideMaterialAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesReturnLineSideMaterialRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
         string internalBearerToken,
         BusinessConsoleMesDispatchTaskListRequest request,

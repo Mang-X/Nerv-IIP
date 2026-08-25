@@ -168,6 +168,12 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  returnBusinessConsoleMesLineSideMaterialMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   createBusinessConsoleMesRushWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
