@@ -791,10 +791,10 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                      WHERE {contentPredicate}),
                     (SELECT COUNT(*) FROM inventory.integration_event_dead_letters
                      WHERE event_id IN ({eventPredicate})),
-                    (SELECT status FROM inventory.authority_resolution_pending
+                    (SELECT status FROM inventory.authority_resolution_pending_audits
                      WHERE event_id = @pending_event_id
                      LIMIT 1),
-                    (SELECT reason_code FROM inventory.authority_resolution_pending
+                    (SELECT reason_code FROM inventory.authority_resolution_pending_audits
                      WHERE event_id = @pending_event_id
                      LIMIT 1);
                 """;
