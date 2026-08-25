@@ -30,7 +30,9 @@ public sealed class MasterDataResourceListHttpTests
             dbContext.ProductCategories.AddRange(
                 ProductCategory.Create("org-001", "env-dev", "CAT-PUMP-A", "Pump A", null, null),
                 ProductCategory.Create("org-001", "env-dev", "CAT-PUMP-B", "Pump B", null, null),
-                ProductCategory.Create("org-001", "env-dev", "CAT-OTHER", "Other", null, null));
+                ProductCategory.Create("org-001", "env-dev", "CAT-OTHER", "Other", null, null),
+                ProductCategory.Create("org-002", "env-dev", "CAT-PUMP-OTHER-ORG", "Pump other org", null, null),
+                ProductCategory.Create("org-001", "env-test", "CAT-PUMP-OTHER-ENV", "Pump other env", null, null));
             await dbContext.SaveChangesAsync();
         }
 
@@ -60,7 +62,9 @@ public sealed class MasterDataResourceListHttpTests
             dbContext.Skills.AddRange(
                 Skill.Create("org-001", "env-dev", "SK-PUMP-A", "Pump A", "Manufacturing", false, null, null),
                 Skill.Create("org-001", "env-dev", "SK-PUMP-B", "Pump B", "Manufacturing", false, null, null),
-                Skill.Create("org-001", "env-dev", "SK-OTHER", "Other", "Manufacturing", false, null, null));
+                Skill.Create("org-001", "env-dev", "SK-OTHER", "Other", "Manufacturing", false, null, null),
+                Skill.Create("org-002", "env-dev", "SK-PUMP-OTHER-ORG", "Pump other org", "Manufacturing", false, null, null),
+                Skill.Create("org-001", "env-test", "SK-PUMP-OTHER-ENV", "Pump other env", "Manufacturing", false, null, null));
             await dbContext.SaveChangesAsync();
         }
 
@@ -90,6 +94,8 @@ public sealed class MasterDataResourceListHttpTests
             dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-PUMP", "Pump", "pcs", "finished-goods"));
             dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-PUMP-2", "Pump spare", "pcs", "finished-goods"));
             dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-OTHER", "Other", "pcs", "finished-goods"));
+            dbContext.Skus.Add(Sku.Create("org-002", "env-dev", "SKU-PUMP-OTHER-ORG", "Pump other org", "pcs", "finished-goods"));
+            dbContext.Skus.Add(Sku.Create("org-001", "env-test", "SKU-PUMP-OTHER-ENV", "Pump other env", "pcs", "finished-goods"));
             await dbContext.SaveChangesAsync();
         }
 

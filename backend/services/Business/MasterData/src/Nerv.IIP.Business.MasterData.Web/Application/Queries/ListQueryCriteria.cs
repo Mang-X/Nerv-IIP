@@ -2,8 +2,17 @@ using System.Linq.Expressions;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
-public sealed record TenantScope(string OrganizationId, string EnvironmentId)
+public sealed record TenantScope
 {
+    private TenantScope(string organizationId, string environmentId)
+    {
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
+    }
+
+    public string OrganizationId { get; }
+    public string EnvironmentId { get; }
+
     public static TenantScope From(string organizationId, string environmentId)
     {
         if (string.IsNullOrWhiteSpace(organizationId))
@@ -20,8 +29,17 @@ public sealed record TenantScope(string OrganizationId, string EnvironmentId)
     }
 }
 
-public sealed record OffsetPage(int Skip, int Take)
+public sealed record OffsetPage
 {
+    private OffsetPage(int skip, int take)
+    {
+        Skip = skip;
+        Take = take;
+    }
+
+    public int Skip { get; }
+    public int Take { get; }
+
     public const int DefaultTake = 100;
     public const int MaxTake = 500;
 
@@ -29,16 +47,35 @@ public sealed record OffsetPage(int Skip, int Take)
         new(Math.Max(0, skip), Math.Clamp(take, 1, MaxTake));
 }
 
-public sealed record SearchTerm(string? Value)
+public sealed record SearchTerm
 {
+    private SearchTerm(string? value) => Value = value;
+
+    public string? Value { get; }
+
     public static SearchTerm From(string? value) =>
         new(string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant());
 }
 
-public sealed record MasterDataListQueryCriteria(
-    TenantScope Tenant,
-    OffsetPage Page,
-    SearchTerm Keyword);
+public sealed record MasterDataListQueryCriteria
+{
+    private MasterDataListQueryCriteria(TenantScope tenant, OffsetPage page, SearchTerm keyword)
+    {
+        Tenant = tenant;
+        Page = page;
+        Keyword = keyword;
+    }
+
+    public TenantScope Tenant { get; }
+    public OffsetPage Page { get; }
+    public SearchTerm Keyword { get; }
+
+    public static MasterDataListQueryCriteria From(
+        TenantScope tenant,
+        OffsetPage page,
+        SearchTerm keyword) =>
+        new(tenant, page, keyword);
+}
 
 public static class ListMasterDataResourcesQueryCriteriaExtensions
 {
@@ -49,7 +86,7 @@ public static class ListMasterDataResourcesQueryCriteriaExtensions
         int take,
         string? keyword)
     {
-        return new MasterDataListQueryCriteria(
+        return MasterDataListQueryCriteria.From(
             TenantScope.From(organizationId, environmentId),
             OffsetPage.From(skip, take),
             SearchTerm.From(keyword));
