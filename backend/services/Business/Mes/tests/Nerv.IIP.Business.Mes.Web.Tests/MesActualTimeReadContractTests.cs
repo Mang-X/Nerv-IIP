@@ -325,6 +325,7 @@ public sealed class MesActualTimeReadContractTests
                     0m,
                     DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
                     OperationActualHours: new MesActualHours(1.25m, 0.5m)),
+                [],
                 []));
         }
     }
