@@ -21,7 +21,7 @@ public sealed record ListProductCategoriesQuery(
     string? Search = null,
     string? ParentCode = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ProductCategoryListResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ProductCategoryListResponse>;
 
 public sealed record GetProductCategoryQuery(
     string OrganizationId,
@@ -33,19 +33,25 @@ public sealed class ListProductCategoriesQueryHandler(ApplicationDbContext dbCon
 {
     public async Task<ProductCategoryListResponse> Handle(ListProductCategoriesQuery request, CancellationToken cancellationToken)
     {
-        var keyword = NormalizeKeyword(request.Search);
+        var criteria = ListMasterDataResourcesQueryCriteriaExtensions.ToCriteria(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Skip,
+            request.Take,
+            request.Search);
+        var keyword = criteria.Keyword.Value;
         var query = dbContext.ProductCategories
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == criteria.Tenant.OrganizationId && x.EnvironmentId == criteria.Tenant.EnvironmentId)
             .Where(x => !request.Enabled.HasValue || x.Disabled != request.Enabled.Value)
             .Where(x => string.IsNullOrWhiteSpace(request.ParentCode) || x.ParentCode == request.ParentCode)
             .Where(x => keyword == null || x.CategoryCode.ToLower().Contains(keyword) || x.CategoryName.ToLower().Contains(keyword));
         var total = await query.CountAsync(cancellationToken);
-        var categories = await LoadCategoriesAsync(dbContext, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        var categories = await LoadCategoriesAsync(dbContext, criteria.Tenant.OrganizationId, criteria.Tenant.EnvironmentId, cancellationToken);
         var items = await query
             .OrderBy(x => x.CategoryCode)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(criteria.Page.Skip)
+            .Take(criteria.Page.Take)
             .ToListAsync(cancellationToken);
 
         return new ProductCategoryListResponse(items.Select(x => ToItem(x, categories)).ToArray(), total);
@@ -93,10 +99,6 @@ public sealed class ListProductCategoriesQueryHandler(ApplicationDbContext dbCon
         return string.Join('/', path);
     }
 
-    private static string? NormalizeKeyword(string? keyword)
-    {
-        return string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
-    }
 }
 
 public sealed class GetProductCategoryQueryHandler(ApplicationDbContext dbContext)

@@ -42,14 +42,24 @@ public sealed record MasterDataListQueryCriteria(
 
 public static class ListMasterDataResourcesQueryCriteriaExtensions
 {
+    public static MasterDataListQueryCriteria ToCriteria(
+        string organizationId,
+        string environmentId,
+        int skip,
+        int take,
+        string? keyword)
+    {
+        return new MasterDataListQueryCriteria(
+            TenantScope.From(organizationId, environmentId),
+            OffsetPage.From(skip, take),
+            SearchTerm.From(keyword));
+    }
+
     public static MasterDataListQueryCriteria ToCriteria(this ListMasterDataResourcesQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        return new MasterDataListQueryCriteria(
-            TenantScope.From(query.OrganizationId, query.EnvironmentId),
-            OffsetPage.From(query.Skip, query.Take),
-            SearchTerm.From(query.Keyword));
+        return ToCriteria(query.OrganizationId, query.EnvironmentId, query.Skip, query.Take, query.Keyword);
     }
 }
 

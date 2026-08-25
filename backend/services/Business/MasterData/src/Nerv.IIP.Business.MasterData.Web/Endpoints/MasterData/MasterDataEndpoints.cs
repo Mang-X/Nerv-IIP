@@ -61,7 +61,7 @@ public sealed record ListMasterDataResourcesRequest(
     string ResourceType,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? CodeSet = null,
     string? ParentCode = null,
     string? SiteCode = null,
@@ -1327,7 +1327,7 @@ public sealed record ListProductCategoriesRequest(
     string? Search = null,
     string? ParentCode = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ProductCategoryRequest(
     string OrganizationId,
@@ -1364,7 +1364,7 @@ public sealed record ListSkillsRequest(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record SkillRequest(
     string OrganizationId,

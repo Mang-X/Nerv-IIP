@@ -22,7 +22,7 @@ public sealed record ListSkillsQuery(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100) : IQuery<SkillListResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<SkillListResponse>;
 
 public sealed record GetSkillQuery(
     string OrganizationId,
@@ -34,18 +34,24 @@ public sealed class ListSkillsQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<SkillListResponse> Handle(ListSkillsQuery request, CancellationToken cancellationToken)
     {
-        var keyword = NormalizeKeyword(request.Search);
+        var criteria = ListMasterDataResourcesQueryCriteriaExtensions.ToCriteria(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Skip,
+            request.Take,
+            request.Search);
+        var keyword = criteria.Keyword.Value;
         var query = dbContext.Skills
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == criteria.Tenant.OrganizationId && x.EnvironmentId == criteria.Tenant.EnvironmentId)
             .Where(x => !request.Enabled.HasValue || x.Disabled != request.Enabled.Value)
             .Where(x => string.IsNullOrWhiteSpace(request.GroupName) || x.GroupName == request.GroupName)
             .Where(x => keyword == null || x.SkillCode.ToLower().Contains(keyword) || x.SkillName.ToLower().Contains(keyword) || x.GroupName.ToLower().Contains(keyword));
         var total = await query.CountAsync(cancellationToken);
         var skills = await query
             .OrderBy(x => x.SkillCode)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(criteria.Page.Skip)
+            .Take(criteria.Page.Take)
             .ToListAsync(cancellationToken);
 
         return new SkillListResponse(skills.Select(ToItem).ToArray(), total);
@@ -64,10 +70,6 @@ public sealed class ListSkillsQueryHandler(ApplicationDbContext dbContext)
             skill.UpdatedAtUtc.ToString("O"));
     }
 
-    private static string? NormalizeKeyword(string? keyword)
-    {
-        return string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
-    }
 }
 
 public sealed class GetSkillQueryHandler(ApplicationDbContext dbContext)

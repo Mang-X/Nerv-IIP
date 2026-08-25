@@ -100,50 +100,43 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
     public async Task<ListMasterDataResourcesResponse> Handle(ListMasterDataResourcesQuery request, CancellationToken cancellationToken)
     {
         var criteria = request.ToCriteria();
-        request = request with
-        {
-            OrganizationId = criteria.Tenant.OrganizationId,
-            EnvironmentId = criteria.Tenant.EnvironmentId,
-            Skip = criteria.Page.Skip,
-            Take = criteria.Page.Take,
-            Keyword = criteria.Keyword.Value,
-        };
-        var type = request.ResourceType.Trim().ToLowerInvariant();
+        var requestContext = new ListMasterDataResourceQueryContext(request, criteria);
+        var type = requestContext.ResourceType.Trim().ToLowerInvariant();
         var query = type switch
         {
-            "sku" => ListSkus(request, type),
-            "unit-of-measure" or "uom" => ListUnits(request, "unit-of-measure"),
-            "uom-conversion" => ListUomConversions(request, type),
-            "business-partner" or "partner" => ListPartners(request, "business-partner"),
-            "department" => ListDepartments(request, type),
-            "team" => ListTeams(request, type),
-            "worker" => ListWorkers(request, type),
-            "personnel-skill" => ListPersonnelSkills(request, type),
-            "workshop" => ListWorkshops(request, type),
-            "work-center" => ListWorkCenters(request, type),
-            "work-calendar" => ListWorkCalendars(request, type),
-            "device-asset" => ListDeviceAssets(request, type),
-            "station" => ListStations(request, type),
-            "site" => ListSites(request, type),
-            "production-line" => ListProductionLines(request, type),
-            "shift" => ListShifts(request, type),
-            "reference-data" or "reference-data-code" => ListReferenceDataCodes(request, "reference-data"),
+            "sku" => ListSkus(requestContext, type),
+            "unit-of-measure" or "uom" => ListUnits(requestContext, "unit-of-measure"),
+            "uom-conversion" => ListUomConversions(requestContext, type),
+            "business-partner" or "partner" => ListPartners(requestContext, "business-partner"),
+            "department" => ListDepartments(requestContext, type),
+            "team" => ListTeams(requestContext, type),
+            "worker" => ListWorkers(requestContext, type),
+            "personnel-skill" => ListPersonnelSkills(requestContext, type),
+            "workshop" => ListWorkshops(requestContext, type),
+            "work-center" => ListWorkCenters(requestContext, type),
+            "work-calendar" => ListWorkCalendars(requestContext, type),
+            "device-asset" => ListDeviceAssets(requestContext, type),
+            "station" => ListStations(requestContext, type),
+            "site" => ListSites(requestContext, type),
+            "production-line" => ListProductionLines(requestContext, type),
+            "shift" => ListShifts(requestContext, type),
+            "reference-data" or "reference-data-code" => ListReferenceDataCodes(requestContext, "reference-data"),
             _ => null,
         };
         return query is null
             ? new ListMasterDataResourcesResponse([], 0)
-            : await ToPageAsync(query, request, cancellationToken);
+            : await ToPageAsync(query, requestContext, cancellationToken);
     }
 
     private static async Task<ListMasterDataResourcesResponse> ToPageAsync(
         IQueryable<MasterDataResourceItem> query,
-        ListMasterDataResourcesQuery request,
+        ListMasterDataResourceQueryContext request,
         CancellationToken cancellationToken)
     {
         var total = await query.CountAsync(cancellationToken);
-        var limit = request.All ? 5000 : Math.Clamp(request.Take, 1, 500);
+        var limit = request.All ? 5000 : request.Take;
         var resources = await query
-            .Skip(request.All ? 0 : Math.Max(0, request.Skip))
+            .Skip(request.All ? 0 : request.Skip)
             .Take(limit)
             .ToListAsync(cancellationToken);
         if (string.Equals(request.ResourceType, "station", StringComparison.OrdinalIgnoreCase))
@@ -180,9 +173,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         return builder.ToString();
     }
 
-    private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Skus
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -193,9 +186,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", x.Category, x.MaterialType, null, x.BaseUomCode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListUnits(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListUnits(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.UnitsOfMeasure
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -205,9 +198,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListUomConversions(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListUomConversions(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.UomConversions
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -251,9 +244,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 x.RoundingMode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListPartners(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListPartners(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.BusinessPartners
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -277,9 +270,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Departments
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -290,9 +283,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, x.ParentDepartmentCode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListTeams(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListTeams(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Teams
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -305,9 +298,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, x.WorkshopCode, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, x.ShiftCode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkers(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkers(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Workers
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -319,9 +312,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, null, x.UserId, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, x.JobTitle, x.EmploymentStatus, x.Phone));
     }
 
-    private IQueryable<MasterDataResourceItem> ListPersonnelSkills(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListPersonnelSkills(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.PersonnelSkills
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -334,9 +327,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, $"{x.UserId}:{x.SkillCode}", x.Level, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, null, null, x.UserId, x.SkillCode, x.Level, x.EffectiveFrom, x.EffectiveTo));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkshops(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkshops(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Workshops
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -347,9 +340,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, x.SiteCode, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkCenters(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkCenters(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.WorkCenters
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -361,9 +354,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, x.PlantCode, x.LineCode, x.WorkshopCode, x.CapacityMinutesPerDay, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkCalendars(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkCalendars(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.WorkCalendars
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -373,9 +366,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListDeviceAssets(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListDeviceAssets(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.DeviceAssets
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -408,9 +401,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListStations(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListStations(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.DeviceAssets
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -440,9 +433,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Sites
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -462,9 +455,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListProductionLines(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListProductionLines(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.ProductionLines
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -476,9 +469,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, x.SiteCode, null, null, x.WorkshopCode, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListShifts(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListShifts(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.Shifts
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -501,9 +494,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListReferenceDataCodes(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListReferenceDataCodes(ListMasterDataResourceQueryContext request, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
+        var keyword = request.Keyword;
         return dbContext.ReferenceDataCodes
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -614,8 +607,29 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             Phone);
     }
 
-    private static string? NormalizeKeyword(string? keyword)
+    private sealed class ListMasterDataResourceQueryContext(
+        ListMasterDataResourcesQuery request,
+        MasterDataListQueryCriteria criteria)
     {
-        return string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
+        public string OrganizationId => criteria.Tenant.OrganizationId;
+        public string EnvironmentId => criteria.Tenant.EnvironmentId;
+        public int Skip => criteria.Page.Skip;
+        public int Take => criteria.Page.Take;
+        public string? Keyword => criteria.Keyword.Value;
+        public string ResourceType => request.ResourceType;
+        public bool IncludeDisabled => request.IncludeDisabled;
+        public string? CodeSet => request.CodeSet;
+        public string? ParentCode => request.ParentCode;
+        public string? SiteCode => request.SiteCode;
+        public string? LineCode => request.LineCode;
+        public string? WorkCenterCode => request.WorkCenterCode;
+        public string? Category => request.Category;
+        public string? PartnerType => request.PartnerType;
+        public bool All => request.All;
+        public string? DepartmentCode => request.DepartmentCode;
+        public string? ShiftCode => request.ShiftCode;
+        public string? UserId => request.UserId;
+        public string? SkillCode => request.SkillCode;
+        public string? WorkshopCode => request.WorkshopCode;
     }
 }

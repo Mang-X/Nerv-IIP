@@ -26,6 +26,7 @@ public sealed class MasterDataResourceListHttpTests
         {
             var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-PUMP", "Pump", "pcs", "finished-goods"));
+            dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-PUMP-2", "Pump spare", "pcs", "finished-goods"));
             dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-OTHER", "Other", "pcs", "finished-goods"));
             await dbContext.SaveChangesAsync();
         }
@@ -33,20 +34,30 @@ public sealed class MasterDataResourceListHttpTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "master-data-resource-list-http-test-token");
 
-        foreach (var paging in new[] { "skip=-1&take=0", "skip=0&take=501", "skip=0&take=100" })
+        var pagingCases = new[]
+        {
+            (Paging: "skip=-1&take=0", ExpectedCount: 1, ExpectedFirstCode: "SKU-PUMP"),
+            (Paging: "skip=0&take=501", ExpectedCount: 2, ExpectedFirstCode: "SKU-PUMP"),
+            (Paging: "skip=1&take=1", ExpectedCount: 1, ExpectedFirstCode: "SKU-PUMP-2"),
+            (Paging: "skip=0&take=100", ExpectedCount: 2, ExpectedFirstCode: "SKU-PUMP"),
+        };
+
+        foreach (var paging in pagingCases)
         {
             var response = await client.GetAsync(
                 "/api/business/v1/master-data/resources" +
                 "?organizationId=%20org-001%20&environmentId=%20env-dev%20&resourceType=sku" +
-                "&keyword=%20%20pump%20%20&" + paging);
+                "&keyword=%20%20pump%20%20&" + paging.Paging);
 
             var body = await response.Content.ReadAsStringAsync();
             Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
             using var document = JsonDocument.Parse(body);
             Assert.True(document.RootElement.TryGetProperty("data", out var data), body);
             Assert.True(document.RootElement.GetProperty("success").GetBoolean());
-            Assert.Equal(1, data.GetProperty("total").GetInt32());
-            Assert.Equal("SKU-PUMP", Assert.Single(data.GetProperty("resources").EnumerateArray()).GetProperty("code").GetString());
+            Assert.Equal(2, data.GetProperty("total").GetInt32());
+            var resources = data.GetProperty("resources").EnumerateArray().ToArray();
+            Assert.Equal(paging.ExpectedCount, resources.Length);
+            Assert.Equal(paging.ExpectedFirstCode, resources[0].GetProperty("code").GetString());
         }
     }
 
@@ -54,12 +65,13 @@ public sealed class MasterDataResourceListHttpTests
     public async Task Get_resources_accepts_existing_tenant_identifier_length()
     {
         var organizationId = "org-" + "x".PadRight(61, 'x');
+        var environmentId = "env-" + "y".PadRight(61, 'y');
 
         await using var factory = new MasterDataResourceListHttpTestFactory();
         using (var seedScope = factory.Services.CreateScope())
         {
             var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.Skus.Add(Sku.Create(organizationId, "env-dev", "SKU-LONG-TENANT", "Long tenant", "pcs", "finished-goods"));
+            dbContext.Skus.Add(Sku.Create(organizationId, environmentId, "SKU-LONG-TENANT", "Long tenant", "pcs", "finished-goods"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -67,7 +79,7 @@ public sealed class MasterDataResourceListHttpTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "master-data-resource-list-http-test-token");
 
         var response = await client.GetAsync(
-            $"/api/business/v1/master-data/resources?organizationId={organizationId}&environmentId=env-dev&resourceType=sku");
+            $"/api/business/v1/master-data/resources?organizationId={organizationId}&environmentId={environmentId}&resourceType=sku");
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
