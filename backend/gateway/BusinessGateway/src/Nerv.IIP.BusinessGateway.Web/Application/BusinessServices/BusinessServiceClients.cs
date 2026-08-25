@@ -1522,7 +1522,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesMaterialIssueRequestListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
@@ -7747,12 +7747,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesMaterialIssueRequestListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesMaterialIssueRequestListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/material-issue-requests?" + ListQuery(request),
+            "/api/business/v1/mes/material-issue-requests?" + MaterialIssueRequestListQuery(request),
             null,
             cancellationToken);
 
@@ -8239,6 +8239,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("workOrderId", request.WorkOrderId),
             ("skip", request.Skip),
             ("take", request.Take));
+
+    private static string MaterialIssueRequestListQuery(BusinessConsoleMesMaterialIssueRequestListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("workOrderId", request.WorkOrderId),
+            ("skip", request.Skip),
+            ("take", request.Take),
+            ("operationTaskId", request.OperationTaskId));
 
     private static string DispatchTaskListQuery(BusinessConsoleMesDispatchTaskListRequest request) =>
         Query(

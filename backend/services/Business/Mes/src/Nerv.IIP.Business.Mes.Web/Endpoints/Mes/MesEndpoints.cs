@@ -334,7 +334,8 @@ public sealed record ListMaterialIssueRequestsRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null);
+    string? Status = null,
+    string? OperationTaskId = null);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -958,7 +959,8 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
             req.WorkCenterId,
             req.ShiftId,
             req.DeviceAssetId,
-            req.Status), ct);
+            req.Status,
+            req.OperationTaskId), ct);
         await Send.OkAsync(response, ct);
     }
 }

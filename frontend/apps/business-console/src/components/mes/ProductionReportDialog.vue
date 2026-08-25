@@ -30,7 +30,7 @@ import {
  * 工单与工序只能从工单列表行或工序任务行带入。因此本组件：
  * - 不提供任何工单/工序的挑选控件，`context` 为空即不可提交；
  * - 带出的字段走 CarriedContextSummary 只读展示，不做 readonly 输入框；
- * - 录入项只有合格数量、不合格数量、是否完成本工序；
+ * - 录入项包含合格数量、不合格数量、返修数量、耗料批次与是否完成本工序；
  * - 零说明文案，结果一律 toast。
  */
 const props = defineProps<{
@@ -62,6 +62,22 @@ const {
   reportScopeMessage,
   reportScopePending,
   reportScopeReady,
+  materialsReadPermission,
+  materialLotsPending,
+  materialLotsError,
+  availableMaterialLots,
+  refreshMaterialLots,
+  materialValidationMessage,
+  qualityInspectionRecordsReadPermission,
+  scrapReasonCodesPending,
+  scrapReasonCodesError,
+  scrapReasonCodes,
+  refreshScrapReasonCodes,
+  scrapReasonValidationMessage,
+  materialSelected,
+  materialQuantity,
+  setMaterialSelected,
+  setMaterialQuantity,
   submit,
 } = useProductionReportForm(() => props.context, {
   onReported: () => emit('reported'),
@@ -78,6 +94,11 @@ const operationLabel = computed(() => {
 const workOrderLabel = computed(
   () => props.context?.workOrderNo ?? props.context?.workOrderId ?? '',
 )
+function materialRemaining(row: { receivedQuantity?: number; consumedQuantity?: number }) {
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(
+    (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0),
+  )
+}
 const contextItems = computed(() => {
   const ctx = props.context
   if (!ctx) return []
@@ -148,6 +169,19 @@ async function onSubmit() {
               :data-invalid="showErrors && invalid.scrapQuantity ? '' : undefined"
             />
           </NvField>
+          <NvField>
+            <NvFieldLabel for="report-rework">返修数量</NvFieldLabel>
+            <NvInput
+              id="report-rework"
+              v-model="form.reworkQuantity"
+              inputmode="decimal"
+              min="0"
+              step="any"
+              type="number"
+              :disabled="intentLocked || !reportScopeReady"
+              :data-invalid="showErrors && invalid.reworkQuantity ? '' : undefined"
+            />
+          </NvField>
           <NvField
             orientation="horizontal"
             class="items-center justify-between rounded-lg border p-3 sm:col-span-2"
@@ -160,6 +194,124 @@ async function onSubmit() {
             />
           </NvField>
         </NvFieldGroup>
+
+        <section
+          v-if="Number(form.scrapQuantity) > 0"
+          data-testid="scrap-reason-code-field"
+          class="grid gap-2 rounded-lg border p-3"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <label for="report-scrap-reason" class="text-sm font-medium">
+              报废原因码 <span class="text-destructive">*</span>
+            </label>
+            <NvButton
+              type="button"
+              variant="ghost"
+              :disabled="scrapReasonCodesPending || intentLocked"
+              @click="refreshScrapReasonCodes"
+            >
+              刷新
+            </NvButton>
+          </div>
+          <select
+            id="report-scrap-reason"
+            v-model="form.scrapReasonCode"
+            class="min-h-10 w-full rounded-md border bg-background px-3 text-sm"
+            :disabled="
+              !qualityInspectionRecordsReadPermission ||
+              scrapReasonCodesPending ||
+              !!scrapReasonCodesError ||
+              intentLocked ||
+              !reportScopeReady
+            "
+            :data-invalid="showErrors && scrapReasonValidationMessage ? '' : undefined"
+          >
+            <option value="">请选择报废原因码</option>
+            <option
+              v-for="reason in scrapReasonCodes"
+              :key="reason.reasonCode"
+              :value="reason.reasonCode"
+            >
+              {{ reason.reasonCode }} · {{ reason.reasonName }}
+            </option>
+          </select>
+          <p v-if="scrapReasonCodesError" class="text-sm text-destructive" role="alert">
+            报废原因码读取失败，请刷新后重试。
+          </p>
+          <p v-else-if="scrapReasonCodesPending" class="text-sm text-muted-foreground">
+            正在读取报废原因码…
+          </p>
+          <p
+            v-else-if="!qualityInspectionRecordsReadPermission"
+            class="text-sm text-muted-foreground"
+          >
+            当前账号没有质量原因码读取权限，报废报工已禁用。
+          </p>
+          <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
+            {{ scrapReasonValidationMessage }}
+          </p>
+        </section>
+
+        <section
+          v-if="materialsReadPermission"
+          data-testid="production-material-lots"
+          class="grid gap-2 rounded-lg border p-3"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="text-sm font-medium">耗料批次</h3>
+            <NvButton
+              type="button"
+              variant="ghost"
+              :disabled="materialLotsPending || intentLocked"
+              @click="refreshMaterialLots"
+            >
+              刷新
+            </NvButton>
+          </div>
+          <p v-if="materialLotsError" class="text-sm text-destructive" role="alert">
+            已收料批次读取失败，请刷新后重试。
+          </p>
+          <p v-else-if="materialLotsPending" class="text-sm text-muted-foreground">
+            正在读取已收料批次…
+          </p>
+          <p v-else-if="availableMaterialLots.length === 0" class="text-sm text-muted-foreground">
+            当前工序暂无可用已收料批次。
+          </p>
+          <div v-for="row in availableMaterialLots" :key="row.requestId" class="grid gap-2">
+            <label class="flex items-center gap-2 text-sm">
+              <NvCheckbox
+                :id="`report-material-${row.requestId}`"
+                :model-value="materialSelected(row.requestId)"
+                :disabled="intentLocked || !reportScopeReady"
+                @update:model-value="setMaterialSelected(row.requestId, $event)"
+              />
+              <span>
+                {{ row.materialId }} · {{ row.materialLotId }}
+                <span class="text-muted-foreground">
+                  （{{ row.operationTaskId ? '本工序' : '工单级' }}，可用
+                  {{ materialRemaining(row) }} {{ row.uomCode }}）
+                </span>
+              </span>
+            </label>
+            <NvInput
+              :id="`report-material-quantity-${row.requestId}`"
+              :model-value="materialQuantity(row.requestId)"
+              inputmode="decimal"
+              min="0"
+              step="any"
+              type="number"
+              placeholder="耗用数量"
+              :disabled="!materialSelected(row.requestId) || intentLocked || !reportScopeReady"
+              @update:model-value="setMaterialQuantity(row.requestId, $event)"
+            />
+          </div>
+          <p v-if="materialValidationMessage" class="text-sm text-destructive" role="alert">
+            {{ materialValidationMessage }}
+          </p>
+        </section>
+        <p v-else data-testid="material-permission-message" class="text-sm text-muted-foreground">
+          当前账号没有材料读取权限，耗料批次选择已禁用。
+        </p>
 
         <p
           v-if="reportScopeMessage"
@@ -183,7 +335,7 @@ async function onSubmit() {
           class="text-sm text-destructive"
           role="alert"
         >
-          请填写数量：合格与不合格均不可为负，且合计需大于 0。
+          请填写数量：合格、不合格与返修均不可为负，且合计需大于 0。
         </p>
         <p v-if="intentLocked" class="text-sm text-warning-strong">
           提交结果未知，当前内容已锁定；仅可按原内容重试。
