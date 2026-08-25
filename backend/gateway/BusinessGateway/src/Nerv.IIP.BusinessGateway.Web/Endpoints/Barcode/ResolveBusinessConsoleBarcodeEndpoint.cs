@@ -1,0 +1,271 @@
+using System.Net;
+using FastEndpoints;
+using FluentValidation;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.ServiceAuth;
+
+namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Barcode;
+
+public sealed record BusinessConsoleBarcodeResolveRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ScannedValue,
+    int PageIndex = 1,
+    int PageSize = 20);
+
+public sealed record BusinessConsoleBarcodeResolveResponse(
+    string Status,
+    string? ReasonCode,
+    IReadOnlyCollection<BusinessConsoleBarcodeResolveCandidate> Candidates,
+    int Total);
+
+public sealed record BusinessConsoleBarcodeResolveCandidate(
+    string ObjectType,
+    IReadOnlyDictionary<string, string> StrongIds,
+    string Authority,
+    string Source,
+    DateTimeOffset ObservedAtUtc);
+
+[Tags("Business Console Barcode")]
+[HttpPost("/api/business-console/v1/barcode/resolve")]
+[BusinessGatewayOperationId("resolveBusinessConsoleBarcode")]
+public sealed class ResolveBusinessConsoleBarcodeEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeResolverClient barcode,
+    IBusinessMesClient mes,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBarcodeResolveRequest, BusinessConsoleBarcodeResolveResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodeScansWrite)
+{
+    private const int OperationLookupConcurrency = 8;
+
+    protected override string OrganizationId(BusinessConsoleBarcodeResolveRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBarcodeResolveRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleBarcodeResolveResponse> ForwardAsync(
+        BusinessConsoleBarcodeResolveRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCalculatePageOffset(request.PageIndex, request.PageSize, out var pageOffset))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.BadRequest, "barcode-resolve-page-invalid");
+        }
+
+        var downstream = await barcode.ResolveAsync(
+            tokenProvider.BearerToken,
+            new BusinessBarcodeResolveRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.ScannedValue,
+                pageOffset,
+                request.PageSize),
+            cancellationToken);
+        if (downstream.Status is not ("resolved" or "ambiguous"))
+        {
+            return new BusinessConsoleBarcodeResolveResponse(
+                downstream.Status,
+                downstream.ReasonCode,
+                [],
+                downstream.Total);
+        }
+
+        PrincipalWorkScopeSelection? operationScope = null;
+        if (downstream.Candidates.Any(IsOperationTask))
+        {
+            var operationAuthorization = await AuthorizationClient.CheckAsync(
+                bearerToken,
+                new BusinessGatewayPermissionRequirement(
+                    BusinessGatewayPermissions.MesOperationsRead,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    null,
+                    null,
+                    IncludePrincipalContext: true),
+                BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+                cancellationToken);
+            if (!operationAuthorization.IsAllowed)
+            {
+                throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "mes-operation-read-forbidden");
+            }
+
+            operationScope = await workScopeResolver.ResolveAsync(
+                operationAuthorization,
+                request.OrganizationId,
+                request.EnvironmentId,
+                BusinessGatewayPermissions.MesOperationsRead,
+                null,
+                null,
+                cancellationToken);
+        }
+
+        using var operationLookupGate = new SemaphoreSlim(OperationLookupConcurrency);
+        var mapped = await Task.WhenAll(downstream.Candidates.Select(candidate =>
+            MapCandidateAsync(request, candidate, operationScope, operationLookupGate, cancellationToken)));
+        if (mapped.Any(candidate => candidate is null))
+        {
+            return new BusinessConsoleBarcodeResolveResponse(
+                "unsupported",
+                "resolved-object-type-unsupported",
+                [],
+                0);
+        }
+
+        return new BusinessConsoleBarcodeResolveResponse(
+            downstream.Status,
+            downstream.ReasonCode,
+            mapped.Select(candidate => candidate!).ToArray(),
+            downstream.Total);
+    }
+
+    private async Task<BusinessConsoleBarcodeResolveCandidate?> MapCandidateAsync(
+        BusinessConsoleBarcodeResolveRequest request,
+        BusinessBarcodeResolveCandidate candidate,
+        PrincipalWorkScopeSelection? operationScope,
+        SemaphoreSlim operationLookupGate,
+        CancellationToken cancellationToken)
+    {
+        var sourceType = candidate.SourceDocumentType.Trim().ToLowerInvariant();
+        IReadOnlyDictionary<string, string>? strongIds = sourceType switch
+        {
+            "work-order" => StrongId("workOrderId", candidate.SourceDocumentId),
+            "material-issue" => StrongId("materialIssueRequestId", candidate.SourceDocumentId),
+            "finished-goods-receipt" => StrongId("finishedGoodsReceiptRequestId", candidate.SourceDocumentId),
+            "work-center" => StrongId("workCenterId", candidate.SourceDocumentId),
+            "device-asset" => StrongId("deviceAssetId", candidate.SourceDocumentId),
+            "personnel" => StrongId("userId", candidate.SourceDocumentId),
+            "inventory-batch" => StrongId("inventoryBatchId", candidate.SourceDocumentId),
+            "inventory-location" => StrongId("inventoryLocationId", candidate.SourceDocumentId),
+            "purchase-receipt" => StrongId("purchaseReceiptId", candidate.SourceDocumentId),
+            "delivery-order" => StrongId("deliveryOrderId", candidate.SourceDocumentId),
+            "operation-task" => await ResolveOperationIdsAsync(
+                request,
+                candidate.SourceDocumentId,
+                operationScope ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "work-scope-not-authorized"),
+                operationLookupGate,
+                cancellationToken),
+            _ => null,
+        };
+        if (strongIds is null)
+        {
+            return null;
+        }
+
+        return new BusinessConsoleBarcodeResolveCandidate(
+            ObjectType(sourceType),
+            strongIds,
+            candidate.Authority,
+            "barcode-label-print-item",
+            candidate.ObservedAtUtc);
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>?> ResolveOperationIdsAsync(
+        BusinessConsoleBarcodeResolveRequest request,
+        string operationTaskId,
+        PrincipalWorkScopeSelection operationScope,
+        SemaphoreSlim operationLookupGate,
+        CancellationToken cancellationToken)
+    {
+        await operationLookupGate.WaitAsync(cancellationToken);
+        BusinessConsoleMesOperationTaskListResponse result;
+        try
+        {
+            result = await mes.ListOperationTasksAsync(
+                tokenProvider.BearerToken,
+                new BusinessMesOperationTaskListRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    OperationTaskId: operationTaskId,
+                    Take: 2,
+                    AssignedUserIds: Join(operationScope.AssignedUserIds),
+                    TeamIds: Join(operationScope.TeamIds),
+                    WorkCenterIds: Join(operationScope.WorkCenterIds)),
+                cancellationToken);
+        }
+        finally
+        {
+            operationLookupGate.Release();
+        }
+
+        var exact = result.Items
+            .Where(item => string.Equals(item.OperationTaskId, operationTaskId, StringComparison.Ordinal))
+            .Take(2)
+            .ToArray();
+        if (exact.Length != 1)
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        }
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["workOrderId"] = exact[0].WorkOrderId,
+            ["operationTaskId"] = exact[0].OperationTaskId,
+        };
+    }
+
+    private static bool IsOperationTask(BusinessBarcodeResolveCandidate candidate) =>
+        string.Equals(candidate.SourceDocumentType.Trim(), "operation-task", StringComparison.OrdinalIgnoreCase);
+
+    private static string? Join(IReadOnlyCollection<string> values) =>
+        values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
+
+    internal static bool TryCalculatePageOffset(int pageIndex, int pageSize, out int pageOffset)
+    {
+        pageOffset = 0;
+        if (pageIndex < 1 || pageSize is < 1 or > 100)
+        {
+            return false;
+        }
+
+        var candidate = ((long)pageIndex - 1L) * pageSize;
+        if (candidate > int.MaxValue)
+        {
+            return false;
+        }
+
+        pageOffset = (int)candidate;
+        return true;
+    }
+
+    private static IReadOnlyDictionary<string, string> StrongId(string name, string value) =>
+        new Dictionary<string, string>(StringComparer.Ordinal) { [name] = value };
+
+    private static string ObjectType(string sourceType) => sourceType switch
+    {
+        "work-order" => "mes-work-order",
+        "operation-task" => "mes-operation",
+        "material-issue" => "mes-material-issue-request",
+        "finished-goods-receipt" => "mes-finished-goods-receipt-request",
+        "work-center" => "work-center",
+        "device-asset" => "equipment-device",
+        "personnel" => "personnel",
+        "inventory-batch" => "inventory-batch",
+        "inventory-location" => "inventory-location",
+        "purchase-receipt" => "erp-purchase-receipt",
+        "delivery-order" => "erp-delivery-order",
+        _ => throw new InvalidOperationException("Unsupported barcode source type."),
+    };
+}
+
+public sealed class BusinessConsoleBarcodeResolveRequestValidator : Validator<BusinessConsoleBarcodeResolveRequest>
+{
+    public BusinessConsoleBarcodeResolveRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScannedValue).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.PageIndex).GreaterThanOrEqualTo(1);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+        RuleFor(x => x)
+            .Must(request => ResolveBusinessConsoleBarcodeEndpoint.TryCalculatePageOffset(
+                request.PageIndex,
+                request.PageSize,
+                out _))
+            .WithMessage("Page offset exceeds the supported range.");
+    }
+}
