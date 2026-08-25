@@ -1,31 +1,59 @@
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
-public sealed record LabelPrinterDispatchResult
+public abstract record LabelPrinterDispatchResult
 {
-    private LabelPrinterDispatchResult(string status, string? printJobId, string? failureReason)
-    {
-        Status = status;
-        PrintJobId = printJobId;
-        FailureReason = failureReason;
-    }
+    internal LabelPrinterDispatchResult() { }
 
-    public string Status { get; }
-    public string? PrintJobId { get; }
-    public string? FailureReason { get; }
+    public abstract string Status { get; }
+    public abstract string? PrintJobId { get; }
+    public abstract string? FailureReason { get; }
 
     public static LabelPrinterDispatchResult Sent(string printJobId) =>
-        new("sent-to-printer", Required(printJobId, nameof(printJobId)), null);
+        new LabelPrinterSentResult(Required(printJobId, nameof(printJobId)));
 
     public static LabelPrinterDispatchResult DeliveryUnknown(string printJobId, string failureReason) =>
-        new("delivery-unknown", Required(printJobId, nameof(printJobId)), Required(failureReason, nameof(failureReason)));
+        new LabelPrinterDeliveryUnknownResult(
+            Required(printJobId, nameof(printJobId)),
+            Required(failureReason, nameof(failureReason)));
 
     public static LabelPrinterDispatchResult Failed(string failureReason) =>
-        new("failed", null, Required(failureReason, nameof(failureReason)));
+        new LabelPrinterFailedResult(Required(failureReason, nameof(failureReason)));
 
     private static string Required(string value, string parameterName) =>
         string.IsNullOrWhiteSpace(value)
             ? throw new ArgumentException("Value cannot be null, empty, or whitespace.", parameterName)
             : value;
+}
+
+public sealed record LabelPrinterSentResult : LabelPrinterDispatchResult
+{
+    internal LabelPrinterSentResult(string jobId) => PrintJobId = jobId;
+
+    public override string Status => "sent-to-printer";
+    public override string PrintJobId { get; }
+    public override string? FailureReason => null;
+}
+
+public sealed record LabelPrinterDeliveryUnknownResult : LabelPrinterDispatchResult
+{
+    internal LabelPrinterDeliveryUnknownResult(string jobId, string failureReason)
+    {
+        PrintJobId = jobId;
+        FailureReason = failureReason;
+    }
+
+    public override string Status => "delivery-unknown";
+    public override string PrintJobId { get; }
+    public override string FailureReason { get; }
+}
+
+public sealed record LabelPrinterFailedResult : LabelPrinterDispatchResult
+{
+    internal LabelPrinterFailedResult(string failureReason) => FailureReason = failureReason;
+
+    public override string Status => "failed";
+    public override string? PrintJobId => null;
+    public override string FailureReason { get; }
 }
 
 public interface ILabelPrinter

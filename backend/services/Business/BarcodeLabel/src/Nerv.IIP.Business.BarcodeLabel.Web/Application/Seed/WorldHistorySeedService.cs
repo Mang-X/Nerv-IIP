@@ -283,7 +283,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         }
         else
         {
-            batch.RecordPrintFailed(fact.FailureReason!);
+            batch.RecordPrintFailed(fact.PrinterId, fact.FailureReason!);
         }
 
         dbContext.LabelPrintBatches.Add(batch);

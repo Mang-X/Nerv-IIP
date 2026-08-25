@@ -10,7 +10,9 @@ public sealed class LabelPrinterOptions
     public string Mode { get; init; } = "disabled";
     public string? Host { get; init; }
     public int Port { get; init; } = 9100;
+    /// <summary>连接建立阶段的独立预算，单位为秒。</summary>
     public int ConnectTimeoutSeconds { get; init; } = 10;
+    /// <summary>连接成功后，覆盖全部文档和所有短写的传输总预算，单位为秒。</summary>
     public int WriteTimeoutSeconds { get; init; } = 10;
 }
 
@@ -71,18 +73,28 @@ public sealed class ZplTcpLabelPrinter : ILabelPrinter
 {
     private readonly IOptions<LabelPrinterOptions> options;
     private readonly IZplTcpConnectionFactory connectionFactory;
+    private readonly TimeProvider timeProvider;
 
     public ZplTcpLabelPrinter(IOptions<LabelPrinterOptions> options)
-        : this(options, new SocketZplTcpConnectionFactory())
+        : this(options, new SocketZplTcpConnectionFactory(), TimeProvider.System)
     {
     }
 
     internal ZplTcpLabelPrinter(
         IOptions<LabelPrinterOptions> options,
         IZplTcpConnectionFactory connectionFactory)
+        : this(options, connectionFactory, TimeProvider.System)
+    {
+    }
+
+    internal ZplTcpLabelPrinter(
+        IOptions<LabelPrinterOptions> options,
+        IZplTcpConnectionFactory connectionFactory,
+        TimeProvider timeProvider)
     {
         this.options = options;
         this.connectionFactory = connectionFactory;
+        this.timeProvider = timeProvider;
     }
 
     public async Task<LabelPrinterDispatchResult> PrintAsync(
@@ -119,14 +131,18 @@ public sealed class ZplTcpLabelPrinter : ILabelPrinter
                 settings.Port,
                 TimeSpan.FromSeconds(settings.ConnectTimeoutSeconds),
                 cancellationToken);
+            using var timeoutSource = new CancellationTokenSource(
+                TimeSpan.FromSeconds(settings.WriteTimeoutSeconds),
+                timeProvider);
+            using var transferSource = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutSource.Token);
             foreach (var document in documents)
             {
                 var remaining = document.Payload;
                 while (!remaining.IsEmpty)
                 {
-                    using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    timeoutSource.CancelAfter(TimeSpan.FromSeconds(settings.WriteTimeoutSeconds));
-                    var written = await connection.SendAsync(remaining, timeoutSource.Token);
+                    var written = await connection.SendAsync(remaining, transferSource.Token);
                     if (written <= 0 || written > remaining.Length)
                     {
                         throw new IOException("The TCP socket returned an invalid write count.");

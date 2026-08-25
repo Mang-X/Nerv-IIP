@@ -4,10 +4,18 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.EntityConfigurations;
 
 public sealed class LabelPrintBatchEntityTypeConfiguration : IEntityTypeConfiguration<LabelPrintBatch>
 {
+    private const string ReplaySnapshotCompletenessConstraint = "ck_label_print_batches_replay_snapshot_complete";
+
     public void Configure(EntityTypeBuilder<LabelPrintBatch> builder)
     {
         builder.ToTable("label_print_batches", tableBuilder =>
-            tableBuilder.HasComment("Label print batch facts and idempotency records."));
+        {
+            tableBuilder.HasComment("Label print batch facts and idempotency records.");
+            tableBuilder.HasCheckConstraint(
+                ReplaySnapshotCompletenessConstraint,
+                "(template_file_id_snapshot IS NULL AND template_asset_sha256 IS NULL AND variable_schema_json_snapshot IS NULL AND barcode_type_snapshot IS NULL AND renderer_contract_version IS NULL) OR " +
+                "(template_file_id_snapshot IS NOT NULL AND template_asset_sha256 IS NOT NULL AND variable_schema_json_snapshot IS NOT NULL AND barcode_type_snapshot IS NOT NULL AND renderer_contract_version IS NOT NULL)");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Label print batch aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the print batch.");

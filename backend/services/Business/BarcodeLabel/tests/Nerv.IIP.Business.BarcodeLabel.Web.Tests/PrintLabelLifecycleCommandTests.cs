@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using NetCorePal.Extensions.Primitives;
@@ -13,6 +14,21 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed class PrintLabelLifecycleCommandTests
 {
+    [Fact]
+    public async Task Replay_snapshot_columns_reject_a_mixed_nullability_state_in_a_relational_database()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await dbContext.Database.EnsureCreatedAsync();
+        AddReplayableBatch(dbContext, 1);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<SqliteException>(() => dbContext.Database.ExecuteSqlRawAsync(
+            "UPDATE label_print_batches SET template_file_id_snapshot = NULL"));
+    }
+
     [Fact]
     public void Every_lifecycle_rejection_reason_has_an_explicit_user_message_mapping()
     {
@@ -111,6 +127,24 @@ public sealed class PrintLabelLifecycleCommandTests
     }
 
     [Fact]
+    public async Task Dispatch_pre_write_failure_records_the_latest_printer_attempt()
+    {
+        await using var dbContext = CreateDbContext();
+        var (batch, _) = AddReplayableBatch(dbContext, 1);
+        await dbContext.SaveChangesAsync();
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Failed("连接前失败。"));
+
+        await new DispatchLabelPrintBatchCommandHandler(dbContext, ValidAssetPort(), printer).Handle(
+            new DispatchLabelPrintBatchCommand("org-001", "env-dev", batch.Id, "printer-retry"),
+            CancellationToken.None);
+
+        Assert.Equal("failed", batch.Status);
+        Assert.Equal("printer-retry", batch.PrinterId);
+        Assert.Null(batch.PrintJobId);
+        Assert.Equal("连接前失败。", batch.FailureReason);
+    }
+
+    [Fact]
     public async Task Reprint_sent_to_printer_records_the_new_dispatch_without_claiming_the_item_reprinted()
     {
         await using var dbContext = CreateDbContext();
@@ -158,7 +192,7 @@ public sealed class PrintLabelLifecycleCommandTests
     {
         await using var dbContext = CreateDbContext();
         var (batch, _) = AddReplayableBatch(dbContext, 1);
-        batch.RecordPrintFailed("整批连接前失败。");
+        batch.RecordPrintFailed("printer-01", "整批连接前失败。");
         await dbContext.SaveChangesAsync();
         var reprintAssetPort = ValidAssetPort();
         var reprintPrinter = new RecordingPrinter(LabelPrinterDispatchResult.Sent("reprint-job"));

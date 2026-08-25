@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
@@ -13,26 +14,69 @@ public sealed class ZplTcpLabelPrinterTests
     [Fact]
     public async Task Full_write_sends_exact_compiled_bytes_half_closes_and_reports_sent_to_printer()
     {
+        await TestTimeout.RunAsync(
+            "ZPL loopback transfer and EOF observation",
+            async cancellationToken =>
+            {
+                using var listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                var received = ReceiveUntilEofAsync(listener, cancellationToken);
+                var printer = new ZplTcpLabelPrinter(Options.Create(new LabelPrinterOptions
+                {
+                    Host = IPAddress.Loopback.ToString(),
+                    Port = port,
+                    ConnectTimeoutSeconds = 5,
+                    WriteTimeoutSeconds = 5,
+                }));
+                var documents = CompileDocuments(2);
+
+                var result = await printer.PrintAsync("printer-zpl-01", documents, cancellationToken);
+                var payload = await received;
+
+                Assert.Equal("sent-to-printer", result.Status);
+                Assert.False(string.IsNullOrWhiteSpace(result.PrintJobId));
+                Assert.Null(result.FailureReason);
+                Assert.Equal(documents.SelectMany(document => document.Payload.ToArray()).ToArray(), payload);
+            },
+            TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task Write_timeout_is_a_single_budget_across_all_partial_writes()
+    {
+        var clock = new TimerRegistrationObservingTimeProvider();
+        var connection = new BudgetAwareScriptedConnection(clock);
+        var factory = new ScriptedConnectionFactory { Connection = connection };
+        var printer = new ZplTcpLabelPrinter(Options.Create(new LabelPrinterOptions
+        {
+            Host = "printer.test",
+            Port = 9100,
+            ConnectTimeoutSeconds = 1,
+            WriteTimeoutSeconds = 1,
+        }), factory, clock);
+
+        var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("delivery-unknown", result.Status);
+        Assert.Equal(2, connection.SendCalls);
+        Assert.False(connection.ShutdownSendCalled);
+    }
+
+    [Fact]
+    public async Task Loopback_receive_is_bounded_when_the_peer_does_not_half_close()
+    {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var received = ReceiveUntilEofAsync(listener);
-        var printer = new ZplTcpLabelPrinter(Options.Create(new LabelPrinterOptions
-        {
-            Host = IPAddress.Loopback.ToString(),
-            Port = port,
-            ConnectTimeoutSeconds = 5,
-            WriteTimeoutSeconds = 5,
-        }));
-        var documents = CompileDocuments(2);
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
 
-        var result = await printer.PrintAsync("printer-zpl-01", documents, CancellationToken.None);
-        var payload = await received;
-
-        Assert.Equal("sent-to-printer", result.Status);
-        Assert.False(string.IsNullOrWhiteSpace(result.PrintJobId));
-        Assert.Null(result.FailureReason);
-        Assert.Equal(documents.SelectMany(document => document.Payload.ToArray()).ToArray(), payload);
+        await Assert.ThrowsAsync<TestTimeoutException>(async () =>
+            await TestTimeout.RunAsync(
+                "ZPL loopback missing half-close probe",
+                cancellationToken => new ValueTask(ReceiveUntilEofAsync(listener, cancellationToken)),
+                TimeSpan.FromMilliseconds(250)));
     }
 
     [Fact]
@@ -147,14 +191,14 @@ public sealed class ZplTcpLabelPrinterTests
         return ZplV1LabelCompiler.CompileBatch(template, schema, "code128", items);
     }
 
-    private static async Task<byte[]> ReceiveUntilEofAsync(TcpListener listener)
+    private static async Task<byte[]> ReceiveUntilEofAsync(TcpListener listener, CancellationToken cancellationToken)
     {
-        using var client = await listener.AcceptTcpClientAsync();
+        using var client = await listener.AcceptTcpClientAsync(cancellationToken);
         await using var stream = client.GetStream();
         using var buffer = new MemoryStream();
         var bytes = new byte[1024];
         int read;
-        while ((read = await stream.ReadAsync(bytes)) > 0)
+        while ((read = await stream.ReadAsync(bytes, cancellationToken)) > 0)
         {
             await buffer.WriteAsync(bytes.AsMemory(0, read));
         }
@@ -167,7 +211,7 @@ public sealed class ZplTcpLabelPrinterTests
         public int ConnectCalls { get; private set; }
         public Exception? ConnectFailure { get; init; }
         public bool HonorCancellationDuringConnect { get; init; }
-        public ScriptedConnection Connection { get; init; } = new(buffer => buffer.Length);
+        public IZplTcpConnection Connection { get; init; } = new ScriptedConnection(buffer => buffer.Length);
 
         public Task<IZplTcpConnection> ConnectAsync(string host, int port, TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -176,6 +220,24 @@ public sealed class ZplTcpLabelPrinterTests
             if (ConnectFailure is not null) throw ConnectFailure;
             return Task.FromResult<IZplTcpConnection>(Connection);
         }
+    }
+
+    private sealed class BudgetAwareScriptedConnection(TimerRegistrationObservingTimeProvider clock) : IZplTcpConnection
+    {
+        public int SendCalls { get; private set; }
+        public bool ShutdownSendCalled { get; private set; }
+
+        public ValueTask<int> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+        {
+            SendCalls++;
+            clock.Advance(
+                SendCalls == 1 ? TimeSpan.FromMilliseconds(800) : TimeSpan.FromMilliseconds(300));
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(SendCalls == 1 ? Math.Min(1, payload.Length) : payload.Length);
+        }
+
+        public void ShutdownSend() => ShutdownSendCalled = true;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class ScriptedConnection(params Func<ReadOnlyMemory<byte>, int>[] steps) : IZplTcpConnection

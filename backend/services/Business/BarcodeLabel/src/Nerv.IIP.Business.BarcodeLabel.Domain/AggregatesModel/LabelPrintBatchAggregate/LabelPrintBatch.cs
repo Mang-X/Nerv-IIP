@@ -255,13 +255,15 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
     }
 
-    public void RecordPrintFailed(string failureReason)
+    public void RecordPrintFailed(string printerId, string failureReason)
     {
         if (Status is not (Pending or Failed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked failed.");
         }
 
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = null;
         FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
         Status = Failed;
         CompletedAtUtc = DateTimeOffset.UtcNow;

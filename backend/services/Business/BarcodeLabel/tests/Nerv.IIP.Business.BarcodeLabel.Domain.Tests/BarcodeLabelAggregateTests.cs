@@ -298,7 +298,7 @@ public sealed class BarcodeLabelAggregateTests
     {
         var pending = NewPrintBatch(ActiveRule(), "idem-unknown-pending", "ASN-001", 1);
         var failed = NewPrintBatch(ActiveRule(), "idem-unknown-failed", "ASN-001", 1);
-        failed.RecordPrintFailed("pre-write failure");
+        failed.RecordPrintFailed("printer-zpl-01", "pre-write failure");
         var printed = NewPrintBatch(ActiveRule(), "idem-unknown-printed", "ASN-001", 1);
         printed.RecordSentToPrinter("printer-zpl-01", "job-initial");
         printed.RecordPrinted();
@@ -350,7 +350,7 @@ public sealed class BarcodeLabelAggregateTests
     {
         var pending = NewPrintBatch(ActiveRule(), "idem-reprint-result-pending", "ASN-001", 1);
         var failed = NewPrintBatch(ActiveRule(), "idem-reprint-result-failed", "ASN-001", 1);
-        failed.RecordPrintFailed("pre-write failure");
+        failed.RecordPrintFailed("printer-zpl-01", "pre-write failure");
         var unknown = NewPrintBatch(ActiveRule(), "idem-reprint-result-unknown", "ASN-001", 1);
         unknown.RecordDeliveryUnknown("printer-initial", "job-unknown", "partial write");
 
@@ -392,11 +392,13 @@ public sealed class BarcodeLabelAggregateTests
     public void Repeated_pre_write_failure_updates_the_failure_without_leaving_the_retry_state()
     {
         var batch = NewPrintBatch(ActiveRule(), "idem-repeat-failure", "ASN-001", 1);
-        batch.RecordPrintFailed("first failure");
+        batch.RecordPrintFailed("printer-first", "first failure");
 
-        batch.RecordPrintFailed("second failure");
+        batch.RecordPrintFailed("printer-second", "second failure");
 
         Assert.Equal("failed", batch.Status);
+        Assert.Equal("printer-second", batch.PrinterId);
+        Assert.Null(batch.PrintJobId);
         Assert.Equal("second failure", batch.FailureReason);
     }
 

@@ -283,59 +283,55 @@ internal static class LabelPrintLifecycle
 
     public static void ApplyResult(LabelPrintBatch batch, string printerId, LabelPrinterDispatchResult result)
     {
-        switch (result.Status)
-        {
-            case "sent-to-printer":
-                batch.RecordSentToPrinter(printerId, result.PrintJobId!);
-                break;
-            case "delivery-unknown":
-                batch.RecordDeliveryUnknown(
-                    printerId,
-                    result.PrintJobId!,
-                    result.FailureReason ?? "打印传输结果未知，禁止自动重试。");
-                break;
-            case "failed":
-                batch.RecordPrintFailed(result.FailureReason ?? "打印机适配器报告失败，但未提供原因。");
-                break;
-            default:
-                batch.RecordPrintFailed($"打印机适配器返回了不支持的状态：{result.Status}。");
-                break;
-        }
+        ApplyTransportResult(
+            result,
+            printJobId => batch.RecordSentToPrinter(printerId, printJobId),
+            (printJobId, failureReason) => batch.RecordDeliveryUnknown(printerId, printJobId, failureReason),
+            failureReason => batch.RecordPrintFailed(printerId, failureReason));
     }
 
     public static void ApplyReprintResult(LabelPrintBatch batch, string printerId, LabelPrinterDispatchResult result)
     {
-        switch (result.Status)
+        ApplyTransportResult(
+            result,
+            printJobId => batch.RecordReprintSentToPrinter(printerId, printJobId),
+            (printJobId, failureReason) => batch.RecordReprintDeliveryUnknown(printerId, printJobId, failureReason),
+            failureReason => batch.RecordReprintFailed(printerId, failureReason));
+    }
+
+    private static void ApplyTransportResult(
+        LabelPrinterDispatchResult result,
+        Action<string> recordSent,
+        Action<string, string> recordDeliveryUnknown,
+        Action<string> recordFailed)
+    {
+        switch (result)
         {
-            case "sent-to-printer":
-                batch.RecordReprintSentToPrinter(printerId, result.PrintJobId!);
+            case LabelPrinterSentResult sent:
+                recordSent(sent.PrintJobId);
                 break;
-            case "delivery-unknown":
-                batch.RecordReprintDeliveryUnknown(
-                    printerId,
-                    result.PrintJobId!,
-                    result.FailureReason ?? "打印传输结果未知，禁止自动重试。");
+            case LabelPrinterDeliveryUnknownResult unknown:
+                recordDeliveryUnknown(unknown.PrintJobId, unknown.FailureReason);
                 break;
-            case "failed":
-                batch.RecordReprintFailed(printerId, result.FailureReason ?? "打印机适配器报告失败，但未提供原因。");
+            case LabelPrinterFailedResult failed:
+                recordFailed(failed.FailureReason);
                 break;
             default:
-                batch.RecordReprintFailed(printerId, $"打印机适配器返回了不支持的状态：{result.Status}。");
-                break;
+                throw new InvalidOperationException($"Unsupported label printer result type: {result.GetType().FullName}.");
         }
     }
 
     public static LabelPrinterDispatchResult AddReprintOperatorGuidance(LabelPrinterDispatchResult result)
     {
-        if (result.Status != "delivery-unknown")
+        if (result is not LabelPrinterDeliveryUnknownResult unknown)
         {
             return result;
         }
 
         const string guidance = "请先现场确认上一张标签是否已出纸，再决定是否重新重打。";
-        var reason = result.FailureReason!.Trim();
+        var reason = unknown.FailureReason.Trim();
         return LabelPrinterDispatchResult.DeliveryUnknown(
-            result.PrintJobId!,
+            unknown.PrintJobId,
             reason.Contains(guidance, StringComparison.Ordinal)
                 ? reason
                 : $"{reason} {guidance}");

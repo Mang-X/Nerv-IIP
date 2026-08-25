@@ -319,7 +319,8 @@ BarcodeLabel 新建打印批次会从同一 organization/environment 的 active 
 `BarcodeRule` 冻结五项重放事实：`TemplateFileIdSnapshot`、`TemplateAssetSha256`、
 `VariableSchemaJsonSnapshot`、`BarcodeTypeSnapshot` 和
 `RendererContractVersion = zpl-v1`。这些数据库列只为兼容历史行保持可空；新建入口要求全部完整，
-历史行不会被猜测或回填，缺任一快照即拒绝 dispatch/reprint。模板或规则后续变更只影响新批次；
+数据库 check constraint 要求五列只能全为 `NULL` 或全为非 `NULL`，拒绝部分快照；历史行不会被猜测或回填，
+缺任一快照即拒绝 dispatch/reprint。模板或规则后续变更只影响新批次；
 dispatch 与 reprint 读取同一 fileId、复核同一摘要，并使用同一版本 compiler 重放。
 
 FileStorage 消费 adapter 对 metadata 的 fileId、organization/environment、
@@ -341,6 +342,9 @@ GS1 CSET 82 合法 `>` 当前仍被 Code 128 数据上下文硬拒；以 ZPL 上
 全部字节写入并正常关闭发送方向只记为 `sent-to-printer`；`printed` 批次同样禁止整批再次下发，
 避免已经发布的完成事实被降级。这三类传输结果都不是物理打印回读；adapter 不生成 `printed`，
 dispatch/reprint 也不把 item 改为 `printed` / `reprinted`。
+TCP adapter 分别使用显式连接预算和覆盖全部文档及所有短写的单一传输总预算；传输总预算不会在每次
+socket write 后重新开始。loopback 测试本身也以显式总测试预算和贯穿 accept/read 的取消 token 收口，
+半关闭回归会有界失败而不是无限等待。
 
 本层的 reprint 是对单个冻结文档再次执行 transport，不是物理打印确认：批次处于
 `sent-to-printer` 或兼容既有数据的 `printed` 时可发起；`pending` 尚未完成首次整批下发，`failed`
