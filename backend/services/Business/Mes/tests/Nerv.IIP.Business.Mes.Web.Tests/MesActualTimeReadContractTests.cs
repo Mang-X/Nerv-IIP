@@ -156,6 +156,22 @@ public sealed class MesActualTimeReadContractTests
     }
 
     [Fact]
+    public void Production_report_actual_hours_use_one_correlated_operation_projection()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var sql = dbContext.ProductionReports
+            .AsNoTracking()
+            .SelectFacts(dbContext)
+            .ToQueryString();
+
+        Assert.Equal(1, sql.Split("operation_tasks", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
     public void Internal_actual_hours_use_only_the_paired_read_model()
     {
         Assert.Null(typeof(MesOperationTaskRow).GetProperty("ActualLaborHours"));

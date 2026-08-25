@@ -124,26 +124,15 @@ internal static class ProductionReportFactProjection
                     && reversal.ReversedReportNo == x.ReportNo)
                 .Select(reversal => reversal.ReportNo)
                 .FirstOrDefault(),
-            dbContext.OperationTasks.Any(task => task.OrganizationId == x.OrganizationId
-                && task.EnvironmentId == x.EnvironmentId
-                && task.OperationTaskIdValue == x.OperationTaskId
-                && task.Status == OperationTaskLifecycleStatus.Completed)
-                ? new MesActualHours(
-                    dbContext.OperationTasks
-                        .Where(task => task.OrganizationId == x.OrganizationId
-                            && task.EnvironmentId == x.EnvironmentId
-                            && task.OperationTaskIdValue == x.OperationTaskId
-                            && task.Status == OperationTaskLifecycleStatus.Completed)
-                        .Select(task => task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour)
-                        .First(),
-                    dbContext.OperationTasks
-                        .Where(task => task.OrganizationId == x.OrganizationId
-                            && task.EnvironmentId == x.EnvironmentId
-                            && task.OperationTaskIdValue == x.OperationTaskId
-                            && task.Status == OperationTaskLifecycleStatus.Completed)
-                        .Select(task => task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
-                        .First())
-                : null));
+            dbContext.OperationTasks
+                .Where(task => task.OrganizationId == x.OrganizationId
+                    && task.EnvironmentId == x.EnvironmentId
+                    && task.OperationTaskIdValue == x.OperationTaskId
+                    && task.Status == OperationTaskLifecycleStatus.Completed)
+                .Select(task => new MesActualHours(
+                    task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                    task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
+                .FirstOrDefault()));
 }
 
 public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)
