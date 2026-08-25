@@ -2893,13 +2893,16 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         if (response.Items is null ||
             response.Total < response.Items.Count ||
             response.Items.Any(item =>
+                item is null ||
                 string.IsNullOrWhiteSpace(item.Code) ||
                 string.IsNullOrWhiteSpace(item.Name) ||
                 string.IsNullOrWhiteSpace(item.ToolingType) ||
                 item.UsageCount < 0 ||
                 item.MaintenanceLifeCount is <= 0 ||
                 item.WorkCenterCodes is null ||
-                item.SkuCodes is null))
+                item.WorkCenterCodes.Any(string.IsNullOrWhiteSpace) ||
+                item.SkuCodes is null ||
+                item.SkuCodes.Any(string.IsNullOrWhiteSpace)))
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
@@ -2908,14 +2911,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         return response;
     }
 
-    public Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
-        string internalBearerToken,
-        BusinessConsoleRegisterToolingAssetRequest request,
-        string correlationId,
-        CancellationToken cancellationToken) =>
-        RegisterToolingAssetCoreAsync(internalBearerToken, request, correlationId, cancellationToken);
-
-    private async Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetCoreAsync(
+    public async Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
         string internalBearerToken,
         BusinessConsoleRegisterToolingAssetRequest request,
         string correlationId,
@@ -2941,37 +2937,37 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         return response;
     }
 
-    public Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
+    public async Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
         string internalBearerToken,
         BusinessConsoleChangeToolingStatusRequest request,
         string correlationId,
-        CancellationToken cancellationToken) =>
-        AcceptedAfterAsync(SendNoContentAsync(
+        CancellationToken cancellationToken)
+    {
+        await SendNoContentAsync(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/master-data/tooling-assets/status",
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            configureRequest: message => ConfigureCorrelationHeader(message, correlationId)));
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId));
+        return new BusinessConsoleAcceptedResponse(true);
+    }
 
-    public Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
+    public async Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
         string internalBearerToken,
         BusinessConsoleRecordToolingUsageRequest request,
         string correlationId,
-        CancellationToken cancellationToken) =>
-        AcceptedAfterAsync(SendNoContentAsync(
+        CancellationToken cancellationToken)
+    {
+        await SendNoContentAsync(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/master-data/tooling-assets/usage",
             request,
             cancellationToken,
             jsonOptions: ToolingJsonOptions,
-            configureRequest: message => ConfigureCorrelationHeader(message, correlationId)));
-
-    private static async Task<BusinessConsoleAcceptedResponse> AcceptedAfterAsync(Task task)
-    {
-        await task;
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId));
         return new BusinessConsoleAcceptedResponse(true);
     }
 

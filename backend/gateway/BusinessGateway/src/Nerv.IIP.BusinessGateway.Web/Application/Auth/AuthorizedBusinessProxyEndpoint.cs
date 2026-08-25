@@ -129,14 +129,10 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
 
     protected string ResolveCorrelationId()
     {
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(correlationId))
-        {
-            correlationId = HttpContext.Response.Headers["X-Correlation-Id"].FirstOrDefault();
-        }
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].ToString();
         return string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.CreateVersion7().ToString("N")
-            : correlationId.Trim();
+            ? throw new InvalidOperationException("The correlation middleware did not establish a correlation ID.")
+            : correlationId;
     }
 
     protected abstract string OrganizationId(TRequest request);
