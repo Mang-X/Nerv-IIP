@@ -23,6 +23,19 @@ public sealed class BusinessGatewayOpenApiTests
         AssertGovernedWriteIdempotencyHeaders(paths);
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleResourceItem",
+            "siteCode",
+            "workshopCode",
+            "lineCode",
+            "workCenterCode",
+            "timezone",
+            "startsAt",
+            "endsAt",
+            "crossesMidnight",
+            "paidMinutes",
+            "breakMinutes");
         AssertOperationId(paths, "/api/business-console/v1/me/work-context", "get", "getBusinessConsolePrincipalWorkContext");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment", "post", "assignBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/actions", "post", "transitionBusinessConsoleMaintenanceWorkOrder");

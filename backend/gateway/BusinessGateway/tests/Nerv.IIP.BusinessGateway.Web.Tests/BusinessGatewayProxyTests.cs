@@ -6727,6 +6727,53 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_http_client_preserves_reporting_dimension_fields()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                resources = new[]
+                {
+                    new
+                    {
+                        resourceType = "shift",
+                        code = "SHIFT-NIGHT",
+                        displayName = "夜班",
+                        active = true,
+                        snapshotVersion = "v1",
+                        timezone = "Asia/Shanghai",
+                        startsAt = "20:00:00",
+                        endsAt = "04:00:00",
+                        crossesMidnight = true,
+                        paidMinutes = 420,
+                        breakMinutes = 60,
+                    },
+                },
+                total = 1,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var response = await client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "shift"),
+            CancellationToken.None);
+
+        var json = JsonSerializer.SerializeToElement(response.Resources.Single(), JsonSerializerOptions.Web);
+        Assert.Equal("Asia/Shanghai", json.GetProperty("timezone").GetString());
+        Assert.Equal("20:00:00", json.GetProperty("startsAt").GetString());
+        Assert.Equal("04:00:00", json.GetProperty("endsAt").GetString());
+        Assert.True(json.GetProperty("crossesMidnight").GetBoolean());
+        Assert.Equal(420, json.GetProperty("paidMinutes").GetInt32());
+        Assert.Equal(60, json.GetProperty("breakMinutes").GetInt32());
+    }
+
+    [Fact]
     public async Task Master_data_worker_directory_maps_downstream_name_to_display_name()
     {
         // 下游员工目录行是 `name`，facade 契约是 `displayName`——回归守卫：若网关又改回
