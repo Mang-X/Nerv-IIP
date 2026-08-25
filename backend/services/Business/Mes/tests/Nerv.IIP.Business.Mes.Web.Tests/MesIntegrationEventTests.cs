@@ -153,6 +153,9 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("LOT-FG-001", integrationEvent.Payload.LotNo);
         Assert.Equal(8m, integrationEvent.Payload.Quantity);
         Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
+        Assert.Equal(
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            integrationEvent.Payload.UnitCostAuthorityReference);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
     }
 
@@ -206,6 +209,9 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("inbound", integrationEvent.Payload.MovementType);
         Assert.Equal("FGR-LEGACY", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
+        Assert.Equal(
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            integrationEvent.Payload.UnitCostAuthorityReference);
     }
 
     [Fact]
