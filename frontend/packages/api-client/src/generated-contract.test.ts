@@ -1031,6 +1031,15 @@ describe('generated API client contract', () => {
     }
   })
 
+  it('exports line-side inventory balances through the stable Business Console entry point (#2228)', () => {
+    expect(businessConsoleClient.listBusinessConsoleMesLineSideInventoryBalances).toBeTypeOf(
+      'function',
+    )
+    expect(
+      businessConsoleClient.listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
+    ).toBeTypeOf('function')
+  })
+
   it('exports device-control command result/history read-face (#842) Business Console operations through stable api-client entry points', () => {
     const expectedFunctions = [
       'getBusinessConsoleTelemetryDeviceControlCommandQueryOptions',
