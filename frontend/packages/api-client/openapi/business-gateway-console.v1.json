@@ -19557,7 +19557,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesLineSideInventoryBalancesResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse"
                 }
               }
             }
@@ -47821,7 +47821,7 @@
           }
         }
       },
-      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesLineSideInventoryBalancesResponse": {
+      "NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse": {
         "allOf": [
           {
             "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
@@ -47834,7 +47834,7 @@
                 "nullable": true,
                 "oneOf": [
                   {
-                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesResponse"
+                    "$ref": "#/components/schemas/NervIIPContractsInventoryLineSideInventoryBalancesResponse"
                   }
                 ]
               }
@@ -47842,14 +47842,14 @@
           }
         ]
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesResponse": {
+      "NervIIPContractsInventoryLineSideInventoryBalancesResponse": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalanceItem"
+              "$ref": "#/components/schemas/NervIIPContractsInventoryLineSideInventoryBalanceItem"
             }
           },
           "totalCount": {
@@ -47870,7 +47870,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalanceItem": {
+      "NervIIPContractsInventoryLineSideInventoryBalanceItem": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -47917,7 +47917,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesRequest": {
+      "NervIIPContractsInventoryLineSideInventoryBalancesRequest": {
         "type": "object",
         "additionalProperties": false
       },

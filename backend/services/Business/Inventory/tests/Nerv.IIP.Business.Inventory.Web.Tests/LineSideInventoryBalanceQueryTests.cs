@@ -26,12 +26,14 @@ public sealed class LineSideInventoryBalanceQueryTests
         db.StockLocations.AddRange(
             StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LINE-01", "line-side", "SITE-01", null, "active"),
             StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "RAW-01", "warehouse", "SITE-01", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-other", "LINE-ENV-OTHER", "line-side", "SITE-01", null, "active"),
             StockLocation.CreateOrUpdate(null, "org-other", "env-dev", "LINE-OTHER", "line-side", "SITE-01", null, "active"));
 
         AddLedger(db, "org-001", "env-dev", "RM-001", "EA", "SITE-01", "LINE-01", "LOT-OLD", 8m, 2m, new DateOnly(2026, 8, 1));
         AddLedger(db, "org-001", "env-dev", "RM-001", "EA", "SITE-01", "LINE-01", "LOT-UNKNOWN", 4m, 1m, null);
         AddLedger(db, "org-001", "env-dev", "RM-002", "KG", "SITE-01", "LINE-01", "LOT-ZERO", 0m, 0m, new DateOnly(2026, 7, 1));
         AddLedger(db, "org-001", "env-dev", "RM-003", "EA", "SITE-01", "RAW-01", "LOT-WH", 9m, 0m, new DateOnly(2026, 7, 1));
+        AddLedger(db, "org-001", "env-other", "RM-ENV-OTHER", "EA", "SITE-01", "LINE-ENV-OTHER", "LOT-ENV-OTHER", 11m, 0m, new DateOnly(2026, 7, 1));
         AddLedger(db, "org-other", "env-dev", "RM-004", "EA", "SITE-01", "LINE-OTHER", "LOT-OTHER", 7m, 0m, new DateOnly(2026, 7, 1));
         await db.SaveChangesAsync();
 

@@ -8298,7 +8298,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListLineSideBalancesAsync(
             "internal-token-001",
-            new BusinessConsoleMesLineSideInventoryBalancesRequest(
+            new LineSideInventoryBalancesRequest(
                 "org-001",
                 "env-dev",
                 "SITE-01",
@@ -12367,7 +12367,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 {
     public int LineSideBalanceCallCount { get; private set; }
 
-    public BusinessConsoleMesLineSideInventoryBalancesRequest? LastLineSideBalanceRequest { get; private set; }
+    public LineSideInventoryBalancesRequest? LastLineSideBalanceRequest { get; private set; }
 
     public int AvailabilityCallCount { get; private set; }
 
@@ -12475,17 +12475,17 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         ], 26, 8, 18, 6, request.Page, request.PageSize));
     }
 
-    public Task<BusinessConsoleMesLineSideInventoryBalancesResponse> ListLineSideBalancesAsync(
+    public Task<LineSideInventoryBalancesResponse> ListLineSideBalancesAsync(
         string internalBearerToken,
-        BusinessConsoleMesLineSideInventoryBalancesRequest request,
+        LineSideInventoryBalancesRequest request,
         CancellationToken cancellationToken)
     {
         LineSideBalanceCallCount++;
         LastInternalToken = internalBearerToken;
         LastLineSideBalanceRequest = request;
-        return Task.FromResult(new BusinessConsoleMesLineSideInventoryBalancesResponse(
+        return Task.FromResult(new LineSideInventoryBalancesResponse(
         [
-            new BusinessConsoleMesLineSideInventoryBalanceItem(
+            new LineSideInventoryBalanceItem(
                 request.SiteCode ?? "SITE-01",
                 request.LocationCode ?? "LINE-01",
                 request.SkuCode ?? "RM-001",
@@ -12496,7 +12496,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
                 2,
                 new DateOnly(2026, 8, 1),
                 24,
-                "partial"),
+                LineSideInventoryAgeCompleteness.Partial),
         ],
         26,
         request.Page,

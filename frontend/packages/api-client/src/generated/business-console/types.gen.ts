@@ -4826,19 +4826,19 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     trigger?: string;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesResponse | null;
+export type NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsInventoryLineSideInventoryBalancesResponse | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesResponse = {
-    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalanceItem>;
+export type NervIipContractsInventoryLineSideInventoryBalancesResponse = {
+    items?: Array<NervIipContractsInventoryLineSideInventoryBalanceItem>;
     totalCount?: number;
     page?: number;
     pageSize?: number;
     asOfDate?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalanceItem = {
+export type NervIipContractsInventoryLineSideInventoryBalanceItem = {
     siteCode?: string;
     locationCode?: string;
     skuCode?: string;
@@ -4852,7 +4852,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     ageCompleteness?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLineSideInventoryBalancesRequest = {
+export type NervIipContractsInventoryLineSideInventoryBalancesRequest = {
     [key: string]: never;
 };
 
@@ -16391,7 +16391,7 @@ export type ListBusinessConsoleMesLineSideInventoryBalancesResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesLineSideInventoryBalancesResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse;
 };
 
 export type ListBusinessConsoleMesLineSideInventoryBalancesResponse = ListBusinessConsoleMesLineSideInventoryBalancesResponses[keyof ListBusinessConsoleMesLineSideInventoryBalancesResponses];

@@ -210,8 +210,12 @@ try {
     # 拆解②的单条试点在 #1561 之后扩为两条；#2228 再加入线边余额聚合的真实 PostgreSQL 翻译证据。
     # 两条 InventoryDirectory external 用例形态与成员一致，已并入本成员；同类 Docker 夹具仍留在 deferred 条目里。
     Assert-Contract (@($member.expectedTestIdentities).Count -eq 3) 'The Inventory member must freeze its profile test and both external directory-backed PostgreSQL tests.'
+    $expectedTestIdentitySet = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@($member.expectedTestIdentities),
+        [StringComparer]::Ordinal)
+    $lineSideBalancePostgresIdentity = 'Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.Line_side_balance_grouping_and_age_completeness_execute_on_postgres'
     Assert-Contract (
-        @($member.expectedTestIdentities).Contains('Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.Line_side_balance_grouping_and_age_completeness_execute_on_postgres')) `
+        $expectedTestIdentitySet.Contains($lineSideBalancePostgresIdentity)) `
         'The Inventory member must freeze the #2228 line-side balance PostgreSQL translation proof.'
     Assert-MethodScopedFilter -Member $member
     Assert-Contract (@($member.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$member.diagnosticSchemas[0], 'inventory', [StringComparison]::Ordinal)) 'The pilot member must own its restricted diagnostic schema declaration.'

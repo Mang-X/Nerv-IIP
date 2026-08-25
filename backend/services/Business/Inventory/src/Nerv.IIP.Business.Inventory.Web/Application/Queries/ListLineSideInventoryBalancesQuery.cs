@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Queries;
 
@@ -11,27 +12,7 @@ public sealed record ListLineSideInventoryBalancesQuery(
     string? SkuCode = null,
     DateOnly? AsOfDate = null,
     int Page = 1,
-    int PageSize = 50) : IQuery<LineSideInventoryBalanceListResponse>;
-
-public sealed record LineSideInventoryBalanceListResponse(
-    IReadOnlyCollection<LineSideInventoryBalanceItem> Items,
-    int TotalCount,
-    int Page,
-    int PageSize,
-    DateOnly AsOfDate);
-
-public sealed record LineSideInventoryBalanceItem(
-    string SiteCode,
-    string LocationCode,
-    string SkuCode,
-    string UomCode,
-    decimal OnHandQuantity,
-    decimal ReservedQuantity,
-    decimal AvailableQuantity,
-    int LotCount,
-    DateOnly? OldestProductionDate,
-    int? AgeDays,
-    string AgeCompleteness);
+    int PageSize = 50) : IQuery<LineSideInventoryBalancesResponse>;
 
 public sealed class ListLineSideInventoryBalancesQueryValidator
     : AbstractValidator<ListLineSideInventoryBalancesQuery>
@@ -51,9 +32,9 @@ public sealed class ListLineSideInventoryBalancesQueryValidator
 public sealed class ListLineSideInventoryBalancesQueryHandler(
     ApplicationDbContext dbContext,
     TimeProvider timeProvider)
-    : IQueryHandler<ListLineSideInventoryBalancesQuery, LineSideInventoryBalanceListResponse>
+    : IQueryHandler<ListLineSideInventoryBalancesQuery, LineSideInventoryBalancesResponse>
 {
-    public async Task<LineSideInventoryBalanceListResponse> Handle(
+    public async Task<LineSideInventoryBalancesResponse> Handle(
         ListLineSideInventoryBalancesQuery request,
         CancellationToken cancellationToken)
     {
@@ -112,7 +93,7 @@ public sealed class ListLineSideInventoryBalancesQueryHandler(
             .ToArrayAsync(cancellationToken);
 
         var items = projections.Select(x => ToResponse(x, asOfDate)).ToArray();
-        return new LineSideInventoryBalanceListResponse(
+        return new LineSideInventoryBalancesResponse(
             items,
             totalCount,
             request.Page,
@@ -126,9 +107,9 @@ public sealed class ListLineSideInventoryBalancesQueryHandler(
     {
         var ageCompleteness = projection.DatedDimensionCount switch
         {
-            0 => "unavailable",
-            var count when count == projection.DimensionCount => "complete",
-            _ => "partial",
+            0 => LineSideInventoryAgeCompleteness.Unavailable,
+            var count when count == projection.DimensionCount => LineSideInventoryAgeCompleteness.Complete,
+            _ => LineSideInventoryAgeCompleteness.Partial,
         };
         int? ageDays = projection.OldestProductionDate is { } productionDate
             ? Math.Max(0, asOfDate.DayNumber - productionDate.DayNumber)

@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
@@ -73,16 +74,6 @@ public sealed record ListInventoryDirectoryRequest(
     string? Keyword = null,
     int Skip = 0,
     int Take = 50);
-
-public sealed record ListLineSideInventoryBalancesRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    string? SiteCode = null,
-    string? LocationCode = null,
-    string? SkuCode = null,
-    DateOnly? AsOfDate = null,
-    int Page = 1,
-    int PageSize = 50);
 
 public sealed record PostStockMovementRequest(
     string OrganizationId,
@@ -357,14 +348,14 @@ public sealed class ListInventoryDirectoryEndpoint(ISender sender)
 }
 
 public sealed class ListLineSideInventoryBalancesEndpoint(ISender sender)
-    : InventoryEndpoint<ListLineSideInventoryBalancesRequest, ResponseData<LineSideInventoryBalanceListResponse>>
+    : InventoryEndpoint<LineSideInventoryBalancesRequest, ResponseData<LineSideInventoryBalancesResponse>>
 {
     public override void Configure()
     {
         ConfigureInventoryContract(InventoryEndpointContracts.Get<ListLineSideInventoryBalancesEndpoint>());
     }
 
-    public override async Task HandleAsync(ListLineSideInventoryBalancesRequest req, CancellationToken ct)
+    public override async Task HandleAsync(LineSideInventoryBalancesRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListLineSideInventoryBalancesQuery(
             req.OrganizationId,

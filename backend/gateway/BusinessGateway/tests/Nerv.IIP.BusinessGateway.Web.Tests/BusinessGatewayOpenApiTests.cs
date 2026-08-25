@@ -111,7 +111,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/line-side-inventory-balances", "get", "listBusinessConsoleMesLineSideInventoryBalances");
         AssertSchemaProperties(
             document,
-            "BusinessConsoleMesLineSideInventoryBalanceItem",
+            "LineSideInventoryBalanceItem",
             "siteCode",
             "locationCode",
             "skuCode",

@@ -1,6 +1,6 @@
-namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+namespace Nerv.IIP.Contracts.Inventory;
 
-public sealed record BusinessConsoleMesLineSideInventoryBalancesRequest(
+public sealed record LineSideInventoryBalancesRequest(
     string OrganizationId,
     string EnvironmentId,
     string? SiteCode = null,
@@ -10,14 +10,14 @@ public sealed record BusinessConsoleMesLineSideInventoryBalancesRequest(
     int Page = 1,
     int PageSize = 50);
 
-public sealed record BusinessConsoleMesLineSideInventoryBalancesResponse(
-    IReadOnlyCollection<BusinessConsoleMesLineSideInventoryBalanceItem> Items,
+public sealed record LineSideInventoryBalancesResponse(
+    IReadOnlyCollection<LineSideInventoryBalanceItem> Items,
     int TotalCount,
     int Page,
     int PageSize,
     DateOnly AsOfDate);
 
-public sealed record BusinessConsoleMesLineSideInventoryBalanceItem(
+public sealed record LineSideInventoryBalanceItem(
     string SiteCode,
     string LocationCode,
     string SkuCode,
@@ -29,3 +29,10 @@ public sealed record BusinessConsoleMesLineSideInventoryBalanceItem(
     DateOnly? OldestProductionDate,
     int? AgeDays,
     string AgeCompleteness);
+
+public static class LineSideInventoryAgeCompleteness
+{
+    public const string Complete = "complete";
+    public const string Partial = "partial";
+    public const string Unavailable = "unavailable";
+}

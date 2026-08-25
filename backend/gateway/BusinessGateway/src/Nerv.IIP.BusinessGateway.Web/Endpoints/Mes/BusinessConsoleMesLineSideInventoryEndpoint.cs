@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
@@ -15,28 +16,28 @@ public sealed class ListBusinessConsoleMesLineSideInventoryBalancesEndpoint(
     IBusinessInventoryClient inventory,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<
-        BusinessConsoleMesLineSideInventoryBalancesRequest,
-        BusinessConsoleMesLineSideInventoryBalancesResponse>(
+        LineSideInventoryBalancesRequest,
+        LineSideInventoryBalancesResponse>(
         auth,
         BusinessGatewayPermissions.MesMaterialsRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesLineSideInventoryBalancesRequest request) =>
+    protected override string OrganizationId(LineSideInventoryBalancesRequest request) =>
         request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesLineSideInventoryBalancesRequest request) =>
+    protected override string EnvironmentId(LineSideInventoryBalancesRequest request) =>
         request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesLineSideInventoryBalancesResponse> ForwardAsync(
-        BusinessConsoleMesLineSideInventoryBalancesRequest request,
+    protected override Task<LineSideInventoryBalancesResponse> ForwardAsync(
+        LineSideInventoryBalancesRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         inventory.ListLineSideBalancesAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
-public sealed class BusinessConsoleMesLineSideInventoryBalancesRequestValidator
-    : Validator<BusinessConsoleMesLineSideInventoryBalancesRequest>
+public sealed class LineSideInventoryBalancesRequestValidator
+    : Validator<LineSideInventoryBalancesRequest>
 {
-    public BusinessConsoleMesLineSideInventoryBalancesRequestValidator()
+    public LineSideInventoryBalancesRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
