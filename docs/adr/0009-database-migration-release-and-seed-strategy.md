@@ -37,12 +37,16 @@
 ## 后果
 
 1. 第五阶段已经为 AppHub/Ops 建立 migrations 与 migrator 入口；后续新增持久化服务继续沿用同一迁移、seed 和验证口径。
-2. 第四、第五阶段历史验证脚本不再是当前入口；真实 PostgreSQL/Redis 证明由专用 provider lane 承担，发布迁移由受控 migrator/release step 承担，全栈验证使用 `nerv.ps1 fullstack run`。
+2. `scripts/verify-fourth-slice-real-infra.ps1` 可以继续作为本地门禁，但不能被解释为生产部署流程。
 3. 部署脚本会变复杂，需要管理连接串、迁移执行顺序、备份提示、失败日志和重试语义。
 4. 服务启动路径会更安全，但开发者需要显式运行迁移或使用验证脚本准备数据库。
 5. 引入新的持久化服务时，必须同时补迁移、seed 和 profile 验证计划，不能只提交 DbContext 和实体。
 6. schema 注释和 catalog 维护成为持久化变更的一部分；这会增加少量开发成本，但能支撑 ER 可视化、客户数据字典、部署审计和后续代理理解项目结构。
 7. 数据库相关脚本必须显式声明目标库、profile、副作用和清理策略，避免把一次性验证习惯带入 PoC、私有化或生产发布。
+
+## 实施说明
+
+1. 2026-08-25 起，后果第 2 条关于 `scripts/verify-fourth-slice-real-infra.ps1` 可作为本地门禁的表述不再代表当前入口；ADR 0028 记录该历史入口的退役裁决，本次 #2176 已删除第四阶段路径及第五阶段历史验证脚本，当前真实 PostgreSQL/Redis 证明由专用 provider lane 承担，发布迁移由受控 migrator/release step 承担，全栈验证使用 `nerv.ps1 fullstack run`。后果第 2 条原文保留为本 ADR 作出时的历史事实。
 
 ## 已考虑的替代方案
 

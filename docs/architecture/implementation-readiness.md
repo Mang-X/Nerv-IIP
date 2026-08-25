@@ -1169,7 +1169,7 @@ WMS 收货、上架、拣货、复核发货与盘点五类列表已接入 WMS �
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
 8. 超出 Console Auth + shadcn-vue Baseline 的前端视觉系统、组件皮肤、主题和导航策略；需要先按 docs/architecture/frontend-design-system-planning.md 的“后续规格触发条件”创建独立设计规格。
 9. Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md 与 docs/architecture/database-release-runbook.md。
-10. 除已按 #2157 退役并保留为兼容墓碑的第一至第四阶段纵切脚本外，剩余 legacy 脚本继续迁移到 docs/architecture/script-automation-governance.md 的 helper 和门禁；当前待治理入口以 OpenAPI 导出为主，不把退役墓碑列入后续迁移顺序。
+10. 除已按 #2157 退役并保留为兼容墓碑的第一至第三阶段纵切脚本外，第四阶段脚本及第五阶段历史验证脚本已删除；剩余 legacy 脚本继续迁移到 docs/architecture/script-automation-governance.md 的 helper 和门禁；当前待治理入口以 OpenAPI 导出为主，不把退役墓碑列入后续迁移顺序。
 
 ## 开工验收标准
 
