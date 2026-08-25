@@ -2,6 +2,8 @@ import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
   cancelBusinessConsoleMesWorkOrder,
+  closeBusinessConsoleMesWorkOrderMutationOptions,
+  recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
@@ -111,6 +113,8 @@ import {
   type BusinessConsoleMesWorkOrderDetailResponse,
   type BusinessConsoleMesWorkOrderItem,
   type BusinessConsoleMesWorkOrderListEnvelope,
+  type BusinessConsoleMesCloseWorkOrderRequest,
+  type BusinessConsoleMesEngineeringChangeDecisionRequest,
   type BusinessConsoleRecordProductionReportRequest,
   type BusinessConsoleRunScheduleRequest,
   type ListBusinessConsoleMesWorkOrdersData,
@@ -1355,6 +1359,54 @@ export function useMesWorkOrderDetail() {
     }
   }
 
+  const closeWorkOrderMutation = useMutation({
+    ...closeBusinessConsoleMesWorkOrderMutationOptions(),
+    onSuccess() {
+      void refreshCancelledWorkOrderQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const engineeringChangeDecisionMutation = useMutation({
+    ...recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions(),
+    onSuccess() {
+      void refreshCancelledWorkOrderQueries().catch(ignoreBackgroundError)
+    },
+  })
+
+  async function closeWorkOrder(
+    body: Pick<BusinessConsoleMesCloseWorkOrderRequest, 'closedAtUtc'> = {},
+  ) {
+    const selectedManageScope = workOrderManageScope.requireSelectedScope()
+    return closeWorkOrderMutation.mutateAsync({
+      path: { workOrderId: filters.workOrderId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        scopeKind: selectedManageScope.kind,
+        scopeId: selectedManageScope.id,
+      },
+      body,
+    })
+  }
+
+  async function recordEngineeringChangeDecision(
+    body: Pick<
+      BusinessConsoleMesEngineeringChangeDecisionRequest,
+      'changeNumber' | 'decision' | 'reason'
+    >,
+  ) {
+    const selectedManageScope = workOrderManageScope.requireSelectedScope()
+    return engineeringChangeDecisionMutation.mutateAsync({
+      path: { workOrderId: filters.workOrderId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        scopeKind: selectedManageScope.kind,
+        scopeId: selectedManageScope.id,
+      },
+      body,
+    })
+  }
+
   return {
     activateCancelPreview: () => {
       cancelPreviewRequested.value = true
@@ -1362,6 +1414,12 @@ export function useMesWorkOrderDetail() {
     cancelWorkOrder,
     cancelWorkOrderError,
     cancelWorkOrderPending,
+    closeWorkOrder,
+    closeWorkOrderError: closeWorkOrderMutation.error,
+    closeWorkOrderPending: closeWorkOrderMutation.isLoading,
+    recordEngineeringChangeDecision,
+    recordEngineeringChangeDecisionError: engineeringChangeDecisionMutation.error,
+    recordEngineeringChangeDecisionPending: engineeringChangeDecisionMutation.isLoading,
     // 补偿预览两项查询的加载/失败/就绪态，供破坏性确认按钮门禁：两项都成功拿到数据前禁用确认，失败可重试。
     cancelPreviewPending: computed(
       () =>
