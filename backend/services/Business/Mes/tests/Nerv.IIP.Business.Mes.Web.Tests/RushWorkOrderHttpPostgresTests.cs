@@ -57,6 +57,7 @@ public sealed class RushWorkOrderHttpPostgresTests
                 x.EnvironmentId == "env-dev" &&
                 x.WorkOrderIdValue == "WO-HTTP-PG-001",
             CancellationToken.None));
+        Assert.Null((await assertionContext.OperationTasks.SingleAsync(CancellationToken.None)).RequiredSkillCode);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
