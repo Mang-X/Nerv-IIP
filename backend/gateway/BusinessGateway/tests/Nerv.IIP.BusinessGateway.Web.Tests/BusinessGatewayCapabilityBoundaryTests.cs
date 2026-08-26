@@ -212,6 +212,50 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void ProductEngineering_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/ProductEngineering/BusinessProductEngineeringClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessProductEngineeringClient"),
+            Identity("Class", "HttpBusinessProductEngineeringClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void Planning_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Planning/BusinessPlanningClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessPlanningClient"),
+            Identity("Class", "HttpBusinessPlanningClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
     public void Capability_boundary_mutation_matrix_rejects_escapes_and_preserves_non_clients()
     {
         var baseDocuments = new[]
@@ -711,7 +755,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"IBusiness{clientName}Client",
                 capability,
                 sourcePath,
-                includeInLegacy: capability != "FileStorage" &&
+                includeInLegacy: capability != "ProductEngineering" &&
+                    capability != "Planning" &&
+                    capability != "FileStorage" &&
                     capability != "MasterData" &&
                     capability != "Inventory" &&
                     capability != "Quality" &&
@@ -724,7 +770,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"HttpBusiness{clientName}Client",
                 capability,
                 sourcePath,
-                includeInLegacy: capability != "FileStorage" &&
+                includeInLegacy: capability != "ProductEngineering" &&
+                    capability != "Planning" &&
+                    capability != "FileStorage" &&
                     capability != "MasterData" &&
                     capability != "Inventory" &&
                     capability != "Quality" &&
@@ -740,6 +788,22 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "Quality");
         seedCapabilities[Identity("Interface", "IBusinessBarcodeResolverClient")] = "BarcodeLabel";
         seedCapabilities[Identity("Class", "HttpBusinessBarcodeResolverClient")] = "BarcodeLabel";
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Interface",
+            "IBusinessMesWorkOrderTransformationClient",
+            "Mes",
+            "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
+            includeInLegacy: false);
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Class",
+            "HttpBusinessMesWorkOrderTransformationClient",
+            "Mes",
+            "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
+            includeInLegacy: false);
 
         AddManagedType(
             seedCapabilities,

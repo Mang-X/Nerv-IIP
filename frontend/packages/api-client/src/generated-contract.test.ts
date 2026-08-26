@@ -106,6 +106,9 @@ import type {
   GetBusinessConsoleErpPayableBySourceDocumentData,
   GetBusinessConsoleErpReceivableBySourceDocumentData,
   GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData,
+  GetBusinessConsoleMesWorkOrderTransformationData,
+  GetBusinessConsoleMesWorkOrderTransformationErrors,
+  GetBusinessConsoleMesWorkOrderTransformationResponse,
   GetBusinessConsolePrincipalWorkContextData,
   GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
@@ -115,6 +118,9 @@ import type {
   ListBusinessConsoleWmsCountOperationalCandidatesData,
   ListBusinessConsoleWmsReceiptOperationalCandidatesData,
   ListBusinessConsoleWmsShipmentOperationalCandidatesData,
+  MergeBusinessConsoleMesWorkOrdersData,
+  MergeBusinessConsoleMesWorkOrdersErrors,
+  MergeBusinessConsoleMesWorkOrdersResponse,
   OpenBusinessConsoleQualityNcrFromInspectionData,
   PreviewBusinessConsoleCodeRuleData,
   PublishBusinessConsoleEngineeringSopDocumentData,
@@ -122,6 +128,9 @@ import type {
   ResolveBusinessConsoleEngineeringProductionVersionData,
   RevokeBusinessConsoleSchedulingPlanData,
   SearchBusinessConsoleObjectsData,
+  SplitBusinessConsoleMesWorkOrderData,
+  SplitBusinessConsoleMesWorkOrderErrors,
+  SplitBusinessConsoleMesWorkOrderResponse,
 } from './business-console'
 import {
   getConsoleNotificationDeadLetterMetricsQueryOptions,
@@ -160,6 +169,7 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
+  getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
@@ -177,6 +187,7 @@ import {
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
+  mergeBusinessConsoleMesWorkOrdersMutationOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
@@ -184,6 +195,7 @@ import {
   recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
+  splitBusinessConsoleMesWorkOrderMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from './business-console'
 import {
@@ -396,6 +408,30 @@ describe('generated API client contract', () => {
     >().toEqualTypeOf<502 | 503>()
     expectTypeOf(businessConsoleClient.getBusinessConsolePrincipalWorkContext).toBeFunction()
     expectTypeOf(getBusinessConsolePrincipalWorkContextQueryOptions).toBeFunction()
+  })
+
+  it('exports MES work-order transformation operations through the stable boundary', () => {
+    expectTypeOf<SplitBusinessConsoleMesWorkOrderData>().toBeObject()
+    expectTypeOf<MergeBusinessConsoleMesWorkOrdersData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleMesWorkOrderTransformationData>().toBeObject()
+    expectTypeOf<
+      Extract<keyof SplitBusinessConsoleMesWorkOrderErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof MergeBusinessConsoleMesWorkOrdersErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof GetBusinessConsoleMesWorkOrderTransformationErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<SplitBusinessConsoleMesWorkOrderResponse>().toBeObject()
+    expectTypeOf<MergeBusinessConsoleMesWorkOrdersResponse>().toBeObject()
+    expectTypeOf<GetBusinessConsoleMesWorkOrderTransformationResponse>().toBeObject()
+    expectTypeOf(businessConsoleClient.splitBusinessConsoleMesWorkOrder).toBeFunction()
+    expectTypeOf(businessConsoleClient.mergeBusinessConsoleMesWorkOrders).toBeFunction()
+    expectTypeOf(businessConsoleClient.getBusinessConsoleMesWorkOrderTransformation).toBeFunction()
+    expectTypeOf(splitBusinessConsoleMesWorkOrderMutationOptions).toBeFunction()
+    expectTypeOf(mergeBusinessConsoleMesWorkOrdersMutationOptions).toBeFunction()
+    expectTypeOf(getBusinessConsoleMesWorkOrderTransformationQueryOptions).toBeFunction()
   })
 
   it('requires the governed ERP work-center cost-rate effective start', () => {

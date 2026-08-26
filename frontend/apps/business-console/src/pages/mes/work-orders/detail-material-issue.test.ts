@@ -115,10 +115,19 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshMaterialReadiness: vi.fn(),
     recordEngineeringChangeDecision: state.recordEngineeringChangeDecision,
     recordEngineeringChangeDecisionPending: ref(false),
+    workOrderManageScope: ref({ kind: 'work-center', id: 'WC-1' }),
     retryCancelPreview: vi.fn(),
     workOrderManageScopeMessage: ref(''),
     workOrderManageScopeReady: ref(true),
     workOrderReadScopeMessage: ref(''),
+    workOrderReadScope: ref({ kind: 'work-center', id: 'WC-1' }),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 

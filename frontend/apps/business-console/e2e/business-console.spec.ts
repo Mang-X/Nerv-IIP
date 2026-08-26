@@ -152,6 +152,155 @@ test('领料与齐套：领料申请渲染收料进度与「查看出库」闭�
     'href',
     /\/wms\/outbound/,
   )
+  await expect(page.getByRole('heading', { name: '线边库存余额与账龄' })).toBeVisible()
+  await expect(
+    page.getByText('SKU-DAMPER-001', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(page.getByText(/在手 120 pcs/).filter({ visible: true })).toBeVisible()
+  await expect(
+    page.getByText(/4 天（部分批次缺少生产日期）/).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('账龄未知（批次缺少生产日期）', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  const lineSideInventory = page.locator('section[aria-labelledby="line-side-inventory-title"]')
+  await expect(lineSideInventory.locator('nav[aria-label="分页"]')).toBeVisible()
+  await expect(lineSideInventory.locator('nav[aria-label="分页"]')).toHaveCount(1)
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await expect(lineSideInventory.locator('tbody tr')).toHaveCount(200)
+    await expect(
+      lineSideInventory.getByText('SKU-PAGE-200', { exact: true }).filter({ visible: true }),
+    ).toBeVisible()
+  }
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
+  await lineSideInventory.getByRole('button', { name: '下一页' }).click()
+  await expect(
+    lineSideInventory.getByText('SKU-PAGE-201', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 2 / 2 页')
+  await lineSideInventory.getByRole('button', { name: '上一页' }).click()
+  await expect(
+    lineSideInventory.getByText('SKU-DAMPER-001', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
+  const mobileInventory = page.getByTestId('line-side-inventory-mobile')
+  if ((page.viewportSize()?.width ?? 0) < 768) {
+    await expect(mobileInventory).toBeVisible()
+    await expect(mobileInventory).toContainText('4 天（部分批次缺少生产日期）')
+  } else {
+    await expect(mobileInventory).toBeHidden()
+  }
+})
+
+test('领料与齐套：第 2 页失败后保留下方分页并可返回第 1 页', async ({ page }) => {
+  await page.route(
+    '**/api/business-console/v1/mes/line-side-inventory-balances*',
+    async (route) => {
+      const requestedPage = Number(new URL(route.request().url()).searchParams.get('page') ?? 1)
+      if (requestedPage === 2) {
+        return fulfillJson(route, {
+          success: false,
+          message: '第 2 页库存暂不可用',
+          data: null,
+        })
+      }
+      return fulfillJson(
+        route,
+        envelope({
+          items: [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-RECOVERY-PAGE-1',
+              uomCode: 'pcs',
+              onHandQuantity: 12,
+              reservedQuantity: 2,
+              availableQuantity: 10,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ],
+          totalCount: 201,
+          page: 1,
+          pageSize: 200,
+          asOfDate: '2026-08-26',
+        }),
+      )
+    },
+  )
+
+  await page.goto('/mes/materials', { waitUntil: 'domcontentloaded' })
+  const lineSideInventory = page.locator('section[aria-labelledby="line-side-inventory-title"]')
+  await expect(
+    lineSideInventory.getByText('SKU-RECOVERY-PAGE-1', { exact: true }).filter({ visible: true }),
+  ).toBeVisible({ timeout: 15_000 })
+  await lineSideInventory.getByRole('button', { name: '下一页' }).click()
+
+  await expect(lineSideInventory.getByRole('alert')).toContainText('第 2 页库存暂不可用')
+  await expect(lineSideInventory.locator('nav[aria-label="分页"]')).toBeVisible()
+  await expect(lineSideInventory.getByTestId('line-side-inventory-pagination')).toBeVisible()
+  await expect(lineSideInventory.locator('[data-slot="table-container"]')).toHaveCount(0)
+  await expect(lineSideInventory.getByRole('button', { name: '上一页' })).toBeEnabled()
+  await lineSideInventory.getByRole('button', { name: '上一页' }).click()
+  await expect(
+    lineSideInventory.getByText('SKU-RECOVERY-PAGE-1', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
+})
+
+test('领料与齐套：总量收缩后自动回到最后有效页', async ({ page }) => {
+  let pageOneRequests = 0
+  await page.route(
+    '**/api/business-console/v1/mes/line-side-inventory-balances*',
+    async (route) => {
+      const requestedPage = Number(new URL(route.request().url()).searchParams.get('page') ?? 1)
+      if (requestedPage === 2) {
+        return fulfillJson(route, envelope({ items: [], totalCount: 200, page: 2, pageSize: 200 }))
+      }
+      pageOneRequests += 1
+      return fulfillJson(
+        route,
+        envelope({
+          items: [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-CLAMPED-PAGE-1',
+              uomCode: 'pcs',
+              onHandQuantity: 12,
+              reservedQuantity: 2,
+              availableQuantity: 10,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ],
+          totalCount: pageOneRequests === 1 ? 201 : 200,
+          page: 1,
+          pageSize: 200,
+        }),
+      )
+    },
+  )
+
+  await page.goto('/mes/materials', { waitUntil: 'domcontentloaded' })
+  const lineSideInventory = page.locator('section[aria-labelledby="line-side-inventory-title"]')
+  await expect(
+    lineSideInventory.getByText('SKU-CLAMPED-PAGE-1', { exact: true }).filter({ visible: true }),
+  ).toBeVisible({ timeout: 15_000 })
+  await lineSideInventory.getByRole('button', { name: '下一页' }).click()
+
+  await expect.poll(() => pageOneRequests).toBe(2)
+  await expect(
+    lineSideInventory.getByText('SKU-CLAMPED-PAGE-1', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 1 / 1 页')
+  await expect(lineSideInventory).not.toContainText('第 2 / 1 页')
+  await page.waitForTimeout(500)
+  expect(pageOneRequests).toBe(2)
 })
 
 test('工序执行：队列渲染、可报工行直显「报工」按钮且能进报工弹窗', async ({ page }) => {
@@ -542,6 +691,91 @@ async function routeBusinessConsoleApi(route: Route) {
           },
         ],
         total: 1,
+      }),
+    )
+  }
+
+  if (pathname === '/api/business-console/v1/mes/line-side-inventory-balances') {
+    const requestedPage = Number(url.searchParams.get('page') ?? 1)
+    const items =
+      requestedPage === 2
+        ? [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A04',
+              skuCode: 'SKU-PAGE-201',
+              uomCode: 'pcs',
+              onHandQuantity: 8,
+              reservedQuantity: 1,
+              availableQuantity: 7,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ]
+        : [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-DAMPER-001',
+              uomCode: 'pcs',
+              onHandQuantity: 120,
+              reservedQuantity: 20,
+              availableQuantity: 100,
+              lotCount: 3,
+              oldestProductionDate: '2026-08-20',
+              ageDays: 6,
+              ageCompleteness: 'complete',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A02',
+              skuCode: 'SKU-SEAL-008',
+              uomCode: 'pcs',
+              onHandQuantity: 45,
+              reservedQuantity: 5,
+              availableQuantity: 40,
+              lotCount: 2,
+              oldestProductionDate: '2026-08-22',
+              ageDays: 4,
+              ageCompleteness: 'partial',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A03',
+              skuCode: 'SKU-OIL-012',
+              uomCode: 'l',
+              onHandQuantity: 18,
+              reservedQuantity: 0,
+              availableQuantity: 18,
+              lotCount: 1,
+              oldestProductionDate: null,
+              ageDays: null,
+              ageCompleteness: 'unavailable',
+            },
+            ...Array.from({ length: 197 }, (_, index) => ({
+              siteCode: 'SITE-SH',
+              locationCode: `LINE-${String(index + 4).padStart(3, '0')}`,
+              skuCode: `SKU-PAGE-${String(index + 4).padStart(3, '0')}`,
+              uomCode: 'pcs',
+              onHandQuantity: index + 1_000,
+              reservedQuantity: 0,
+              availableQuantity: index + 1_000,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            })),
+          ]
+    return fulfillJson(
+      route,
+      envelope({
+        items,
+        totalCount: 201,
+        page: requestedPage,
+        pageSize: 200,
+        asOfDate: '2026-08-26',
       }),
     )
   }

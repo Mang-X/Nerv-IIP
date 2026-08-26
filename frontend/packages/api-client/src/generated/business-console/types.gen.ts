@@ -82,7 +82,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 export type NetCorePalExtensionsDtoResponseData = {
     success?: boolean;
     message?: string;
-    code?: number;
+    code?: number | string;
     errorData?: Array<unknown>;
 };
 
@@ -4879,6 +4879,67 @@ export type NervIipContractsInventoryLineSideInventoryBalanceItem = {
 export type NervIipContractsInventoryLineSideInventoryAgeCompleteness = 'complete' | 'partial' | 'unavailable';
 
 export type NervIipContractsInventoryLineSideInventoryBalancesRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationMutationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationMutationResponse = {
+    accepted: boolean;
+    transformationId: string;
+    type: string;
+    sourceWorkOrderIds: Array<string>;
+    targetWorkOrderIds: Array<string>;
+    isIdempotentReplay: boolean;
+    operationReceipt: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSplitWorkOrderRequest = {
+    targets: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationTargetRequest>;
+    reason: string;
+    idempotencyKey: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationTargetRequest = {
+    workOrderId: string;
+    quantity: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMergeWorkOrdersRequest = {
+    sourceWorkOrderIds: Array<string>;
+    targetWorkOrderId: string;
+    reason: string;
+    idempotencyKey: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationReadbackResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackResponse = {
+    transformationId: string;
+    type: string;
+    idempotencyKey: string;
+    actor: string;
+    reason: string;
+    occurredAtUtc: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationLineResponse>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationLineResponse = {
+    sourceWorkOrderId: string;
+    targetWorkOrderId: string;
+    quantity: number;
+    uomCode: string;
+    sourceStatus: string;
+    targetStatus: string;
+    sourceVersion: number;
+    targetVersion: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackRequest = {
     [key: string]: never;
 };
 
@@ -16421,6 +16482,135 @@ export type ListBusinessConsoleMesLineSideInventoryBalancesResponses = {
 };
 
 export type ListBusinessConsoleMesLineSideInventoryBalancesResponse = ListBusinessConsoleMesLineSideInventoryBalancesResponses[keyof ListBusinessConsoleMesLineSideInventoryBalancesResponses];
+
+export type SplitBusinessConsoleMesWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSplitWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/split';
+};
+
+export type SplitBusinessConsoleMesWorkOrderErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type SplitBusinessConsoleMesWorkOrderError = SplitBusinessConsoleMesWorkOrderErrors[keyof SplitBusinessConsoleMesWorkOrderErrors];
+
+export type SplitBusinessConsoleMesWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse;
+};
+
+export type SplitBusinessConsoleMesWorkOrderResponse = SplitBusinessConsoleMesWorkOrderResponses[keyof SplitBusinessConsoleMesWorkOrderResponses];
+
+export type MergeBusinessConsoleMesWorkOrdersData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMergeWorkOrdersRequest;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/merge';
+};
+
+export type MergeBusinessConsoleMesWorkOrdersErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type MergeBusinessConsoleMesWorkOrdersError = MergeBusinessConsoleMesWorkOrdersErrors[keyof MergeBusinessConsoleMesWorkOrdersErrors];
+
+export type MergeBusinessConsoleMesWorkOrdersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse;
+};
+
+export type MergeBusinessConsoleMesWorkOrdersResponse = MergeBusinessConsoleMesWorkOrdersResponses[keyof MergeBusinessConsoleMesWorkOrdersResponses];
+
+export type GetBusinessConsoleMesWorkOrderTransformationData = {
+    body?: never;
+    path: {
+        transformationId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-order-transformations/{transformationId}';
+};
+
+export type GetBusinessConsoleMesWorkOrderTransformationErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type GetBusinessConsoleMesWorkOrderTransformationError = GetBusinessConsoleMesWorkOrderTransformationErrors[keyof GetBusinessConsoleMesWorkOrderTransformationErrors];
+
+export type GetBusinessConsoleMesWorkOrderTransformationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationReadbackResponse;
+};
+
+export type GetBusinessConsoleMesWorkOrderTransformationResponse = GetBusinessConsoleMesWorkOrderTransformationResponses[keyof GetBusinessConsoleMesWorkOrderTransformationResponses];
 
 export type ListBusinessConsoleMasterDataResourcesData = {
     body?: never;

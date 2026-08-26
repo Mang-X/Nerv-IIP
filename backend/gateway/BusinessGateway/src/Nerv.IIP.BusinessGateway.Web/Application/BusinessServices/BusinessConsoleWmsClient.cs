@@ -214,6 +214,32 @@ public interface IBusinessWmsClient
 
 public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessWmsClient
 {
+    // WMS legacy middleware puts its published reason code in message. Keep this list aligned with
+    // frontend/apps/business-console/src/utils/wmsReasonCodes.ts; unknown text must stay fail-closed.
+    private static readonly HashSet<string> RegisteredLegacySemanticCodes = new(StringComparer.Ordinal)
+    {
+        "outbound-pack-review-not-passed",
+        "outbound-picking-task-missing",
+        "outbound-picking-not-completed",
+        "outbound-picking-difference-reason-missing",
+        "outbound-line-picking-task-missing",
+        "picking-difference-reason-required",
+        "picking-over-limit",
+        "executed-quantity-out-of-range",
+        "resource-not-assigned-to-self",
+        "assignment-principal-mismatch",
+        "resource-outside-selected-work-scope",
+        "missing-work-pool-assignment",
+        "resource-tenant-mismatch",
+        "missing-work-scope-kind",
+        "missing-work-scope-id",
+        "membership-window-not-forward",
+    };
+
+    protected override bool IsRegisteredLegacySemanticCode(string? code) =>
+        base.IsRegisteredLegacySemanticCode(code) ||
+        code is not null && RegisteredLegacySemanticCodes.Contains(code);
+
     public Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
         string internalBearerToken,
         BusinessWmsWorkScopeCatalogRequest request,
