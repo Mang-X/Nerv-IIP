@@ -2,7 +2,7 @@
 import type { BusinessConsoleMesLineSideInventoryBalanceItem } from '@nerv-iip/api-client'
 import { lineSideInventoryAgePresentation } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { NvButton, NvDataTable, NvStatusBadge } from '@nerv-iip/ui'
+import { NvButton, NvDataTable, NvPagination, NvStatusBadge } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { inlineErrorMessage } from '@/utils/notify'
@@ -114,13 +114,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
       </article>
     </div>
 
-    <div
-      v-if="items.length > 0 || (errorMessage && page > 1 && total > pageSize)"
-      :class="[
-        'line-side-inventory-table',
-        { 'line-side-inventory-table--recovery': errorMessage && items.length === 0 },
-      ]"
-    >
+    <div v-if="items.length > 0" class="line-side-inventory-table">
       <NvDataTable
         :columns="columns"
         :rows="items"
@@ -162,6 +156,16 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
         </template>
       </NvDataTable>
     </div>
+
+    <NvPagination
+      v-if="errorMessage && items.length === 0 && page > 1 && total > pageSize"
+      data-testid="line-side-inventory-recovery-pagination"
+      :page="page"
+      :page-size="pageSize"
+      :page-size-options="[pageSize]"
+      :total-items="total"
+      @update:page="emit('updatePage', $event)"
+    />
   </section>
 </template>
 
@@ -170,9 +174,5 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
   .line-side-inventory-table :deep([data-slot='table-container']) {
     display: none;
   }
-}
-
-.line-side-inventory-table--recovery :deep([data-slot='table-container']) {
-  display: none;
 }
 </style>

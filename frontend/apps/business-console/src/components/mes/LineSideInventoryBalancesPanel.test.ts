@@ -57,6 +57,10 @@ describe('LineSideInventoryBalancesPanel', () => {
 
       expect(wrapper.get('[role="alert"]').text()).toContain(message)
       expect(wrapper.findAll('nav[aria-label="分页"]')).toHaveLength(1)
+      expect(wrapper.find('[data-testid="line-side-inventory-recovery-pagination"]').exists()).toBe(
+        true,
+      )
+      expect(wrapper.find('[data-slot="table-container"]').exists()).toBe(false)
       expect(wrapper.get('button[aria-label="上一页"]').attributes('disabled')).toBeUndefined()
 
       await wrapper.get('button[aria-label="上一页"]').trigger('click')

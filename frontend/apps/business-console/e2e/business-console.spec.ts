@@ -240,6 +240,10 @@ test('领料与齐套：第 2 页失败后保留下方分页并可返回第 1 �
 
   await expect(lineSideInventory.getByRole('alert')).toContainText('第 2 页库存暂不可用')
   await expect(lineSideInventory.locator('nav[aria-label="分页"]')).toBeVisible()
+  await expect(
+    lineSideInventory.getByTestId('line-side-inventory-recovery-pagination'),
+  ).toBeVisible()
+  await expect(lineSideInventory.locator('[data-slot="table-container"]')).toHaveCount(0)
   await expect(lineSideInventory.getByRole('button', { name: '上一页' })).toBeEnabled()
   await lineSideInventory.getByRole('button', { name: '上一页' }).click()
   await expect(
