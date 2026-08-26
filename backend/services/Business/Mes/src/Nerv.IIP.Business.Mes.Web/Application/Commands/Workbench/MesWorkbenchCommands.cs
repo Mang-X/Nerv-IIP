@@ -2184,6 +2184,17 @@ internal static class MaterialReadinessGuards
             .ToArray();
     }
 
+    internal static MaterialRequirement[] SelectLatestRequirementSnapshots(
+        IEnumerable<MaterialRequirement> requirements)
+    {
+        return requirements
+            .GroupBy(
+                x => $"{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
+                StringComparer.Ordinal)
+            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
+            .ToArray();
+    }
+
     internal interface IMaterialRequirementSnapshot
     {
         string? OperationTaskId { get; }

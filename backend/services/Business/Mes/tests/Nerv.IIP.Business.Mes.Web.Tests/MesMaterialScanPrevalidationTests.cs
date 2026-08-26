@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using System.Net;
 using System.Net.Http.Json;
@@ -62,6 +63,60 @@ public sealed class MesMaterialScanPrevalidationTests
         Assert.Equal("OP-10", response.OperationTaskId);
         Assert.Equal("MAT-SUB", response.MaterialId);
         Assert.Equal("substitute", response.MaterialQualification);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus)]
+    public async Task Unclosed_or_contradictory_snapshot_status_fails_closed_even_when_an_orphan_requirement_exists(
+        string? snapshotStatus)
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: true, completeReceipt: true, snapshotStatus: snapshotStatus);
+        await db.SaveChangesAsync();
+        var inventory = new StubAvailabilityProvider(new(true, false, true));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(db, inventory).Handle(Request(), CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+        Assert.Equal(0, inventory.CallCount);
+    }
+
+    [Fact]
+    public async Task Latest_frozen_requirement_snapshot_does_not_union_a_removed_historical_substitute()
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-SUB", includeRequirement: false, completeReceipt: true);
+        db.MaterialRequirements.AddRange(
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
+                5m, 5m, 0m, "product-engineering", "snap-old", Now.AddMinutes(-1), ["MAT-SUB"]),
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
+                5m, 5m, 0m, "product-engineering", "snap-latest", Now, []));
+        await db.SaveChangesAsync();
+        var inventory = new StubAvailabilityProvider(new(true, false, true));
+
+        var response = await CreateHandler(db, inventory).Handle(Request(), CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal("material-not-required", response.ReasonCode);
+        Assert.Equal(0, inventory.CallCount);
+    }
+
+    [Fact]
+    public async Task Captured_snapshot_without_any_requirement_rows_fails_closed()
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: false, completeReceipt: true);
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(db, new StubAvailabilityProvider(new(true, false, true)))
+                .Handle(Request(), CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
     }
 
     [Fact]
@@ -239,7 +294,7 @@ public sealed class MesMaterialScanPrevalidationTests
                     locationCode = "LINE-01",
                     lotNo = "LOT-001",
                     onHandQuantity = 5m,
-                    items = new[] { new { locationCode = "LINE-01", lotNo = "LOT-001", isExpired = false, movementAllowed = true, onHandQuantity = 5m } },
+                    items = new[] { new { locationCode = "LINE-01", lotNo = "LOT-001", expiryDate = (DateOnly?)null, isExpired = false, movementAllowed = true, onHandQuantity = 5m } },
                 },
             }),
         });
@@ -271,14 +326,17 @@ public sealed class MesMaterialScanPrevalidationTests
             AvailabilityRequest(),
             CancellationToken.None));
 
-        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+        Assert.DoesNotContain("JSON", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
     [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5}")]
     [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":null}")]
-    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"onHandQuantity\":5}]}")]
-    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true}]}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}]}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"expiryDate\":\"08/25/2026\",\"isExpired\":true,\"movementAllowed\":false,\"onHandQuantity\":5}]}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"expiryDate\":null,\"isExpired\":false,\"onHandQuantity\":5}]}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"expiryDate\":null,\"isExpired\":false,\"movementAllowed\":true}]}")]
     public async Task Inventory_provider_fails_closed_when_success_json_omits_or_nulls_authoritative_fact(string dataJson)
     {
         var inventoryHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -319,7 +377,7 @@ public sealed class MesMaterialScanPrevalidationTests
                     onHandQuantity = 0m,
                     items = new[]
                     {
-                        new { locationCode = "LINE-01", lotNo = "LOT-001", isExpired = false, movementAllowed = true, onHandQuantity = 5m },
+                        new { locationCode = "LINE-01", lotNo = "LOT-001", expiryDate = (DateOnly?)null, isExpired = false, movementAllowed = true, onHandQuantity = 5m },
                     },
                 },
             }),
@@ -333,6 +391,31 @@ public sealed class MesMaterialScanPrevalidationTests
         Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(-1, -1, null, false, true)]
+    [InlineData(5, 5, "2026-08-25", false, true)]
+    [InlineData(5, 5, "2026-08-25", true, true)]
+    [InlineData(5, 5, null, true, false)]
+    [InlineData(5, 5, "2026-08-27", true, false)]
+    public async Task Inventory_provider_fails_closed_for_negative_or_contradictory_expiry_facts(
+        decimal aggregateOnHand,
+        decimal lineOnHand,
+        string? expiryDate,
+        bool isExpired,
+        bool movementAllowed)
+    {
+        var expiryJson = expiryDate is null ? "null" : $"\"{expiryDate}\"";
+        var inventoryHandler = new RecordingHttpHandler(_ => JsonEnvelopeResponse(
+            $"{{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":{aggregateOnHand},\"items\":[{{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"expiryDate\":{expiryJson},\"isExpired\":{isExpired.ToString().ToLowerInvariant()},\"movementAllowed\":{movementAllowed.ToString().ToLowerInvariant()},\"onHandQuantity\":{lineOnHand}}}]}}"));
+        var provider = CreateHttpProvider(inventoryHandler);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetAsync(
+            AvailabilityRequest(),
+            CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+    }
+
     [Fact]
     public async Task Inventory_provider_maps_503_to_source_unavailable_not_business_rejection()
     {
@@ -343,7 +426,34 @@ public sealed class MesMaterialScanPrevalidationTests
             AvailabilityRequest(),
             CancellationToken.None));
 
-        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+        Assert.DoesNotContain("Service Unavailable", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Inventory_provider_does_not_expose_transport_exception_details()
+    {
+        var provider = CreateHttpProvider(new ThrowingHttpHandler(
+            new HttpRequestException("SECRET-provider-host inventory.internal:8443")));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetAsync(
+            AvailabilityRequest(), CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+        Assert.DoesNotContain("SECRET", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inventory_provider_does_not_expose_timeout_exception_details()
+    {
+        var provider = CreateHttpProvider(new ThrowingHttpHandler(
+            new TaskCanceledException("SECRET-provider-timeout")));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetAsync(
+            AvailabilityRequest(), CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+        Assert.DoesNotContain("SECRET", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -389,10 +499,10 @@ public sealed class MesMaterialScanPrevalidationTests
 
     [Theory]
     [InlineData("null")]
-    [InlineData("{\"locationCode\":null,\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
-    [InlineData("{\"locationCode\":\"LINE-OTHER\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
-    [InlineData("{\"locationCode\":\"LINE-01\",\"lotNo\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
-    [InlineData("{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-OTHER\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":null,\"lotNo\":\"LOT-001\",\"expiryDate\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":\"LINE-OTHER\",\"lotNo\":\"LOT-001\",\"expiryDate\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":\"LINE-01\",\"lotNo\":null,\"expiryDate\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-OTHER\",\"expiryDate\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
     public async Task Inventory_provider_fails_closed_when_line_fact_is_null_or_outside_requested_scope(string lineJson)
     {
         var inventoryHandler = new RecordingHttpHandler(_ => JsonEnvelopeResponse(
@@ -444,7 +554,7 @@ public sealed class MesMaterialScanPrevalidationTests
             ["onHandQuantity"] = 5m,
             ["items"] = new[]
             {
-                new { locationCode = "LINE-01", lotNo = "LOT-001", isExpired = false, movementAllowed = true, onHandQuantity = 5m },
+                new { locationCode = "LINE-01", lotNo = "LOT-001", expiryDate = (DateOnly?)null, isExpired = false, movementAllowed = true, onHandQuantity = 5m },
             },
         };
         data[field] = mismatchedValue;
@@ -465,10 +575,16 @@ public sealed class MesMaterialScanPrevalidationTests
         string materialId,
         bool includeRequirement,
         bool completeReceipt,
-        decimal? receivedQuantity = null)
+        decimal? receivedQuantity = null,
+        string? snapshotStatus = WorkOrder.MaterialRequirementSnapshotCapturedStatus)
     {
-        db.WorkOrders.Add(WorkOrder.Create(
-            "org-001", "env-dev", "WO-001", "FG-001", "PV-001", 10m, 1, Now.AddDays(1), "PCS"));
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-001", "FG-001", "PV-001", 10m, 1, Now.AddDays(1), "PCS");
+        if (snapshotStatus is not null)
+        {
+            workOrder.RecordMaterialRequirementSnapshot(snapshotStatus, Now);
+        }
+        db.WorkOrders.Add(workOrder);
         db.OperationTasks.Add(OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-10", OperationTaskLifecycleStatus.Queued,
             10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null));
@@ -505,7 +621,8 @@ public sealed class MesMaterialScanPrevalidationTests
         new(
             new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
             new TestInternalServiceTokenProvider(),
-            new StubMesIntegrationEventContextAccessor());
+            new StubMesIntegrationEventContextAccessor(),
+            NullLogger<HttpMesMaterialLotAvailabilityProvider>.Instance);
 
     private sealed class StubAvailabilityProvider(MesMaterialLotAvailabilityResult result)
         : IMesMaterialLotAvailabilityProvider
@@ -543,6 +660,13 @@ public sealed class MesMaterialScanPrevalidationTests
             AuthorizationParameter = request.Headers.Authorization?.Parameter ?? string.Empty;
             return Task.FromResult(responseFactory(request));
         }
+    }
+
+    private sealed class ThrowingHttpHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => Task.FromException<HttpResponseMessage>(exception);
     }
 
     private sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider

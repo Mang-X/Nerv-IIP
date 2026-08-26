@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
@@ -53,6 +55,14 @@ public interface IMesMaterialLotAvailabilityProvider
         CancellationToken cancellationToken);
 }
 
+internal static class MaterialScanPrevalidationErrors
+{
+    internal const string SourceUnavailableMessage =
+        "MATERIAL_SCAN_SOURCE_UNAVAILABLE: 物料扫码预校验来源不可用，请稍后重试。";
+
+    internal static KnownException SourceUnavailable() => new(SourceUnavailableMessage);
+}
+
 public sealed class PrevalidateMaterialScanQueryHandler(
     ApplicationDbContext dbContext,
     IMesMaterialLotAvailabilityProvider availabilityProvider,
@@ -100,6 +110,21 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                 request, "mes-context-not-found", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
+        var snapshotStatus = workOrder.MaterialRequirementSnapshotStatus;
+        var snapshotStateClosed =
+            (snapshotStatus is WorkOrder.MaterialRequirementSnapshotCapturedStatus
+                or WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus) &&
+            workOrder.MaterialRequirementSnapshotEvaluatedAtUtc is not null &&
+            !string.IsNullOrWhiteSpace(workOrder.MaterialRequirementSnapshotProductionVersionId) &&
+            string.Equals(
+                workOrder.MaterialRequirementSnapshotProductionVersionId,
+                workOrder.ProductionVersionId,
+                StringComparison.Ordinal);
+        if (!snapshotStateClosed)
+        {
+            throw MaterialScanPrevalidationErrors.SourceUnavailable();
+        }
+
         if (!string.Equals(issue.Status, MaterialIssueRequest.ReceivedStatus, StringComparison.Ordinal) ||
             issue.ReceivedQuantity < issue.RequestedQuantity ||
             string.IsNullOrWhiteSpace(issue.MaterialLotId) ||
@@ -110,20 +135,47 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                 request, "line-side-receipt-incomplete", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
-        var requirements = await dbContext.MaterialRequirements.AsNoTracking().Where(x =>
+        var persistedRequirements = await dbContext.MaterialRequirements.AsNoTracking().Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId &&
-            x.WorkOrderId == request.WorkOrderId &&
-            (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId))
+            x.WorkOrderId == request.WorkOrderId)
             .ToArrayAsync(cancellationToken);
+        var latestRequirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(persistedRequirements);
+        if (snapshotStatus == WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus)
+        {
+            if (latestRequirements.Length != 0)
+            {
+                throw MaterialScanPrevalidationErrors.SourceUnavailable();
+            }
+
+            return Reject(
+                request, "material-not-required", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
+        }
+
+        if (latestRequirements.Length == 0)
+        {
+            throw MaterialScanPrevalidationErrors.SourceUnavailable();
+        }
+
+        var requirements = latestRequirements.Where(x =>
+            x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId).ToArray();
+
         var isPrimary = requirements.Any(x =>
             string.Equals(x.MaterialId, issue.MaterialId, StringComparison.OrdinalIgnoreCase));
 
         var qualification = "primary";
         if (!isPrimary)
         {
-            var isFrozenSubstitute = requirements.Any(x =>
-                x.GetSubstituteMaterialIds().Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase));
+            bool isFrozenSubstitute;
+            try
+            {
+                isFrozenSubstitute = requirements.Any(x =>
+                    x.GetSubstituteMaterialIds().Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase));
+            }
+            catch (JsonException)
+            {
+                throw MaterialScanPrevalidationErrors.SourceUnavailable();
+            }
             if (!isFrozenSubstitute)
             {
                 return Reject(
@@ -175,7 +227,8 @@ public sealed class PrevalidateMaterialScanQueryHandler(
 public sealed class HttpMesMaterialLotAvailabilityProvider(
     MesInventoryHttpClient inventoryClient,
     IInternalServiceTokenProvider internalTokenProvider,
-    IMesIntegrationEventContextAccessor correlationContextAccessor)
+    IMesIntegrationEventContextAccessor correlationContextAccessor,
+    ILogger<HttpMesMaterialLotAvailabilityProvider> logger)
     : IMesMaterialLotAvailabilityProvider
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -207,19 +260,26 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
             !string.Equals(response.LocationCode, request.LocationCode, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(response.LotNo, request.MaterialLotId, StringComparison.OrdinalIgnoreCase))
         {
-            throw SourceUnavailable("Inventory 返回了与请求范围不一致的物料批次。");
+            throw SourceUnavailable();
         }
 
         if (response.Items is null || response.Items.Any(x => x is null ||
             !string.Equals(x.LocationCode, request.LocationCode, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(x.LotNo, request.MaterialLotId, StringComparison.OrdinalIgnoreCase)))
         {
-            throw SourceUnavailable("Inventory 返回的库存明细集合不完整或超出请求范围。");
+            throw SourceUnavailable();
         }
 
-        if (response.OnHandQuantity != response.Items.Sum(x => x.OnHandQuantity))
+        if (response.OnHandQuantity < 0m ||
+            response.Items.Any(x => x.OnHandQuantity < 0m) ||
+            response.OnHandQuantity != response.Items.Sum(x => x.OnHandQuantity) ||
+            response.Items.Any(x =>
+            {
+                var expectedExpired = x.ExpiryDate is not null && x.ExpiryDate.Value < request.AsOfDate;
+                return x.IsExpired != expectedExpired || (x.IsExpired && x.MovementAllowed);
+            }))
         {
-            throw SourceUnavailable("Inventory 返回的汇总在手量与明细不一致。");
+            throw SourceUnavailable();
         }
 
         var lines = response.Items.Where(x =>
@@ -250,18 +310,25 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
         }
         catch (HttpRequestException exception)
         {
-            throw SourceUnavailable($"{serviceName} 暂不可用。{exception.Message}");
+            logger.LogWarning(exception, "{ServiceName} material scan dependency request failed.", serviceName);
+            throw SourceUnavailable();
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw SourceUnavailable($"{serviceName} 请求超时。{exception.Message}");
+            logger.LogWarning(exception, "{ServiceName} material scan dependency request timed out.", serviceName);
+            throw SourceUnavailable();
         }
 
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw SourceUnavailable($"{serviceName} 返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
+                logger.LogWarning(
+                    "{ServiceName} material scan dependency returned HTTP {StatusCode} {ReasonPhrase}.",
+                    serviceName,
+                    (int)response.StatusCode,
+                    response.ReasonPhrase);
+                throw SourceUnavailable();
             }
 
             ResponseDataEnvelope<T>? envelope;
@@ -278,23 +345,25 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
             }
             catch (JsonException exception)
             {
-                throw SourceUnavailable($"{serviceName} 返回畸形 JSON。{exception.Message}");
+                logger.LogWarning(exception, "{ServiceName} material scan dependency returned malformed JSON.", serviceName);
+                throw SourceUnavailable();
             }
             catch (NotSupportedException exception)
             {
-                throw SourceUnavailable($"{serviceName} 返回不支持的内容类型。{exception.Message}");
+                logger.LogWarning(exception, "{ServiceName} material scan dependency returned unsupported content.", serviceName);
+                throw SourceUnavailable();
             }
             if (envelope is null || !envelope.Success || envelope.Data is null)
             {
-                throw SourceUnavailable($"{serviceName} 返回空响应或失败响应。");
+                logger.LogWarning("{ServiceName} material scan dependency returned an empty or failure envelope.", serviceName);
+                throw SourceUnavailable();
             }
 
             return envelope.Data;
         }
     }
 
-    private static KnownException SourceUnavailable(string detail) =>
-        new($"MATERIAL_SCAN_SOURCE_UNAVAILABLE: 物料扫码预校验来源不可用。{detail}");
+    private static KnownException SourceUnavailable() => MaterialScanPrevalidationErrors.SourceUnavailable();
 
     private static void ValidateStockAvailabilityJson(JsonElement data)
     {
@@ -312,11 +381,12 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
             items.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.Object ||
                 !HasString(item, "locationCode") ||
                 !HasString(item, "lotNo") ||
+                !HasNullableDate(item, "expiryDate") ||
                 !HasBoolean(item, "isExpired") ||
                 !HasBoolean(item, "movementAllowed") ||
                 !HasNumber(item, "onHandQuantity")))
         {
-            throw SourceUnavailable("Inventory 返回的库存权威事实不完整。");
+            throw SourceUnavailable();
         }
     }
 
@@ -331,6 +401,13 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
     private static bool HasBoolean(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var value) &&
         value.ValueKind is JsonValueKind.True or JsonValueKind.False;
+
+    private static bool HasNullableDate(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) &&
+        (value.ValueKind == JsonValueKind.Null ||
+            value.ValueKind == JsonValueKind.String &&
+            DateOnly.TryParseExact(
+                value.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
 
     private static string Query(params (string Name, object? Value)[] values) => string.Join('&', values.Select(x =>
         $"{Uri.EscapeDataString(x.Name)}={Uri.EscapeDataString(Format(x.Value))}"));
