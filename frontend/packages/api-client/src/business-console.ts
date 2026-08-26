@@ -267,6 +267,9 @@ export {
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
+  splitBusinessConsoleMesWorkOrderMutationOptions,
+  mergeBusinessConsoleMesWorkOrdersMutationOptions,
+  getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
   listBusinessConsolePlanningMpsBucketsQueryOptions,
   listBusinessConsolePlanningMrpRunsQueryOptions,
@@ -531,6 +534,9 @@ export {
   listBusinessConsoleMesScheduleResults,
   listBusinessConsoleMesShiftHandovers,
   listBusinessConsoleMesWorkOrders,
+  splitBusinessConsoleMesWorkOrder,
+  mergeBusinessConsoleMesWorkOrders,
+  getBusinessConsoleMesWorkOrderTransformation,
   listBusinessConsolePlanningDemands,
   listBusinessConsolePlanningMpsBuckets,
   listBusinessConsolePlanningMrpRuns,
@@ -2049,6 +2055,17 @@ export type BusinessConsoleInventorySourceBalance =
 export type BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse
 export type { GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData }
+export type {
+  GetBusinessConsoleMesWorkOrderTransformationData,
+  GetBusinessConsoleMesWorkOrderTransformationErrors,
+  GetBusinessConsoleMesWorkOrderTransformationResponse,
+  MergeBusinessConsoleMesWorkOrdersData,
+  MergeBusinessConsoleMesWorkOrdersErrors,
+  MergeBusinessConsoleMesWorkOrdersResponse,
+  SplitBusinessConsoleMesWorkOrderData,
+  SplitBusinessConsoleMesWorkOrderErrors,
+  SplitBusinessConsoleMesWorkOrderResponse,
+} from './generated/business-console'
 export type BusinessConsoleMesScheduleResult =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult
 export type BusinessConsoleMesScheduleResultListResponse =

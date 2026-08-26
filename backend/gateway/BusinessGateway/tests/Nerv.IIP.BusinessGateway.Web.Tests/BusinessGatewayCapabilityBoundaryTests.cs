@@ -764,6 +764,22 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "Quality");
         seedCapabilities[Identity("Interface", "IBusinessBarcodeResolverClient")] = "BarcodeLabel";
         seedCapabilities[Identity("Class", "HttpBusinessBarcodeResolverClient")] = "BarcodeLabel";
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Interface",
+            "IBusinessMesWorkOrderTransformationClient",
+            "Mes",
+            "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
+            includeInLegacy: false);
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Class",
+            "HttpBusinessMesWorkOrderTransformationClient",
+            "Mes",
+            "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
+            includeInLegacy: false);
 
         AddManagedType(
             seedCapabilities,
