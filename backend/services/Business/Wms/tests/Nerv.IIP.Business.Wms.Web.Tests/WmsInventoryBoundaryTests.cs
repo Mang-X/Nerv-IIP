@@ -616,6 +616,66 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Retry_inbound_inventory_posting_retries_only_failed_lines_and_keeps_failed_request_location()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-RETRY-MULTI-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-RETRY-MULTI-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-A", "SKU-A", "kg", 5m, "LOC-STAGE-A", "LOT-A", null, "qualified", "company", null),
+                new InboundOrderLineDraft("LINE-B", "SKU-B", "kg", 3m, "LOC-STAGE-B", "LOT-B", null, "qualified", "company", null),
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var putawayHandler = new CreatePutawayTaskCommandHandler(dbContext);
+        await putawayHandler.Handle(
+            new CreatePutawayTaskCommand(inbound.Id, "PUT-RETRY-MULTI-A", "LINE-A", "LOC-STAGE-A", "LOC-TARGET-A", 5m),
+            CancellationToken.None);
+        await putawayHandler.Handle(
+            new CreatePutawayTaskCommand(inbound.Id, "PUT-RETRY-MULTI-B", "LINE-B", "LOC-STAGE-B", "LOC-TARGET-B", 3m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-multi-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+        var initialRequests = dbContext.InventoryMovementRequests.Local
+            .OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal)
+            .ToArray();
+        var postedRequest = Assert.Single(initialRequests, x => x.SourceDocumentLineId == "LINE-A");
+        var failedRequest = Assert.Single(initialRequests, x => x.SourceDocumentLineId == "LINE-B");
+        postedRequest.MarkPosted("inventory-a-001");
+        failedRequest.MarkFailed("TEST_FAILURE", "test failure");
+        foreach (var task in dbContext.WarehouseTasks.Local)
+        {
+            task.Cancel();
+        }
+
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var retryResult = await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-multi-001"),
+            CancellationToken.None);
+
+        Assert.Equal(3, dbContext.InventoryMovementRequests.Local.Count);
+        Assert.Single(dbContext.InventoryMovementRequests.Local, x => x.SourceDocumentLineId == "LINE-A");
+        var retryRequest = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.SourceDocumentLineId == "LINE-B" && x.Id != failedRequest.Id);
+        Assert.Equal(retryResult.RequestId, retryRequest.Id);
+        Assert.Equal("LOC-TARGET-B", failedRequest.LocationCode);
+        Assert.Equal(failedRequest.LocationCode, retryRequest.LocationCode);
+    }
+
+    [Fact]
     public async Task Complete_inbound_creates_pending_inventory_movement_request_for_each_line()
     {
         await using var dbContext = CreateContext();

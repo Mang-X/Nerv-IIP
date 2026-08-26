@@ -514,10 +514,6 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
-        var inventoryLocationsByLine = await InboundInventoryLocationResolver.ResolveAsync(
-            dbContext,
-            inbound,
-            cancellationToken);
         var failedRequests = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == inbound.OrganizationId
                 && x.EnvironmentId == inbound.EnvironmentId
@@ -525,17 +521,16 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
                 && x.SourceDocumentId == inbound.InboundOrderNo
                 && x.Status == InventoryMovementRequestStatus.Failed)
             .ToArrayAsync(cancellationToken);
-        var retryLocationsByLine = inventoryLocationsByLine.ToDictionary(
+        var failedRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(failedRequests);
+        var failedLineNos = failedRequestsByLine.Keys.ToArray();
+        var retryLocationsByLine = failedRequestsByLine.ToDictionary(
             pair => pair.Key,
-            pair => pair.Value,
+            pair => pair.Value.LocationCode,
             StringComparer.Ordinal);
-        foreach (var (lineNo, failedRequest) in InventoryMovementRequestAttempts.LatestByLine(failedRequests))
-        {
-            retryLocationsByLine[lineNo] = failedRequest.LocationCode;
-        }
         var movementRequests = inbound.RetryInventoryPosting(
             WmsText.IdempotencyKey(request.IdempotencyKey),
-            retryLocationsByLine);
+            retryLocationsByLine,
+            failedLineNos);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }

@@ -282,7 +282,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
     public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
         string idempotencyKey,
-        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null)
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,
+        IReadOnlyCollection<string>? failedLineNos = null)
     {
         if (Status != InboundOrderStatus.InventoryPostingFailed)
         {
@@ -291,9 +292,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        var retryLines = RetryLines(failedLineNos);
         Status = InboundOrderStatus.Completed;
-        var singleLine = lines.Count == 1;
-        var requests = lines.Select(line => InventoryMovementRequest.Create(
+        var singleLine = retryLines.Count == 1;
+        var requests = retryLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,
                 "inbound",
@@ -314,6 +316,35 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 ExpiryDate: line.ExpiryDate))
             .ToArray();
         return requests;
+    }
+
+    private IReadOnlyCollection<InboundOrderLine> RetryLines(IReadOnlyCollection<string>? failedLineNos)
+    {
+        if (failedLineNos is null)
+        {
+            return lines;
+        }
+
+        var requestedLineNos = failedLineNos
+            .Select(lineNo => WmsText.Required(lineNo, nameof(failedLineNos)))
+            .ToHashSet(StringComparer.Ordinal);
+        if (requestedLineNos.Count == 0)
+        {
+            throw new InvalidOperationException("At least one failed inbound line is required for Inventory posting retry.");
+        }
+
+        var retryLines = lines
+            .Where(line => requestedLineNos.Contains(line.LineNo))
+            .ToArray();
+        if (retryLines.Length != requestedLineNos.Count)
+        {
+            var unknownLineNo = requestedLineNos
+                .Except(retryLines.Select(line => line.LineNo), StringComparer.Ordinal)
+                .First();
+            throw new InvalidOperationException($"Inbound line '{unknownLineNo}' was not found.");
+        }
+
+        return retryLines;
     }
 
     private static string InventoryLocationFor(
