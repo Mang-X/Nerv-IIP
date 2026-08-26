@@ -67,10 +67,21 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         {
             if (!response.IsSuccessStatusCode)
             {
-                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken);
-                throw response.StatusCode == HttpStatusCode.BadRequest
-                    ? BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage)
-                    : BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, downstreamMessage);
+                if (response.StatusCode == HttpStatusCode.BadRequest)
+                {
+                    var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(
+                        response,
+                        cancellationToken);
+                    throw BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage);
+                }
+
+                var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
+                throw BusinessServiceProxyException.FromDownstreamError(
+                    response.StatusCode,
+                    envelope.SemanticCode,
+                    envelope.Message,
+                    envelope.ErrorData,
+                    envelope.AllowMessageAsSemanticCode);
             }
 
             try
@@ -168,6 +179,112 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         {
             return null;
         }
+    }
+
+    private static async Task<DownstreamErrorEnvelope> ReadDownstreamErrorEnvelopeAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var text = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return DownstreamErrorEnvelope.Invalid;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            return ParseDownstreamErrorEnvelope(document.RootElement, response.StatusCode);
+        }
+        catch (JsonException)
+        {
+            return DownstreamErrorEnvelope.Invalid;
+        }
+    }
+
+    private static DownstreamErrorEnvelope ParseDownstreamErrorEnvelope(
+        JsonElement root,
+        HttpStatusCode statusCode)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("success", out var success) ||
+            success.ValueKind != JsonValueKind.False)
+        {
+            return DownstreamErrorEnvelope.Invalid;
+        }
+
+        var message = root.TryGetProperty("message", out var messageValue) &&
+            messageValue.ValueKind == JsonValueKind.String
+            ? messageValue.GetString()
+            : null;
+        if (!root.TryGetProperty("code", out var codeValue))
+        {
+            // 兼容既有 success=false envelope：缺少 code 时，稳定 reason 由 message 承载。
+            return new(
+                null,
+                message,
+                ReadDownstreamErrorData(root),
+                AllowMessageAsSemanticCode: true);
+        }
+
+        if (codeValue.ValueKind == JsonValueKind.String)
+        {
+            var code = codeValue.GetString();
+            return IsMatchingTransportStatus(code, statusCode)
+                ? new(null, message, ReadDownstreamErrorData(root), AllowMessageAsSemanticCode: true)
+                : new(code, message, ReadDownstreamErrorData(root), AllowMessageAsSemanticCode: false);
+        }
+
+        if (codeValue.ValueKind == JsonValueKind.Number &&
+            codeValue.TryGetInt32(out var numericCode) &&
+            numericCode == (int)statusCode)
+        {
+            return new(
+                null,
+                message,
+                ReadDownstreamErrorData(root),
+                AllowMessageAsSemanticCode: true);
+        }
+
+        return DownstreamErrorEnvelope.Invalid;
+    }
+
+    private static IReadOnlyCollection<JsonElement> ReadDownstreamErrorData(JsonElement root)
+    {
+        if (root.TryGetProperty("errorData", out var errorData) &&
+            errorData.ValueKind == JsonValueKind.Array)
+        {
+            return errorData.EnumerateArray().Select(item => item.Clone()).ToArray();
+        }
+
+        if (root.TryGetProperty("data", out var data))
+        {
+            return data.ValueKind switch
+            {
+                JsonValueKind.Array => data.EnumerateArray().Select(item => item.Clone()).ToArray(),
+                JsonValueKind.Object => [data.Clone()],
+                _ => [],
+            };
+        }
+
+        return [];
+    }
+
+    private static bool IsMatchingTransportStatus(string? code, HttpStatusCode statusCode) =>
+        int.TryParse(
+            code,
+            System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var numericCode) &&
+        numericCode == (int)statusCode;
+
+    private sealed record DownstreamErrorEnvelope(
+        string? SemanticCode,
+        string? Message,
+        IReadOnlyCollection<JsonElement> ErrorData,
+        bool AllowMessageAsSemanticCode)
+    {
+        public static DownstreamErrorEnvelope Invalid { get; } = new(null, null, [], false);
     }
 
     protected static string Query(params (string Name, object? Value)[] values)

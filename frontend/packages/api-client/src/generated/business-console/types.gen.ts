@@ -82,7 +82,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 export type NetCorePalExtensionsDtoResponseData = {
     success?: boolean;
     message?: string;
-    code?: number;
+    code?: number | string;
     errorData?: Array<unknown>;
 };
 

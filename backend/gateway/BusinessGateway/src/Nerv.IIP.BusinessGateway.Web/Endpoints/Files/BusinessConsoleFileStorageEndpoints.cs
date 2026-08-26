@@ -104,7 +104,7 @@ public sealed class DownloadBusinessConsoleSopFileContentEndpoint(
         }
         catch (BusinessServiceProxyException ex)
         {
-            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, (int)ex.StatusCode, ex.Message, ct);
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, ex, ct);
         }
     }
 
