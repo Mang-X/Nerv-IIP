@@ -57,6 +57,16 @@ public sealed class WorldBibleWorkerOptInIntegrationTests
         Assert.Equal(DataScopeBinding.Self, emp049Scope.ScopeType);
         Assert.Equal("user-emp-049", emp049Scope.ScopeCode);
 
+        var warehouseRole = await dbContext.Roles
+            .Include(x => x.Permissions)
+            .SingleAsync(x => x.Id.Id == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        Assert.Contains(
+            warehouseRole.Permissions,
+            permission => permission.PermissionCode == "business.masterdata.products.read");
+        Assert.DoesNotContain(
+            warehouseRole.Permissions,
+            permission => permission.PermissionCode == "business.masterdata.products.manage");
+
         Assert.Empty(await dbContext.Memberships
             .Where(x => x.UserId.Id == "user-emp-001")
             .ToArrayAsync());
