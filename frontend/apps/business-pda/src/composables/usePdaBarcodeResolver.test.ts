@@ -142,6 +142,52 @@ describe('usePdaBarcodeResolver', () => {
     expect(resolver.status.value).toBe('unknown')
   })
 
+  it('ignores a late resolve rejection after a newer scan starts', async () => {
+    let rejectFirst!: (reason?: unknown) => void
+    const resolveBarcode = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<BusinessConsoleBarcodeResolveEnvelope>((_resolve, reject) => {
+            rejectFirst = reject
+          }),
+      )
+      .mockResolvedValueOnce(envelope('unknown'))
+    const resolver = usePdaBarcodeResolver({ ...scope, resolveBarcode })
+
+    const first = resolver.resolve('FIRST')
+    await resolver.resolve('SECOND')
+    rejectFirst(new Error('旧解析请求失败'))
+
+    await expect(first).resolves.toBeNull()
+    expect(resolver.scannedValue.value).toBe('SECOND')
+    expect(resolver.status.value).toBe('unknown')
+  })
+
+  it('ignores a late resolve rejection after scope drift', async () => {
+    const organizationId = shallowRef('org-1')
+    let rejectFirst!: (reason?: unknown) => void
+    const resolver = usePdaBarcodeResolver({
+      organizationId,
+      environmentId: 'env-1',
+      resolveBarcode: vi.fn(
+        () =>
+          new Promise<BusinessConsoleBarcodeResolveEnvelope>((_resolve, reject) => {
+            rejectFirst = reject
+          }),
+      ),
+    })
+
+    const first = resolver.resolve('FIRST')
+    organizationId.value = 'org-2'
+    await nextTick()
+    rejectFirst(new Error('旧 scope 解析请求失败'))
+
+    await expect(first).resolves.toBeNull()
+    expect(resolver.scannedValue.value).toBe('')
+    expect(resolver.status.value).toBe('idle')
+  })
+
   it('discards an unknown search response after a newer scan starts', async () => {
     let settleSearch!: (value: BusinessConsoleSearchEnvelope) => void
     const resolver = usePdaBarcodeResolver({
@@ -165,6 +211,59 @@ describe('usePdaBarcodeResolver', () => {
 
     expect(resolver.scannedValue.value).toBe('SECOND')
     expect(resolver.status.value).toBe('unknown')
+    expect(resolver.searchStatus.value).toBe('idle')
+    expect(resolver.searchResults.value).toEqual([])
+  })
+
+  it('ignores a late unknown-search rejection after a newer scan starts', async () => {
+    let rejectSearch!: (reason?: unknown) => void
+    const resolver = usePdaBarcodeResolver({
+      ...scope,
+      resolveBarcode: vi.fn().mockResolvedValue(envelope('unknown')),
+      searchCandidates: vi.fn(
+        () =>
+          new Promise<BusinessConsoleSearchEnvelope>((_resolve, reject) => {
+            rejectSearch = reject
+          }),
+      ),
+    })
+
+    await resolver.resolve('FIRST')
+    const firstSearch = resolver.searchUnknownCandidates()
+    await resolver.resolve('SECOND')
+    rejectSearch(new Error('旧候选搜索失败'))
+    await firstSearch
+
+    expect(resolver.scannedValue.value).toBe('SECOND')
+    expect(resolver.status.value).toBe('unknown')
+    expect(resolver.searchStatus.value).toBe('idle')
+    expect(resolver.searchResults.value).toEqual([])
+  })
+
+  it('ignores a late unknown-search rejection after scope drift', async () => {
+    const organizationId = shallowRef('org-1')
+    let rejectSearch!: (reason?: unknown) => void
+    const resolver = usePdaBarcodeResolver({
+      organizationId,
+      environmentId: 'env-1',
+      resolveBarcode: vi.fn().mockResolvedValue(envelope('unknown')),
+      searchCandidates: vi.fn(
+        () =>
+          new Promise<BusinessConsoleSearchEnvelope>((_resolve, reject) => {
+            rejectSearch = reject
+          }),
+      ),
+    })
+
+    await resolver.resolve('FIRST')
+    const firstSearch = resolver.searchUnknownCandidates()
+    organizationId.value = 'org-2'
+    await nextTick()
+    rejectSearch(new Error('旧 scope 候选搜索失败'))
+    await firstSearch
+
+    expect(resolver.scannedValue.value).toBe('')
+    expect(resolver.status.value).toBe('idle')
     expect(resolver.searchStatus.value).toBe('idle')
     expect(resolver.searchResults.value).toEqual([])
   })
