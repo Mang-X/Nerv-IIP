@@ -131,13 +131,18 @@ export function validateMergeInput(input: MergeValidationInput) {
 
   const first = input.sources[0]
   if (first) {
-    const sameContext = input.sources.every(
+    const sameSkuAndVersion = input.sources.every(
       (source) =>
-        source.skuId === first.skuId &&
-        source.productionVersionId === first.productionVersionId &&
-        source.uomCode === first.uomCode,
+        source.skuId === first.skuId && source.productionVersionId === first.productionVersionId,
     )
-    if (!sameContext) errors.push('只能合并 SKU、生产版本和单位都相同的工单。')
+    if (!sameSkuAndVersion) errors.push('只能合并 SKU、生产版本和单位都相同的工单。')
+
+    const units = input.sources.map((source) => source.uomCode?.trim() || undefined)
+    if (units.some((unit) => !unit)) {
+      errors.push('合并源工单的单位信息未取得，无法确认数量单位；请刷新列表后重试。')
+    } else if (units.some((unit) => unit !== units[0])) {
+      errors.push('只能合并 SKU、生产版本和单位都相同的工单。')
+    }
 
     const transformable = input.sources.every((source) =>
       ['created', 'released'].includes((source.status ?? '').toLowerCase()),

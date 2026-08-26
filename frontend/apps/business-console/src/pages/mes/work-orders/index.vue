@@ -23,7 +23,10 @@ import WorkOrderTransformationDialog, {
   type SplitTransformationSubmit,
   type WorkOrderTransformationState,
 } from '@/components/mes/WorkOrderTransformationDialog.vue'
-import { isTransformationConflict } from '@/composables/mes/workOrderTransformation'
+import {
+  isTransformationConflict,
+  type WorkOrderTransformationSource,
+} from '@/composables/mes/workOrderTransformation'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -217,7 +220,9 @@ const mergeState = ref<WorkOrderTransformationState>('idle')
 const mergeError = ref('')
 const mergeResult = shallowRef<MesWorkOrderTransformationResult | null>(null)
 const mergeIdempotencyKey = ref('')
-const mergeSources = computed(() =>
+const mergeSources = computed<
+  Array<WorkOrderTransformationSource & { label?: string; skuLabel?: string }>
+>(() =>
   selectedWorkOrderIds.value
     .map((id) => workOrders.value.find((order) => rowKey(order) === id))
     .filter((order): order is Row & { workOrderId: string } => Boolean(order?.workOrderId))
@@ -228,8 +233,15 @@ const mergeSources = computed(() =>
       skuId: order.skuId,
       productionVersionId: order.productionVersionId,
       quantity: order.quantity,
+      // PR-C 当前列表读契约没有返回 UOM；保留缺失值，让合并校验 fail-closed。
+      uomCode: undefined,
       status: order.status,
     })),
+)
+const mergeUnitUnavailable = computed(
+  () =>
+    selectedWorkOrderIds.value.length >= 2 &&
+    mergeSources.value.some((source) => !source.uomCode?.trim()),
 )
 const mergeButtonDisabled = computed(
   () =>
@@ -237,8 +249,18 @@ const mergeButtonDisabled = computed(
     !workOrderManageScopeReady.value ||
     workOrderManageScopePending.value ||
     selectedWorkOrderIds.value.length < 2 ||
+    mergeUnitUnavailable.value ||
     Boolean(mergeState.value === 'loading'),
 )
+const mergeButtonTitle = computed(() => {
+  if (mergeUnitUnavailable.value) {
+    return '选中的工单未返回单位信息，无法确认数量单位；请刷新列表后重试。'
+  }
+  if (mergeButtonDisabled.value) {
+    return '请选择至少两个工单，并确认当前主体具有工单管理权限。'
+  }
+  return '将选中工单合并为新的工单'
+})
 const mergePending = computed(
   () => workOrderTransformations.mergeWorkOrdersPending.value || mergeState.value === 'loading',
 )
@@ -810,16 +832,20 @@ function isNonEmpty(value: string) {
           size="sm"
           variant="outline"
           :disabled="mergeButtonDisabled"
-          :title="
-            mergeButtonDisabled
-              ? '请选择至少两个工单，并确认当前主体具有工单管理权限。'
-              : '将选中工单合并为新的工单'
-          "
+          :title="mergeButtonTitle"
           data-testid="open-merge-work-orders"
           @click="openMergeDialog"
         >
           合并选中工单
         </NvButton>
+        <span
+          v-if="mergeUnitUnavailable"
+          class="text-xs text-destructive"
+          role="alert"
+          data-testid="merge-unit-unavailable"
+        >
+          选中的工单未返回单位信息，无法确认数量单位；请刷新列表后重试。
+        </span>
       </template>
       <template #cell-workOrderId="{ row }">
         <RouterLink

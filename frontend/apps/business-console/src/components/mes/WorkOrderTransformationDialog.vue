@@ -322,14 +322,14 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           >
             <span class="font-medium">{{ source.label || source.workOrderId }}</span>
             <span class="tabular-nums text-muted-foreground"
-              >{{ source.quantity ?? '未取得' }} {{ source.uomCode || '' }} ·
+              >{{ source.quantity ?? '未取得' }} {{ source.uomCode || '单位未取得' }} ·
               {{ source.status || '未知状态' }}</span
             >
           </div>
           <p class="text-xs text-muted-foreground">
             目标数量将自动合计为
             {{ sources.reduce((total, source) => total + (source.quantity ?? 0), 0) }}
-            {{ sources[0]?.uomCode || '' }}。
+            {{ sources[0]?.uomCode || '单位未取得' }}。
           </p>
         </section>
 

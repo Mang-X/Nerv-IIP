@@ -106,6 +106,33 @@ describe('工单拆分与合并前端校验', () => {
     ).toContain('只能合并 SKU、生产版本和单位都相同的工单。')
   })
 
+  it('单位缺失时 fail-closed，不把两个未知单位当作相同单位', () => {
+    expect(
+      validateMergeInput({
+        sources: [
+          {
+            workOrderId: 'WO-1',
+            skuId: 'SKU-1',
+            productionVersionId: 'PV-1',
+            uomCode: 'PCS',
+            quantity: 2,
+            status: 'created',
+          },
+          {
+            workOrderId: 'WO-2',
+            skuId: 'SKU-1',
+            productionVersionId: 'PV-1',
+            uomCode: undefined,
+            quantity: 3,
+            status: 'released',
+          },
+        ],
+        targetWorkOrderId: 'WO-NEW',
+        reason: '同 SKU 小单合并',
+      }),
+    ).toContain('合并源工单的单位信息未取得，无法确认数量单位；请刷新列表后重试。')
+  })
+
   it('将 HTTP 409 或冲突文案归入冲突态', () => {
     expect(isTransformationConflict({ response: { status: 409 } })).toBe(true)
     expect(isTransformationConflict(new Error('work-order transformation conflict'))).toBe(true)

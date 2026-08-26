@@ -73,7 +73,7 @@ describe('WorkOrderTransformationDialog', () => {
     )
   })
 
-  it('合并同上下文工单并显示 409 冲突态', async () => {
+  it('合并同 SKU、生产版本和单位的工单', async () => {
     const wrapper = mountDialog({
       mode: 'merge',
       idempotencyKey: 'merge-test-1',
@@ -82,6 +82,7 @@ describe('WorkOrderTransformationDialog', () => {
           workOrderId: 'WO-1',
           skuId: 'SKU-1',
           productionVersionId: 'PV-1',
+          uomCode: 'PCS',
           quantity: 2,
           status: 'created',
         },
@@ -89,11 +90,11 @@ describe('WorkOrderTransformationDialog', () => {
           workOrderId: 'WO-2',
           skuId: 'SKU-1',
           productionVersionId: 'PV-1',
+          uomCode: 'PCS',
           quantity: 3,
           status: 'released',
         },
       ],
-      state: 'conflict',
     })
     await wrapper.find('#merge-target-work-order').setValue('WO-NEW')
     await wrapper.find('#merge-reason').setValue('同 SKU 小单合并')
@@ -105,6 +106,85 @@ describe('WorkOrderTransformationDialog', () => {
       reason: '同 SKU 小单合并',
       idempotencyKey: 'merge-test-1',
     })
+  })
+
+  it('缺少合并单位时显示可行动校验并不提交', async () => {
+    const wrapper = mountDialog({
+      mode: 'merge',
+      idempotencyKey: 'merge-missing-uom',
+      sources: [
+        {
+          workOrderId: 'WO-1',
+          skuId: 'SKU-1',
+          productionVersionId: 'PV-1',
+          uomCode: 'PCS',
+          quantity: 2,
+          status: 'created',
+        },
+        {
+          workOrderId: 'WO-2',
+          skuId: 'SKU-1',
+          productionVersionId: 'PV-1',
+          quantity: 3,
+          status: 'released',
+        },
+      ],
+    })
+    await wrapper.find('#merge-target-work-order').setValue('WO-NEW')
+    await wrapper.find('#merge-reason').setValue('同 SKU 小单合并')
+    await wrapper.find('[data-testid="submit-work-order-transformation"]').trigger('click')
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(wrapper.find('[data-testid="transformation-validation-errors"]').text()).toContain(
+      '单位信息未取得，无法确认数量单位；请刷新列表后重试。',
+    )
+  })
+
+  it('不同合并单位时显示校验并不提交', async () => {
+    const wrapper = mountDialog({
+      mode: 'merge',
+      idempotencyKey: 'merge-different-uom',
+      sources: [
+        {
+          workOrderId: 'WO-1',
+          skuId: 'SKU-1',
+          productionVersionId: 'PV-1',
+          uomCode: 'PCS',
+          quantity: 2,
+          status: 'created',
+        },
+        {
+          workOrderId: 'WO-2',
+          skuId: 'SKU-1',
+          productionVersionId: 'PV-1',
+          uomCode: 'EA',
+          quantity: 3,
+          status: 'released',
+        },
+      ],
+    })
+    await wrapper.find('#merge-target-work-order').setValue('WO-NEW')
+    await wrapper.find('#merge-reason').setValue('同 SKU 小单合并')
+    await wrapper.find('[data-testid="submit-work-order-transformation"]').trigger('click')
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(wrapper.find('[data-testid="transformation-validation-errors"]').text()).toContain(
+      '只能合并 SKU、生产版本和单位都相同的工单。',
+    )
+  })
+
+  it('渲染由父级映射的 409 冲突态，不把预置状态当作请求证据', () => {
+    const wrapper = mountDialog({
+      mode: 'merge',
+      state: 'conflict',
+      errorMessage: '服务端返回冲突',
+      sources: [
+        { workOrderId: 'WO-1', skuId: 'SKU-1', uomCode: 'PCS', status: 'created' },
+        { workOrderId: 'WO-2', skuId: 'SKU-1', uomCode: 'PCS', status: 'released' },
+      ],
+    })
+
     expect(wrapper.find('[data-testid="transformation-status"]').text()).toContain('409')
+    expect(wrapper.emitted('submit')).toBeUndefined()
   })
 })

@@ -206,6 +206,8 @@ const splitSource = computed(() =>
         skuLabel: skuLabel.value,
         productionVersionId: detail.value.productionVersionId,
         quantity: detail.value.quantity,
+        // PR-C 当前详情读契约没有返回 UOM；拆分结果由服务端继承单位，页面不猜测。
+        uomCode: undefined,
         status: detail.value.status,
       }
     : undefined,
