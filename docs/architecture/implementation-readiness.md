@@ -485,7 +485,7 @@ review follow-up 真实栈 session `nerv-bad6-17be94` 已将 `mes-task-productio
 4. SKU / 工作中心 / 工序 / 员工标识在 MasterData、ProductEngineering、IndustrialTelemetry、IAM 四侧按同一字面量重复声明，每侧各有黄金向量测试防止跨服务漂移。
 5. 采集清单里的绑定一律登记为 `pending`：种子只声明「该点位配置上归属该连接器」。**连接器是否在线由 L3 常驻模拟/真实连接器心跳决定，本块不伪造 3 条「在线」连接**——采集健康页要显示 3 条在线连接仍需 #1086 常驻模拟接管。
 
-IAM 侧同时补齐了工人档案：`iam.users` 新增可空列 `DisplayName` / `EmployeeNo` / `DepartmentName`（migration `20260726055246_AddUserWorkerProfile`），内部工人目录 `GET /internal/iam/v1/workers` 原先写死的 `null` 显示名/工号/部门改为读取真实档案，缺档案时仍回落到 login name。这 58 个账号**不是可登录账号**：口令哈希取一次性随机值、强制改密、不授予任何角色或成员资格，只用于人员目录/班组/技能矩阵的展示与引用。
+IAM 侧同时补齐了工人档案：`iam.users` 新增可空列 `DisplayName` / `EmployeeNo` / `DepartmentName`（migration `20260726055246_AddUserWorkerProfile`），内部工人目录 `GET /internal/iam/v1/workers` 原先写死的 `null` 显示名/工号/部门改为读取真实档案，缺档案时仍回落到 login name。默认情况下这 58 个账号**不是可登录账号**：口令哈希取一次性随机值、强制改密、不授予任何角色或成员资格，只用于人员目录/班组/技能矩阵的展示与引用。需要独立走查 PDA/WMS worker 时，IAM 可在不打开完整 `LeaderDemo:World:Enabled` 的前提下，由当前进程注入非空 `Iam__Seed__DemoWorkerPassword` 显式开通既有四个 PDA 账号；其余人员仍保持不可登录。
 
 耗时实测（2026-07-26，Windows 10.0.26200、.NET 10.0.0、Docker PostgreSQL、`infra/docker-compose.dev.yml` 的共享开发实例）：
 
