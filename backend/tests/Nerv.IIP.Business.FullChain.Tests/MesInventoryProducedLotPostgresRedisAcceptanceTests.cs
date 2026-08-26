@@ -85,7 +85,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             pendingEvent.EventId,
         };
         Assert.Equal(5, allEventIds.Distinct(StringComparer.Ordinal).Count());
-        Assert.NotEqual(source.ClientSuppliedUnitCost, source.ErpCapitalizedUnitCost);
+        Assert.NotEqual(ErpCapitalizedUnitCost, source.ClientSuppliedUnitCost);
         Assert.Equal(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
         Assert.Equal(source.ClientSuppliedUnitCost, successReplayEvent.Payload.UnitCost);
         Assert.Equal(source.ClientSuppliedUnitCost, failureEvent.Payload.UnitCost);
@@ -160,8 +160,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && state.Mes.SuccessMovementId is not null
                     && state.Mes.FailureStatus == "InventoryPostingFailed"
                     && !string.IsNullOrWhiteSpace(state.Mes.FailureCode)
-                    && state.Mes.SuccessUnitCost == source.ErpCapitalizedUnitCost
-                    && state.Mes.ErpCapitalizedUnitCost == source.ErpCapitalizedUnitCost
+                    && state.Mes.SuccessUnitCost == ErpCapitalizedUnitCost
+                    && state.Mes.ErpCapitalizedUnitCost == ErpCapitalizedUnitCost
                     && state.Mes.PendingStatus == "Requested"
                     && state.Mes.PendingUnitCost is null
                     && state.Mes.PendingErpCapitalizedUnitCost is null
@@ -169,11 +169,12 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && state.Inventory.SuccessMovementCount == 1
                     && state.Inventory.FailureMovementCount == 0
                     && state.Inventory.PendingMovementCount == 0
-                    && state.Inventory.SuccessRequestedUnitCost == source.ErpCapitalizedUnitCost
-                    && state.Inventory.SuccessUnitCost == source.ErpCapitalizedUnitCost
-                    && state.Inventory.SuccessMovementAmount == ReceiptQuantity * source.ErpCapitalizedUnitCost
-                    && state.Inventory.LedgerMovingAverageUnitCost == source.ErpCapitalizedUnitCost
-                    && state.Inventory.LedgerInventoryValue == ReceiptQuantity * source.ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessRequestedUnitCost == ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessUnitCost == ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessQuantity == ReceiptQuantity
+                    && state.Inventory.SuccessMovementAmount == ReceiptQuantity * ErpCapitalizedUnitCost
+                    && state.Inventory.LedgerMovingAverageUnitCost == ErpCapitalizedUnitCost
+                    && state.Inventory.LedgerInventoryValue == ReceiptQuantity * ErpCapitalizedUnitCost
                     && CaptureObservedTransportFacts(
                         state.Messaging,
                         requiredTransportEventIds,
@@ -193,6 +194,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     $"MesUnitCost={state.Mes.SuccessUnitCost}, " +
                     $"RequestedUnitCost={state.Inventory.SuccessRequestedUnitCost}, " +
                     $"EffectiveUnitCost={state.Inventory.SuccessUnitCost}, " +
+                    $"MovementQuantity={state.Inventory.SuccessQuantity}, " +
                     $"MovementAmount={state.Inventory.SuccessMovementAmount}, " +
                     $"LedgerMovingAverage={state.Inventory.LedgerMovingAverageUnitCost}, " +
                     $"LedgerValue={state.Inventory.LedgerInventoryValue}",
@@ -205,17 +207,24 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal(source.WorkOrderId, observed.Inventory.SuccessSourceDocumentLineId);
             Assert.Equal("business-mes", observed.Inventory.SuccessSourceService);
             Assert.Equal(0, observed.Inventory.SimilarSourceMovementCount);
-            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Mes.SuccessUnitCost);
-            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Inventory.SuccessRequestedUnitCost);
-            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Inventory.SuccessUnitCost);
-            Assert.Equal(ReceiptQuantity * source.ErpCapitalizedUnitCost, observed.Inventory.SuccessMovementAmount);
-            Assert.Equal(source.ErpCapitalizedUnitCost, observed.Inventory.LedgerMovingAverageUnitCost);
-            Assert.Equal(ReceiptQuantity * source.ErpCapitalizedUnitCost, observed.Inventory.LedgerInventoryValue);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Mes.SuccessUnitCost);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Inventory.SuccessRequestedUnitCost);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Inventory.SuccessUnitCost);
+            Assert.Equal(ReceiptQuantity, observed.Inventory.SuccessQuantity);
+            Assert.Equal(ReceiptQuantity * ErpCapitalizedUnitCost, observed.Inventory.SuccessMovementAmount);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Inventory.LedgerMovingAverageUnitCost);
+            Assert.Equal(ReceiptQuantity * ErpCapitalizedUnitCost, observed.Inventory.LedgerInventoryValue);
             Assert.Equal("Requested", observed.Mes.PendingStatus);
             Assert.Null(observed.Mes.PendingUnitCost);
             Assert.Null(observed.Mes.PendingErpCapitalizedUnitCost);
             Assert.Equal(0L, observed.Mes.PendingAuthorityProvenanceCount);
             Assert.Equal(0, observed.Inventory.PendingMovementCount);
+
+            var finalInventory = await ReadInventoryFactsAsync(
+                inventoryPostgres,
+                source,
+                CancellationToken.None);
+            Assert.Equal(ReceiptQuantity, finalInventory.SuccessQuantity);
             Assert.True(observedTransportFacts.Keys.ToHashSet(StringComparer.Ordinal)
                 .SetEquals(requiredTransportEventIds));
 

@@ -87,7 +87,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Single(failureReceipt.GetDomainEvents()));
         var generatedSuccessEvent = converter.Convert(successDomainEvent);
         var generatedFailureEvent = converter.Convert(failureDomainEvent);
-        Assert.Equal(source.ErpCapitalizedUnitCost, generatedSuccessEvent.Payload.UnitCost);
+        Assert.Equal(ErpCapitalizedUnitCost, generatedSuccessEvent.Payload.UnitCost);
         Assert.Equal(
             InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
             generatedSuccessEvent.Payload.UnitCostAuthorityReference);
@@ -157,8 +157,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 UnitCost: source.ClientSuppliedUnitCost,
                 UnitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt));
 
-        Assert.Equal(source.ErpCapitalizedUnitCost, successReceipt.UnitCost);
-        Assert.Equal(source.ErpCapitalizedUnitCost, failureReceipt.UnitCost);
+        Assert.Equal(ErpCapitalizedUnitCost, successReceipt.UnitCost);
+        Assert.Equal(ErpCapitalizedUnitCost, failureReceipt.UnitCost);
         Assert.Null(pendingReceipt.UnitCost);
         Assert.Empty(pendingReceipt.GetDomainEvents());
         Assert.NotEqual(source.ClientSuppliedUnitCost, successReceipt.UnitCost);
@@ -307,7 +307,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             $"LOT-MAN528-F-{suffix}",
             $"LOT-MAN528-PENDING-{suffix}",
             ClientSuppliedUnitCost,
-            0m,
             probeRunId);
 
         await using var transaction = await connection.BeginTransactionAsync();
@@ -372,10 +371,12 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         authority.Parameters.AddWithValue("environment_id", source.EnvironmentId);
         authority.Parameters.AddWithValue("work_order_id", source.WorkOrderId);
         var authorityValue = await authority.ExecuteScalarAsync();
-        if (authorityValue is not decimal erpCapitalizedUnitCost)
+        if (authorityValue is not decimal authorityReadbackCost)
         {
             throw new InvalidOperationException("MAN-528 probe could not read the ERP-authoritative capitalized unit cost projection.");
         }
+        // The fixed 12.34m value is the independent contract; PostgreSQL readback is only the observed authority fact.
+        Assert.Equal(ErpCapitalizedUnitCost, authorityReadbackCost);
 
         await using var provenanceReadback = connection.CreateCommand();
         provenanceReadback.CommandText = """
@@ -398,7 +399,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             throw new InvalidOperationException("MAN-528 probe could not read back the successful ERP authority provenance projection.");
         }
 
-        return source with { ErpCapitalizedUnitCost = erpCapitalizedUnitCost };
+        return source;
     }
 
     private static async Task<ReceiptFacts> ReadMesFactsAsync(
@@ -498,7 +499,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         command.CommandType = CommandType.Text;
         command.CommandText = """
             SELECT source_document_id, source_service, source_document_line_id, lot_no,
-                   requested_unit_cost, unit_cost, movement_amount
+                   requested_unit_cost, unit_cost, quantity, movement_amount
             FROM inventory.stock_movements
             WHERE organization_id = @organization_id
               AND environment_id = @environment_id
@@ -520,6 +521,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? successLotNo = null;
         decimal? successRequestedUnitCost = null;
         decimal? successUnitCost = null;
+        decimal? successQuantity = null;
         decimal? successMovementAmount = null;
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
@@ -534,7 +536,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     successLotNo = reader.IsDBNull(3) ? null : reader.GetString(3);
                     successRequestedUnitCost = reader.IsDBNull(4) ? null : reader.GetDecimal(4);
                     successUnitCost = reader.IsDBNull(5) ? null : reader.GetDecimal(5);
-                    successMovementAmount = reader.IsDBNull(6) ? null : reader.GetDecimal(6);
+                    successQuantity = reader.IsDBNull(6) ? null : reader.GetDecimal(6);
+                    successMovementAmount = reader.IsDBNull(7) ? null : reader.GetDecimal(7);
                 }
                 else if (requestNo == source.FailureRequestNo)
                 {
@@ -593,6 +596,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             successLotNo,
             successRequestedUnitCost,
             successUnitCost,
+            successQuantity,
             successMovementAmount,
             ledgerMovingAverageUnitCost,
             ledgerInventoryValue);
@@ -612,7 +616,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string FailureLotNo,
         string PendingLotNo,
         decimal ClientSuppliedUnitCost,
-        decimal ErpCapitalizedUnitCost,
         string ProbeRunId);
 
     private sealed record ReceiptBoundaryFacts(
@@ -649,6 +652,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? SuccessLotNo,
         decimal? SuccessRequestedUnitCost,
         decimal? SuccessUnitCost,
+        decimal? SuccessQuantity,
         decimal? SuccessMovementAmount,
         decimal? LedgerMovingAverageUnitCost,
         decimal? LedgerInventoryValue);
