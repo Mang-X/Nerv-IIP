@@ -3925,6 +3925,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     allowedActions?: Array<string> | null;
     blockReasons?: Array<string> | null;
     evaluatedAtUtc?: string | null;
+    /**
+     * 工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    actualLaborHours?: number | null;
+    /**
+     * 工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    actualMachineHours?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
@@ -4328,6 +4336,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     reversalReportNo?: string | null;
     producedLotNo?: string | null;
     serialNo?: string | null;
+    /**
+     * 对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualLaborHours?: number | null;
+    /**
+     * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualMachineHours?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {
@@ -4366,6 +4382,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inventoryPostingFailedAtUtc?: string | null;
     workOrderStatus?: string | null;
     reversalReportNo?: string | null;
+    /**
+     * 对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualLaborHours?: number | null;
+    /**
+     * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualMachineHours?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {

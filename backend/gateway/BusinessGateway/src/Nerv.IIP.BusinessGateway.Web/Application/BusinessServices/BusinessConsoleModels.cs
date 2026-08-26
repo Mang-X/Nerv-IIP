@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
@@ -4900,7 +4901,11 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? TeamName = null,
     IReadOnlyCollection<string>? AllowedActions = null,
     IReadOnlyCollection<string>? BlockReasons = null,
-    DateTimeOffset? EvaluatedAtUtc = null);
+    DateTimeOffset? EvaluatedAtUtc = null,
+    [property: Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? ActualLaborHours = null,
+    [property: Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? ActualMachineHours = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4970,7 +4975,11 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null,
     string? WorkOrderStatus = null,
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualLaborHours = null,
+    [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualMachineHours = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5019,7 +5028,11 @@ public sealed record BusinessConsoleMesProductionReportRow(
     // MES 已生成的产出批次(见 CreateFinishedGoodsReceiptRequestCommandHandler),Console 据此让操作员从工单
     // 真实报工产出中选择 producedLotNo,而非前端伪造(MAN-445/#799 review)。
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualLaborHours = null,
+    [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualMachineHours = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
