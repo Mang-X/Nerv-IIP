@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text;
 using System.Text.Json;
 using DotNetCore.CAP;
 using MediatR;
@@ -841,6 +842,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                         eventId,
                         eventIdempotencyKeys[eventId],
                         nameof(InventoryMovementRequestedIntegrationEvent),
+                        InventoryIntegrationEventTypes.InventoryMovementRequested,
                         publishedReader.IsDBNull(0) ? null : publishedReader.GetString(0)))
                     {
                         publishedCount++;
@@ -869,6 +871,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                         eventId,
                         eventIdempotencyKeys[eventId],
                         nameof(InventoryMovementRequestedIntegrationEvent),
+                        InventoryIntegrationEventTypes.InventoryMovementRequested,
                         receivedReader.IsDBNull(0) ? null : receivedReader.GetString(0)))
                     {
                         receivedCount++;
@@ -960,12 +963,12 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 pendingMessage.MessageId,
                 pendingMessage.MessageId,
                 1);
-            if (entries.SelectMany(entry => entry.Values)
-                .Any(value => ContentMatchesEvent(
-                    value.Value.ToString(),
+            if (entries.Any(entry => RedisStreamEntryMatchesEvent(
+                    entry,
                     eventId,
                     idempotencyKey,
-                    nameof(InventoryMovementRequestedIntegrationEvent))))
+                    nameof(InventoryMovementRequestedIntegrationEvent),
+                    InventoryIntegrationEventTypes.InventoryMovementRequested)))
             {
                 return new PendingRedisFact(
                     true,
@@ -984,13 +987,21 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string content,
         string eventId,
         string idempotencyKey,
-        string eventType,
+        string expectedTopic,
+        string expectedEventType,
         string? tableName = null)
     {
         try
         {
             using var document = JsonDocument.Parse(content);
-            return JsonObjectMatchesAny(document.RootElement, eventId, idempotencyKey, eventType, tableName);
+            return JsonObjectMatchesAny(
+                document.RootElement,
+                eventId,
+                idempotencyKey,
+                expectedTopic,
+                expectedEventType,
+                tableName,
+                inheritedHeaderTopic: null);
         }
         catch (JsonException)
         {
@@ -998,28 +1009,105 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
     }
 
+    private static bool RedisStreamEntryMatchesEvent(
+        StreamEntry entry,
+        string eventId,
+        string idempotencyKey,
+        string expectedTopic,
+        string expectedEventType)
+    {
+        RedisValue headers = RedisValue.Null;
+        RedisValue body = RedisValue.Null;
+        var hasBody = false;
+        foreach (var field in entry.Values)
+        {
+            if (field.Name.ToString().Equals("headers", StringComparison.OrdinalIgnoreCase))
+            {
+                headers = field.Value;
+            }
+            else if (field.Name.ToString().Equals("body", StringComparison.OrdinalIgnoreCase))
+            {
+                body = field.Value;
+                hasBody = true;
+            }
+        }
+
+        if (!hasBody)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var bodyDocument = JsonDocument.Parse(RedisValueToUtf8(body));
+            return JsonObjectMatchesAny(
+                bodyDocument.RootElement,
+                eventId,
+                idempotencyKey,
+                expectedTopic,
+                expectedEventType,
+                tableName: null,
+                inheritedHeaderTopic: ReadHeaderTopicJson(RedisValueToUtf8(headers)));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string RedisValueToUtf8(RedisValue value)
+    {
+        var bytes = (byte[]?)value;
+        return bytes is null ? string.Empty : Encoding.UTF8.GetString(bytes);
+    }
+
     private static bool JsonObjectMatchesAny(
         JsonElement element,
         string eventId,
         string idempotencyKey,
-        string eventType,
-        string? tableName)
+        string expectedTopic,
+        string expectedEventType,
+        string? tableName,
+        string? inheritedHeaderTopic)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            if (JsonObjectMatches(element, eventId, idempotencyKey, eventType, tableName))
+            var headerTopic = ReadHeaderTopic(element) ?? inheritedHeaderTopic;
+            if (JsonObjectMatches(
+                    element,
+                    eventId,
+                    idempotencyKey,
+                    expectedTopic,
+                    expectedEventType,
+                    tableName,
+                    headerTopic))
             {
                 return true;
             }
 
             return element.EnumerateObject()
-                .Any(property => JsonObjectMatchesAny(property.Value, eventId, idempotencyKey, eventType, null));
+                .Where(property => !property.Name.Equals("Headers", StringComparison.OrdinalIgnoreCase))
+                .Any(property => JsonObjectMatchesAny(
+                    property.Value,
+                    eventId,
+                    idempotencyKey,
+                    expectedTopic,
+                    expectedEventType,
+                    tableName,
+                    headerTopic));
         }
 
         if (element.ValueKind == JsonValueKind.Array)
         {
             return element.EnumerateArray()
-                .Any(item => JsonObjectMatchesAny(item, eventId, idempotencyKey, eventType, null));
+                .Any(item => JsonObjectMatchesAny(
+                    item,
+                    eventId,
+                    idempotencyKey,
+                    expectedTopic,
+                    expectedEventType,
+                    tableName,
+                    inheritedHeaderTopic));
         }
 
         if (element.ValueKind == JsonValueKind.String &&
@@ -1029,7 +1117,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         {
             using (nestedDocument)
             {
-                return JsonObjectMatchesAny(nestedDocument!.RootElement, eventId, idempotencyKey, eventType, null);
+                return JsonObjectMatchesAny(
+                    nestedDocument!.RootElement,
+                    eventId,
+                    idempotencyKey,
+                    expectedTopic,
+                    expectedEventType,
+                    tableName,
+                    inheritedHeaderTopic);
             }
         }
 
@@ -1040,19 +1135,93 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         JsonElement element,
         string eventId,
         string idempotencyKey,
-        string eventType,
-        string? tableName)
+        string expectedTopic,
+        string expectedEventType,
+        string? tableName,
+        string? headerTopic)
     {
         var properties = element.EnumerateObject()
             .ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
         var candidateEventId = ReadDirectJsonString(properties, "EventId");
         var candidateIdempotencyKey = ReadDirectJsonString(properties, "IdempotencyKey");
         var candidateEventType = ReadDirectJsonString(properties, "EventType");
-        var candidateName = ReadDirectJsonString(properties, "Name");
-        var typeMatches = candidateEventType == eventType || candidateName == eventType ||
-            (candidateEventType is null && candidateName is null && tableName == eventType);
+        var topicMatches = (tableName is null || tableName == expectedTopic) &&
+            (headerTopic is null || headerTopic == expectedTopic) &&
+            (tableName == expectedTopic || headerTopic == expectedTopic);
 
-        return candidateEventId == eventId && candidateIdempotencyKey == idempotencyKey && typeMatches;
+        return candidateEventId == eventId &&
+            candidateIdempotencyKey == idempotencyKey &&
+            candidateEventType == expectedEventType &&
+            topicMatches;
+    }
+
+    private static string? ReadHeaderTopic(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Name.Equals("Headers", StringComparison.OrdinalIgnoreCase))
+            {
+                if (property.Value.ValueKind == JsonValueKind.Object)
+                {
+                    return ReadDirectJsonString(property.Value, "cap-msg-name");
+                }
+
+                if (property.Value.ValueKind == JsonValueKind.String &&
+                    property.Value.GetString() is { } serializedHeaders &&
+                    TryParseJson(serializedHeaders, out var headersDocument))
+                {
+                    using (headersDocument)
+                    {
+                        return ReadHeaderTopic(headersDocument!.RootElement);
+                    }
+                }
+            }
+
+            if (property.Name.Equals("cap-msg-name", StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String)
+            {
+                return property.Value.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ReadHeaderTopicJson(string serializedHeaders)
+    {
+        if (!TryParseJson(serializedHeaders, out var headersDocument))
+        {
+            return null;
+        }
+
+        using (headersDocument)
+        {
+            return ReadHeaderTopic(headersDocument!.RootElement);
+        }
+    }
+
+    private static string? ReadDirectJsonString(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String)
+            {
+                return property.Value.GetString();
+            }
+        }
+
+        return null;
     }
 
     private static string? ReadDirectJsonString(
