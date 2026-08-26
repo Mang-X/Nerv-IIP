@@ -13,10 +13,8 @@ const minimumDisplayedHours = 0.0001
 
 function formatHours(value?: number | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '暂无实绩'
-  if (value !== 0 && Math.abs(value) < minimumDisplayedHours) {
-    const boundary = value > 0 ? minimumDisplayedHours : -minimumDisplayedHours
-    const comparison = value > 0 ? '小于' : '大于'
-    return `${comparison} ${hoursFormatter.format(boundary)} 小时`
+  if (value > 0 && value < minimumDisplayedHours) {
+    return `小于 ${hoursFormatter.format(minimumDisplayedHours)} 小时`
   }
   return `${hoursFormatter.format(value)} 小时`
 }

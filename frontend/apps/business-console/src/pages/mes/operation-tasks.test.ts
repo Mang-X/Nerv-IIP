@@ -262,13 +262,6 @@ describe('operation-tasks 排程已失效 quick filter', () => {
         actualLaborHours: 0.00004,
         actualMachineHours: 0.00004,
       },
-      {
-        operationTaskId: 'OP-TINY-NEGATIVE',
-        workOrderId: 'WO-TINY-NEGATIVE',
-        operationSequence: 50,
-        actualLaborHours: -0.00004,
-        actualMachineHours: -0.00004,
-      },
     ]
 
     const wrapper = mountPage()
@@ -276,7 +269,7 @@ describe('operation-tasks 排程已失效 quick filter', () => {
 
     expect(wrapper.text()).toContain('实际工时')
     const actualHourCells = wrapper.findAll('[data-testid="actual-hours"]')
-    expect(actualHourCells).toHaveLength(5)
+    expect(actualHourCells).toHaveLength(4)
     expect(actualHourCells[0].text()).toMatch(/人工\s*1\.25 小时/)
     expect(actualHourCells[0].text()).toMatch(/机器\s*0\.5 小时/)
     expect(actualHourCells[1].text()).toMatch(/人工\s*0 小时/)
@@ -285,7 +278,5 @@ describe('operation-tasks 排程已失效 quick filter', () => {
     expect(actualHourCells[2].text()).toMatch(/机器\s*暂无实绩/)
     expect(actualHourCells[3].text()).toMatch(/人工\s*小于 0\.0001 小时/)
     expect(actualHourCells[3].text()).toMatch(/机器\s*小于 0\.0001 小时/)
-    expect(actualHourCells[4].text()).toMatch(/人工\s*大于 -0\.0001 小时/)
-    expect(actualHourCells[4].text()).toMatch(/机器\s*大于 -0\.0001 小时/)
   })
 })
