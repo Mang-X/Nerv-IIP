@@ -24,7 +24,8 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
         var options = MesPostgresLaneDatabase.CreateOptions();
         var capturedAtUtc = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
 
-        await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
+        var setup = new ApplicationDbContext(options, new NoopMediator());
+        try
         {
             MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await TestTimeout.RunAsync(
@@ -54,8 +55,16 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 timeout: PostgresOperationTimeout,
                 cancellationToken);
         }
+        finally
+        {
+            await DisposeWithinPostgresOperationBudgetAsync(
+                setup,
+                "dispose the MES substitute snapshot PostgreSQL setup context",
+                cancellationToken);
+        }
 
-        await using (var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString))
+        var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        try
         {
             await TestTimeout.RunAsync(
                 operation: "open the MES substitute snapshot PostgreSQL proof connection",
@@ -63,25 +72,35 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 timeout: PostgresOperationTimeout,
                 cancellationToken,
                 sensitiveValues: [MesPostgresLaneDatabase.ConnectionString]);
-            await using var historyCommand = new NpgsqlCommand(
+            var historyCommand = new NpgsqlCommand(
                 """
                 SELECT count(*)
                 FROM mes."__EFMigrationsHistory"
                 WHERE "MigrationId" ~ @migration_id_pattern
                 """,
                 connection);
-            historyCommand.Parameters.AddWithValue(
-                "migration_id_pattern",
-                $"^[0-9]{{14}}_{TargetMigrationName}$");
-            var migrationCount = await TestTimeout.RunAsync(
-                operation: "read the MES substitute snapshot migration history on PostgreSQL",
-                action: async token => (long)(await historyCommand.ExecuteScalarAsync(token))!,
-                timeout: PostgresOperationTimeout,
-                cancellationToken);
-            Assert.Equal(1L, migrationCount);
+            try
+            {
+                historyCommand.Parameters.AddWithValue(
+                    "migration_id_pattern",
+                    $"^[0-9]{{14}}_{TargetMigrationName}$");
+                var migrationCount = await TestTimeout.RunAsync(
+                    operation: "read the MES substitute snapshot migration history on PostgreSQL",
+                    action: async token => (long)(await historyCommand.ExecuteScalarAsync(token))!,
+                    timeout: PostgresOperationTimeout,
+                    cancellationToken);
+                Assert.Equal(1L, migrationCount);
+            }
+            finally
+            {
+                await DisposeWithinPostgresOperationBudgetAsync(
+                    historyCommand,
+                    "dispose the MES substitute snapshot PostgreSQL migration history command",
+                    cancellationToken);
+            }
 
             var columns = new Dictionary<string, ColumnDefinition>(StringComparer.Ordinal);
-            await using var columnsCommand = new NpgsqlCommand(
+            var columnsCommand = new NpgsqlCommand(
                 """
                 SELECT table_name, column_name, data_type, character_maximum_length, is_nullable, column_default
                 FROM information_schema.columns
@@ -92,34 +111,54 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 ORDER BY table_name, column_name
                 """,
                 connection);
-            await using var reader = await TestTimeout.RunAsync(
-                operation: "query the MES substitute snapshot columns on PostgreSQL",
-                action: async token => await columnsCommand.ExecuteReaderAsync(token),
-                timeout: PostgresOperationTimeout,
-                cancellationToken);
-            while (await TestTimeout.RunAsync(
-                       operation: "read the next MES substitute snapshot column on PostgreSQL",
-                       action: async token => await reader.ReadAsync(token),
-                       timeout: PostgresOperationTimeout,
-                       cancellationToken))
+            try
             {
-                var maximumLengthIsNull = await TestTimeout.RunAsync(
-                    operation: "read the MES substitute snapshot column length nullability on PostgreSQL",
-                    action: async token => await reader.IsDBNullAsync(3, token),
+                var reader = await TestTimeout.RunAsync(
+                    operation: "query the MES substitute snapshot columns on PostgreSQL",
+                    action: async token => await columnsCommand.ExecuteReaderAsync(token),
                     timeout: PostgresOperationTimeout,
                     cancellationToken);
-                var defaultValueIsNull = await TestTimeout.RunAsync(
-                    operation: "read the MES substitute snapshot column default nullability on PostgreSQL",
-                    action: async token => await reader.IsDBNullAsync(5, token),
-                    timeout: PostgresOperationTimeout,
+                try
+                {
+                    while (await TestTimeout.RunAsync(
+                               operation: "read the next MES substitute snapshot column on PostgreSQL",
+                               action: async token => await reader.ReadAsync(token),
+                               timeout: PostgresOperationTimeout,
+                               cancellationToken))
+                    {
+                        var maximumLengthIsNull = await TestTimeout.RunAsync(
+                            operation: "read the MES substitute snapshot column length nullability on PostgreSQL",
+                            action: async token => await reader.IsDBNullAsync(3, token),
+                            timeout: PostgresOperationTimeout,
+                            cancellationToken);
+                        var defaultValueIsNull = await TestTimeout.RunAsync(
+                            operation: "read the MES substitute snapshot column default nullability on PostgreSQL",
+                            action: async token => await reader.IsDBNullAsync(5, token),
+                            timeout: PostgresOperationTimeout,
+                            cancellationToken);
+                        columns.Add(
+                            $"{reader.GetString(0)}.{reader.GetString(1)}",
+                            new ColumnDefinition(
+                                reader.GetString(2),
+                                maximumLengthIsNull ? null : reader.GetInt32(3),
+                                reader.GetString(4),
+                                defaultValueIsNull ? null : reader.GetString(5)));
+                    }
+                }
+                finally
+                {
+                    await DisposeWithinPostgresOperationBudgetAsync(
+                        reader,
+                        "dispose the MES substitute snapshot PostgreSQL column reader",
+                        cancellationToken);
+                }
+            }
+            finally
+            {
+                await DisposeWithinPostgresOperationBudgetAsync(
+                    columnsCommand,
+                    "dispose the MES substitute snapshot PostgreSQL columns command",
                     cancellationToken);
-                columns.Add(
-                    $"{reader.GetString(0)}.{reader.GetString(1)}",
-                    new ColumnDefinition(
-                        reader.GetString(2),
-                        maximumLengthIsNull ? null : reader.GetInt32(3),
-                        reader.GetString(4),
-                        defaultValueIsNull ? null : reader.GetString(5)));
             }
 
             Assert.Equal(2, columns.Count);
@@ -135,46 +174,97 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
             Assert.Equal("YES", audit.IsNullable);
             Assert.Null(audit.DefaultValue);
         }
+        finally
+        {
+            await DisposeWithinPostgresOperationBudgetAsync(
+                connection,
+                "dispose the MES substitute snapshot PostgreSQL proof connection",
+                cancellationToken,
+                [MesPostgresLaneDatabase.ConnectionString]);
+        }
 
-        await using var assertion = new ApplicationDbContext(options, new NoopMediator());
-        var requirement = await TestTimeout.RunAsync(
-            operation: "read back the MES substitute candidate snapshot on PostgreSQL",
-            action: async token => await assertion.MaterialRequirements.SingleAsync(token),
-            timeout: PostgresOperationTimeout,
-            cancellationToken);
-        var issues = await TestTimeout.RunAsync(
-            operation: "read back the MES substitute audit matrix on PostgreSQL",
-            action: async token => await assertion.MaterialIssueRequests
-                .ToDictionaryAsync(x => x.RequestNo, StringComparer.Ordinal, token),
-            timeout: PostgresOperationTimeout,
-            cancellationToken);
-        Assert.Equal(["MAT-ALT-A", "MAT-ALT-B"], requirement.GetSubstituteMaterialIds());
-        Assert.Equal("MAT-ALT-A", issues["MIR-SUBSTITUTE-PG-001"].SubstitutedMaterialId);
-        Assert.Null(issues["MIR-SUBSTITUTE-PG-NULL"].SubstitutedMaterialId);
+        var assertion = new ApplicationDbContext(options, new NoopMediator());
+        try
+        {
+            var requirement = await TestTimeout.RunAsync(
+                operation: "read back the MES substitute candidate snapshot on PostgreSQL",
+                action: async token => await assertion.MaterialRequirements.SingleAsync(token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
+            var issues = await TestTimeout.RunAsync(
+                operation: "read back the MES substitute audit matrix on PostgreSQL",
+                action: async token => await assertion.MaterialIssueRequests
+                    .ToDictionaryAsync(x => x.RequestNo, StringComparer.Ordinal, token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
+            Assert.Equal(["MAT-ALT-A", "MAT-ALT-B"], requirement.GetSubstituteMaterialIds());
+            Assert.Equal("MAT-ALT-A", issues["MIR-SUBSTITUTE-PG-001"].SubstitutedMaterialId);
+            Assert.Null(issues["MIR-SUBSTITUTE-PG-NULL"].SubstitutedMaterialId);
+        }
+        finally
+        {
+            await DisposeWithinPostgresOperationBudgetAsync(
+                assertion,
+                "dispose the MES substitute snapshot PostgreSQL assertion context",
+                cancellationToken);
+        }
     }
 
     private static async Task ResetSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
-        await TestTimeout.RunAsync(
-            operation: "open the MES substitute snapshot PostgreSQL reset connection",
-            action: async token => await connection.OpenAsync(token),
-            timeout: PostgresOperationTimeout,
-            cancellationToken,
-            sensitiveValues: [MesPostgresLaneDatabase.ConnectionString]);
-
-        foreach (var schema in new[] { MesFacts.Schema, "cap" })
+        var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        try
         {
-            var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(schema);
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
             await TestTimeout.RunAsync(
-                operation: $"reset the {schema} schema for the MES substitute snapshot PostgreSQL proof",
-                action: async token => await command.ExecuteNonQueryAsync(token),
+                operation: "open the MES substitute snapshot PostgreSQL reset connection",
+                action: async token => await connection.OpenAsync(token),
                 timeout: PostgresOperationTimeout,
-                cancellationToken);
+                cancellationToken,
+                sensitiveValues: [MesPostgresLaneDatabase.ConnectionString]);
+
+            foreach (var schema in new[] { MesFacts.Schema, "cap" })
+            {
+                var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(schema);
+                var command = connection.CreateCommand();
+                try
+                {
+                    command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+                    await TestTimeout.RunAsync(
+                        operation: $"reset the {schema} schema for the MES substitute snapshot PostgreSQL proof",
+                        action: async token => await command.ExecuteNonQueryAsync(token),
+                        timeout: PostgresOperationTimeout,
+                        cancellationToken);
+                }
+                finally
+                {
+                    await DisposeWithinPostgresOperationBudgetAsync(
+                        command,
+                        $"dispose the {schema} schema reset command for the MES substitute snapshot PostgreSQL proof",
+                        cancellationToken);
+                }
+            }
+        }
+        finally
+        {
+            await DisposeWithinPostgresOperationBudgetAsync(
+                connection,
+                "dispose the MES substitute snapshot PostgreSQL reset connection",
+                cancellationToken,
+                [MesPostgresLaneDatabase.ConnectionString]);
         }
     }
+
+    private static ValueTask DisposeWithinPostgresOperationBudgetAsync(
+        IAsyncDisposable disposable,
+        string operation,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string?>? sensitiveValues = null) =>
+        TestTimeout.RunAsync(
+            operation,
+            token => new ValueTask(disposable.DisposeAsync().AsTask().WaitAsync(token)),
+            PostgresOperationTimeout,
+            cancellationToken,
+            sensitiveValues: sensitiveValues);
 
     private sealed record ColumnDefinition(
         string DataType,
