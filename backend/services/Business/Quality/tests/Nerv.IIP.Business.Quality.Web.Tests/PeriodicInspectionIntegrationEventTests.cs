@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
+using System.Text.Json;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
@@ -14,6 +15,26 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 public sealed class PeriodicInspectionIntegrationEventTests
 {
+    [Fact]
+    public async Task Production_report_v2_wire_is_rejected_by_the_quality_v1_consumer()
+    {
+        var v2Json = JsonSerializer.Serialize(ProductionReport() with { EventVersion = 2 });
+        var deserialized = JsonSerializer.Deserialize<ProductionReportRecordedIntegrationEvent>(v2Json);
+        Assert.NotNull(deserialized);
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters).HandleAsync(deserialized, CancellationToken.None);
+
+        Assert.Empty(await dbContext.PeriodicInspectionOperations.ToListAsync());
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+    }
+
     [Fact]
     public async Task Fake_time_at_the_first_due_window_generates_one_assigned_operation_task_and_advances_watermark()
     {
