@@ -892,6 +892,11 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         redisOptions.AbortOnConnectFail = false;
         await using var redisConnection = await ConnectionMultiplexer.ConnectAsync(redisOptions);
         var redisDatabase = redisConnection.GetDatabase();
+        eventFacts = await ReadRedisEventFactsAsync(
+            redisDatabase,
+            capVersion,
+            eventIdempotencyKeys,
+            eventIds);
         var pendingEventRedisFact = await ReadPendingRedisFactAsync(
             redisConnectionString,
             capVersion,
@@ -905,6 +910,61 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             pendingAuthorityReason,
             inventoryDeadLetterCount);
     }
+
+    private static async Task<Dictionary<string, EventMessageFact>> ReadRedisEventFactsAsync(
+        IDatabase database,
+        string capVersion,
+        IReadOnlyDictionary<string, string> eventIdempotencyKeys,
+        IReadOnlyCollection<string> eventIds)
+    {
+        var stream = (RedisKey)nameof(InventoryMovementRequestedIntegrationEvent);
+        var groupName = (RedisValue)$"business-inventory.movement-requested.{capVersion}";
+        var groups = await database.StreamGroupInfoAsync(stream);
+        var group = groups.Single(x => x.Name == groupName);
+        var entries = await database.StreamRangeAsync(stream);
+        var facts = eventIds.Distinct(StringComparer.Ordinal)
+            .ToDictionary(x => x, _ => new EventMessageFact(0L, 0L), StringComparer.Ordinal);
+        var lastDeliveredId = group.LastDeliveredId!.ToString() ?? string.Empty;
+        var lastDelivered = string.IsNullOrEmpty(lastDeliveredId)
+            ? (long.MinValue, long.MinValue)
+            : ParseRedisStreamId(lastDeliveredId);
+        foreach (var entry in entries)
+        {
+            var matchedEventId = eventIds.FirstOrDefault(eventId =>
+                entry.Values.Any(value =>
+                    ContentMatchesEvent(
+                        value.Value.ToString(),
+                        eventId,
+                        eventIdempotencyKeys[eventId],
+                        nameof(InventoryMovementRequestedIntegrationEvent))));
+            if (matchedEventId is null)
+            {
+                continue;
+            }
+
+            var entryId = ParseRedisStreamId(entry.Id.ToString());
+            var current = facts[matchedEventId];
+            facts[matchedEventId] = current with
+            {
+                PublishedCount = current.PublishedCount + 1,
+                ReceivedCount = current.ReceivedCount + (IsAtOrBefore(entryId, lastDelivered) ? 1L : 0L),
+            };
+        }
+
+        return facts;
+    }
+
+    private static (long Milliseconds, long Sequence) ParseRedisStreamId(string value)
+    {
+        var parts = value.Split('-', 2);
+        return (long.Parse(parts[0]), long.Parse(parts[1]));
+    }
+
+    private static bool IsAtOrBefore(
+        (long Milliseconds, long Sequence) left,
+        (long Milliseconds, long Sequence) right) =>
+        left.Milliseconds < right.Milliseconds ||
+        (left.Milliseconds == right.Milliseconds && left.Sequence <= right.Sequence);
 
     private static void AssertEventTransport(MessagingFacts facts, string eventId)
     {
@@ -968,20 +1028,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         try
         {
             using var document = JsonDocument.Parse(content);
-            var values = document.RootElement
-                .EnumerateObject()
-                .ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
-            var hasEventType = values.TryGetValue("EventType", out var eventTypeValue) &&
-                               eventTypeValue.ValueKind == JsonValueKind.String &&
-                               eventTypeValue.GetString() == eventType;
-            var hasName = values.TryGetValue("Name", out var nameValue) &&
-                          nameValue.ValueKind == JsonValueKind.String &&
-                          nameValue.GetString() == eventType;
-            return ReadJsonString(values, "EventId") == eventId &&
-                   ReadJsonString(values, "IdempotencyKey") == idempotencyKey &&
-                   (hasEventType || hasName) &&
-                   (!values.ContainsKey("EventType") || hasEventType) &&
-                   (!values.ContainsKey("Name") || hasName);
+            var eventIds = ReadJsonStrings(document.RootElement, "EventId");
+            var idempotencyKeys = ReadJsonStrings(document.RootElement, "IdempotencyKey");
+            var eventTypes = ReadJsonStrings(document.RootElement, "EventType");
+            var names = ReadJsonStrings(document.RootElement, "Name");
+            return eventIds.Contains(eventId, StringComparer.Ordinal) &&
+                   idempotencyKeys.Contains(idempotencyKey, StringComparer.Ordinal) &&
+                   (eventTypes.Contains(eventType, StringComparer.Ordinal) ||
+                    names.Contains(eventType, StringComparer.Ordinal));
         }
         catch (JsonException)
         {
@@ -989,12 +1043,61 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
     }
 
-    private static string? ReadJsonString(
-        IReadOnlyDictionary<string, JsonElement> values,
-        string propertyName) =>
-        values.TryGetValue(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+    private static IReadOnlyList<string> ReadJsonStrings(JsonElement element, string propertyName)
+    {
+        var values = new List<string>();
+        ReadJsonStrings(element, propertyName, values);
+        return values;
+    }
+
+    private static void ReadJsonStrings(JsonElement element, string propertyName, ICollection<string> values)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.String &&
+                    property.Value.GetString() is { } value)
+                {
+                    values.Add(value);
+                }
+
+                ReadJsonStrings(property.Value, propertyName, values);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                ReadJsonStrings(item, propertyName, values);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.String &&
+                 element.GetString() is { } nested &&
+                 nested.TrimStart().StartsWith('{') &&
+                 TryParseJson(nested, out var nestedDocument))
+        {
+            using (nestedDocument)
+            {
+                ReadJsonStrings(nestedDocument!.RootElement, propertyName, values);
+            }
+        }
+    }
+
+    private static bool TryParseJson(string value, out JsonDocument? document)
+    {
+        try
+        {
+            document = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            document = null;
+            return false;
+        }
+    }
 
     private sealed record ProbeSource(
         string OrganizationId,
