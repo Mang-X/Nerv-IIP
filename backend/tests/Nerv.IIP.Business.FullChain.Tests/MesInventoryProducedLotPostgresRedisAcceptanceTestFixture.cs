@@ -462,15 +462,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             }
         }
 
-        await using var pendingMessages = connection.CreateCommand();
-        pendingMessages.CommandText = """
-            SELECT COUNT(*)
-            FROM mes.cap_published_messages
-            WHERE "Content" LIKE @pending_request_pattern;
-            """;
-        pendingMessages.Parameters.AddWithValue("pending_request_pattern", $"%{source.PendingRequestNo}%");
-        var pendingPublishedMessageCount = (long)(await pendingMessages.ExecuteScalarAsync(cancellationToken) ?? 0L);
-
         await using var pendingAuthority = connection.CreateCommand();
         pendingAuthority.CommandText = """
             SELECT COUNT(*)
@@ -493,7 +484,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             pendingStatus,
             pendingUnitCost,
             pendingErpCapitalizedUnitCost,
-            pendingPublishedMessageCount,
             pendingAuthorityProvenanceCount);
     }
 
@@ -647,7 +637,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? PendingStatus,
         decimal? PendingUnitCost,
         decimal? PendingErpCapitalizedUnitCost,
-        long PendingPublishedMessageCount,
         long PendingAuthorityProvenanceCount);
 
     private sealed record InventoryFacts(

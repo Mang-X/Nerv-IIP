@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Data;
 using System.Text;
 using System.Text.Json;
@@ -79,41 +80,53 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.False(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, "OtherTopic", eventType));
     }
 
+    [Fact]
+    public void Final_transport_evidence_rejects_duplicate_or_missing_delivery_counts()
+    {
+        var exact = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
+        {
+            ["evt-exact"] = new(1L, 1L),
+        };
+        AssertEventTransport(exact, "evt-exact");
+
+        var duplicatePublished = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
+        {
+            ["evt-exact"] = new(2L, 1L),
+        };
+        Assert.ThrowsAny<Exception>(() => AssertEventTransport(duplicatePublished, "evt-exact"));
+
+        var missingReceived = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
+        {
+            ["evt-exact"] = new(1L, 0L),
+        };
+        Assert.ThrowsAny<Exception>(() => AssertEventTransport(missingReceived, "evt-exact"));
+    }
+
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
-        string mesConnectionString,
         string inventoryConnectionString,
         string redisConnectionString,
         string capVersion,
         string pendingEventId,
         string pendingEventIdempotencyKey,
         IReadOnlyDictionary<string, string> eventIdempotencyKeys,
+        InventoryReceivedMessageSnapshot receivedMessages,
         params string[] eventIds)
     {
-        var eventFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
-        await using (var mesConnection = new NpgsqlConnection(mesConnectionString))
+        // CAP PostgreSQL deletes published rows after the Redis handoff and received rows after
+        // the consumer is acknowledged. Published evidence therefore comes from the retained Redis
+        // stream entry; received evidence is supplied by the exact-content snapshot that started
+        // before the first publish and records the row while it was still alive.
+        var eventFacts = await ReadRedisStreamHistoryFactsAsync(
+            redisConnectionString,
+            eventIdempotencyKeys,
+            eventIds);
+        receivedMessages.ThrowIfFaulted();
+        foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
         {
-            await mesConnection.OpenAsync();
-            foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
+            eventFacts[eventId] = eventFacts[eventId] with
             {
-                await using var published = mesConnection.CreateCommand();
-                published.CommandText = "SELECT \"Name\", \"Content\" FROM mes.cap_published_messages WHERE \"Content\" IS NOT NULL;";
-                var publishedCount = 0L;
-                await using var publishedReader = await published.ExecuteReaderAsync();
-                while (await publishedReader.ReadAsync())
-                {
-                    if (ContentMatchesEvent(
-                        publishedReader.GetString(1),
-                        eventId,
-                        eventIdempotencyKeys[eventId],
-                        nameof(InventoryMovementRequestedIntegrationEvent),
-                        InventoryIntegrationEventTypes.InventoryMovementRequested,
-                        publishedReader.IsDBNull(0) ? null : publishedReader.GetString(0)))
-                    {
-                        publishedCount++;
-                    }
-                }
-                eventFacts[eventId] = new EventMessageFact(publishedCount, 0L);
-            }
+                ReceivedCount = receivedMessages.GetReceivedCount(eventId),
+            };
         }
 
         long inventoryDeadLetterCount;
@@ -122,27 +135,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await using (var inventoryConnection = new NpgsqlConnection(inventoryConnectionString))
         {
             await inventoryConnection.OpenAsync();
-            foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
-            {
-                await using var consumed = inventoryConnection.CreateCommand();
-                consumed.CommandText = "SELECT \"Name\", \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
-                var receivedCount = 0L;
-                await using var receivedReader = await consumed.ExecuteReaderAsync();
-                while (await receivedReader.ReadAsync())
-                {
-                    if (ContentMatchesEvent(
-                        receivedReader.GetString(1),
-                        eventId,
-                        eventIdempotencyKeys[eventId],
-                        nameof(InventoryMovementRequestedIntegrationEvent),
-                        InventoryIntegrationEventTypes.InventoryMovementRequested,
-                        receivedReader.IsDBNull(0) ? null : receivedReader.GetString(0)))
-                    {
-                        receivedCount++;
-                    }
-                }
-                eventFacts[eventId] = eventFacts[eventId] with { ReceivedCount = receivedCount };
-            }
             await using var deadLetters = inventoryConnection.CreateCommand();
             deadLetters.CommandText = "SELECT COUNT(*) FROM inventory.integration_event_dead_letters WHERE event_id = @event_id;";
             deadLetters.Parameters.AddWithValue("event_id", pendingEventId);
@@ -175,6 +167,48 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             inventoryDeadLetterCount);
     }
 
+    private static async Task<Dictionary<string, EventMessageFact>> ReadRedisStreamHistoryFactsAsync(
+        string redisConnectionString,
+        IReadOnlyDictionary<string, string> eventIdempotencyKeys,
+        IEnumerable<string> eventIds)
+    {
+        var eventFacts = eventIds
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(
+                eventId => eventId,
+                static _ => new EventMessageFact(0L, 0L),
+                StringComparer.Ordinal);
+        var options = ConfigurationOptions.Parse(redisConnectionString);
+        options.AbortOnConnectFail = false;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(options);
+        var database = connection.GetDatabase();
+        var stream = (RedisKey)nameof(InventoryMovementRequestedIntegrationEvent);
+        var entries = await database.StreamRangeAsync(stream, "-", "+");
+        foreach (var entry in entries)
+        {
+            foreach (var (eventId, idempotencyKey) in eventIdempotencyKeys)
+            {
+                if (!eventFacts.ContainsKey(eventId) ||
+                    !RedisStreamEntryMatchesEvent(
+                        entry,
+                        eventId,
+                        idempotencyKey,
+                        nameof(InventoryMovementRequestedIntegrationEvent),
+                        InventoryIntegrationEventTypes.InventoryMovementRequested))
+                {
+                    continue;
+                }
+
+                eventFacts[eventId] = eventFacts[eventId] with
+                {
+                    PublishedCount = eventFacts[eventId].PublishedCount + 1L,
+                };
+            }
+        }
+
+        return eventFacts;
+    }
+
     private static bool CaptureObservedTransportFacts(
         MessagingFacts messaging,
         IReadOnlySet<string> requiredEventIds,
@@ -192,6 +226,23 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return observedFacts.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(requiredEventIds);
     }
 
+    private static bool CaptureObservedPendingRedisFact(
+        PendingRedisFact pendingFact,
+        string expectedEventId,
+        IDictionary<string, PendingRedisFact> observedFacts)
+    {
+        if (pendingFact.IsPresent &&
+            pendingFact.EventId == expectedEventId &&
+            pendingFact.StreamEntryId is not null &&
+            pendingFact.ConsumerName is not null &&
+            pendingFact.DeliveryCount >= 1)
+        {
+            observedFacts[expectedEventId] = pendingFact;
+        }
+
+        return observedFacts.ContainsKey(expectedEventId);
+    }
+
     private static void AssertEventTransport(
         IReadOnlyDictionary<string, EventMessageFact> eventFacts,
         string eventId)
@@ -199,6 +250,132 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         var eventFact = eventFacts[eventId];
         Assert.Equal(1L, eventFact.PublishedCount);
         Assert.Equal(1L, eventFact.ReceivedCount);
+    }
+
+    private sealed class InventoryReceivedMessageSnapshot : IAsyncDisposable
+    {
+        private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(10);
+
+        private readonly string connectionString;
+        private readonly IReadOnlyDictionary<string, string> eventIdempotencyKeys;
+        private readonly ConcurrentDictionary<string, byte> receivedEventIds = new(StringComparer.Ordinal);
+        private readonly CancellationTokenSource stop = new();
+        private readonly TaskCompletionSource<bool> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Task captureTask;
+
+        private InventoryReceivedMessageSnapshot(
+            string connectionString,
+            IReadOnlyDictionary<string, string> eventIdempotencyKeys)
+        {
+            this.connectionString = connectionString;
+            this.eventIdempotencyKeys = eventIdempotencyKeys.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal);
+            captureTask = CaptureLoopAsync();
+        }
+
+        public static async Task<InventoryReceivedMessageSnapshot> StartAsync(
+            string connectionString,
+            IReadOnlyDictionary<string, string> eventIdempotencyKeys)
+        {
+            var snapshot = new InventoryReceivedMessageSnapshot(connectionString, eventIdempotencyKeys);
+            try
+            {
+                await snapshot.ready.Task.ConfigureAwait(false);
+                return snapshot;
+            }
+            catch
+            {
+                await snapshot.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        public long GetReceivedCount(string eventId)
+        {
+            ThrowIfFaulted();
+            return receivedEventIds.ContainsKey(eventId) ? 1L : 0L;
+        }
+
+        public void ThrowIfFaulted()
+        {
+            if (captureTask.IsFaulted)
+            {
+                throw new InvalidOperationException(
+                    "CAP inventory received-message snapshot failed; received evidence is unavailable.",
+                    captureTask.Exception?.GetBaseException());
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            stop.Cancel();
+            try
+            {
+                await captureTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                stop.Dispose();
+            }
+        }
+
+        private async Task CaptureLoopAsync()
+        {
+            try
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(stop.Token);
+                ready.TrySetResult(true);
+                while (!stop.IsCancellationRequested)
+                {
+                    await CaptureOnceAsync(connection, stop.Token);
+                    await Task.Delay(PollInterval, stop.Token);
+                }
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            {
+                ready.TrySetCanceled(stop.Token);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                ready.TrySetException(exception);
+                throw;
+            }
+        }
+
+        private async Task CaptureOnceAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT \"Name\", \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var tableName = reader.IsDBNull(0) ? null : reader.GetString(0);
+                var content = reader.GetString(1);
+                foreach (var (eventId, idempotencyKey) in eventIdempotencyKeys)
+                {
+                    if (receivedEventIds.ContainsKey(eventId) ||
+                        !ContentMatchesEvent(
+                            content,
+                            eventId,
+                            idempotencyKey,
+                            nameof(InventoryMovementRequestedIntegrationEvent),
+                            InventoryIntegrationEventTypes.InventoryMovementRequested,
+                            tableName))
+                    {
+                        continue;
+                    }
+
+                    receivedEventIds.TryAdd(eventId, 0);
+                }
+            }
+        }
     }
 
     private static async Task<PendingRedisFact> ReadPendingRedisFactAsync(

@@ -95,11 +95,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             pendingEvent.EventId,
             pendingEvent.IdempotencyKey);
         Assert.False(pendingRedisBeforePublish.IsPresent);
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureReplayEvent);
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), pendingEvent);
 
         var eventIdempotencyKeys = new Dictionary<string, string>
         {
@@ -109,11 +104,23 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
             [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
         };
+        await using var receivedMessageSnapshot = await InventoryReceivedMessageSnapshot.StartAsync(
+            inventoryPostgres,
+            eventIdempotencyKeys);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureReplayEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), pendingEvent);
+
         var requiredTransportEventIds = eventIdempotencyKeys.Keys.ToHashSet(StringComparer.Ordinal);
         var observedTransportFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
+        var observedPendingRedisFacts = new Dictionary<string, PendingRedisFact>(StringComparer.Ordinal);
 
-        // Real cross-process Redis CAP transport: the observable facts live in the two PostgreSQL databases,
-        // so poll them on a bounded budget instead of guessing a single completion instant.
+        // Real cross-process Redis CAP transport: stream history is the durable published fact; the
+        // received-message snapshot was started before publish and latches each exact row before CAP's
+        // post-ack DeleteReceivedMessageAsync removes it. The pending assertion below independently reads
+        // the same event's Redis PEL entry.
         try
         {
             var observed = await Eventually.WaitAsync(
@@ -122,13 +129,13 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     Mes: await ReadMesFactsAsync(mesPostgres, source, token),
                     Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source, token),
                     Messaging: await ReadMessagingFactsAsync(
-                        mesPostgres,
                         inventoryPostgres,
                         redis,
                         capVersion,
                         pendingEvent.EventId,
                         pendingEvent.IdempotencyKey,
                         eventIdempotencyKeys,
+                        receivedMessageSnapshot,
                         eventIdempotencyKeys.Keys.ToArray())),
                 isSatisfied: state => state.Mes.SuccessStatus == "Posted"
                     && state.Mes.SuccessMovementId is not null
@@ -140,7 +147,6 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && state.Mes.PendingUnitCost is null
                     && state.Mes.PendingErpCapitalizedUnitCost is null
                     && state.Mes.PendingAuthorityProvenanceCount == 0
-                    && state.Mes.PendingPublishedMessageCount == 1
                     && state.Inventory.SuccessMovementCount == 1
                     && state.Inventory.FailureMovementCount == 0
                     && state.Inventory.PendingMovementCount == 0
@@ -152,14 +158,17 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && CaptureObservedTransportFacts(
                         state.Messaging,
                         requiredTransportEventIds,
-                        observedTransportFacts),
+                        observedTransportFacts)
+                    && CaptureObservedPendingRedisFact(
+                        state.Messaging.PendingEventRedisFact,
+                        pendingEvent.EventId,
+                        observedPendingRedisFacts),
                 describe: state =>
                     $"SuccessStatus={state.Mes.SuccessStatus}, SuccessMovement={state.Mes.SuccessMovementId}, " +
                     $"FailureStatus={state.Mes.FailureStatus}, FailureCode={state.Mes.FailureCode}, " +
                     $"InventorySuccess={state.Inventory.SuccessMovementCount}, " +
                     $"InventoryFailure={state.Inventory.FailureMovementCount}, " +
                     $"PendingStatus={state.Mes.PendingStatus}, " +
-                    $"PendingPublished={state.Mes.PendingPublishedMessageCount}, " +
                     $"PendingInventory={state.Inventory.PendingMovementCount}, " +
                     $"MesUnitCost={state.Mes.SuccessUnitCost}, " +
                     $"RequestedUnitCost={state.Inventory.SuccessRequestedUnitCost}, " +
@@ -186,45 +195,48 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Null(observed.Mes.PendingUnitCost);
             Assert.Null(observed.Mes.PendingErpCapitalizedUnitCost);
             Assert.Equal(0L, observed.Mes.PendingAuthorityProvenanceCount);
-            Assert.Equal(1L, observed.Mes.PendingPublishedMessageCount);
             Assert.Equal(0, observed.Inventory.PendingMovementCount);
             Assert.True(observedTransportFacts.Keys.ToHashSet(StringComparer.Ordinal)
                 .SetEquals(requiredTransportEventIds));
 
             var transport = await ReadMessagingFactsAsync(
-                mesPostgres,
                 inventoryPostgres,
                 redis,
                 capVersion,
                 pendingEvent.EventId,
                 pendingEvent.IdempotencyKey,
                 eventIdempotencyKeys,
+                receivedMessageSnapshot,
                 eventIdempotencyKeys.Keys.ToArray());
-            AssertEventTransport(observedTransportFacts, successEvent.EventId);
-            AssertEventTransport(observedTransportFacts, successReplayEvent.EventId);
-            AssertEventTransport(observedTransportFacts, failureEvent.EventId);
-            AssertEventTransport(observedTransportFacts, failureReplayEvent.EventId);
-            AssertEventTransport(observedTransportFacts, pendingEvent.EventId);
-            Assert.True(transport.PendingEventRedisFact.IsPresent);
-            Assert.Equal(pendingEvent.EventId, transport.PendingEventRedisFact.EventId);
-            Assert.Equal(pendingEvent.IdempotencyKey, transport.PendingEventRedisFact.IdempotencyKey);
-            Assert.True(transport.PendingEventRedisFact.DeliveryCount >= 1);
+            // The bounded latch only proves that every event was observed at least once during
+            // processing. Final exact-once evidence must come from a fresh durable/snapshot read,
+            // so a later duplicate cannot be hidden by the latch.
+            AssertEventTransport(transport.EventFacts, successEvent.EventId);
+            AssertEventTransport(transport.EventFacts, successReplayEvent.EventId);
+            AssertEventTransport(transport.EventFacts, failureEvent.EventId);
+            AssertEventTransport(transport.EventFacts, failureReplayEvent.EventId);
+            AssertEventTransport(transport.EventFacts, pendingEvent.EventId);
+            var pendingRedisFact = observedPendingRedisFacts[pendingEvent.EventId];
+            Assert.True(pendingRedisFact.IsPresent);
+            Assert.Equal(pendingEvent.EventId, pendingRedisFact.EventId);
+            Assert.Equal(pendingEvent.IdempotencyKey, pendingRedisFact.IdempotencyKey);
+            Assert.True(pendingRedisFact.DeliveryCount >= 1);
             Assert.Equal("Pending", transport.PendingAuthorityStatus);
             Assert.Equal("capitalized-unit-cost-not-ready", transport.PendingAuthorityReason);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
         {
-            // The messaging tables are only read once, on failure: they are diagnostics for the timeout, not
-            // part of the awaited condition.
+            // The final read is diagnostic only. Published/received facts are the Redis history and the
+            // pre-ack received snapshot, not the presence or absence of transient CAP PostgreSQL rows.
             var finalMessagingFacts = await ReadMessagingFactsAsync(
-                mesPostgres,
                 inventoryPostgres,
                 redis,
                 capVersion,
                 pendingEvent.EventId,
                 pendingEvent.IdempotencyKey,
                 eventIdempotencyKeys,
+                receivedMessageSnapshot,
                 eventIdempotencyKeys.Keys.ToArray());
             throw new TimeoutException(
                 $"{timeout.Message} " +
