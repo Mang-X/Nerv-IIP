@@ -16,7 +16,7 @@ const resolver = usePdaBarcodeResolver({
 })
 const navigationStatus = shallowRef<'idle' | 'pending' | 'succeeded' | 'error'>('idle')
 const navigationPending = computed(() => navigationStatus.value === 'pending')
-const scanDisabled = computed(() => resolver.status.value === 'pending' || navigationPending.value)
+const scanDisabled = navigationPending
 let navigationGeneration = 0
 onBeforeUnmount(() => {
   resolver.cancel()

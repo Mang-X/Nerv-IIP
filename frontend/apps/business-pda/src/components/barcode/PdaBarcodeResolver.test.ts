@@ -77,7 +77,7 @@ async function scan(wrapper: VueWrapper, value: string) {
 }
 
 describe('PdaBarcodeResolver', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => vi.resetAllMocks())
 
   it('shows pending and directly navigates a unique supported candidate', async () => {
     let settle!: (value: unknown) => void
@@ -270,5 +270,67 @@ describe('PdaBarcodeResolver', () => {
     releaseNavigation(true)
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NAV-PENDING')
+  })
+
+  it('lets a newer scan replace a pending resolve and ignores the older success', async () => {
+    let settleOlder!: (value: unknown) => void
+    api.resolve
+      .mockReturnValueOnce(new Promise((resolve) => (settleOlder = resolve)))
+      .mockReturnValueOnce(
+        resolved('resolved', [
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-NEWER' } },
+        ]),
+      )
+    const { wrapper, router } = await setup()
+
+    await scan(wrapper, 'WO-OLDER')
+    await scan(wrapper, 'WO-NEWER')
+    await flushPromises()
+
+    expect(api.resolve).toHaveBeenCalledTimes(2)
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NEWER')
+
+    settleOlder({
+      data: {
+        success: true,
+        data: {
+          status: 'resolved',
+          candidates: [{ objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-OLDER' } }],
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NEWER')
+  })
+
+  it('lets a newer scan replace a pending resolve and ignores the older rejection', async () => {
+    let rejectOlder!: (reason?: unknown) => void
+    api.resolve
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectOlder = reject
+        }),
+      )
+      .mockReturnValueOnce(
+        resolved('resolved', [
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-NEWER' } },
+        ]),
+      )
+    const { wrapper, router } = await setup()
+
+    await scan(wrapper, 'WO-OLDER')
+    await scan(wrapper, 'WO-NEWER')
+    await flushPromises()
+
+    expect(api.resolve).toHaveBeenCalledTimes(2)
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NEWER')
+
+    rejectOlder(new Error('旧解析请求失败'))
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NEWER')
+    expect(wrapper.get('[data-testid="barcode-status"]').attributes('role')).toBe('status')
+    expect(wrapper.get('[data-testid="barcode-status"]').text()).not.toContain('解析服务暂不可用')
   })
 })
