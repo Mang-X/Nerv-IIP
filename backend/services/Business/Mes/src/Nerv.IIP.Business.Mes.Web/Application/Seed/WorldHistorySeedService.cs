@@ -598,7 +598,8 @@ public sealed class WorldHistorySeedService(
                 stagedQuantity: staged,
                 sourceSystem: SourceSystem,
                 sourceSnapshotId: $"{plan.WorkOrderNo}-KIT",
-                capturedAtUtc: capturedAtUtc);
+                capturedAtUtc: capturedAtUtc,
+                substituteMaterialIds: []);
             dbContext.MaterialRequirements.Add(requirement);
         }
 

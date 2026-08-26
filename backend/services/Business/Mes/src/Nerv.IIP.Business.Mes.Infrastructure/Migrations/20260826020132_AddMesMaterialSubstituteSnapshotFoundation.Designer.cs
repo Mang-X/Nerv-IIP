@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826020132_AddMesMaterialSubstituteSnapshotFoundation")]
+    partial class AddMesMaterialSubstituteSnapshotFoundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -677,175 +680,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasComment("Actual-time settlement revision identifier.");
-
-                    b.Property<long>("ActualLaborTicks")
-                        .HasColumnType("bigint")
-                        .HasColumnName("actual_labor_ticks")
-                        .HasComment("Nonnegative actual labor duration in .NET ticks frozen by this settlement.");
-
-                    b.Property<long>("ActualMachineTicks")
-                        .HasColumnType("bigint")
-                        .HasColumnName("actual_machine_ticks")
-                        .HasComment("Nonnegative actual machine duration in .NET ticks frozen by this settlement.");
-
-                    b.Property<DateTimeOffset>("CompletedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("completed_at_utc")
-                        .HasComment("Operation completion time in UTC frozen by this settlement.");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("environment_id")
-                        .HasComment("Environment id for the settlement.");
-
-                    b.Property<string>("OperationTaskId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("operation_task_id")
-                        .HasComment("MES operation task id frozen by the settlement.");
-
-                    b.Property<string>("OrganizationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("organization_id")
-                        .HasComment("Organization tenant id.");
-
-                    b.Property<long>("Revision")
-                        .HasColumnType("bigint")
-                        .HasColumnName("revision")
-                        .HasComment("Positive monotonic actual-time settlement business revision.");
-
-                    b.Property<DateTimeOffset?>("VoidedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("voided_at_utc")
-                        .HasComment("UTC time when the settlement was voided by completion-report reversal; null while active.");
-
-                    b.Property<string>("WorkCenterId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("work_center_id")
-                        .HasComment("MES work center id frozen by the settlement.");
-
-                    b.Property<string>("WorkOrderId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("work_order_id")
-                        .HasComment("MES work order id frozen by the settlement.");
-
-                    b.HasKey("Id");
-
-                    b.HasAlternateKey("Id", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
-                        .HasName("ak_operation_actual_time_settlements_id_scope_task");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "Revision")
-                        .IsUnique()
-                        .HasDatabaseName("ux_operation_actual_time_settlements_scope_task_revision");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "WorkOrderId")
-                        .HasDatabaseName("ix_operation_actual_time_settlements_scope_task");
-
-                    b.ToTable("operation_actual_time_settlements", "mes", t =>
-                        {
-                            t.HasComment("Immutable MES operation actual-time settlement revisions and their void lifecycle.");
-
-                            t.HasCheckConstraint("ck_operation_actual_time_settlements_revision_positive", "revision > 0");
-
-                            t.HasCheckConstraint("ck_operation_actual_time_settlements_ticks_nonnegative", "actual_labor_ticks >= 0 AND actual_machine_ticks >= 0");
-
-                            t.HasCheckConstraint("ck_operation_actual_time_settlements_void_order", "voided_at_utc IS NULL OR voided_at_utc >= completed_at_utc");
-                        });
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlementReport", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasComment("Settlement-to-report lineage identifier.");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("environment_id")
-                        .HasComment("Environment id copied for report foreign-key isolation.");
-
-                    b.Property<string>("OperationTaskId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("operation_task_id")
-                        .HasComment("MES operation task id copied to enforce report ownership.");
-
-                    b.Property<string>("OrganizationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("organization_id")
-                        .HasComment("Organization tenant id copied for report foreign-key isolation.");
-
-                    b.Property<string>("ReportNo")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("report_no")
-                        .HasComment("Covered MES production report number.");
-
-                    b.Property<Guid>("SettlementId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("settlement_id")
-                        .HasComment("Owning actual-time settlement revision identifier.");
-
-                    b.Property<string>("WorkOrderId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("work_order_id")
-                        .HasComment("MES work order id copied to enforce report ownership.");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SettlementId", "ReportNo")
-                        .IsUnique()
-                        .HasDatabaseName("ux_operation_actual_time_settlement_reports_settlement_report");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
-                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_report_owner");
-
-                    b.HasIndex("SettlementId", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
-                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_settlement_owner");
-
-                    b.ToTable("operation_actual_time_settlement_reports", "mes", t =>
-                        {
-                            t.HasComment("Relational production-report lineage covered by one MES actual-time settlement revision.");
-                        });
-                });
-
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Operation task aggregate id.");
-
-                    b.Property<long>("ActualTimeSettlementRevision")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L)
-                        .HasColumnName("actual_time_settlement_revision")
-                        .HasComment("Monotonic MES actual-time settlement revision; zero means the operation has never emitted a settlement.");
 
                     b.Property<string>("AlternativeWorkCenterIds")
                         .IsRequired()
@@ -992,12 +832,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("requires_quality_inspection")
                         .HasComment("Whether this operation completion should trigger a Quality inspection task.");
 
-                    b.Property<int>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer")
-                        .HasColumnName("row_version")
-                        .HasComment("Optimistic row version.");
-
                     b.Property<string>("ScheduleInvalidationReasonCode")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -1096,8 +930,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("operation_tasks", "mes", t =>
                         {
                             t.HasComment("MES operation task facts created from routing step snapshots for scheduling and execution tracking.");
-
-                            t.HasCheckConstraint("ck_operation_tasks_actual_time_settlement_revision_nonnegative", "actual_time_settlement_revision >= 0");
                         });
                 });
 
@@ -1511,9 +1343,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasAlternateKey("OrganizationId", "EnvironmentId", "ReportNo")
                         .HasName("ak_production_reports_scope_report_no");
-
-                    b.HasAlternateKey("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
-                        .HasName("ak_production_reports_scope_report_task");
 
                     b.HasIndex("OperationTaskId")
                         .HasDatabaseName("ix_production_reports_operation_task_id");
@@ -3540,36 +3369,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasConstraintName("fk_material_requirements_work_orders");
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", b =>
-                {
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "EnvironmentId", "OperationTaskId", "WorkOrderId")
-                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue", "WorkOrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_operation_actual_time_settlements_operation_tasks");
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlementReport", b =>
-                {
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
-                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_operation_actual_time_settlement_reports_production_reports");
-
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", null)
-                        .WithMany("CoveredReports")
-                        .HasForeignKey("SettlementId", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
-                        .HasPrincipalKey("Id", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_operation_actual_time_settlement_reports_settlement");
-                });
-
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
@@ -3803,11 +3602,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_work_order_transformation_lines_target_work_order");
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", b =>
-                {
-                    b.Navigation("CoveredReports");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", b =>

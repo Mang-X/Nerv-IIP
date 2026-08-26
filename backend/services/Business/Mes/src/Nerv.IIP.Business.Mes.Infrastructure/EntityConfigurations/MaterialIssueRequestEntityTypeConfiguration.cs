@@ -17,6 +17,7 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work order id requesting materials.");
         builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").HasMaxLength(100).HasComment("Optional MES operation task id requesting materials.");
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("Material SKU id requested for staging or line-side receipt.");
+        builder.Property(x => x.SubstitutedMaterialId).HasColumnName("substituted_material_id").HasMaxLength(100).HasComment("Optional primary material SKU replaced by the actually issued material; reserved for substitute issue audit activation.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasDefaultValue(MaterialIssueRequest.UnspecifiedUomCode).HasComment("Unit of measure code captured for the material issue quantity.");
         builder.Property(x => x.IsSupplementary).HasColumnName("is_supplementary").IsRequired().HasDefaultValue(false).HasComment("Whether this material issue request supplements an earlier request.");
         builder.Property(x => x.OriginalMaterialIssueRequestNo).HasColumnName("original_material_issue_request_no").HasMaxLength(100).HasComment("Business number of the original material issue request in the same organization, environment, work order and material scope.");
