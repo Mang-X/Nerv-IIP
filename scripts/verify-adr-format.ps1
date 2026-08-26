@@ -77,7 +77,13 @@ $lifecycleSectionAllowlist = @('实施说明')
 # 只查标题不查正文——正文里的票号与日期是耐久指针，下探正文会误伤（见门禁小节）。
 $dateStampedHeadingPattern = '\d{4}-\d{2}-\d{2}'
 
-$adrFiles = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
+# `README.md` 是目录导航入口，不是决策记录。只排除这一确切文件名，其他 Markdown 文件仍然
+# 必须经过原有的文件名和格式校验。
+$adrFiles = @(Get-NervItemsSortedByString -Items @(
+        Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File | Where-Object {
+            -not [string]::Equals($_.Name, 'README.md', [StringComparison]::Ordinal)
+        }
+    ) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
 if ($adrFiles.Count -eq 0) { Write-Host "No ADR found under $AdrRoot"; exit 1 }
 
 $findings = [System.Collections.Generic.List[string]]::new()
