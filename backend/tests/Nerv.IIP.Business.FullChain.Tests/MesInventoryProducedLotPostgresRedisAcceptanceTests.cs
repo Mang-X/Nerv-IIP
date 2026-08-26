@@ -94,6 +94,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             capVersion,
             pendingEvent.EventId,
             pendingEvent.IdempotencyKey);
+        Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), pendingRedisBeforePublish.StreamName);
+        Assert.Equal($"business-inventory.movement-requested.{capVersion}", pendingRedisBeforePublish.ConsumerGroup);
         Assert.False(pendingRedisBeforePublish.IsPresent);
 
         var eventIdempotencyKeys = new Dictionary<string, string>
@@ -123,12 +125,12 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         var requiredTransportEventIds = eventIdempotencyKeys.Keys.ToHashSet(StringComparer.Ordinal);
         var observedTransportFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
-        var observedPendingRedisFacts = new Dictionary<string, PendingRedisFact>(StringComparer.Ordinal);
+        var observedPendingCapReceivedFacts = new Dictionary<string, CapReceivedEventFact>(StringComparer.Ordinal);
 
-        // Real cross-process Redis CAP transport: stream history is the durable published fact. CAP's
-        // PostgreSQL received row is a short-lived delivery snapshot in this profile, so the snapshot
-        // started before publish latches each exact row while it is alive. The pending assertion below
-        // independently reads the same event's fresh PEL entry.
+        // Real cross-process Redis CAP transport: stream history is the durable published fact. CAP stores
+        // the exact received row before enqueueing the subscriber, then XACKs the Redis entry; the
+        // subscriber's authority retry therefore becomes a CAP received Failed/Retries fact rather than
+        // a durable Redis PEL entry. The snapshot latches the exact row identity and latest status.
         try
         {
             var observed = await Eventually.WaitAsync(
@@ -167,10 +169,11 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                         state.Messaging,
                         requiredTransportEventIds,
                         observedTransportFacts)
-                    && CaptureObservedPendingRedisFact(
-                        state.Messaging.PendingEventRedisFact,
+                    && CaptureObservedPendingCapReceivedFact(
+                        state.Messaging.PendingCapReceivedFact,
                         pendingEvent.EventId,
-                        observedPendingRedisFacts),
+                        inventoryConsumerGroup,
+                        observedPendingCapReceivedFacts),
                 describe: state =>
                     $"SuccessStatus={state.Mes.SuccessStatus}, SuccessMovement={state.Mes.SuccessMovementId}, " +
                     $"FailureStatus={state.Mes.FailureStatus}, FailureCode={state.Mes.FailureCode}, " +
@@ -224,22 +227,27 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             AssertEventTransport(transport.EventFacts, failureEvent.EventId);
             AssertEventTransport(transport.EventFacts, failureReplayEvent.EventId);
             AssertEventTransport(transport.EventFacts, pendingEvent.EventId);
-            // The latch only gates bounded completion. Final pending proof must come from a fresh
-            // PEL read, otherwise a later ACK/state change could be hidden by the latched value.
-            var pendingRedisFact = transport.PendingEventRedisFact;
-            Assert.True(pendingRedisFact.IsPresent);
-            Assert.Equal(pendingEvent.EventId, pendingRedisFact.EventId);
-            Assert.Equal(pendingEvent.IdempotencyKey, pendingRedisFact.IdempotencyKey);
-            Assert.False(string.IsNullOrWhiteSpace(pendingRedisFact.ConsumerName));
-            Assert.True(pendingRedisFact.DeliveryCount >= 1);
+            // CAP XACKs after StoreReceivedMessageAsync/queueing and before the subscriber retry. A fresh
+            // PEL read is therefore expected to be empty; the event-specific CAP received row is the
+            // durable pending/retry source of truth and must carry the exact group, topic, and failure state.
+            Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), transport.PendingEventRedisFact.StreamName);
+            Assert.Equal(inventoryConsumerGroup, transport.PendingEventRedisFact.ConsumerGroup);
+            Assert.False(transport.PendingEventRedisFact.IsPresent);
+            var pendingReceivedFact = transport.PendingCapReceivedFact;
+            Assert.NotNull(pendingReceivedFact);
+            Assert.Equal(pendingEvent.EventId, pendingReceivedFact!.EventId);
+            Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), pendingReceivedFact.Name);
+            Assert.Equal(inventoryConsumerGroup, pendingReceivedFact.Group);
+            Assert.Equal("Failed", pendingReceivedFact.StatusName);
+            Assert.True(pendingReceivedFact.RetryCount >= 1);
             Assert.Equal("Pending", transport.PendingAuthorityStatus);
             Assert.Equal("capitalized-unit-cost-not-ready", transport.PendingAuthorityReason);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
         {
-            // The final read is diagnostic only. Published evidence is Redis stream history and received
-            // evidence is the pre-ack PostgreSQL snapshot, not a late query after CAP has cleaned the row.
+            // The final read is diagnostic only. PEL absence after CAP's early XACK is expected; the CAP
+            // received status/retry fact remains the discriminating pending evidence.
             var finalMessagingFacts = await ReadMessagingFactsAsync(
                 inventoryPostgres,
                 redis,
@@ -253,6 +261,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 $"{timeout.Message} " +
                 $"EventTransport={string.Join(",", finalMessagingFacts.EventFacts.Select(x => $"{x.Key}:published={x.Value.PublishedCount}/received={x.Value.ReceivedCount}"))}, " +
                 $"PendingEntry={finalMessagingFacts.PendingEventRedisFact.StreamEntryId}, " +
+                $"PendingCapReceived={finalMessagingFacts.PendingCapReceivedFact?.StatusName}/{finalMessagingFacts.PendingCapReceivedFact?.RetryCount}, " +
                 $"InventoryDeadLetters={finalMessagingFacts.InventoryDeadLetterCount}.",
                 timeout);
         }

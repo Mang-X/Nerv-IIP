@@ -656,13 +656,24 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
     private sealed record MessagingFacts(
         IReadOnlyDictionary<string, EventMessageFact> EventFacts,
         PendingRedisFact PendingEventRedisFact,
+        CapReceivedEventFact? PendingCapReceivedFact,
         string? PendingAuthorityStatus,
         string? PendingAuthorityReason,
         long InventoryDeadLetterCount);
 
     private sealed record EventMessageFact(long PublishedCount, long ReceivedCount);
 
+    private sealed record CapReceivedEventFact(
+        string EventId,
+        long RowId,
+        string? Name,
+        string? Group,
+        string StatusName,
+        int RetryCount);
+
     private sealed record PendingRedisFact(
+        string StreamName,
+        string ConsumerGroup,
         bool IsPresent,
         string? EventId,
         string? IdempotencyKey,

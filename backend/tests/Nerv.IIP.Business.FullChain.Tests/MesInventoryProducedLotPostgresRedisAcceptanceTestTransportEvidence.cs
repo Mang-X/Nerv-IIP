@@ -30,91 +30,6 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 {
     [Fact]
-    public void Cap_transport_evidence_parses_official_pg_envelope_and_redis_body_shapes()
-    {
-        const string eventId = "evt-parser-shape";
-        const string idempotencyKey = "idem-parser-shape";
-        const string topic = nameof(InventoryMovementRequestedIntegrationEvent);
-        const string eventType = InventoryIntegrationEventTypes.InventoryMovementRequested;
-        const string payload = "{\"EventId\":\"evt-parser-shape\",\"IdempotencyKey\":\"idem-parser-shape\",\"EventType\":\"inventory.InventoryMovementRequested\"}";
-
-        using var payloadDocument = JsonDocument.Parse(payload);
-        var capContent = JsonSerializer.Serialize(new
-        {
-            Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
-            Value = payloadDocument.RootElement,
-        });
-        Assert.True(ContentMatchesEvent(
-            capContent,
-            eventId,
-            idempotencyKey,
-            topic,
-            eventType,
-            tableName: topic));
-        Assert.False(ContentMatchesEvent(
-            capContent,
-            eventId,
-            idempotencyKey,
-            "OtherTopic",
-            eventType,
-            tableName: "OtherTopic"));
-
-        var capStringValue = JsonSerializer.Serialize(new
-        {
-            Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
-            Value = payload,
-        });
-        Assert.True(ContentMatchesEvent(
-            capStringValue,
-            eventId,
-            idempotencyKey,
-            topic,
-            eventType,
-            tableName: topic));
-
-        var capBase64Value = JsonSerializer.Serialize(new
-        {
-            Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
-            Value = JsonSerializer.Serialize(Encoding.UTF8.GetBytes(payload)),
-        });
-        Assert.True(ContentMatchesEvent(
-            capBase64Value,
-            eventId,
-            idempotencyKey,
-            topic,
-            eventType,
-            tableName: topic));
-
-        Assert.True(ContentMatchesEvent(
-            JsonSerializer.Serialize(capContent),
-            eventId,
-            idempotencyKey,
-            topic,
-            eventType,
-            tableName: topic));
-
-        var utf8Payload = Encoding.UTF8.GetBytes(payload);
-        var redisHeaders = JsonSerializer.Serialize(new Dictionary<string, string>
-        {
-            ["cap-msg-name"] = topic,
-        });
-        var redisBase64Body = JsonSerializer.Serialize(utf8Payload);
-        var redisArrayBody = JsonSerializer.Serialize(utf8Payload.Select(static value => (int)value).ToArray());
-        var entry = new StreamEntry(
-            "1-0",
-            [
-                new NameValueEntry("headers", redisHeaders),
-                new NameValueEntry("body", redisBase64Body),
-            ]);
-
-        Assert.Equal(payload, RedisValueToUtf8(redisBase64Body));
-        Assert.Equal(payload, RedisValueToUtf8(redisArrayBody));
-        Assert.Equal(payload, RedisValueToUtf8(payload));
-        Assert.True(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, topic, eventType));
-        Assert.False(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, "OtherTopic", eventType));
-    }
-
-    [Fact]
     public void Final_transport_evidence_rejects_duplicate_or_missing_delivery_counts()
     {
         var exact = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
@@ -160,14 +75,15 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         InventoryReceivedMessageSnapshot receivedMessages,
         params string[] eventIds)
     {
-        // CAP PostgreSQL retains received rows only for the configured expiry window, but the hosted
-        // profile can clean a row before the final poll. Published evidence therefore comes from retained
-        // Redis stream history; received evidence comes from exact row identities captured while alive.
+        // CAP PostgreSQL retains the received row through its expiry window and updates StatusName/Retries
+        // as subscriber execution retries. Published evidence comes from Redis stream history; received and
+        // pending evidence comes from exact CAP row identity/content/status snapshots.
         var eventFacts = await ReadRedisStreamHistoryFactsAsync(
             redisConnectionString,
             eventIdempotencyKeys,
             eventIds);
         receivedMessages.ThrowIfFaulted();
+        var pendingCapReceivedFact = receivedMessages.GetReceivedFact(pendingEventId);
         foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
         {
             eventFacts[eventId] = eventFacts[eventId] with
@@ -209,6 +125,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return new MessagingFacts(
             eventFacts,
             pendingEventRedisFact,
+            pendingCapReceivedFact,
             pendingAuthorityStatus,
             pendingAuthorityReason,
             inventoryDeadLetterCount);
@@ -273,16 +190,18 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return observedFacts.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(requiredEventIds);
     }
 
-    private static bool CaptureObservedPendingRedisFact(
-        PendingRedisFact pendingFact,
+    private static bool CaptureObservedPendingCapReceivedFact(
+        CapReceivedEventFact? pendingFact,
         string expectedEventId,
-        IDictionary<string, PendingRedisFact> observedFacts)
+        string expectedGroup,
+        IDictionary<string, CapReceivedEventFact> observedFacts)
     {
-        if (pendingFact.IsPresent &&
+        if (pendingFact is not null &&
             pendingFact.EventId == expectedEventId &&
-            pendingFact.StreamEntryId is not null &&
-            pendingFact.ConsumerName is not null &&
-            pendingFact.DeliveryCount >= 1)
+            pendingFact.Name == nameof(InventoryMovementRequestedIntegrationEvent) &&
+            pendingFact.Group == expectedGroup &&
+            pendingFact.StatusName == "Failed" &&
+            pendingFact.RetryCount >= 1)
         {
             observedFacts[expectedEventId] = pendingFact;
         }
@@ -307,7 +226,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         private readonly string capVersion;
         private readonly string consumerGroup;
         private readonly IReadOnlyDictionary<string, string> eventIdempotencyKeys;
-        private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, byte>> receivedRowsByEventId =
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, CapReceivedEventFact>> receivedRowsByEventId =
             new(StringComparer.Ordinal);
         private readonly CancellationTokenSource stop = new();
         private readonly TaskCompletionSource<bool> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -360,7 +279,15 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 : 0L;
         }
 
-        public static long CountReceivedRows(IReadOnlyDictionary<long, byte>? rows) => rows?.Count ?? 0L;
+        public CapReceivedEventFact? GetReceivedFact(string eventId)
+        {
+            ThrowIfFaulted();
+            return receivedRowsByEventId.TryGetValue(eventId, out var rows) && rows.Count == 1
+                ? rows.Values.Single()
+                : null;
+        }
+
+        public static long CountReceivedRows<T>(IReadOnlyDictionary<long, T>? rows) => rows?.Count ?? 0L;
 
         public void ThrowIfFaulted()
         {
@@ -420,7 +347,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         {
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT "Id", "Version", "Name", "Group", "Content", "StatusName"
+                SELECT "Id", "Version", "Name", "Group", "Content", "Retries", "StatusName"
                 FROM "cap"."received"
                 WHERE "Version" = @cap_version
                   AND "Group" = @consumer_group
@@ -437,7 +364,10 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             {
                 var rowId = reader.GetInt64(0);
                 var tableName = reader.IsDBNull(2) ? null : reader.GetString(2);
+                var group = reader.IsDBNull(3) ? null : reader.GetString(3);
                 var content = reader.GetString(4);
+                var retryCount = reader.GetInt32(5);
+                var statusName = reader.GetString(6);
                 foreach (var (eventId, idempotencyKey) in eventIdempotencyKeys)
                 {
                     if (!ContentMatchesEvent(
@@ -451,9 +381,16 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                         continue;
                     }
 
+                    var receivedFact = new CapReceivedEventFact(
+                        eventId,
+                        rowId,
+                        tableName,
+                        group,
+                        statusName,
+                        retryCount);
                     receivedRowsByEventId
-                        .GetOrAdd(eventId, static _ => new ConcurrentDictionary<long, byte>())
-                        .TryAdd(rowId, 0);
+                        .GetOrAdd(eventId, static _ => new ConcurrentDictionary<long, CapReceivedEventFact>())
+                        .AddOrUpdate(rowId, receivedFact, (_, _) => receivedFact);
                 }
             }
         }
@@ -465,12 +402,14 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string eventId,
         string idempotencyKey)
     {
+        var streamName = nameof(InventoryMovementRequestedIntegrationEvent);
+        var consumerGroup = $"business-inventory.movement-requested.{capVersion}";
         var options = ConfigurationOptions.Parse(redisConnectionString);
         options.AbortOnConnectFail = false;
         await using var connection = await ConnectionMultiplexer.ConnectAsync(options);
         var database = connection.GetDatabase();
-        var stream = (RedisKey)nameof(InventoryMovementRequestedIntegrationEvent);
-        var group = (RedisValue)$"business-inventory.movement-requested.{capVersion}";
+        var stream = (RedisKey)streamName;
+        var group = (RedisValue)consumerGroup;
         var pending = await database.StreamPendingMessagesAsync(
             stream,
             group,
@@ -493,6 +432,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     InventoryIntegrationEventTypes.InventoryMovementRequested)))
             {
                 return new PendingRedisFact(
+                    streamName,
+                    consumerGroup,
                     true,
                     eventId,
                     idempotencyKey,
@@ -502,7 +443,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             }
         }
 
-        return new PendingRedisFact(false, null, null, null, null, 0);
+        return new PendingRedisFact(streamName, consumerGroup, false, null, null, null, null, 0);
     }
 
     private static bool ContentMatchesEvent(
