@@ -177,7 +177,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public IReadOnlyCollection<InventoryMovementRequest> Complete(
         string idempotencyKey,
         long expectedVersion,
-        IReadOnlyCollection<InboundOrderLineCapture>? captures = null)
+        IReadOnlyCollection<InboundOrderLineCapture>? captures = null,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null)
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
@@ -205,7 +206,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                line.StagingLocationCode,
+                InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 line.ReceiptQualityStatus,
@@ -279,7 +280,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         Status = InboundOrderStatus.InventoryPostingFailed;
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(string idempotencyKey)
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null)
     {
         if (Status != InboundOrderStatus.InventoryPostingFailed)
         {
@@ -300,7 +303,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                line.StagingLocationCode,
+                InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 line.ReceiptQualityStatus,
@@ -311,6 +314,16 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 ExpiryDate: line.ExpiryDate))
             .ToArray();
         return requests;
+    }
+
+    private static string InventoryLocationFor(
+        InboundOrderLine line,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine)
+    {
+        return inventoryLocationByLine is not null
+            && inventoryLocationByLine.TryGetValue(line.LineNo, out var locationCode)
+            ? WmsText.Required(locationCode, nameof(inventoryLocationByLine))
+            : line.StagingLocationCode;
     }
 
     private InboundOrderLine FindLine(string lineNo)

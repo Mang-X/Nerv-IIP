@@ -490,6 +490,132 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Complete_inbound_uses_full_putaway_task_target_for_inventory_request()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-TARGET-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-TARGET-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePutawayTaskCommandHandler(dbContext).Handle(
+            new CreatePutawayTaskCommand(
+                inbound.Id,
+                "PUT-TARGET-001",
+                "LINE-001",
+                "LOC-STAGE",
+                "LOC-TARGET",
+                5m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var command = new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-target-001")
+            .TrustedFor(dbContext, inbound);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal("LOC-TARGET", movementRequest.LocationCode);
+        var movementRequestedEvent = new InventoryMovementRequestCreatedIntegrationEventConverter()
+            .Convert(new InventoryMovementRequestCreatedDomainEvent(movementRequest));
+        Assert.Equal("LOC-TARGET", movementRequestedEvent.Payload.LocationCode);
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(result.RequestId, replay.RequestId);
+        Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+        Assert.Equal("LOC-TARGET", await dbContext.InventoryMovementRequests.Select(x => x.LocationCode).SingleAsync());
+    }
+
+    [Fact]
+    public async Task Complete_inbound_keeps_staging_location_when_putaway_task_is_not_full_line_quantity()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-PARTIAL-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-PARTIAL-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePutawayTaskCommandHandler(dbContext).Handle(
+            new CreatePutawayTaskCommand(
+                inbound.Id,
+                "PUT-PARTIAL-001",
+                "LINE-001",
+                "LOC-STAGE",
+                "LOC-TARGET",
+                4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-partial-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+
+        Assert.Equal("LOC-STAGE", Assert.Single(dbContext.InventoryMovementRequests.Local).LocationCode);
+    }
+
+    [Fact]
+    public async Task Retry_inbound_inventory_posting_reuses_full_putaway_task_target()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-RETRY-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-RETRY-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePutawayTaskCommandHandler(dbContext).Handle(
+            new CreatePutawayTaskCommand(
+                inbound.Id,
+                "PUT-RETRY-001",
+                "LINE-001",
+                "LOC-STAGE",
+                "LOC-TARGET",
+                5m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+        Assert.Single(dbContext.InventoryMovementRequests.Local).MarkFailed("TEST_FAILURE", "test failure");
+        dbContext.WarehouseTasks.Single().Cancel();
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var retryResult = await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-target-001"),
+            CancellationToken.None);
+
+        var retryRequest = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.Id == retryResult.RequestId);
+        Assert.Equal("LOC-TARGET", retryRequest.LocationCode);
+    }
+
+    [Fact]
     public async Task Complete_inbound_creates_pending_inventory_movement_request_for_each_line()
     {
         await using var dbContext = CreateContext();
