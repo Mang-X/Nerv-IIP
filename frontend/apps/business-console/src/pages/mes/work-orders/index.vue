@@ -12,7 +12,22 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import { useMesOperationTasks, useMesWorkOrders } from '@/composables/useBusinessMes'
+import {
+  useMesOperationTasks,
+  useMesWorkOrderTransformations,
+  useMesWorkOrders,
+  type MesWorkOrderTransformationResult,
+} from '@/composables/useBusinessMes'
+import WorkOrderTransformationDialog, {
+  type MergeTransformationSubmit,
+  type SplitTransformationSubmit,
+  type WorkOrderTransformationState,
+} from '@/components/mes/WorkOrderTransformationDialog.vue'
+import {
+  isTransformationConflict,
+  type WorkOrderTransformationSource,
+} from '@/composables/mes/workOrderTransformation'
+import { toBaseUomBySku } from '@/composables/skuBaseUom'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -105,7 +120,13 @@ const {
   workOrderManageScopeMessage,
   workOrderManageScopePending,
   workOrderManageScopeReady,
+  workOrderManageScope,
 } = useMesWorkOrders()
+const workOrderTransformations = useMesWorkOrderTransformations({
+  filters,
+  readScope: workOrderReadScope,
+  manageScope: workOrderManageScope,
+})
 const orderUrgencies = useOrderUrgencies(
   computed(() => workOrders.value.map((order) => order.workOrderId)),
 )
@@ -117,6 +138,7 @@ function refreshUrgency() {
 
 const router = useRouter()
 const { skus } = useBusinessSkus()
+const baseUomBySku = toBaseUomBySku(skus)
 const { resolveSku, resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 
@@ -193,6 +215,113 @@ const auth = useAuthStore()
 const canManageWorkOrders = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.mesWorkOrdersManage),
 )
+
+const selectedWorkOrderIds = ref<(string | number)[]>([])
+const mergeDialogOpen = ref(false)
+const mergeState = ref<WorkOrderTransformationState>('idle')
+const mergeError = ref('')
+const mergeResult = shallowRef<MesWorkOrderTransformationResult | null>(null)
+const mergeIdempotencyKey = ref('')
+const mergeSources = computed<
+  Array<WorkOrderTransformationSource & { label?: string; skuLabel?: string }>
+>(() =>
+  selectedWorkOrderIds.value
+    .map((id) => workOrders.value.find((order) => rowKey(order) === id))
+    .filter((order): order is Row & { workOrderId: string } => Boolean(order?.workOrderId))
+    .map((order) => ({
+      workOrderId: order.workOrderId,
+      label: order.workOrderNo ?? order.workOrderId,
+      skuLabel: resolveSku(order.skuCode ?? order.skuId),
+      skuId: order.skuId,
+      productionVersionId: order.productionVersionId,
+      quantity: order.quantity,
+      // PR-C 工单列表没有 UOM；使用既有 MasterData SKU 读面中的基本单位事实，不臆造单位。
+      uomCode: baseUomBySku.value.get((order.skuCode ?? order.skuId)?.trim() ?? ''),
+      status: order.status,
+    })),
+)
+const mergeUnitUnavailable = computed(
+  () =>
+    selectedWorkOrderIds.value.length >= 2 &&
+    mergeSources.value.some((source) => !source.uomCode?.trim()),
+)
+const mergeButtonDisabled = computed(
+  () =>
+    !canManageWorkOrders.value ||
+    !workOrderManageScopeReady.value ||
+    workOrderManageScopePending.value ||
+    selectedWorkOrderIds.value.length < 2 ||
+    mergeUnitUnavailable.value ||
+    Boolean(mergeState.value === 'loading'),
+)
+const mergeButtonTitle = computed(() => {
+  if (mergeUnitUnavailable.value) {
+    return '选中的工单未返回单位信息，无法确认数量单位；请刷新列表后重试。'
+  }
+  if (mergeButtonDisabled.value) {
+    return '请选择至少两个工单，并确认当前主体具有工单管理权限。'
+  }
+  return '将选中工单合并为新的工单'
+})
+const mergePending = computed(
+  () => workOrderTransformations.mergeWorkOrdersPending.value || mergeState.value === 'loading',
+)
+
+function openMergeDialog() {
+  if (mergeButtonDisabled.value) return
+  mergeError.value = ''
+  mergeState.value = 'idle'
+  mergeResult.value = null
+  mergeIdempotencyKey.value = newMesIdempotencyKey('merge-work-orders')
+  mergeDialogOpen.value = true
+}
+
+async function submitMerge(payload: SplitTransformationSubmit | MergeTransformationSubmit) {
+  if (!('sourceWorkOrderIds' in payload)) return
+  mergeState.value = 'loading'
+  mergeError.value = ''
+  try {
+    const result = await workOrderTransformations.mergeWorkOrders(payload)
+    mergeResult.value = result
+    if (result.readback) {
+      mergeState.value = 'success'
+      notifySuccess(`已合并 ${payload.sourceWorkOrderIds.length} 个工单，结果已回读。`)
+      selectedWorkOrderIds.value = []
+      await refreshWorkOrders()
+    } else {
+      mergeState.value = 'accepted'
+      notifySuccess('合并请求已受理，但结果暂未回读；请在本窗口重试回读。')
+    }
+  } catch (error) {
+    mergeState.value = isTransformationConflict(error) ? 'conflict' : 'error'
+    mergeError.value = inlineErrorMessage(error, '合并工单失败，请刷新后重试。')
+    notifyOperationFailure('合并工单失败', error, '合并工单失败，请刷新后重试。')
+  }
+}
+
+async function retryMergeReadback() {
+  const current = mergeResult.value
+  if (!current) return
+  mergeState.value = 'loading'
+  try {
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
+    mergeResult.value = { ...current, readback, readbackError: undefined }
+    mergeState.value = 'success'
+    selectedWorkOrderIds.value = []
+    notifySuccess('合并结果已回读。')
+    await refreshWorkOrders()
+  } catch (error) {
+    mergeResult.value = { ...current, readbackError: error }
+    mergeState.value = 'accepted'
+    notifyOperationFailure(
+      '回读合并结果失败',
+      error,
+      '合并已受理，但结果暂不可用，请稍后重试回读。',
+    )
+  }
+}
 
 type ReleaseIntent = {
   idempotencyKey: string
@@ -696,7 +825,30 @@ function isNonEmpty(value: string) {
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
       :searchable="false"
       :column-settings="false"
+      selectable
+      v-model:selected="selectedWorkOrderIds"
     >
+      <template #bulk-actions>
+        <NvButton
+          type="button"
+          size="sm"
+          variant="outline"
+          :disabled="mergeButtonDisabled"
+          :title="mergeButtonTitle"
+          data-testid="open-merge-work-orders"
+          @click="openMergeDialog"
+        >
+          合并选中工单
+        </NvButton>
+        <span
+          v-if="mergeUnitUnavailable"
+          class="text-xs text-destructive"
+          role="alert"
+          data-testid="merge-unit-unavailable"
+        >
+          选中的工单未返回单位信息，无法确认数量单位；请刷新列表后重试。
+        </span>
+      </template>
       <template #cell-workOrderId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
@@ -800,6 +952,19 @@ function isNonEmpty(value: string) {
         </NvRowActions>
       </template>
     </NvDataTable>
+
+    <WorkOrderTransformationDialog
+      v-model:open="mergeDialogOpen"
+      mode="merge"
+      :state="mergeState"
+      :pending="mergePending"
+      :sources="mergeSources"
+      :result="mergeResult"
+      :error-message="mergeError"
+      :idempotency-key="mergeIdempotencyKey"
+      @submit="submitMerge"
+      @retry-readback="retryMergeReadback"
+    />
 
     <NvDialog v-model:open="releaseDialogOpen">
       <NvDialogContent class="sm:max-w-lg">
