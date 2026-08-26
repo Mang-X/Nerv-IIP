@@ -299,6 +299,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationException("Only in-progress operation task can be completed.");
         }
 
+        if (ExistingStartUtc is { } existingStartUtc && completedAtUtc < existingStartUtc)
+        {
+            throw new InvalidOperationException("Operation task cannot be completed before its current start time.");
+        }
+
         Status = OperationTaskLifecycleStatus.Completed;
         ExistingStartUtc ??= completedAtUtc;
         ExistingEndUtc = completedAtUtc;

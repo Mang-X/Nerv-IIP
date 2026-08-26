@@ -71,6 +71,32 @@ public sealed class OperationActualTimeSettlementTests
     }
 
     [Fact]
+    public void Completion_before_the_reopen_start_is_rejected_without_state_or_revision_change()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var firstCompletionAtUtc = startedAtUtc.AddHours(1);
+        var secondCompletionAtUtc = startedAtUtc.AddHours(2);
+        var reopenedAtUtc = startedAtUtc.AddHours(3);
+        var task = CreateTask(startedAtUtc);
+        task.Start(startedAtUtc);
+        task.Complete(firstCompletionAtUtc, ["PR-001"]);
+        task.ReopenAfterReportReversal(Settlement(task), reopenedAtUtc);
+        task.ClearDomainEvents();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            task.Complete(secondCompletionAtUtc, ["PR-001", "PR-REV-001", "PR-002"]));
+
+        Assert.Contains("start", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
+        Assert.Equal(1, task.ActualTimeSettlementRevision);
+        Assert.Equal(reopenedAtUtc, task.ExistingStartUtc);
+        Assert.Null(task.ExistingEndUtc);
+        Assert.Equal(0, task.LaborTimeTicks);
+        Assert.Equal(0, task.MachineTimeTicks);
+        Assert.Empty(task.GetDomainEvents());
+    }
+
+    [Fact]
     public void Reopening_a_non_completed_task_does_not_publish_a_void()
     {
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");

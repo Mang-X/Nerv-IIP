@@ -321,12 +321,6 @@ BusinessGateway 已以 `business.scheduling.plans.read/manage` 暴露紧急度�
 
 BusinessScheduling 以 organization + environment 为硬隔离边界执行 `order_urgency_snapshots` 生命周期：在线保留默认 180 天、总保留默认 1,095 天，且每张订单的 latest snapshot 永不因在线清理被移除。保留 worker 默认关闭；scope 未显式启用、配置非法、legal hold active、FileStorage/MinIO 不可用、bucket 未启用版本化、exact-version 回读的 SHA-256/大小证据不完整、删除授权缺失或过期时均 fail safe，不删除源快照。Scheduling 记录稳定 batch、精确 object version、归档/删除证据和恢复审计，数据库租约与唯一约束收敛多实例并发；FileStorage 只负责版本化对象存储边界，不让 Scheduling 直接访问 MinIO。源行与超过三年 archive version 的删除需要相互独立、限时且可审计的显式授权，legal hold 默认 false。受管内部 restore endpoint 校验 exact version 后幂等回灌，运营恢复目标为 24 小时。迁移、配置、指标告警、恢复和代表性 10,002 行 PostgreSQL 容量验证见 `docs/architecture/business-scheduling-order-urgency-retention.md`。
 
-## MES 工序实际工时结算事实（#2273）
-
-MES 工序完成现在以 `actual_time_settlement_revision` 形成单调业务版本，并把本次覆盖报工、实际人工 ticks 与机器 ticks 规范化冻结到 `operation_actual_time_settlements` 及 `operation_actual_time_settlement_reports`；框架 `row_version` 独立承担乐观并发。完成状态、关系型追溯和 `mes.OperationActualTimeSettled` CAP outbox 在同一事务提交。覆盖完工报工被冲销时，对应正 revision 的活动结算标记作废、工序重开并发布 `mes.OperationActualTimeSettlementVoided`；作废不递增 revision，后续再次完工才产生更高 revision。升级前既有工序 revision 为 0，不推测或补发历史结算；找不到精确活动结算的 legacy 冲销失败关闭。
-
-本切片只交付 MES 权威实绩结算与精确作废事实，不实现 ERP 人工/机器成本、HTTP、Gateway 或 UI。ERP 消费、费率选择及财务冲销由 #2275 独立负责；其消费方必须按 scope、工序和 revision 幂等处理，不得从 MES 当前可变状态反推原结算。
-
 ## 并行全栈验证基线
 
 真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：managed session 在 AppHost 启动前显式注入 Redis messaging 与 PostgreSQL persistence profile，并把实际选择写入 manifest；场景只以 BusinessGateway 公开 HTTP 作为业务断言面，再由 manifest 向浏览器证据进程盖章真实 PostgreSQL 与跨进程 Redis Streams 画像。逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`，该运行产物不提交仓库；只有逐跳 runtime-confirmed 和已登记的 #972 查询 gap 可以通过，任何 `not-verified` 或未纳入验收基线的 gap 都使场景非零退出。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。

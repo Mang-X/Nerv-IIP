@@ -202,6 +202,42 @@ public sealed class OperationActualTimeSettlementPostgresTests
     }
 
     [MesRealPostgresFact]
+    public async Task Settlement_void_before_completion_is_rejected_by_named_check_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
+        OperationActualTimeSettlement settlement;
+        await using (var setup = CreateContext(options))
+        {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.WorkOrders.Add(CreateWorkOrder());
+            var task = CreateRunningTask();
+            setup.OperationTasks.Add(task);
+            task.Complete(At(60), []);
+            settlement = OperationActualTimeSettlement.Capture(
+                Assert.Single(task.GetDomainEvents()
+                    .OfType<OperationActualTimeSettledDomainEvent>()).Settlement);
+            setup.OperationActualTimeSettlements.Add(settlement);
+            await setup.SaveChangesAsync();
+        }
+
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE mes.operation_actual_time_settlements
+            SET voided_at_utc = completed_at_utc - INTERVAL '1 second'
+            WHERE id = @id
+            """;
+        command.Parameters.AddWithValue("id", settlement.Id.Id);
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+        Assert.Equal("ck_operation_actual_time_settlements_void_order", exception.ConstraintName);
+    }
+
+    [MesRealPostgresFact]
     public async Task Settlement_lineage_rejects_a_report_from_another_scope_or_task_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -248,14 +284,24 @@ public sealed class OperationActualTimeSettlementPostgresTests
             "org-002",
             "WO-002",
             "OP-002",
-            "PR-OTHER");
+            "PR-OTHER",
+            "fk_operation_actual_time_settlement_reports_settlement");
         await AssertLineageRejectedAsync(
             connection,
             settlement.Id.Id,
             "org-001",
             "WO-003",
             "OP-003",
-            "PR-OTHER-TASK");
+            "PR-OTHER-TASK",
+            "fk_operation_actual_time_settlement_reports_settlement");
+        await AssertLineageRejectedAsync(
+            connection,
+            settlement.Id.Id,
+            "org-001",
+            "WO-001",
+            "OP-001",
+            "PR-OTHER-TASK",
+            "fk_operation_actual_time_settlement_reports_production_reports");
     }
 
     private static async Task AssertLineageRejectedAsync(
@@ -264,7 +310,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
         string organizationId,
         string workOrderId,
         string operationTaskId,
-        string reportNo)
+        string reportNo,
+        string expectedConstraintName)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -282,9 +329,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
 
         var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
-        Assert.Equal(
-            "fk_operation_actual_time_settlement_reports_settlement",
-            exception.ConstraintName);
+        Assert.Equal(expectedConstraintName, exception.ConstraintName);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
