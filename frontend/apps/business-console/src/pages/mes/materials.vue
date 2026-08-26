@@ -51,6 +51,7 @@ const {
   lineSideInventoryError,
   lineSideInventoryPage,
   lineSideInventoryPageCount,
+  lineSideInventoryPageSize,
   lineSideInventoryPending,
   lineSideInventoryReady,
   lineSideInventoryTotal,
@@ -172,6 +173,7 @@ function formatError(error: unknown) {
       :items="lineSideInventoryBalances"
       :page="lineSideInventoryPage"
       :page-count="lineSideInventoryPageCount"
+      :page-size="lineSideInventoryPageSize"
       :total="lineSideInventoryTotal"
       :pending="lineSideInventoryPending"
       :error="lineSideInventoryError"

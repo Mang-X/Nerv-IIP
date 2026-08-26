@@ -8,6 +8,7 @@ const lineSideInventoryPending = ref(false)
 const lineSideInventoryError = ref<unknown>(null)
 const lineSideInventoryReady = ref(true)
 const lineSideInventoryTotal = ref(201)
+const lineSideInventoryPageSize = ref(200)
 const lineSideInventoryBalances = ref([
   {
     siteCode: 'SITE-SH',
@@ -68,6 +69,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     lineSideInventoryReady,
     lineSideInventoryPage: ref(1),
     lineSideInventoryPageCount: ref(2),
+    lineSideInventoryPageSize,
     lineSideInventoryHasPreviousPage: ref(false),
     lineSideInventoryHasNextPage: ref(true),
     goToLineSideInventoryPage,
@@ -103,7 +105,17 @@ describe('Console MES materials page line-side inventory', () => {
     lineSideInventoryError.value = null
     lineSideInventoryReady.value = true
     lineSideInventoryTotal.value = 201
+    lineSideInventoryPageSize.value = 200
     lineSideInventoryBalances.value = initialLineSideInventoryBalances
+  })
+
+  it('把 composable 的 pageSize 原样传给内建分页', async () => {
+    lineSideInventoryPageSize.value = 73
+    lineSideInventoryTotal.value = 146
+    const wrapper = mount(MaterialsPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('显示 1–73 / 146 条')
   })
 
   it('shows authoritative balances and distinguishes complete, partial, and unknown ages', async () => {

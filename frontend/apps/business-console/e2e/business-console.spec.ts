@@ -192,6 +192,62 @@ test('领料与齐套：领料申请渲染收料进度与「查看出库」闭�
   }
 })
 
+test('领料与齐套：第 2 页失败后保留下方分页并可返回第 1 页', async ({ page }) => {
+  await page.route(
+    '**/api/business-console/v1/mes/line-side-inventory-balances*',
+    async (route) => {
+      const requestedPage = Number(new URL(route.request().url()).searchParams.get('page') ?? 1)
+      if (requestedPage === 2) {
+        return fulfillJson(route, {
+          success: false,
+          message: '第 2 页库存暂不可用',
+          data: null,
+        })
+      }
+      return fulfillJson(
+        route,
+        envelope({
+          items: [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-RECOVERY-PAGE-1',
+              uomCode: 'pcs',
+              onHandQuantity: 12,
+              reservedQuantity: 2,
+              availableQuantity: 10,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ],
+          totalCount: 201,
+          page: 1,
+          pageSize: 200,
+          asOfDate: '2026-08-26',
+        }),
+      )
+    },
+  )
+
+  await page.goto('/mes/materials', { waitUntil: 'domcontentloaded' })
+  const lineSideInventory = page.locator('section[aria-labelledby="line-side-inventory-title"]')
+  await expect(
+    lineSideInventory.getByText('SKU-RECOVERY-PAGE-1', { exact: true }).filter({ visible: true }),
+  ).toBeVisible({ timeout: 15_000 })
+  await lineSideInventory.getByRole('button', { name: '下一页' }).click()
+
+  await expect(lineSideInventory.getByRole('alert')).toContainText('第 2 页库存暂不可用')
+  await expect(lineSideInventory.locator('nav[aria-label="分页"]')).toBeVisible()
+  await expect(lineSideInventory.getByRole('button', { name: '上一页' })).toBeEnabled()
+  await lineSideInventory.getByRole('button', { name: '上一页' }).click()
+  await expect(
+    lineSideInventory.getByText('SKU-RECOVERY-PAGE-1', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
+})
+
 test('工序执行：队列渲染、可报工行直显「报工」按钮且能进报工弹窗', async ({ page }) => {
   // 工序任务数据来自共享 mock（op-1：Ready + WO-001 → 可报工）。
   await page.goto('/mes/operation-tasks', { waitUntil: 'domcontentloaded' })

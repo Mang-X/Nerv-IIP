@@ -12,6 +12,7 @@ const props = defineProps<{
   items: BusinessConsoleMesLineSideInventoryBalanceItem[]
   page: number
   pageCount: number
+  pageSize: number
   pending: boolean
   ready: boolean
   total: number
@@ -77,82 +78,90 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
       当前组织/环境范围暂无线边库存余额。
     </div>
 
-    <template v-else-if="items.length > 0">
-      <div data-testid="line-side-inventory-mobile" class="grid gap-3 md:hidden">
-        <article
-          v-for="item in items"
-          :key="`${item.siteCode}-${item.locationCode}-${item.skuCode}-${item.uomCode}`"
-          class="grid gap-2 rounded-md border bg-card p-4"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="font-medium text-foreground">{{ item.skuCode ?? '物料编码未提供' }}</p>
-              <p class="text-sm text-muted-foreground">
-                {{ item.locationCode ?? '未指定线边库' }} · {{ item.siteCode ?? '未指定站点' }}
-              </p>
-            </div>
-            <span class="shrink-0 text-sm text-muted-foreground">{{ item.lotCount ?? 0 }} 批</span>
+    <div
+      v-if="items.length > 0"
+      data-testid="line-side-inventory-mobile"
+      class="grid gap-3 md:hidden"
+    >
+      <article
+        v-for="item in items"
+        :key="`${item.siteCode}-${item.locationCode}-${item.skuCode}-${item.uomCode}`"
+        class="grid gap-2 rounded-md border bg-card p-4"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="font-medium text-foreground">{{ item.skuCode ?? '物料编码未提供' }}</p>
+            <p class="text-sm text-muted-foreground">
+              {{ item.locationCode ?? '未指定线边库' }} · {{ item.siteCode ?? '未指定站点' }}
+            </p>
           </div>
-          <p class="text-sm tabular-nums text-foreground">
-            在手 {{ quantity(item.onHandQuantity) }} {{ item.uomCode ?? '单位未提供' }} · 预留
-            {{ quantity(item.reservedQuantity) }} · 可用 {{ quantity(item.availableQuantity) }}
-            {{ item.uomCode ?? '单位未提供' }}
-          </p>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm text-muted-foreground">
-              {{ lineSideInventoryAgePresentation(item).detail }}
+          <span class="shrink-0 text-sm text-muted-foreground">{{ item.lotCount ?? 0 }} 批</span>
+        </div>
+        <p class="text-sm tabular-nums text-foreground">
+          在手 {{ quantity(item.onHandQuantity) }} {{ item.uomCode ?? '单位未提供' }} · 预留
+          {{ quantity(item.reservedQuantity) }} · 可用 {{ quantity(item.availableQuantity) }}
+          {{ item.uomCode ?? '单位未提供' }}
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm text-muted-foreground">
+            {{ lineSideInventoryAgePresentation(item).detail }}
+          </span>
+          <NvStatusBadge
+            :label="lineSideInventoryAgePresentation(item).label"
+            :tone="lineSideInventoryAgePresentation(item).tone"
+          />
+        </div>
+      </article>
+    </div>
+
+    <div
+      v-if="items.length > 0 || (errorMessage && page > 1 && total > pageSize)"
+      :class="[
+        'line-side-inventory-table',
+        { 'line-side-inventory-table--recovery': errorMessage && items.length === 0 },
+      ]"
+    >
+      <NvDataTable
+        :columns="columns"
+        :rows="items"
+        :row-key="rowKey"
+        :loading="pending"
+        :searchable="false"
+        :column-settings="false"
+        manual
+        :page="page"
+        :page-size="pageSize"
+        :page-size-options="[pageSize]"
+        :total-items="total"
+        @update:page="emit('updatePage', $event)"
+      >
+        <template #cell-locationCode="{ row }">
+          <div class="flex flex-col">
+            <span>{{ row.locationCode ?? '未指定线边库' }}</span>
+            <span class="text-xs text-muted-foreground">{{ row.siteCode ?? '未指定站点' }}</span>
+          </div>
+        </template>
+        <template #cell-onHandQuantity="{ row }">
+          <div class="grid gap-0.5 text-sm tabular-nums">
+            <span>在手 {{ quantity(row.onHandQuantity) }} {{ row.uomCode ?? '单位未提供' }}</span>
+            <span class="text-muted-foreground">
+              预留 {{ quantity(row.reservedQuantity) }} · 可用 {{ quantity(row.availableQuantity) }}
+              {{ row.uomCode ?? '单位未提供' }}
             </span>
+          </div>
+        </template>
+        <template #cell-lotCount="{ row }">{{ row.lotCount ?? 0 }} 批</template>
+        <template #cell-ageDays="{ row }">
+          <div class="flex flex-col items-start gap-1">
+            <span class="text-sm">{{ lineSideInventoryAgePresentation(row).detail }}</span>
             <NvStatusBadge
-              :label="lineSideInventoryAgePresentation(item).label"
-              :tone="lineSideInventoryAgePresentation(item).tone"
+              :label="lineSideInventoryAgePresentation(row).label"
+              :tone="lineSideInventoryAgePresentation(row).tone"
             />
           </div>
-        </article>
-      </div>
-
-      <div class="line-side-inventory-table">
-        <NvDataTable
-          :columns="columns"
-          :rows="items"
-          :row-key="rowKey"
-          :loading="pending"
-          :searchable="false"
-          :column-settings="false"
-          manual
-          :page="page"
-          :page-size="200"
-          :page-size-options="[200]"
-          :total-items="total"
-          @update:page="emit('updatePage', $event)"
-        >
-          <template #cell-locationCode="{ row }">
-            <div class="flex flex-col">
-              <span>{{ row.locationCode ?? '未指定线边库' }}</span>
-              <span class="text-xs text-muted-foreground">{{ row.siteCode ?? '未指定站点' }}</span>
-            </div>
-          </template>
-          <template #cell-onHandQuantity="{ row }">
-            <div class="grid gap-0.5 text-sm tabular-nums">
-              <span>在手 {{ quantity(row.onHandQuantity) }} {{ row.uomCode ?? '单位未提供' }}</span>
-              <span class="text-muted-foreground">
-                预留 {{ quantity(row.reservedQuantity) }} · 可用
-                {{ quantity(row.availableQuantity) }} {{ row.uomCode ?? '单位未提供' }}
-              </span>
-            </div>
-          </template>
-          <template #cell-lotCount="{ row }">{{ row.lotCount ?? 0 }} 批</template>
-          <template #cell-ageDays="{ row }">
-            <div class="flex flex-col items-start gap-1">
-              <span class="text-sm">{{ lineSideInventoryAgePresentation(row).detail }}</span>
-              <NvStatusBadge
-                :label="lineSideInventoryAgePresentation(row).label"
-                :tone="lineSideInventoryAgePresentation(row).tone"
-              />
-            </div>
-          </template>
-        </NvDataTable>
-      </div>
-    </template>
+        </template>
+      </NvDataTable>
+    </div>
   </section>
 </template>
 
@@ -161,5 +170,9 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
   .line-side-inventory-table :deep([data-slot='table-container']) {
     display: none;
   }
+}
+
+.line-side-inventory-table--recovery :deep([data-slot='table-container']) {
+  display: none;
 }
 </style>

@@ -2275,6 +2275,7 @@ describe('business MES composables', () => {
       expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
     )
     expect(result.lineSideInventoryPending.value).toBe(false)
+    expect(result.lineSideInventoryTotal.value).toBe(0)
   })
 
   it('翻页后带当前请求身份的迟到错页 payload 不得投影', async () => {
@@ -2312,6 +2313,8 @@ describe('business MES composables', () => {
       expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
     )
     expect(result.lineSideInventoryPending.value).toBe(false)
+    expect(result.lineSideInventoryTotal.value).toBe(401)
+    expect(result.lineSideInventoryPageCount.value).toBe(3)
 
     result.previousLineSideInventoryPage()
     expect(result.lineSideInventoryPage.value).toBe(1)
@@ -2336,6 +2339,7 @@ describe('business MES composables', () => {
 
     expect(result.lineSideInventoryPage.value).toBe(1)
     expect(result.lineSideInventoryBalances.value).toEqual([])
+    expect(result.lineSideInventoryTotal.value).toBe(0)
     expect(result.lineSideInventoryReady.value).toBe(false)
     coladaState.queryFactoriesById.get('listBusinessConsoleMesLineSideInventoryBalances')?.()
     expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
@@ -2364,6 +2368,8 @@ describe('business MES composables', () => {
     expect(result.lineSideInventoryError.value).toEqual(
       expect.objectContaining({ message: '第 2 页加载失败' }),
     )
+    expect(result.lineSideInventoryTotal.value).toBe(401)
+    expect(result.lineSideInventoryPageCount.value).toBe(3)
     result.previousLineSideInventoryPage()
     expect(result.lineSideInventoryPage.value).toBe(1)
   })
@@ -2412,6 +2418,7 @@ describe('business MES composables', () => {
     )?.().key
 
     expect(result.lineSideInventoryPage.value).toBe(1)
+    expect(result.lineSideInventoryPageSize).toBe(200)
     expect(result.lineSideInventoryPageCount.value).toBe(3)
     expect(result.lineSideInventoryHasNextPage.value).toBe(true)
 

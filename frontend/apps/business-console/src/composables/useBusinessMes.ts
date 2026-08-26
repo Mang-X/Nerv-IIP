@@ -2021,6 +2021,7 @@ export function useMesLineSideInventoryBalances() {
   const pageSize = 200
   const page = shallowRef(1)
   const pageNavigationPending = shallowRef(false)
+  const lastSuccessfulTotal = shallowRef(0)
   const filters = defaultContext()
   const scopeIdentity = computed(() =>
     hasBusinessContext(filters)
@@ -2031,6 +2032,7 @@ export function useMesLineSideInventoryBalances() {
     () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
     () => {
       pageNavigationPending.value = false
+      lastSuccessfulTotal.value = 0
       page.value = 1
     },
     { flush: 'sync' },
@@ -2073,6 +2075,15 @@ export function useMesLineSideInventoryBalances() {
     const response = scopedResponse.response
     return response?.success === true && (response.data?.page ?? 1) !== page.value
   })
+  watch(
+    currentResponse,
+    (response) => {
+      if (response?.success === true) {
+        lastSuccessfulTotal.value = response.data?.totalCount ?? 0
+      }
+    },
+    { flush: 'sync', immediate: true },
+  )
   const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
   const state = businessReadState(
     { data: currentResponse, error: query.error, isLoading: pending },
@@ -2088,7 +2099,9 @@ export function useMesLineSideInventoryBalances() {
           : null,
   )
   const total = computed(() =>
-    currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
+    currentResponse.value?.success
+      ? (currentResponse.value.data?.totalCount ?? 0)
+      : lastSuccessfulTotal.value,
   )
   const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
   const hasPreviousPage = computed(() => page.value > 1)
@@ -2145,6 +2158,7 @@ export function useMesLineSideInventoryBalances() {
     ),
     lineSideInventoryTotal: total,
     lineSideInventoryPage: page,
+    lineSideInventoryPageSize: pageSize,
     lineSideInventoryPageCount: pageCount,
     lineSideInventoryHasPreviousPage: hasPreviousPage,
     lineSideInventoryHasNextPage: hasNextPage,
