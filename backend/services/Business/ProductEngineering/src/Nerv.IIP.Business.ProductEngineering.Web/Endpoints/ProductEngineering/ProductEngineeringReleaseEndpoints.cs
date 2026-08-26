@@ -3,7 +3,6 @@ using FastEndpoints;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
-using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;

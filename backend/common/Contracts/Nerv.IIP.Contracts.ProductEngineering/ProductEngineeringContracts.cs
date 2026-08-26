@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Contracts.ProductEngineering;
@@ -29,55 +27,21 @@ public sealed record ResolveProductionVersionResponse(
     string Status);
 
 public sealed record ProductionVersionListItem(
-    [property: JsonRequired, Required] string ProductionVersionId,
-    [property: JsonRequired, Required] string OrganizationId,
-    [property: JsonRequired, Required] string EnvironmentId,
-    [property: JsonRequired, Required] string SkuCode,
-    [property: JsonRequired, Required] string MbomVersionId,
-    [property: JsonRequired, Required] string RoutingVersionId,
-    [property: JsonRequired] DateOnly ValidFrom,
+    string ProductionVersionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string MbomVersionId,
+    string RoutingVersionId,
+    DateOnly ValidFrom,
     DateOnly? ValidTo,
     decimal? LotSizeMin,
     decimal? LotSizeMax,
-    [property: JsonRequired] int Priority,
-    [property: JsonRequired] bool IsDefault,
-    [property: JsonRequired, Required] string Status);
+    int Priority,
+    bool IsDefault,
+    string Status);
 
-public sealed record ListProductionVersionsResponse(
-    [property: JsonRequired, Required] IReadOnlyCollection<ProductionVersionListItem> Items,
-    [property: JsonRequired, Required] int Total);
-
-public sealed record ManufacturingBomMaterialLineItem(
-    string SkuCode,
-    decimal Quantity,
-    string UnitOfMeasureCode,
-    decimal ScrapRate,
-    bool IsPhantom = false,
-    string? AlternateGroup = null,
-    int? AlternatePriority = null,
-    string? SubstituteSkuCodes = null,
-    string? ReferenceDesignators = null,
-    decimal YieldRate = 1m,
-    bool Backflush = false);
-
-public sealed record ManufacturingBomRecipeLineItem(
-    string ParameterCode,
-    string TargetValue,
-    string UnitOfMeasureCode);
-
-public sealed record ManufacturingBomListItem(
-    string BomCode,
-    string Revision,
-    string SkuCode,
-    string EngineeringBomVersionId,
-    string Status,
-    DateOnly? EffectiveDate,
-    [property: JsonRequired, Required] IReadOnlyCollection<ManufacturingBomMaterialLineItem> MaterialLines,
-    [property: JsonRequired, Required] IReadOnlyCollection<ManufacturingBomRecipeLineItem> RecipeLines);
-
-public sealed record ListManufacturingBomsResponse(
-    [property: JsonRequired, Required] IReadOnlyCollection<ManufacturingBomListItem> Items,
-    [property: JsonRequired, Required] int Total);
+public sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items, int Total);
 
 public static class ProductEngineeringIntegrationEventTypes
 {

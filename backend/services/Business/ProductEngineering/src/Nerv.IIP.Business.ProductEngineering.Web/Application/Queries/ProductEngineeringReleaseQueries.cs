@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
@@ -149,6 +148,33 @@ public sealed class GetEngineeringBomQueryHandler(ApplicationDbContext dbContext
             ?? throw new KnownException($"工程 BOM '{request.BomCode}' 修订 '{request.Revision}' 不存在。");
     }
 }
+
+public sealed record ManufacturingBomMaterialLineItem(
+    string SkuCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
+
+public sealed record ManufacturingBomRecipeLineItem(string ParameterCode, string TargetValue, string UnitOfMeasureCode);
+
+public sealed record ManufacturingBomListItem(
+    string BomCode,
+    string Revision,
+    string SkuCode,
+    string EngineeringBomVersionId,
+    string Status,
+    DateOnly? EffectiveDate,
+    IReadOnlyCollection<ManufacturingBomMaterialLineItem> MaterialLines,
+    IReadOnlyCollection<ManufacturingBomRecipeLineItem> RecipeLines);
+
+public sealed record ListManufacturingBomsResponse(IReadOnlyCollection<ManufacturingBomListItem> Items, int Total);
 
 public sealed record ListManufacturingBomsQuery(
     string OrganizationId,

@@ -58,6 +58,17 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             Assert.Single(method.ReturnType.GenericTypeArguments).Assembly.GetName().Name);
     }
 
+    [Fact]
+    public void Client_reuses_the_canonical_business_service_http_module()
+    {
+        var client = new HttpBusinessMesMaterialPrevalidationClient(new HttpClient(new RecordingHandler())
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+        Assert.IsAssignableFrom<BusinessServiceHttpClient>(client);
+    }
+
     [Theory]
     [InlineData("{\"decision\":\"accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
     [InlineData("{\"decision\":\"unexpected\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]

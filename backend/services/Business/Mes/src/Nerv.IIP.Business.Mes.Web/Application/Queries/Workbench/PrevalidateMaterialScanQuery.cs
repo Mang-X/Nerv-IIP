@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -10,9 +9,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
-using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
-using ContractManufacturingBomListItem = Nerv.IIP.Contracts.ProductEngineering.ManufacturingBomListItem;
 using ContractStockAvailabilityResponse = Nerv.IIP.Contracts.Inventory.StockAvailabilityResponse;
 using MesMaterialScanPrevalidationResponse = Nerv.IIP.Contracts.Mes.BusinessConsoleMesMaterialScanPrevalidationResponse;
 
@@ -37,19 +34,6 @@ public sealed class PrevalidateMaterialScanQueryValidator : AbstractValidator<Pr
     }
 }
 
-public sealed record MesMaterialQualificationRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    string FinishedSkuId,
-    string ProductionVersionId,
-    IReadOnlyCollection<string> RequiredPrimaryMaterialIds,
-    string MaterialId);
-
-public interface IMesMaterialQualificationProvider
-{
-    Task<bool> IsFrozenSubstituteAsync(MesMaterialQualificationRequest request, CancellationToken cancellationToken);
-}
-
 public sealed record MesMaterialLotAvailabilityRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -71,7 +55,6 @@ public interface IMesMaterialLotAvailabilityProvider
 
 public sealed class PrevalidateMaterialScanQueryHandler(
     ApplicationDbContext dbContext,
-    IMesMaterialQualificationProvider qualificationProvider,
     IMesMaterialLotAvailabilityProvider availabilityProvider,
     TimeProvider timeProvider)
     : IQueryHandler<PrevalidateMaterialScanQuery, MesMaterialScanPrevalidationResponse>
@@ -127,30 +110,21 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                 request, "line-side-receipt-incomplete", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
-        var requiredPrimaryMaterialIds = await dbContext.MaterialRequirements.AsNoTracking().Where(x =>
+        var requirements = await dbContext.MaterialRequirements.AsNoTracking().Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId &&
             x.WorkOrderId == request.WorkOrderId &&
             (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId))
-            .Select(x => x.MaterialId)
-            .Distinct()
             .ToArrayAsync(cancellationToken);
-        var isPrimary = requiredPrimaryMaterialIds.Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase);
+        var isPrimary = requirements.Any(x =>
+            string.Equals(x.MaterialId, issue.MaterialId, StringComparison.OrdinalIgnoreCase));
 
         var qualification = "primary";
         if (!isPrimary)
         {
-            if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId) ||
-                requiredPrimaryMaterialIds.Length == 0 ||
-                !await qualificationProvider.IsFrozenSubstituteAsync(
-                    new MesMaterialQualificationRequest(
-                        request.OrganizationId,
-                        request.EnvironmentId,
-                        workOrder.SkuId,
-                        workOrder.ProductionVersionId,
-                        requiredPrimaryMaterialIds,
-                        issue.MaterialId),
-                    cancellationToken))
+            var isFrozenSubstitute = requirements.Any(x =>
+                x.GetSubstituteMaterialIds().Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase));
+            if (!isFrozenSubstitute)
             {
                 return Reject(
                     request, "material-not-required", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
@@ -198,86 +172,13 @@ public sealed class PrevalidateMaterialScanQueryHandler(
             request.OperationTaskId, materialId, materialLotId, null, evaluatedAtUtc);
 }
 
-public sealed class HttpMesMaterialPrevalidationProvider(
-    MesProductEngineeringHttpClient productEngineeringClient,
+public sealed class HttpMesMaterialLotAvailabilityProvider(
     MesInventoryHttpClient inventoryClient,
     IInternalServiceTokenProvider internalTokenProvider,
     IMesIntegrationEventContextAccessor correlationContextAccessor)
-    : IMesMaterialQualificationProvider, IMesMaterialLotAvailabilityProvider
+    : IMesMaterialLotAvailabilityProvider
 {
-    public async Task<bool> IsFrozenSubstituteAsync(
-        MesMaterialQualificationRequest request,
-        CancellationToken cancellationToken)
-    {
-        var correlationId = correlationContextAccessor.GetContext().CorrelationId;
-        var versions = await GetAsync<ListProductionVersionsResponse>(
-            productEngineeringClient.HttpClient,
-            "ProductEngineering",
-            "/api/business/v1/engineering/production-versions?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("skuCode", request.FinishedSkuId),
-                ("skip", 0),
-                ("take", 500)),
-            correlationId,
-            cancellationToken);
-        if (versions.Items is null ||
-            versions.Total != versions.Items.Count ||
-            versions.Items.Any(x => x is null ||
-                string.IsNullOrWhiteSpace(x.ProductionVersionId) ||
-                string.IsNullOrWhiteSpace(x.OrganizationId) ||
-                string.IsNullOrWhiteSpace(x.EnvironmentId) ||
-                string.IsNullOrWhiteSpace(x.SkuCode) ||
-                string.IsNullOrWhiteSpace(x.MbomVersionId) ||
-                string.IsNullOrWhiteSpace(x.RoutingVersionId) ||
-                x.ValidFrom == default ||
-                string.IsNullOrWhiteSpace(x.Status)))
-        {
-            throw SourceUnavailable("ProductEngineering 冻结生产版本列表不完整。");
-        }
-
-        var matches = versions.Items.Where(x =>
-            string.Equals(x.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(x.OrganizationId, request.OrganizationId, StringComparison.Ordinal) &&
-            string.Equals(x.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) &&
-            string.Equals(x.SkuCode, request.FinishedSkuId, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (matches.Length > 1)
-        {
-            throw SourceUnavailable("ProductEngineering 冻结生产版本列表不完整或存在重复项。");
-        }
-
-        var version = matches.SingleOrDefault();
-        if (version is null || !TryParseVersionReference(version.MbomVersionId, out var bomCode, out var revision))
-        {
-            return false;
-        }
-
-        var bom = await GetAsync<ContractManufacturingBomListItem>(
-            productEngineeringClient.HttpClient,
-            "ProductEngineering",
-            $"/api/business/v1/engineering/manufacturing-boms/{Uri.EscapeDataString(bomCode)}/{Uri.EscapeDataString(revision)}?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId)),
-            correlationId,
-            cancellationToken);
-        if (!string.Equals(bom.BomCode, bomCode, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(bom.Revision, revision, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(bom.SkuCode, request.FinishedSkuId, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(bom.Status, "published", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (bom.MaterialLines is null || bom.RecipeLines is null)
-        {
-            throw SourceUnavailable("ProductEngineering MBOM 明细集合不完整。");
-        }
-
-        var requiredPrimaryMaterialIds = request.RequiredPrimaryMaterialIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return bom.MaterialLines.Any(line =>
-            requiredPrimaryMaterialIds.Contains(line.SkuCode) &&
-            SplitSubstituteCodes(line.SubstituteSkuCodes).Contains(request.MaterialId, StringComparer.OrdinalIgnoreCase));
-    }
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<MesMaterialLotAvailabilityResult> GetAsync(
         MesMaterialLotAvailabilityRequest request,
@@ -296,7 +197,8 @@ public sealed class HttpMesMaterialPrevalidationProvider(
                 ("lotNo", request.MaterialLotId),
                 ("asOfDate", request.AsOfDate)),
             correlationContextAccessor.GetContext().CorrelationId,
-            cancellationToken);
+            cancellationToken,
+            ValidateStockAvailabilityJson);
         if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
             !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) ||
             !string.Equals(response.SkuCode, request.MaterialId, StringComparison.OrdinalIgnoreCase) ||
@@ -334,7 +236,8 @@ public sealed class HttpMesMaterialPrevalidationProvider(
         string serviceName,
         string requestUri,
         string correlationId,
-        CancellationToken cancellationToken) where T : class
+        CancellationToken cancellationToken,
+        Action<JsonElement>? validateData = null) where T : class
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
@@ -364,7 +267,14 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             ResponseDataEnvelope<T>? envelope;
             try
             {
-                envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var document = JsonDocument.Parse(json);
+                envelope = JsonSerializer.Deserialize<ResponseDataEnvelope<T>>(json, JsonOptions);
+                if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("data", out var data))
+                {
+                    validateData?.Invoke(data);
+                }
             }
             catch (JsonException exception)
             {
@@ -386,18 +296,41 @@ public sealed class HttpMesMaterialPrevalidationProvider(
     private static KnownException SourceUnavailable(string detail) =>
         new($"MATERIAL_SCAN_SOURCE_UNAVAILABLE: 物料扫码预校验来源不可用。{detail}");
 
-    private static IEnumerable<string> SplitSubstituteCodes(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? []
-            : value.Split([',', ';', '|'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-
-    private static bool TryParseVersionReference(string value, out string code, out string revision)
+    private static void ValidateStockAvailabilityJson(JsonElement data)
     {
-        var parts = value.Split(':', 2, StringSplitOptions.TrimEntries);
-        code = parts.Length == 2 ? parts[0] : string.Empty;
-        revision = parts.Length == 2 ? parts[1] : string.Empty;
-        return !string.IsNullOrWhiteSpace(code) && !string.IsNullOrWhiteSpace(revision);
+        if (data.ValueKind != JsonValueKind.Object ||
+            !HasString(data, "organizationId") ||
+            !HasString(data, "environmentId") ||
+            !HasString(data, "skuCode") ||
+            !HasString(data, "uomCode") ||
+            !HasString(data, "siteCode") ||
+            !HasString(data, "locationCode") ||
+            !HasString(data, "lotNo") ||
+            !HasNumber(data, "onHandQuantity") ||
+            !data.TryGetProperty("items", out var items) ||
+            items.ValueKind != JsonValueKind.Array ||
+            items.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.Object ||
+                !HasString(item, "locationCode") ||
+                !HasString(item, "lotNo") ||
+                !HasBoolean(item, "isExpired") ||
+                !HasBoolean(item, "movementAllowed") ||
+                !HasNumber(item, "onHandQuantity")))
+        {
+            throw SourceUnavailable("Inventory 返回的库存权威事实不完整。");
+        }
     }
+
+    private static bool HasString(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(value.GetString());
+
+    private static bool HasNumber(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number;
+
+    private static bool HasBoolean(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind is JsonValueKind.True or JsonValueKind.False;
 
     private static string Query(params (string Name, object? Value)[] values) => string.Join('&', values.Select(x =>
         $"{Uri.EscapeDataString(x.Name)}={Uri.EscapeDataString(Format(x.Value))}"));
