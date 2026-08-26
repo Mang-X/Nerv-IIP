@@ -135,9 +135,11 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         var observedPendingCapReceivedFacts = new Dictionary<string, CapReceivedEventFact>(StringComparer.Ordinal);
 
         // Real cross-process Redis CAP transport: stream history is the durable published fact. CAP stores
-        // the exact received row before enqueueing the subscriber, then XACKs the Redis entry; the
-        // subscriber's authority retry therefore becomes a CAP received Failed/Retries fact rather than
-        // a durable Redis PEL entry. The snapshot latches the exact row identity and latest status.
+        // the exact received row before enqueueing the subscriber. A successful consumer callback is
+        // XACKed, while RejectAsync leaves a failed subscriber entry in the PEL; depending on CAP's
+        // execution mode, the pending authority path can therefore have either an exact PEL entry or
+        // only its durable CAP received Failed/Retries row. The snapshot latches the exact row identity
+        // and latest status.
         try
         {
             var observed = await Eventually.WaitAsync(
@@ -234,12 +236,13 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             AssertEventTransport(transport.EventFacts, failureEvent.EventId);
             AssertEventTransport(transport.EventFacts, failureReplayEvent.EventId);
             AssertEventTransport(transport.EventFacts, pendingEvent.EventId);
-            // CAP XACKs after StoreReceivedMessageAsync/queueing and before the subscriber retry. A fresh
-            // PEL read is therefore expected to be empty; the event-specific CAP received row is the
-            // durable pending/retry source of truth and must carry the exact group, topic, and failure state.
-            Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), transport.PendingEventRedisFact.StreamName);
-            Assert.Equal(inventoryConsumerGroup, transport.PendingEventRedisFact.ConsumerGroup);
-            Assert.False(transport.PendingEventRedisFact.IsPresent);
+            // CAP XACKs only after the consumer callback completes successfully. RejectAsync does not ACK,
+            // so a failed authority subscriber may retain the exact event in the PEL. If the callback has
+            // already ACKed after enqueueing, the PEL may instead be absent. Both shapes are accepted only
+            // with their complete fail-closed identity evidence; neither replaces the CAP received proof.
+            var pendingRedisFact = transport.PendingEventRedisFact;
+            Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), pendingRedisFact.StreamName);
+            Assert.Equal(inventoryConsumerGroup, pendingRedisFact.ConsumerGroup);
             var pendingReceivedFact = transport.PendingCapReceivedFact;
             Assert.NotNull(pendingReceivedFact);
             Assert.Equal(pendingEvent.EventId, pendingReceivedFact!.EventId);
@@ -247,14 +250,33 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal(inventoryConsumerGroup, pendingReceivedFact.Group);
             Assert.Equal("Failed", pendingReceivedFact.StatusName);
             Assert.True(pendingReceivedFact.RetryCount >= 1);
+            if (pendingRedisFact.IsPresent)
+            {
+                Assert.Equal(pendingEvent.EventId, pendingRedisFact.EventId);
+                Assert.Equal(pendingEvent.IdempotencyKey, pendingRedisFact.IdempotencyKey);
+                Assert.False(string.IsNullOrWhiteSpace(pendingRedisFact.StreamEntryId));
+                Assert.False(string.IsNullOrWhiteSpace(pendingRedisFact.ConsumerName));
+                Assert.True(pendingRedisFact.DeliveryCount >= 1);
+                Assert.Equal(pendingReceivedFact.EventId, pendingRedisFact.EventId);
+                Assert.Equal(pendingReceivedFact.Group, pendingRedisFact.ConsumerGroup);
+            }
+            else
+            {
+                Assert.Null(pendingRedisFact.EventId);
+                Assert.Null(pendingRedisFact.IdempotencyKey);
+                Assert.Null(pendingRedisFact.StreamEntryId);
+                Assert.Null(pendingRedisFact.ConsumerName);
+                Assert.Equal(0, pendingRedisFact.DeliveryCount);
+            }
             Assert.Equal("Pending", transport.PendingAuthorityStatus);
             Assert.Equal("erp-capitalization-provenance-not-observed", transport.PendingAuthorityReason);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
         {
-            // The final read is diagnostic only. PEL absence after CAP's early XACK is expected; the CAP
-            // received status/retry fact remains the discriminating pending evidence.
+            // The final read is diagnostic only. CAP may retain or ACK the PEL depending on where the
+            // subscriber failure occurred; the final facts preserve both the exact PEL shape and the CAP
+            // received status/retry fact for diagnosis.
             var finalMessagingFacts = await ReadMessagingFactsAsync(
                 inventoryPostgres,
                 redis,
