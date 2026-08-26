@@ -79,12 +79,12 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      50 |      41 |        5 |        4 |
-| Mes                 |      56 |      55 |        0 |        1 |
+| Mes                 |      59 |      55 |        3 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **423** | **351** |   **46** |   **26** |
+| **Total**           | **426** | **351** |   **49** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
