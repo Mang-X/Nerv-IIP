@@ -188,6 +188,56 @@ describe('usePdaBarcodeResolver', () => {
     expect(resolver.status.value).toBe('idle')
   })
 
+  it('discards a late resolve response after environment-only drift', async () => {
+    const environmentId = shallowRef('env-1')
+    let settleFirst!: (value: BusinessConsoleBarcodeResolveEnvelope) => void
+    const resolver = usePdaBarcodeResolver({
+      organizationId: 'org-1',
+      environmentId,
+      resolveBarcode: vi.fn(
+        () =>
+          new Promise<BusinessConsoleBarcodeResolveEnvelope>((resolve) => {
+            settleFirst = resolve
+          }),
+      ),
+    })
+
+    const first = resolver.resolve('FIRST')
+    environmentId.value = 'env-2'
+    await nextTick()
+    settleFirst(
+      envelope('resolved', [{ objectType: 'mes-work-order', strongIds: { workOrderId: 'OLD' } }]),
+    )
+
+    await expect(first).resolves.toBeNull()
+    expect(resolver.scannedValue.value).toBe('')
+    expect(resolver.status.value).toBe('idle')
+  })
+
+  it('ignores a late resolve rejection after environment-only drift', async () => {
+    const environmentId = shallowRef('env-1')
+    let rejectFirst!: (reason?: unknown) => void
+    const resolver = usePdaBarcodeResolver({
+      organizationId: 'org-1',
+      environmentId,
+      resolveBarcode: vi.fn(
+        () =>
+          new Promise<BusinessConsoleBarcodeResolveEnvelope>((_resolve, reject) => {
+            rejectFirst = reject
+          }),
+      ),
+    })
+
+    const first = resolver.resolve('FIRST')
+    environmentId.value = 'env-2'
+    await nextTick()
+    rejectFirst(new Error('旧 environment 解析请求失败'))
+
+    await expect(first).resolves.toBeNull()
+    expect(resolver.scannedValue.value).toBe('')
+    expect(resolver.status.value).toBe('idle')
+  })
+
   it('discards an unknown search response after a newer scan starts', async () => {
     let settleSearch!: (value: BusinessConsoleSearchEnvelope) => void
     const resolver = usePdaBarcodeResolver({
@@ -260,6 +310,65 @@ describe('usePdaBarcodeResolver', () => {
     organizationId.value = 'org-2'
     await nextTick()
     rejectSearch(new Error('旧 scope 候选搜索失败'))
+    await firstSearch
+
+    expect(resolver.scannedValue.value).toBe('')
+    expect(resolver.status.value).toBe('idle')
+    expect(resolver.searchStatus.value).toBe('idle')
+    expect(resolver.searchResults.value).toEqual([])
+  })
+
+  it('discards a late unknown-search response after environment-only drift', async () => {
+    const environmentId = shallowRef('env-1')
+    let settleSearch!: (value: BusinessConsoleSearchEnvelope) => void
+    const resolver = usePdaBarcodeResolver({
+      organizationId: 'org-1',
+      environmentId,
+      resolveBarcode: vi.fn().mockResolvedValue(envelope('unknown')),
+      searchCandidates: vi.fn(
+        () =>
+          new Promise<BusinessConsoleSearchEnvelope>((resolve) => {
+            settleSearch = resolve
+          }),
+      ),
+    })
+
+    await resolver.resolve('FIRST')
+    const firstSearch = resolver.searchUnknownCandidates()
+    environmentId.value = 'env-2'
+    await nextTick()
+    settleSearch({
+      success: true,
+      data: { results: [{ objectType: 'mes-work-order', title: '过期候选' }] },
+    })
+    await firstSearch
+
+    expect(resolver.scannedValue.value).toBe('')
+    expect(resolver.status.value).toBe('idle')
+    expect(resolver.searchStatus.value).toBe('idle')
+    expect(resolver.searchResults.value).toEqual([])
+  })
+
+  it('ignores a late unknown-search rejection after environment-only drift', async () => {
+    const environmentId = shallowRef('env-1')
+    let rejectSearch!: (reason?: unknown) => void
+    const resolver = usePdaBarcodeResolver({
+      organizationId: 'org-1',
+      environmentId,
+      resolveBarcode: vi.fn().mockResolvedValue(envelope('unknown')),
+      searchCandidates: vi.fn(
+        () =>
+          new Promise<BusinessConsoleSearchEnvelope>((_resolve, reject) => {
+            rejectSearch = reject
+          }),
+      ),
+    })
+
+    await resolver.resolve('FIRST')
+    const firstSearch = resolver.searchUnknownCandidates()
+    environmentId.value = 'env-2'
+    await nextTick()
+    rejectSearch(new Error('旧 environment 候选搜索失败'))
     await firstSearch
 
     expect(resolver.scannedValue.value).toBe('')

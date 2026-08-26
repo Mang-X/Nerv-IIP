@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeResolveCandidate } from '@nerv-iip/api-client'
 import { NvMobileButton, NvScanBar } from '@nerv-iip/ui-mobile'
-import { computed, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
@@ -14,9 +14,15 @@ const resolver = usePdaBarcodeResolver({
   organizationId: identity.organizationId,
   environmentId: identity.environmentId,
 })
-onBeforeUnmount(resolver.cancel)
+const navigationError = shallowRef(false)
+let navigationGeneration = 0
+onBeforeUnmount(() => {
+  resolver.cancel()
+  navigationGeneration += 1
+})
 
 const statusCopy = computed(() => {
+  if (navigationError.value) return '无法打开目标页面，请重新扫码或稍后重试。'
   switch (resolver.status.value) {
     case 'pending':
       return '正在解析扫码内容…'
@@ -50,10 +56,19 @@ function candidateLabel(candidate: BusinessConsoleBarcodeResolveCandidate) {
 }
 
 async function navigate(route: ReturnType<typeof resolver.selectCandidate>) {
-  if (route) await router.push(route)
+  if (!route) return
+  const currentGeneration = ++navigationGeneration
+  navigationError.value = false
+  try {
+    await router.push(route)
+  } catch {
+    if (currentGeneration === navigationGeneration) navigationError.value = true
+  }
 }
 
 async function onScan(value: string) {
+  navigationGeneration += 1
+  navigationError.value = false
   await navigate(await resolver.resolve(value))
 }
 
@@ -74,7 +89,9 @@ async function onCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
       v-if="statusCopy"
       data-testid="barcode-status"
       :role="
-        resolver.status.value === 'forbidden' || resolver.status.value === 'error'
+        navigationError ||
+        resolver.status.value === 'forbidden' ||
+        resolver.status.value === 'error'
           ? 'alert'
           : 'status'
       "

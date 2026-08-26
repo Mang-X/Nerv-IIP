@@ -192,4 +192,61 @@ describe('PdaBarcodeResolver', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/')
   })
+
+  it('fails closed with a recoverable alert when navigation rejects', async () => {
+    api.resolve.mockReturnValue(
+      resolved('resolved', [
+        { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-NAV-FAIL' } },
+      ]),
+    )
+    const { wrapper, router } = await setup()
+    vi.spyOn(router, 'push').mockRejectedValueOnce(new Error('目标页面懒加载失败'))
+
+    await scan(wrapper, 'WO-NAV-FAIL')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="barcode-status"]').attributes('role')).toBe('alert')
+    expect(wrapper.get('[data-testid="barcode-status"]').text()).toContain('无法打开目标页面')
+    expect(wrapper.get('input[placeholder^="扫描"]').attributes('disabled')).toBeUndefined()
+
+    await scan(wrapper, 'WO-NAV-FAIL')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NAV-FAIL')
+  })
+
+  it('ignores an older navigation rejection after a newer scan navigates successfully', async () => {
+    api.resolve
+      .mockReturnValueOnce(
+        resolved('resolved', [
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-OLD' } },
+        ]),
+      )
+      .mockReturnValueOnce(
+        resolved('resolved', [
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-NEW' } },
+        ]),
+      )
+    const { wrapper, router } = await setup()
+    const actualPush = router.push.bind(router)
+    let rejectFirst!: (reason?: unknown) => void
+    vi.spyOn(router, 'push')
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject
+          }),
+      )
+      .mockImplementation(actualPush)
+
+    await scan(wrapper, 'WO-OLD')
+    await flushPromises()
+    await scan(wrapper, 'WO-NEW')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NEW')
+
+    rejectFirst(new Error('旧导航懒加载失败'))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="barcode-status"]').attributes('role')).toBe('status')
+    expect(wrapper.get('[data-testid="barcode-status"]').text()).not.toContain('无法打开目标页面')
+  })
 })
