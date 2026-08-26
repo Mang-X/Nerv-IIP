@@ -809,6 +809,47 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post", "holdBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post", "cancelBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/close", "post", "closeBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "splitBusinessConsoleMesWorkOrder");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/work-orders/{workOrderId}/split",
+            "post",
+            "organizationId",
+            "environmentId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "environmentId");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "reason", 500);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "idempotencyKey", 150);
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "mergeBusinessConsoleMesWorkOrders");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/work-orders/merge",
+            "post",
+            "organizationId",
+            "environmentId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "environmentId");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/merge", "post", "reason", 500);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/merge", "post", "idempotencyKey", 150);
+        AssertOperationId(
+            paths,
+            "/api/business-console/v1/mes/work-order-transformations/{transformationId}",
+            "get",
+            "getBusinessConsoleMesWorkOrderTransformation");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/work-order-transformations/{transformationId}",
+            "get",
+            "organizationId",
+            "environmentId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "environmentId");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", "post", "recordBusinessConsoleMesEngineeringChangeDecision");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release", "post", "forceReleaseBusinessConsoleMesQualityHold");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline", "get", "getBusinessConsoleMesQualityHoldTimeline");
