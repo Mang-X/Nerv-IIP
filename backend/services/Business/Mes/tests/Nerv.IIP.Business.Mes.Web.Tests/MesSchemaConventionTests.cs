@@ -29,6 +29,77 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesSchemaConventionTests
 {
     [Fact]
+    public void Operation_actual_time_settlement_uses_framework_row_version_and_relational_lineage()
+    {
+        using var fixture = CreateFixture();
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var entity = model.FindEntityType(typeof(OperationTask))!;
+        var revision = entity.FindProperty(nameof(OperationTask.ActualTimeSettlementRevision))!;
+        var rowVersion = entity.FindProperty(nameof(OperationTask.RowVersion))!;
+        var settlement = model.FindEntityType(typeof(OperationActualTimeSettlement))!;
+        var coveredReport = model.FindEntityType(typeof(OperationActualTimeSettlementReport))!;
+
+        Assert.Equal("actual_time_settlement_revision", revision.GetColumnName());
+        Assert.Equal(0L, revision.GetDefaultValue());
+        Assert.False(revision.IsConcurrencyToken);
+        Assert.Equal("row_version", rowVersion.GetColumnName());
+        Assert.True(rowVersion.IsConcurrencyToken);
+        Assert.Equal("operation_actual_time_settlements", settlement.GetTableName());
+        Assert.Equal("operation_actual_time_settlement_reports", coveredReport.GetTableName());
+        Assert.Contains(settlement.GetIndexes(), x =>
+            x.IsUnique && x.Properties.Select(p => p.Name).SequenceEqual([
+                nameof(OperationActualTimeSettlement.OrganizationId),
+                nameof(OperationActualTimeSettlement.EnvironmentId),
+                nameof(OperationActualTimeSettlement.OperationTaskId),
+                nameof(OperationActualTimeSettlement.Revision),
+            ]));
+        Assert.Contains(coveredReport.GetForeignKeys(), x =>
+            x.PrincipalEntityType.ClrType == typeof(ProductionReport));
+        Assert.Contains(coveredReport.GetForeignKeys(), x =>
+            x.PrincipalEntityType.ClrType == typeof(OperationActualTimeSettlement) &&
+            x.Properties.Select(p => p.Name).SequenceEqual([
+                nameof(OperationActualTimeSettlementReport.SettlementId),
+                nameof(OperationActualTimeSettlementReport.OrganizationId),
+                nameof(OperationActualTimeSettlementReport.EnvironmentId),
+                nameof(OperationActualTimeSettlementReport.WorkOrderId),
+                nameof(OperationActualTimeSettlementReport.OperationTaskId),
+            ]));
+        Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative");
+    }
+
+    [Fact]
+    public void Operation_actual_time_settlement_migration_adds_revision_lineage_and_nonnegative_constraint()
+    {
+        var migration = new AddMesOperationActualTimeSettlement();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesOperationActualTimeSettlement)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        var columns = migrationBuilder.Operations.OfType<AddColumnOperation>().ToArray();
+        Assert.Contains(columns, x =>
+            x.Schema == MesFacts.Schema &&
+            x.Table == "operation_tasks" &&
+            x.Name == "actual_time_settlement_revision" &&
+            Equals(x.DefaultValue, 0L) &&
+            !string.IsNullOrWhiteSpace(x.Comment));
+        Assert.Contains(columns, x =>
+            x.Schema == MesFacts.Schema &&
+            x.Table == "operation_tasks" &&
+            x.Name == "row_version" &&
+            !string.IsNullOrWhiteSpace(x.Comment));
+        Assert.Contains(migrationBuilder.Operations.OfType<CreateTableOperation>(), x =>
+            x.Schema == MesFacts.Schema && x.Name == "operation_actual_time_settlements");
+        Assert.Contains(migrationBuilder.Operations.OfType<CreateTableOperation>(), x =>
+            x.Schema == MesFacts.Schema && x.Name == "operation_actual_time_settlement_reports");
+        Assert.Contains(migrationBuilder.Operations.OfType<AddCheckConstraintOperation>(), x =>
+            x.Schema == MesFacts.Schema &&
+            x.Table == "operation_tasks" &&
+            x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative" &&
+            x.Sql == "actual_time_settlement_revision >= 0");
+    }
+
+    [Fact]
     public void Operation_task_schedule_release_provenance_columns_are_explicit()
     {
         using var fixture = CreateFixture();
@@ -271,6 +342,28 @@ public sealed class MesSchemaConventionTests
                 .GetComment());
     }
 
+    // Contract: Governance. Authority: docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
+    // the newest migration target model must contain every preceding migration before it can match the checked-in snapshot.
+    [Fact]
+    public void Latest_mes_migration_target_model_matches_the_application_snapshot()
+    {
+        using var fixture = CreateFixture();
+        var migrations = fixture.DbContext.GetService<IMigrationsAssembly>();
+        var latest = migrations.Migrations.OrderBy(x => x.Key, StringComparer.Ordinal).Last();
+        var migration = migrations.CreateMigration(latest.Value, fixture.DbContext.Database.ProviderName!);
+        var snapshot = Assert.IsAssignableFrom<ModelSnapshot>(migrations.ModelSnapshot);
+        var runtimeInitializer = fixture.DbContext.GetService<IModelRuntimeInitializer>();
+        var targetModel = runtimeInitializer.Initialize(migration.TargetModel, designTime: true);
+        var snapshotModel = runtimeInitializer.Initialize(snapshot.Model, designTime: true);
+        var modelDiffer = fixture.DbContext.GetService<IMigrationsModelDiffer>();
+
+        var differences = modelDiffer.GetDifferences(
+            targetModel.GetRelationalModel(),
+            snapshotModel.GetRelationalModel());
+
+        Assert.Empty(differences);
+    }
+
     [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {
@@ -282,6 +375,8 @@ public sealed class MesSchemaConventionTests
             typeof(WorkOrderTransformationLine),
             typeof(MesEngineeringChangeWorkOrderImpact),
             typeof(OperationTask),
+            typeof(OperationActualTimeSettlement),
+            typeof(OperationActualTimeSettlementReport),
             typeof(ProductionReport),
             typeof(ProductionReportMaterialConsumption),
             typeof(OutputLotGenealogy),

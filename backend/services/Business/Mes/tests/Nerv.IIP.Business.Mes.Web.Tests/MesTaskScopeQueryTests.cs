@@ -254,7 +254,7 @@ public sealed class MesTaskScopeQueryTests
         paused.Pause(now.AddMinutes(4));
         var completed = SeedTask(dbContext, "WO-DONE", "OP-DONE", "WC-01", "emp010", "TEAM-MC", now.AddMinutes(3));
         completed.Start(now.AddMinutes(4));
-        completed.Complete(now.AddMinutes(5));
+        completed.Complete(now.AddMinutes(5), []);
         await dbContext.SaveChangesAsync();
 
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -581,7 +581,7 @@ public sealed class MesTaskScopeQueryTests
         var now = Utc("2026-07-29T08:00:00Z");
         var task = SeedTask(dbContext, "WO-DONE", "OP-DONE", "WC-01", "emp010", "TEAM-MC", now);
         task.Start(now.AddMinutes(1));
-        task.Complete(now.AddMinutes(2));
+        task.Complete(now.AddMinutes(2), []);
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -285,6 +286,13 @@ public sealed class ManualDispatchConcurrencyTests
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = CreateInMemoryOptions(databaseName, databaseRoot);
         await SeedTaskAsync(options, activeDeviceAssetId: null, OperationTaskLifecycleStatus.InProgress);
+        await using (var reportContext = CreateContext(options))
+        {
+            reportContext.ProductionReports.Add(ProductionReport.Record(
+                "org-001", "env-dev", "PR-CONCURRENCY-001", "WO-CONCURRENCY-001", "OP-CONCURRENCY-10",
+                1m, 0m, false, At(2)));
+            await reportContext.SaveChangesAsync();
+        }
         await using var provider = CreatePipelineProvider(databaseName, databaseRoot);
         await using var scope = provider.CreateAsyncScope();
         var staleContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -442,6 +450,8 @@ public sealed class ManualDispatchConcurrencyTests
         services.AddScoped<OperationTaskManuallyDispatchedIntegrationEventConverter>();
         services.AddScoped<OperationTaskManualDispatchClearedIntegrationEventConverter>();
         services.AddScoped<OperationTaskCompletedIntegrationEventConverter>();
+        services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
+        services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
         services.AddSingleton<RecordingIntegrationEventPublisher>();
         services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
             serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());

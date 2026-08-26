@@ -499,7 +499,7 @@ public sealed class WorldHistorySeedService(
 
             if (isCompleted)
             {
-                task.Complete(endUtc);
+                task.CompleteLegacyHistoryWithoutSettlement(endUtc);
             }
 
             dbContext.OperationTasks.Add(task);

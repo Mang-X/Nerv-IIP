@@ -246,6 +246,84 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
     }
 }
 
+public sealed class OperationActualTimeSettledIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<OperationActualTimeSettledDomainEvent, MesOperationActualTimeSettledIntegrationEvent>
+{
+    public MesOperationActualTimeSettledIntegrationEvent Convert(OperationActualTimeSettledDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settled",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettledIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V1,
+            settlement.CompletedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettledPayload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos));
+    }
+}
+
+public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<OperationActualTimeSettlementVoidedDomainEvent, MesOperationActualTimeSettlementVoidedIntegrationEvent>
+{
+    public MesOperationActualTimeSettlementVoidedIntegrationEvent Convert(
+        OperationActualTimeSettlementVoidedDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settlement-voided",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettlementVoidedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V1,
+            domainEvent.VoidedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettlementVoidedPayload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                domainEvent.VoidedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos));
+    }
+}
+
 public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter
     : IIntegrationEventConverter<OperationTaskManuallyDispatchedDomainEvent, MesOperationTaskManuallyDispatchedIntegrationEvent>
 {

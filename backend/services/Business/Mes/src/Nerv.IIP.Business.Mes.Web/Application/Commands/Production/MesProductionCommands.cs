@@ -341,7 +341,12 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
+            await OperationActualTimeSettlementCoordinator.CompleteAsync(
+                dbContext,
+                operationTask,
+                request.ReportedAtUtc,
+                [report.ReportNo],
+                cancellationToken);
         }
 
         dbContext.ProductionReports.Add(report);
@@ -531,7 +536,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
         if (original.CompletesOperation)
         {
-            operationTask.ReopenAfterReportReversal();
+            await OperationActualTimeSettlementCoordinator.VoidAsync(
+                dbContext,
+                operationTask,
+                request.ReversedAtUtc,
+                cancellationToken);
         }
 
         var reversal = ProductionReport.Reverse(

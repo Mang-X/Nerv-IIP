@@ -28,7 +28,7 @@ public sealed class MesQualityInspectionTriggerEventTests
             uomCode: "kg",
             plannedQuantity: 12.5m,
             requiresQualityInspection: true);
-        task.Complete(DateTimeOffset.Parse("2026-07-05T08:00:00Z"));
+        task.Complete(DateTimeOffset.Parse("2026-07-05T08:00:00Z"), []);
 
         var integrationEvent = new OperationTaskCompletedIntegrationEventConverter()
             .Convert(new OperationTaskCompletedDomainEvent(task));
