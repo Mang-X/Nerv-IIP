@@ -371,7 +371,7 @@ stateDiagram-v2
 
 ### BusinessGateway 移动门面（mobile facade）
 
-PDA v1 已落地 `frontend/apps/business-pda`，当前事实是复用 `BusinessGateway` 现有 `/api/business-console/v1/**` 门面（facade）和 `@nerv-iip/api-client` 的 business-console 稳定导出；尚未创建独立 `/api/mobile/v1/**` endpoint、`business-gateway-mobile.v1.json`、`src/generated/mobile/` 或 `src/mobile.ts`。移动专用门面（mobile facade）的推荐落点仍是 `BusinessGateway`，但应作为后续轨道，只承载 business-console 门面不适合表达的 PDA 专属引导数据（bootstrap）、个人任务、扫码解释、设备注册、离线 outbox/sync 和诊断上传。
+PDA v1 已落地 `frontend/apps/business-pda`，当前事实是复用 `BusinessGateway` 现有 `/api/business-console/v1/**` 门面（facade）和 `@nerv-iip/api-client` 的 business-console 稳定导出；首页与 `/scan` 已通过既有 Barcode resolve facade 完成只读扫码解释。尚未创建独立 `/api/mobile/v1/**` endpoint、`business-gateway-mobile.v1.json`、`src/generated/mobile/` 或 `src/mobile.ts`；后续移动专用门面只承载 business-console 门面不适合表达的 PDA 专属引导数据（bootstrap）、个人任务、扫码专属增强、设备注册、离线 outbox/sync 和诊断上传，不复制现有解析能力。
 
 它复用现有 `PlatformGateway` 已验证的门面（facade）模式、IAM 支持的权限执行（IAM-backed permission enforcement）、OpenAPI 生成和错误归一化口径，但部署和职责边界不同：
 

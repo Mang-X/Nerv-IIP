@@ -9,6 +9,12 @@ vi.mock('vue-router', () => ({
   RouterView: { template: '<div />' },
 }))
 
+const resolveBarcode = vi.hoisted(() => vi.fn())
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  resolveBusinessConsoleBarcode: resolveBarcode,
+}))
+
 // 报警角标数据源：mock composable，避免拉起 pinia/colada；用 ref 驱动角标可见性。
 const unacknowledgedCount = ref(0)
 vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
@@ -134,6 +140,7 @@ describe('PDA home', () => {
     refreshInspection.mockClear()
     inspectionHasSuccessfulResponse.value = true
     inspectionHasFailedResponse.value = false
+    resolveBarcode.mockReset()
   })
 
   it('shows the unacknowledged-alarm count badge on the 查看报警 tile, and hides it at zero', async () => {
@@ -308,14 +315,23 @@ describe('PDA home', () => {
     expect(push).toHaveBeenCalledWith(route)
   })
 
-  it('echoes the scanned value in-page and does NOT navigate (scan-resolve is M5)', async () => {
+  it('uses the shared resolver to navigate a unique strong-ID result', async () => {
+    resolveBarcode.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          status: 'resolved',
+          candidates: [{ objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-1' } }],
+        },
+      },
+    })
     const wrapper = mount(HomePage)
     const input = wrapper.get('input[placeholder^="扫描"]')
     await input.setValue('WO-2026-0001')
     await input.trigger('keydown.enter')
 
-    // 诚实的页内反馈：回显扫码内容，不做假跳转到尚不存在的 /scan。
-    expect(wrapper.text()).toContain('已扫码：WO-2026-0001')
-    expect(push).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect(push).toHaveBeenCalledWith({ path: '/mes/report', query: { workOrderId: 'WO-1' } }),
+    )
   })
 })
