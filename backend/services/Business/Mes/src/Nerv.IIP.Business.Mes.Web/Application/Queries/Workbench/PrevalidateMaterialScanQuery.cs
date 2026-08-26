@@ -221,12 +221,17 @@ public sealed class HttpMesMaterialPrevalidationProvider(
                 ("take", 500)),
             correlationId,
             cancellationToken);
+        if (versions.Items is null || versions.Total != versions.Items.Count)
+        {
+            throw SourceUnavailable("ProductEngineering 冻结生产版本列表不完整。");
+        }
+
         var matches = versions.Items.Where(x =>
             string.Equals(x.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(x.OrganizationId, request.OrganizationId, StringComparison.Ordinal) &&
             string.Equals(x.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) &&
             string.Equals(x.SkuCode, request.FinishedSkuId, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (matches.Length > 1 || (matches.Length == 0 && versions.Total > versions.Items.Count))
+        if (matches.Length > 1)
         {
             throw SourceUnavailable("ProductEngineering 冻结生产版本列表不完整或存在重复项。");
         }
@@ -251,6 +256,11 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             !string.Equals(bom.Status, "published", StringComparison.OrdinalIgnoreCase))
         {
             return false;
+        }
+
+        if (bom.MaterialLines is null || bom.RecipeLines is null)
+        {
+            throw SourceUnavailable("ProductEngineering MBOM 明细集合不完整。");
         }
 
         var requiredPrimaryMaterialIds = request.RequiredPrimaryMaterialIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -286,6 +296,11 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             !string.Equals(response.LotNo, request.MaterialLotId, StringComparison.OrdinalIgnoreCase))
         {
             throw SourceUnavailable("Inventory 返回了与请求范围不一致的物料批次。");
+        }
+
+        if (response.Items is null)
+        {
+            throw SourceUnavailable("Inventory 返回的库存明细集合为空。");
         }
 
         if (response.OnHandQuantity != response.Items.Sum(x => x.OnHandQuantity))

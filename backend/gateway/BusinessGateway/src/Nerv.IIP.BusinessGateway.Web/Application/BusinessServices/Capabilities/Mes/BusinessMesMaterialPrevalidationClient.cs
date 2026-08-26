@@ -47,6 +47,9 @@ public sealed class HttpBusinessMesMaterialPrevalidationClient(HttpClient httpCl
                 string.IsNullOrWhiteSpace(result.MaterialIssueRequestId) ||
                 string.IsNullOrWhiteSpace(result.WorkOrderId) ||
                 string.IsNullOrWhiteSpace(result.OperationTaskId) ||
+                !string.Equals(result.MaterialIssueRequestId, request.MaterialIssueRequestId, StringComparison.Ordinal) ||
+                !string.Equals(result.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal) ||
+                !string.Equals(result.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal) ||
                 result.EvaluatedAtUtc == default)
             {
                 throw BusinessServiceProxyException.FromSafeDownstreamMessage(

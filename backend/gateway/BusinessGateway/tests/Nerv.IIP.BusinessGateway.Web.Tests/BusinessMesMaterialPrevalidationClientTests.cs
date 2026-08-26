@@ -61,11 +61,48 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
     [Theory]
     [InlineData("{\"decision\":\"accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
     [InlineData("{\"decision\":\"unexpected\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":0,\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":1,\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
     public async Task Client_rejects_success_response_with_missing_required_fact_or_unknown_decision(string json)
     {
         var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        });
+        var client = new HttpBusinessMesMaterialPrevalidationClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
+            "internal-token",
+            "corr-001",
+            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+                "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+            CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("MIR-OTHER", "WO-001", "OP-10")]
+    [InlineData("MIR-001", "WO-OTHER", "OP-10")]
+    [InlineData("MIR-001", "WO-001", "OP-OTHER")]
+    public async Task Client_rejects_success_response_whose_strong_identifiers_do_not_echo_request(
+        string materialIssueRequestId,
+        string workOrderId,
+        string operationTaskId)
+    {
+        var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new BusinessConsoleMesMaterialScanPrevalidationResponse(
+                MesMaterialScanDecision.Accepted,
+                "material-scan-accepted",
+                materialIssueRequestId,
+                workOrderId,
+                operationTaskId,
+                "MAT-001",
+                "LOT-001",
+                "primary",
+                DateTimeOffset.Parse("2026-08-26T08:00:00Z"))),
         });
         var client = new HttpBusinessMesMaterialPrevalidationClient(new HttpClient(handler)
         {

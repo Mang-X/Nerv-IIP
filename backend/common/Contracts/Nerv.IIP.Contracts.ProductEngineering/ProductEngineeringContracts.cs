@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Contracts.ProductEngineering;
@@ -41,7 +43,9 @@ public sealed record ProductionVersionListItem(
     bool IsDefault,
     string Status);
 
-public sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items, int Total);
+public sealed record ListProductionVersionsResponse(
+    [property: JsonRequired, Required] IReadOnlyCollection<ProductionVersionListItem> Items,
+    [property: JsonRequired, Required] int Total);
 
 public sealed record ManufacturingBomMaterialLineItem(
     string SkuCode,
@@ -68,12 +72,12 @@ public sealed record ManufacturingBomListItem(
     string EngineeringBomVersionId,
     string Status,
     DateOnly? EffectiveDate,
-    IReadOnlyCollection<ManufacturingBomMaterialLineItem> MaterialLines,
-    IReadOnlyCollection<ManufacturingBomRecipeLineItem> RecipeLines);
+    [property: JsonRequired, Required] IReadOnlyCollection<ManufacturingBomMaterialLineItem> MaterialLines,
+    [property: JsonRequired, Required] IReadOnlyCollection<ManufacturingBomRecipeLineItem> RecipeLines);
 
 public sealed record ListManufacturingBomsResponse(
-    IReadOnlyCollection<ManufacturingBomListItem> Items,
-    int Total);
+    [property: JsonRequired, Required] IReadOnlyCollection<ManufacturingBomListItem> Items,
+    [property: JsonRequired, Required] int Total);
 
 public static class ProductEngineeringIntegrationEventTypes
 {

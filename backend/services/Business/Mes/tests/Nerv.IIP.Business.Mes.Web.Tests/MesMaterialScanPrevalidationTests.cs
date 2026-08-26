@@ -206,9 +206,10 @@ public sealed class MesMaterialScanPrevalidationTests
 
     [Theory]
     [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":null}")]
     [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"onHandQuantity\":5}]}")]
     [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true}]}")]
-    public async Task Inventory_provider_fails_closed_when_success_json_omits_authoritative_fact(string dataJson)
+    public async Task Inventory_provider_fails_closed_when_success_json_omits_or_nulls_authoritative_fact(string dataJson)
     {
         var inventoryHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -290,28 +291,21 @@ public sealed class MesMaterialScanPrevalidationTests
         Assert.True(inventoryHandler.LastCancellationToken.CanBeCanceled);
     }
 
-    [Fact]
-    public async Task Inventory_provider_fails_closed_when_success_response_has_mismatched_scope()
+    [Theory]
+    [InlineData("organizationId", "other-org")]
+    [InlineData("environmentId", "env-other")]
+    [InlineData("skuCode", "MAT-OTHER")]
+    [InlineData("uomCode", "KG")]
+    [InlineData("siteCode", "SITE-OTHER")]
+    [InlineData("locationCode", "LINE-OTHER")]
+    [InlineData("lotNo", "LOT-OTHER")]
+    public async Task Inventory_provider_fails_closed_when_success_response_has_mismatched_scope(
+        string field,
+        string mismatchedValue)
     {
         var inventoryHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = JsonContent.Create(new
-            {
-                success = true,
-                message = "ok",
-                code = 200,
-                data = new
-                {
-                    organizationId = "other-org",
-                    environmentId = "env-dev",
-                    skuCode = "MAT-001",
-                    uomCode = "PCS",
-                    siteCode = "SITE-01",
-                    locationCode = "LINE-01",
-                    lotNo = "LOT-001",
-                    items = Array.Empty<object>(),
-                },
-            }),
+            Content = JsonContent.Create(InventoryEnvelopeWithScopeMutation(field, mismatchedValue)),
         });
         var provider = CreateHttpProvider(new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)), inventoryHandler);
 
@@ -321,6 +315,66 @@ public sealed class MesMaterialScanPrevalidationTests
             CancellationToken.None));
 
         Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("{\"total\":1}")]
+    [InlineData("{\"total\":1,\"items\":null}")]
+    public async Task Qualification_provider_fails_closed_when_version_collection_is_missing_or_null(string dataJson)
+    {
+        var engineeringHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{dataJson}}}",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        });
+        var provider = CreateHttpProvider(engineeringHandler, new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.IsFrozenSubstituteAsync(
+            QualificationRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("materialLines")]
+    [InlineData("materialLinesNull")]
+    public async Task Qualification_provider_fails_closed_when_mbom_material_lines_are_missing_or_null(string variant)
+    {
+        var bomData = variant == "materialLinesNull"
+            ? "{\"bomCode\":\"MBOM-001\",\"revision\":\"B\",\"skuCode\":\"FG-001\",\"engineeringBomVersionId\":\"EBOM-001:A\",\"status\":\"published\",\"materialLines\":null,\"recipeLines\":[]}"
+            : "{\"bomCode\":\"MBOM-001\",\"revision\":\"B\",\"skuCode\":\"FG-001\",\"engineeringBomVersionId\":\"EBOM-001:A\",\"status\":\"published\",\"recipeLines\":[]}";
+        var responses = new Queue<HttpResponseMessage>(
+        [
+            JsonEnvelopeResponse("{\"total\":1,\"items\":[{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\"}]}"),
+            JsonEnvelopeResponse(bomData),
+        ]);
+        var provider = CreateHttpProvider(
+            new RecordingHttpHandler(_ => responses.Dequeue()),
+            new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.IsFrozenSubstituteAsync(
+            QualificationRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Qualification_provider_fails_closed_when_matching_version_is_inside_a_truncated_page()
+    {
+        var engineeringHandler = new RecordingHttpHandler(_ => JsonEnvelopeResponse(
+            "{\"total\":501,\"items\":[{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\"}]}"));
+        var provider = CreateHttpProvider(engineeringHandler, new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.IsFrozenSubstituteAsync(
+            QualificationRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, engineeringHandler.CallCount);
     }
 
     [Fact]
@@ -418,6 +472,38 @@ public sealed class MesMaterialScanPrevalidationTests
 
     private static MesMaterialLotAvailabilityRequest AvailabilityRequest() =>
         new("org-001", "env-dev", "MAT-001", "PCS", "SITE-01", "LINE-01", "LOT-001", new DateOnly(2026, 8, 26));
+
+    private static MesMaterialQualificationRequest QualificationRequest() =>
+        new("org-001", "env-dev", "FG-001", "PV-001", ["MAT-PRIMARY"], "MAT-SUB");
+
+    private static object InventoryEnvelopeWithScopeMutation(string field, string mismatchedValue)
+    {
+        var data = new Dictionary<string, object?>
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["skuCode"] = "MAT-001",
+            ["uomCode"] = "PCS",
+            ["siteCode"] = "SITE-01",
+            ["locationCode"] = "LINE-01",
+            ["lotNo"] = "LOT-001",
+            ["onHandQuantity"] = 5m,
+            ["items"] = new[]
+            {
+                new { locationCode = "LINE-01", lotNo = "LOT-001", isExpired = false, movementAllowed = true, onHandQuantity = 5m },
+            },
+        };
+        data[field] = mismatchedValue;
+        return new { success = true, message = "ok", code = 200, data };
+    }
+
+    private static HttpResponseMessage JsonEnvelopeResponse(string dataJson) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(
+            $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{dataJson}}}",
+            System.Text.Encoding.UTF8,
+            "application/json"),
+    };
 
     private static Queue<HttpResponseMessage> FrozenVersionAndBomResponses(object materialLine) => new(
     [
@@ -545,6 +631,7 @@ public sealed class MesMaterialScanPrevalidationTests
     private sealed class RecordingHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
         : HttpMessageHandler
     {
+        public int CallCount { get; private set; }
         public string LastRequestUri { get; private set; } = string.Empty;
         public string CorrelationId { get; private set; } = string.Empty;
         public string AuthorizationParameter { get; private set; } = string.Empty;
@@ -554,6 +641,7 @@ public sealed class MesMaterialScanPrevalidationTests
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            CallCount++;
             LastRequestUri = request.RequestUri?.ToString() ?? string.Empty;
             CorrelationId = request.Headers.GetValues("X-Correlation-Id").Single();
             AuthorizationParameter = request.Headers.Authorization?.Parameter ?? string.Empty;
