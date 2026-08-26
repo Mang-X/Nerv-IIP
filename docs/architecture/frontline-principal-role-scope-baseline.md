@@ -206,6 +206,11 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 World Bible 人员虽会生成 IAM user 与 MasterData worker，但随机未知口令、
 `PasswordChangeRequired=true`，且没有 role/membership，不是可登录验收账号。
 
+当 Development 全栈显式开启 PDA/WMS worker 时，AppHost 只向 BusinessWms 转发非敏感的
+`LeaderDemo:Wms:WorkPoolSeed:Enabled=true`。WMS 该开关只补一座 `SITE-001` 收货与上架作业池、
+`user-emp-049` 的有效成员资格和一张保持 Open 的最小入库单；它不修改 IAM、不把管理员加入作业池，
+也不启动完整 History seed。未显式开启时不生成这些事实；History 开启时该最小 seed 自动保持关闭。
+
 证据：
 
 - [Program.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Program.cs)

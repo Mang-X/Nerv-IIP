@@ -130,7 +130,7 @@ public sealed class MesSchemaConventionTests
             originalRequestForeignKey.PrincipalKey.Properties.Select(x => x.Name).ToArray());
     }
 
-    // Contract: Governance. Authority: Issue #2222 acceptance 3 and the MES database schema catalog; provider behavior is covered separately on PostgreSQL.
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and the MES database schema catalog; provider behavior is covered separately on PostgreSQL.
     [Fact]
     public void Material_substitute_snapshot_and_issue_audit_columns_are_explicit()
     {
@@ -142,9 +142,37 @@ public sealed class MesSchemaConventionTests
         Assert.Equal(
             "substitute_material_ids_json",
             requirement.FindProperty(nameof(MaterialRequirement.SubstituteMaterialIdsJson))!.GetColumnName());
-        Assert.Equal(
-            "substituted_material_id",
-            issue.FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId))!.GetColumnName());
+        var issueAudit = issue.FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId))!;
+        Assert.Equal("substituted_material_id", issueAudit.GetColumnName());
+        Assert.True(issueAudit.IsNullable);
+        Assert.Equal(100, issueAudit.GetMaxLength());
+        Assert.Equal("character varying(100)", issueAudit.GetColumnType());
+        Assert.Null(issueAudit.GetDefaultValue());
+        Assert.Null(issueAudit.GetDefaultValueSql());
+    }
+
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and the MES database schema catalog;
+    // the migration operation must match the approved nullable, bounded PostgreSQL audit column without a default.
+    [Fact]
+    public void Material_substitute_foundation_migration_preserves_issue_audit_column_facets()
+    {
+        var migration = new AddMesMaterialSubstituteSnapshotFoundation();
+        var upBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [upBuilder]);
+
+        var issueAudit = Assert.Single(
+            upBuilder.Operations.OfType<AddColumnOperation>(),
+            x => x.Name == "substituted_material_id");
+        Assert.Equal(MesFacts.Schema, issueAudit.Schema);
+        Assert.Equal("material_issue_requests", issueAudit.Table);
+        Assert.Equal(typeof(string), issueAudit.ClrType);
+        Assert.Equal("character varying(100)", issueAudit.ColumnType);
+        Assert.Equal(100, issueAudit.MaxLength);
+        Assert.True(issueAudit.IsNullable);
+        Assert.Null(issueAudit.DefaultValue);
+        Assert.Null(issueAudit.DefaultValueSql);
     }
 
     // Contract: Governance. Authority: Issue #2246 acceptance 4 and docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
