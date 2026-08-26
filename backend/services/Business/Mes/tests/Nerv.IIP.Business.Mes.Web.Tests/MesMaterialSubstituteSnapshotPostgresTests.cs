@@ -10,7 +10,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class MesMaterialSubstituteSnapshotPostgresTests
 {
-    private const string TargetMigration = "20260825145237_AddMesMaterialSubstituteSnapshotFoundation";
+    private const string TargetMigrationName = "AddMesMaterialSubstituteSnapshotFoundation";
 
     // Contract: ProviderBehavior + Regression. Authority: Issue #2247 acceptance and the target MES migration/schema catalog.
     // Removing the target migration columns must fail this real PostgreSQL proof before persistence can be mistaken for green.
@@ -45,10 +45,12 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 """
                 SELECT count(*)
                 FROM mes."__EFMigrationsHistory"
-                WHERE "MigrationId" = @migration_id
+                WHERE "MigrationId" ~ @migration_id_pattern
                 """,
                 connection);
-            historyCommand.Parameters.AddWithValue("migration_id", TargetMigration);
+            historyCommand.Parameters.AddWithValue(
+                "migration_id_pattern",
+                $"^[0-9]{{14}}_{TargetMigrationName}$");
             Assert.Equal(1L, (long)(await historyCommand.ExecuteScalarAsync())!);
 
             var columns = new Dictionary<string, ColumnDefinition>(StringComparer.Ordinal);
