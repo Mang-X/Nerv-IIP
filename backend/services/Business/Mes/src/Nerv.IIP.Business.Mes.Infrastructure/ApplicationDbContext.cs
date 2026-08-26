@@ -33,6 +33,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
 
+    public DbSet<OperationActualTimeSettlement> OperationActualTimeSettlements => Set<OperationActualTimeSettlement>();
+
+    public DbSet<OperationActualTimeSettlementReport> OperationActualTimeSettlementReports => Set<OperationActualTimeSettlementReport>();
+
     public DbSet<OperationTaskParticipant> OperationTaskParticipants => Set<OperationTaskParticipant>();
 
     public DbSet<OperationTaskStartAuthorization> OperationTaskStartAuthorizations => Set<OperationTaskStartAuthorization>();

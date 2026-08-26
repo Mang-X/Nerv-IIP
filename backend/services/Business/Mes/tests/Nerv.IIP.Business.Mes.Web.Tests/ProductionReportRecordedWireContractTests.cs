@@ -42,12 +42,77 @@ public sealed class ProductionReportRecordedWireContractTests
             HistoricalDimensionWireNames.Contains(property.Name, StringComparer.OrdinalIgnoreCase)
             && !HistoricalDimensionWireNames.Contains(property.Name, StringComparer.Ordinal));
 
-        var roundTrip = JsonSerializer.Deserialize<ProductionReportRecordedIntegrationEvent>(json, jsonOptions);
-        Assert.NotNull(roundTrip);
-        Assert.Equal(MesIntegrationEventVersions.V1, roundTrip.EventVersion);
-        Assert.Equal("SITE-SH", roundTrip.Payload.SiteCode);
-        Assert.Equal(new TimeOnly(20, 0), roundTrip.Payload.ShiftStartsAt);
-        Assert.Equal(30, roundTrip.Payload.ShiftBreakMinutes);
+        Assert.Equal("SITE-SH", payload.GetProperty("SiteCode").GetString());
+        Assert.Equal("WS-ASSEMBLY", payload.GetProperty("WorkshopCode").GetString());
+        Assert.Equal("LINE-A", payload.GetProperty("LineCode").GetString());
+        Assert.Equal("NIGHT", payload.GetProperty("ShiftCode").GetString());
+        Assert.Equal("Asia/Shanghai", payload.GetProperty("SiteTimezone").GetString());
+        Assert.Equal("20:00:00", payload.GetProperty("ShiftStartsAt").GetString());
+        Assert.Equal("04:00:00", payload.GetProperty("ShiftEndsAt").GetString());
+        Assert.True(payload.GetProperty("ShiftCrossesMidnight").GetBoolean());
+        Assert.Equal(450, payload.GetProperty("ShiftPaidMinutes").GetInt32());
+        Assert.Equal(30, payload.GetProperty("ShiftBreakMinutes").GetInt32());
+    }
+
+    [Fact]
+    public void V1_fixed_external_wire_maps_each_historical_dimension_to_its_semantic_field()
+    {
+        const string json =
+            """
+            {
+              "EventId": "evt-fixed-wire-001",
+              "EventType": "mes.production-report.recorded",
+              "EventVersion": 1,
+              "OccurredAtUtc": "2026-07-10T17:30:00Z",
+              "SourceService": "business-mes",
+              "CorrelationId": "corr-fixed-wire-001",
+              "CausationId": "cause-fixed-wire-001",
+              "OrganizationId": "org-001",
+              "EnvironmentId": "env-dev",
+              "Actor": "system:mes",
+              "IdempotencyKey": "fixed-wire-001",
+              "Payload": {
+                "ReportNo": "RPT-FIXED-001",
+                "WorkOrderId": "WO-001",
+                "OperationTaskId": "OP-10",
+                "WorkCenterId": "WC-B",
+                "DeviceAssetId": "DEV-01",
+                "GoodQuantity": 80,
+                "ScrapQuantity": 10,
+                "ReworkQuantity": 10,
+                "UomCode": "PCS",
+                "TheoreticalRatePerHour": 100,
+                "ReportedAtUtc": "2026-07-10T17:30:00Z",
+                "IsReversal": false,
+                "SiteCode": "SITE-FIXED",
+                "WorkshopCode": "WORKSHOP-FIXED",
+                "LineCode": "LINE-FIXED",
+                "ShiftCode": "SHIFT-FIXED",
+                "SiteTimezone": "Asia/Shanghai",
+                "ShiftStartsAt": "20:00:00",
+                "ShiftEndsAt": "04:00:00",
+                "ShiftCrossesMidnight": true,
+                "ShiftPaidMinutes": 450,
+                "ShiftBreakMinutes": 30
+              }
+            }
+            """;
+
+        var integrationEvent = JsonSerializer.Deserialize<ProductionReportRecordedIntegrationEvent>(
+            json,
+            CreateMesCapJsonOptions());
+
+        Assert.NotNull(integrationEvent);
+        Assert.Equal("SITE-FIXED", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WORKSHOP-FIXED", integrationEvent.Payload.WorkshopCode);
+        Assert.Equal("LINE-FIXED", integrationEvent.Payload.LineCode);
+        Assert.Equal("SHIFT-FIXED", integrationEvent.Payload.ShiftCode);
+        Assert.Equal("Asia/Shanghai", integrationEvent.Payload.SiteTimezone);
+        Assert.Equal(new TimeOnly(20, 0), integrationEvent.Payload.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(4, 0), integrationEvent.Payload.ShiftEndsAt);
+        Assert.True(integrationEvent.Payload.ShiftCrossesMidnight);
+        Assert.Equal(450, integrationEvent.Payload.ShiftPaidMinutes);
+        Assert.Equal(30, integrationEvent.Payload.ShiftBreakMinutes);
     }
 
     [Fact]

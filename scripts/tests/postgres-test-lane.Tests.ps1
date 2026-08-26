@@ -379,8 +379,8 @@ try {
         -GovernancePath (Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md') `
         -ActiveMembers $activeMembers `
         -HostedMemberIds $script:HostedPostgresMemberIds
-    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 109) 'The active PostgreSQL manifest inventory must remain 15 members and 109 frozen identities.'
-    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 101) 'The hosted PostgreSQL workflow subset must remain 14 members and 101 frozen identities.'
+    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 116) 'The active PostgreSQL manifest inventory must remain 15 members and 116 frozen identities.'
+    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 108) 'The hosted PostgreSQL workflow subset must remain 14 members and 108 frozen identities.'
     Assert-Contract ($laneInventory.activeNotHostedIds.Count -eq 1 -and [string]::Equals([string]$laneInventory.activeNotHostedIds[0], 'masterdata-device-reference-concurrency', [StringComparison]::Ordinal) -and $laneInventory.activeNotHostedIdentities -eq 8) 'The active-but-not-hosted inventory must explicitly identify the eight-test MasterData device-reference concurrency member.'
     $testOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'test-owned', [StringComparison]::Ordinal) }).Count
     $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
@@ -434,10 +434,10 @@ try {
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
-    # MES：既有类、WorkOrderTransformation、替代料与 OEE 快照类共有 30 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
+    # MES：既有类、WorkOrderTransformation、替代料、OEE 快照与 OperationActualTimeSettlement 共有 37 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
     # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 30) 'The MES member must freeze exactly its thirty governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 37) 'The MES member must freeze exactly its thirty-seven governed PostgreSQL identities.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',

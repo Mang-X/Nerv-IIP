@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using WorkCenterUnavailabilityId = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailabilityId;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -1520,7 +1521,12 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 break;
             case "complete":
                 await EnsurePreviousOperationsCompletedAsync(dbContext, task, cancellationToken);
-                MesDomainRuleGuard.Enforce(() => task.Complete(request.ChangedAtUtc));
+                await OperationActualTimeSettlementCoordinator.CompleteAsync(
+                    dbContext,
+                    task,
+                    request.ChangedAtUtc,
+                    [],
+                    cancellationToken);
                 break;
             default:
                 throw new KnownException($"不支持的工序动作：{request.Action}");

@@ -425,6 +425,7 @@ public sealed class WorldHistorySeedServiceTests
 
         Assert.All(completed, task =>
         {
+            Assert.Equal(0, task.ActualTimeSettlementRevision);
             Assert.NotNull(task.ExistingStartUtc);
             Assert.NotNull(task.ExistingEndUtc);
             Assert.True(task.ExistingEndUtc >= task.ExistingStartUtc);
@@ -437,6 +438,7 @@ public sealed class WorldHistorySeedServiceTests
             AssertInsideShiftWindow(task.ExistingStartUtc!.Value);
             AssertInsideShiftWindow(task.ExistingEndUtc!.Value);
         });
+        Assert.Empty(await dbContext.OperationActualTimeSettlements.ToArrayAsync());
 
         // 性能终检工序带质检标志——这是二期质量域接管检验任务的预留引用点。
         var inspectionTasks = await dbContext.OperationTasks

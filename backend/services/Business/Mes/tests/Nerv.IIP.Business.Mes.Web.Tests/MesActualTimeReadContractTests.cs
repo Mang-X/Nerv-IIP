@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -36,15 +37,17 @@ public sealed class MesActualTimeReadContractTests
         completed.Start(startedAtUtc);
         completed.Pause(startedAtUtc.AddMinutes(30));
         completed.Resume(startedAtUtc.AddMinutes(45));
-        completed.Complete(startedAtUtc.AddMinutes(90));
+        completed.Complete(startedAtUtc.AddMinutes(90), []);
         dbContext.Entry(completed).Property(x => x.MachineTimeTicks).CurrentValue = TimeSpan.FromMinutes(30).Ticks;
         var completedWithZero = CreateTask("WO-ZERO", "OP-ZERO", startedAtUtc);
         completedWithZero.Start(startedAtUtc);
-        completedWithZero.Complete(startedAtUtc);
+        completedWithZero.Complete(startedAtUtc, []);
         var reopened = CreateTask("WO-REOPENED", "OP-REOPENED", startedAtUtc);
         reopened.Start(startedAtUtc);
-        reopened.Complete(startedAtUtc.AddMinutes(15));
-        reopened.ReopenAfterReportReversal();
+        reopened.Complete(startedAtUtc.AddMinutes(15), []);
+        var reopenedSettlement = Assert.Single(
+            reopened.GetDomainEvents().OfType<OperationActualTimeSettledDomainEvent>()).Settlement;
+        reopened.ReopenAfterReportReversal(reopenedSettlement, startedAtUtc.AddMinutes(30));
 
         dbContext.OperationTasks.AddRange(queued, inProgress, paused, completed, completedWithZero, reopened);
         await dbContext.SaveChangesAsync();
@@ -82,7 +85,7 @@ public sealed class MesActualTimeReadContractTests
             startedAtUtc.AddHours(-1),
             [new RoutingStepSnapshot("OP-DETAIL", 10, "WC-DETAIL", [], TimeSpan.FromMinutes(30))]));
         operation.Start(startedAtUtc);
-        operation.Complete(startedAtUtc.AddMinutes(75));
+        operation.Complete(startedAtUtc.AddMinutes(75), []);
         dbContext.Entry(operation).Property(x => x.MachineTimeTicks).CurrentValue = TimeSpan.FromMinutes(30).Ticks;
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(operation);
@@ -105,11 +108,11 @@ public sealed class MesActualTimeReadContractTests
         var startedAtUtc = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
         var completed = CreateTask("WO-REPORT", "OP-REPORT", startedAtUtc);
         completed.Start(startedAtUtc);
-        completed.Complete(startedAtUtc.AddMinutes(75));
+        completed.Complete(startedAtUtc.AddMinutes(75), []);
         dbContext.Entry(completed).Property(x => x.MachineTimeTicks).CurrentValue = TimeSpan.FromMinutes(30).Ticks;
         var completedWithZero = CreateTask("WO-ZERO-REPORT", "OP-ZERO-REPORT", startedAtUtc);
         completedWithZero.Start(startedAtUtc);
-        completedWithZero.Complete(startedAtUtc);
+        completedWithZero.Complete(startedAtUtc, []);
         var running = CreateTask("WO-RUNNING-REPORT", "OP-RUNNING-REPORT", startedAtUtc);
         running.Start(startedAtUtc);
         var otherScope = OperationTask.Queue(
@@ -123,7 +126,7 @@ public sealed class MesActualTimeReadContractTests
             startedAtUtc,
             TimeSpan.FromMinutes(30));
         otherScope.Start(startedAtUtc);
-        otherScope.Complete(startedAtUtc.AddHours(2));
+        otherScope.Complete(startedAtUtc.AddHours(2), []);
         var otherEnvironment = OperationTask.Queue(
             "org-001",
             "env-other",
@@ -135,7 +138,7 @@ public sealed class MesActualTimeReadContractTests
             startedAtUtc,
             TimeSpan.FromMinutes(30));
         otherEnvironment.Start(startedAtUtc);
-        otherEnvironment.Complete(startedAtUtc.AddHours(2));
+        otherEnvironment.Complete(startedAtUtc.AddHours(2), []);
         dbContext.OperationTasks.AddRange(completed, completedWithZero, running, otherScope, otherEnvironment);
         dbContext.ProductionReports.AddRange(
             ProductionReport.Record(

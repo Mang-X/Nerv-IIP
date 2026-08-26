@@ -360,7 +360,12 @@ public sealed class RecordProductionReportCommandHandler(
                 dbContext,
                 operationTask,
                 cancellationToken);
-            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
+            await OperationActualTimeSettlementCoordinator.CompleteAsync(
+                dbContext,
+                operationTask,
+                request.ReportedAtUtc,
+                [report.ReportNo],
+                cancellationToken);
         }
 
         dbContext.ProductionReports.Add(report);
@@ -563,7 +568,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
         if (original.CompletesOperation)
         {
-            operationTask.ReopenAfterReportReversal();
+            await OperationActualTimeSettlementCoordinator.VoidAsync(
+                dbContext,
+                operationTask,
+                request.ReversedAtUtc,
+                cancellationToken);
         }
 
         var reversal = ProductionReport.Reverse(
@@ -607,14 +616,18 @@ internal static class ProductionReportOeeProjectionFactory
         decimal? theoreticalRatePerHour = operationTask.PlannedQuantity > 0m && durationHours > 0m
             ? decimal.Divide(operationTask.PlannedQuantity, durationHours)
             : null;
+        var snapshotWorkCenterCode = string.IsNullOrWhiteSpace(dimensionSnapshot?.WorkCenterCode)
+            ? null
+            : dimensionSnapshot.WorkCenterCode.Trim();
+        var hasAuthoritativeHierarchySnapshot = snapshotWorkCenterCode is not null;
         return new ProductionReportOeeProjection(
-            operationTask.WorkCenterId,
+            snapshotWorkCenterCode ?? operationTask.WorkCenterId,
             operationTask.DeviceAssetId,
             operationTask.UomCode,
             theoreticalRatePerHour,
-            dimensionSnapshot?.SiteCode,
-            dimensionSnapshot?.WorkshopCode,
-            dimensionSnapshot?.LineCode,
+            hasAuthoritativeHierarchySnapshot ? dimensionSnapshot?.SiteCode : null,
+            hasAuthoritativeHierarchySnapshot ? dimensionSnapshot?.WorkshopCode : null,
+            hasAuthoritativeHierarchySnapshot ? dimensionSnapshot?.LineCode : null,
             dimensionSnapshot?.ShiftCode,
             dimensionSnapshot?.SiteTimezone,
             dimensionSnapshot?.ShiftStartsAt,

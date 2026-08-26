@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826053334_AddMesOperationActualTimeSettlement")]
+    partial class AddMesOperationActualTimeSettlement
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1399,55 +1402,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("oee_device_asset_id")
                         .HasComment("Assigned device snapshot carried with the report for OEE projection and reversal consistency.");
 
-                    b.Property<string>("OeeLineCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("oee_line_code")
-                        .HasComment("MasterData production line code snapshot captured when the production report was recorded.");
-
-                    b.Property<int?>("OeeShiftBreakMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("oee_shift_break_minutes")
-                        .HasComment("Break minutes from the captured shift definition.");
-
-                    b.Property<string>("OeeShiftCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("oee_shift_code")
-                        .HasComment("Assigned MasterData shift code snapshot captured when the production report was recorded.");
-
-                    b.Property<bool?>("OeeShiftCrossesMidnight")
-                        .HasColumnType("boolean")
-                        .HasColumnName("oee_shift_crosses_midnight")
-                        .HasComment("Whether the captured shift definition crosses local midnight.");
-
-                    b.Property<TimeOnly?>("OeeShiftEndsAt")
-                        .HasColumnType("time without time zone")
-                        .HasColumnName("oee_shift_ends_at")
-                        .HasComment("Local shift end time snapshot used to derive the historical shift window.");
-
-                    b.Property<int?>("OeeShiftPaidMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("oee_shift_paid_minutes")
-                        .HasComment("Paid minutes from the captured shift definition.");
-
-                    b.Property<TimeOnly?>("OeeShiftStartsAt")
-                        .HasColumnType("time without time zone")
-                        .HasColumnName("oee_shift_starts_at")
-                        .HasComment("Local shift start time snapshot used to derive the historical shift window.");
-
-                    b.Property<string>("OeeSiteCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("oee_site_code")
-                        .HasComment("MasterData site code snapshot captured when the production report was recorded.");
-
-                    b.Property<string>("OeeSiteTimezone")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("oee_site_timezone")
-                        .HasComment("IANA site timezone snapshot used to derive historical OEE business-day boundaries.");
-
                     b.Property<decimal?>("OeeTheoreticalRatePerHour")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -1465,12 +1419,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("oee_work_center_id")
                         .HasComment("Work center snapshot carried with the report for OEE projection and reversal consistency.");
-
-                    b.Property<string>("OeeWorkshopCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("oee_workshop_code")
-                        .HasComment("MasterData workshop code snapshot captured when the production report was recorded.");
 
                     b.Property<string>("OperationTaskId")
                         .IsRequired()

@@ -47,6 +47,15 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.MaterialMovementCount).HasColumnName("material_movement_count").IsRequired().HasComment("Count of production-consumption Inventory movements emitted for cost closure.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
             .HasName("ak_production_reports_scope_report_no");
+        builder.HasAlternateKey(x => new
+        {
+            x.OrganizationId,
+            x.EnvironmentId,
+            x.ReportNo,
+            x.WorkOrderId,
+            x.OperationTaskId,
+        })
+            .HasName("ak_production_reports_scope_report_task");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

@@ -1284,7 +1284,7 @@ $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSub
 $mesOeeSnapshotIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Production_report_handler_persists_dimension_snapshot_after_postgres_migration'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 19 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its nineteen governed PostgreSQL identities.'
+Assert-Equal 26 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its twenty-six governed PostgreSQL identities.'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesMaterialSubstituteIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the material-substitute snapshot identity exactly once.'
 Assert-True ($mesMaterialSubstituteIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the material-substitute snapshot identity.'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesOeeSnapshotIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the OEE dimension snapshot identity exactly once.'

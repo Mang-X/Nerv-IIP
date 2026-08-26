@@ -257,25 +257,35 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
             FactWithHierarchy("PRPT-MOVED-B", start.AddMinutes(90), "DEV-MOVED", "WC-B", "LINE-B", "WORKSHOP-B", 10m, 10m));
         await dbContext.SaveChangesAsync();
 
-        var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
-            new QueryOeeAggregateBucketsQuery(
-                "org-001", "env-dev", OeeAggregateDimensions.Line, start, end),
-            CancellationToken.None);
-
-        Assert.Equal(
-            ["LINE-A", "LINE-B"],
-            result.Buckets.Select(x => Assert.IsType<string>(x.DimensionValue)).Order().ToArray());
-        Assert.All(result.Buckets, bucket =>
+        var expectations = new (string Dimension, string[] Values)[]
         {
-            Assert.Equal(10m, bucket.GoodQuantity);
-            Assert.Null(bucket.AvailabilityRate);
-            Assert.Null(bucket.PerformanceRate);
-            Assert.Null(bucket.QualityRate);
-            Assert.Null(bucket.OeeRate);
-            Assert.Null(bucket.ExpectedOutputQuantity);
-            Assert.True(bucket.IsDegraded);
-            Assert.Contains("historical-dimension-effective-range-ambiguous", bucket.DegradedReasons);
-        });
+            (OeeAggregateDimensions.Line, ["LINE-A", "LINE-B"]),
+            (OeeAggregateDimensions.WorkCenter, ["WC-A", "WC-B"]),
+            (OeeAggregateDimensions.Workshop, ["WORKSHOP-A", "WORKSHOP-B"])
+        };
+        var handler = new QueryOeeAggregateBucketsQueryHandler(dbContext);
+        foreach (var (dimension, expectedValues) in expectations)
+        {
+            var result = await handler.Handle(
+                new QueryOeeAggregateBucketsQuery("org-001", "env-dev", dimension, start, end),
+                CancellationToken.None);
+
+            Assert.Equal(
+                expectedValues,
+                result.Buckets.Select(x => Assert.IsType<string>(x.DimensionValue)).Order().ToArray());
+            Assert.Equal(20m, result.Buckets.Sum(bucket => bucket.GoodQuantity));
+            Assert.All(result.Buckets, bucket =>
+            {
+                Assert.Equal(10m, bucket.GoodQuantity);
+                Assert.Null(bucket.AvailabilityRate);
+                Assert.Null(bucket.PerformanceRate);
+                Assert.Null(bucket.QualityRate);
+                Assert.Null(bucket.OeeRate);
+                Assert.Null(bucket.ExpectedOutputQuantity);
+                Assert.True(bucket.IsDegraded);
+                Assert.Contains("historical-dimension-effective-range-ambiguous", bucket.DegradedReasons);
+            });
+        }
     }
 
     [RealPostgresFact]
