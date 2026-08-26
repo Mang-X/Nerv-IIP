@@ -1984,7 +1984,8 @@ internal static class MaterialReadinessGuards
                 line.StagedQuantity,
                 result.SourceSystem,
                 line.SourceSnapshotId,
-                capturedAtUtc));
+                capturedAtUtc,
+                line.SubstituteMaterialIds));
         }
 
         workOrder.RecordMaterialRequirementSnapshot(
