@@ -414,9 +414,15 @@ describe('generated API client contract', () => {
     expectTypeOf<SplitBusinessConsoleMesWorkOrderData>().toBeObject()
     expectTypeOf<MergeBusinessConsoleMesWorkOrdersData>().toBeObject()
     expectTypeOf<GetBusinessConsoleMesWorkOrderTransformationData>().toBeObject()
-    expectTypeOf<Extract<keyof SplitBusinessConsoleMesWorkOrderErrors, 502 | 503 | 504>>().toEqualTypeOf<502 | 503 | 504>()
-    expectTypeOf<Extract<keyof MergeBusinessConsoleMesWorkOrdersErrors, 502 | 503 | 504>>().toEqualTypeOf<502 | 503 | 504>()
-    expectTypeOf<Extract<keyof GetBusinessConsoleMesWorkOrderTransformationErrors, 502 | 503 | 504>>().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof SplitBusinessConsoleMesWorkOrderErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof MergeBusinessConsoleMesWorkOrdersErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof GetBusinessConsoleMesWorkOrderTransformationErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
     expectTypeOf<SplitBusinessConsoleMesWorkOrderResponse>().toBeObject()
     expectTypeOf<MergeBusinessConsoleMesWorkOrdersResponse>().toBeObject()
     expectTypeOf<GetBusinessConsoleMesWorkOrderTransformationResponse>().toBeObject()
