@@ -1498,7 +1498,7 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 x.CapturedAtUtc,
                 System.Text.Json.JsonSerializer.Deserialize<string[]>(x.SubstituteMaterialIdsJson) ?? []))
             .ToArray();
-        requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(requirements);
+        requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshot(requirements, x => x.CapturedAtUtc).Requirements;
 
         if (requirements.Length == 0)
         {

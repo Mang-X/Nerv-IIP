@@ -1998,18 +1998,31 @@ internal static class MaterialReadinessGuards
         DateTimeOffset capturedAtUtc,
         CancellationToken cancellationToken)
     {
-        var hasRequirements = await HasRequirementSnapshotsAsync(
+        var existingCaptureIdentity = await GetLatestRequirementSnapshotCaptureIdentityAsync(
             dbContext,
             workOrder.OrganizationId,
             workOrder.EnvironmentId,
             workOrder.WorkOrderId,
             cancellationToken);
-        if (hasRequirements)
+        if (existingCaptureIdentity is not null)
         {
-            workOrder.RecordMaterialRequirementSnapshot(
-                WorkOrder.MaterialRequirementSnapshotCapturedStatus,
-                capturedAtUtc);
-            return MaterialRequirementCaptureOutcome.Existing;
+            if (workOrder.MaterialRequirementSnapshotStatus != WorkOrder.MaterialRequirementSnapshotCapturedStatus ||
+                workOrder.MaterialRequirementSnapshotEvaluatedAtUtc != existingCaptureIdentity ||
+                workOrder.MaterialRequirementSnapshotProductionVersionId != workOrder.ProductionVersionId)
+            {
+                workOrder.RecordMaterialRequirementSnapshot(
+                    WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+                    existingCaptureIdentity.Value);
+            }
+
+            return MaterialRequirementCaptureOutcome.Existing(existingCaptureIdentity.Value);
+        }
+
+        if (workOrder.MaterialRequirementSnapshotStatus == WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus &&
+            workOrder.MaterialRequirementSnapshotEvaluatedAtUtc is { } noRequirementsCaptureIdentity &&
+            workOrder.MaterialRequirementSnapshotProductionVersionId == workOrder.ProductionVersionId)
+        {
+            return MaterialRequirementCaptureOutcome.ExistingNoRequirements(noRequirementsCaptureIdentity);
         }
 
         if (snapshotProvider is null)
@@ -2037,7 +2050,7 @@ internal static class MaterialReadinessGuards
             workOrder.RecordMaterialRequirementSnapshot(
                 WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
                 capturedAtUtc);
-            return MaterialRequirementCaptureOutcome.NoRequirementsFound;
+            return MaterialRequirementCaptureOutcome.NoRequirementsFound(capturedAtUtc);
         }
 
         foreach (var line in result.Lines)
@@ -2061,7 +2074,7 @@ internal static class MaterialReadinessGuards
         workOrder.RecordMaterialRequirementSnapshot(
             WorkOrder.MaterialRequirementSnapshotCapturedStatus,
             capturedAtUtc);
-        return MaterialRequirementCaptureOutcome.Captured;
+        return MaterialRequirementCaptureOutcome.Captured(capturedAtUtc);
     }
 
     public static async Task<IReadOnlyCollection<string>> GetShortageReasonsAsync(
@@ -2104,7 +2117,7 @@ internal static class MaterialReadinessGuards
                     x.StagedQuantity,
                     x.CapturedAtUtc)))
             .ToArray();
-        requirements = SelectLatestRequirementSnapshots(requirements, x => x.CapturedAtUtc);
+        requirements = SelectLatestRequirementSnapshot(requirements, x => x.CapturedAtUtc).Requirements;
 
         if (requirements.Length == 0)
         {
@@ -2142,50 +2155,68 @@ internal static class MaterialReadinessGuards
             .ToArray();
     }
 
-    private static async Task<bool> HasRequirementSnapshotsAsync(
+    private static async Task<DateTimeOffset?> GetLatestRequirementSnapshotCaptureIdentityAsync(
         ApplicationDbContext dbContext,
         string organizationId,
         string environmentId,
         string workOrderId,
         CancellationToken cancellationToken)
     {
-        return dbContext.MaterialRequirements.Local.Any(x =>
-                x.OrganizationId == organizationId &&
+        var persistedCaptureIdentities = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
-                x.WorkOrderId == workOrderId) ||
-            await dbContext.MaterialRequirements
-                .AsNoTracking()
-                .AnyAsync(
-                    x => x.OrganizationId == organizationId &&
-                        x.EnvironmentId == environmentId &&
-                        x.WorkOrderId == workOrderId,
-                    cancellationToken);
+                x.WorkOrderId == workOrderId)
+            .Select(x => x.CapturedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        var captureIdentities = persistedCaptureIdentities
+            .Concat(dbContext.MaterialRequirements.Local
+                .Where(x => x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.WorkOrderId == workOrderId)
+                .Select(x => x.CapturedAtUtc));
+        return SelectLatestRequirementSnapshot(captureIdentities, x => x).CaptureIdentity;
     }
 
-    public readonly record struct MaterialRequirementCaptureOutcome(bool NoRequirements, bool IsMissing)
+    public readonly record struct MaterialRequirementCaptureOutcome(
+        bool NoRequirements,
+        bool IsMissing,
+        DateTimeOffset? CaptureIdentity)
     {
-        public static MaterialRequirementCaptureOutcome Existing { get; } = new(false, false);
+        public static MaterialRequirementCaptureOutcome Existing(DateTimeOffset captureIdentity) =>
+            new(false, false, captureIdentity);
 
-        public static MaterialRequirementCaptureOutcome Captured { get; } = new(false, false);
+        public static MaterialRequirementCaptureOutcome Captured(DateTimeOffset captureIdentity) =>
+            new(false, false, captureIdentity);
 
-        public static MaterialRequirementCaptureOutcome Missing { get; } = new(false, true);
+        public static MaterialRequirementCaptureOutcome Missing { get; } = new(false, true, null);
 
-        public static MaterialRequirementCaptureOutcome NoRequirementsFound { get; } = new(true, false);
+        public static MaterialRequirementCaptureOutcome NoRequirementsFound(DateTimeOffset captureIdentity) =>
+            new(true, false, captureIdentity);
+
+        public static MaterialRequirementCaptureOutcome ExistingNoRequirements(DateTimeOffset captureIdentity) =>
+            new(true, false, captureIdentity);
     }
 
-    internal static T[] SelectLatestRequirementSnapshots<T>(
+    internal static MaterialRequirementSnapshotSelection<T> SelectLatestRequirementSnapshot<T>(
         IEnumerable<T> requirements,
         Func<T, DateTimeOffset> capturedAtUtc)
     {
         var materialized = requirements.ToArray();
         if (materialized.Length == 0)
         {
-            return materialized;
+            return new(null, materialized);
         }
 
         var latestCapture = materialized.Max(capturedAtUtc);
-        return materialized.Where(x => capturedAtUtc(x) == latestCapture).ToArray();
+        return new(
+            latestCapture,
+            materialized.Where(x => capturedAtUtc(x) == latestCapture).ToArray());
     }
+
+    internal readonly record struct MaterialRequirementSnapshotSelection<T>(
+        DateTimeOffset? CaptureIdentity,
+        T[] Requirements);
 
     internal sealed record MaterialRequirementSnapshot(
         string? OperationTaskId,

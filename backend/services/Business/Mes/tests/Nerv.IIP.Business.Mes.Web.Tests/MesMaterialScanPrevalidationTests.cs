@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 using Nerv.IIP.Testing;
@@ -42,6 +43,58 @@ public sealed class MesMaterialScanPrevalidationTests
         Assert.Equal("LOT-001", response.MaterialLotId);
         Assert.Equal("LINE-01", inventory.LastRequest?.LocationCode);
         Assert.Equal(new DateOnly(2026, 8, 26), inventory.LastRequest?.AsOfDate);
+    }
+
+    [Fact]
+    public async Task Convert_then_release_preserves_capture_identity_and_allows_material_scan()
+    {
+        await using var db = CreateDbContext();
+        var snapshotProvider = new StaticMaterialSnapshotProvider(
+            MesMaterialRequirementSnapshotResult.Captured(
+                "product-engineering-http:PV-001:MBOM-001",
+                [new MesMaterialRequirementSnapshotLine(
+                    null, "MAT-PRIMARY", null, 5m, "PCS", 5m, 0m,
+                    "MBOM-001:MAT-PRIMARY", [])]));
+        var converted = await new ConvertPlanToWorkOrderCommandHandler(
+            db,
+            new RuleScheduler(),
+            null,
+            snapshotProvider).Handle(
+                new ConvertPlanToWorkOrderCommand(
+                    "org-001", "env-dev", "PLAN-SCAN-001", null, Now,
+                    "FG-001", "PV-001", 10m, "PCS", Now.AddDays(1), "WC-01",
+                    "DemandPlanning", "PlanningSuggestion", "SUG-SCAN-001", "DEMAND-SCAN-001",
+                    "convert-plan-material-scan"),
+                CancellationToken.None);
+        await db.SaveChangesAsync();
+        var workOrderId = converted.ReferenceId;
+        var operationTaskId = $"{workOrderId}-OP-10";
+        var captureIdentity = Assert.Single(db.MaterialRequirements).CapturedAtUtc;
+
+        await new ReleaseWorkOrderCommandHandler(db, snapshotProvider).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", workOrderId, Now.AddMinutes(1)),
+            CancellationToken.None);
+        var workOrder = await db.WorkOrders.SingleAsync();
+        Assert.Equal(captureIdentity, workOrder.MaterialRequirementSnapshotEvaluatedAtUtc);
+
+        var issue = MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-LIFECYCLE-001", workOrderId, operationTaskId,
+            "MAT-PRIMARY", "PCS", 5m, Now.AddMinutes(2));
+        issue.ConfirmAndPostLineSideReceipt(
+            new MaterialTransferLocations(
+                "SITE-01", "WH-01", "SITE-01", "LINE-01",
+                [new MaterialTransferAllocation("SITE-01", "WH-01", "LOT-001", 5m)]),
+            Now.AddMinutes(3), 5m, "LOT-001");
+        db.MaterialIssueRequests.Add(issue);
+        await db.SaveChangesAsync();
+
+        var response = await CreateHandler(db, new StubAvailabilityProvider(new(true, false, true))).Handle(
+            new PrevalidateMaterialScanQuery(
+                "org-001", "env-dev", "MIR-LIFECYCLE-001", workOrderId, operationTaskId),
+            CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
+        Assert.Equal("material-scan-accepted", response.ReasonCode);
     }
 
     [Fact]
@@ -593,6 +646,14 @@ public sealed class MesMaterialScanPrevalidationTests
         Assert.DoesNotContain(secret, entry.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("ReasonPhrase", entry.Message, StringComparison.Ordinal);
         Assert.Contains("Inventory", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("MATERIAL_SCAN_SOURCE_UNAVAILABLE", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("MAT-001", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("LOT-001", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("corr-001", entry.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            failureKind == "exception" ? nameof(HttpRequestException) : "503",
+            entry.Message,
+            StringComparison.Ordinal);
     }
 
     private static PrevalidateMaterialScanQueryHandler CreateHandler(
@@ -708,6 +769,14 @@ public sealed class MesMaterialScanPrevalidationTests
             LastRequest = request;
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class StaticMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult result)
+        : IMesMaterialRequirementSnapshotProvider
+    {
+        public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
+            MesMaterialRequirementSnapshotRequest request,
+            CancellationToken cancellationToken) => Task.FromResult(result);
     }
 
     private sealed class RecordingHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
