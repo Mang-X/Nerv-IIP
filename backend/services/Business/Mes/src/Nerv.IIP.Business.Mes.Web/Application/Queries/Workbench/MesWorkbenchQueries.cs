@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -654,6 +655,12 @@ public sealed record MesOperationTaskRow(
     // 只在工序完成后返回已冻结的累计实绩；未完成或冲销后重新打开时为 null，单位为小时。
     [property: JsonIgnore] MesActualHours? ActualHours = null)
 {
+    [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? ActualLaborHours => ActualHours?.LaborHours;
+
+    [Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? ActualMachineHours => ActualHours?.MachineHours;
+
     public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
     public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
