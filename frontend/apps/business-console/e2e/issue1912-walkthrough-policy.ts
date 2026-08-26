@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page, type Response } from '@playwright/test'
 
 const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
   'document',
@@ -41,16 +41,16 @@ export function classifyRequestFailure(
   const url = new URL(observation.url)
   const isApi = url.pathname.startsWith('/api/')
   const expectedDocumentOrResourceAbort =
-    !isApi
-    && observation.failure === 'net::ERR_ABORTED'
-    && EXPECTED_ABORT_RESOURCE_TYPES.has(observation.resourceType)
+    !isApi &&
+    observation.failure === 'net::ERR_ABORTED' &&
+    EXPECTED_ABORT_RESOURCE_TYPES.has(observation.resourceType)
   const expectedApiAbort =
-    isApi
-    && observation.failure === 'net::ERR_ABORTED'
-    && API_ABORT_RESOURCE_TYPES.has(observation.resourceType)
-    && observation.cancellationEvidence?.requestStartedBeforeTransition === true
-    && (observation.cancellationEvidence.kind === 'navigation'
-      || observation.cancellationEvidence.kind === 'component-unmount')
+    isApi &&
+    observation.failure === 'net::ERR_ABORTED' &&
+    API_ABORT_RESOURCE_TYPES.has(observation.resourceType) &&
+    observation.cancellationEvidence?.requestStartedBeforeTransition === true &&
+    (observation.cancellationEvidence.kind === 'navigation' ||
+      observation.cancellationEvidence.kind === 'component-unmount')
   const expected = expectedDocumentOrResourceAbort || expectedApiAbort
 
   return {
@@ -80,82 +80,197 @@ export function classifyRequestFailure(
 
 type ObservedRequest = {
   event: number
-  generation: number
   pageUrl: string
 }
 
-type LifecycleTransition = {
+type LifecycleAttemptState = 'pending' | 'active' | 'cancelled' | 'closed'
+
+type PendingFailure = {
+  onResolved: (evidence: RequestCancellationEvidence | undefined) => void
+}
+
+type LifecycleAttempt = {
   event: number
-  generation: number
   id: number
-  kind: RequestCancellationKind
+  kind?: RequestCancellationKind
   pageUrl: string
+  pendingFailures: PendingFailure[]
+  state: LifecycleAttemptState
 }
 
-export type LifecycleTransitionHandle = {
-  id: number
+export type LifecycleAttemptHandle = {
+  cancel: () => void
   complete: () => void
+  confirm: (kind: RequestCancellationKind) => void
+  id: number
 }
 
 export class RequestFailureEvidenceTracker {
   private event = 0
 
-  private generation = 0
-
   private transitionId = 0
 
   private readonly requests = new WeakMap<object, ObservedRequest>()
 
-  private readonly transitions: LifecycleTransition[] = []
+  private readonly attempts = new Map<number, LifecycleAttempt>()
 
   observeRequest(request: object, pageUrl: string): void {
     this.requests.set(request, {
       event: ++this.event,
-      generation: this.generation,
       pageUrl,
     })
   }
 
-  beginTransition(kind: RequestCancellationKind, pageUrl: string): LifecycleTransitionHandle {
-    const transition: LifecycleTransition = {
+  beginLifecycleAttempt(pageUrl: string): LifecycleAttemptHandle {
+    const attempt: LifecycleAttempt = {
       event: ++this.event,
-      generation: ++this.generation,
       id: ++this.transitionId,
-      kind,
       pageUrl,
+      pendingFailures: [],
+      state: 'pending',
     }
-    this.transitions.push(transition)
-    let completed = false
+    this.attempts.set(attempt.id, attempt)
     return {
-      id: transition.id,
-      complete: () => {
-        if (completed) return
-        completed = true
-        this.event += 1
-      },
+      id: attempt.id,
+      cancel: () => this.cancelAttempt(attempt),
+      confirm: (kind) => this.confirmAttempt(attempt, kind),
+      complete: () => this.completeAttempt(attempt),
     }
   }
 
-  cancellationEvidenceFor(request: object): RequestCancellationEvidence | undefined {
+  resolveFailureEvidence(
+    request: object,
+    onResolved: (evidence: RequestCancellationEvidence | undefined) => void,
+  ): void {
     const observed = this.requests.get(request)
-    if (!observed) return undefined
+    if (!observed) {
+      onResolved(undefined)
+      return
+    }
 
-    const failureEvent = ++this.event
-    const transition = [...this.transitions]
+    ++this.event
+    const activeAttempt = [...this.attempts.values()]
       .reverse()
       .find(
-        candidate =>
-          candidate.pageUrl === observed.pageUrl
-          && candidate.generation > observed.generation
-          && candidate.event < failureEvent
-          && observed.event < candidate.event,
+        (attempt) =>
+          attempt.state === 'active' &&
+          attempt.pageUrl === observed.pageUrl &&
+          observed.event < attempt.event,
       )
-    if (!transition) return undefined
+    if (activeAttempt) {
+      onResolved(this.evidenceFor(activeAttempt))
+      return
+    }
 
+    const pendingAttempt = [...this.attempts.values()]
+      .reverse()
+      .find(
+        (attempt) =>
+          attempt.state === 'pending' &&
+          attempt.pageUrl === observed.pageUrl &&
+          observed.event < attempt.event,
+      )
+    if (pendingAttempt) {
+      pendingAttempt.pendingFailures.push({ onResolved })
+      return
+    }
+
+    onResolved(undefined)
+  }
+
+  private confirmAttempt(attempt: LifecycleAttempt, kind: RequestCancellationKind): void {
+    if (attempt.state !== 'pending') return
+    attempt.kind = kind
+    attempt.state = 'active'
+    ++this.event
+    const pendingFailures = attempt.pendingFailures.splice(0)
+    const evidence = this.evidenceFor(attempt)
+    for (const failure of pendingFailures) failure.onResolved(evidence)
+  }
+
+  private cancelAttempt(attempt: LifecycleAttempt): void {
+    if (attempt.state === 'cancelled' || attempt.state === 'closed') return
+    attempt.state = 'cancelled'
+    ++this.event
+    const pendingFailures = attempt.pendingFailures.splice(0)
+    for (const failure of pendingFailures) failure.onResolved(undefined)
+    this.attempts.delete(attempt.id)
+  }
+
+  private completeAttempt(attempt: LifecycleAttempt): void {
+    if (attempt.state === 'pending') {
+      this.cancelAttempt(attempt)
+      return
+    }
+    if (attempt.state !== 'active') return
+    attempt.state = 'closed'
+    ++this.event
+    this.attempts.delete(attempt.id)
+  }
+
+  private evidenceFor(attempt: LifecycleAttempt): RequestCancellationEvidence {
+    if (!attempt.kind) throw new Error('lifecycle attempt has no confirmed kind')
     return {
-      kind: transition.kind,
+      kind: attempt.kind,
       requestStartedBeforeTransition: true,
-      transitionId: transition.id,
+      transitionId: attempt.id,
+    }
+  }
+}
+
+export type InitialPageNavigationOptions = {
+  route: string
+  listPath: string
+  timeoutMs?: number
+}
+
+export async function navigateAndWaitForInitialList(
+  page: Page,
+  options: InitialPageNavigationOptions,
+): Promise<{ firstList: Response; navigation: Response | null }> {
+  const timeoutMs = options.timeoutMs ?? 120_000
+  const initialListResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === options.listPath &&
+      response.status() === 200,
+    { timeout: timeoutMs },
+  )
+  const navigation = await page.goto(options.route, {
+    waitUntil: 'domcontentloaded',
+    timeout: timeoutMs,
+  })
+  const firstList = await initialListResponse
+  return { firstList, navigation }
+}
+
+export async function clickTabAndConfirmUnmount(
+  page: Page,
+  tabText: string | RegExp,
+  tracker: RequestFailureEvidenceTracker,
+  timeoutMs = 120_000,
+): Promise<void> {
+  const previousPanel = page.locator('[role="tabpanel"]:visible').first()
+  const previousPanelHandle = await previousPanel.elementHandle()
+  const attempt = tracker.beginLifecycleAttempt(page.url())
+  let confirmed = false
+  try {
+    await page.getByRole('tab', { name: tabText }).click({ timeout: timeoutMs })
+    if (!previousPanelHandle) {
+      throw new Error('component unmount could not be evidenced: no visible tab panel')
+    }
+    await expect
+      .poll(() => previousPanelHandle.evaluate((element) => element.isConnected), {
+        timeout: timeoutMs,
+      })
+      .toBe(false)
+    attempt.confirm('component-unmount')
+    confirmed = true
+  } finally {
+    if (confirmed) {
+      attempt.complete()
+    } else {
+      attempt.cancel()
     }
   }
 }
@@ -195,11 +310,10 @@ export async function fillFilterAndWaitForListResponse(
   }
 
   const filteredListResponse = page.waitForResponse(
-    response => (
-      response.request().method() === 'GET'
-      && new URL(response.url()).pathname === options.listPath
-      && response.status() === 200
-    ),
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === options.listPath &&
+      response.status() === 200,
     { timeout: options.timeoutMs ?? 120_000 },
   )
   await filter.fill(options.stableText)
