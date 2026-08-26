@@ -388,10 +388,10 @@ try {
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
-    # MES：八个既有类与 WorkOrderTransformation 类共有 28 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
+    # MES：base 的 WorkOrderTransformation application 证明与替代料快照证明合计 29 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
     # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 28) 'The MES member must freeze exactly its twenty-eight governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 29) 'The MES member must freeze exactly its twenty-nine governed PostgreSQL identities.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
@@ -411,6 +411,7 @@ try {
             'MesCapSaveBoundaryPostgresTests.cs',
             'MesCapSubscriptionTests.cs',
             'MesCollaborationPostgresTests.cs',
+            'MesMaterialSubstituteSnapshotPostgresTests.cs',
             'MesSchedulePlanProvenancePostgresTests.cs',
             'RushWorkOrderHttpPostgresTests.cs',
             'SkuDisabledConsumerTests.cs',
