@@ -353,10 +353,10 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 // prevents the first query from racing with the first CAP received row.
                 await CaptureOnceAsync(connection, stop.Token);
                 ready.TrySetResult(true);
-                while (!stop.IsCancellationRequested)
+                using var pollTimer = new PeriodicTimer(PollInterval);
+                while (await pollTimer.WaitForNextTickAsync(stop.Token))
                 {
                     await CaptureOnceAsync(connection, stop.Token);
-                    await Task.Delay(PollInterval, stop.Token);
                 }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested)
