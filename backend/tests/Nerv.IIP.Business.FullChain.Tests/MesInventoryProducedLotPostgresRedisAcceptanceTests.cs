@@ -13,6 +13,8 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
@@ -536,6 +538,28 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         insert.Parameters.AddWithValue("due_utc", DateTimeOffset.UtcNow.AddHours(8));
         insert.Parameters.AddWithValue("erp_capitalized_unit_cost", ErpCapitalizedUnitCost);
         await insert.ExecuteNonQueryAsync();
+
+        // External ERP authority projection prerequisite: the successful work order's cost has already
+        // been consumed by the real MES ERP handler, while the pending work order deliberately has no row.
+        await using var provenance = connection.CreateCommand();
+        provenance.Transaction = transaction;
+        provenance.CommandText = """
+            INSERT INTO mes.processed_integration_events
+                ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
+            VALUES
+                (@id, @consumer_name, @event_id, @event_type, @event_version, @source_service, @idempotency_key, @processed_at_utc);
+            """;
+        provenance.Parameters.AddWithValue("id", Guid.CreateVersion7());
+        provenance.Parameters.AddWithValue("consumer_name", WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName);
+        provenance.Parameters.AddWithValue("event_id", $"evt-man528-cost-capitalized-{source.ProbeRunId}");
+        provenance.Parameters.AddWithValue("event_type", ErpIntegrationEventTypes.WorkOrderCostCapitalized);
+        provenance.Parameters.AddWithValue("event_version", ErpIntegrationEventVersions.V1);
+        provenance.Parameters.AddWithValue("source_service", ErpIntegrationEventSources.BusinessErp);
+        provenance.Parameters.AddWithValue(
+            "idempotency_key",
+            $"work-order-cost-capitalized:{source.OrganizationId}:{source.EnvironmentId}:{source.WorkOrderId}");
+        provenance.Parameters.AddWithValue("processed_at_utc", DateTimeOffset.UtcNow);
+        await provenance.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
 
         await using var authority = connection.CreateCommand();
@@ -553,6 +577,27 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         if (authorityValue is not decimal erpCapitalizedUnitCost)
         {
             throw new InvalidOperationException("MAN-528 probe could not read the ERP-authoritative capitalized unit cost projection.");
+        }
+
+        await using var provenanceReadback = connection.CreateCommand();
+        provenanceReadback.CommandText = """
+            SELECT COUNT(*) FROM mes.processed_integration_events
+            WHERE "ConsumerName" = @consumer_name
+              AND "EventType" = @event_type
+              AND "EventVersion" = @event_version
+              AND "SourceService" = @source_service
+              AND "IdempotencyKey" = @success_idempotency_key;
+            """;
+        provenanceReadback.Parameters.AddWithValue("consumer_name", WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName);
+        provenanceReadback.Parameters.AddWithValue("event_type", ErpIntegrationEventTypes.WorkOrderCostCapitalized);
+        provenanceReadback.Parameters.AddWithValue("event_version", ErpIntegrationEventVersions.V1);
+        provenanceReadback.Parameters.AddWithValue("source_service", ErpIntegrationEventSources.BusinessErp);
+        provenanceReadback.Parameters.AddWithValue(
+            "success_idempotency_key",
+            $"work-order-cost-capitalized:{source.OrganizationId}:{source.EnvironmentId}:{source.WorkOrderId}");
+        if ((long)(await provenanceReadback.ExecuteScalarAsync() ?? 0L) != 1L)
+        {
+            throw new InvalidOperationException("MAN-528 probe could not read back the successful ERP authority provenance projection.");
         }
 
         return source with { ErpCapitalizedUnitCost = erpCapitalizedUnitCost };
