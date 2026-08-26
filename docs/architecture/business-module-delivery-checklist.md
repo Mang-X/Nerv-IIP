@@ -1,6 +1,6 @@
 # 业务模块交付清单
 
-代码事实复核日期：2026-07-02。
+代码事实复核日期：2026-08-26。
 
 本文用于下一步业务排期。它按当前代码事实列出业务模块在后端、BusinessGateway、PC Business Console、PDA/mobile 和大屏/看板上的完成与缺口，不替代 `docs/architecture/implementation-readiness.md` 的全局状态，也不替代 OpenAPI 或测试报告。
 
@@ -10,7 +10,7 @@
 - `[ ]` 表示当前仓库中未找到正式交付物，或只有设计系统/占位/诊断能力，不能作为业务完成声明。
 - “后端已完成”只表示领域服务、API、持久化或事件闭环已存在，不代表 PC、PDA 或大屏已经可用。
 - “PC 已完成”只表示 Business Console 有正式路由页面和 facade 消费事实，不代表该业务域已经达到完整 ERP/MES/WMS/CMMS 产品深度。
-- “PDA 已完成”只表示 `frontend/apps/business-pda` 中有移动作业页、composable 或任务入口，不代表离线、扫码解析、设备绑定和个人任务已经完成。
+- “PDA 已完成”只表示 `frontend/apps/business-pda` 中有移动作业页、composable 或任务入口；已落地的扫码解析仍不代表离线、相机扫码、设备绑定和个人任务已经完成。
 - “大屏已完成”只认可业务大屏应用或 live data 页面。`frontend/apps/design-system` 中的 `board.vue` 和 screen 组件文档只能算设计/组件样例。
 
 ## 代码事实来源
@@ -20,7 +20,7 @@
 - PC Business Console：`frontend/apps/business-console/src/navigation.ts` 和 `frontend/apps/business-console/src/pages/*`
 - Business PDA：`frontend/apps/business-pda/src/pages/*`、`frontend/apps/business-pda/src/composables/*`、`frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`
 - 大屏/设计系统：`frontend/apps/design-system/src/pages/board.vue`、`frontend/apps/design-system/docs/components/screen/*`、`frontend/packages/ui/src/components/screen/*`
-- 当前没有 `frontend/apps/business-board`，也没有 `frontend/apps/business-pda/src/pages/scan.vue`；Business Console 已有 `frontend/apps/business-console/src/pages/barcode` 与 `frontend/apps/business-console/src/pages/approval`。
+- 当前没有 `frontend/apps/business-board`；Business PDA 已有 `frontend/apps/business-pda/src/pages/scan.vue`，Business Console 已有 `frontend/apps/business-console/src/pages/barcode` 与 `frontend/apps/business-console/src/pages/approval`。
 
 ## 总览
 
@@ -32,12 +32,12 @@
 | Scheduling / APS lite        | [x]        | [x]             | [x] MES 规则排程页、独立 APS 只读甘特工作台 | [ ]                              | [ ]       | 交互式重排/RFC、排程版本对比、生产大屏甘特。                                                                                                                                 |
 | Inventory 库存               | [x]        | [x]             | [x]                                         | [ ] 独立库存 PDA                 | [ ]       | MAN-351 已补 availability facade 支撑的批次与预留 PC 视图；独立批次/序列号履历、冻结/解冻、预留明细、库存分析、WMS 作业页内库存上下文深化、移动盘点与库存 PDA 边界仍待后续。 |
 | Quality 质量                 | [x]        | [x]             | [x]                                         | [ ] 独立质量 PDA                 | [ ]       | 移动检验、CAPA 深化、质量趋势/供应商质量分析、NCR 到返工/库存冻结穿透。                                                                                                      |
-| MES 制造执行                 | [x]        | [x]             | [x]                                         | [x] 部分一线作业                 | [ ]       | PC 详情深度、真实个人任务、扫码直达、离线报工、生产指挥大屏。                                                                                                                |
-| WMS 仓储作业                 | [x]        | [x]             | [x]                                         | [x] 部分一线作业                 | [ ]       | FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、扫描解析与离线作业。                                                                                                          |
+| MES 制造执行                 | [x]        | [x]             | [x]                                         | [x] 部分一线作业                 | [ ]       | PC 详情深度、真实个人任务、更多对象扫码直达、相机/离线解析、离线报工、生产指挥大屏。                                                                                         |
+| WMS 仓储作业                 | [x]        | [x]             | [x]                                         | [x] 部分一线作业                 | [ ]       | FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、WMS 对象强 ID 直达与离线作业。                                                                                                |
 | ERP 经营管理                 | [x]        | [x]             | [x] 采购/销售/财务窄面                      | [ ]                              | [ ]       | 完整采购/销售/财务菜单、税务/银行/月结/报表、退货/RMA、移动审批/收货协同。                                                                                                   |
 | IndustrialTelemetry 设备监控 | [x]        | [x]             | [x] 设备看板/报警/Tag/规则/历史/OEE         | [x] 报警查看                     | [ ]       | 报警处理闭环、OEE/停机大屏、Connector 产品化。                                                                                                                               |
 | Maintenance 设备运维         | [x]        | [x]             | [x] 工单/计划                               | [x] 报修/点检                    | [ ]       | 完整 CMMS 资产视角、备件成本、移动离线点检、维修绩效分析。                                                                                                                   |
-| BarcodeLabel 条码标签        | [x]        | [x]             | [x] 规则/模板                               | [ ]                              | [ ]       | 打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。                                                                                                                        |
+| BarcodeLabel 条码标签        | [x]        | [x]             | [x] 规则/模板                               | [x] `/scan` 只读解析             | [ ]       | 打印管理深化、相机/离线解析、更多对象目标页强 ID 重核验和跨域追溯 UI。                                                                                                      |
 | BusinessApproval 审批中心    | [x]        | [x]             | [x]                                         | [ ]                              | [ ]       | PC 审批中心已接入模板、流程、任务、决策和委托；移动审批、工作台待办深度整合和跨域单据详情穿透仍后续。                                                                        |
 | Search / Workbench 工作台    | [x] facade | [x]             | [x] 首页，[ ] Cmd/Ctrl+K 实装               | [x] 首页壳，[ ] 我的任务真实数据 | [ ]       | 全局对象搜索面板、近期/星标、角色化待办、跨域指标和预警聚合。                                                                                                                |
 
@@ -99,7 +99,7 @@
 - [x] 覆盖 production plan/work order、dispatch、material readiness、operation task、production report、finished goods receipt、quality hold、defect、downtime/capacity、schedule result、handover、traceability、foundation readiness。
 - [x] 消费 Planning suggestion accepted、ProductionVersion created、Scheduling plan released、Quality inspection result、Inventory posting posted/failed、Maintenance asset events 等跨域事实。
 - [x] BusinessGateway 暴露 MES workbench、plans、work orders、dispatch、materials、operation tasks、WIP、reports、receipts、quality、downtime、capacity、schedules、handovers、traceability、foundation facade。
-- [ ] 还缺完整班组个人任务、扫码入口解析、离线报工、异常协同详情、生产指挥大屏和更完整的一线 UX 闭环。
+- [ ] 还缺完整班组个人任务、更多对象扫码直达、相机/离线解析、离线报工、异常协同详情、生产指挥大屏和更完整的一线 UX 闭环。
 
 ### WMS
 
@@ -139,9 +139,9 @@
 - [x] 服务存在：`backend/services/Business/BarcodeLabel`
 - [x] 覆盖 barcode rule、label template、print batch、scan record。
 - [x] BusinessGateway 暴露 `/api/business-console/v1/barcode/*` rules/templates/print-batches/scans facade。
-- [ ] PC 没有正式 barcode 页面目录。
-- [ ] PDA 没有 `/scan` 路由和扫码解析端点消费。
-- [ ] 还缺打印机/模板设计器、扫码业务直达、标签追溯 UI 和移动扫描闭环。
+- [x] PC 已有 `/barcode/rules`、`/barcode/templates`、`/barcode/print-batches` 与 `/barcode/scans` 正式页面，并消费现有 BusinessGateway facade。
+- [x] PDA 首页与 `/scan` 共用只读解析状态机并消费 `/api/business-console/v1/barcode/resolve`；唯一 MES 工单或完整工序双强 ID 可直达，目标页继续按当前权限精确回读。
+- [ ] 还缺打印机/模板设计器、相机/离线解析、更多对象目标页强 ID 重核验、标签追溯 UI 和完整移动扫描闭环。
 
 ### BusinessApproval
 
@@ -170,13 +170,13 @@
 
 ### PC 仍明显落后的部分
 
-- [ ] BarcodeLabel 没有正式 PC 页面，尽管后端和 BusinessGateway 已经具备 rules/templates/print-batches/scans。
+- [x] BarcodeLabel 已有 rules/templates/print-batches/scans 正式 PC 页面；打印驱动、模板设计器和完整标签预览仍未交付。
 - [x] BusinessApproval 已有正式 PC 页面，消费 BusinessGateway templates/chains/tasks/decisions/delegations facade。
 - [ ] Scheduling 没有独立 APS 顶级工作台，当前主要落在 MES `schedules` 页面和 BusinessGateway facade。
 - [x] IndustrialTelemetry 已有 tags/alarm-rules/history/OEE/runtime-availability 配置与分析页面，当前不包含独立大屏或报警处置闭环。
 - [ ] ERP 只有采购/销售/财务窄面，不能声明完整 ERP。税务、银行、月结、完整报表、退货/RMA 等未交付。
 - [ ] DemandPlanning 只有单页入口，MRP 运行详情、pegging 可视化、建议追踪和异常处理明显不足。
-- [ ] MES 页面覆盖面广，但多处仍偏工作台/列表/诊断，不等于完整一线执行产品。个人任务、扫码直达、离线、异常协同和详情穿透不足。
+- [ ] MES 页面覆盖面广，但多处仍偏工作台/列表/诊断，不等于完整一线执行产品。个人任务、更多对象扫码直达、相机/离线解析、异常协同和详情穿透不足。
 - [ ] WMS 页面覆盖收发存拣盘，但库内策略、LPN/HU、ASN 差异、FEFO/FIFO、扫描作业闭环不足。
 - [ ] Workbench 首页还没有达到角色化待办、真实预警、近期/星标和跨域对象搜索的最低可用版本。
 - [ ] Cmd/Ctrl+K 命令搜索入口存在于壳层口径，但全局对象搜索面板尚未正式实装。
@@ -190,6 +190,7 @@
 - [x] 移动组件包存在：`frontend/packages/ui-mobile`
 - [x] 移动业务核心包存在：`frontend/packages/business-core`
 - [x] 登录页、移动工作台、应用墙、ScanBar 组件存在。
+- [x] 首页与 `/scan` 共用扫码解析；唯一、歧义、未知、越权和失效 ID 都有明确状态，只有支持目标页实时重核验的 MES 强 ID 才导航。
 - [x] WMS PDA 页面：收货入库、复核发货、拣货、上架、盘点。
 - [x] MES PDA 页面：工序执行、报工、领料、完工入库。
 - [x] 设备运维 PDA 页面：报修、点检、报警查看。
@@ -198,8 +199,7 @@
 
 ### PDA/mobile 仍明显落后的部分
 
-- [ ] 没有 `/scan` 页面。PDA 首页代码明确标注扫码直达仍待 `/scan` 路由和扫码解析端点。
-- [ ] ScanBar 当前只能回显扫码内容，不能把工单、库位、物料、设备、批次等解析后路由到业务页。
+- [ ] 相机扫码、离线解析及设备、库存、WMS、ERP 等更多对象的目标页强 ID 实时重核验尚未交付；当前统一显示 unsupported，不由客户端补造可信度。
 - [ ] “我的任务”当前是空态，没有从 BusinessGateway 或移动专用 facade 拉取个人任务。
 - [ ] 没有独立 mobile API contract 或 `/api/mobile/v1/**` 分层，当前仍主要复用 Business Console facade 和业务 composable。
 - [ ] 没有离线 outbox、同步重放、冲突解决、弱网缓存或本地队列。
@@ -227,10 +227,10 @@
 
 ### P0：先补前端业务可见缺口
 
-- [ ] PC BarcodeLabel：规则、模板、打印批次、扫码记录，接现有 BusinessGateway facade。
+- [x] PC BarcodeLabel：规则、模板、打印批次、扫码记录已接现有 BusinessGateway facade。
 - [x] PC BusinessApproval：我的待办、审批链详情、审批决策、模板、委托，接现有 BusinessGateway facade。
 - [ ] PC Workbench：真实待办、预警、跨域快捷入口、近期/星标、空态/降级状态。
-- [ ] PDA Scan：新增扫码解析 route/facade，支持工单、库位、物料、设备、批次、任务跳转。
+- [x] PDA Scan：`/scan` 与首页已消费既有 Barcode resolve facade，支持唯一 MES 工单和完整工序双强 ID 只读直达；更多对象、相机与离线解析仍按后续切片推进。
 - [ ] PDA My Tasks：从真实任务源聚合 WMS/MES/设备/审批/质量任务，替换首页空态。
 
 ### P1：补 PC 深度和移动闭环
@@ -255,5 +255,5 @@
 - [x] 后端业务主干已经明显进入业务阶段，不再是单纯平台骨架。
 - [x] BusinessGateway 覆盖面已经比 PC/PDA 页面更完整，多个模块是“后端和 facade 已经先到位，前端未跟上”。
 - [x] PC Business Console 覆盖面扩大，但仍有 Workbench/search 等明显缺口；BarcodeLabel 与 BusinessApproval 正式页面已接入，Telemetry/OEE 正式 PC 页面已接入，独立大屏与报警处置闭环后置。
-- [x] PDA v1 已有 WMS/MES/设备运维三域一线作业，但扫码直达、个人任务、离线、移动审批/质量/库存仍未完成。
+- [x] PDA v1 已有 WMS/MES/设备运维三域一线作业和 MES 强 ID 扫码直达，但更多对象直达、个人任务、相机/离线解析、移动审批/质量/库存仍未完成。
 - [x] 大屏目前只有设计系统样例和组件方向，没有业务大屏应用，不能按“已交付大屏”宣传。

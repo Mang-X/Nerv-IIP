@@ -274,7 +274,7 @@ Connector 已配置标签覆盖率的两跳契约固定如下：IndustrialTeleme
 
 当前 `frontend/apps/business-pda` 已落地，但还没有独立 `/api/mobile/v1/**` 契约、`business-gateway-mobile.v1.json` 快照、`frontend/packages/api-client/src/generated/mobile/` 或 `frontend/packages/api-client/src/mobile.ts`。PDA v1 复用现有 BusinessGateway `/api/business-console/v1/**` 门面，并通过 `@nerv-iip/api-client` 的 `business-console.ts` 稳定导出消费 WMS、MES、Maintenance 和 Equipment/IndustrialTelemetry 相关查询/变更选项。`business-pda` 的 Vite 开发代理分别把 `/api/business-console` 转发到 BusinessGateway、`/api/console` 转发到 PlatformGateway；Capacitor/APK 构建通过 `VITE_NERV_IIP_API_BASE_URL` 或等价配置传入绝对网关地址。
 
-移动专用 API 仍是后续演进路线。新增 `/api/mobile/v1/**` 前必须先确认它不会复制 business-console 门面的既有能力，只承载 PDA 专属的引导初始化、个人任务、扫码解释、设备注册、离线发件箱/同步、诊断上传和弱网冲突处理。落地时的生成链路应为：
+移动专用 API 仍是后续演进路线。PDA 首页与 `/scan` 已复用 business-console Barcode resolve facade 完成只读扫码解释；新增 `/api/mobile/v1/**` 前必须先确认它不会复制该既有能力，只承载 PDA 专属的引导初始化、个人任务、扫码专属增强、设备注册、离线发件箱/同步、诊断上传和弱网冲突处理。落地时的生成链路应为：
 
 1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
 2. 导出脚本将 BusinessGateway 移动 OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-mobile.v1.json`。

@@ -28,6 +28,7 @@ export const principal = {
     'business.maintenance.work-orders.read',
     'business.maintenance.plans.read',
     'business.masterdata.resources.read',
+    'business.barcodes.scans.write',
   ],
   roleIds: [],
 }
@@ -576,6 +577,17 @@ export async function routeBusinessConsoleApi(route: Route) {
   const { pathname } = requestUrl
   const method = route.request().method()
   const isPost = method === 'POST'
+
+  if (isPost && pathname === '/api/business-console/v1/barcode/resolve') {
+    return fulfillJson(
+      route,
+      envelope({ status: 'unknown', reasonCode: 'NO_MATCH', candidates: [], total: 0 }),
+    )
+  }
+
+  if (method === 'GET' && pathname === '/api/business-console/v1/search') {
+    return fulfillJson(route, envelope({ query: requestUrl.searchParams.get('q'), results: [] }))
+  }
 
   // ---- WMS（收货/复核/盘点 + 拣货/上架） ----
   if (/\/wms\/work-scopes\/(receipts|shipments|counts)$/.test(pathname)) {
