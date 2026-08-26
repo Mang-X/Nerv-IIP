@@ -42,6 +42,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("mes:operation-actual-time-settled:org-001:env-dev:OP-001:2", integrationEvent.IdempotencyKey);
         Assert.Equal(2, integrationEvent.Payload.SettlementRevision);
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
+        Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }
 
@@ -67,6 +68,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(completedAtUtc, integrationEvent.Payload.CompletedAtUtc);
         Assert.Equal(voidedAtUtc, integrationEvent.Payload.VoidedAtUtc);
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
+        Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }
 

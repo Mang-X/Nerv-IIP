@@ -243,6 +243,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var options = MesPostgresLaneDatabase.CreateOptions();
         OperationActualTimeSettlement settlement;
+        OperationActualTimeSettlement environmentSettlement;
         await using (var setup = CreateContext(options))
         {
             MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
@@ -268,11 +269,29 @@ public sealed class OperationActualTimeSettlementPostgresTests
             setup.ProductionReports.Add(ProductionReport.Record(
                 "org-001", "env-dev", "PR-OTHER-TASK", "WO-003", "OP-003",
                 1m, 0m, false, At(30)));
+            setup.ProductionReports.Add(ProductionReport.Record(
+                "org-001", "env-dev", "PR-ENV-DEV", "WO-001", "OP-001",
+                1m, 0m, false, At(30)));
+            setup.WorkOrders.Add(WorkOrder.Create(
+                "org-001", "env-other", "WO-001", "SKU-001", "PV-001", 10m, 1, At(480)));
+            var environmentTask = OperationTask.Create(
+                "org-001", "env-other", "WO-001", "OP-001",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], At(0),
+                TimeSpan.FromHours(1), At(0), null);
+            setup.OperationTasks.Add(environmentTask);
+            setup.ProductionReports.Add(ProductionReport.Record(
+                "org-001", "env-other", "PR-ENV-OTHER", "WO-001", "OP-001",
+                1m, 0m, false, At(30)));
             task.Complete(At(60), []);
             settlement = OperationActualTimeSettlement.Capture(
                 Assert.Single(task.GetDomainEvents()
                     .OfType<OperationActualTimeSettledDomainEvent>()).Settlement);
             setup.OperationActualTimeSettlements.Add(settlement);
+            environmentTask.Complete(At(60), []);
+            environmentSettlement = OperationActualTimeSettlement.Capture(
+                Assert.Single(environmentTask.GetDomainEvents()
+                    .OfType<OperationActualTimeSettledDomainEvent>()).Settlement);
+            setup.OperationActualTimeSettlements.Add(environmentSettlement);
             await setup.SaveChangesAsync();
         }
 
@@ -282,6 +301,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
             connection,
             settlement.Id.Id,
             "org-002",
+            "env-dev",
             "WO-002",
             "OP-002",
             "PR-OTHER",
@@ -290,6 +310,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
             connection,
             settlement.Id.Id,
             "org-001",
+            "env-dev",
             "WO-003",
             "OP-003",
             "PR-OTHER-TASK",
@@ -298,9 +319,28 @@ public sealed class OperationActualTimeSettlementPostgresTests
             connection,
             settlement.Id.Id,
             "org-001",
+            "env-dev",
             "WO-001",
             "OP-001",
             "PR-OTHER-TASK",
+            "fk_operation_actual_time_settlement_reports_production_reports");
+        await AssertLineageRejectedAsync(
+            connection,
+            settlement.Id.Id,
+            "org-001",
+            "env-other",
+            "WO-001",
+            "OP-001",
+            "PR-ENV-OTHER",
+            "fk_operation_actual_time_settlement_reports_settlement");
+        await AssertLineageRejectedAsync(
+            connection,
+            environmentSettlement.Id.Id,
+            "org-001",
+            "env-other",
+            "WO-001",
+            "OP-001",
+            "PR-ENV-DEV",
             "fk_operation_actual_time_settlement_reports_production_reports");
     }
 
@@ -308,6 +348,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
         NpgsqlConnection connection,
         Guid settlementId,
         string organizationId,
+        string environmentId,
         string workOrderId,
         string operationTaskId,
         string reportNo,
@@ -318,11 +359,12 @@ public sealed class OperationActualTimeSettlementPostgresTests
             INSERT INTO mes.operation_actual_time_settlement_reports
                 (id, settlement_id, organization_id, environment_id, work_order_id, operation_task_id, report_no)
             VALUES
-                (@id, @settlement_id, @organization_id, 'env-dev', @work_order_id, @operation_task_id, @report_no)
+                (@id, @settlement_id, @organization_id, @environment_id, @work_order_id, @operation_task_id, @report_no)
             """;
         command.Parameters.AddWithValue("id", Guid.CreateVersion7());
         command.Parameters.AddWithValue("settlement_id", settlementId);
         command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("environment_id", environmentId);
         command.Parameters.AddWithValue("work_order_id", workOrderId);
         command.Parameters.AddWithValue("operation_task_id", operationTaskId);
         command.Parameters.AddWithValue("report_no", reportNo);

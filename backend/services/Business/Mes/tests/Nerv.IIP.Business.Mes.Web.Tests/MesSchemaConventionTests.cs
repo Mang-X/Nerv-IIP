@@ -342,6 +342,28 @@ public sealed class MesSchemaConventionTests
                 .GetComment());
     }
 
+    // Contract: Governance. Authority: docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
+    // the newest migration target model must contain every preceding migration before it can match the checked-in snapshot.
+    [Fact]
+    public void Latest_mes_migration_target_model_matches_the_application_snapshot()
+    {
+        using var fixture = CreateFixture();
+        var migrations = fixture.DbContext.GetService<IMigrationsAssembly>();
+        var latest = migrations.Migrations.OrderBy(x => x.Key, StringComparer.Ordinal).Last();
+        var migration = migrations.CreateMigration(latest.Value, fixture.DbContext.Database.ProviderName!);
+        var snapshot = Assert.IsAssignableFrom<ModelSnapshot>(migrations.ModelSnapshot);
+        var runtimeInitializer = fixture.DbContext.GetService<IModelRuntimeInitializer>();
+        var targetModel = runtimeInitializer.Initialize(migration.TargetModel, designTime: true);
+        var snapshotModel = runtimeInitializer.Initialize(snapshot.Model, designTime: true);
+        var modelDiffer = fixture.DbContext.GetService<IMigrationsModelDiffer>();
+
+        var differences = modelDiffer.GetDifferences(
+            targetModel.GetRelationalModel(),
+            snapshotModel.GetRelationalModel());
+
+        Assert.Empty(differences);
+    }
+
     [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {

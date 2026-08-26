@@ -495,6 +495,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Material issue lifecycle status within MES.");
 
+                    b.Property<string>("SubstitutedMaterialId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("substituted_material_id")
+                        .HasComment("Optional primary material SKU replaced by the actually issued material; reserved for substitute issue audit activation.");
+
                     b.Property<string>("TargetLocationCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -644,6 +650,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("staged_quantity")
                         .HasComment("WMS staged quantity snapshot for this requirement.");
+
+                    b.Property<string>("SubstituteMaterialIdsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("substitute_material_ids_json")
+                        .HasComment("JSON array of normalized substitute material ids produced by the MES MBOM snapshot adapter; consumers are MES readiness and material issue flows; compatibility is an append-only candidate list.");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -2663,7 +2677,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("material_requirement_snapshot_production_version_id")
-                        .HasComment("Production version id whose material requirement snapshot outcome was proved; it must match the current work order version.");
+                        .HasComment("Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.");
 
                     b.Property<string>("MaterialRequirementSnapshotStatus")
                         .HasMaxLength(30)
