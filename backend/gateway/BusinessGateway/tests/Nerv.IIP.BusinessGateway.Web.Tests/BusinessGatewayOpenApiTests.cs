@@ -909,6 +909,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests", "get", "listBusinessConsoleMesMaterialIssueRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}", "get", "getBusinessConsoleMesMaterialIssueRequest");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-scan-prevalidation", "post", "prevalidateBusinessConsoleMesMaterialScan");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/mes/material-scan-prevalidation",
+            "post",
+            "400",
+            "502",
+            "503",
+            "504");
         AssertRequiredSchemaProperties(
             document,
             "BusinessConsoleMesMaterialScanPrevalidationRequest",

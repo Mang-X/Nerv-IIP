@@ -947,6 +947,10 @@ public sealed class GetBusinessConsoleMesMaterialIssueRequestEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/material-scan-prevalidation")]
 [BusinessGatewayOperationId("prevalidateBusinessConsoleMesMaterialScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
 public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesMaterialPrevalidationClient mes,
