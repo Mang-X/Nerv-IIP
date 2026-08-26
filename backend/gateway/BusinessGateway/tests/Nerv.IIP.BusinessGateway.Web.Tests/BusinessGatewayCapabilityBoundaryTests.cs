@@ -234,6 +234,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void Planning_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Planning/BusinessPlanningClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessPlanningClient"),
+            Identity("Class", "HttpBusinessPlanningClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
     public void Capability_boundary_mutation_matrix_rejects_escapes_and_preserves_non_clients()
     {
         var baseDocuments = new[]
@@ -734,6 +756,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 capability,
                 sourcePath,
                 includeInLegacy: capability != "ProductEngineering" &&
+                    capability != "Planning" &&
                     capability != "FileStorage" &&
                     capability != "MasterData" &&
                     capability != "Inventory" &&
@@ -748,6 +771,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 capability,
                 sourcePath,
                 includeInLegacy: capability != "ProductEngineering" &&
+                    capability != "Planning" &&
                     capability != "FileStorage" &&
                     capability != "MasterData" &&
                     capability != "Inventory" &&
