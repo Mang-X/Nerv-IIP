@@ -200,9 +200,10 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 
 ## 6. 四个现有 PDA 账号核对
 
-四个账号只有在 `LeaderDemo:World:Enabled=true`、IAM 使用 PostgreSQL 自动迁移/seed 路径，
-且当前进程注入非空 `Iam__Seed__DemoWorkerPassword` 时才会被开通；密码不在仓库。
-其余 World Bible 人员虽会生成 IAM user 与 MasterData worker，但随机未知口令、
+四个账号在 IAM 使用 PostgreSQL 自动迁移/seed 路径且当前进程注入非空
+`Iam__Seed__DemoWorkerPassword` 时被开通；该口令是独立的受控 PDA/WMS worker opt-in，
+不要求 `LeaderDemo:World:Enabled=true`，密码不在仓库。未提供该口令时，四个账号以及其余
+World Bible 人员虽会生成 IAM user 与 MasterData worker，但随机未知口令、
 `PasswordChangeRequired=true`，且没有 role/membership，不是可登录验收账号。
 
 证据：
