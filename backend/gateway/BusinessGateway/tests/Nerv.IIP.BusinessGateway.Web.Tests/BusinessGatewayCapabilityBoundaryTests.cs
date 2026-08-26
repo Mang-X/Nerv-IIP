@@ -146,6 +146,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void MasterData_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "MasterData/BusinessMasterDataClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessMasterDataClient"),
+            Identity("Class", "HttpBusinessMasterDataClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
     public void Capability_boundary_mutation_matrix_rejects_escapes_and_preserves_non_clients()
     {
         var baseDocuments = new[]
@@ -645,7 +667,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"IBusiness{clientName}Client",
                 capability,
                 sourcePath,
-                includeInLegacy: capability != "Inventory" && capability != "Approval" && capability != "Notification");
+                includeInLegacy: capability != "MasterData" &&
+                    capability != "Inventory" &&
+                    capability != "Approval" &&
+                    capability != "Notification");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -653,7 +678,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"HttpBusiness{clientName}Client",
                 capability,
                 sourcePath,
-                includeInLegacy: capability != "Inventory" && capability != "Approval" && capability != "Notification");
+                includeInLegacy: capability != "MasterData" &&
+                    capability != "Inventory" &&
+                    capability != "Approval" &&
+                    capability != "Notification");
         }
 
         seedCapabilities.Add(
@@ -678,7 +706,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             .Distinct(StringComparer.Ordinal)
             .ToDictionary(
                 capability => capability,
-                capability => $"Capabilities/{capability}",
+                capability => capability == "MasterData"
+                    ? "MasterData"
+                    : $"Capabilities/{capability}",
                 StringComparer.Ordinal);
         var ignoredSharedIdentities = new HashSet<string>(StringComparer.Ordinal)
         {
