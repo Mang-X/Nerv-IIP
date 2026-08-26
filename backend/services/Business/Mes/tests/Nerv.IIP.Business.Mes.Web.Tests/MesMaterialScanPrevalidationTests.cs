@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using System.Net;
 using System.Net.Http.Json;
@@ -106,6 +107,28 @@ public sealed class MesMaterialScanPrevalidationTests
     }
 
     [Fact]
+    public async Task Latest_complete_snapshot_does_not_union_a_material_row_deleted_from_the_new_capture()
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-A", includeRequirement: false, completeReceipt: true);
+        db.MaterialRequirements.AddRange(
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-001", "OP-10", "MAT-A", null,
+                5m, 5m, 0m, "product-engineering", "snap-old", Now.AddMinutes(-1), []),
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-001", "OP-10", "MAT-B", null,
+                5m, 5m, 0m, "product-engineering", "snap-latest", Now, []));
+        await db.SaveChangesAsync();
+        var inventory = new StubAvailabilityProvider(new(true, false, true));
+
+        var response = await CreateHandler(db, inventory).Handle(Request(), CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal("material-not-required", response.ReasonCode);
+        Assert.Equal(0, inventory.CallCount);
+    }
+
+    [Fact]
     public async Task Captured_snapshot_without_any_requirement_rows_fails_closed()
     {
         await using var db = CreateDbContext();
@@ -117,6 +140,24 @@ public sealed class MesMaterialScanPrevalidationTests
                 .Handle(Request(), CancellationToken.None));
 
         Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+    }
+
+    [Fact]
+    public async Task Requirement_rows_outside_the_closed_capture_fail_closed()
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: false, completeReceipt: true);
+        db.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
+            5m, 5m, 0m, "product-engineering", "snap-unclosed", Now.AddMinutes(1), []));
+        await db.SaveChangesAsync();
+        var inventory = new StubAvailabilityProvider(new(true, false, true));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(db, inventory).Handle(Request(), CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
+        Assert.Equal(0, inventory.CallCount);
     }
 
     [Fact]
@@ -528,6 +569,32 @@ public sealed class MesMaterialScanPrevalidationTests
             parameter.ParameterType == typeof(IInternalServiceTokenProvider) && !parameter.IsOptional);
     }
 
+    [Theory]
+    [InlineData("exception")]
+    [InlineData("reason-phrase")]
+    public async Task Inventory_provider_logs_only_stable_dependency_facts(string failureKind)
+    {
+        const string secret = "secret-provider-detail";
+        HttpMessageHandler handler = failureKind == "exception"
+            ? new ThrowingHttpHandler(new HttpRequestException(secret))
+            : new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                ReasonPhrase = secret,
+            });
+        var logger = new RecordingLogger<HttpMesMaterialLotAvailabilityProvider>();
+        var provider = CreateHttpProvider(handler, logger);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            provider.GetAsync(AvailabilityRequest(), CancellationToken.None));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.DoesNotContain(secret, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReasonPhrase", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("Inventory", entry.Message, StringComparison.Ordinal);
+    }
+
     private static PrevalidateMaterialScanQueryHandler CreateHandler(
         ApplicationDbContext db,
         IMesMaterialLotAvailabilityProvider inventory) =>
@@ -617,12 +684,14 @@ public sealed class MesMaterialScanPrevalidationTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static HttpMesMaterialLotAvailabilityProvider CreateHttpProvider(HttpMessageHandler inventoryHandler) =>
+    private static HttpMesMaterialLotAvailabilityProvider CreateHttpProvider(
+        HttpMessageHandler inventoryHandler,
+        ILogger<HttpMesMaterialLotAvailabilityProvider>? logger = null) =>
         new(
             new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
             new TestInternalServiceTokenProvider(),
             new StubMesIntegrationEventContextAccessor(),
-            NullLogger<HttpMesMaterialLotAvailabilityProvider>.Instance);
+            logger ?? NullLogger<HttpMesMaterialLotAvailabilityProvider>.Instance);
 
     private sealed class StubAvailabilityProvider(MesMaterialLotAvailabilityResult result)
         : IMesMaterialLotAvailabilityProvider
@@ -667,6 +736,23 @@ public sealed class MesMaterialScanPrevalidationTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => Task.FromException<HttpResponseMessage>(exception);
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception), exception));
     }
 
     private sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider

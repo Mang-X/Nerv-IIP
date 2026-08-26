@@ -1,8 +1,4 @@
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.Loader;
 using DotNetCore.CAP;
-using Savorboard.CAP.InMemoryMessageQueue;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -15,13 +11,16 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Contracts.Mes;
+using Savorboard.CAP.InMemoryMessageQueue;
 
-namespace Nerv.IIP.Business.Mes.Web.Tests;
+namespace Nerv.IIP.Business.Acceptance.Tests;
 
-[Collection(WebApplicationFactoryCollection.Name)]
+[Collection(BusinessAcceptanceCollection.Name)]
 public sealed class MesMaterialScanGatewaySeamTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-26T08:00:00Z");
@@ -29,10 +28,21 @@ public sealed class MesMaterialScanGatewaySeamTests
     [Fact]
     public async Task Real_handler_result_crosses_mes_http_wire_and_gateway_client_without_fact_drift()
     {
-        await using var factory = CreateFactory();
+        await using var factory = CreateMesFactory();
         using var mesClient = factory.CreateClient();
         await SeedAsync(factory.Services);
-        var response = await InvokeGatewayClientAfterMesHostStartsAsync(mesClient);
+        using var gatewayTransport = new HttpClient(new MesTestServerBridgeHandler(mesClient))
+        {
+            BaseAddress = new Uri("http://mes"),
+        };
+        var gatewayClient = new HttpBusinessMesMaterialPrevalidationClient(gatewayTransport);
+
+        var response = await gatewayClient.PrevalidateAsync(
+            "test-internal-service-token",
+            "corr-seam-001",
+            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+                "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+            CancellationToken.None);
 
         Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
         Assert.Equal("material-scan-accepted", response.ReasonCode);
@@ -44,77 +54,14 @@ public sealed class MesMaterialScanGatewaySeamTests
         Assert.Equal("substitute", response.MaterialQualification);
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task<BusinessConsoleMesMaterialScanPrevalidationResponse>
-        InvokeGatewayClientAfterMesHostStartsAsync(HttpClient mesClient)
-    {
-        var response = await InvokeGatewayClientInCollectibleContextAsync(mesClient);
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-        }
-        return response;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task<BusinessConsoleMesMaterialScanPrevalidationResponse>
-        InvokeGatewayClientInCollectibleContextAsync(HttpClient mesClient)
-    {
-        var gatewayAssemblyPath = FindGatewayAssemblyPath();
-        var loadContext = new GatewayAssemblyLoadContext(gatewayAssemblyPath);
-        var gatewayAssembly = loadContext.LoadFromAssemblyPath(gatewayAssemblyPath);
-        var clientType = gatewayAssembly.GetType(
-            "Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.HttpBusinessMesMaterialPrevalidationClient",
-            throwOnError: true)!;
-        using var transport = new HttpClient(new MesTestServerBridgeHandler(mesClient))
-        {
-            BaseAddress = new Uri("http://mes"),
-        };
-        var gatewayClient = Activator.CreateInstance(clientType, transport)!;
-        var method = clientType.GetMethod("PrevalidateAsync")!;
-        var pending = (Task<BusinessConsoleMesMaterialScanPrevalidationResponse>)method.Invoke(
-            gatewayClient,
-            [
-                "test-internal-service-token",
-                "corr-seam-001",
-                new BusinessConsoleMesMaterialScanPrevalidationRequest(
-                    "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
-                CancellationToken.None,
-            ])!;
-        var response = await pending;
-        loadContext.Unload();
-        return response;
-    }
-
-    private static string FindGatewayAssemblyPath()
-    {
-        var configuration = Directory.GetParent(
-            AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!.Name;
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null &&
-            !File.Exists(Path.Combine(current.FullName, ".git")) &&
-            !Directory.Exists(Path.Combine(current.FullName, ".git")))
-        {
-            current = current.Parent;
-        }
-
-        Assert.NotNull(current);
-        var path = Path.Combine(
-            current.FullName,
-            "backend", "gateway", "BusinessGateway", "src", "Nerv.IIP.BusinessGateway.Web",
-            "bin", configuration, "net10.0", "Nerv.IIP.BusinessGateway.Web.dll");
-        Assert.True(File.Exists(path), $"Gateway assembly was not built at {path}.");
-        return path;
-    }
-
-    private static WebApplicationFactory<Program> CreateFactory()
+    private static WebApplicationFactory<PrevalidateMaterialScanEndpoint> CreateMesFactory()
     {
         var databaseName = $"mes-material-scan-seam-{Guid.CreateVersion7():N}";
-        return new WebApplicationFactory<Program>()
+        return new WebApplicationFactory<PrevalidateMaterialScanEndpoint>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("FastEndpoints:RestrictDiscoveryToEntryAssembly", "true");
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
@@ -133,8 +80,7 @@ public sealed class MesMaterialScanGatewaySeamTests
                     services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
                     services.AddCap(options => options.UseInMemoryMessageQueue());
                     services.RemoveAll<IMesMaterialLotAvailabilityProvider>();
-                    services.AddSingleton<IMesMaterialLotAvailabilityProvider>(
-                        new AcceptedAvailabilityProvider());
+                    services.AddSingleton<IMesMaterialLotAvailabilityProvider>(new AcceptedAvailabilityProvider());
                     services.Configure<HostOptions>(options =>
                         options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
                 });
@@ -199,25 +145,6 @@ public sealed class MesMaterialScanGatewaySeamTests
             }
 
             return await mesClient.SendAsync(forwarded, cancellationToken);
-        }
-    }
-
-    private sealed class GatewayAssemblyLoadContext(string gatewayAssemblyPath)
-        : AssemblyLoadContext(isCollectible: true)
-    {
-        private readonly AssemblyDependencyResolver _resolver = new(gatewayAssemblyPath);
-
-        protected override Assembly? Load(AssemblyName assemblyName)
-        {
-            var shared = Default.Assemblies.FirstOrDefault(candidate =>
-                string.Equals(candidate.GetName().Name, assemblyName.Name, StringComparison.Ordinal));
-            if (shared is not null)
-            {
-                return shared;
-            }
-
-            var path = _resolver.ResolveAssemblyToPath(assemblyName);
-            return path is null ? null : LoadFromAssemblyPath(path);
         }
     }
 }

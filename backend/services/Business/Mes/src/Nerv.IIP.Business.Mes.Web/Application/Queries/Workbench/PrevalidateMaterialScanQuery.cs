@@ -140,7 +140,15 @@ public sealed class PrevalidateMaterialScanQueryHandler(
             x.EnvironmentId == request.EnvironmentId &&
             x.WorkOrderId == request.WorkOrderId)
             .ToArrayAsync(cancellationToken);
-        var latestRequirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(persistedRequirements);
+        var latestRequirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(
+            persistedRequirements,
+            x => x.CapturedAtUtc);
+        if (latestRequirements.Any(x =>
+            x.CapturedAtUtc != workOrder.MaterialRequirementSnapshotEvaluatedAtUtc!.Value))
+        {
+            throw MaterialScanPrevalidationErrors.SourceUnavailable();
+        }
+
         if (snapshotStatus == WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus)
         {
             if (latestRequirements.Length != 0)
@@ -310,12 +318,20 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
         }
         catch (HttpRequestException exception)
         {
-            logger.LogWarning(exception, "{ServiceName} material scan dependency request failed.", serviceName);
+            logger.LogWarning(
+                "{ServiceName} material scan dependency request failed with {FailureType}; CorrelationId={CorrelationId}.",
+                serviceName,
+                exception.GetType().Name,
+                correlationId);
             throw SourceUnavailable();
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(exception, "{ServiceName} material scan dependency request timed out.", serviceName);
+            logger.LogWarning(
+                "{ServiceName} material scan dependency request timed out with {FailureType}; CorrelationId={CorrelationId}.",
+                serviceName,
+                exception.GetType().Name,
+                correlationId);
             throw SourceUnavailable();
         }
 
@@ -324,10 +340,10 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning(
-                    "{ServiceName} material scan dependency returned HTTP {StatusCode} {ReasonPhrase}.",
+                    "{ServiceName} material scan dependency returned HTTP {StatusCode}; CorrelationId={CorrelationId}.",
                     serviceName,
                     (int)response.StatusCode,
-                    response.ReasonPhrase);
+                    correlationId);
                 throw SourceUnavailable();
             }
 
@@ -345,17 +361,28 @@ public sealed class HttpMesMaterialLotAvailabilityProvider(
             }
             catch (JsonException exception)
             {
-                logger.LogWarning(exception, "{ServiceName} material scan dependency returned malformed JSON.", serviceName);
+                logger.LogWarning(
+                    "{ServiceName} material scan dependency returned malformed JSON ({FailureType}); CorrelationId={CorrelationId}.",
+                    serviceName,
+                    exception.GetType().Name,
+                    correlationId);
                 throw SourceUnavailable();
             }
             catch (NotSupportedException exception)
             {
-                logger.LogWarning(exception, "{ServiceName} material scan dependency returned unsupported content.", serviceName);
+                logger.LogWarning(
+                    "{ServiceName} material scan dependency returned unsupported content ({FailureType}); CorrelationId={CorrelationId}.",
+                    serviceName,
+                    exception.GetType().Name,
+                    correlationId);
                 throw SourceUnavailable();
             }
             if (envelope is null || !envelope.Success || envelope.Data is null)
             {
-                logger.LogWarning("{ServiceName} material scan dependency returned an empty or failure envelope.", serviceName);
+                logger.LogWarning(
+                    "{ServiceName} material scan dependency returned an empty or failure envelope; CorrelationId={CorrelationId}.",
+                    serviceName,
+                    correlationId);
                 throw SourceUnavailable();
             }
 

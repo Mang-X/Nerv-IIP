@@ -1,4 +1,5 @@
-﻿using FastEndpoints;
+﻿using System.Reflection;
+using FastEndpoints;
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +33,14 @@ var isTesting = builder.Environment.IsEnvironment("Testing");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-mes");
 
 builder.Services
-    .AddFastEndpoints()
+    .AddFastEndpoints(o =>
+    {
+        if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+        {
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        }
+    })
     .SwaggerDocument(o =>
     {
         o.DocumentSettings = s =>

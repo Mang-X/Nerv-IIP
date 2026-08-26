@@ -2104,7 +2104,7 @@ internal static class MaterialReadinessGuards
                     x.StagedQuantity,
                     x.CapturedAtUtc)))
             .ToArray();
-        requirements = SelectLatestRequirementSnapshots(requirements);
+        requirements = SelectLatestRequirementSnapshots(requirements, x => x.CapturedAtUtc);
 
         if (requirements.Length == 0)
         {
@@ -2173,37 +2173,18 @@ internal static class MaterialReadinessGuards
         public static MaterialRequirementCaptureOutcome NoRequirementsFound { get; } = new(true, false);
     }
 
-    internal static T[] SelectLatestRequirementSnapshots<T>(IEnumerable<T> requirements)
-        where T : IMaterialRequirementSnapshot
+    internal static T[] SelectLatestRequirementSnapshots<T>(
+        IEnumerable<T> requirements,
+        Func<T, DateTimeOffset> capturedAtUtc)
     {
-        return requirements
-            .GroupBy(
-                x => $"{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
-                StringComparer.Ordinal)
-            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
-            .ToArray();
-    }
+        var materialized = requirements.ToArray();
+        if (materialized.Length == 0)
+        {
+            return materialized;
+        }
 
-    internal static MaterialRequirement[] SelectLatestRequirementSnapshots(
-        IEnumerable<MaterialRequirement> requirements)
-    {
-        return requirements
-            .GroupBy(
-                x => $"{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
-                StringComparer.Ordinal)
-            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
-            .ToArray();
-    }
-
-    internal interface IMaterialRequirementSnapshot
-    {
-        string? OperationTaskId { get; }
-
-        string MaterialId { get; }
-
-        string? MaterialLotId { get; }
-
-        DateTimeOffset CapturedAtUtc { get; }
+        var latestCapture = materialized.Max(capturedAtUtc);
+        return materialized.Where(x => capturedAtUtc(x) == latestCapture).ToArray();
     }
 
     internal sealed record MaterialRequirementSnapshot(
