@@ -1,8 +1,9 @@
-using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Testing;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -11,20 +12,26 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesMaterialSubstituteSnapshotPostgresTests
 {
     private const string TargetMigrationName = "AddMesMaterialSubstituteSnapshotFoundation";
+    private static readonly TimeSpan PostgresOperationTimeout = TimeSpan.FromSeconds(30);
 
     // Contract: ProviderBehavior + Regression. Authority: Issue #2247 acceptance and the target MES migration/schema catalog.
     // Removing the target migration columns must fail this real PostgreSQL proof before persistence can be mistaken for green.
     [MesRealPostgresFact]
     public async Task Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres()
     {
-        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var cancellationToken = CancellationToken.None;
+        await ResetSchemaAsync(cancellationToken);
         var options = MesPostgresLaneDatabase.CreateOptions();
         var capturedAtUtc = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
 
         await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
         {
             MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
-            await setup.Database.MigrateAsync();
+            await TestTimeout.RunAsync(
+                operation: "apply the MES substitute snapshot migrations on PostgreSQL",
+                action: async token => await setup.Database.MigrateAsync(token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
 
             setup.WorkOrders.Add(WorkOrder.Create(
                 "org-001", "env-dev", "WO-SUBSTITUTE-PG-001", "FG-001", "PV-001", 10m, 10, capturedAtUtc));
@@ -32,15 +39,30 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 "org-001", "env-dev", "WO-SUBSTITUTE-PG-001", null, "MAT-PRIMARY", null,
                 10m, 2m, 0m, "product-engineering-http", "MBOM-001:A:MAT-PRIMARY", capturedAtUtc,
                 ["MAT-ALT-A", "MAT-ALT-B"]));
-            setup.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            var substitutedIssue = MaterialIssueRequest.Create(
                 "org-001", "env-dev", "MIR-SUBSTITUTE-PG-001", "WO-SUBSTITUTE-PG-001", null,
-                "MAT-PRIMARY", "PCS", 1m, capturedAtUtc));
-            await setup.SaveChangesAsync();
+                "MAT-PRIMARY", "PCS", 1m, capturedAtUtc);
+            setup.Entry(substitutedIssue).Property(x => x.SubstitutedMaterialId).CurrentValue = "MAT-ALT-A";
+            setup.MaterialIssueRequests.AddRange(
+                substitutedIssue,
+                MaterialIssueRequest.Create(
+                    "org-001", "env-dev", "MIR-SUBSTITUTE-PG-NULL", "WO-SUBSTITUTE-PG-001", null,
+                    "MAT-PRIMARY", "PCS", 1m, capturedAtUtc));
+            await TestTimeout.RunAsync(
+                operation: "persist the MES substitute snapshot provider fixture on PostgreSQL",
+                action: async token => await setup.SaveChangesAsync(token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
         }
 
         await using (var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString))
         {
-            await connection.OpenAsync();
+            await TestTimeout.RunAsync(
+                operation: "open the MES substitute snapshot PostgreSQL proof connection",
+                action: async token => await connection.OpenAsync(token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken,
+                sensitiveValues: [MesPostgresLaneDatabase.ConnectionString]);
             await using var historyCommand = new NpgsqlCommand(
                 """
                 SELECT count(*)
@@ -51,7 +73,12 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
             historyCommand.Parameters.AddWithValue(
                 "migration_id_pattern",
                 $"^[0-9]{{14}}_{TargetMigrationName}$");
-            Assert.Equal(1L, (long)(await historyCommand.ExecuteScalarAsync())!);
+            var migrationCount = await TestTimeout.RunAsync(
+                operation: "read the MES substitute snapshot migration history on PostgreSQL",
+                action: async token => (long)(await historyCommand.ExecuteScalarAsync(token))!,
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
+            Assert.Equal(1L, migrationCount);
 
             var columns = new Dictionary<string, ColumnDefinition>(StringComparer.Ordinal);
             await using var columnsCommand = new NpgsqlCommand(
@@ -65,16 +92,34 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 ORDER BY table_name, column_name
                 """,
                 connection);
-            await using var reader = await columnsCommand.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            await using var reader = await TestTimeout.RunAsync(
+                operation: "query the MES substitute snapshot columns on PostgreSQL",
+                action: async token => await columnsCommand.ExecuteReaderAsync(token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
+            while (await TestTimeout.RunAsync(
+                       operation: "read the next MES substitute snapshot column on PostgreSQL",
+                       action: async token => await reader.ReadAsync(token),
+                       timeout: PostgresOperationTimeout,
+                       cancellationToken))
             {
+                var maximumLengthIsNull = await TestTimeout.RunAsync(
+                    operation: "read the MES substitute snapshot column length nullability on PostgreSQL",
+                    action: async token => await reader.IsDBNullAsync(3, token),
+                    timeout: PostgresOperationTimeout,
+                    cancellationToken);
+                var defaultValueIsNull = await TestTimeout.RunAsync(
+                    operation: "read the MES substitute snapshot column default nullability on PostgreSQL",
+                    action: async token => await reader.IsDBNullAsync(5, token),
+                    timeout: PostgresOperationTimeout,
+                    cancellationToken);
                 columns.Add(
                     $"{reader.GetString(0)}.{reader.GetString(1)}",
                     new ColumnDefinition(
                         reader.GetString(2),
-                        await reader.IsDBNullAsync(3) ? null : reader.GetInt32(3),
+                        maximumLengthIsNull ? null : reader.GetInt32(3),
                         reader.GetString(4),
-                        await reader.IsDBNullAsync(5) ? null : reader.GetString(5)));
+                        defaultValueIsNull ? null : reader.GetString(5)));
             }
 
             Assert.Equal(2, columns.Count);
@@ -92,10 +137,43 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
         }
 
         await using var assertion = new ApplicationDbContext(options, new NoopMediator());
-        var requirement = await assertion.MaterialRequirements.SingleAsync();
-        var issue = await assertion.MaterialIssueRequests.SingleAsync();
+        var requirement = await TestTimeout.RunAsync(
+            operation: "read back the MES substitute candidate snapshot on PostgreSQL",
+            action: async token => await assertion.MaterialRequirements.SingleAsync(token),
+            timeout: PostgresOperationTimeout,
+            cancellationToken);
+        var issues = await TestTimeout.RunAsync(
+            operation: "read back the MES substitute audit matrix on PostgreSQL",
+            action: async token => await assertion.MaterialIssueRequests
+                .ToDictionaryAsync(x => x.RequestNo, StringComparer.Ordinal, token),
+            timeout: PostgresOperationTimeout,
+            cancellationToken);
         Assert.Equal(["MAT-ALT-A", "MAT-ALT-B"], requirement.GetSubstituteMaterialIds());
-        Assert.Null(issue.SubstitutedMaterialId);
+        Assert.Equal("MAT-ALT-A", issues["MIR-SUBSTITUTE-PG-001"].SubstitutedMaterialId);
+        Assert.Null(issues["MIR-SUBSTITUTE-PG-NULL"].SubstitutedMaterialId);
+    }
+
+    private static async Task ResetSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await TestTimeout.RunAsync(
+            operation: "open the MES substitute snapshot PostgreSQL reset connection",
+            action: async token => await connection.OpenAsync(token),
+            timeout: PostgresOperationTimeout,
+            cancellationToken,
+            sensitiveValues: [MesPostgresLaneDatabase.ConnectionString]);
+
+        foreach (var schema in new[] { MesFacts.Schema, "cap" })
+        {
+            var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(schema);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+            await TestTimeout.RunAsync(
+                operation: $"reset the {schema} schema for the MES substitute snapshot PostgreSQL proof",
+                action: async token => await command.ExecuteNonQueryAsync(token),
+                timeout: PostgresOperationTimeout,
+                cancellationToken);
+        }
     }
 
     private sealed record ColumnDefinition(
@@ -103,22 +181,4 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
         int? MaximumLength,
         string IsNullable,
         string? DefaultValue);
-
-    private sealed class NoopMediator : IMediator
-    {
-        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
-            where TNotification : INotification => Task.CompletedTask;
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest => throw new NotSupportedException();
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
-            IStreamRequest<TResponse> request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<object?> CreateStream(
-            object request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
 }
