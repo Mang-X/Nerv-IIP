@@ -2022,6 +2022,11 @@ export function useMesLineSideInventoryBalances() {
   const page = shallowRef(1)
   const pageNavigationPending = shallowRef(false)
   const filters = defaultContext()
+  const scopeIdentity = computed(() =>
+    hasBusinessContext(filters)
+      ? `${filters.organizationId.trim()}:${filters.environmentId.trim()}`
+      : '',
+  )
   watch(
     () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
     () => {
@@ -2030,8 +2035,12 @@ export function useMesLineSideInventoryBalances() {
     },
     { flush: 'sync' },
   )
-  const query = useQuery(() =>
-    withBusinessContextEnabled(
+  const responseIdentity = computed(() =>
+    scopeIdentity.value ? `${scopeIdentity.value}:page:${page.value}` : '',
+  )
+  const query = useQuery(() => {
+    const requestIdentity = responseIdentity.value
+    const { key, query: executeQuery } =
       listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
         query: {
           organizationId: filters.organizationId,
@@ -2039,12 +2048,22 @@ export function useMesLineSideInventoryBalances() {
           page: page.value,
           pageSize,
         },
-      }),
+      })
+    return withBusinessContextEnabled(
+      {
+        key: [...key, `scope-page:${requestIdentity}`],
+        query: async (context) => ({
+          identity: requestIdentity,
+          response: await executeQuery(context),
+        }),
+      },
       filters,
-    ),
-  )
+    )
+  })
   const currentResponse = computed(() => {
-    const response = query.data.value
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== responseIdentity.value) return undefined
+    const response = scopedResponse.response
     if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
     return response
   })
@@ -2070,7 +2089,7 @@ export function useMesLineSideInventoryBalances() {
   )
 
   watch(
-    [page, () => query.data.value, () => query.error.value],
+    [page, currentResponse, () => query.error.value],
     ([currentPage, response, error]) => {
       if (
         error != null ||

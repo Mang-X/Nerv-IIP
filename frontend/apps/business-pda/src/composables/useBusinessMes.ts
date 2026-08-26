@@ -1614,18 +1614,33 @@ export function useMesLineSideInventoryBalances() {
   const identity = computed(() =>
     scopeIdentity.value ? `${scopeIdentity.value}:page:${page.value}` : '',
   )
-  const query = useQuery(() => ({
-    ...listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
-      query: {
-        organizationId: scope.organizationId,
-        environmentId: scope.environmentId,
-        page: page.value,
-        pageSize,
-      },
-    }),
-    enabled: scopeReady.value,
-  }))
-  const currentResponse = useScopeBoundListResponse(() => query.data.value, identity, scopeReady)
+  const query = useQuery(() => {
+    const requestIdentity = identity.value
+    const { key, query: executeQuery } =
+      listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
+        query: {
+          organizationId: scope.organizationId,
+          environmentId: scope.environmentId,
+          page: page.value,
+          pageSize,
+        },
+      })
+    return {
+      key: [...key, `scope-page:${requestIdentity}`],
+      query: async (context) => ({
+        identity: requestIdentity,
+        response: await executeQuery(context),
+      }),
+      enabled: scopeReady.value,
+    }
+  })
+  const currentResponse = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== identity.value) return undefined
+    const response = scopedResponse.response
+    if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
+    return response
+  })
   const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
   const failure = computed(() =>
     query.error.value != null
