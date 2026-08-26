@@ -20,7 +20,9 @@ import {
   extractPublicError,
   runWithActorContext,
   selectAuthorizedWorkPoolScope,
+  selectAuthorizedWorkSiteScope,
   type AuthorizedWorkPoolScope,
+  type AuthorizedWorkSiteScope,
 } from './issue1912-walkthrough-runtime'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
@@ -1288,16 +1290,26 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       receiptScopes.payload,
       SITE_CODE,
     )
-    if (!receiptScope)
-      throw new Error('WMS receipt scope catalog returned no authorized work-pool scope.')
+    const receiptReadScope: AuthorizedWorkSiteScope | undefined = selectAuthorizedWorkSiteScope(
+      receiptScopes.payload,
+      SITE_CODE,
+    )
+    if (!receiptScope || !receiptReadScope)
+      throw new Error('WMS receipt scope catalog returned no authorized read or work-pool scope.')
     expect(textOf(asRecord(dataOf(receiptScopes.payload)).actorPrincipalId)).toBe(
       workerRuntime.principalId,
     )
     const receiptScopeKind = textOf(receiptScope.scopeKind).trim()
     const receiptScopeId = textOf(receiptScope.scopeId).trim()
     const receiptPoolCode = textOf(receiptScope.poolCode).trim()
+    const receiptReadScopeKind = textOf(receiptReadScope.scopeKind).trim()
+    const receiptReadScopeId = textOf(receiptReadScope.scopeId).trim()
+    const receiptReadSiteCode = textOf(receiptReadScope.siteCode).trim()
     expect(receiptPoolCode).not.toBe('')
     expect(textOf(receiptScope.siteCode)).toBe(SITE_CODE)
+    expect(receiptReadScopeKind.toLowerCase()).toBe('site')
+    expect(receiptReadScopeId).toBe(receiptReadSiteCode)
+    expect(receiptReadSiteCode).toBe(SITE_CODE)
     setup.push({
       kind: 'wms-scope-catalog',
       actor: workerRuntime.actor,
@@ -1305,6 +1317,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       operation: 'receipts',
       source: 'authorized WarehouseWorkScopeCatalogItem',
       scope: publicJson(receiptScope),
+      readScope: publicJson(receiptReadScope),
       request: receiptScopes.summary,
     })
     const inbound = await workerCall('POST', '/api/business-console/v1/wms/inbound-orders', {
@@ -1337,8 +1350,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         organizationId,
         environmentId,
         keyword: INBOUND_ORDER_NO,
-        scopeKind: receiptScopeKind,
-        scopeId: receiptScopeId,
+        scopeKind: receiptReadScopeKind,
+        scopeId: receiptReadScopeId,
+        siteCode: receiptReadSiteCode,
         skip: 0,
         take: 100,
       },
@@ -2121,16 +2135,26 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       shipmentScopes.payload,
       SITE_CODE,
     )
-    if (!shipmentScope)
-      throw new Error('WMS shipment scope catalog returned no authorized work-pool scope.')
+    const shipmentReadScope: AuthorizedWorkSiteScope | undefined = selectAuthorizedWorkSiteScope(
+      shipmentScopes.payload,
+      SITE_CODE,
+    )
+    if (!shipmentScope || !shipmentReadScope)
+      throw new Error('WMS shipment scope catalog returned no authorized read or work-pool scope.')
     expect(textOf(asRecord(dataOf(shipmentScopes.payload)).actorPrincipalId)).toBe(
       workerRuntime.principalId,
     )
     const shipmentScopeKind = textOf(shipmentScope.scopeKind).trim()
     const shipmentScopeId = textOf(shipmentScope.scopeId).trim()
     const shipmentPoolCode = textOf(shipmentScope.poolCode).trim()
+    const shipmentReadScopeKind = textOf(shipmentReadScope.scopeKind).trim()
+    const shipmentReadScopeId = textOf(shipmentReadScope.scopeId).trim()
+    const shipmentReadSiteCode = textOf(shipmentReadScope.siteCode).trim()
     expect(shipmentPoolCode).not.toBe('')
     expect(textOf(shipmentScope.siteCode)).toBe(SITE_CODE)
+    expect(shipmentReadScopeKind.toLowerCase()).toBe('site')
+    expect(shipmentReadScopeId).toBe(shipmentReadSiteCode)
+    expect(shipmentReadSiteCode).toBe(SITE_CODE)
     setup.push({
       kind: 'wms-scope-catalog',
       actor: workerRuntime.actor,
@@ -2138,6 +2162,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       operation: 'shipments',
       source: 'authorized WarehouseWorkScopeCatalogItem',
       scope: publicJson(shipmentScope),
+      readScope: publicJson(shipmentReadScope),
       request: shipmentScopes.summary,
     })
     const outbound = await workerPollRows(
@@ -2146,37 +2171,15 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         organizationId,
         environmentId,
         keyword: DELIVERY_ORDER_NO,
-        scopeKind: shipmentScopeKind,
-        scopeId: shipmentScopeId,
+        scopeKind: shipmentReadScopeKind,
+        scopeId: shipmentReadScopeId,
+        siteCode: shipmentReadSiteCode,
         skip: 0,
         take: 100,
       },
       (row) => textOf(row.outboundOrderNo) === DELIVERY_ORDER_NO,
       180_000,
     )
-    const outboundUi = await provePageSafely('delivery-wms-outbound', {
-      actor: 'wms-worker',
-      route: '/wms/outbound',
-      listPath: '/api/business-console/v1/wms/outbound-orders',
-      filterLabel: '关键字搜索',
-      stableText: DELIVERY_ORDER_NO,
-      emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
-      screenshotName: '17-wms-outbound.png',
-    })
-    record({
-      node: 'delivery-wms-outbound',
-      sourceObject: DELIVERY_ORDER_NO,
-      downstreamObject: textOf(outbound.match.outboundOrderId),
-      stableKey: `${DELIVERY_ORDER_NO} -> ${textOf(outbound.match.outboundOrderNo)}`,
-      automationMode: 'automatic',
-      request: outbound.call.summary,
-      responseOrLog: { outbound: publicJson(outbound.match), ui: outboundUi },
-      conclusion: 'runtime-confirmed',
-      demoWording:
-        'ERP 发货释放跨 Redis 生成 WMS 出库单，真实出库页面以 HTTP 200 渲染 DO-WALK-001。',
-      responsibilityIssue: null,
-    })
-
     const outboundId = textOf(outbound.match.outboundOrderId)
     const outboundVersion = Number(outbound.match.version ?? 1)
     const outboundAssignmentPlan = buildAuthorizedWorkPoolAssignment(
@@ -2242,6 +2245,28 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         operatorPrincipalId: textOf(assignedOutbound.match.assignedOperatorUserId),
         version: assignedOutboundVersion,
       },
+    })
+    const outboundUi = await provePageSafely('delivery-wms-outbound', {
+      actor: 'wms-worker',
+      route: '/wms/outbound',
+      listPath: '/api/business-console/v1/wms/outbound-orders',
+      filterLabel: '关键字搜索',
+      stableText: DELIVERY_ORDER_NO,
+      emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
+      screenshotName: '17-wms-outbound.png',
+    })
+    record({
+      node: 'delivery-wms-outbound',
+      sourceObject: DELIVERY_ORDER_NO,
+      downstreamObject: textOf(assignedOutbound.match.outboundOrderId),
+      stableKey: `${DELIVERY_ORDER_NO} -> ${textOf(assignedOutbound.match.outboundOrderNo)}`,
+      automationMode: 'automatic',
+      request: outbound.call.summary,
+      responseOrLog: { outbound: publicJson(assignedOutbound.match), ui: outboundUi },
+      conclusion: 'runtime-confirmed',
+      demoWording:
+        'ERP 发货释放跨 Redis 生成 WMS 出库单，授权作业池绑定后真实出库页面以 HTTP 200 渲染 DO-WALK-001。',
+      responsibilityIssue: null,
     })
     const completedOutbound = await workerCall(
       'POST',

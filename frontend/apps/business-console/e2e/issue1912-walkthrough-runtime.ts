@@ -24,6 +24,14 @@ export type AuthorizedWorkPoolScope = Readonly<{
   siteCode: string
 }>
 
+export type AuthorizedWorkSiteScope = Readonly<{
+  displayName: string
+  poolCode: null
+  scopeId: string
+  scopeKind: string
+  siteCode: string
+}>
+
 export type PublicError = Readonly<{
   code: string
   message: string
@@ -139,6 +147,42 @@ export function selectAuthorizedWorkPoolScope(
     return {
       displayName: scope.displayName,
       poolCode: scope.poolCode,
+      scopeId: scope.scopeId,
+      scopeKind: scope.scopeKind,
+      siteCode: scope.siteCode,
+    }
+  }
+  return undefined
+}
+
+/**
+ * Selects a site item for reading resources that have not received an assignment yet. The
+ * catalog's site scope is the only source for the site id; missing or malformed items fail closed.
+ */
+export function selectAuthorizedWorkSiteScope(
+  value: unknown,
+  siteCode?: string,
+): AuthorizedWorkSiteScope | undefined {
+  const items = asRecord(dataOf(value)).items
+  if (!Array.isArray(items)) return undefined
+  const normalizedSiteCode = siteCode?.trim()
+
+  for (const item of items) {
+    const scope = parseAuthorizedWorkScope(item)
+    if (
+      !scope ||
+      scope.scopeKind.toLowerCase() !== 'site' ||
+      scope.poolCode !== null ||
+      scope.siteCode === null ||
+      (normalizedSiteCode !== undefined &&
+        normalizedSiteCode !== '' &&
+        scope.siteCode !== normalizedSiteCode)
+    ) {
+      continue
+    }
+    return {
+      displayName: scope.displayName,
+      poolCode: null,
       scopeId: scope.scopeId,
       scopeKind: scope.scopeKind,
       siteCode: scope.siteCode,

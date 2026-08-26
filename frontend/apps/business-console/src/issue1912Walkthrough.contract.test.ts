@@ -13,6 +13,7 @@ import {
   runWithActorContext,
   runWithAuthorizedScope,
   selectAuthorizedWorkPoolScope,
+  selectAuthorizedWorkSiteScope,
   selectAuthorizedWorkScope,
 } from '../e2e/issue1912-walkthrough-runtime'
 
@@ -454,9 +455,24 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
             scopeKind: 'work-pool',
             siteCode: 'SITE-001',
           },
+          {
+            displayName: 'SITE-001',
+            poolCode: null,
+            scopeId: 'SITE-001',
+            scopeKind: 'site',
+            siteCode: 'SITE-001',
+          },
         ],
       },
     }
+    const readScope = selectAuthorizedWorkSiteScope(catalogPayload, 'SITE-001')
+    expect(readScope).toEqual({
+      displayName: 'SITE-001',
+      poolCode: null,
+      scopeId: 'SITE-001',
+      scopeKind: 'site',
+      siteCode: 'SITE-001',
+    })
     const scope = selectAuthorizedWorkPoolScope(catalogPayload, 'SITE-001')
     expect(scope).toEqual({
       displayName: '收货作业池',
