@@ -19,7 +19,12 @@ import {
 } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
+import {
+  useMesLineSideInventoryBalances,
+  useMesMaterialIssue,
+  useMesWorkOrders,
+} from '@/composables/useBusinessMes'
+import LineSideInventoryBalancesPanel from '@/components/mes/LineSideInventoryBalancesPanel.vue'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
@@ -61,6 +66,21 @@ const {
   error: workOrdersError,
   refresh: refreshWorkOrders,
 } = useMesWorkOrders()
+
+const {
+  balances: lineSideInventoryBalances,
+  total: lineSideInventoryTotal,
+  pending: lineSideInventoryPending,
+  error: lineSideInventoryError,
+  hasNextPage: lineSideInventoryHasNextPage,
+  hasPreviousPage: lineSideInventoryHasPreviousPage,
+  page: lineSideInventoryPage,
+  pageCount: lineSideInventoryPageCount,
+  ready: lineSideInventoryReady,
+  nextPage: nextLineSideInventoryPage,
+  previousPage: previousLineSideInventoryPage,
+  refresh: refreshLineSideInventory,
+} = useMesLineSideInventoryBalances()
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = materialIssueStatusLabel
@@ -446,6 +466,21 @@ function onScanWorkOrder(value: string) {
 
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描工单号 / 领料单" :active="scanActive" @scan="onScan" />
+
+      <LineSideInventoryBalancesPanel
+        :items="lineSideInventoryBalances"
+        :page="lineSideInventoryPage"
+        :page-count="lineSideInventoryPageCount"
+        :has-previous-page="lineSideInventoryHasPreviousPage"
+        :has-next-page="lineSideInventoryHasNextPage"
+        :total="lineSideInventoryTotal"
+        :pending="lineSideInventoryPending"
+        :error="lineSideInventoryError"
+        :ready="lineSideInventoryReady"
+        @previous-page="previousLineSideInventoryPage"
+        @next-page="nextLineSideInventoryPage"
+        @refresh="refreshLineSideInventory"
+      />
 
       <ListScopeMeta
         :scope="listScope"
