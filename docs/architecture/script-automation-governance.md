@@ -21,6 +21,9 @@
 
 受控 FullStack session 如需开通独立的 WMS 演示工人账号，必须显式使用 `.\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker`（或等价的 `fullstack start` 参数）。脚本为该次受控进程生成与 admin password 不同的短生命周期 seed，仅注入 Aspire 子进程和后续 Playwright 子进程环境；默认不生成、不注入 worker seed。worker password 不得写入 manifest、artifact、报告或日志。
 
+同一 worker opt-in 还由 AppHost 转换为非敏感的 WMS 最小作业池 seed 开关，worker password 仍仅供 IAM 使用；
+WMS 只补 `SITE-001` 收货作业池、`user-emp-049` 有效成员资格和最小 Open 入库单，完整 History 开启时不重复写入。
+
 ## 分类矩阵
 
 | 分类 | 允许行为 | 禁止行为 | 示例 |
