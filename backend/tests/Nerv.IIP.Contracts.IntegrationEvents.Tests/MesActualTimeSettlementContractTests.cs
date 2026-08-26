@@ -82,7 +82,9 @@ public sealed class MesActualTimeSettlementContractTests
         Assert.Equal(completedAtUtc, roundTripped.Payload.CompletedAtUtc);
         Assert.Equal(voidedAtUtc, roundTripped.Payload.VoidedAtUtc);
         Assert.Equal(72_000_000_000, roundTripped.Payload.ActualLaborTicks);
+        Assert.Equal(36_000_000_000, roundTripped.Payload.ActualMachineTicks);
         Assert.Equal(["PR-001", "PR-002"], roundTripped.Payload.CoveredProductionReportNos);
         Assert.Contains("\"voidedAtUtc\":\"2026-08-26T03:10:00+00:00\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"actualMachineTicks\":36000000000", json, StringComparison.Ordinal);
     }
 }
