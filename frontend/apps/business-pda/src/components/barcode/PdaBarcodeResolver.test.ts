@@ -1,5 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { computed } from 'vue'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { computed, defineComponent, nextTick, shallowRef } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -42,7 +42,35 @@ async function setup() {
   return { wrapper, router }
 }
 
-async function scan(wrapper: Awaited<ReturnType<typeof setup>>['wrapper'], value: string) {
+async function setupLifecycleHost() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/mes/report', component: { template: '<div>report</div>' } },
+    ],
+  })
+  await router.push('/')
+  await router.isReady()
+  const visible = shallowRef(true)
+  const LifecycleHost = defineComponent({
+    components: { PdaBarcodeResolver },
+    setup: () => ({ visible }),
+    template: '<PdaBarcodeResolver v-if="visible" />',
+  })
+  const wrapper = mount(LifecycleHost, { global: { plugins: [router] } })
+
+  return {
+    router,
+    wrapper,
+    async hideResolver() {
+      visible.value = false
+      await nextTick()
+    },
+  }
+}
+
+async function scan(wrapper: VueWrapper, value: string) {
   const input = wrapper.get('input[placeholder^="扫描"]')
   await input.setValue(value)
   await input.trigger('keydown.enter')
@@ -147,10 +175,10 @@ describe('PdaBarcodeResolver', () => {
   it('does not navigate when a pending resolve completes after unmount', async () => {
     let settle!: (value: unknown) => void
     api.resolve.mockReturnValue(new Promise((resolve) => (settle = resolve)))
-    const { wrapper, router } = await setup()
+    const { hideResolver, wrapper, router } = await setupLifecycleHost()
 
     await scan(wrapper, 'WO-LATE')
-    wrapper.unmount()
+    await hideResolver()
     settle({
       data: {
         success: true,
