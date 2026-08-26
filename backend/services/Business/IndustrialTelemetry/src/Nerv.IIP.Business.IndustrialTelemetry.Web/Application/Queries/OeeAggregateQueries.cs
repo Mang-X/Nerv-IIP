@@ -62,6 +62,8 @@ internal static class OeeAggregateQueryPlan
             .Where(x => x.OccurredAtUtc >= earliestStart)
             .Where(x => x.OccurredAtUtc < latestEnd)
             .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.RecordedAtUtc)
+            .ThenBy(x => x.SourceSequence)
             .Take(maximumRows + 1);
 
     internal static IQueryable<DeviceStateSnapshot> BuildCarryInStates(
@@ -76,7 +78,11 @@ internal static class OeeAggregateQueryPlan
             .Where(x => deviceIds.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc < earliestStart)
             .GroupBy(x => x.DeviceAssetId)
-            .Select(group => group.OrderByDescending(x => x.OccurredAtUtc).First())
+            .Select(group => group
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .ThenByDescending(x => x.RecordedAtUtc)
+                .ThenByDescending(x => x.SourceSequence)
+                .First())
             .Take(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1);
 }
 
@@ -195,7 +201,14 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         var statesByDevice = carryIns
             .Concat(inWindowStates)
             .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => (IReadOnlyList<DeviceStateSnapshot>)x.OrderBy(y => y.OccurredAtUtc).ToArray(), StringComparer.Ordinal);
+            .ToDictionary(
+                x => x.Key,
+                x => (IReadOnlyList<DeviceStateSnapshot>)x
+                    .OrderBy(y => y.OccurredAtUtc)
+                    .ThenBy(y => y.RecordedAtUtc)
+                    .ThenBy(y => y.SourceSequence, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
 
         var buckets = groups
             .Select(group => CalculateBucket(request.Dimension, group, statesByDevice))

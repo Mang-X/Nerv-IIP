@@ -17,6 +17,69 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 public sealed class IndustrialTelemetryOeePostgresQueryTests
 {
     [RealPostgresFact]
+    public async Task Same_occurred_at_states_use_recorded_at_and_source_sequence_for_carry_in_and_window_tail_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        var interceptor = new StateQueryLimitCaptureInterceptor();
+        await using var dbContext = CreateLaneDbContext(interceptor);
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var windowStart = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        dbContext.OeeProductionFacts.Add(Fact(
+            "PRPT-STATE-TIE", windowStart.AddMinutes(1), "DEV-STATE-TIE", "WC-STATE-TIE",
+            5m, 0m, "PCS", 10m));
+        await dbContext.SaveChangesAsync();
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO industrial_telemetry.device_state_snapshots
+                ("Id", organization_id, environment_id, device_asset_id, state, occurred_at_utc,
+                 occurred_at_unix_time_milliseconds, source_sequence, source_system, source_connector,
+                 recorded_at_utc, recorded_at_unix_time_milliseconds)
+            VALUES
+                ((md5('state-tie-carry-wrong'))::uuid, 'org-001', 'env-dev', 'DEV-STATE-TIE', 'idle',
+                 TIMESTAMPTZ '2026-06-30T23:59:00Z', 1782863940000, 'Z-carry', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-01T00:01:00Z', 1782864060000),
+                ((md5('state-tie-carry-correct'))::uuid, 'org-001', 'env-dev', 'DEV-STATE-TIE', 'planned-down',
+                 TIMESTAMPTZ '2026-06-30T23:59:00Z', 1782863940000, 'A-carry', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-01T00:02:00Z', 1782864120000),
+                ((md5('state-tie-window-recorded-correct'))::uuid, 'org-001', 'env-dev', 'DEV-STATE-TIE', 'running',
+                 TIMESTAMPTZ '2026-07-01T00:30:00Z', 1782865800000, 'A-window', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-01T00:04:00Z', 1782864240000),
+                ((md5('state-tie-window-recorded-wrong'))::uuid, 'org-001', 'env-dev', 'DEV-STATE-TIE', 'idle',
+                 TIMESTAMPTZ '2026-07-01T00:30:00Z', 1782865800000, 'Z-window', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-01T00:03:00Z', 1782864180000),
+                ((md5('state-tie-window-sequence-correct'))::uuid, 'org-001', 'env-dev', 'DEV-STATE-TIE', 'running',
+                 TIMESTAMPTZ '2026-07-01T00:45:00Z', 1782866700000, 'Z-sequence', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-01T00:05:00Z', 1782864300000),
+                ((md5('state-tie-window-sequence-wrong'))::uuid, 'org-001', 'env-dev', 'DEV-STATE-TIE', 'idle',
+                 TIMESTAMPTZ '2026-07-01T00:45:00Z', 1782866700000, 'A-sequence', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-01T00:05:00Z', 1782864300000);
+            """);
+
+        var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.WorkCenter,
+                windowStart, windowStart.AddHours(1), WorkCenterId: "WC-STATE-TIE"),
+            CancellationToken.None);
+
+        var bucket = Assert.Single(result.Buckets);
+        Assert.Equal(5, bucket.StateSampleCount);
+        Assert.Equal(1m, bucket.AvailabilityRate);
+        Assert.Equal(1m, bucket.PerformanceRate);
+        Assert.Equal(5m, bucket.ExpectedOutputQuantity);
+        Assert.Equal(1m, bucket.OeeRate);
+        var stateCommands = interceptor.ExecutedStateCommands
+            .Select(command => string.Join(' ', command.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Replace("\"", string.Empty, StringComparison.Ordinal))
+            .ToArray();
+        Assert.Contains(stateCommands, command => command.Contains(
+            "ORDER BY d.occurred_at_utc, d.recorded_at_utc, d.source_sequence",
+            StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(stateCommands, command => command.Contains(
+            "ORDER BY d0.occurred_at_utc DESC, d0.recorded_at_utc DESC, d0.source_sequence DESC",
+            StringComparison.OrdinalIgnoreCase));
+    }
+
+    [RealPostgresFact]
     public async Task Combined_carry_in_and_window_state_limit_executes_exact_boundary_on_postgres()
     {
         await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
@@ -370,6 +433,7 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
     private sealed class StateQueryLimitCaptureInterceptor : DbCommandInterceptor
     {
         public List<int> ExecutedLimits { get; } = [];
+        public List<string> ExecutedStateCommands { get; } = [];
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command,
@@ -379,6 +443,7 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         {
             if (command.CommandText.Contains("device_state_snapshots", StringComparison.Ordinal))
             {
+                ExecutedStateCommands.Add(command.CommandText);
                 ExecutedLimits.AddRange(command.Parameters.Cast<DbParameter>()
                     .Where(parameter => parameter.Value is int)
                     .Select(parameter => (int)parameter.Value!));
