@@ -1280,6 +1280,12 @@ $demandPlanningRedisRules = @($livePolicy.rules | Where-Object { [string]::Equal
 Assert-Equal 1 $demandPlanningRedisRules.Count 'The DemandPlanning Redis/CAP proofs must have one evidence policy rule.'
 Assert-True ([string]::Equals([string]$demandPlanningRedisRules[0].requiredLane, 'redis-cap', [StringComparison]::Ordinal)) 'The DemandPlanning Redis/CAP proofs must be owned by redis-cap rather than full-chain.'
 Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/CAP policy rule must freeze exactly the duplicate/ordering and fallback-scan identities.'
+$mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
+$mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
+Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
+Assert-Equal 25 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its twenty-five governed PostgreSQL identities.'
+Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesMaterialSubstituteIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the material-substitute snapshot identity exactly once.'
+Assert-True ($mesMaterialSubstituteIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the material-substitute snapshot identity.'
 $mesCapPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-cap-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesCapPostgresRules.Count 'The MES CAP PostgreSQL proofs must have one evidence policy rule.'
 $mesSaveBoundaryIdentities = @(
