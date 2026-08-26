@@ -252,6 +252,9 @@ export async function clickTabAndConfirmUnmount(
 ): Promise<void> {
   const previousPanel = page.locator('[role="tabpanel"]:visible').first()
   const previousPanelHandle = await previousPanel.elementHandle()
+  const previousContentCount = previousPanelHandle
+    ? await previousPanelHandle.evaluate((element) => element.children.length)
+    : 0
   const attempt = tracker.beginLifecycleAttempt(page.url())
   let confirmed = false
   try {
@@ -259,11 +262,24 @@ export async function clickTabAndConfirmUnmount(
     if (!previousPanelHandle) {
       throw new Error('component unmount could not be evidenced: no visible tab panel')
     }
+    if (previousContentCount === 0) {
+      throw new Error('component unmount could not be evidenced: tab panel has no content')
+    }
     await expect
-      .poll(() => previousPanelHandle.evaluate((element) => element.isConnected), {
+      .poll(
+        () =>
+          previousPanelHandle.evaluate(
+            (element) =>
+              element.getAttribute('data-state') === 'inactive' && element.hasAttribute('hidden'),
+          ),
+        { timeout: timeoutMs },
+      )
+      .toBe(true)
+    await expect
+      .poll(() => previousPanelHandle.evaluate((element) => element.children.length), {
         timeout: timeoutMs,
       })
-      .toBe(false)
+      .toBe(0)
     attempt.confirm('component-unmount')
     confirmed = true
   } finally {

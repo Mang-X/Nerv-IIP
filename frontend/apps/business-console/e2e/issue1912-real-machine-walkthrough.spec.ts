@@ -25,7 +25,9 @@ import {
 } from './issue1912-walkthrough-runtime'
 import {
   classifyRequestFailure,
+  clickTabAndConfirmUnmount,
   fillFilterAndWaitForListResponse,
+  navigateAndWaitForInitialList,
   RequestFailureEvidenceTracker,
 } from './issue1912-walkthrough-policy'
 
@@ -2357,7 +2359,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
                 assertionBoundary:
                   'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
                 requestFailurePolicy:
-                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests with recorded navigation or component-unmount evidence, are separated as expected cancellations; API aborts without that evidence, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
+                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
                 setup,
                 identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
                 expectedBusinessRejections,
