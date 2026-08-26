@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -85,6 +86,25 @@ public sealed class MesInventoryHttpClient(HttpClient httpClient)
 public sealed class MesMasterDataHttpClient(HttpClient httpClient)
 {
     public HttpClient HttpClient { get; } = httpClient;
+}
+
+public static class MesMasterDataHttpClientRegistration
+{
+    public static IServiceCollection AddMesMasterDataHttpClient(
+        this IServiceCollection services,
+        Uri baseAddress)
+    {
+        services.AddHttpClient<MesMasterDataHttpClient>(client =>
+            {
+                client.BaseAddress = baseAddress;
+                client.Timeout = TimeSpan.FromSeconds(10);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                ConnectTimeout = TimeSpan.FromSeconds(5),
+            });
+        return services;
+    }
 }
 
 public sealed class MesMaterialRequirementInventoryOptions

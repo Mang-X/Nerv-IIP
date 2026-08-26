@@ -76,10 +76,7 @@ builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
 {
     client.BaseAddress = inventoryBaseAddress;
 });
-builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
-{
-    client.BaseAddress = masterDataBaseAddress;
-});
+builder.Services.AddMesMasterDataHttpClient(masterDataBaseAddress);
 builder.Services.AddHttpClient<MesQualityHttpClient>(client =>
 {
     client.BaseAddress = qualityBaseAddress;

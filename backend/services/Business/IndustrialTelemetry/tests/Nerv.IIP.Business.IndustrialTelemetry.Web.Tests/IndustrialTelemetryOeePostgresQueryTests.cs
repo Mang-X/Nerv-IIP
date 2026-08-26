@@ -243,6 +243,37 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
     }
 
     [RealPostgresFact]
+    public async Task State_starting_after_the_window_start_degrades_apq_instead_of_assuming_prefix_coverage_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var start = DateTimeOffset.Parse("2026-07-10T08:00:00Z");
+        var end = start.AddHours(1);
+        dbContext.DeviceStateSnapshots.Add(
+            State("org-001", "DEV-PREFIX-GAP", "running", start.AddMinutes(30), "state-prefix-gap"));
+        dbContext.OeeProductionFacts.Add(
+            Fact("PRPT-PREFIX-GAP", start.AddMinutes(45), "DEV-PREFIX-GAP", "WC-PREFIX-GAP", 5m, 0m, "PCS", 10m));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.WorkCenter,
+                start, end, WorkCenterId: "WC-PREFIX-GAP"),
+            CancellationToken.None);
+
+        var bucket = Assert.Single(result.Buckets);
+        Assert.Equal(1, bucket.StateSampleCount);
+        Assert.Null(bucket.AvailabilityRate);
+        Assert.Null(bucket.PerformanceRate);
+        Assert.Null(bucket.QualityRate);
+        Assert.Null(bucket.OeeRate);
+        Assert.True(bucket.IsDegraded);
+        Assert.Contains("runtime-state-coverage-incomplete", bucket.DegradedReasons);
+    }
+
+    [RealPostgresFact]
     public async Task Mixed_uom_bucket_is_explicitly_degraded_on_postgres()
     {
         await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();

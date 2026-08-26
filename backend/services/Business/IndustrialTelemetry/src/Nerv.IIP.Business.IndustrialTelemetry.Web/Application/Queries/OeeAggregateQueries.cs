@@ -236,10 +236,12 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             productiveTicks += runtime.ProductiveTicks;
             stateSampleCount += runtime.StateSampleCount;
             productiveHoursByDevice[deviceId] = decimal.Divide(runtime.ProductiveTicks, TimeSpan.TicksPerHour);
-            if (!runtime.HasState)
+            if (!runtime.HasCompleteCoverage)
             {
                 hasCompleteRuntimeCoverage = false;
-                degradedReasons.Add("runtime-state-facts-missing");
+                degradedReasons.Add(runtime.StateSampleCount == 0
+                    ? "runtime-state-facts-missing"
+                    : "runtime-state-coverage-incomplete");
             }
         }
 
@@ -383,7 +385,9 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             }
         }
 
-        return new RuntimeTotals(loadingTicks, productiveTicks, points.Length, points.Length > 0);
+        var hasCompleteCoverage = carryIn is not null ||
+            inWindow.FirstOrDefault()?.OccurredAtUtc == startUtc;
+        return new RuntimeTotals(loadingTicks, productiveTicks, points.Length, hasCompleteCoverage);
     }
 
     private static void AddHistoricalDimensionDegradation(
@@ -425,7 +429,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         IReadOnlyCollection<OeeAggregateBucket> buckets) =>
         new(request.OrganizationId, request.EnvironmentId, request.Dimension, request.WindowStartUtc, request.WindowEndUtc, buckets);
 
-    private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, int StateSampleCount, bool HasState);
+    private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, int StateSampleCount, bool HasCompleteCoverage);
     private sealed record StatePoint(DateTimeOffset OccurredAtUtc, string State);
     private sealed record FactBucket(BucketKey Key, OeeProductionFact[] Facts, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
 

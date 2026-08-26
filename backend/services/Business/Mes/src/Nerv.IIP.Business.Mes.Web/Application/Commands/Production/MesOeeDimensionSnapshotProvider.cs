@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
@@ -60,16 +61,16 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             request.WorkCenterCode,
             Normalize(request.DeviceAssetId),
             ShiftCode: Normalize(request.ShiftCode));
-        if (fallback.DeviceAssetId is null)
-        {
-            return fallback;
-        }
+        var shiftCode = Normalize(request.ShiftCode);
+        var deviceTask = fallback.DeviceAssetId is null
+            ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
+            : ListAsync(request, "device-asset", ("keyword", fallback.DeviceAssetId), cancellationToken);
+        var shiftTask = shiftCode is null
+            ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
+            : ListAsync(request, "shift", ("shiftCode", shiftCode), cancellationToken);
+        await Task.WhenAll(deviceTask, shiftTask);
 
-        var deviceResponse = await ListAsync(
-            request,
-            "device-asset",
-            ("keyword", fallback.DeviceAssetId),
-            cancellationToken);
+        var deviceResponse = deviceTask.Result;
         var devices = deviceResponse?.Resources.Where(x =>
             x.Active &&
             (string.Equals(x.Code, fallback.DeviceAssetId, StringComparison.OrdinalIgnoreCase) ||
@@ -77,22 +78,12 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             .Take(2)
             .ToArray();
         var device = devices is { Length: 1 } ? devices[0] : null;
-        if (device is null)
-        {
-            return fallback;
-        }
-
-        var siteCode = Normalize(device.SiteCode);
-        var shiftCode = Normalize(request.ShiftCode);
-        var siteTask = siteCode is null
+        var siteCode = Normalize(device?.SiteCode);
+        var siteResponse = await (siteCode is null
             ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
-            : ListAsync(request, "site", ("siteCode", siteCode), cancellationToken);
-        var shiftTask = shiftCode is null
-            ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
-            : ListAsync(request, "shift", ("shiftCode", shiftCode), cancellationToken);
-        await Task.WhenAll(siteTask, shiftTask);
+            : ListAsync(request, "site", ("siteCode", siteCode), cancellationToken));
 
-        var sites = siteTask.Result?.Resources.Where(x =>
+        var sites = siteResponse?.Resources.Where(x =>
                 x.Active && string.Equals(x.Code, siteCode, StringComparison.OrdinalIgnoreCase))
             .Take(2)
             .ToArray();
@@ -103,11 +94,11 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         var site = sites is { Length: 1 } ? sites[0] : null;
         var shift = shifts is { Length: 1 } ? shifts[0] : null;
         return new MesOeeDimensionSnapshot(
-            Normalize(device.WorkCenterCode) ?? request.WorkCenterCode,
+            Normalize(device?.WorkCenterCode) ?? request.WorkCenterCode,
             fallback.DeviceAssetId,
             siteCode,
-            Normalize(device.WorkshopCode),
-            Normalize(device.LineCode),
+            Normalize(device?.WorkshopCode),
+            Normalize(device?.LineCode),
             shiftCode,
             Normalize(site?.Timezone),
             shift?.StartsAt,
@@ -132,6 +123,11 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             Pair("all", true.ToString(CultureInfo.InvariantCulture)),
         });
         using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        var correlationId = Normalize(Activity.Current?.GetTagItem("correlationId")?.ToString());
+        if (correlationId is not null)
+        {
+            message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+        }
         var token = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(token))
         {

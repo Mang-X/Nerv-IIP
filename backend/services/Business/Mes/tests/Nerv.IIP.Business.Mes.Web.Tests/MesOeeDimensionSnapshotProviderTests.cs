@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,6 +143,49 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     }
 
     [Fact]
+    public async Task MasterData_provider_propagates_the_current_correlation_id_on_every_request()
+    {
+        var handler = new ReportingDimensionHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+        using var activity = new Activity("record-production-report");
+        activity.SetTag("correlationId", "corr-oee-snapshot-001");
+        activity.Start();
+
+        await provider.CaptureAsync(
+            new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+            CancellationToken.None);
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.All(handler.Requests, request =>
+            Assert.Equal("corr-oee-snapshot-001", Assert.Single(request.Headers.GetValues("X-Correlation-Id"))));
+    }
+
+    [Fact]
+    public async Task MasterData_provider_captures_shift_independently_when_device_lookup_fails()
+    {
+        using var httpClient = new HttpClient(new ShiftReleasesFailedDeviceHandler())
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+
+        var snapshot = await provider.CaptureAsync(
+                new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+                CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Null(snapshot.SiteCode);
+        Assert.Equal("NIGHT", snapshot.ShiftCode);
+        Assert.Equal(new TimeOnly(20, 0), snapshot.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(4, 0), snapshot.ShiftEndsAt);
+        Assert.True(snapshot.ShiftCrossesMidnight);
+    }
+
+    [Fact]
     public async Task MasterData_provider_returns_missing_snapshot_when_dimension_service_is_unavailable()
     {
         using var httpClient = new HttpClient(new UnavailableHandler())
@@ -164,8 +208,11 @@ public sealed class MesOeeDimensionSnapshotProviderTests
 
     private sealed class ReportingDimensionHandler : HttpMessageHandler
     {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Requests.Add(request);
             var query = request.RequestUri?.Query ?? string.Empty;
             var data = query.Contains("resourceType=device-asset", StringComparison.Ordinal)
                 ? "{\"resources\":[{\"resourceType\":\"device-asset\",\"code\":\"DEV-01\",\"displayName\":\"Device\",\"active\":true,\"snapshotVersion\":\"v1\",\"siteCode\":\"SITE-SH\",\"workshopCode\":\"WS-01\",\"lineCode\":\"LINE-01\",\"workCenterCode\":\"WC-01\"}],\"total\":1}"
@@ -177,6 +224,35 @@ public sealed class MesOeeDimensionSnapshotProviderTests
                 Content = new StringContent($"{{\"data\":{data},\"success\":true,\"message\":\"\",\"code\":0}}", Encoding.UTF8, "application/json"),
             };
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class ShiftReleasesFailedDeviceHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource<HttpResponseMessage> deviceResponse =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var query = request.RequestUri?.Query ?? string.Empty;
+            if (query.Contains("resourceType=device-asset", StringComparison.Ordinal))
+            {
+                return deviceResponse.Task;
+            }
+
+            if (query.Contains("resourceType=shift", StringComparison.Ordinal))
+            {
+                deviceResponse.TrySetResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"data\":{\"resources\":[{\"resourceType\":\"shift\",\"code\":\"NIGHT\",\"displayName\":\"Night\",\"active\":true,\"snapshotVersion\":\"v1\",\"startsAt\":\"20:00:00\",\"endsAt\":\"04:00:00\",\"crossesMidnight\":true,\"paidMinutes\":450,\"breakMinutes\":30}],\"total\":1},\"success\":true,\"message\":\"\",\"code\":0}",
+                        Encoding.UTF8,
+                        "application/json"),
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 
