@@ -155,26 +155,40 @@ test.describe('walkthrough filter response boundary', () => {
     expect(queries).toEqual(['SO-WALK-001', 'SO-WALK-001'])
   })
 
-  test('仅在 tab 内容实际卸载后才建立 component-unmount 证据', async ({ page }) => {
+  test('tab 容器保留但旧 slot 内容切换后才建立 component-unmount 证据', async ({ page }) => {
     await page.setContent(`
       <button role="tab" id="next-tab">下一页</button>
-      <div role="tabpanel" id="old-panel">旧面板</div>
+      <div role="tabpanel" id="old-panel" data-state="active">
+        <div id="old-content">旧面板</div>
+      </div>
+      <div role="tabpanel" id="next-panel" data-state="inactive" hidden>
+        <div id="next-content">新面板</div>
+      </div>
       <script>
         document.querySelector('#next-tab').addEventListener('click', () => {
-          document.querySelector('#old-panel').remove()
+          const oldPanel = document.querySelector('#old-panel')
+          const nextPanel = document.querySelector('#next-panel')
+          oldPanel.dataset.state = 'inactive'
+          oldPanel.hidden = true
+          oldPanel.replaceChildren()
+          nextPanel.dataset.state = 'active'
+          nextPanel.hidden = false
         })
       </script>
     `)
     const tracker = new RequestFailureEvidenceTracker()
 
     await clickTabAndConfirmUnmount(page, '下一页', tracker, 1_000)
-    expect(await page.locator('#old-panel').count()).toBe(0)
+    await expect(page.locator('#old-panel')).toHaveCount(1)
+    await expect(page.locator('#old-panel')).toBeHidden()
+    await expect(page.locator('#old-content')).toHaveCount(0)
+    await expect(page.locator('#next-panel')).toBeVisible()
   })
 
   test('点击失败时不建立 component-unmount 证据', async ({ page }) => {
     await page.setContent(`
       <button role="tab" id="next-tab" disabled>下一页</button>
-      <div role="tabpanel" id="old-panel">旧面板</div>
+      <div role="tabpanel" id="old-panel"><div>旧面板</div></div>
     `)
     const tracker = new RequestFailureEvidenceTracker()
 
@@ -185,11 +199,36 @@ test.describe('walkthrough filter response boundary', () => {
   test('点击成功但内容未卸载时不建立 component-unmount 证据', async ({ page }) => {
     await page.setContent(`
       <button role="tab" id="next-tab">下一页</button>
-      <div role="tabpanel" id="old-panel">旧面板</div>
+      <div role="tabpanel" id="old-panel" data-state="active"><div>旧面板</div></div>
     `)
     const tracker = new RequestFailureEvidenceTracker()
 
     await expect(clickTabAndConfirmUnmount(page, '下一页', tracker, 100)).rejects.toThrow()
     expect(await page.locator('#old-panel').count()).toBe(1)
+  })
+
+  test('仅隐藏旧 tab 容器但保留旧内容时不建立 component-unmount 证据', async ({ page }) => {
+    await page.setContent(`
+      <button role="tab" id="next-tab">下一页</button>
+      <div role="tabpanel" id="old-panel" data-state="active">
+        <div id="old-content">旧面板</div>
+      </div>
+      <div role="tabpanel" id="next-panel" data-state="inactive" hidden>新面板</div>
+      <script>
+        document.querySelector('#next-tab').addEventListener('click', () => {
+          const oldPanel = document.querySelector('#old-panel')
+          const nextPanel = document.querySelector('#next-panel')
+          oldPanel.dataset.state = 'inactive'
+          oldPanel.hidden = true
+          nextPanel.dataset.state = 'active'
+          nextPanel.hidden = false
+        })
+      </script>
+    `)
+    const tracker = new RequestFailureEvidenceTracker()
+
+    await expect(clickTabAndConfirmUnmount(page, '下一页', tracker, 100)).rejects.toThrow()
+    await expect(page.locator('#old-panel')).toBeHidden()
+    await expect(page.locator('#old-content')).toHaveCount(1)
   })
 })
