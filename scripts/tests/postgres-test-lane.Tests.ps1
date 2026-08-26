@@ -25,7 +25,7 @@ function Assert-MasterDataDiagnosticSchemas([object]$Member) {
         throw 'The MasterData member must retain restricted business_masterdata and CAP outbox diagnostics.'
     }
 }
-$script:GovernedPostgresMemberIds = @(
+$script:HostedPostgresMemberIds = @(
     'inventory-postgres-profile',
     'masterdata-postgres-profile',
     'scheduling-postgres-profile',
@@ -136,8 +136,8 @@ function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
     $job = $document.jobs.'postgres-provider-tests'
     $testSteps = @($job.steps | Where-Object { [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $_ -PropertyName 'id'), 'postgres-tests', [StringComparison]::Ordinal) })
     if ($testSteps.Count -ne 1) { throw 'PostgreSQL Provider Tests must contain exactly one authoritative postgres-tests step.' }
-    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select every governed lane member exactly through one AST-validated assignment and runner invocation.'
-    $expectedMemberIds = @($script:GovernedPostgresMemberIds)
+    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select every hosted lane member exactly through one AST-validated assignment and runner invocation.'
+    $expectedMemberIds = @($script:HostedPostgresMemberIds)
     $run = [regex]::Replace([string]$testSteps[0].run, '\$\{\{.*?\}\}', 'github-expression')
     $tokens = $null
     $parseErrors = $null
@@ -181,6 +181,45 @@ function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
     if ($memberArgument -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
         -not [string]::Equals($memberArgument.VariablePath.UserPath, 'members', [StringComparison]::Ordinal)) {
         throw $invalidBatchMessage
+    }
+}
+function Assert-PostgresLaneInventoryNarrative(
+    [string]$GovernancePath,
+    [object[]]$ActiveMembers,
+    [string[]]$HostedMemberIds) {
+    $activeMemberIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $activeIdentityCount = 0
+    foreach ($activeMember in $ActiveMembers) {
+        Assert-Contract ($activeMemberIds.Add([string]$activeMember.id)) "Active PostgreSQL member '$($activeMember.id)' must be unique."
+        $activeIdentityCount += @($activeMember.expectedTestIdentities).Count
+    }
+    $hostedMemberIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $hostedIdentityCount = 0
+    foreach ($hostedMemberId in $HostedMemberIds) {
+        Assert-Contract ($hostedMemberIdSet.Add($hostedMemberId)) "Hosted PostgreSQL member '$hostedMemberId' must be unique."
+        $hostedMember = @($ActiveMembers | Where-Object { [string]::Equals([string]$_.id, $hostedMemberId, [StringComparison]::Ordinal) })
+        Assert-Contract ($hostedMember.Count -eq 1) "Hosted PostgreSQL member '$hostedMemberId' must resolve to exactly one active manifest member."
+        $hostedIdentityCount += @($hostedMember[0].expectedTestIdentities).Count
+    }
+    $activeNotHosted = @($ActiveMembers | Where-Object { -not $hostedMemberIdSet.Contains([string]$_.id) })
+    $activeNotHostedIds = @($activeNotHosted | ForEach-Object { [string]$_.id })
+    $activeNotHostedIdentityCount = @($activeNotHosted | ForEach-Object { @($_.expectedTestIdentities).Count } | Measure-Object -Sum).Sum
+    $inventoryMarker = '<!-- postgres-lane-inventory active-members={0} active-identities={1} hosted-members={2} hosted-identities={3} active-not-hosted={4} active-not-hosted-identities={5} -->' -f `
+        $ActiveMembers.Count,
+        $activeIdentityCount,
+        $HostedMemberIds.Count,
+        $hostedIdentityCount,
+        ($activeNotHostedIds -join ','),
+        $activeNotHostedIdentityCount
+    $governance = [IO.File]::ReadAllText($GovernancePath)
+    Assert-Contract ($governance.Contains($inventoryMarker, [StringComparison]::Ordinal)) "PostgreSQL evidence governance must contain the manifest/workflow-derived inventory marker: $inventoryMarker"
+    return [pscustomobject]@{
+        activeMembers = $ActiveMembers.Count
+        activeIdentities = $activeIdentityCount
+        hostedMembers = $HostedMemberIds.Count
+        hostedIdentities = $hostedIdentityCount
+        activeNotHostedIds = $activeNotHostedIds
+        activeNotHostedIdentities = $activeNotHostedIdentityCount
     }
 }
 try {
@@ -336,6 +375,13 @@ try {
     # 改为断言两种归属都还有成员（任一清空，它那半边契约就不再被行使）且每个成员都显式声明。
     $manifestDocument = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $activeMembers = @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) })
+    $laneInventory = Assert-PostgresLaneInventoryNarrative `
+        -GovernancePath (Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md') `
+        -ActiveMembers $activeMembers `
+        -HostedMemberIds $script:HostedPostgresMemberIds
+    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 97) 'The active PostgreSQL manifest inventory must remain 15 members and 97 frozen identities.'
+    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 89) 'The hosted PostgreSQL workflow subset must remain 14 members and 89 frozen identities.'
+    Assert-Contract ($laneInventory.activeNotHostedIds.Count -eq 1 -and [string]::Equals([string]$laneInventory.activeNotHostedIds[0], 'masterdata-device-reference-concurrency', [StringComparison]::Ordinal) -and $laneInventory.activeNotHostedIdentities -eq 8) 'The active-but-not-hosted inventory must explicitly identify the eight-test MasterData device-reference concurrency member.'
     $testOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'test-owned', [StringComparison]::Ordinal) }).Count
     $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
     Assert-Contract ($testOwnedCount -ge 1 -and $runnerOwnedCount -ge 1) 'Both ownership forms must stay represented; if one empties, its half of the contract stops being exercised.'
@@ -561,7 +607,7 @@ try {
 
     # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
     $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($governedMemberId in $script:GovernedPostgresMemberIds) {
+    foreach ($governedMemberId in $script:HostedPostgresMemberIds) {
         $governedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $governedMemberId -RepositoryRoot $repoRoot
         $projectDirectory = Split-Path -Parent (Join-Path $repoRoot ([string]$governedMember.project))
         # 重置不变量只适用于 runner 归属：test-owned 成员每条用例自建临时库，本来就从零开始，
@@ -614,7 +660,7 @@ try {
     Assert-Contract ($resetDeclaringSources.Count -ge 10) 'Every governed member must own a schema-reset implementation that this contract can inspect.'
     # 逐成员闭合：总量下界挡不住"某成员的重置实现藏在既非冻结身份类、也非 *PostgresLaneDatabase.cs 的文件里"，
     # 那种情况下它会逃过 CASCADE 形态检查而总数仍然达标。
-    foreach ($runnerMemberId in @($script:GovernedPostgresMemberIds)) {
+    foreach ($runnerMemberId in @($script:HostedPostgresMemberIds)) {
         $runnerMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $runnerMemberId -RepositoryRoot $repoRoot
         if (-not [string]::Equals([string]$runnerMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) { continue }
         $runnerProjectDirectory = Split-Path -Parent (Join-Path $repoRoot ([string]$runnerMember.project))
@@ -637,7 +683,7 @@ try {
     try { Assert-LaneResetDropsCascade -SourcePath $noCascadeSourcePath } catch { $noCascadeRejected = $_.Exception.Message.Contains('IF EXISTS and CASCADE', [StringComparison]::Ordinal) }
     Assert-Contract $noCascadeRejected 'A schema reset without CASCADE must fail closed.'
 
-    $selectedMemberIds = @($script:GovernedPostgresMemberIds)
+    $selectedMemberIds = @($script:HostedPostgresMemberIds)
     $validMemberSummaries = @(
         foreach ($governedMemberId in $selectedMemberIds) {
             $governedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $governedMemberId -RepositoryRoot $repoRoot
@@ -645,7 +691,7 @@ try {
             [pscustomobject]@{ memberId = $governedMemberId; expected = $governedCount; discovered = $governedCount; passed = $governedCount; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }
         }
     )
-    Assert-Contract ($validMemberSummaries.Count -eq $selectedMemberIds.Count) 'Every governed member id must resolve to a manifest member.'
+    Assert-Contract ($validMemberSummaries.Count -eq $selectedMemberIds.Count) 'Every hosted member id must resolve to an active manifest member.'
     Assert-NervPostgresTestLaneSummary -SelectedMemberIds $selectedMemberIds -MemberSummaries $validMemberSummaries
     # 变异只改最后一个成员，其余成员保持合格：证明聚合断言逐成员生效，而不是"有一个成员通过就放行"。
     $lastIndex = $validMemberSummaries.Count - 1
@@ -715,7 +761,7 @@ try {
     # deferred 登记必须写明理由，且不得被 runner 选中执行。
     foreach ($deferredMember in @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'deferred', [StringComparison]::Ordinal) })) {
         Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$deferredMember.deferredReason)) "Deferred member '$($deferredMember.id)' must record why it cannot join the lane."
-        $selectedMemberIdSet = [Collections.Generic.HashSet[string]]::new([string[]]@($script:GovernedPostgresMemberIds), [StringComparer]::Ordinal)
+        $selectedMemberIdSet = [Collections.Generic.HashSet[string]]::new([string[]]@($script:HostedPostgresMemberIds), [StringComparer]::Ordinal)
         Assert-Contract (-not $selectedMemberIdSet.Contains([string]$deferredMember.id)) "Deferred member '$($deferredMember.id)' must not be selected by the hosted job."
         $deferredRejected = $false
         try { Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId ([string]$deferredMember.id) -RepositoryRoot $repoRoot | Out-Null }
@@ -729,7 +775,7 @@ try {
     $workflow = [IO.File]::ReadAllText($workflowPath)
     Assert-PostgresWorkflowMemberBatch -WorkflowPath $workflowPath
     $authoritativeAssignment = "`$members = @('" + ($selectedMemberIds -join "', '") + "')"
-    Assert-Contract ($workflow.Contains($authoritativeAssignment, [StringComparison]::Ordinal)) 'The authoritative workflow assignment must select the full governed member batch.'
+    Assert-Contract ($workflow.Contains($authoritativeAssignment, [StringComparison]::Ordinal)) 'The authoritative workflow assignment must select the full hosted member batch.'
     $droppedMemberCases = @(
         foreach ($droppedMemberId in @('maintenance-device-pause-postgres', 'apphub-postgres-profile', 'masterdata-postgres-profile')) {
             $remainingIds = @($selectedMemberIds | Where-Object { -not [string]::Equals($_, $droppedMemberId, [StringComparison]::Ordinal) })
