@@ -161,6 +161,87 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
     }
 
     [Fact]
+    public async Task Http_client_rejects_a_non_guid_transformation_id_without_returning_a_readback_path()
+    {
+        var handler = new RecordingTransformationHandler(_ => JsonResponse(new
+        {
+            success = true,
+            data = new
+            {
+                transformationId = new { id = "not-a-guid" },
+                type = "split",
+                sourceWorkOrderIds = new[] { "WO-PARENT-001" },
+                targetWorkOrderIds = new[] { "WO-CHILD-001" },
+                isIdempotentReplay = false,
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesWorkOrderTransformationClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.SplitAsync(
+                "internal-token",
+                new BusinessConsoleMesSplitWorkOrderRequest(
+                    "WO-PARENT-001",
+                    "org-001",
+                    "env-dev",
+                    [new BusinessConsoleMesWorkOrderTransformationTargetRequest("WO-CHILD-001", 4m)],
+                    "按客户批次拆分",
+                    "split-001"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task Split_facade_exposes_downstream_proxy_errors_as_public_contract(HttpStatusCode statusCode)
+    {
+        var transformation = new RecordingTransformationClient
+        {
+            SplitFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                statusCode,
+                "downstream-invalid-response"),
+        };
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient();
+        var auth = AuthorizationFor(BusinessGatewayPermissions.MesWorkOrdersManage);
+        await using var lease = BusinessGatewayTestHost.Lease(
+            auth,
+            services =>
+            {
+                services.RemoveAll<IBusinessMesWorkOrderTransformationClient>();
+                services.AddSingleton<IBusinessMesWorkOrderTransformationClient>(transformation);
+                services.RemoveAll<IBusinessMesClient>();
+                services.AddSingleton<IBusinessMesClient>(mes);
+                services.RemoveAll<IBusinessMasterDataClient>();
+                services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-PARENT-001/split?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                targets = new[]
+                {
+                    new { workOrderId = "WO-CHILD-001", quantity = 4m },
+                    new { workOrderId = "WO-CHILD-002", quantity = 6m },
+                },
+                reason = "下游错误",
+                idempotencyKey = "split-failure-001",
+            });
+
+        Assert.Equal(statusCode, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("downstream-invalid-response", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Split_facade_requires_realtime_permission_scope_and_returns_accepted_readback_contract()
     {
         var transformation = new RecordingTransformationClient();
@@ -366,6 +447,8 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
 
 internal sealed class RecordingTransformationClient : IBusinessMesWorkOrderTransformationClient
 {
+    public BusinessServiceProxyException? SplitFailure { get; init; }
+
     public int SplitCallCount { get; private set; }
 
     public int ReadbackCallCount { get; private set; }
@@ -386,6 +469,11 @@ internal sealed class RecordingTransformationClient : IBusinessMesWorkOrderTrans
         SplitCallCount++;
         LastInternalToken = internalBearerToken;
         LastSplitRequest = request;
+        if (SplitFailure is not null)
+        {
+            throw SplitFailure;
+        }
+
         return Task.FromResult(new BusinessMesWorkOrderTransformationResult(
             "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df8",
             "split",

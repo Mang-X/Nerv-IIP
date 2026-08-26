@@ -16511,6 +16511,9 @@ export type SplitBusinessConsoleMesWorkOrderErrors = {
      */
     403: unknown;
     409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
 };
 
 export type SplitBusinessConsoleMesWorkOrderError = SplitBusinessConsoleMesWorkOrderErrors[keyof SplitBusinessConsoleMesWorkOrderErrors];
@@ -16550,6 +16553,9 @@ export type MergeBusinessConsoleMesWorkOrdersErrors = {
      */
     403: unknown;
     409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
 };
 
 export type MergeBusinessConsoleMesWorkOrdersError = MergeBusinessConsoleMesWorkOrdersErrors[keyof MergeBusinessConsoleMesWorkOrdersErrors];
@@ -16590,6 +16596,9 @@ export type GetBusinessConsoleMesWorkOrderTransformationErrors = {
      * Forbidden
      */
     403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
 };
 
 export type GetBusinessConsoleMesWorkOrderTransformationError = GetBusinessConsoleMesWorkOrderTransformationErrors[keyof GetBusinessConsoleMesWorkOrderTransformationErrors];

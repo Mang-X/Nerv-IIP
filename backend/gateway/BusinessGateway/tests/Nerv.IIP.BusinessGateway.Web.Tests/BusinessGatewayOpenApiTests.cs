@@ -822,6 +822,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "environmentId");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "reason", 500);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "idempotencyKey", 150);
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "502", "503", "504");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "mergeBusinessConsoleMesWorkOrders");
         AssertQueryParameters(
             paths,
@@ -835,6 +836,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "environmentId");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/merge", "post", "reason", 500);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/merge", "post", "idempotencyKey", 150);
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "502", "503", "504");
         AssertOperationId(
             paths,
             "/api/business-console/v1/mes/work-order-transformations/{transformationId}",
@@ -850,6 +852,7 @@ public sealed class BusinessGatewayOpenApiTests
             "scopeId");
         AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "organizationId");
         AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "environmentId");
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "502", "503", "504");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", "post", "recordBusinessConsoleMesEngineeringChangeDecision");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release", "post", "forceReleaseBusinessConsoleMesQualityHold");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline", "get", "getBusinessConsoleMesQualityHoldTimeline");

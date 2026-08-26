@@ -10,6 +10,9 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/split")]
 [BusinessGatewayOperationId("splitBusinessConsoleMesWorkOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class SplitBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
@@ -67,6 +70,9 @@ public sealed class SplitBusinessConsoleMesWorkOrderEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/merge")]
 [BusinessGatewayOperationId("mergeBusinessConsoleMesWorkOrders")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class MergeBusinessConsoleMesWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
@@ -128,6 +134,9 @@ public sealed class MergeBusinessConsoleMesWorkOrdersEndpoint(
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/work-order-transformations/{transformationId}")]
 [BusinessGatewayOperationId("getBusinessConsoleMesWorkOrderTransformation")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
 public sealed class GetBusinessConsoleMesWorkOrderTransformationEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesWorkOrderTransformationClient transformationClient,

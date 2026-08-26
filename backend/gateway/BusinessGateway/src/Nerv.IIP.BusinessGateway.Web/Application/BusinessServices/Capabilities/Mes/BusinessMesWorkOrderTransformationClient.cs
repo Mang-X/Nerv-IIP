@@ -124,7 +124,7 @@ public sealed class HttpBusinessMesWorkOrderTransformationClient(HttpClient http
         var actor = response.Actor?.Trim();
         var reason = response.Reason?.Trim();
         if (transformationId is null
-            || !string.Equals(transformationId, requestedTransformationId, StringComparison.OrdinalIgnoreCase)
+            || !MatchesStrongId(transformationId, requestedTransformationId)
             || type is null
             || string.IsNullOrWhiteSpace(idempotencyKey)
             || string.IsNullOrWhiteSpace(actor)
@@ -173,8 +173,17 @@ public sealed class HttpBusinessMesWorkOrderTransformationClient(HttpClient http
         }
 
         var text = id.GetString()?.Trim();
-        return string.IsNullOrWhiteSpace(text) ? null : text;
+        return Guid.TryParse(text, out var parsed) && parsed != Guid.Empty
+            ? parsed.ToString("D")
+            : null;
     }
+
+    private static bool MatchesStrongId(string actual, string requested) =>
+        Guid.TryParse(actual, out var actualId)
+        && actualId != Guid.Empty
+        && Guid.TryParse(requested, out var requestedId)
+        && requestedId != Guid.Empty
+        && actualId == requestedId;
 
     private static string? ReadType(JsonElement value)
     {
