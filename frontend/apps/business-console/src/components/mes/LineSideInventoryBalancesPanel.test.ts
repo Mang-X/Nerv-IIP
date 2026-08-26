@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import LineSideInventoryBalancesPanel from './LineSideInventoryBalancesPanel.vue'
 
 describe('LineSideInventoryBalancesPanel', () => {
-  it('桌面表格完整渲染 200 行并由内建 manual 分页发出目标页', async () => {
+  it('桌面表格完整渲染 200 行并由独立分页发出目标页', async () => {
     const items = Array.from({ length: 200 }, (_, index) => ({
       siteCode: 'SITE-A',
       locationCode: `LINE-${index + 1}`,
@@ -33,6 +33,11 @@ describe('LineSideInventoryBalancesPanel', () => {
     expect(wrapper.findAll('tbody tr')).toHaveLength(200)
     expect(wrapper.text()).toContain('SKU-200')
     expect(wrapper.findAll('nav[aria-label="分页"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="line-side-inventory-pagination"]').exists()).toBe(true)
+    expect(wrapper.get('.line-side-inventory-table').classes()).toEqual(
+      expect.arrayContaining(['hidden', 'md:block']),
+    )
+    expect(wrapper.find('.line-side-inventory-table nav[aria-label="分页"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('显示 1–200 / 201 条')
 
     await wrapper.get('button[aria-label="第 2 页"]').trigger('click')
@@ -57,9 +62,7 @@ describe('LineSideInventoryBalancesPanel', () => {
 
       expect(wrapper.get('[role="alert"]').text()).toContain(message)
       expect(wrapper.findAll('nav[aria-label="分页"]')).toHaveLength(1)
-      expect(wrapper.find('[data-testid="line-side-inventory-recovery-pagination"]').exists()).toBe(
-        true,
-      )
+      expect(wrapper.find('[data-testid="line-side-inventory-pagination"]').exists()).toBe(true)
       expect(wrapper.find('[data-slot="table-container"]').exists()).toBe(false)
       expect(wrapper.get('button[aria-label="上一页"]').attributes('disabled')).toBeUndefined()
 

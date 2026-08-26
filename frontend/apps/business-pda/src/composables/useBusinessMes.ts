@@ -56,11 +56,14 @@ import {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
+  createServerPaginationState,
   formatWorkScopeKey,
   isAvailableMaterialLot,
   lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  reduceServerPagination,
+  serverPaginationIdentity,
   statusActionGate,
 } from '@nerv-iip/business-core'
 import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
@@ -70,7 +73,7 @@ import {
   useListResponseState,
   useScopeBoundListResponse,
 } from '@/composables/useListFreshness'
-import { computed, nextTick, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import {
   assertLifecycleActionExecutable,
   LifecycleActionUnavailableError,
@@ -1599,44 +1602,44 @@ export type ReturnLineSideMaterialInput = BusinessConsoleMesReturnLineSideMateri
 
 export function useMesLineSideInventoryBalances() {
   const pageSize = 200
-  const page = shallowRef(1)
-  const pageNavigationPending = shallowRef(false)
-  const correctedPageIdentity = shallowRef('')
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(scope))
   const scopeIdentity = computed(() => (scopeReady.value ? scopeKey(scope) : ''))
+  const pagination = shallowRef(createServerPaginationState(pageSize, scopeIdentity.value))
+  const page = computed(() => pagination.value.page)
   watch(
     scopeIdentity,
-    () => {
-      pageNavigationPending.value = false
-      correctedPageIdentity.value = ''
-      page.value = 1
+    (identity) => {
+      pagination.value = reduceServerPagination(pagination.value, {
+        type: 'scope-changed',
+        scopeIdentity: identity,
+      })
     },
     { flush: 'sync' },
   )
-  const identity = computed(() =>
-    scopeIdentity.value ? `${scopeIdentity.value}:page:${page.value}` : '',
-  )
-  const query = useQuery(() => {
-    const requestIdentity = identity.value
+  const identity = computed(() => serverPaginationIdentity(scopeIdentity.value, page.value))
+  function queryOptions(targetPage: number) {
+    const requestIdentity = serverPaginationIdentity(scopeIdentity.value, targetPage)
     const { key, query: executeQuery } =
       listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
         query: {
           organizationId: scope.organizationId,
           environmentId: scope.environmentId,
-          page: page.value,
+          page: targetPage,
           pageSize,
         },
       })
     return {
       key: [...key, `scope-page:${requestIdentity}`],
-      query: async (context) => ({
+      query: async (context: Parameters<typeof executeQuery>[0]) => ({
         identity: requestIdentity,
         response: await executeQuery(context),
       }),
       enabled: scopeReady.value,
     }
-  })
+  }
+  const query = useQuery(() => queryOptions(page.value))
   const currentResponse = computed(() => {
     const scopedResponse = query.data.value
     if (scopedResponse?.identity !== identity.value) return undefined
@@ -1654,37 +1657,25 @@ export function useMesLineSideInventoryBalances() {
     currentResponse,
     (response) => {
       if (response?.success !== true) return
-      const lastPage = lastPageForTotal(response.data?.totalCount ?? 0, pageSize)
-      if (page.value > lastPage) {
-        pageNavigationPending.value = true
-        correctedPageIdentity.value = `${scopeIdentity.value}:page:${lastPage}`
-        page.value = lastPage
-        const targetIdentity = correctedPageIdentity.value
-        void nextTick(() => {
-          if (correctedPageIdentity.value !== targetIdentity) return
-          void query
-            .refetch()
-            .catch(ignoreBackgroundError)
-            .finally(() => {
-              if (
-                correctedPageIdentity.value === targetIdentity &&
-                identity.value === targetIdentity
-              ) {
-                correctedPageIdentity.value = ''
-                pageNavigationPending.value = false
-              }
-            })
-        })
+      const nextPagination = reduceServerPagination(pagination.value, {
+        type: 'response-succeeded',
+        identity: identity.value,
+        responsePage: response.data?.page ?? 1,
+        total: response.data?.totalCount ?? 0,
+      })
+      if (nextPagination.page !== pagination.value.page) {
+        // A correction can return to a still-fresh cached page. Mark only that target stale,
+        // then let the reactive key transition remain the single fetch trigger.
+        void queryCache.invalidateQueries(
+          { key: queryOptions(nextPagination.page).key, exact: true },
+          false,
+        )
       }
+      pagination.value = nextPagination
     },
     { flush: 'sync', immediate: true },
   )
-  const pending = computed(
-    () =>
-      query.isLoading.value ||
-      pageNavigationPending.value ||
-      (correctedPageIdentity.value !== '' && correctedPageIdentity.value === identity.value),
-  )
+  const pending = computed(() => query.isLoading.value || pagination.value.navigationPending)
   const failure = computed(() =>
     query.error.value != null
       ? query.error.value
@@ -1694,9 +1685,7 @@ export function useMesLineSideInventoryBalances() {
           ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
           : null,
   )
-  const total = computed(() =>
-    currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
-  )
+  const total = computed(() => pagination.value.lastSuccessfulTotal)
   const pageCount = computed(() => lastPageForTotal(total.value, pageSize))
   const hasPreviousPage = computed(() => page.value > 1)
   const hasNextPage = computed(
@@ -1712,7 +1701,10 @@ export function useMesLineSideInventoryBalances() {
         (response !== undefined &&
           (response.success !== true || (response.data?.page ?? 1) === currentPage))
       ) {
-        pageNavigationPending.value = false
+        pagination.value = reduceServerPagination(pagination.value, {
+          type: 'response-failed',
+          identity: identity.value,
+        })
       }
     },
     { flush: 'sync' },
@@ -1720,14 +1712,20 @@ export function useMesLineSideInventoryBalances() {
 
   function previousPage() {
     if (pending.value || !hasPreviousPage.value) return
-    pageNavigationPending.value = true
-    page.value -= 1
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage: page.value - 1,
+      pageCount: pageCount.value,
+    })
   }
 
   function nextPage() {
     if (pending.value || !hasNextPage.value) return
-    pageNavigationPending.value = true
-    page.value += 1
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage: page.value + 1,
+      pageCount: pageCount.value,
+    })
   }
 
   return {

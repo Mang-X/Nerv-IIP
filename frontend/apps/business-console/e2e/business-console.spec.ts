@@ -240,9 +240,7 @@ test('领料与齐套：第 2 页失败后保留下方分页并可返回第 1 �
 
   await expect(lineSideInventory.getByRole('alert')).toContainText('第 2 页库存暂不可用')
   await expect(lineSideInventory.locator('nav[aria-label="分页"]')).toBeVisible()
-  await expect(
-    lineSideInventory.getByTestId('line-side-inventory-recovery-pagination'),
-  ).toBeVisible()
+  await expect(lineSideInventory.getByTestId('line-side-inventory-pagination')).toBeVisible()
   await expect(lineSideInventory.locator('[data-slot="table-container"]')).toHaveCount(0)
   await expect(lineSideInventory.getByRole('button', { name: '上一页' })).toBeEnabled()
   await lineSideInventory.getByRole('button', { name: '上一页' }).click()
@@ -301,6 +299,8 @@ test('领料与齐套：总量收缩后自动回到最后有效页', async ({ pa
   ).toBeVisible()
   await expect(lineSideInventory).toContainText('第 1 / 1 页')
   await expect(lineSideInventory).not.toContainText('第 2 / 1 页')
+  await page.waitForTimeout(500)
+  expect(pageOneRequests).toBe(2)
 })
 
 test('工序执行：队列渲染、可报工行直显「报工」按钮且能进报工弹窗', async ({ page }) => {

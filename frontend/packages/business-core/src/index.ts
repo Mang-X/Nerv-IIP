@@ -128,6 +128,15 @@ export type {
 } from './inventory/lineSideAge'
 export { lastPageForTotal } from './pagination/pageBounds'
 export {
+  createServerPaginationState,
+  reduceServerPagination,
+  serverPaginationIdentity,
+} from './pagination/serverPaginationController'
+export type {
+  ServerPaginationEvent,
+  ServerPaginationState,
+} from './pagination/serverPaginationController'
+export {
   aggregateReceivingGateStatus,
   isReleasedForPutaway,
   orderReleasedForPutaway,

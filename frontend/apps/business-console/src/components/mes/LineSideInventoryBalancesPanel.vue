@@ -114,7 +114,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
       </article>
     </div>
 
-    <div v-if="items.length > 0" class="line-side-inventory-table">
+    <div v-if="items.length > 0" class="line-side-inventory-table hidden md:block">
       <NvDataTable
         :columns="columns"
         :rows="items"
@@ -122,12 +122,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
         :loading="pending"
         :searchable="false"
         :column-settings="false"
-        manual
-        :page="page"
-        :page-size="pageSize"
-        :page-size-options="[pageSize]"
-        :total-items="total"
-        @update:page="emit('updatePage', $event)"
+        :pagination="false"
       >
         <template #cell-locationCode="{ row }">
           <div class="flex flex-col">
@@ -158,8 +153,8 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
     </div>
 
     <NvPagination
-      v-if="errorMessage && items.length === 0 && page > 1 && total > pageSize"
-      data-testid="line-side-inventory-recovery-pagination"
+      v-if="total > pageSize || page > 1"
+      data-testid="line-side-inventory-pagination"
       :page="page"
       :page-size="pageSize"
       :page-size-options="[pageSize]"
@@ -168,13 +163,3 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
     />
   </section>
 </template>
-
-<style scoped>
-@layer app {
-  @media (max-width: 767px) {
-    .line-side-inventory-table :deep([data-slot='table-container']) {
-      display: none;
-    }
-  }
-}
-</style>

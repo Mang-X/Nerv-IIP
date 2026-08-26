@@ -848,6 +848,8 @@ test('领料：总量收缩后自动回到最后有效页', async ({ page }) => 
   await expect(lineSideInventory.getByText('SKU-CLAMPED-PAGE-1', { exact: true })).toBeVisible()
   await expect(lineSideInventory).toContainText('第 1 / 1 页')
   await expect(lineSideInventory).not.toContainText('第 2 / 1 页')
+  await page.waitForTimeout(500)
+  expect(pageOneRequests).toBe(2)
 })
 
 test('完工入库：列表渲染入库申请行（不退化为空态）', async ({ page }) => {
