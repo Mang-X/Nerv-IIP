@@ -287,6 +287,61 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     }
 
     [Fact]
+    public async Task MasterData_json_reader_degrades_unsupported_deserialization_shape()
+    {
+        using var httpClient = new HttpClient(new UnavailableHandler())
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+        using var content = new StringContent(
+            "{\"runtimeType\":\"System.String\"}",
+            Encoding.UTF8,
+            "application/json");
+
+        var payload = await provider.ReadJsonAsync<UnsupportedJsonPayload>(
+            content,
+            "device-asset",
+            CancellationToken.None);
+
+        Assert.Null(payload);
+    }
+
+    [Fact]
+    public async Task MasterData_provider_propagates_not_supported_exception_from_http_handler()
+    {
+        using var httpClient = new HttpClient(new ThrowingTransportHandler(
+            new NotSupportedException("transport configuration is not supported")))
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => provider.CaptureAsync(
+            new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+            CancellationToken.None));
+
+        Assert.Equal("transport configuration is not supported", exception.Message);
+    }
+
+    [Fact]
+    public async Task MasterData_provider_propagates_json_exception_from_http_handler()
+    {
+        using var httpClient = new HttpClient(new ThrowingTransportHandler(
+            new System.Text.Json.JsonException("transport JSON handler failed")))
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+
+        var exception = await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => provider.CaptureAsync(
+            new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+            CancellationToken.None));
+
+        Assert.Equal("transport JSON handler failed", exception.Message);
+    }
+
+    [Fact]
     public async Task MasterData_provider_does_not_swallow_caller_cancellation()
     {
         using var httpClient = new HttpClient(new CallerCancellationHandler())
@@ -410,6 +465,12 @@ public sealed class MesOeeDimensionSnapshotProviderTests
         }
     }
 
+    private sealed class ThrowingTransportHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(exception);
+    }
+
     private sealed class CallerCancellationHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
@@ -489,4 +550,6 @@ public sealed class MesOeeDimensionSnapshotProviderTests
                 450,
                 30));
     }
+
+    private sealed record UnsupportedJsonPayload(Type RuntimeType);
 }

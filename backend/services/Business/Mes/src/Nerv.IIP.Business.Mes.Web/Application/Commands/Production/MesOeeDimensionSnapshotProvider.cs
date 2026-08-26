@@ -147,16 +147,7 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
                 return null;
             }
 
-            var envelope = await response.Content.ReadFromJsonAsync<OeeResponseDataEnvelope<OeeMasterDataResourceListResponse>>(cancellationToken);
-            if (envelope?.Data is not { Truncated: false } data)
-            {
-                logger?.LogWarning(
-                    "MasterData OEE dimension snapshot response for {ResourceType} was empty or truncated; MES will record an explicit partial snapshot.",
-                    resourceType);
-                return null;
-            }
-
-            return data;
+            return await ReadResponseAsync(response.Content, resourceType, cancellationToken);
         }
         catch (HttpRequestException exception)
         {
@@ -167,6 +158,38 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         {
             logger?.LogWarning(exception, "MasterData OEE dimension snapshot request for {ResourceType} timed out; MES will record an explicit partial snapshot.", resourceType);
             return null;
+        }
+    }
+
+    private async Task<OeeMasterDataResourceListResponse?> ReadResponseAsync(
+        HttpContent content,
+        string resourceType,
+        CancellationToken cancellationToken)
+    {
+        var envelope = await ReadJsonAsync<OeeResponseDataEnvelope<OeeMasterDataResourceListResponse>>(
+            content,
+            resourceType,
+            cancellationToken);
+        if (envelope?.Data is not { Truncated: false } data)
+        {
+            logger?.LogWarning(
+                "MasterData OEE dimension snapshot response for {ResourceType} was empty or truncated; MES will record an explicit partial snapshot.",
+                resourceType);
+            return null;
+        }
+
+        return data;
+    }
+
+    internal async Task<T?> ReadJsonAsync<T>(
+        HttpContent content,
+        string resourceType,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            return await content.ReadFromJsonAsync<T>(cancellationToken);
         }
         catch (JsonException exception)
         {
