@@ -214,39 +214,61 @@ describe('PdaBarcodeResolver', () => {
     expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NAV-FAIL')
   })
 
-  it('ignores an older navigation rejection after a newer scan navigates successfully', async () => {
+  it('fails closed when router resolves a prevented navigation', async () => {
+    api.resolve.mockReturnValue(
+      resolved('resolved', [
+        { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-BLOCKED' } },
+      ]),
+    )
+    const { wrapper, router } = await setup()
+    const removeGuard = router.beforeEach(() => false)
+
+    await scan(wrapper, 'WO-BLOCKED')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(wrapper.get('[data-testid="barcode-status"]').attributes('role')).toBe('alert')
+    expect(wrapper.get('[data-testid="barcode-status"]').text()).toContain('无法打开目标页面')
+
+    removeGuard()
+    await scan(wrapper, 'WO-BLOCKED')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-BLOCKED')
+  })
+
+  it('blocks a newer scan while the previous navigation is still pending', async () => {
     api.resolve
       .mockReturnValueOnce(
         resolved('resolved', [
-          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-OLD' } },
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-NAV-PENDING' } },
         ]),
       )
       .mockReturnValueOnce(
         resolved('resolved', [
-          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-NEW' } },
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-MUST-NOT-START' } },
         ]),
       )
     const { wrapper, router } = await setup()
-    const actualPush = router.push.bind(router)
-    let rejectFirst!: (reason?: unknown) => void
-    vi.spyOn(router, 'push')
-      .mockImplementationOnce(
-        () =>
-          new Promise((_resolve, reject) => {
-            rejectFirst = reject
-          }),
-      )
-      .mockImplementation(actualPush)
+    let releaseNavigation!: (allow: boolean) => void
+    router.beforeEach(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseNavigation = resolve
+        }),
+    )
 
-    await scan(wrapper, 'WO-OLD')
-    await flushPromises()
-    await scan(wrapper, 'WO-NEW')
-    await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NEW')
+    await scan(wrapper, 'WO-NAV-PENDING')
+    await vi.waitFor(() => expect(releaseNavigation).toBeTypeOf('function'))
 
-    rejectFirst(new Error('旧导航懒加载失败'))
+    const input = wrapper.get('input[placeholder^="扫描"]')
+    await scan(wrapper, 'WO-MUST-NOT-START')
+    expect({
+      inputDisabled: (input.element as HTMLInputElement).matches(':disabled'),
+      resolveCalls: api.resolve.mock.calls.length,
+    }).toEqual({ inputDisabled: true, resolveCalls: 1 })
+
+    releaseNavigation(true)
     await flushPromises()
-    expect(wrapper.get('[data-testid="barcode-status"]').attributes('role')).toBe('status')
-    expect(wrapper.get('[data-testid="barcode-status"]').text()).not.toContain('无法打开目标页面')
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-NAV-PENDING')
   })
 })
