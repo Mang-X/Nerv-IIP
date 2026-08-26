@@ -8,9 +8,11 @@ import {
   withSessionCredentialCleanup,
 } from '../e2e/session-credential-tracker'
 import {
+  buildAuthorizedWorkPoolAssignment,
   extractPublicError,
   runWithActorContext,
   runWithAuthorizedScope,
+  selectAuthorizedWorkPoolScope,
   selectAuthorizedWorkScope,
 } from '../e2e/issue1912-walkthrough-runtime'
 
@@ -421,5 +423,152 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(
       extractPublicError({ success: false, message: 'missing-work-pool-assignment' }),
     ).not.toEqual(extractPublicError({ success: false, message: 'work-scope-not-authorized' }))
+  })
+
+  it('builds WMS assignments from the worker context and an authorized work-pool scope', async () => {
+    const workerContext = {
+      actor: 'wms-worker' as const,
+      principalId: 'user-emp-049',
+      authorization: 'Bearer worker-fixture-token',
+    }
+    const adminContext = {
+      actor: 'erp-admin' as const,
+      principalId: 'user-admin',
+      authorization: 'Bearer admin-fixture-token',
+    }
+    const catalogPayload = {
+      data: {
+        actorPrincipalId: workerContext.principalId,
+        items: [
+          {
+            displayName: '我的任务',
+            poolCode: null,
+            scopeId: workerContext.principalId,
+            scopeKind: 'self',
+            siteCode: null,
+          },
+          {
+            displayName: '收货作业池',
+            poolCode: 'POOL-WMS-RECEIVING',
+            scopeId: 'pool-receiving-001',
+            scopeKind: 'work-pool',
+            siteCode: 'SITE-001',
+          },
+        ],
+      },
+    }
+    const scope = selectAuthorizedWorkPoolScope(catalogPayload, 'SITE-001')
+    expect(scope).toEqual({
+      displayName: '收货作业池',
+      poolCode: 'POOL-WMS-RECEIVING',
+      scopeId: 'pool-receiving-001',
+      scopeKind: 'work-pool',
+      siteCode: 'SITE-001',
+    })
+
+    const assignmentCalls: Array<{
+      actor: string
+      principalId: string
+      authorization: string
+      resourceId: string
+      poolCode: string
+      operatorPrincipalId: string
+      scopeKind: string
+      scopeId: string
+    }> = []
+    const assignment = await runWithActorContext(workerContext, async (context) => {
+      const plan = buildAuthorizedWorkPoolAssignment(
+        context,
+        scope,
+        'inbound-fixture-001',
+        'issue1912-inbound-assignment',
+        3,
+      )
+      if (plan.called) {
+        assignmentCalls.push({
+          actor: context.actor,
+          principalId: context.principalId,
+          authorization: context.authorization,
+          resourceId: plan.request.resourceId,
+          poolCode: plan.request.body.poolCode,
+          operatorPrincipalId: plan.request.body.operatorPrincipalId,
+          scopeKind: plan.request.scope.scopeKind,
+          scopeId: plan.request.scope.scopeId,
+        })
+      }
+      return plan
+    })
+    expect(assignment).toEqual({
+      called: true,
+      request: {
+        resourceId: 'inbound-fixture-001',
+        scope: {
+          displayName: '收货作业池',
+          poolCode: 'POOL-WMS-RECEIVING',
+          scopeId: 'pool-receiving-001',
+          scopeKind: 'work-pool',
+          siteCode: 'SITE-001',
+        },
+        body: {
+          poolCode: 'POOL-WMS-RECEIVING',
+          operatorPrincipalId: 'user-emp-049',
+          idempotencyKey: 'issue1912-inbound-assignment',
+          expectedVersion: 3,
+        },
+      },
+    })
+    expect(assignmentCalls).toEqual([
+      {
+        actor: 'wms-worker',
+        principalId: 'user-emp-049',
+        authorization: workerContext.authorization,
+        resourceId: 'inbound-fixture-001',
+        poolCode: 'POOL-WMS-RECEIVING',
+        operatorPrincipalId: 'user-emp-049',
+        scopeKind: 'work-pool',
+        scopeId: 'pool-receiving-001',
+      },
+    ])
+    expect(assignmentCalls).not.toContainEqual(
+      expect.objectContaining({
+        actor: adminContext.actor,
+        principalId: adminContext.principalId,
+        authorization: adminContext.authorization,
+      }),
+    )
+
+    expect(
+      selectAuthorizedWorkPoolScope({
+        data: {
+          items: [
+            {
+              displayName: '不完整作业池',
+              poolCode: null,
+              scopeId: 'pool-missing-code',
+              scopeKind: 'work-pool',
+              siteCode: 'SITE-001',
+            },
+          ],
+        },
+      }),
+    ).toBeUndefined()
+    expect(
+      buildAuthorizedWorkPoolAssignment(
+        workerContext,
+        undefined,
+        'inbound-fixture-001',
+        'issue1912-missing-assignment',
+        3,
+      ),
+    ).toEqual({ called: false, reason: 'missing-authorized-scope' })
+    expect(
+      buildAuthorizedWorkPoolAssignment(
+        adminContext,
+        scope,
+        'inbound-fixture-001',
+        'issue1912-admin-assignment',
+        3,
+      ),
+    ).toEqual({ called: false, reason: 'wms-worker-context-required' })
   })
 })
