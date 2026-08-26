@@ -8,7 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Npgsql;
@@ -153,6 +155,55 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await using var assertion = CreateContext(options);
         var persisted = await assertion.OperationTasks.AsNoTracking().SingleAsync();
         Assert.Equal(1, persisted.ActualTimeSettlementRevision);
+    }
+
+    [MesRealPostgresFact]
+    public async Task Settlement_lineage_rejects_a_report_from_another_scope_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
+        OperationActualTimeSettlement settlement;
+        await using (var setup = CreateContext(options))
+        {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
+            setup.WorkOrders.Add(CreateWorkOrder());
+            var task = CreateRunningTask();
+            setup.OperationTasks.Add(task);
+            setup.WorkOrders.Add(WorkOrder.Create(
+                "org-002", "env-dev", "WO-002", "SKU-002", "PV-002", 10m, 1, At(480)));
+            setup.OperationTasks.Add(OperationTask.Create(
+                "org-002", "env-dev", "WO-002", "OP-002",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-002", [], At(0),
+                TimeSpan.FromHours(1), At(0), null));
+            setup.ProductionReports.Add(ProductionReport.Record(
+                "org-002", "env-dev", "PR-OTHER", "WO-002", "OP-002",
+                1m, 0m, false, At(30)));
+            task.Complete(At(60), []);
+            settlement = OperationActualTimeSettlement.Capture(
+                Assert.Single(task.GetDomainEvents()
+                    .OfType<OperationActualTimeSettledDomainEvent>()).Settlement);
+            setup.OperationActualTimeSettlements.Add(settlement);
+            await setup.SaveChangesAsync();
+        }
+
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO mes.operation_actual_time_settlement_reports
+                (id, settlement_id, organization_id, environment_id, report_no)
+            VALUES
+                (@id, @settlement_id, 'org-002', 'env-dev', 'PR-OTHER')
+            """;
+        command.Parameters.AddWithValue("id", Guid.CreateVersion7());
+        command.Parameters.AddWithValue("settlement_id", settlement.Id.Id);
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
+        Assert.Equal(
+            "fk_operation_actual_time_settlement_reports_settlement",
+            exception.ConstraintName);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

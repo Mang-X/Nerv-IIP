@@ -41,6 +41,8 @@ public sealed class OperationActualTimeSettlementEntityTypeConfiguration
             .HasComment("Nonnegative actual machine duration in .NET ticks frozen by this settlement.");
         builder.Property(x => x.VoidedAtUtc).HasColumnName("voided_at_utc")
             .HasComment("UTC time when the settlement was voided by completion-report reversal; null while active.");
+        builder.HasAlternateKey(x => new { x.Id, x.OrganizationId, x.EnvironmentId })
+            .HasName("ak_operation_actual_time_settlements_id_scope");
         builder.HasOne<OperationTask>()
             .WithMany()
             .HasPrincipalKey(x => new
@@ -61,7 +63,8 @@ public sealed class OperationActualTimeSettlementEntityTypeConfiguration
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.CoveredReports)
             .WithOne()
-            .HasForeignKey(x => x.SettlementId)
+            .HasPrincipalKey(x => new { x.Id, x.OrganizationId, x.EnvironmentId })
+            .HasForeignKey(x => new { x.SettlementId, x.OrganizationId, x.EnvironmentId })
             .HasConstraintName("fk_operation_actual_time_settlement_reports_settlement")
             .OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.CoveredReports).UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -112,6 +115,8 @@ public sealed class OperationActualTimeSettlementReportEntityTypeConfiguration
         builder.HasIndex(x => new { x.SettlementId, x.ReportNo })
             .IsUnique()
             .HasDatabaseName("ux_operation_actual_time_settlement_reports_settlement_report");
+        builder.HasIndex(x => new { x.SettlementId, x.OrganizationId, x.EnvironmentId })
+            .HasDatabaseName("ix_operation_actual_time_settlement_reports_settlement_scope");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
             .HasDatabaseName("ix_operation_actual_time_settlement_reports_scope_report");
     }

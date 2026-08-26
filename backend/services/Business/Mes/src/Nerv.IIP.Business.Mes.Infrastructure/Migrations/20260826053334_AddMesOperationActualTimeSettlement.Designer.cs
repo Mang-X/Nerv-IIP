@@ -735,6 +735,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("Id", "OrganizationId", "EnvironmentId")
+                        .HasName("ak_operation_actual_time_settlements_id_scope");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "Revision")
                         .IsUnique()
                         .HasDatabaseName("ux_operation_actual_time_settlements_scope_task_revision");
@@ -793,6 +796,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo")
                         .HasDatabaseName("ix_operation_actual_time_settlement_reports_scope_report");
+
+                    b.HasIndex("SettlementId", "OrganizationId", "EnvironmentId")
+                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_settlement_scope");
 
                     b.ToTable("operation_actual_time_settlement_reports", "mes", t =>
                         {
@@ -3517,13 +3523,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlementReport", b =>
                 {
-                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", null)
-                        .WithMany("CoveredReports")
-                        .HasForeignKey("SettlementId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_operation_actual_time_settlement_reports_settlement");
-
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo")
@@ -3531,6 +3530,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_operation_actual_time_settlement_reports_production_reports");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", null)
+                        .WithMany("CoveredReports")
+                        .HasForeignKey("SettlementId", "OrganizationId", "EnvironmentId")
+                        .HasPrincipalKey("Id", "OrganizationId", "EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_operation_actual_time_settlement_reports_settlement");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", b =>

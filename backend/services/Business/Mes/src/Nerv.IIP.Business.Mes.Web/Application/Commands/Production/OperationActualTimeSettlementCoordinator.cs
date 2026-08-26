@@ -32,12 +32,6 @@ internal static class OperationActualTimeSettlementCoordinator
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        if (coveredReportNos.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "Operation completion requires at least one governed production report.");
-        }
-
         operationTask.Complete(completedAtUtc, coveredReportNos);
         var snapshot = operationTask.GetDomainEvents()
             .OfType<OperationActualTimeSettledDomainEvent>()

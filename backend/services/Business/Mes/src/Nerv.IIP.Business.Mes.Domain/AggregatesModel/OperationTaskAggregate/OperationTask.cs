@@ -269,6 +269,31 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         IReadOnlyCollection<string> coveredProductionReportNos)
     {
         ArgumentNullException.ThrowIfNull(coveredProductionReportNos);
+        FreezeCompletion(completedAtUtc);
+
+        ActualTimeSettlementRevision = checked(ActualTimeSettlementRevision + 1);
+        var normalizedReportNos = NormalizeCoveredProductionReportNos(coveredProductionReportNos);
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
+        AddDomainEvent(new OperationActualTimeSettledDomainEvent(CreateActualTimeSettlementSnapshot(normalizedReportNos)));
+    }
+
+    /// <summary>
+    /// Imports a completed historical task without inventing a settlement revision or integration fact.
+    /// Runtime completion must use the governed settlement coordinator instead.
+    /// </summary>
+    internal void CompleteLegacyHistoryWithoutSettlement(DateTimeOffset completedAtUtc)
+    {
+        if (ActualTimeSettlementRevision != 0)
+        {
+            throw new InvalidOperationException("Settled operation task cannot be imported as legacy history.");
+        }
+
+        FreezeCompletion(completedAtUtc);
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
+    }
+
+    private void FreezeCompletion(DateTimeOffset completedAtUtc)
+    {
         if (Status != OperationTaskLifecycleStatus.InProgress)
         {
             throw new InvalidOperationException("Only in-progress operation task can be completed.");
@@ -280,10 +305,6 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var elapsedTicks = Math.Max(0L, (completedAtUtc - ExistingStartUtc.Value).Ticks - PausedDurationTicks);
         LaborTimeTicks = elapsedTicks;
         MachineTimeTicks = elapsedTicks;
-        ActualTimeSettlementRevision = checked(ActualTimeSettlementRevision + 1);
-        var normalizedReportNos = NormalizeCoveredProductionReportNos(coveredProductionReportNos);
-        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
-        AddDomainEvent(new OperationActualTimeSettledDomainEvent(CreateActualTimeSettlementSnapshot(normalizedReportNos)));
     }
 
     public void ReopenAfterReportReversal(
@@ -306,7 +327,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
 
         Status = OperationTaskLifecycleStatus.InProgress;
+        ExistingStartUtc = voidedAtUtc;
         ExistingEndUtc = null;
+        PausedAtUtc = null;
+        PausedDurationTicks = 0;
         LaborTimeTicks = 0;
         MachineTimeTicks = 0;
         AddDomainEvent(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));

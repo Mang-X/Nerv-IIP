@@ -55,6 +55,13 @@ public sealed class MesSchemaConventionTests
             ]));
         Assert.Contains(coveredReport.GetForeignKeys(), x =>
             x.PrincipalEntityType.ClrType == typeof(ProductionReport));
+        Assert.Contains(coveredReport.GetForeignKeys(), x =>
+            x.PrincipalEntityType.ClrType == typeof(OperationActualTimeSettlement) &&
+            x.Properties.Select(p => p.Name).SequenceEqual([
+                nameof(OperationActualTimeSettlementReport.SettlementId),
+                nameof(OperationActualTimeSettlementReport.OrganizationId),
+                nameof(OperationActualTimeSettlementReport.EnvironmentId),
+            ]));
         Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative");
     }
 

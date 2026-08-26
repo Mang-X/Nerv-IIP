@@ -41,6 +41,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_operation_actual_time_settlements", x => x.id);
+                    table.UniqueConstraint("ak_operation_actual_time_settlements_id_scope", x => new { x.id, x.organization_id, x.environment_id });
                     table.CheckConstraint("ck_operation_actual_time_settlements_revision_positive", "revision > 0");
                     table.CheckConstraint("ck_operation_actual_time_settlements_ticks_nonnegative", "actual_labor_ticks >= 0 AND actual_machine_ticks >= 0");
                     table.ForeignKey(
@@ -74,8 +75,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "fk_operation_actual_time_settlement_reports_settlement",
-                        column: x => x.settlement_id,
-                        principalSchema: "mes", principalTable: "operation_actual_time_settlements", principalColumn: "id",
+                        columns: x => new { x.settlement_id, x.organization_id, x.environment_id },
+                        principalSchema: "mes", principalTable: "operation_actual_time_settlements",
+                        principalColumns: new[] { "id", "organization_id", "environment_id" },
                         onDelete: ReferentialAction.Cascade);
                 },
                 comment: "Relational production-report lineage covered by one MES actual-time settlement revision.");
@@ -88,6 +90,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 name: "ix_operation_actual_time_settlement_reports_scope_report",
                 schema: "mes", table: "operation_actual_time_settlement_reports",
                 columns: new[] { "organization_id", "environment_id", "report_no" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_operation_actual_time_settlement_reports_settlement_scope",
+                schema: "mes", table: "operation_actual_time_settlement_reports",
+                columns: new[] { "settlement_id", "organization_id", "environment_id" });
 
             migrationBuilder.CreateIndex(
                 name: "ux_operation_actual_time_settlement_reports_settlement_report",

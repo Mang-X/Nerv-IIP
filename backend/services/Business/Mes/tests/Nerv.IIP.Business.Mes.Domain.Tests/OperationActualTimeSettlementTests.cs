@@ -39,6 +39,7 @@ public sealed class OperationActualTimeSettlementTests
 
         Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
         Assert.Equal(1, task.ActualTimeSettlementRevision);
+        Assert.Equal(voidedAtUtc, task.ExistingStartUtc);
         Assert.Equal(0, task.LaborTimeTicks);
         Assert.Equal(0, task.MachineTimeTicks);
         var voided = Assert.Single(task.GetDomainEvents().OfType<OperationActualTimeSettlementVoidedDomainEvent>());
@@ -64,6 +65,8 @@ public sealed class OperationActualTimeSettlementTests
         Assert.Equal(2, task.ActualTimeSettlementRevision);
         var settled = Assert.Single(task.GetDomainEvents().OfType<OperationActualTimeSettledDomainEvent>());
         Assert.Equal(2, settled.Settlement.SettlementRevision);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settled.Settlement.ActualLaborTicks);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settled.Settlement.ActualMachineTicks);
         Assert.Equal(["PR-001", "PR-002", "PR-REV-001"], settled.Settlement.CoveredProductionReportNos);
     }
 

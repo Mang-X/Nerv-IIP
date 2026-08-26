@@ -83,7 +83,7 @@ public sealed class OperationActualTimeSettlementCommandTests
     }
 
     [Fact]
-    public async Task Workbench_completion_without_a_governed_report_fails_closed()
+    public async Task Workbench_completion_without_reports_freezes_an_authoritative_empty_snapshot()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -100,14 +100,14 @@ public sealed class OperationActualTimeSettlementCommandTests
         await dbContext.SaveChangesAsync();
         task.ClearDomainEvents();
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
-                new ChangeOperationTaskStateCommand(
-                    "org-001", "env-dev", "OP-001", "complete", startedAtUtc.AddHours(1)),
-                CancellationToken.None));
+        await new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
+            new ChangeOperationTaskStateCommand(
+                "org-001", "env-dev", "OP-001", "complete", startedAtUtc.AddHours(1)),
+            CancellationToken.None);
 
-        Assert.Contains("requires at least one governed production report", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
-        Assert.Empty(task.GetDomainEvents().OfType<OperationActualTimeSettledDomainEvent>());
+        Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
+        var settled = Assert.Single(task.GetDomainEvents().OfType<OperationActualTimeSettledDomainEvent>());
+        Assert.Empty(settled.Settlement.CoveredProductionReportNos);
+        Assert.Empty(Assert.Single(dbContext.OperationActualTimeSettlements.Local).CoveredReports);
     }
 }
