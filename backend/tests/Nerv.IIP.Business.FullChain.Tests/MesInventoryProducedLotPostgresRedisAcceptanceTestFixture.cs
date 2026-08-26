@@ -661,9 +661,9 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? PendingAuthorityReason,
         long InventoryDeadLetterCount);
 
-    private sealed record EventMessageFact(long PublishedCount, long ReceivedCount);
+    internal sealed record EventMessageFact(long PublishedCount, long ReceivedCount);
 
-    private sealed record CapReceivedEventFact(
+    internal sealed record CapReceivedEventFact(
         string EventId,
         long RowId,
         string? Name,

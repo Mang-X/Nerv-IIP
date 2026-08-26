@@ -5,7 +5,7 @@ using StackExchange.Redis;
 
 namespace Nerv.IIP.Business.FullChain.Tests;
 
-public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
+public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTestTransportContractTests
 {
     [Fact]
     public void Cap_transport_evidence_parses_official_pg_envelope_and_redis_body_shapes()
@@ -22,14 +22,14 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
             Value = payloadDocument.RootElement,
         });
-        Assert.True(ContentMatchesEvent(
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.ContentMatchesEvent(
             capContent,
             eventId,
             idempotencyKey,
             topic,
             eventType,
             tableName: topic));
-        Assert.False(ContentMatchesEvent(
+        Assert.False(MesInventoryProducedLotPostgresRedisAcceptanceTests.ContentMatchesEvent(
             capContent,
             eventId,
             idempotencyKey,
@@ -42,7 +42,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
             Value = payload,
         });
-        Assert.True(ContentMatchesEvent(
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.ContentMatchesEvent(
             capStringValue,
             eventId,
             idempotencyKey,
@@ -55,7 +55,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
             Value = JsonSerializer.Serialize(Encoding.UTF8.GetBytes(payload)),
         });
-        Assert.True(ContentMatchesEvent(
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.ContentMatchesEvent(
             capBase64Value,
             eventId,
             idempotencyKey,
@@ -63,7 +63,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             eventType,
             tableName: topic));
 
-        Assert.True(ContentMatchesEvent(
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.ContentMatchesEvent(
             JsonSerializer.Serialize(capContent),
             eventId,
             idempotencyKey,
@@ -85,11 +85,11 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 new NameValueEntry("body", redisBase64Body),
             ]);
 
-        Assert.Equal(payload, RedisValueToUtf8(redisBase64Body));
-        Assert.Equal(payload, RedisValueToUtf8(redisArrayBody));
-        Assert.Equal(payload, RedisValueToUtf8(payload));
-        Assert.True(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, topic, eventType));
-        Assert.False(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, "OtherTopic", eventType));
+        Assert.Equal(payload, MesInventoryProducedLotPostgresRedisAcceptanceTests.RedisValueToUtf8(redisBase64Body));
+        Assert.Equal(payload, MesInventoryProducedLotPostgresRedisAcceptanceTests.RedisValueToUtf8(redisArrayBody));
+        Assert.Equal(payload, MesInventoryProducedLotPostgresRedisAcceptanceTests.RedisValueToUtf8(payload));
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, topic, eventType));
+        Assert.False(MesInventoryProducedLotPostgresRedisAcceptanceTests.RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, "OtherTopic", eventType));
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             new Dictionary<string, string?> { ["cap-msg-name"] = topic },
             integrationEvent));
 
-        Assert.True(ContentMatchesEvent(capContent, eventId, idempotencyKey, topic, eventType, topic));
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.ContentMatchesEvent(capContent, eventId, idempotencyKey, topic, eventType, topic));
     }
 
     [Fact]
@@ -141,17 +141,53 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
     {
         const string eventId = "evt-pending-cap-row";
         const string group = "business-inventory.movement-requested.v1";
-        var observed = new Dictionary<string, CapReceivedEventFact>(StringComparer.Ordinal);
+        var observed = new Dictionary<string, MesInventoryProducedLotPostgresRedisAcceptanceTests.CapReceivedEventFact>(StringComparer.Ordinal);
 
-        Assert.False(CaptureObservedPendingCapReceivedFact(
-            new CapReceivedEventFact(eventId, 1L, nameof(InventoryMovementRequestedIntegrationEvent), group, "Scheduled", 0),
+        Assert.False(MesInventoryProducedLotPostgresRedisAcceptanceTests.CaptureObservedPendingCapReceivedFact(
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.CapReceivedEventFact(eventId, 1L, nameof(InventoryMovementRequestedIntegrationEvent), group, "Scheduled", 0),
             eventId,
             group,
             observed));
-        Assert.True(CaptureObservedPendingCapReceivedFact(
-            new CapReceivedEventFact(eventId, 1L, nameof(InventoryMovementRequestedIntegrationEvent), group, "Failed", 2),
+        Assert.True(MesInventoryProducedLotPostgresRedisAcceptanceTests.CaptureObservedPendingCapReceivedFact(
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.CapReceivedEventFact(eventId, 1L, nameof(InventoryMovementRequestedIntegrationEvent), group, "Failed", 2),
             eventId,
             group,
             observed));
+    }
+
+    [Fact]
+    public void Final_transport_evidence_rejects_duplicate_or_missing_delivery_counts()
+    {
+        var exact = new Dictionary<string, MesInventoryProducedLotPostgresRedisAcceptanceTests.EventMessageFact>(StringComparer.Ordinal)
+        {
+            ["evt-exact"] = new(1L, 1L),
+        };
+        MesInventoryProducedLotPostgresRedisAcceptanceTests.AssertEventTransport(exact, "evt-exact");
+
+        var duplicatePublished = new Dictionary<string, MesInventoryProducedLotPostgresRedisAcceptanceTests.EventMessageFact>(StringComparer.Ordinal)
+        {
+            ["evt-exact"] = new(2L, 1L),
+        };
+        Assert.ThrowsAny<Exception>(() => MesInventoryProducedLotPostgresRedisAcceptanceTests.AssertEventTransport(duplicatePublished, "evt-exact"));
+
+        var missingReceived = new Dictionary<string, MesInventoryProducedLotPostgresRedisAcceptanceTests.EventMessageFact>(StringComparer.Ordinal)
+        {
+            ["evt-exact"] = new(1L, 0L),
+        };
+        Assert.ThrowsAny<Exception>(() => MesInventoryProducedLotPostgresRedisAcceptanceTests.AssertEventTransport(missingReceived, "evt-exact"));
+    }
+
+    [Fact]
+    public void Received_snapshot_counts_distinct_cap_row_ids()
+    {
+        var rows = new Dictionary<long, byte>
+        {
+            [101L] = 0,
+            [102L] = 0,
+        };
+
+        Assert.Equal(2L, MesInventoryProducedLotPostgresRedisAcceptanceTests.InventoryReceivedMessageSnapshot.CountReceivedRows(rows));
+        rows[101L] = 0;
+        Assert.Equal(2L, MesInventoryProducedLotPostgresRedisAcceptanceTests.InventoryReceivedMessageSnapshot.CountReceivedRows(rows));
     }
 }

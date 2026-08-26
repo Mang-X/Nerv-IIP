@@ -29,42 +29,6 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 
 public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 {
-    [Fact]
-    public void Final_transport_evidence_rejects_duplicate_or_missing_delivery_counts()
-    {
-        var exact = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
-        {
-            ["evt-exact"] = new(1L, 1L),
-        };
-        AssertEventTransport(exact, "evt-exact");
-
-        var duplicatePublished = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
-        {
-            ["evt-exact"] = new(2L, 1L),
-        };
-        Assert.ThrowsAny<Exception>(() => AssertEventTransport(duplicatePublished, "evt-exact"));
-
-        var missingReceived = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal)
-        {
-            ["evt-exact"] = new(1L, 0L),
-        };
-        Assert.ThrowsAny<Exception>(() => AssertEventTransport(missingReceived, "evt-exact"));
-    }
-
-    [Fact]
-    public void Received_snapshot_counts_distinct_cap_row_ids()
-    {
-        var rows = new Dictionary<long, byte>
-        {
-            [101L] = 0,
-            [102L] = 0,
-        };
-
-        Assert.Equal(2L, InventoryReceivedMessageSnapshot.CountReceivedRows(rows));
-        rows[101L] = 0;
-        Assert.Equal(2L, InventoryReceivedMessageSnapshot.CountReceivedRows(rows));
-    }
-
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
         string inventoryConnectionString,
         string redisConnectionString,
@@ -190,7 +154,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return observedFacts.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(requiredEventIds);
     }
 
-    private static bool CaptureObservedPendingCapReceivedFact(
+    internal static bool CaptureObservedPendingCapReceivedFact(
         CapReceivedEventFact? pendingFact,
         string expectedEventId,
         string expectedGroup,
@@ -209,7 +173,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return observedFacts.ContainsKey(expectedEventId);
     }
 
-    private static void AssertEventTransport(
+    internal static void AssertEventTransport(
         IReadOnlyDictionary<string, EventMessageFact> eventFacts,
         string eventId)
     {
@@ -218,7 +182,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.Equal(1L, eventFact.ReceivedCount);
     }
 
-    private sealed class InventoryReceivedMessageSnapshot : IAsyncDisposable
+    internal sealed class InventoryReceivedMessageSnapshot : IAsyncDisposable
     {
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(10);
 
@@ -446,7 +410,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return new PendingRedisFact(streamName, consumerGroup, false, null, null, null, null, 0);
     }
 
-    private static bool ContentMatchesEvent(
+    internal static bool ContentMatchesEvent(
         string content,
         string eventId,
         string idempotencyKey,
@@ -509,7 +473,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
     }
 
-    private static bool RedisStreamEntryMatchesEvent(
+    internal static bool RedisStreamEntryMatchesEvent(
         StreamEntry entry,
         string eventId,
         string idempotencyKey,
@@ -555,7 +519,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
     }
 
-    private static string RedisValueToUtf8(RedisValue value)
+    internal static string RedisValueToUtf8(RedisValue value)
     {
         var bytes = (byte[]?)value;
         if (bytes is null)
