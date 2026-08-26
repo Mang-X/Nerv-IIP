@@ -13,6 +13,25 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Business_gateway_error_response_code_supports_numeric_success_and_semantic_failure_values()
+    {
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
+        using var document = JsonDocument.Parse(json);
+        var responseData = FindSchemaBySuffix(document, "NetCorePalExtensionsDtoResponseData");
+        var code = responseData.GetProperty("properties").GetProperty("code");
+
+        Assert.False(code.TryGetProperty("type", out _));
+        var variants = code.GetProperty("oneOf").EnumerateArray().ToArray();
+        var integer = Assert.Single(
+            variants,
+            item => item.GetProperty("type").GetString() == "integer");
+        Assert.Equal("int32", integer.GetProperty("format").GetString());
+        Assert.Single(
+            variants,
+            item => item.GetProperty("type").GetString() == "string");
+    }
+
+    [Fact]
     public async Task Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids()
     {
         var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();

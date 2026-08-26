@@ -266,6 +266,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     detailError: ref(null),
     detailPending: ref(false),
     filters: reactive({ workOrderId: '' }),
+    workOrderManageScope: ref(undefined),
+    workOrderReadScope: ref(undefined),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
@@ -309,6 +311,21 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
+    workOrderManageScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopePending: ref(false),
+    workOrderManageScopeReady: ref(true),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 

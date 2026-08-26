@@ -130,6 +130,147 @@ public sealed class MesSchemaConventionTests
             originalRequestForeignKey.PrincipalKey.Properties.Select(x => x.Name).ToArray());
     }
 
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and the MES database schema catalog; provider behavior is covered separately on PostgreSQL.
+    [Fact]
+    public void Material_substitute_snapshot_and_issue_audit_columns_are_explicit()
+    {
+        using var fixture = CreateFixture();
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var requirement = model.FindEntityType(typeof(MaterialRequirement))!;
+        var issue = model.FindEntityType(typeof(MaterialIssueRequest))!;
+
+        var substituteCandidates = requirement.FindProperty(nameof(MaterialRequirement.SubstituteMaterialIdsJson))!;
+        Assert.Equal("substitute_material_ids_json", substituteCandidates.GetColumnName());
+        Assert.False(substituteCandidates.IsNullable);
+        Assert.Null(substituteCandidates.GetMaxLength());
+        Assert.Equal("text", substituteCandidates.GetColumnType());
+        Assert.Equal("[]", substituteCandidates.GetDefaultValue());
+        Assert.Null(substituteCandidates.GetDefaultValueSql());
+        var issueAudit = issue.FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId))!;
+        Assert.Equal("substituted_material_id", issueAudit.GetColumnName());
+        Assert.True(issueAudit.IsNullable);
+        Assert.Equal(100, issueAudit.GetMaxLength());
+        Assert.Equal("character varying(100)", issueAudit.GetColumnType());
+        Assert.Null(issueAudit.GetDefaultValue());
+        Assert.Null(issueAudit.GetDefaultValueSql());
+    }
+
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and the MES database schema catalog;
+    // the migration operation must match the approved nullable, bounded PostgreSQL audit column without a default.
+    [Fact]
+    public void Material_substitute_foundation_migration_preserves_issue_audit_column_facets()
+    {
+        var migration = new AddMesMaterialSubstituteSnapshotFoundation();
+        var upBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [upBuilder]);
+
+        var issueAudit = Assert.Single(
+            upBuilder.Operations.OfType<AddColumnOperation>(),
+            x => x.Name == "substituted_material_id");
+        Assert.Equal(MesFacts.Schema, issueAudit.Schema);
+        Assert.Equal("material_issue_requests", issueAudit.Table);
+        Assert.Equal(typeof(string), issueAudit.ClrType);
+        Assert.Equal("character varying(100)", issueAudit.ColumnType);
+        Assert.Equal(100, issueAudit.MaxLength);
+        Assert.True(issueAudit.IsNullable);
+        Assert.Null(issueAudit.DefaultValue);
+        Assert.Null(issueAudit.DefaultValueSql);
+    }
+
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and the MES database schema catalog;
+    // the migration operation must match the approved required, unbounded PostgreSQL text snapshot with an empty-array default.
+    [Fact]
+    public void Material_substitute_foundation_migration_preserves_candidate_snapshot_column_facets()
+    {
+        var migration = new AddMesMaterialSubstituteSnapshotFoundation();
+        var upBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [upBuilder]);
+
+        var substituteCandidates = Assert.Single(
+            upBuilder.Operations.OfType<AddColumnOperation>(),
+            x => x.Name == "substitute_material_ids_json");
+        Assert.Equal(MesFacts.Schema, substituteCandidates.Schema);
+        Assert.Equal("material_requirements", substituteCandidates.Table);
+        Assert.Equal(typeof(string), substituteCandidates.ClrType);
+        Assert.Equal("text", substituteCandidates.ColumnType);
+        Assert.Null(substituteCandidates.MaxLength);
+        Assert.False(substituteCandidates.IsNullable);
+        Assert.Equal("[]", substituteCandidates.DefaultValue);
+        Assert.Null(substituteCandidates.DefaultValueSql);
+    }
+
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
+    // the migration must update the approved Released AutoRebind provenance comment and restore the prior contract on rollback.
+    [Fact]
+    public void Material_substitute_foundation_migration_updates_snapshot_provenance_comment_symmetrically()
+    {
+        const string originalComment =
+            "Production version id whose material requirement snapshot outcome was proved; it must match the current work order version.";
+        const string releasedRebindComment =
+            "Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.";
+        var migration = new AddMesMaterialSubstituteSnapshotFoundation();
+
+        var upBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [upBuilder]);
+
+        var upgradedComment = Assert.Single(upBuilder.Operations.OfType<AlterColumnOperation>());
+        Assert.Equal(MesFacts.Schema, upgradedComment.Schema);
+        Assert.Equal("work_orders", upgradedComment.Table);
+        Assert.Equal("material_requirement_snapshot_production_version_id", upgradedComment.Name);
+        Assert.Equal(releasedRebindComment, upgradedComment.Comment);
+        Assert.Equal(originalComment, upgradedComment.OldColumn.Comment);
+
+        var downBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesMaterialSubstituteSnapshotFoundation)
+            .GetMethod("Down", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [downBuilder]);
+
+        var restoredComment = Assert.Single(downBuilder.Operations.OfType<AlterColumnOperation>());
+        Assert.Equal(originalComment, restoredComment.Comment);
+        Assert.Equal(releasedRebindComment, restoredComment.OldColumn.Comment);
+    }
+
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
+    // the generated migration must follow existing MES migrations and carry the configuration-complete target model.
+    [Fact]
+    public void Material_substitute_foundation_migration_is_latest_and_targets_the_complete_mes_model()
+    {
+        const string releasedRebindComment =
+            "Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.";
+        var foundationMigration = new AddMesMaterialSubstituteSnapshotFoundation();
+        var foundationId = GetMigrationId(typeof(AddMesMaterialSubstituteSnapshotFoundation));
+
+        Assert.True(
+            string.CompareOrdinal(foundationId, GetMigrationId(typeof(AddMesCollaborativeLaborAllocation))) > 0,
+            $"{foundationId} must sort after the collaborative labor migration.");
+        Assert.True(
+            string.CompareOrdinal(foundationId, GetMigrationId(typeof(AddMesOperationTaskRequiredSkillSnapshot))) > 0,
+            $"{foundationId} must sort after the required-skill migration.");
+
+        var targetModel = foundationMigration.TargetModel;
+        Assert.NotNull(targetModel.FindEntityType(typeof(MaterialRequirement))!
+            .FindProperty(nameof(MaterialRequirement.SubstituteMaterialIdsJson)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(MaterialIssueRequest))!
+            .FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(OperationTask))!
+            .FindProperty(nameof(OperationTask.RequiredSkillCode)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(OperationTaskParticipant)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(ProductionReportLaborAllocation)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(WorkOrderTransformation)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(WorkOrderTransformationLine)));
+        Assert.Equal(
+            releasedRebindComment,
+            targetModel.FindEntityType(typeof(WorkOrder))!
+                .FindProperty(nameof(WorkOrder.MaterialRequirementSnapshotProductionVersionId))!
+                .GetComment());
+    }
+
     [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {
@@ -171,6 +312,7 @@ public sealed class MesSchemaConventionTests
             [
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AssignmentsJson)),
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AffectedWorkOrderIdsJson)),
+                new JsonColumnRule(typeof(MaterialRequirement), nameof(MaterialRequirement.SubstituteMaterialIdsJson)),
             ]));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MesFacts.ServiceName, MesFacts.Schema));
         failures.AddRange(ForeignKeysAreConfigured(fixture.DbContext));
@@ -467,5 +609,10 @@ public sealed class MesSchemaConventionTests
             scope.Dispose();
             serviceProvider.Dispose();
         }
+    }
+
+    private static string GetMigrationId(Type migrationType)
+    {
+        return ((MigrationAttribute)Attribute.GetCustomAttribute(migrationType, typeof(MigrationAttribute))!).Id;
     }
 }

@@ -138,6 +138,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string WorkOrderId { get; private set; } = string.Empty;
     public string? OperationTaskId { get; private set; }
     public string MaterialId { get; private set; } = string.Empty;
+    public string? SubstitutedMaterialId { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
     public bool IsSupplementary { get; private set; }
     public string? OriginalMaterialIssueRequestNo { get; private set; }

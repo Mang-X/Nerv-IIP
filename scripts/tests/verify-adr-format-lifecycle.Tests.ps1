@@ -186,8 +186,21 @@ try {
     $baselineRoot = Join-Path $temporaryRoot 'baseline'
     [IO.Directory]::CreateDirectory($baselineRoot) | Out-Null
     [IO.File]::WriteAllText((Join-Path $baselineRoot '0001-baseline.md'), $baselineRecord, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $baselineRoot 'README.md'), "# ADR 导航`n`n本页仅用于导航。", [Text.UTF8Encoding]::new($false))
     $baseline = Invoke-Gate -AdrRoot $baselineRoot
     Assert-Contract ($baseline.ExitCode -eq 0) "基线夹具必须通过门禁，实际 exit $($baseline.ExitCode)：`n$($baseline.Output)"
+
+    # 回归：docs/adr/README.md 是导航入口而不是决策记录，只能排除这一确切文件名；其它
+    # Markdown 仍必须经过文件名和结构校验，不能把扫描范围收窄成只认 NNNN-kebab-case。
+    $malformedRoot = Join-Path $temporaryRoot 'malformed'
+    [IO.Directory]::CreateDirectory($malformedRoot) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $malformedRoot 'README.md'), "# ADR 导航`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $malformedRoot 'not-an-adr.md'), $baselineRecord, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $malformedRoot '0002-malformed.md'), "# ADR 0002：不完整记录`n", [Text.UTF8Encoding]::new($false))
+    $malformed = Invoke-Gate -AdrRoot $malformedRoot
+    Assert-Contract ($malformed.ExitCode -eq 1) "非 README 的 Markdown 和不完整 ADR 必须继续失败，实际 exit $($malformed.ExitCode)：`n$($malformed.Output)"
+    Assert-Contract ($malformed.Output.Contains('not-an-adr.md', [StringComparison]::Ordinal)) "非 README 的 Markdown 文件名必须继续进入 ADR 门禁：`n$($malformed.Output)"
+    Assert-Contract ($malformed.Output.Contains('0002-malformed.md', [StringComparison]::Ordinal)) "不完整 ADR 必须继续进入 ADR 门禁：`n$($malformed.Output)"
 
     $redCases = [System.Collections.Generic.List[object]]::new()
 

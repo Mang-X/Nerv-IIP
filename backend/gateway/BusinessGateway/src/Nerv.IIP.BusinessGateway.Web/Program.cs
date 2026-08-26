@@ -46,6 +46,7 @@ builder.Services
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new BusinessGatewayErrorResponseOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>

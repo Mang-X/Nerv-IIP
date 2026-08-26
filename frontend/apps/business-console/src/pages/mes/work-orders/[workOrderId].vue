@@ -14,8 +14,16 @@ import {
 import {
   describeMesReadinessReasons,
   makeIdempotencyKey,
+  useMesWorkOrderTransformations,
   useMesWorkOrderDetail,
+  type MesWorkOrderTransformationResult,
 } from '@/composables/useBusinessMes'
+import WorkOrderTransformationDialog, {
+  type MergeTransformationSubmit,
+  type SplitTransformationSubmit,
+  type WorkOrderTransformationState,
+} from '@/components/mes/WorkOrderTransformationDialog.vue'
+import { isTransformationConflict } from '@/composables/mes/workOrderTransformation'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,
@@ -119,9 +127,16 @@ const {
   recordEngineeringChangeDecisionPending,
   retryCancelPreview,
   workOrderManageScopeMessage,
+  workOrderManageScope,
   workOrderManageScopeReady,
+  workOrderReadScope,
   workOrderReadScopeMessage,
 } = useMesWorkOrderDetail()
+const workOrderTransformations = useMesWorkOrderTransformations({
+  filters,
+  readScope: workOrderReadScope,
+  manageScope: workOrderManageScope,
+})
 
 watch(
   () => (route.params as Record<string, string | string[] | undefined>).workOrderId,
@@ -177,6 +192,89 @@ const errorMessage = computed(
 
 // 工单头部四卡：状态与用料给「能不能开工」的结论，工序进度给「做到哪了」。
 const skuLabel = computed(() => resolveSkuLabel(detail.value?.skuId))
+const splitDialogOpen = ref(false)
+const splitState = ref<WorkOrderTransformationState>('idle')
+const splitError = ref('')
+const splitResult = ref<MesWorkOrderTransformationResult | null>(null)
+const splitIdempotencyKey = ref('')
+const splitSource = computed(() =>
+  detail.value?.workOrderId
+    ? {
+        workOrderId: detail.value.workOrderId,
+        label: workOrderLabel.value,
+        skuId: detail.value.skuId,
+        skuLabel: skuLabel.value,
+        productionVersionId: detail.value.productionVersionId,
+        quantity: detail.value.quantity,
+        // PR-C 当前详情读契约没有返回 UOM；拆分结果由服务端继承单位，页面不猜测。
+        uomCode: undefined,
+        status: detail.value.status,
+      }
+    : undefined,
+)
+const canTransformWorkOrder = computed(
+  () =>
+    workOrderManageScopeReady.value &&
+    Boolean(detail.value) &&
+    ['created', 'released'].includes((detail.value?.status ?? '').toLowerCase()),
+)
+const splitPending = computed(
+  () => workOrderTransformations.splitWorkOrderPending.value || splitState.value === 'loading',
+)
+
+function openSplitDialog() {
+  if (!canTransformWorkOrder.value) return
+  splitState.value = 'idle'
+  splitError.value = ''
+  splitResult.value = null
+  splitIdempotencyKey.value = makeIdempotencyKey(`split-work-order-${filters.workOrderId}`)
+  splitDialogOpen.value = true
+}
+
+async function submitSplit(payload: SplitTransformationSubmit | MergeTransformationSubmit) {
+  if (!('targets' in payload)) return
+  splitState.value = 'loading'
+  splitError.value = ''
+  try {
+    const result = await workOrderTransformations.splitWorkOrder(filters.workOrderId, payload)
+    splitResult.value = result
+    if (result.readback) {
+      splitState.value = 'success'
+      notifySuccess(`工单 ${workOrderLabel.value} 已拆分，结果已回读。`)
+      await refreshDetail()
+    } else {
+      splitState.value = 'accepted'
+      notifySuccess('拆分请求已受理，但结果暂未回读；请在本窗口重试回读。')
+    }
+  } catch (error) {
+    splitState.value = isTransformationConflict(error) ? 'conflict' : 'error'
+    splitError.value = inlineErrorMessage(error, '拆分工单失败，请刷新后重试。')
+    notifyOperationFailure('拆分工单失败', error, '拆分工单失败，请刷新后重试。')
+  }
+}
+
+async function retrySplitReadback() {
+  const current = splitResult.value
+  if (!current) return
+  splitState.value = 'loading'
+  try {
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
+    splitResult.value = { ...current, readback, readbackError: undefined }
+    splitState.value = 'success'
+    notifySuccess('拆分结果已回读。')
+    await refreshDetail()
+  } catch (error) {
+    splitResult.value = { ...current, readbackError: error }
+    splitState.value = 'accepted'
+    notifyOperationFailure(
+      '回读拆分结果失败',
+      error,
+      '拆分已受理，但结果暂不可用，请稍后重试回读。',
+    )
+  }
+}
 const completedTaskCount = computed(
   () =>
     operationTasks.value.filter((task) =>
@@ -800,6 +898,22 @@ function formatError(error: unknown) {
           记录工程变更决策
         </NvButton>
         <NvButton
+          v-if="workOrderManageScopeReady"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="!canTransformWorkOrder || splitPending"
+          :title="
+            canTransformWorkOrder
+              ? '将当前工单拆成多个新的子工单'
+              : '只有已创建或已下达状态的工单可以拆分'
+          "
+          data-testid="open-split-work-order"
+          @click="openSplitDialog"
+        >
+          拆分工单
+        </NvButton>
+        <NvButton
           v-if="canClose"
           size="sm"
           type="button"
@@ -899,6 +1013,19 @@ function formatError(error: unknown) {
       v-model:open="scheduleOpen"
       :work-order-id="detail?.workOrderId ?? filters.workOrderId"
       :context-label="`MES 工单 ${workOrderLabel}`"
+    />
+
+    <WorkOrderTransformationDialog
+      v-model:open="splitDialogOpen"
+      mode="split"
+      :state="splitState"
+      :pending="splitPending"
+      :source="splitSource"
+      :result="splitResult"
+      :error-message="splitError"
+      :idempotency-key="splitIdempotencyKey"
+      @submit="submitSplit"
+      @retry-readback="retrySplitReadback"
     />
 
     <!-- 作业范围未就绪：说明缺什么，并直接给选择入口，不让整页只剩一句拒载（#1288）。 -->

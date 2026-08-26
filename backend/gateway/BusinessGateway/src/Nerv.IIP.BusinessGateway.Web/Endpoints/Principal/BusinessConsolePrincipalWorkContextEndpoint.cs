@@ -114,8 +114,7 @@ public sealed class GetBusinessConsolePrincipalWorkContextEndpoint(
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
                 HttpContext,
-                (int)ex.StatusCode,
-                ex.Message,
+                ex,
                 ct);
         }
     }
