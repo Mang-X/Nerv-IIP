@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -166,6 +168,66 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     }
 
     [Fact]
+    public async Task Production_report_handler_propagates_the_activity_correlation_id_when_command_omits_it()
+    {
+        await using var services = MesTestProvider.CreateInMemoryProvider();
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-07-10T17:30:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-ACTIVITY-001",
+            "SKU-001",
+            "PV-001",
+            100m,
+            1,
+            now.AddHours(8)));
+        var task = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-ACTIVITY-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-01",
+            [],
+            now,
+            TimeSpan.FromHours(1),
+            now,
+            now.AddHours(1));
+        task.Assign(null, "DEV-01", "NIGHT", now.AddMinutes(-10), "user:dispatcher");
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var requests = new ReportingDimensionHandler();
+        using var httpClient = new HttpClient(requests)
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+        var handler = new RecordProductionReportCommandHandler(dbContext, provider);
+        using var activity = new Activity("mes-production-report-http-entry").Start();
+        activity.SetTag("correlationId", "corr-http-entry-001");
+
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-ACTIVITY-001",
+                "OP-10",
+                10m,
+                0m,
+                false,
+                now),
+            CancellationToken.None);
+
+        Assert.Equal(3, requests.Requests.Count);
+        Assert.All(requests.Requests, request =>
+            Assert.Equal("corr-http-entry-001", Assert.Single(request.Headers.GetValues("X-Correlation-Id"))));
+    }
+
+    [Fact]
     public async Task MasterData_provider_captures_shift_independently_when_device_lookup_fails()
     {
         using var httpClient = new HttpClient(new ShiftReleasesFailedDeviceHandler())
@@ -174,10 +236,13 @@ public sealed class MesOeeDimensionSnapshotProviderTests
         };
         var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
 
-        var snapshot = await provider.CaptureAsync(
+        var snapshot = await TestTimeout.RunAsync(
+            operation: "capture shift independently after device lookup failure",
+            action: token => new ValueTask<MesOeeDimensionSnapshot>(provider.CaptureAsync(
                 new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
-                CancellationToken.None)
-            .WaitAsync(TimeSpan.FromSeconds(2));
+                token)),
+            timeout: TimeSpan.FromSeconds(2),
+            cancellationToken: CancellationToken.None);
 
         Assert.Null(snapshot.SiteCode);
         Assert.Equal("NIGHT", snapshot.ShiftCode);
