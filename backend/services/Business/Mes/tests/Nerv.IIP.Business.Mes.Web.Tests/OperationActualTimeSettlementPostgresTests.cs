@@ -49,13 +49,22 @@ public sealed class OperationActualTimeSettlementPostgresTests
             content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal));
 
         Assert.Equal(1, task.ActualTimeSettlementRevision);
+        Assert.Equal("DEVICE-001", settlement.DeviceAssetId);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settlement.BillableMachineTicks);
+        Assert.Equal(MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, settlement.MachineTimeBasisCode);
         Assert.Equal(
             new[] { staged.ReportNo, completing.ReportNo }.Order(StringComparer.Ordinal),
             settlement.CoveredReports.Select(x => x.ReportNo).Order(StringComparer.Ordinal));
         Assert.Null(settlement.VoidedAtUtc);
         Assert.Contains("\"SettlementRevision\":1", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"EventVersion\":2", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"DeviceAssetId\":\"DEVICE-001\"", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"MachineTimeStatus\":\"available\"", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"BillableMachineTicks\":36000000000", settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(staged.ReportNo, settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, settlementOutbox, StringComparison.Ordinal);
+        await AssertMachineFactCheckRejectsIncompleteAvailableRowAsync(settlement.Id.Id);
     }
 
     [MesRealPostgresFact]
@@ -91,9 +100,14 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal(0, task.LaborTimeTicks);
         Assert.Equal(0, task.MachineTimeTicks);
         Assert.Equal(At(70), settlement.VoidedAtUtc);
+        Assert.Equal("DEVICE-001", settlement.DeviceAssetId);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settlement.BillableMachineTicks);
         Assert.Equal([completing.ReportNo], settlement.CoveredReports.Select(x => x.ReportNo));
         Assert.Contains("\"SettlementRevision\":1", voidOutbox, StringComparison.Ordinal);
         Assert.Contains("\"ActualLaborTicks\":36000000000", voidOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"DeviceAssetId\":\"DEVICE-001\"", voidOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"BillableMachineTicks\":36000000000", voidOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, voidOutbox, StringComparison.Ordinal);
     }
 
@@ -374,6 +388,23 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal(expectedConstraintName, exception.ConstraintName);
     }
 
+    private static async Task AssertMachineFactCheckRejectsIncompleteAvailableRowAsync(Guid settlementId)
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE mes.operation_actual_time_settlements
+            SET billable_machine_ticks = NULL
+            WHERE id = @id
+            """;
+        command.Parameters.AddWithValue("id", settlementId);
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+        Assert.Equal("ck_operation_actual_time_settlements_machine_fact", exception.ConstraintName);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory()
     {
         var settings = new Dictionary<string, string?>
@@ -420,11 +451,15 @@ public sealed class OperationActualTimeSettlementPostgresTests
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1,
             At(480));
 
-    private static OperationTask CreateRunningTask() =>
-        OperationTask.Create(
+    private static OperationTask CreateRunningTask()
+    {
+        var task = OperationTask.Queue(
             "org-001", "env-dev", "WO-001", "OP-001",
-            OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], At(0),
-            TimeSpan.FromHours(1), At(0), null);
+            10, "WC-001", [], At(0), TimeSpan.FromHours(1));
+        task.Assign("operator-001", "DEVICE-001", "SHIFT-1", At(-5));
+        task.Start(At(0));
+        return task;
+    }
 
     private static ApplicationDbContext CreateContext(DbContextOptions<ApplicationDbContext> options) =>
         new(options, new NoopMediator());

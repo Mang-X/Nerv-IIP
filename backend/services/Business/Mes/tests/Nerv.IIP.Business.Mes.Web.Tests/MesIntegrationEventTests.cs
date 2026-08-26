@@ -28,7 +28,9 @@ public sealed class MesIntegrationEventTests
         var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
         var settlement = new OperationActualTimeSettlementSnapshot(
             "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
-            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"]);
+            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"],
+            "DEVICE-001", MachineTimeFactStatus.Available, 36_000_000_000,
+            MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
         var integrationEvent = new OperationActualTimeSettledIntegrationEventConverter(
                 new StubMesIntegrationEventContextAccessor(
@@ -36,13 +38,17 @@ public sealed class MesIntegrationEventTests
             .Convert(new OperationActualTimeSettledDomainEvent(settlement));
 
         Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettled, integrationEvent.EventType);
-        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
         Assert.Equal("corr-settled", integrationEvent.CorrelationId);
         Assert.Equal("cause-report-completed", integrationEvent.CausationId);
         Assert.Equal("mes:operation-actual-time-settled:org-001:env-dev:OP-001:2", integrationEvent.IdempotencyKey);
         Assert.Equal(2, integrationEvent.Payload.SettlementRevision);
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
         Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
+        Assert.Equal("DEVICE-001", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal(MesMachineTimeFactStatusCodes.Available, integrationEvent.Payload.MachineTimeStatus);
+        Assert.Equal(36_000_000_000, integrationEvent.Payload.BillableMachineTicks);
+        Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, integrationEvent.Payload.MachineTimeBasisCode);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }
 
@@ -53,7 +59,9 @@ public sealed class MesIntegrationEventTests
         var voidedAtUtc = completedAtUtc.AddMinutes(10);
         var settlement = new OperationActualTimeSettlementSnapshot(
             "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
-            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"]);
+            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"],
+            "DEVICE-001", MachineTimeFactStatus.Available, 36_000_000_000,
+            MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
         var integrationEvent = new OperationActualTimeSettlementVoidedIntegrationEventConverter(
                 new StubMesIntegrationEventContextAccessor(
@@ -69,6 +77,11 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(voidedAtUtc, integrationEvent.Payload.VoidedAtUtc);
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
         Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
+        Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
+        Assert.Equal("DEVICE-001", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal(MesMachineTimeFactStatusCodes.Available, integrationEvent.Payload.MachineTimeStatus);
+        Assert.Equal(36_000_000_000, integrationEvent.Payload.BillableMachineTicks);
+        Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, integrationEvent.Payload.MachineTimeBasisCode);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }
 

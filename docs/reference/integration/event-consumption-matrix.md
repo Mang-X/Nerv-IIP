@@ -86,6 +86,8 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally` |
 | MES | `MesOperationActualTimeSettledIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `MesOperationActualTimeSettlementVoidedIntegrationEvent` | MES | ERP | `consumed-internally` |
+
+MES 工序工时结算事件按 ADR 0011 并行发布：上述 V1 契约继续供当前 ERP 消费；独立的 `MesOperationActualTimeSettledV2IntegrationEvent` 与 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` topic 携带冻结机器工时事实，当前无仓库内消费者。V2 的 `available` 可携带真实零值，且当前唯一 basis 为 `single-device-active-minus-explicit-pause-v1`；无设备或执行中设备变化为 `unavailable` 且不写零，`notApplicable` 仅来自显式业务判定。V1 在 ERP 完成升级且 replay/DLQ 处置完成前不得退役；本项不扩展 ERP 费率或机器成本。
 | MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `MesOperationTaskManualDispatchClearedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `ProductionReportRecordedIntegrationEvent` | MES | IndustrialTelemetry、ERP、Quality | `consumed-internally` |

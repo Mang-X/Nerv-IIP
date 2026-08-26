@@ -274,7 +274,7 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
         return new MesOperationActualTimeSettledIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationActualTimeSettled,
-            MesIntegrationEventVersions.V1,
+            MesIntegrationEventVersions.V2,
             settlement.CompletedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             context.CorrelationId,
@@ -291,8 +291,20 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
                 settlement.CompletedAtUtc,
                 settlement.ActualLaborTicks,
                 settlement.ActualMachineTicks,
-                settlement.CoveredProductionReportNos));
+                settlement.CoveredProductionReportNos,
+                settlement.DeviceAssetId,
+                ToMachineTimeStatusCode(settlement.MachineTimeStatus),
+                settlement.BillableMachineTicks,
+                settlement.MachineTimeBasisCode));
     }
+
+    private static string ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
+    {
+        MachineTimeFactStatus.Available => MesMachineTimeFactStatusCodes.Available,
+        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatusCodes.NotApplicable,
+        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatusCodes.Unavailable,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported machine-time fact status."),
+    };
 }
 
 public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter(
@@ -313,7 +325,7 @@ public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter
         return new MesOperationActualTimeSettlementVoidedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
-            MesIntegrationEventVersions.V1,
+            MesIntegrationEventVersions.V2,
             domainEvent.VoidedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             context.CorrelationId,
@@ -331,8 +343,20 @@ public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter
                 domainEvent.VoidedAtUtc,
                 settlement.ActualLaborTicks,
                 settlement.ActualMachineTicks,
-                settlement.CoveredProductionReportNos));
+                settlement.CoveredProductionReportNos,
+                settlement.DeviceAssetId,
+                ToMachineTimeStatusCode(settlement.MachineTimeStatus),
+                settlement.BillableMachineTicks,
+                settlement.MachineTimeBasisCode));
     }
+
+    private static string ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
+    {
+        MachineTimeFactStatus.Available => MesMachineTimeFactStatusCodes.Available,
+        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatusCodes.NotApplicable,
+        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatusCodes.Unavailable,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported machine-time fact status."),
+    };
 }
 
 public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter

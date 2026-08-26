@@ -27,6 +27,19 @@ public static class MesSourceDocumentTypes
 public static class MesIntegrationEventVersions
 {
     public const int V1 = 1;
+    public const int V2 = 2;
+}
+
+public static class MesMachineTimeFactStatusCodes
+{
+    public const string Available = "available";
+    public const string NotApplicable = "notApplicable";
+    public const string Unavailable = "unavailable";
+}
+
+public static class MesMachineTimeBasisCodes
+{
+    public const string SingleDeviceActiveMinusExplicitPauseV1 = "single-device-active-minus-explicit-pause-v1";
 }
 
 public static class MesIntegrationEventSources
@@ -208,7 +221,11 @@ public sealed record OperationActualTimeSettledPayload(
     DateTimeOffset CompletedAtUtc,
     long ActualLaborTicks,
     long ActualMachineTicks,
-    IReadOnlyCollection<string> CoveredProductionReportNos);
+    IReadOnlyCollection<string> CoveredProductionReportNos,
+    string? DeviceAssetId = null,
+    string? MachineTimeStatus = null,
+    long? BillableMachineTicks = null,
+    string? MachineTimeBasisCode = null);
 
 public sealed record MesOperationActualTimeSettlementVoidedIntegrationEvent(
     string EventId,
@@ -236,7 +253,11 @@ public sealed record OperationActualTimeSettlementVoidedPayload(
     DateTimeOffset VoidedAtUtc,
     long ActualLaborTicks,
     long ActualMachineTicks,
-    IReadOnlyCollection<string> CoveredProductionReportNos);
+    IReadOnlyCollection<string> CoveredProductionReportNos,
+    string? DeviceAssetId = null,
+    string? MachineTimeStatus = null,
+    long? BillableMachineTicks = null,
+    string? MachineTimeBasisCode = null);
 
 public sealed record MesOperationTaskManuallyDispatchedIntegrationEvent(
     string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
