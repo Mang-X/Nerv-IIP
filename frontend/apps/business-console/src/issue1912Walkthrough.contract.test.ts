@@ -16,6 +16,10 @@ import {
   selectAuthorizedWorkSiteScope,
   selectAuthorizedWorkScope,
 } from '../e2e/issue1912-walkthrough-runtime'
+import {
+  classifyRequestFailure,
+  RequestFailureEvidenceTracker,
+} from '../e2e/issue1912-walkthrough-policy'
 
 const scenarioSource = readFileSync(
   resolve(
@@ -273,6 +277,8 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('await expect(row).toContainText')
     expect(scenarioSource).toContain('emptyText')
     expect(scenarioSource).toContain('await targetPage.screenshot')
+    expect(scenarioSource).toContain('fillFilterAndWaitForListResponse')
+    expect(scenarioSource).toContain("'component-unmount'")
     expect(scenarioSource).toContain('failedRequests')
     expect(scenarioSource).toContain('classifyRequestFailure')
     expect(scenarioSource).toContain('expectedRequestCancellations')
@@ -586,5 +592,68 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
         3,
       ),
     ).toEqual({ called: false, reason: 'wms-worker-context-required' })
+  })
+
+  it('keeps an API abort as a failure without cancellation evidence', () => {
+    const result = classifyRequestFailure({
+      method: 'GET',
+      url: 'https://console.fixture/api/wms/inbound-orders',
+      failure: 'net::ERR_ABORTED',
+      resourceType: 'fetch',
+      isNavigationRequest: false,
+    })
+
+    expect(result.expected).toBe(false)
+    expect(result.record.classification).toBe('api-request-failure')
+  })
+
+  it('classifies an API abort only when a superseding lifecycle transition is evidenced', () => {
+    const tracker = new RequestFailureEvidenceTracker()
+    const request = {}
+    tracker.observeRequest(request, 'https://console.fixture/erp/purchase-orders')
+    const transition = tracker.beginTransition(
+      'component-unmount',
+      'https://console.fixture/erp/purchase-orders',
+    )
+    transition.complete()
+
+    const result = classifyRequestFailure({
+      method: 'GET',
+      url: 'https://console.fixture/api/wms/inbound-orders',
+      failure: 'net::ERR_ABORTED',
+      resourceType: 'fetch',
+      isNavigationRequest: false,
+      cancellationEvidence: tracker.cancellationEvidenceFor(request),
+    })
+
+    expect(result.expected).toBe(true)
+    expect(result.record.classification).toBe('expected-superseded-api-request')
+    expect(result.record.cancellationEvidence).toEqual({
+      kind: 'component-unmount',
+      requestStartedBeforeTransition: true,
+      transitionId: transition.id,
+    })
+
+    const requestStartedAfterTransition = {}
+    tracker.observeRequest(requestStartedAfterTransition, 'https://console.fixture/erp/purchase-orders')
+    expect(tracker.cancellationEvidenceFor(requestStartedAfterTransition)).toBeUndefined()
+  })
+
+  it('keeps a different API network failure fail-closed even with transition evidence', () => {
+    const result = classifyRequestFailure({
+      method: 'GET',
+      url: 'https://console.fixture/api/wms/inbound-orders',
+      failure: 'net::ERR_FAILED',
+      resourceType: 'fetch',
+      isNavigationRequest: false,
+      cancellationEvidence: {
+        kind: 'navigation',
+        requestStartedBeforeTransition: true,
+        transitionId: 1,
+      },
+    })
+
+    expect(result.expected).toBe(false)
+    expect(result.record.classification).toBe('api-request-failure')
   })
 })
