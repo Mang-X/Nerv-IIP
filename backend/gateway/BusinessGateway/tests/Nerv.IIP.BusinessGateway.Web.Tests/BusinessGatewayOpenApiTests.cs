@@ -917,6 +917,21 @@ public sealed class BusinessGatewayOpenApiTests
             "materialIssueRequestId",
             "workOrderId",
             "operationTaskId");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleMesMaterialScanPrevalidationResponse",
+            "decision",
+            "reasonCode",
+            "materialIssueRequestId",
+            "workOrderId",
+            "operationTaskId",
+            "evaluatedAtUtc");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleMesMaterialScanPrevalidationResponse",
+            "decision",
+            "accepted",
+            "rejected");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts", "post", "confirmBusinessConsoleMesLineSideMaterialReceipt");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns", "post", "returnBusinessConsoleMesLineSideMaterial");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");
@@ -1485,6 +1500,30 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal(values, actualValues);
     }
 
+    private static void AssertStringEnumProperty(
+        JsonDocument document,
+        string schemaNameSuffix,
+        string propertyName,
+        params string[] values)
+    {
+        var property = FindSchemaBySuffix(document, schemaNameSuffix)
+            .GetProperty("properties")
+            .GetProperty(propertyName);
+        var enumSchema = property.TryGetProperty("enum", out _)
+            ? property
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(property.GetProperty("$ref").GetString()!.Split('/').Last());
+        var actualValues = enumSchema.GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+
+        Assert.Equal("string", enumSchema.GetProperty("type").GetString());
+        Assert.Equal(values, actualValues);
+    }
+
     private static void AssertBusinessPartnerCreditFields(JsonDocument document)
     {
         var properties = FindSchemaBySuffix(document, "BusinessConsoleCreateBusinessPartnerRequest")
@@ -1870,7 +1909,7 @@ public sealed class BusinessGatewayOpenApiTests
             .EnumerateObject()
             .Where(schema =>
                 schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal) &&
-                !schema.Name.StartsWith("NetCorePalExtensionsDtoResponseDataOf", StringComparison.Ordinal))
+                !schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal))
             .ToArray();
 
         Assert.Single(schemas);

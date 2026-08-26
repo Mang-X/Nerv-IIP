@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
@@ -963,10 +964,8 @@ public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        correlationId = string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.CreateVersion7().ToString("N")
-            : correlationId.Trim();
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
         return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
     }
 }

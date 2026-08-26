@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 using Nerv.IIP.Testing;
 
@@ -30,7 +31,7 @@ public sealed class MesMaterialScanPrevalidationTests
 
         var response = await CreateHandler(db, qualification, inventory).Handle(Request(), CancellationToken.None);
 
-        Assert.Equal("accepted", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
         Assert.Equal("primary", response.MaterialQualification);
         Assert.Equal("LOT-001", response.MaterialLotId);
         Assert.Equal("LINE-01", inventory.LastRequest?.LocationCode);
@@ -54,7 +55,7 @@ public sealed class MesMaterialScanPrevalidationTests
             qualification,
             new StubAvailabilityProvider(new(true, false, true))).Handle(Request(), CancellationToken.None);
 
-        Assert.Equal("accepted", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
         Assert.Equal("substitute", response.MaterialQualification);
         Assert.Equal("PV-001", qualification.LastRequest?.ProductionVersionId);
         Assert.Equal("MAT-SUB", qualification.LastRequest?.MaterialId);
@@ -72,7 +73,24 @@ public sealed class MesMaterialScanPrevalidationTests
 
         var response = await CreateHandler(db, qualification, inventory).Handle(Request(), CancellationToken.None);
 
-        Assert.Equal("rejected", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal("line-side-receipt-incomplete", response.ReasonCode);
+        Assert.Equal(0, qualification.CallCount);
+        Assert.Equal(0, inventory.CallCount);
+    }
+
+    [Fact]
+    public async Task Partially_received_issue_rejects_before_external_sources_are_called()
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: true, completeReceipt: true, receivedQuantity: 1m);
+        await db.SaveChangesAsync();
+        var qualification = new StubQualificationProvider(true);
+        var inventory = new StubAvailabilityProvider(new(true, false, true));
+
+        var response = await CreateHandler(db, qualification, inventory).Handle(Request(), CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
         Assert.Equal("line-side-receipt-incomplete", response.ReasonCode);
         Assert.Equal(0, qualification.CallCount);
         Assert.Equal(0, inventory.CallCount);
@@ -90,7 +108,7 @@ public sealed class MesMaterialScanPrevalidationTests
             new StubQualificationProvider(false),
             new StubAvailabilityProvider(new(true, true, false))).Handle(Request(), CancellationToken.None);
 
-        Assert.Equal("rejected", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
         Assert.Equal("material-lot-expired", response.ReasonCode);
     }
 
@@ -106,7 +124,7 @@ public sealed class MesMaterialScanPrevalidationTests
             new StubQualificationProvider(false),
             new StubAvailabilityProvider(new(true, false, false))).Handle(Request(), CancellationToken.None);
 
-        Assert.Equal("rejected", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
         Assert.Equal("material-lot-blocked", response.ReasonCode);
     }
 
@@ -126,7 +144,7 @@ public sealed class MesMaterialScanPrevalidationTests
             new StubQualificationProvider(false),
             inventory).Handle(Request(), CancellationToken.None);
 
-        Assert.Equal("rejected", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
         Assert.Equal("material-not-required", response.ReasonCode);
         Assert.Equal(0, inventory.CallCount);
     }
@@ -150,6 +168,7 @@ public sealed class MesMaterialScanPrevalidationTests
                     siteCode = "SITE-01",
                     locationCode = "LINE-01",
                     lotNo = "LOT-001",
+                    onHandQuantity = 5m,
                     items = new[] { new { locationCode = "LINE-01", lotNo = "LOT-001", isExpired = false, movementAllowed = true, onHandQuantity = 5m } },
                 },
             }),
@@ -175,6 +194,64 @@ public sealed class MesMaterialScanPrevalidationTests
         var inventoryHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("{ malformed", System.Text.Encoding.UTF8, "application/json"),
+        });
+        var provider = CreateHttpProvider(new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)), inventoryHandler);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetAsync(
+            AvailabilityRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"onHandQuantity\":5}]}")]
+    [InlineData("{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true}]}")]
+    public async Task Inventory_provider_fails_closed_when_success_json_omits_authoritative_fact(string dataJson)
+    {
+        var inventoryHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{dataJson}}}",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        });
+        var provider = CreateHttpProvider(new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)), inventoryHandler);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetAsync(
+            AvailabilityRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inventory_provider_fails_closed_when_aggregate_on_hand_contradicts_line_facts()
+    {
+        var inventoryHandler = new RecordingHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                success = true,
+                message = "ok",
+                code = 200,
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "MAT-001",
+                    uomCode = "PCS",
+                    siteCode = "SITE-01",
+                    locationCode = "LINE-01",
+                    lotNo = "LOT-001",
+                    onHandQuantity = 0m,
+                    items = new[]
+                    {
+                        new { locationCode = "LINE-01", lotNo = "LOT-001", isExpired = false, movementAllowed = true, onHandQuantity = 5m },
+                    },
+                },
+            }),
         });
         var provider = CreateHttpProvider(new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)), inventoryHandler);
 
@@ -386,7 +463,8 @@ public sealed class MesMaterialScanPrevalidationTests
         ApplicationDbContext db,
         string materialId,
         bool includeRequirement,
-        bool completeReceipt)
+        bool completeReceipt,
+        decimal? receivedQuantity = null)
     {
         db.WorkOrders.Add(WorkOrder.Create(
             "org-001", "env-dev", "WO-001", "FG-001", "PV-001", 10m, 1, Now.AddDays(1), "PCS"));
@@ -407,8 +485,8 @@ public sealed class MesMaterialScanPrevalidationTests
             issue.ConfirmAndPostLineSideReceipt(
                 new MaterialTransferLocations(
                     "SITE-01", "WH-01", "SITE-01", "LINE-01",
-                    [new MaterialTransferAllocation("SITE-01", "WH-01", "LOT-001", 5m)]),
-                Now.AddMinutes(5), 5m, "LOT-001");
+                    [new MaterialTransferAllocation("SITE-01", "WH-01", "LOT-001", receivedQuantity ?? 5m)]),
+                Now.AddMinutes(5), receivedQuantity ?? 5m, "LOT-001");
         }
 
         db.MaterialIssueRequests.Add(issue);
@@ -505,7 +583,7 @@ public sealed class MesMaterialScanPrevalidationTests
             _ = request;
             LastCancellationToken = cancellationToken;
             Started.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
             throw new InvalidOperationException("The cancellation test must not complete normally.");
         }
     }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -23,7 +24,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None);
 
-        Assert.Equal("accepted", response.Decision);
+        Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
         Assert.Equal(HttpMethod.Post, handler.Method);
         Assert.Equal("/api/business/v1/mes/material-scan-prevalidation", handler.Path);
         Assert.Equal("Bearer", handler.AuthorizationScheme);
@@ -46,7 +47,40 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             parameter.ParameterType == typeof(string) && parameter.Name == "correlationId");
     }
 
-    private sealed class RecordingHandler : HttpMessageHandler
+    [Fact]
+    public void Client_contract_uses_the_shared_mes_wire_assembly_for_request_and_response()
+    {
+        var method = Assert.Single(typeof(IBusinessMesMaterialPrevalidationClient).GetMethods());
+
+        Assert.Equal("Nerv.IIP.Contracts.Mes", method.GetParameters()[2].ParameterType.Assembly.GetName().Name);
+        Assert.Equal(
+            "Nerv.IIP.Contracts.Mes",
+            Assert.Single(method.ReturnType.GenericTypeArguments).Assembly.GetName().Name);
+    }
+
+    [Theory]
+    [InlineData("{\"decision\":\"accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"unexpected\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    public async Task Client_rejects_success_response_with_missing_required_fact_or_unknown_decision(string json)
+    {
+        var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        });
+        var client = new HttpBusinessMesMaterialPrevalidationClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
+            "internal-token",
+            "corr-001",
+            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+                "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+            CancellationToken.None));
+    }
+
+    private sealed class RecordingHandler(Func<HttpResponseMessage>? responseFactory = null) : HttpMessageHandler
     {
         public HttpMethod? Method { get; private set; }
         public string Path { get; private set; } = string.Empty;
@@ -65,10 +99,10 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             AuthorizationParameter = request.Headers.Authorization?.Parameter ?? string.Empty;
             CorrelationId = request.Headers.GetValues("X-Correlation-Id").Single();
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return responseFactory?.Invoke() ?? new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(new BusinessConsoleMesMaterialScanPrevalidationResponse(
-                    "accepted", "material-scan-accepted", "MIR-001", "WO-001", "OP-10",
+                    MesMaterialScanDecision.Accepted, "material-scan-accepted", "MIR-001", "WO-001", "OP-10",
                     "MAT-001", "LOT-001", "primary", DateTimeOffset.Parse("2026-08-26T08:00:00Z"))),
             };
         }

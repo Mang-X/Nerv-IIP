@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json.Serialization;
+using System.Text.Json;
+using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -36,28 +36,37 @@ public sealed class HttpBusinessMesMaterialPrevalidationClient(HttpClient httpCl
                 "mes-material-scan-prevalidation-failed");
         }
 
-        return await response.Content.ReadFromJsonAsync<BusinessConsoleMesMaterialScanPrevalidationResponse>(
-            cancellationToken: cancellationToken)
-            ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+        try
+        {
+            var result = await response.Content.ReadFromJsonAsync<BusinessConsoleMesMaterialScanPrevalidationResponse>(
+                cancellationToken: cancellationToken)
+                ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "mes-material-scan-prevalidation-empty-response");
+            if (string.IsNullOrWhiteSpace(result.ReasonCode) ||
+                string.IsNullOrWhiteSpace(result.MaterialIssueRequestId) ||
+                string.IsNullOrWhiteSpace(result.WorkOrderId) ||
+                string.IsNullOrWhiteSpace(result.OperationTaskId) ||
+                result.EvaluatedAtUtc == default)
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "mes-material-scan-prevalidation-invalid-response");
+            }
+
+            return result;
+        }
+        catch (JsonException)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
-                "mes-material-scan-prevalidation-empty-response");
+                "mes-material-scan-prevalidation-invalid-response");
+        }
+        catch (NotSupportedException)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "mes-material-scan-prevalidation-invalid-response");
+        }
     }
 }
-
-public sealed record BusinessConsoleMesMaterialScanPrevalidationRequest(
-    [property: JsonRequired, Required] string OrganizationId,
-    [property: JsonRequired, Required] string EnvironmentId,
-    [property: JsonRequired, Required] string MaterialIssueRequestId,
-    [property: JsonRequired, Required] string WorkOrderId,
-    [property: JsonRequired, Required] string OperationTaskId);
-
-public sealed record BusinessConsoleMesMaterialScanPrevalidationResponse(
-    string Decision,
-    string ReasonCode,
-    string MaterialIssueRequestId,
-    string WorkOrderId,
-    string OperationTaskId,
-    string? MaterialId,
-    string? MaterialLotId,
-    string? MaterialQualification,
-    DateTimeOffset EvaluatedAtUtc);

@@ -14,6 +14,7 @@ using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 using ContractManufacturingBomListItem = Nerv.IIP.Contracts.ProductEngineering.ManufacturingBomListItem;
 using ContractStockAvailabilityResponse = Nerv.IIP.Contracts.Inventory.StockAvailabilityResponse;
+using MesMaterialScanPrevalidationResponse = Nerv.IIP.Contracts.Mes.BusinessConsoleMesMaterialScanPrevalidationResponse;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -34,27 +35,6 @@ public sealed class PrevalidateMaterialScanQueryValidator : AbstractValidator<Pr
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
     }
-}
-
-public sealed record MesMaterialScanPrevalidationResponse(
-    string Decision,
-    string ReasonCode,
-    string MaterialIssueRequestId,
-    string WorkOrderId,
-    string OperationTaskId,
-    string? MaterialId,
-    string? MaterialLotId,
-    string? MaterialQualification,
-    DateTimeOffset EvaluatedAtUtc)
-{
-    public static MesMaterialScanPrevalidationResponse Reject(
-        PrevalidateMaterialScanQuery request,
-        string reasonCode,
-        DateTimeOffset evaluatedAtUtc,
-        string? materialId = null,
-        string? materialLotId = null) =>
-        new(MesMaterialScanDecisions.Rejected, reasonCode, request.MaterialIssueRequestId, request.WorkOrderId,
-            request.OperationTaskId, materialId, materialLotId, null, evaluatedAtUtc);
 }
 
 public sealed record MesMaterialQualificationRequest(
@@ -107,18 +87,18 @@ public sealed class PrevalidateMaterialScanQueryHandler(
             x.RequestNo == request.MaterialIssueRequestId, cancellationToken);
         if (issue is null)
         {
-            return MesMaterialScanPrevalidationResponse.Reject(request, "material-issue-request-not-found", evaluatedAtUtc);
+            return Reject(request, "material-issue-request-not-found", evaluatedAtUtc);
         }
 
         if (!string.Equals(issue.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal))
         {
-            return MesMaterialScanPrevalidationResponse.Reject(
+            return Reject(
                 request, "work-order-mismatch", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
         if (!string.Equals(issue.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal))
         {
-            return MesMaterialScanPrevalidationResponse.Reject(
+            return Reject(
                 request, "operation-task-mismatch", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
@@ -133,16 +113,17 @@ public sealed class PrevalidateMaterialScanQueryHandler(
             x.OperationTaskIdValue == request.OperationTaskId, cancellationToken);
         if (workOrder is null || !operationExists)
         {
-            return MesMaterialScanPrevalidationResponse.Reject(
+            return Reject(
                 request, "mes-context-not-found", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
-        if (issue.ReceivedQuantity <= 0m ||
+        if (!string.Equals(issue.Status, MaterialIssueRequest.ReceivedStatus, StringComparison.Ordinal) ||
+            issue.ReceivedQuantity < issue.RequestedQuantity ||
             string.IsNullOrWhiteSpace(issue.MaterialLotId) ||
             string.IsNullOrWhiteSpace(issue.TargetSiteCode) ||
             string.IsNullOrWhiteSpace(issue.TargetLocationCode))
         {
-            return MesMaterialScanPrevalidationResponse.Reject(
+            return Reject(
                 request, "line-side-receipt-incomplete", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
@@ -171,7 +152,7 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                         issue.MaterialId),
                     cancellationToken))
             {
-                return MesMaterialScanPrevalidationResponse.Reject(
+                return Reject(
                     request, "material-not-required", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
             }
 
@@ -198,14 +179,23 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                     : null;
         if (reasonCode is not null)
         {
-            return MesMaterialScanPrevalidationResponse.Reject(
+            return Reject(
                 request, reasonCode, evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
         return new MesMaterialScanPrevalidationResponse(
-            "accepted", "material-scan-accepted", request.MaterialIssueRequestId, request.WorkOrderId,
+            MesMaterialScanDecision.Accepted, "material-scan-accepted", request.MaterialIssueRequestId, request.WorkOrderId,
             request.OperationTaskId, issue.MaterialId, issue.MaterialLotId, qualification, evaluatedAtUtc);
     }
+
+    private static MesMaterialScanPrevalidationResponse Reject(
+        PrevalidateMaterialScanQuery request,
+        string reasonCode,
+        DateTimeOffset evaluatedAtUtc,
+        string? materialId = null,
+        string? materialLotId = null) =>
+        new(MesMaterialScanDecision.Rejected, reasonCode, request.MaterialIssueRequestId, request.WorkOrderId,
+            request.OperationTaskId, materialId, materialLotId, null, evaluatedAtUtc);
 }
 
 public sealed class HttpMesMaterialPrevalidationProvider(
@@ -296,6 +286,11 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             !string.Equals(response.LotNo, request.MaterialLotId, StringComparison.OrdinalIgnoreCase))
         {
             throw SourceUnavailable("Inventory 返回了与请求范围不一致的物料批次。");
+        }
+
+        if (response.OnHandQuantity != response.Items.Sum(x => x.OnHandQuantity))
+        {
+            throw SourceUnavailable("Inventory 返回的汇总在手量与明细不一致。");
         }
 
         var lines = response.Items.Where(x =>

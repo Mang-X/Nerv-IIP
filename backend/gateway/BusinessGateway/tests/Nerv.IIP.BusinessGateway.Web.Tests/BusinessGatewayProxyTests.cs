@@ -19,6 +19,7 @@ using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
@@ -12560,7 +12561,7 @@ internal sealed class RecordingMesMaterialPrevalidationClient : IBusinessMesMate
         LastCorrelationId = correlationId;
         LastRequest = request;
         return Task.FromResult(new BusinessConsoleMesMaterialScanPrevalidationResponse(
-            "accepted",
+            MesMaterialScanDecision.Accepted,
             "material-scan-accepted",
             request.MaterialIssueRequestId,
             request.WorkOrderId,

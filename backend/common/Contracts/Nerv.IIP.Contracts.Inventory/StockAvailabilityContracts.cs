@@ -1,26 +1,29 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
 namespace Nerv.IIP.Contracts.Inventory;
 
 public sealed record StockAvailabilityResponse(
-    string OrganizationId,
-    string EnvironmentId,
-    string SkuCode,
-    string UomCode,
-    string SiteCode,
-    string? LocationCode,
-    string? LotNo,
+    [property: JsonRequired, Required] string OrganizationId,
+    [property: JsonRequired, Required] string EnvironmentId,
+    [property: JsonRequired, Required] string SkuCode,
+    [property: JsonRequired, Required] string UomCode,
+    [property: JsonRequired, Required] string SiteCode,
+    [property: JsonRequired] string? LocationCode,
+    [property: JsonRequired] string? LotNo,
     string? SerialNo,
     string? QualityStatus,
     string? OwnerType,
     string? OwnerId,
-    decimal OnHandQuantity,
+    [property: JsonRequired, Required] decimal OnHandQuantity,
     decimal ReservedQuantity,
     decimal AvailableQuantity,
     decimal InventoryValue,
-    IReadOnlyCollection<StockAvailabilityLineResponse> Items);
+    [property: JsonRequired, Required] IReadOnlyCollection<StockAvailabilityLineResponse> Items);
 
 public sealed record StockAvailabilityLineResponse(
-    string LocationCode,
-    string? LotNo,
+    [property: JsonRequired, Required] string LocationCode,
+    [property: JsonRequired] string? LotNo,
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
@@ -29,17 +32,17 @@ public sealed record StockAvailabilityLineResponse(
     DateOnly? ExpiryDate,
     int? ShelfLifeDays,
     string? ExpiryDateSource,
-    bool IsExpired,
+    [property: JsonRequired, Required] bool IsExpired,
     bool IsBlocked,
     string? BlockReasonCode,
     string? BlockReason,
-    bool MovementAllowed,
+    [property: JsonRequired, Required] bool MovementAllowed,
     string? MovementBlockReasonCode,
     string? MovementBlockReason,
     bool CountAllowed,
     string? CountBlockReasonCode,
     string? CountBlockReason,
-    decimal OnHandQuantity,
+    [property: JsonRequired, Required] decimal OnHandQuantity,
     decimal ReservedQuantity,
     decimal AvailableQuantity,
     decimal InventoryValue);

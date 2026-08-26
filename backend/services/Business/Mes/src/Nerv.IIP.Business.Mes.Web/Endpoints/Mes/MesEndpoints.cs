@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
@@ -343,13 +344,6 @@ public sealed record GetMaterialIssueRequestRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string RequestId);
-
-public sealed record PrevalidateMaterialScanRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    string MaterialIssueRequestId,
-    string WorkOrderId,
-    string OperationTaskId);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -1010,11 +1004,11 @@ public sealed class GetMaterialIssueRequestEndpoint(ISender sender)
 }
 
 public sealed class PrevalidateMaterialScanEndpoint(ISender sender)
-    : MesEndpoint<PrevalidateMaterialScanRequest, MesMaterialScanPrevalidationResponse>
+    : MesEndpoint<BusinessConsoleMesMaterialScanPrevalidationRequest, BusinessConsoleMesMaterialScanPrevalidationResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<PrevalidateMaterialScanEndpoint>());
 
-    public override async Task HandleAsync(PrevalidateMaterialScanRequest req, CancellationToken ct)
+    public override async Task HandleAsync(BusinessConsoleMesMaterialScanPrevalidationRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new PrevalidateMaterialScanQuery(
             req.OrganizationId,
