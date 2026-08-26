@@ -189,7 +189,7 @@ flowchart LR
     B2["角色: 标签管理员<br/>入口: /barcode/print-batches<br/>对象/状态: PrintBatch Created -> Completed<br/>缺口: 打印管理体验仍需产品化"]
   end
   subgraph Scan["扫码与追溯"]
-    B3["角色: 一线作业员<br/>入口: /barcode/scans<br/>对象/状态: ScanRecord Accepted/Rejected<br/>缺口: 独立移动扫码解释后续深化"]
+    B3["角色: 一线作业员<br/>入口: Business PDA 首页与 /scan；Business Console /barcode/scans<br/>对象/状态: 只读解析并按强 ID 直达；ScanRecord Accepted/Rejected<br/>缺口: 相机扫码与离线解析后续深化"]
     B4["角色: 质量 / MES / 仓储<br/>入口: /mes/traceability<br/>对象/状态: EPCIS Object/Aggregation/Disaggregation Facts<br/>缺口: 跨域追溯图谱后续深化"]
   end
 
@@ -209,6 +209,6 @@ flowchart LR
 - APS 轻量版与 MES 规则排程已经可解释计划到执行的基础链路；`/scheduling` 已提供只读资源甘特，高级优化器、仿真、自动重排和交互式甘特仍后置。
 - 质量审批图表达当前 Quality NCR 与 BusinessApproval 的已暴露业务链路；完整质量处置工作台和跨域工作流体验仍需继续产品化。
 - 设备维护图覆盖报警、维修工单、备件请求和可靠性指标；报警处置闭环、独立大屏和完整 CMMS 工作台仍需深化。
-- 条码追溯图覆盖规则、模板、打印批次、扫码记录和 MES 追溯入口；独立移动扫码解释、离线同步和跨域追溯图谱仍后置。
+- 条码追溯图覆盖规则、模板、打印批次、扫码记录和 MES 追溯入口；Business PDA 已提供键盘楔入扫码的只读解析，并对唯一 MES 工单或工序按强 ID 直达，相机扫码、离线解析和跨域追溯图谱仍后置。
 
 [内部缺口记录](/internal/gaps/core-processes)

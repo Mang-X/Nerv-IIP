@@ -3326,6 +3326,30 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/split",
+      "operationId": "splitBusinessMesWorkOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade 待交付；跟随 Issue #1963 PR-C 的 MES 工单拆分授权与契约门面。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/merge",
+      "operationId": "mergeBusinessMesWorkOrders",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade 待交付；跟随 Issue #1963 PR-C 的 MES 工单合并授权与契约门面。"
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-order-transformations/{transformationId}",
+      "operationId": "getBusinessMesWorkOrderTransformation",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade 待交付；跟随 Issue #1963 PR-C 的 MES 工单转换读回授权与契约门面。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/cancel",
       "operationId": "cancelBusinessMesWorkOrder",
       "classification": "exposed",
