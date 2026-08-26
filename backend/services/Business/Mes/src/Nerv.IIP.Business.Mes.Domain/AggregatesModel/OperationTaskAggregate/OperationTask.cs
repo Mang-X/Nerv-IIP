@@ -1,5 +1,4 @@
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
-using System.Text.Json;
 
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 
@@ -81,7 +80,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long LaborTimeTicks { get; private set; }
     public long MachineTimeTicks { get; private set; }
     public long ActualTimeSettlementRevision { get; private set; }
-    public string ActualTimeSettlementCoveredReportNosJson { get; private set; } = "[]";
+    public RowVersion RowVersion { get; private set; } = new(0);
     public string? AssignedUserId { get; private set; }
 
     /// <summary>Display name of the assigned worker captured when the task was dispatched.</summary>
@@ -267,8 +266,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public void Complete(
         DateTimeOffset completedAtUtc,
-        IReadOnlyCollection<string>? coveredProductionReportNos = null)
+        IReadOnlyCollection<string> coveredProductionReportNos)
     {
+        ArgumentNullException.ThrowIfNull(coveredProductionReportNos);
         if (Status != OperationTaskLifecycleStatus.InProgress)
         {
             throw new InvalidOperationException("Only in-progress operation task can be completed.");
@@ -282,25 +282,33 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         MachineTimeTicks = elapsedTicks;
         ActualTimeSettlementRevision = checked(ActualTimeSettlementRevision + 1);
         var normalizedReportNos = NormalizeCoveredProductionReportNos(coveredProductionReportNos);
-        ActualTimeSettlementCoveredReportNosJson = JsonSerializer.Serialize(normalizedReportNos);
         AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
         AddDomainEvent(new OperationActualTimeSettledDomainEvent(CreateActualTimeSettlementSnapshot(normalizedReportNos)));
     }
 
-    public void ReopenAfterReportReversal(DateTimeOffset voidedAtUtc)
+    public void ReopenAfterReportReversal(
+        OperationActualTimeSettlementSnapshot settlement,
+        DateTimeOffset voidedAtUtc)
     {
+        ArgumentNullException.ThrowIfNull(settlement);
         if (Status != OperationTaskLifecycleStatus.Completed)
         {
             return;
         }
 
-        var settlement = CreateActualTimeSettlementSnapshot(
-            JsonSerializer.Deserialize<string[]>(ActualTimeSettlementCoveredReportNosJson) ?? []);
+        if (ActualTimeSettlementRevision <= 0 ||
+            settlement.SettlementRevision != ActualTimeSettlementRevision ||
+            !string.Equals(settlement.OperationTaskId, OperationTaskIdValue, StringComparison.Ordinal) ||
+            !string.Equals(settlement.OrganizationId, OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(settlement.EnvironmentId, EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Completed operation task has no matching active actual-time settlement.");
+        }
+
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingEndUtc = null;
         LaborTimeTicks = 0;
         MachineTimeTicks = 0;
-        ActualTimeSettlementCoveredReportNosJson = "[]";
         AddDomainEvent(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
     }
 
@@ -319,8 +327,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             coveredProductionReportNos.ToArray());
 
     private static string[] NormalizeCoveredProductionReportNos(
-        IReadOnlyCollection<string>? coveredProductionReportNos) =>
-        (coveredProductionReportNos ?? [])
+        IReadOnlyCollection<string> coveredProductionReportNos) =>
+        coveredProductionReportNos
             .Select(x => DomainGuard.Required(x, nameof(coveredProductionReportNos)))
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)

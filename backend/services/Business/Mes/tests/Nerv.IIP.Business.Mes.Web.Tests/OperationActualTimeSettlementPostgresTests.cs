@@ -38,6 +38,10 @@ public sealed class OperationActualTimeSettlementPostgresTests
         using var assertionScope = factory.Services.CreateScope();
         var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var task = await dbContext.OperationTasks.AsNoTracking().SingleAsync();
+        var settlement = await dbContext.OperationActualTimeSettlements
+            .AsNoTracking()
+            .Include(x => x.CoveredReports)
+            .SingleAsync();
         var settlementOutbox = Assert.Single(
             await ReadCapOutboxContentAsync(),
             content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal));
@@ -45,7 +49,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal(1, task.ActualTimeSettlementRevision);
         Assert.Equal(
             new[] { staged.ReportNo, completing.ReportNo }.Order(StringComparer.Ordinal),
-            System.Text.Json.JsonSerializer.Deserialize<string[]>(task.ActualTimeSettlementCoveredReportNosJson));
+            settlement.CoveredReports.Select(x => x.ReportNo).Order(StringComparer.Ordinal));
+        Assert.Null(settlement.VoidedAtUtc);
         Assert.Contains("\"SettlementRevision\":1", settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(staged.ReportNo, settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, settlementOutbox, StringComparison.Ordinal);
@@ -71,6 +76,10 @@ public sealed class OperationActualTimeSettlementPostgresTests
         using var assertionScope = factory.Services.CreateScope();
         var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var task = await dbContext.OperationTasks.AsNoTracking().SingleAsync();
+        var settlement = await dbContext.OperationActualTimeSettlements
+            .AsNoTracking()
+            .Include(x => x.CoveredReports)
+            .SingleAsync();
         var voidOutbox = Assert.Single(
             await ReadCapOutboxContentAsync(),
             content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal));
@@ -79,10 +88,42 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal(1, task.ActualTimeSettlementRevision);
         Assert.Equal(0, task.LaborTimeTicks);
         Assert.Equal(0, task.MachineTimeTicks);
-        Assert.Equal("[]", task.ActualTimeSettlementCoveredReportNosJson);
+        Assert.Equal(At(70), settlement.VoidedAtUtc);
+        Assert.Equal([completing.ReportNo], settlement.CoveredReports.Select(x => x.ReportNo));
         Assert.Contains("\"SettlementRevision\":1", voidOutbox, StringComparison.Ordinal);
         Assert.Contains("\"ActualLaborTicks\":36000000000", voidOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, voidOutbox, StringComparison.Ordinal);
+    }
+
+    [PostgreSqlFact]
+    public async Task Settlement_outbox_failure_rolls_back_state_lineage_and_reports_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory();
+        await MigrateAndInitializeCapAsync(factory);
+        await SeedRunningTaskAsync(factory);
+        await InstallSettlementOutboxFailureTriggerAsync();
+
+        using (var commandScope = factory.Services.CreateScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            var exception = await Assert.ThrowsAnyAsync<Exception>(() => sender.Send(
+                new RecordProductionReportCommand(
+                    "org-001", "env-dev", "WO-001", "OP-001", 10m, 0m, true,
+                    At(60), "report-complete-postgres-atomic-failure-001")));
+            Assert.Contains("injected settlement outbox failure", exception.ToString(), StringComparison.Ordinal);
+        }
+
+        using var assertionScope = factory.Services.CreateScope();
+        var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var task = await dbContext.OperationTasks.AsNoTracking().SingleAsync();
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
+        Assert.Equal(0, task.ActualTimeSettlementRevision);
+        Assert.Empty(await dbContext.ProductionReports.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await dbContext.OperationActualTimeSettlements.AsNoTracking().ToArrayAsync());
+        Assert.DoesNotContain(
+            await ReadCapOutboxContentAsync(),
+            content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal));
     }
 
     [PostgreSqlFact]
@@ -112,8 +153,6 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await using var assertion = CreateContext(options);
         var persisted = await assertion.OperationTasks.AsNoTracking().SingleAsync();
         Assert.Equal(1, persisted.ActualTimeSettlementRevision);
-        Assert.Contains("PR-WINNER", persisted.ActualTimeSettlementCoveredReportNosJson, StringComparison.Ordinal);
-        Assert.DoesNotContain("PR-STALE", persisted.ActualTimeSettlementCoveredReportNosJson, StringComparison.Ordinal);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
@@ -185,6 +224,28 @@ public sealed class OperationActualTimeSettlementPostgresTests
         }
 
         return content.ToArray();
+    }
+
+    private static async Task InstallSettlementOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE OR REPLACE FUNCTION cap.reject_actual_time_settlement_outbox()
+            RETURNS trigger AS $$
+            BEGIN
+                IF NEW."Content" LIKE '%mes.OperationActualTimeSettled%' THEN
+                    RAISE EXCEPTION 'injected settlement outbox failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_actual_time_settlement_outbox
+            BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_actual_time_settlement_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
     }
 
     private static DateTimeOffset At(int minute) =>

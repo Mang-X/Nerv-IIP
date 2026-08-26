@@ -709,6 +709,9 @@ public sealed class MesIssue557ExecutionTests
             TimeSpan.FromHours(4),
             null,
             null));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "PR-OP-10-001", "WO-001", "OP-10",
+            1m, 0m, false, Utc("2026-06-29T11:59:00Z")));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 

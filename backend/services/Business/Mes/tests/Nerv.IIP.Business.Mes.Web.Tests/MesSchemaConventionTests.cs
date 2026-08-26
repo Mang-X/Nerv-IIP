@@ -29,19 +29,32 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesSchemaConventionTests
 {
     [Fact]
-    public void Operation_actual_time_settlement_revision_and_covered_reports_are_governed_columns()
+    public void Operation_actual_time_settlement_uses_framework_row_version_and_relational_lineage()
     {
         using var fixture = CreateFixture();
-        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(OperationTask))!;
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var entity = model.FindEntityType(typeof(OperationTask))!;
         var revision = entity.FindProperty(nameof(OperationTask.ActualTimeSettlementRevision))!;
-        var coveredReports = entity.FindProperty(nameof(OperationTask.ActualTimeSettlementCoveredReportNosJson))!;
+        var rowVersion = entity.FindProperty(nameof(OperationTask.RowVersion))!;
+        var settlement = model.FindEntityType(typeof(OperationActualTimeSettlement))!;
+        var coveredReport = model.FindEntityType(typeof(OperationActualTimeSettlementReport))!;
 
         Assert.Equal("actual_time_settlement_revision", revision.GetColumnName());
         Assert.Equal(0L, revision.GetDefaultValue());
-        Assert.True(revision.IsConcurrencyToken);
-        Assert.Equal("actual_time_settlement_covered_report_nos_json", coveredReports.GetColumnName());
-        Assert.Equal("[]", coveredReports.GetDefaultValue());
-        Assert.False(string.IsNullOrWhiteSpace(coveredReports.GetComment()));
+        Assert.False(revision.IsConcurrencyToken);
+        Assert.Equal("row_version", rowVersion.GetColumnName());
+        Assert.True(rowVersion.IsConcurrencyToken);
+        Assert.Equal("operation_actual_time_settlements", settlement.GetTableName());
+        Assert.Equal("operation_actual_time_settlement_reports", coveredReport.GetTableName());
+        Assert.Contains(settlement.GetIndexes(), x =>
+            x.IsUnique && x.Properties.Select(p => p.Name).SequenceEqual([
+                nameof(OperationActualTimeSettlement.OrganizationId),
+                nameof(OperationActualTimeSettlement.EnvironmentId),
+                nameof(OperationActualTimeSettlement.OperationTaskId),
+                nameof(OperationActualTimeSettlement.Revision),
+            ]));
+        Assert.Contains(coveredReport.GetForeignKeys(), x =>
+            x.PrincipalEntityType.ClrType == typeof(ProductionReport));
         Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative");
     }
 
@@ -64,9 +77,12 @@ public sealed class MesSchemaConventionTests
         Assert.Contains(columns, x =>
             x.Schema == MesFacts.Schema &&
             x.Table == "operation_tasks" &&
-            x.Name == "actual_time_settlement_covered_report_nos_json" &&
-            Equals(x.DefaultValue, "[]") &&
+            x.Name == "row_version" &&
             !string.IsNullOrWhiteSpace(x.Comment));
+        Assert.Contains(migrationBuilder.Operations.OfType<CreateTableOperation>(), x =>
+            x.Schema == MesFacts.Schema && x.Name == "operation_actual_time_settlements");
+        Assert.Contains(migrationBuilder.Operations.OfType<CreateTableOperation>(), x =>
+            x.Schema == MesFacts.Schema && x.Name == "operation_actual_time_settlement_reports");
         Assert.Contains(migrationBuilder.Operations.OfType<AddCheckConstraintOperation>(), x =>
             x.Schema == MesFacts.Schema &&
             x.Table == "operation_tasks" &&
@@ -187,6 +203,8 @@ public sealed class MesSchemaConventionTests
             typeof(WorkOrderTransformationLine),
             typeof(MesEngineeringChangeWorkOrderImpact),
             typeof(OperationTask),
+            typeof(OperationActualTimeSettlement),
+            typeof(OperationActualTimeSettlementReport),
             typeof(ProductionReport),
             typeof(ProductionReportMaterialConsumption),
             typeof(OutputLotGenealogy),
@@ -215,7 +233,6 @@ public sealed class MesSchemaConventionTests
             fixture.DbContext,
             MesFacts.ServiceName,
             [
-                new JsonColumnRule(typeof(OperationTask), nameof(OperationTask.ActualTimeSettlementCoveredReportNosJson)),
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AssignmentsJson)),
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AffectedWorkOrderIdsJson)),
             ]));

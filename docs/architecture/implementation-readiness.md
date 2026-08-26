@@ -323,7 +323,7 @@ BusinessScheduling 以 organization + environment 为硬隔离边界执行 `orde
 
 ## MES 工序实际工时结算事实（#2273）
 
-MES 工序完成现在以 `actual_time_settlement_revision` 形成单调结算版本，并冻结本次结算覆盖的全部报工号、实际人工 ticks 与机器 ticks；完成状态、revision 和 `mes.OperationActualTimeSettled` CAP outbox 在同一事务提交。覆盖完工报工被冲销时，工序重开并发布 `mes.OperationActualTimeSettlementVoided`，事件携带原 revision 和不可变结算快照；作废不递增 revision，后续再次完工才产生更高 revision。升级前既有工序 revision 为 0，不推测或补发历史结算。
+MES 工序完成现在以 `actual_time_settlement_revision` 形成单调业务版本，并把本次覆盖报工、实际人工 ticks 与机器 ticks 规范化冻结到 `operation_actual_time_settlements` 及 `operation_actual_time_settlement_reports`；框架 `row_version` 独立承担乐观并发。完成状态、关系型追溯和 `mes.OperationActualTimeSettled` CAP outbox 在同一事务提交。覆盖完工报工被冲销时，对应正 revision 的活动结算标记作废、工序重开并发布 `mes.OperationActualTimeSettlementVoided`；作废不递增 revision，后续再次完工才产生更高 revision。升级前既有工序 revision 为 0，不推测或补发历史结算；找不到精确活动结算的 legacy 冲销失败关闭。
 
 本切片只交付 MES 权威实绩结算与精确作废事实，不实现 ERP 人工/机器成本、HTTP、Gateway 或 UI。ERP 消费、费率选择及财务冲销由 #2275 独立负责；其消费方必须按 scope、工序和 revision 幂等处理，不得从 MES 当前可变状态反推原结算。
 

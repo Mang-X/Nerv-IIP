@@ -2093,6 +2093,9 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-life-ready",
             capturedAtUtc: now));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "PR-LIFE-001", "WO-LIFE-001", "OP-LIFE-10",
+            1m, 0m, false, now.AddMinutes(30)));
         await dbContext.SaveChangesAsync();
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
