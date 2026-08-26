@@ -76,6 +76,15 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.Equal(successEvent.IdempotencyKey, successReplayEvent.IdempotencyKey);
         Assert.NotEqual(failureEvent.EventId, failureReplayEvent.EventId);
         Assert.Equal(failureEvent.IdempotencyKey, failureReplayEvent.IdempotencyKey);
+        var allEventIds = new[]
+        {
+            successEvent.EventId,
+            successReplayEvent.EventId,
+            failureEvent.EventId,
+            failureReplayEvent.EventId,
+            pendingEvent.EventId,
+        };
+        Assert.Equal(5, allEventIds.Distinct(StringComparer.Ordinal).Count());
         Assert.NotEqual(source.ClientSuppliedUnitCost, source.ErpCapitalizedUnitCost);
         Assert.Equal(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
         Assert.Equal(source.ClientSuppliedUnitCost, successReplayEvent.Payload.UnitCost);
@@ -98,14 +107,12 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.Equal($"business-inventory.movement-requested.{capVersion}", pendingRedisBeforePublish.ConsumerGroup);
         Assert.False(pendingRedisBeforePublish.IsPresent);
 
-        var eventIdempotencyKeys = new Dictionary<string, string>
-        {
-            [successEvent.EventId] = successEvent.IdempotencyKey,
-            [successReplayEvent.EventId] = successReplayEvent.IdempotencyKey,
-            [failureEvent.EventId] = failureEvent.IdempotencyKey,
-            [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
-            [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
-        };
+        var eventIdempotencyKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        eventIdempotencyKeys.Add(successEvent.EventId, successEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(successReplayEvent.EventId, successReplayEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(failureEvent.EventId, failureEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(failureReplayEvent.EventId, failureReplayEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(pendingEvent.EventId, pendingEvent.IdempotencyKey);
         var inventoryConsumerGroup = $"business-inventory.movement-requested.{capVersion}";
         await using var receivedMessageSnapshot = await InventoryReceivedMessageSnapshot.StartAsync(
             inventoryPostgres,
