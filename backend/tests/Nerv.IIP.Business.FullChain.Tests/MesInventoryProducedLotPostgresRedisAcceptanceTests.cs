@@ -106,7 +106,13 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         };
         await using var receivedMessageSnapshot = await InventoryReceivedMessageSnapshot.StartAsync(
             inventoryPostgres,
+            capVersion,
             eventIdempotencyKeys);
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(successEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(successReplayEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(failureEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(failureReplayEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(pendingEvent.EventId));
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
@@ -117,10 +123,10 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         var observedTransportFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
         var observedPendingRedisFacts = new Dictionary<string, PendingRedisFact>(StringComparer.Ordinal);
 
-        // Real cross-process Redis CAP transport: stream history is the durable published fact; the
-        // received-message snapshot was started before publish and latches each exact row before CAP's
-        // post-ack DeleteReceivedMessageAsync removes it. The pending assertion below independently reads
-        // the same event's Redis PEL entry.
+        // Real cross-process Redis CAP transport: stream history is the durable published fact. CAP's
+        // PostgreSQL received row is a short-lived delivery snapshot in this profile, so the snapshot
+        // started before publish latches each exact row while it is alive. The pending assertion below
+        // independently reads the same event's fresh PEL entry.
         try
         {
             var observed = await Eventually.WaitAsync(
@@ -230,8 +236,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
         catch (EventuallyTimeoutException timeout)
         {
-            // The final read is diagnostic only. Published/received facts are the Redis history and the
-            // pre-ack received snapshot, not the presence or absence of transient CAP PostgreSQL rows.
+            // The final read is diagnostic only. Published evidence is Redis stream history and received
+            // evidence is the pre-ack PostgreSQL snapshot, not a late query after CAP has cleaned the row.
             var finalMessagingFacts = await ReadMessagingFactsAsync(
                 inventoryPostgres,
                 redis,

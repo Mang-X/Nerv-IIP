@@ -59,6 +59,40 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             eventType,
             tableName: "OtherTopic"));
 
+        var capStringValue = JsonSerializer.Serialize(new
+        {
+            Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
+            Value = payload,
+        });
+        Assert.True(ContentMatchesEvent(
+            capStringValue,
+            eventId,
+            idempotencyKey,
+            topic,
+            eventType,
+            tableName: topic));
+
+        var capBase64Value = JsonSerializer.Serialize(new
+        {
+            Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
+            Value = JsonSerializer.Serialize(Encoding.UTF8.GetBytes(payload)),
+        });
+        Assert.True(ContentMatchesEvent(
+            capBase64Value,
+            eventId,
+            idempotencyKey,
+            topic,
+            eventType,
+            tableName: topic));
+
+        Assert.True(ContentMatchesEvent(
+            JsonSerializer.Serialize(capContent),
+            eventId,
+            idempotencyKey,
+            topic,
+            eventType,
+            tableName: topic));
+
         var utf8Payload = Encoding.UTF8.GetBytes(payload);
         var redisHeaders = JsonSerializer.Serialize(new Dictionary<string, string>
         {
@@ -126,10 +160,9 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         InventoryReceivedMessageSnapshot receivedMessages,
         params string[] eventIds)
     {
-        // CAP PostgreSQL deletes published rows after the Redis handoff and received rows after
-        // the consumer is acknowledged. Published evidence therefore comes from the retained Redis
-        // stream entry; received evidence is supplied by the exact-content snapshot that started
-        // before the first publish and records the row while it was still alive.
+        // CAP PostgreSQL retains received rows only for the configured expiry window, but the hosted
+        // profile can clean a row before the final poll. Published evidence therefore comes from retained
+        // Redis stream history; received evidence comes from exact row identities captured while alive.
         var eventFacts = await ReadRedisStreamHistoryFactsAsync(
             redisConnectionString,
             eventIdempotencyKeys,
@@ -271,6 +304,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(10);
 
         private readonly string connectionString;
+        private readonly string capVersion;
         private readonly IReadOnlyDictionary<string, string> eventIdempotencyKeys;
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, byte>> receivedRowsByEventId =
             new(StringComparer.Ordinal);
@@ -280,9 +314,11 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         private InventoryReceivedMessageSnapshot(
             string connectionString,
+            string capVersion,
             IReadOnlyDictionary<string, string> eventIdempotencyKeys)
         {
             this.connectionString = connectionString;
+            this.capVersion = capVersion;
             this.eventIdempotencyKeys = eventIdempotencyKeys.ToDictionary(
                 pair => pair.Key,
                 pair => pair.Value,
@@ -292,9 +328,10 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         public static async Task<InventoryReceivedMessageSnapshot> StartAsync(
             string connectionString,
+            string capVersion,
             IReadOnlyDictionary<string, string> eventIdempotencyKeys)
         {
-            var snapshot = new InventoryReceivedMessageSnapshot(connectionString, eventIdempotencyKeys);
+            var snapshot = new InventoryReceivedMessageSnapshot(connectionString, capVersion, eventIdempotencyKeys);
             try
             {
                 await snapshot.ready.Task.ConfigureAwait(false);
@@ -322,7 +359,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             if (captureTask.IsFaulted)
             {
                 throw new InvalidOperationException(
-                    "CAP inventory received-message snapshot failed; received evidence is unavailable.",
+                    "CAP PostgreSQL Inventory received-message snapshot failed; received evidence is unavailable.",
                     captureTask.Exception?.GetBaseException());
             }
         }
@@ -349,8 +386,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             {
                 await using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync(stop.Token);
-                // Establish the empty/clean baseline before the caller is allowed to publish. This
-                // prevents the first query from racing with the first CAP received row.
+                // Complete the baseline capture before the caller is allowed to publish. This prevents
+                // a first received row from racing the snapshot startup.
                 await CaptureOnceAsync(connection, stop.Token);
                 ready.TrySetResult(true);
                 using var pollTimer = new PeriodicTimer(PollInterval);
@@ -374,7 +411,13 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         private async Task CaptureOnceAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT \"Id\", \"Name\", \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
+            command.CommandText = """
+                SELECT "Id", "Name", "Content"
+                FROM inventory.cap_received_messages
+                WHERE "Version" = @cap_version
+                  AND "Content" IS NOT NULL;
+                """;
+            command.Parameters.AddWithValue("cap_version", capVersion);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -459,18 +502,55 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         try
         {
             using var document = JsonDocument.Parse(content);
-            return JsonMessageMatches(
+            return JsonContentMatches(
                 document.RootElement,
                 eventId,
                 idempotencyKey,
                 expectedTopic,
                 expectedEventType,
-                tableName,
-                headerTopic: null);
+                tableName);
         }
         catch (JsonException)
         {
             return false;
+        }
+    }
+
+    private static bool JsonContentMatches(
+        JsonElement element,
+        string eventId,
+        string idempotencyKey,
+        string expectedTopic,
+        string expectedEventType,
+        string? tableName)
+    {
+        if (element.ValueKind == JsonValueKind.Object &&
+            JsonMessageMatches(
+                element,
+                eventId,
+                idempotencyKey,
+                expectedTopic,
+                expectedEventType,
+                tableName,
+                headerTopic: null))
+        {
+            return true;
+        }
+
+        if (!TryDecodeSerializedJson(element, out var nestedDocument))
+        {
+            return false;
+        }
+
+        using (nestedDocument)
+        {
+            return JsonContentMatches(
+                nestedDocument!.RootElement,
+                eventId,
+                idempotencyKey,
+                expectedTopic,
+                expectedEventType,
+                tableName);
         }
     }
 
@@ -640,9 +720,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? tableName,
         string? headerTopic)
     {
-        if (element.ValueKind == JsonValueKind.String &&
-            element.GetString() is { } nested &&
-            TryParseJson(nested, out var nestedDocument))
+        if (TryDecodeSerializedJson(element, out var nestedDocument))
         {
             using (nestedDocument)
             {
@@ -695,6 +773,59 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return false;
     }
 
+    private static bool TryDecodeSerializedJson(JsonElement element, out JsonDocument? document)
+    {
+        document = null;
+        if (element.ValueKind == JsonValueKind.String && element.GetString() is { } serialized)
+        {
+            if (TryParseJson(serialized, out document))
+            {
+                return true;
+            }
+
+            try
+            {
+                var decoded = Convert.FromBase64String(serialized);
+                document = JsonDocument.Parse(decoded);
+                return true;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var decodedBytes = new List<byte>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (!item.TryGetInt32(out var byteValue) || byteValue is < byte.MinValue or > byte.MaxValue)
+            {
+                return false;
+            }
+
+            decodedBytes.Add((byte)byteValue);
+        }
+
+        try
+        {
+            document = JsonDocument.Parse(decodedBytes.ToArray());
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private static bool JsonObjectMatches(
         JsonElement element,
         string eventId,
@@ -735,9 +866,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     return ReadDirectJsonString(property.Value, "cap-msg-name");
                 }
 
-                if (property.Value.ValueKind == JsonValueKind.String &&
-                    property.Value.GetString() is { } serializedHeaders &&
-                    TryParseJson(serializedHeaders, out var headersDocument))
+                if (TryDecodeSerializedJson(property.Value, out var headersDocument))
                 {
                     using (headersDocument)
                     {
