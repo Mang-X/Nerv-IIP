@@ -120,6 +120,22 @@ export {
   isNearOrExpired,
 } from './inventory/expiry'
 export type { ExpiryAlertLike, ExpiryTone } from './inventory/expiry'
+export { lineSideInventoryAgePresentation } from './inventory/lineSideAge'
+export type {
+  LineSideInventoryAgeCompleteness,
+  LineSideInventoryAgeLike,
+  LineSideInventoryAgePresentation,
+} from './inventory/lineSideAge'
+export { lastPageForTotal } from './pagination/pageBounds'
+export {
+  createServerPaginationState,
+  reduceServerPagination,
+  serverPaginationIdentity,
+} from './pagination/serverPaginationController'
+export type {
+  ServerPaginationEvent,
+  ServerPaginationState,
+} from './pagination/serverPaginationController'
 export {
   aggregateReceivingGateStatus,
   isReleasedForPutaway,
