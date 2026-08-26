@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.ServiceAuth;
@@ -165,6 +166,16 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger?.LogWarning(exception, "MasterData OEE dimension snapshot request for {ResourceType} timed out; MES will record an explicit partial snapshot.", resourceType);
+            return null;
+        }
+        catch (JsonException exception)
+        {
+            logger?.LogWarning(exception, "MasterData OEE dimension snapshot response for {ResourceType} contained invalid JSON; MES will record an explicit partial snapshot.", resourceType);
+            return null;
+        }
+        catch (NotSupportedException exception)
+        {
+            logger?.LogWarning(exception, "MasterData OEE dimension snapshot response for {ResourceType} used an unsupported JSON shape; MES will record an explicit partial snapshot.", resourceType);
             return null;
         }
     }

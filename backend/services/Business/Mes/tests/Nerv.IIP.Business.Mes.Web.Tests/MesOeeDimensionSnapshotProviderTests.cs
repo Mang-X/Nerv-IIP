@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -252,6 +253,56 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     }
 
     [Fact]
+    public async Task MasterData_provider_keeps_valid_shift_when_device_response_is_malformed_json()
+    {
+        var report = await RecordProductionReportWithMasterDataHandlerAsync(new MalformedDimensionHandler("device-asset"));
+
+        Assert.Equal("WC-01", report.OeeWorkCenterId);
+        Assert.Equal("DEV-01", report.OeeDeviceAssetId);
+        Assert.Null(report.OeeSiteCode);
+        Assert.Null(report.OeeWorkshopCode);
+        Assert.Null(report.OeeLineCode);
+        Assert.Null(report.OeeSiteTimezone);
+        Assert.Equal("NIGHT", report.OeeShiftCode);
+        Assert.Equal(new TimeOnly(20, 0), report.OeeShiftStartsAt);
+        Assert.Equal(new TimeOnly(4, 0), report.OeeShiftEndsAt);
+        Assert.True(report.OeeShiftCrossesMidnight);
+    }
+
+    [Fact]
+    public async Task MasterData_provider_keeps_valid_device_and_site_when_shift_response_is_malformed_json()
+    {
+        var report = await RecordProductionReportWithMasterDataHandlerAsync(new MalformedDimensionHandler("shift"));
+
+        Assert.Equal("WC-01", report.OeeWorkCenterId);
+        Assert.Equal("DEV-01", report.OeeDeviceAssetId);
+        Assert.Equal("SITE-SH", report.OeeSiteCode);
+        Assert.Equal("WS-01", report.OeeWorkshopCode);
+        Assert.Equal("LINE-01", report.OeeLineCode);
+        Assert.Equal("Asia/Shanghai", report.OeeSiteTimezone);
+        Assert.Equal("NIGHT", report.OeeShiftCode);
+        Assert.Null(report.OeeShiftStartsAt);
+        Assert.Null(report.OeeShiftEndsAt);
+        Assert.Null(report.OeeShiftCrossesMidnight);
+    }
+
+    [Fact]
+    public async Task MasterData_provider_does_not_swallow_caller_cancellation()
+    {
+        using var httpClient = new HttpClient(new CallerCancellationHandler())
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => provider.CaptureAsync(
+            new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+            cancellation.Token));
+    }
+
+    [Fact]
     public async Task MasterData_provider_returns_missing_snapshot_when_dimension_service_is_unavailable()
     {
         using var httpClient = new HttpClient(new UnavailableHandler())
@@ -326,6 +377,97 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+    }
+
+    private sealed class MalformedDimensionHandler(string malformedResourceType) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var query = request.RequestUri?.Query ?? string.Empty;
+            var resourceType = query.Contains("resourceType=device-asset", StringComparison.Ordinal)
+                ? "device-asset"
+                : query.Contains("resourceType=site", StringComparison.Ordinal)
+                    ? "site"
+                    : "shift";
+            if (string.Equals(resourceType, malformedResourceType, StringComparison.Ordinal))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{", Encoding.UTF8, "application/json"),
+                });
+            }
+
+            var data = resourceType switch
+            {
+                "device-asset" => "{\"resources\":[{\"resourceType\":\"device-asset\",\"code\":\"DEV-01\",\"displayName\":\"Device\",\"active\":true,\"snapshotVersion\":\"v1\",\"siteCode\":\"SITE-SH\",\"workshopCode\":\"WS-01\",\"lineCode\":\"LINE-01\",\"workCenterCode\":\"WC-01\"}],\"total\":1}",
+                "site" => "{\"resources\":[{\"resourceType\":\"site\",\"code\":\"SITE-SH\",\"displayName\":\"Shanghai\",\"active\":true,\"snapshotVersion\":\"v1\",\"timezone\":\"Asia/Shanghai\"}],\"total\":1}",
+                _ => "{\"resources\":[{\"resourceType\":\"shift\",\"code\":\"NIGHT\",\"displayName\":\"Night\",\"active\":true,\"snapshotVersion\":\"v1\",\"startsAt\":\"20:00:00\",\"endsAt\":\"04:00:00\",\"crossesMidnight\":true,\"paidMinutes\":450,\"breakMinutes\":30}],\"total\":1}",
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($"{{\"data\":{data},\"success\":true,\"message\":\"\",\"code\":0}}", Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    private sealed class CallerCancellationHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromCanceled<HttpResponseMessage>(cancellationToken);
+    }
+
+    private static async Task<ProductionReport> RecordProductionReportWithMasterDataHandlerAsync(HttpMessageHandler messageHandler)
+    {
+        await using var services = MesTestProvider.CreateInMemoryProvider();
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-07-10T17:30:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-MALFORMED-001",
+            "SKU-001",
+            "PV-001",
+            100m,
+            1,
+            now.AddHours(8)));
+        var task = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-MALFORMED-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-01",
+            [],
+            now,
+            TimeSpan.FromHours(1),
+            now,
+            now.AddHours(1));
+        task.Assign(null, "DEV-01", "NIGHT", now.AddMinutes(-10), "user:dispatcher");
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        using var httpClient = new HttpClient(messageHandler)
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+        var handler = new RecordProductionReportCommandHandler(dbContext, provider);
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-MALFORMED-001",
+                "OP-10",
+                10m,
+                0m,
+                false,
+                now),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        return await dbContext.ProductionReports.SingleAsync();
     }
 
     private sealed class FixedSnapshotProvider : IMesOeeDimensionSnapshotProvider
