@@ -1010,7 +1010,6 @@ public sealed class GetMaterialIssueRequestEndpoint(ISender sender)
 }
 
 public sealed class PrevalidateMaterialScanEndpoint(ISender sender)
-public sealed class PrevalidateMaterialScanEndpoint(ISender sender)
     : MesEndpoint<PrevalidateMaterialScanRequest, MesMaterialScanPrevalidationResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<PrevalidateMaterialScanEndpoint>());

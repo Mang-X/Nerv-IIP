@@ -961,8 +961,14 @@ public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
     protected override Task<BusinessConsoleMesMaterialScanPrevalidationResponse> ForwardAsync(
         BusinessConsoleMesMaterialScanPrevalidationRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.PrevalidateAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        correlationId = string.IsNullOrWhiteSpace(correlationId)
+            ? Guid.CreateVersion7().ToString("N")
+            : correlationId.Trim();
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]

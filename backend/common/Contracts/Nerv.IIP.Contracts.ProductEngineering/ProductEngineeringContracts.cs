@@ -43,6 +43,38 @@ public sealed record ProductionVersionListItem(
 
 public sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items, int Total);
 
+public sealed record ManufacturingBomMaterialLineItem(
+    string SkuCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
+
+public sealed record ManufacturingBomRecipeLineItem(
+    string ParameterCode,
+    string TargetValue,
+    string UnitOfMeasureCode);
+
+public sealed record ManufacturingBomListItem(
+    string BomCode,
+    string Revision,
+    string SkuCode,
+    string EngineeringBomVersionId,
+    string Status,
+    DateOnly? EffectiveDate,
+    IReadOnlyCollection<ManufacturingBomMaterialLineItem> MaterialLines,
+    IReadOnlyCollection<ManufacturingBomRecipeLineItem> RecipeLines);
+
+public sealed record ListManufacturingBomsResponse(
+    IReadOnlyCollection<ManufacturingBomListItem> Items,
+    int Total);
+
 public static class ProductEngineeringIntegrationEventTypes
 {
     public const string BomReleased = "productEngineering.BomReleased";

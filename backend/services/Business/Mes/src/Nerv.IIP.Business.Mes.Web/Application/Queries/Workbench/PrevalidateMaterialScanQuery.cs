@@ -1,12 +1,19 @@
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
+using ContractManufacturingBomListItem = Nerv.IIP.Contracts.ProductEngineering.ManufacturingBomListItem;
+using ContractStockAvailabilityResponse = Nerv.IIP.Contracts.Inventory.StockAvailabilityResponse;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -46,7 +53,7 @@ public sealed record MesMaterialScanPrevalidationResponse(
         DateTimeOffset evaluatedAtUtc,
         string? materialId = null,
         string? materialLotId = null) =>
-        new("rejected", reasonCode, request.MaterialIssueRequestId, request.WorkOrderId,
+        new(MesMaterialScanDecisions.Rejected, reasonCode, request.MaterialIssueRequestId, request.WorkOrderId,
             request.OperationTaskId, materialId, materialLotId, null, evaluatedAtUtc);
 }
 
@@ -55,6 +62,7 @@ public sealed record MesMaterialQualificationRequest(
     string EnvironmentId,
     string FinishedSkuId,
     string ProductionVersionId,
+    IReadOnlyCollection<string> RequiredPrimaryMaterialIds,
     string MaterialId);
 
 public interface IMesMaterialQualificationProvider
@@ -138,23 +146,28 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                 request, "line-side-receipt-incomplete", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
-        var isPrimary = await dbContext.MaterialRequirements.AsNoTracking().AnyAsync(x =>
+        var requiredPrimaryMaterialIds = await dbContext.MaterialRequirements.AsNoTracking().Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId &&
             x.WorkOrderId == request.WorkOrderId &&
-            (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId) &&
-            x.MaterialId == issue.MaterialId, cancellationToken);
+            (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId))
+            .Select(x => x.MaterialId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        var isPrimary = requiredPrimaryMaterialIds.Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase);
 
         var qualification = "primary";
         if (!isPrimary)
         {
             if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId) ||
+                requiredPrimaryMaterialIds.Length == 0 ||
                 !await qualificationProvider.IsFrozenSubstituteAsync(
                     new MesMaterialQualificationRequest(
                         request.OrganizationId,
                         request.EnvironmentId,
                         workOrder.SkuId,
                         workOrder.ProductionVersionId,
+                        requiredPrimaryMaterialIds,
                         issue.MaterialId),
                     cancellationToken))
             {
@@ -198,14 +211,16 @@ public sealed class PrevalidateMaterialScanQueryHandler(
 public sealed class HttpMesMaterialPrevalidationProvider(
     MesProductEngineeringHttpClient productEngineeringClient,
     MesInventoryHttpClient inventoryClient,
-    IInternalServiceTokenProvider? internalTokenProvider = null)
+    IInternalServiceTokenProvider internalTokenProvider,
+    IMesIntegrationEventContextAccessor correlationContextAccessor)
     : IMesMaterialQualificationProvider, IMesMaterialLotAvailabilityProvider
 {
     public async Task<bool> IsFrozenSubstituteAsync(
         MesMaterialQualificationRequest request,
         CancellationToken cancellationToken)
     {
-        var versions = await GetAsync<MaterialScanProductionVersionListResponse>(
+        var correlationId = correlationContextAccessor.GetContext().CorrelationId;
+        var versions = await GetAsync<ListProductionVersionsResponse>(
             productEngineeringClient.HttpClient,
             "ProductEngineering",
             "/api/business/v1/engineering/production-versions?" + Query(
@@ -214,6 +229,7 @@ public sealed class HttpMesMaterialPrevalidationProvider(
                 ("skuCode", request.FinishedSkuId),
                 ("skip", 0),
                 ("take", 500)),
+            correlationId,
             cancellationToken);
         var matches = versions.Items.Where(x =>
             string.Equals(x.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) &&
@@ -231,12 +247,13 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             return false;
         }
 
-        var bom = await GetAsync<ManufacturingBomListItem>(
+        var bom = await GetAsync<ContractManufacturingBomListItem>(
             productEngineeringClient.HttpClient,
             "ProductEngineering",
             $"/api/business/v1/engineering/manufacturing-boms/{Uri.EscapeDataString(bomCode)}/{Uri.EscapeDataString(revision)}?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
+            correlationId,
             cancellationToken);
         if (!string.Equals(bom.BomCode, bomCode, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(bom.Revision, revision, StringComparison.OrdinalIgnoreCase) ||
@@ -246,15 +263,17 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             return false;
         }
 
-        return bom.MaterialLines.Any(line => SplitSubstituteCodes(line.SubstituteSkuCodes)
-            .Contains(request.MaterialId, StringComparer.OrdinalIgnoreCase));
+        var requiredPrimaryMaterialIds = request.RequiredPrimaryMaterialIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return bom.MaterialLines.Any(line =>
+            requiredPrimaryMaterialIds.Contains(line.SkuCode) &&
+            SplitSubstituteCodes(line.SubstituteSkuCodes).Contains(request.MaterialId, StringComparer.OrdinalIgnoreCase));
     }
 
     public async Task<MesMaterialLotAvailabilityResult> GetAsync(
         MesMaterialLotAvailabilityRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await GetAsync<MaterialScanInventoryAvailabilityResponse>(
+        var response = await GetAsync<ContractStockAvailabilityResponse>(
             inventoryClient.HttpClient,
             "Inventory",
             "/api/inventory/v1/availability?" + Query(
@@ -266,6 +285,7 @@ public sealed class HttpMesMaterialPrevalidationProvider(
                 ("locationCode", request.LocationCode),
                 ("lotNo", request.MaterialLotId),
                 ("asOfDate", request.AsOfDate)),
+            correlationContextAccessor.GetContext().CorrelationId,
             cancellationToken);
         if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
             !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) ||
@@ -291,13 +311,12 @@ public sealed class HttpMesMaterialPrevalidationProvider(
         HttpClient client,
         string serviceName,
         string requestUri,
+        string correlationId,
         CancellationToken cancellationToken) where T : class
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        if (!string.IsNullOrWhiteSpace(internalTokenProvider?.BearerToken))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
-        }
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
 
         HttpResponseMessage response;
         try
@@ -320,7 +339,19 @@ public sealed class HttpMesMaterialPrevalidationProvider(
                 throw SourceUnavailable($"{serviceName} 返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
             }
 
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+            ResponseDataEnvelope<T>? envelope;
+            try
+            {
+                envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+            }
+            catch (JsonException exception)
+            {
+                throw SourceUnavailable($"{serviceName} 返回畸形 JSON。{exception.Message}");
+            }
+            catch (NotSupportedException exception)
+            {
+                throw SourceUnavailable($"{serviceName} 返回不支持的内容类型。{exception.Message}");
+            }
             if (envelope is null || !envelope.Success || envelope.Data is null)
             {
                 throw SourceUnavailable($"{serviceName} 返回空响应或失败响应。");
@@ -355,31 +386,3 @@ public sealed class HttpMesMaterialPrevalidationProvider(
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
     };
 }
-
-internal sealed record MaterialScanProductionVersionListResponse(
-    IReadOnlyCollection<MaterialScanProductionVersionItem> Items,
-    int Total);
-
-internal sealed record MaterialScanProductionVersionItem(
-    string ProductionVersionId,
-    string OrganizationId,
-    string EnvironmentId,
-    string SkuCode,
-    string MbomVersionId);
-
-internal sealed record MaterialScanInventoryAvailabilityResponse(
-    string OrganizationId,
-    string EnvironmentId,
-    string SkuCode,
-    string UomCode,
-    string SiteCode,
-    string? LocationCode,
-    string? LotNo,
-    IReadOnlyCollection<MaterialScanInventoryAvailabilityLine> Items);
-
-internal sealed record MaterialScanInventoryAvailabilityLine(
-    string LocationCode,
-    string? LotNo,
-    bool IsExpired,
-    bool MovementAllowed,
-    decimal OnHandQuantity);

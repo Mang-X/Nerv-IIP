@@ -526,6 +526,14 @@ public sealed class BusinessGatewayAuthorizationTests
 
         return path switch
         {
+        "/api/business-console/v1/mes/material-scan-prevalidation" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            materialIssueRequestId = "MIR-001",
+            workOrderId = "WO-001",
+            operationTaskId = "OP-10",
+        },
         "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
         "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
         {

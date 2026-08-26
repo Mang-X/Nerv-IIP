@@ -18,6 +18,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
 
         var response = await client.PrevalidateAsync(
             "internal-token",
+            "corr-001",
             new BusinessConsoleMesMaterialScanPrevalidationRequest(
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None);
@@ -27,11 +28,22 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         Assert.Equal("/api/business/v1/mes/material-scan-prevalidation", handler.Path);
         Assert.Equal("Bearer", handler.AuthorizationScheme);
         Assert.Equal("internal-token", handler.AuthorizationParameter);
+        Assert.Equal("corr-001", handler.CorrelationId);
         using var body = JsonDocument.Parse(handler.Body);
         Assert.Equal("MIR-001", body.RootElement.GetProperty("materialIssueRequestId").GetString());
         Assert.Equal("WO-001", body.RootElement.GetProperty("workOrderId").GetString());
         Assert.Equal("OP-10", body.RootElement.GetProperty("operationTaskId").GetString());
         Assert.False(body.RootElement.TryGetProperty("inventoryBatchId", out _));
+    }
+
+    [Fact]
+    public void Client_contract_requires_explicit_correlation_id()
+    {
+        var method = typeof(IBusinessMesMaterialPrevalidationClient).GetMethod(nameof(IBusinessMesMaterialPrevalidationClient.PrevalidateAsync));
+
+        Assert.NotNull(method);
+        Assert.Contains(method.GetParameters(), parameter =>
+            parameter.ParameterType == typeof(string) && parameter.Name == "correlationId");
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
@@ -40,6 +52,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         public string Path { get; private set; } = string.Empty;
         public string AuthorizationScheme { get; private set; } = string.Empty;
         public string AuthorizationParameter { get; private set; } = string.Empty;
+        public string CorrelationId { get; private set; } = string.Empty;
         public string Body { get; private set; } = string.Empty;
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -50,6 +63,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             Path = request.RequestUri?.AbsolutePath ?? string.Empty;
             AuthorizationScheme = request.Headers.Authorization?.Scheme ?? string.Empty;
             AuthorizationParameter = request.Headers.Authorization?.Parameter ?? string.Empty;
+            CorrelationId = request.Headers.GetValues("X-Correlation-Id").Single();
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {

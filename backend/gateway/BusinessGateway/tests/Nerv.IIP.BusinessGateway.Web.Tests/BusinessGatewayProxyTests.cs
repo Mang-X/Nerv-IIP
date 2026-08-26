@@ -653,20 +653,24 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/mes/material-scan-prevalidation",
-            new
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/mes/material-scan-prevalidation")
+        {
+            Content = JsonContent.Create(new
             {
                 organizationId = "org-001",
                 environmentId = "env-dev",
                 materialIssueRequestId = "MIR-001",
                 workOrderId = "WO-001",
                 operationTaskId = "OP-10",
-            });
+            }),
+        };
+        message.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-scan-001");
+        var response = await client.SendAsync(message);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MesMaterialsRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal("corr-scan-001", mes.LastCorrelationId);
         Assert.Equal("MIR-001", mes.LastRequest?.MaterialIssueRequestId);
         Assert.Equal("WO-001", mes.LastRequest?.WorkOrderId);
         Assert.Equal("OP-10", mes.LastRequest?.OperationTaskId);
@@ -12542,15 +12546,18 @@ public sealed class BusinessGatewayProxyTests
 internal sealed class RecordingMesMaterialPrevalidationClient : IBusinessMesMaterialPrevalidationClient
 {
     public string? LastInternalToken { get; private set; }
+    public string? LastCorrelationId { get; private set; }
     public BusinessConsoleMesMaterialScanPrevalidationRequest? LastRequest { get; private set; }
 
     public Task<BusinessConsoleMesMaterialScanPrevalidationResponse> PrevalidateAsync(
         string internalBearerToken,
+        string correlationId,
         BusinessConsoleMesMaterialScanPrevalidationRequest request,
         CancellationToken cancellationToken)
     {
         _ = cancellationToken;
         LastInternalToken = internalBearerToken;
+        LastCorrelationId = correlationId;
         LastRequest = request;
         return Task.FromResult(new BusinessConsoleMesMaterialScanPrevalidationResponse(
             "accepted",
