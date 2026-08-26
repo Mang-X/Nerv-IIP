@@ -256,7 +256,9 @@ async function retrySplitReadback() {
   if (!current) return
   splitState.value = 'loading'
   try {
-    const readback = await workOrderTransformations.readTransformation(current.mutation.transformationId)
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
     splitResult.value = { ...current, readback, readbackError: undefined }
     splitState.value = 'success'
     notifySuccess('拆分结果已回读。')
@@ -264,7 +266,11 @@ async function retrySplitReadback() {
   } catch (error) {
     splitResult.value = { ...current, readbackError: error }
     splitState.value = 'accepted'
-    notifyOperationFailure('回读拆分结果失败', error, '拆分已受理，但结果暂不可用，请稍后重试回读。')
+    notifyOperationFailure(
+      '回读拆分结果失败',
+      error,
+      '拆分已受理，但结果暂不可用，请稍后重试回读。',
+    )
   }
 }
 const completedTaskCount = computed(

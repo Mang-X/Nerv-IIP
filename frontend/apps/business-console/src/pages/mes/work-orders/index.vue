@@ -280,7 +280,9 @@ async function retryMergeReadback() {
   if (!current) return
   mergeState.value = 'loading'
   try {
-    const readback = await workOrderTransformations.readTransformation(current.mutation.transformationId)
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
     mergeResult.value = { ...current, readback, readbackError: undefined }
     mergeState.value = 'success'
     selectedWorkOrderIds.value = []
@@ -289,7 +291,11 @@ async function retryMergeReadback() {
   } catch (error) {
     mergeResult.value = { ...current, readbackError: error }
     mergeState.value = 'accepted'
-    notifyOperationFailure('回读合并结果失败', error, '合并已受理，但结果暂不可用，请稍后重试回读。')
+    notifyOperationFailure(
+      '回读合并结果失败',
+      error,
+      '合并已受理，但结果暂不可用，请稍后重试回读。',
+    )
   }
 }
 

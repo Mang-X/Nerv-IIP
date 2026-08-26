@@ -78,8 +78,20 @@ describe('WorkOrderTransformationDialog', () => {
       mode: 'merge',
       idempotencyKey: 'merge-test-1',
       sources: [
-        { workOrderId: 'WO-1', skuId: 'SKU-1', productionVersionId: 'PV-1', quantity: 2, status: 'created' },
-        { workOrderId: 'WO-2', skuId: 'SKU-1', productionVersionId: 'PV-1', quantity: 3, status: 'released' },
+        {
+          workOrderId: 'WO-1',
+          skuId: 'SKU-1',
+          productionVersionId: 'PV-1',
+          quantity: 2,
+          status: 'created',
+        },
+        {
+          workOrderId: 'WO-2',
+          skuId: 'SKU-1',
+          productionVersionId: 'PV-1',
+          quantity: 3,
+          status: 'released',
+        },
       ],
       state: 'conflict',
     })

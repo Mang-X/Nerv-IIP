@@ -134,7 +134,12 @@ const statusTone = computed(() => {
 })
 
 function resetForm() {
-  splitTargets.splice(0, splitTargets.length, { workOrderId: '', quantity: '' }, { workOrderId: '', quantity: '' })
+  splitTargets.splice(
+    0,
+    splitTargets.length,
+    { workOrderId: '', quantity: '' },
+    { workOrderId: '', quantity: '' },
+  )
   splitReason.value = ''
   mergeForm.targetWorkOrderId = ''
   mergeForm.reason = ''
@@ -196,11 +201,13 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
 
 <template>
   <NvDialog :open="open" @update:open="emit('update:open', $event)">
-    <NvDialogContent class="sm:max-w-2xl" data-testid="work-order-transformation-dialog">
+    <NvDialogContent class="sm:max-w-2xl">
       <NvDialogHeader>
         <NvDialogTitle>{{ isSplit ? '拆分工单' : '合并工单' }}</NvDialogTitle>
         <NvDialogDescription v-if="isSplit">
-          将 {{ source?.label || source?.workOrderId || '当前工单' }} 拆成多个新的子工单；数量必须守恒，目标标识不能已存在。
+          将
+          {{ source?.label || source?.workOrderId || '当前工单' }}
+          拆成多个新的子工单；数量必须守恒，目标标识不能已存在。
         </NvDialogDescription>
         <NvDialogDescription v-else>
           将选中的同 SKU 工单合并为一个新工单；服务端会按源工单数量合计生成目标数量。
@@ -225,9 +232,15 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           <span v-if="props.state === 'loading'">{{ statusText }}</span>
         </div>
 
-        <section v-if="isSplit" class="grid gap-3 rounded-md border bg-muted/20 p-3" aria-label="拆分源工单">
+        <section
+          v-if="isSplit"
+          class="grid gap-3 rounded-md border bg-muted/20 p-3"
+          aria-label="拆分源工单"
+        >
           <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span class="font-medium">源工单：{{ source?.label || source?.workOrderId || '未取得' }}</span>
+            <span class="font-medium"
+              >源工单：{{ source?.label || source?.workOrderId || '未取得' }}</span
+            >
             <span class="tabular-nums text-muted-foreground"
               >源数量 {{ sourceQuantity ?? '未取得' }} {{ source?.uomCode || '' }}</span
             >
@@ -240,17 +253,41 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
         <NvFieldGroup v-if="isSplit" class="grid gap-3">
           <div class="flex items-center justify-between gap-2">
             <NvFieldLabel>子工单与数量</NvFieldLabel>
-            <NvButton type="button" variant="ghost" size="sm" :disabled="splitTargets.length >= 10" @click="addTarget">
+            <NvButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              :disabled="splitTargets.length >= 10"
+              @click="addTarget"
+            >
               <PlusIcon aria-hidden="true" />
               增加子工单
             </NvButton>
           </div>
-          <div v-for="(target, index) in splitTargets" :key="index" class="grid gap-2 sm:grid-cols-[1fr_10rem_auto]">
-            <NvField :data-invalid="showErrors && splitErrors.some((error) => error.includes(`第 ${index + 1} 个`))">
-              <NvFieldLabel :for="`split-target-id-${index}`">子工单 {{ index + 1 }} 标识</NvFieldLabel>
-              <NvInput :id="`split-target-id-${index}`" v-model="target.workOrderId" placeholder="请输入新的工单标识" />
+          <div
+            v-for="(target, index) in splitTargets"
+            :key="index"
+            class="grid gap-2 sm:grid-cols-[1fr_10rem_auto]"
+          >
+            <NvField
+              :data-invalid="
+                showErrors && splitErrors.some((error) => error.includes(`第 ${index + 1} 个`))
+              "
+            >
+              <NvFieldLabel :for="`split-target-id-${index}`"
+                >子工单 {{ index + 1 }} 标识</NvFieldLabel
+              >
+              <NvInput
+                :id="`split-target-id-${index}`"
+                v-model="target.workOrderId"
+                placeholder="请输入新的工单标识"
+              />
             </NvField>
-            <NvField :data-invalid="showErrors && splitErrors.some((error) => error.includes(`第 ${index + 1} 个`))">
+            <NvField
+              :data-invalid="
+                showErrors && splitErrors.some((error) => error.includes(`第 ${index + 1} 个`))
+              "
+            >
               <NvFieldLabel :for="`split-target-quantity-${index}`">数量</NvFieldLabel>
               <NvInput
                 :id="`split-target-quantity-${index}`"
@@ -273,17 +310,33 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           </div>
         </NvFieldGroup>
 
-        <section v-else class="grid gap-2 rounded-md border bg-muted/20 p-3" aria-label="合并源工单">
-          <div v-for="source in sources" :key="source.workOrderId" class="flex flex-wrap justify-between gap-2 text-sm">
+        <section
+          v-else
+          class="grid gap-2 rounded-md border bg-muted/20 p-3"
+          aria-label="合并源工单"
+        >
+          <div
+            v-for="source in sources"
+            :key="source.workOrderId"
+            class="flex flex-wrap justify-between gap-2 text-sm"
+          >
             <span class="font-medium">{{ source.label || source.workOrderId }}</span>
             <span class="tabular-nums text-muted-foreground"
-              >{{ source.quantity ?? '未取得' }} {{ source.uomCode || '' }} · {{ source.status || '未知状态' }}</span
+              >{{ source.quantity ?? '未取得' }} {{ source.uomCode || '' }} ·
+              {{ source.status || '未知状态' }}</span
             >
           </div>
-          <p class="text-xs text-muted-foreground">目标数量将自动合计为 {{ sources.reduce((total, source) => total + (source.quantity ?? 0), 0) }} {{ sources[0]?.uomCode || '' }}。</p>
+          <p class="text-xs text-muted-foreground">
+            目标数量将自动合计为
+            {{ sources.reduce((total, source) => total + (source.quantity ?? 0), 0) }}
+            {{ sources[0]?.uomCode || '' }}。
+          </p>
         </section>
 
-        <NvField v-if="!isSplit" :data-invalid="showErrors && validationErrors.some((error) => error.includes('目标'))">
+        <NvField
+          v-if="!isSplit"
+          :data-invalid="showErrors && validationErrors.some((error) => error.includes('目标'))"
+        >
           <NvFieldLabel for="merge-target-work-order">
             新的目标工单标识 <span class="text-destructive">*</span>
           </NvFieldLabel>
@@ -295,7 +348,9 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
         </NvField>
 
         <NvFieldGroup class="grid gap-3">
-          <NvField :data-invalid="showErrors && validationErrors.some((error) => error.includes('原因'))">
+          <NvField
+            :data-invalid="showErrors && validationErrors.some((error) => error.includes('原因'))"
+          >
             <NvFieldLabel :for="isSplit ? 'split-reason' : 'merge-reason'">
               {{ isSplit ? '拆分原因' : '合并原因' }} <span class="text-destructive">*</span>
             </NvFieldLabel>
@@ -307,7 +362,12 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
               @update:model-value="updateReason"
             />
           </NvField>
-          <div v-if="showErrors && validationErrors.length" class="grid gap-1 text-sm text-destructive" role="alert" data-testid="transformation-validation-errors">
+          <div
+            v-if="showErrors && validationErrors.length"
+            class="grid gap-1 text-sm text-destructive"
+            role="alert"
+            data-testid="transformation-validation-errors"
+          >
             <p>请修正以下填写项：</p>
             <ul class="list-disc ps-5">
               <li v-for="error in validationErrors" :key="error">{{ error }}</li>
@@ -323,12 +383,21 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <span class="font-medium">已回读转换结果</span>
-            <span class="text-xs text-muted-foreground">{{ result.readback.type }} · {{ result.readback.occurredAtUtc }}</span>
+            <span class="text-xs text-muted-foreground"
+              >{{ result.readback.type }} · {{ result.readback.occurredAtUtc }}</span
+            >
           </div>
           <ul class="grid gap-1">
-            <li v-for="line in result.readback.lines" :key="`${line.sourceWorkOrderId}-${line.targetWorkOrderId}`" class="flex justify-between gap-2">
+            <li
+              v-for="line in result.readback.lines"
+              :key="`${line.sourceWorkOrderId}-${line.targetWorkOrderId}`"
+              class="flex justify-between gap-2"
+            >
               <span>{{ lineLabel(line) }}</span>
-              <span class="tabular-nums">{{ line.quantity }} {{ line.uomCode }} · {{ line.sourceStatus }} → {{ line.targetStatus }}</span>
+              <span class="tabular-nums"
+                >{{ line.quantity }} {{ line.uomCode }} · {{ line.sourceStatus }} →
+                {{ line.targetStatus }}</span
+              >
             </li>
           </ul>
         </section>

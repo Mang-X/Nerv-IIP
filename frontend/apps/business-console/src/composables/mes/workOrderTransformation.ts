@@ -89,7 +89,6 @@ export function validateSplitInput(input: SplitValidationInput) {
   if (input.targets.length < 2) errors.push('至少填写两个子工单。')
 
   const sourceId = input.sourceWorkOrderId.trim()
-  const targetIds = input.targets.map((target) => target.workOrderId.trim())
   const seenIds = new Set<string>()
   input.targets.forEach((target, index) => {
     const targetId = target.workOrderId.trim()
