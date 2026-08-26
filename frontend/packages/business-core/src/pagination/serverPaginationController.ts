@@ -1,7 +1,6 @@
 import { lastPageForTotal } from './pageBounds'
 
 export interface ServerPaginationState {
-  correctionIdentity: string
   lastSuccessfulTotal: number
   navigationPending: boolean
   page: number
@@ -29,7 +28,6 @@ export function createServerPaginationState(
   scopeIdentity = '',
 ): ServerPaginationState {
   return {
-    correctionIdentity: '',
     lastSuccessfulTotal: 0,
     navigationPending: false,
     page: 1,
@@ -64,7 +62,7 @@ export function reduceServerPagination(
   if (!currentIdentity || event.identity !== currentIdentity) return state
 
   if (event.type === 'response-failed' || event.responsePage !== state.page) {
-    return { ...state, correctionIdentity: '', navigationPending: false }
+    return { ...state, navigationPending: false }
   }
 
   const lastSuccessfulTotal = Number.isFinite(event.total) ? Math.max(0, event.total) : 0
@@ -72,7 +70,6 @@ export function reduceServerPagination(
   if (state.page > lastPage) {
     return {
       ...state,
-      correctionIdentity: serverPaginationIdentity(state.scopeIdentity, lastPage),
       lastSuccessfulTotal,
       navigationPending: true,
       page: lastPage,
@@ -81,7 +78,6 @@ export function reduceServerPagination(
 
   return {
     ...state,
-    correctionIdentity: '',
     lastSuccessfulTotal,
     navigationPending: false,
   }

@@ -21,7 +21,6 @@ describe('server pagination controller', () => {
     expect(state).toMatchObject({
       page: 3,
       navigationPending: true,
-      correctionIdentity: 'org-a:env-a:page:3',
       lastSuccessfulTotal: 401,
     })
 
@@ -32,7 +31,7 @@ describe('server pagination controller', () => {
       total: 401,
     })
 
-    expect(state).toMatchObject({ page: 3, navigationPending: false, correctionIdentity: '' })
+    expect(state).toMatchObject({ page: 3, navigationPending: false })
   })
 
   it('校正期间切换 scope 会清空旧身份且忽略迟到结算', () => {
@@ -50,7 +49,6 @@ describe('server pagination controller', () => {
       scopeIdentity: 'org-b:env-b',
       page: 1,
       navigationPending: false,
-      correctionIdentity: '',
       lastSuccessfulTotal: 0,
     })
 
@@ -79,8 +77,48 @@ describe('server pagination controller', () => {
     expect(state).toMatchObject({
       page: 1,
       navigationPending: false,
-      correctionIdentity: '',
       lastSuccessfulTotal: 200,
+    })
+  })
+
+  it('旧 scope 的成功响应不得改写当前 scope 的总量或触发页码校正', () => {
+    const state = {
+      ...createServerPaginationState(200, 'org-b:env-b'),
+      page: 5,
+      navigationPending: true,
+      lastSuccessfulTotal: 1001,
+    }
+
+    const afterLateOldScope = reduceServerPagination(state, {
+      type: 'response-succeeded',
+      identity: serverPaginationIdentity('org-a:env-a', 5),
+      responsePage: 5,
+      total: 1,
+    })
+
+    expect(afterLateOldScope).toEqual(state)
+  })
+
+  it('当前 identity 携带错误 payload 页码时失败关闭且不改写成功总量', () => {
+    const state = {
+      ...createServerPaginationState(200, 'org-a:env-a'),
+      page: 2,
+      navigationPending: true,
+      lastSuccessfulTotal: 401,
+    }
+
+    const afterWrongPayloadPage = reduceServerPagination(state, {
+      type: 'response-succeeded',
+      identity: serverPaginationIdentity('org-a:env-a', 2),
+      responsePage: 1,
+      total: 1,
+    })
+
+    expect(afterWrongPayloadPage).toMatchObject({
+      page: 2,
+      navigationPending: false,
+      lastSuccessfulTotal: 401,
+      scopeIdentity: 'org-a:env-a',
     })
   })
 })
