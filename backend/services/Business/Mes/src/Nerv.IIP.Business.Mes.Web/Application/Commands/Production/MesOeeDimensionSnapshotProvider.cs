@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
@@ -13,7 +12,8 @@ public sealed record MesOeeDimensionSnapshotRequest(
     string EnvironmentId,
     string WorkCenterCode,
     string? DeviceAssetId,
-    string? ShiftCode);
+    string? ShiftCode,
+    string? CorrelationId = null);
 
 public sealed record MesOeeDimensionSnapshot(
     string WorkCenterCode,
@@ -123,7 +123,7 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             Pair("all", true.ToString(CultureInfo.InvariantCulture)),
         });
         using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        var correlationId = Normalize(Activity.Current?.GetTagItem("correlationId")?.ToString());
+        var correlationId = Normalize(request.CorrelationId);
         if (correlationId is not null)
         {
             message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);

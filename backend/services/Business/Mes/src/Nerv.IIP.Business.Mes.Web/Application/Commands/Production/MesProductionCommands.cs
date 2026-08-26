@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using FluentValidation;
@@ -44,7 +45,8 @@ public sealed record RecordProductionReportCommand(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+    string Source = "manual",
+    string? CorrelationId = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
 {
     internal bool PersistsCallerIntentReceipt { get; private init; } = true;
 
@@ -67,7 +69,8 @@ public sealed record RecordProductionReportCommand(
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
         string? SerialNo = null,
-        string Source = "manual")
+        string Source = "manual",
+        string? CorrelationId = null)
         : this(
             OrganizationId,
             EnvironmentId,
@@ -94,7 +97,8 @@ public sealed record RecordProductionReportCommand(
             DefectRecordNo,
             ProducedLotNo,
             SerialNo,
-            Source)
+            Source,
+            CorrelationId)
     {
         PersistsCallerIntentReceipt = false;
     }
@@ -239,7 +243,10 @@ public sealed class RecordProductionReportCommandHandler(
                 request.EnvironmentId,
                 operationTask.WorkCenterId,
                 operationTask.DeviceAssetId,
-                operationTask.ShiftId),
+                operationTask.ShiftId,
+                FirstNonBlank(
+                    request.CorrelationId,
+                    Activity.Current?.GetTagItem("correlationId")?.ToString())),
             cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
@@ -406,6 +413,19 @@ public sealed class RecordProductionReportCommandHandler(
 
         await Task.CompletedTask;
         return new ProductionReportCommandResult(report.Id, report.ReportNo);
+    }
+
+    private static string? FirstNonBlank(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return null;
     }
 
     private static string ConsumedMaterialLotsFingerprint(IReadOnlyCollection<ConsumedMaterialLotInput>? lots)

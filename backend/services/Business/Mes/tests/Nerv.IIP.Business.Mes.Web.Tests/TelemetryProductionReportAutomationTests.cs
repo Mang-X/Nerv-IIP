@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -5,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
@@ -51,6 +54,35 @@ public sealed class TelemetryProductionReportAutomationTests
 
         Assert.Equal(2, await dbContext.ProductionReports.CountAsync());
         Assert.Equal(0m, (await dbContext.WorkOrders.SingleAsync()).CompletedQuantity);
+    }
+
+    [Fact]
+    public async Task Cap_production_count_preserves_event_correlation_id_on_every_master_data_request()
+    {
+        await using var dbContext = CreateDbContext(nameof(Cap_production_count_preserves_event_correlation_id_on_every_master_data_request));
+        SeedRunningOperation(dbContext);
+        await dbContext.SaveChangesAsync();
+        var masterDataHandler = new CorrelationCapturingDimensionHandler();
+        using var httpClient = new HttpClient(masterDataHandler)
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var snapshotProvider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+        var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new ProductionReportSender(dbContext, snapshotProvider));
+
+        await handler.HandleCapAsync(
+            CreateEvent(
+                reportingMode: "posted",
+                hasActiveAlarm: false,
+                correlationId: "corr-cap-production-001"),
+            CancellationToken.None);
+
+        Assert.Equal(3, masterDataHandler.Requests.Count);
+        Assert.All(masterDataHandler.Requests, request =>
+            Assert.Equal("corr-cap-production-001", Assert.Single(request.Headers.GetValues("X-Correlation-Id"))));
     }
 
     [Fact]
@@ -143,13 +175,14 @@ public sealed class TelemetryProductionReportAutomationTests
     private static TelemetryProductionCountDeltaIntegrationEvent CreateEvent(
         string reportingMode,
         bool hasActiveAlarm,
-        decimal deltaQuantity = 3m) => new(
+        decimal deltaQuantity = 3m,
+        string correlationId = "industrialTelemetry:production-count:org-001:env-dev:DEV-PACK-01:parts_count:seq-002") => new(
         "evt-production-count-001",
         IndustrialTelemetryIntegrationEventTypes.ProductionCountDeltaRecorded,
         IndustrialTelemetryIntegrationEventVersions.V1,
         DateTimeOffset.Parse("2026-07-11T08:01:00Z"),
         IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
-        "industrialTelemetry:production-count:org-001:env-dev:DEV-PACK-01:parts_count:seq-002",
+        correlationId,
         "summary-001",
         "org-001",
         "env-dev",
@@ -183,7 +216,7 @@ public sealed class TelemetryProductionReportAutomationTests
             TimeSpan.FromHours(1),
             DateTimeOffset.Parse("2026-07-11T07:00:00Z"),
             null);
-        operation.Assign(null, "DEV-PACK-01", null, DateTimeOffset.Parse("2026-07-11T07:00:00Z"));
+        operation.Assign(null, "DEV-PACK-01", "NIGHT", DateTimeOffset.Parse("2026-07-11T07:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(operation);
         dbContext.DeviceAssetWorkCenterMappings.Add(DeviceAssetWorkCenterMapping.Create("org-001", "env-dev", "DEV-PACK-01", "WC-PACK-01"));
@@ -197,7 +230,9 @@ public sealed class TelemetryProductionReportAutomationTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private sealed class ProductionReportSender(ApplicationDbContext dbContext) : ISender
+    private sealed class ProductionReportSender(
+        ApplicationDbContext dbContext,
+        IMesOeeDimensionSnapshotProvider? snapshotProvider = null) : ISender
     {
         public MesCodingService CodingService { get; } = new();
 
@@ -205,7 +240,10 @@ public sealed class TelemetryProductionReportAutomationTests
         {
             if (request is RecordProductionReportCommand command)
             {
-                var response = await new RecordProductionReportCommandHandler(dbContext, new NullMesOeeDimensionSnapshotProvider(), CodingService).Handle(command, cancellationToken);
+                var response = await new RecordProductionReportCommandHandler(
+                    dbContext,
+                    snapshotProvider ?? new NullMesOeeDimensionSnapshotProvider(),
+                    CodingService).Handle(command, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)response;
             }
@@ -217,6 +255,31 @@ public sealed class TelemetryProductionReportAutomationTests
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class CorrelationCapturingDimensionHandler : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            var query = request.RequestUri?.Query ?? string.Empty;
+            var data = query.Contains("resourceType=device-asset", StringComparison.Ordinal)
+                ? "{\"resources\":[{\"resourceType\":\"device-asset\",\"code\":\"DEV-PACK-01\",\"displayName\":\"Device\",\"active\":true,\"snapshotVersion\":\"v1\",\"siteCode\":\"SITE-SH\",\"workCenterCode\":\"WC-PACK-01\"}],\"total\":1}"
+                : query.Contains("resourceType=site", StringComparison.Ordinal)
+                    ? "{\"resources\":[{\"resourceType\":\"site\",\"code\":\"SITE-SH\",\"displayName\":\"Shanghai\",\"active\":true,\"snapshotVersion\":\"v1\",\"timezone\":\"Asia/Shanghai\"}],\"total\":1}"
+                    : "{\"resources\":[{\"resourceType\":\"shift\",\"code\":\"NIGHT\",\"displayName\":\"Night\",\"active\":true,\"snapshotVersion\":\"v1\",\"startsAt\":\"20:00:00\",\"endsAt\":\"04:00:00\",\"crossesMidnight\":true}],\"total\":1}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $"{{\"data\":{data},\"success\":true,\"message\":\"\",\"code\":0}}",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+        }
     }
 
     private sealed class NoopMediator : IMediator

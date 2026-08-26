@@ -114,7 +114,8 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
             CompletesOperation: false,
             payload.BucketEndUtc,
             IdempotencyKey: $"telemetry:{integrationEvent.IdempotencyKey}",
-            Source: ProductionReport.TelemetrySource), cancellationToken);
+            Source: ProductionReport.TelemetrySource,
+            CorrelationId: integrationEvent.CorrelationId), cancellationToken);
     }
 
     private static PayloadValidationResult ValidatePayload(TelemetryProductionCountDeltaPayload? payload)

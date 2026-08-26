@@ -1,5 +1,4 @@
 using System.Net;
-using System.Diagnostics;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -143,7 +142,7 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     }
 
     [Fact]
-    public async Task MasterData_provider_propagates_the_current_correlation_id_on_every_request()
+    public async Task MasterData_provider_propagates_the_explicit_correlation_id_on_every_request()
     {
         var handler = new ReportingDimensionHandler();
         using var httpClient = new HttpClient(handler)
@@ -151,12 +150,14 @@ public sealed class MesOeeDimensionSnapshotProviderTests
             BaseAddress = new Uri("http://master-data"),
         };
         var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
-        using var activity = new Activity("record-production-report");
-        activity.SetTag("correlationId", "corr-oee-snapshot-001");
-        activity.Start();
-
         await provider.CaptureAsync(
-            new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+            new MesOeeDimensionSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WC-01",
+                "DEV-01",
+                "NIGHT",
+                "corr-oee-snapshot-001"),
             CancellationToken.None);
 
         Assert.Equal(3, handler.Requests.Count);
