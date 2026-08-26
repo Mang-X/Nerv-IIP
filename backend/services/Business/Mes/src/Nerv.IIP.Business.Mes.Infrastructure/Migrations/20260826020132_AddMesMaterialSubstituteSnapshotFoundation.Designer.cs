@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260826002425_AddMesMaterialSubstituteSnapshotFoundation")]
+    [Migration("20260826020132_AddMesMaterialSubstituteSnapshotFoundation")]
     partial class AddMesMaterialSubstituteSnapshotFoundation
     {
         /// <inheritdoc />
@@ -2567,6 +2567,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("uom_code")
                         .HasComment("Unit of measure copied from the source production plan when the work order is converted from DemandPlanning.");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token advanced for every work-order lifecycle or execution mutation.");
+
                     b.Property<string>("WorkOrderIdValue")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2588,6 +2596,224 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("work_orders", "mes", t =>
                         {
                             t.HasComment("MES durable work orders created from business demand and ProductEngineering production version references.");
+
+                            t.HasCheckConstraint("ck_work_orders_version_positive", "version > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate.WorkOrderTransformation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Work-order transformation aggregate id.");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("actor_id")
+                        .HasComment("Authenticated actor recorded for the transformation audit.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the MES transformation.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Client supplied idempotency identity scoped by organization and environment.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("UTC time when the transformation was applied.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Audited business reason for the split or merge.");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("request_fingerprint")
+                        .HasComment("Canonical request payload fingerprint used to reject a different replay under the same idempotency key.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status")
+                        .HasComment("Transformation audit status; Applied is committed in the same transaction as work-order changes.");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("transformation_type")
+                        .HasComment("Transformation type: Split or Merge.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_order_transformations_scope_idempotency");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Type", "OccurredAtUtc")
+                        .HasDatabaseName("ix_work_order_transformations_scope_type_occurred");
+
+                    b.ToTable("work_order_transformations", "mes", t =>
+                        {
+                            t.HasComment("MES immutable split or merge audit facts and their scoped idempotency identity.");
+
+                            t.HasCheckConstraint("ck_work_order_transformations_status", "status = 'Applied'");
+
+                            t.HasCheckConstraint("ck_work_order_transformations_type", "transformation_type IN ('Split', 'Merge')");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate.WorkOrderTransformationLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Work-order transformation lineage edge id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id copied onto the lineage edge.");
+
+                    b.Property<string>("LineageType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("lineage_type")
+                        .HasComment("Lineage relation type: Split or Merge.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id copied onto the lineage edge.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Quantity represented by this source-to-target lineage edge.");
+
+                    b.Property<decimal>("SourceQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("source_quantity")
+                        .HasComment("Full source work-order planned quantity captured at transformation time.");
+
+                    b.Property<string>("SourceStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("source_status")
+                        .HasComment("Source work-order status captured before the transformation.");
+
+                    b.Property<long>("SourceVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("source_version")
+                        .HasComment("Expected source work-order version used for optimistic concurrency.");
+
+                    b.Property<string>("SourceWorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_work_order_id")
+                        .HasComment("Source or parent MES work-order business id.");
+
+                    b.Property<decimal>("TargetQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("target_quantity")
+                        .HasComment("Full target work-order planned quantity captured at transformation time.");
+
+                    b.Property<string>("TargetStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("target_status")
+                        .HasComment("Target work-order status captured at the transformation boundary.");
+
+                    b.Property<long>("TargetVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("target_version")
+                        .HasComment("Target work-order version captured for lineage audit.");
+
+                    b.Property<string>("TargetWorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("target_work_order_id")
+                        .HasComment("Target or child MES work-order business id.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("UOM shared by the source and target work orders.");
+
+                    b.Property<Guid>("WorkOrderTransformationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_order_transformation_id")
+                        .HasComment("Owning transformation audit aggregate id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkOrderTransformationId")
+                        .HasDatabaseName("ix_work_order_transformation_lines_transformation");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkOrderId")
+                        .HasDatabaseName("ix_work_order_transformation_lines_scope_source");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "TargetWorkOrderId")
+                        .HasDatabaseName("ix_work_order_transformation_lines_scope_target");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkOrderId", "TargetWorkOrderId", "LineageType")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_order_transformation_lines_scope_edge");
+
+                    b.ToTable("work_order_transformation_lines", "mes", t =>
+                        {
+                            t.HasComment("MES immutable source-to-target lineage edges for a split or merge audit.");
+
+                            t.HasCheckConstraint("ck_work_order_transformation_lines_distinct_work_orders", "source_work_order_id <> target_work_order_id");
+
+                            t.HasCheckConstraint("ck_work_order_transformation_lines_lineage_type", "lineage_type IN ('Split', 'Merge')");
+
+                            t.HasCheckConstraint("ck_work_order_transformation_lines_positive_quantity", "quantity > 0");
+
+                            t.HasCheckConstraint("ck_work_order_transformation_lines_positive_snapshot_quantities", "source_quantity > 0 AND target_quantity > 0");
+
+                            t.HasCheckConstraint("ck_work_order_transformation_lines_positive_versions", "source_version > 0 AND target_version > 0");
+
+                            t.HasCheckConstraint("ck_work_order_transformation_lines_uom_present", "trim(uom_code) <> ''");
                         });
                 });
 
@@ -3352,9 +3578,40 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.Navigation("SourcePlanReference");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate.WorkOrderTransformationLine", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate.WorkOrderTransformation", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("WorkOrderTransformationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_work_order_transformation_lines_transformations");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "SourceWorkOrderId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_work_order_transformation_lines_source_work_order");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "TargetWorkOrderId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_work_order_transformation_lines_target_work_order");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", b =>
                 {
                     b.Navigation("Transitions");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate.WorkOrderTransformation", b =>
+                {
+                    b.Navigation("Lines");
                 });
 #pragma warning restore 612, 618
         }
