@@ -191,16 +191,22 @@ public sealed class MesActualTimeReadContractTests
     }
 
     [Fact]
-    public void Internal_actual_hours_use_only_the_paired_read_model()
+    public void Actual_hours_keep_paired_internal_carriers_behind_flat_nullable_decimal_properties()
     {
-        Assert.Null(typeof(MesOperationTaskRow).GetProperty("ActualLaborHours"));
-        Assert.Null(typeof(MesOperationTaskRow).GetProperty("ActualMachineHours"));
-        Assert.Null(typeof(ProductionReportFact).GetProperty("OperationActualLaborHours"));
-        Assert.Null(typeof(ProductionReportFact).GetProperty("OperationActualMachineHours"));
+        Assert.Equal(typeof(decimal?), typeof(MesOperationTaskRow).GetProperty("ActualLaborHours")!.PropertyType);
+        Assert.Equal(typeof(decimal?), typeof(MesOperationTaskRow).GetProperty("ActualMachineHours")!.PropertyType);
+        Assert.Equal(typeof(decimal?), typeof(ProductionReportFact).GetProperty("OperationActualLaborHours")!.PropertyType);
+        Assert.Equal(typeof(decimal?), typeof(ProductionReportFact).GetProperty("OperationActualMachineHours")!.PropertyType);
+        Assert.Contains(
+            typeof(MesOperationTaskRow).GetProperty("ActualHours")!.GetCustomAttributes(false),
+            attribute => attribute is System.Text.Json.Serialization.JsonIgnoreAttribute);
+        Assert.Contains(
+            typeof(ProductionReportFact).GetProperty("OperationActualHours")!.GetCustomAttributes(false),
+            attribute => attribute is System.Text.Json.Serialization.JsonIgnoreAttribute);
     }
 
     [Fact]
-    public async Task Mes_http_read_endpoints_keep_actual_hours_internal_until_the_facade_slice()
+    public async Task Mes_http_read_endpoints_publish_flat_actual_hours_and_keep_paired_carriers_internal()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -209,9 +215,12 @@ public sealed class MesActualTimeReadContractTests
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<IRequestHandler<ListOperationTasksQuery, MesOperationTaskListResponse>>();
+                    services.RemoveAll<IRequestHandler<ListProductionReportsQuery, ListProductionReportsResponse>>();
                     services.RemoveAll<IRequestHandler<GetProductionReportQuery, GetProductionReportResponse>>();
                     services.AddSingleton<IRequestHandler<ListOperationTasksQuery, MesOperationTaskListResponse>,
                         ActualTimeOperationListHandler>();
+                    services.AddSingleton<IRequestHandler<ListProductionReportsQuery, ListProductionReportsResponse>,
+                        ActualTimeProductionReportListHandler>();
                     services.AddSingleton<IRequestHandler<GetProductionReportQuery, GetProductionReportResponse>,
                         ActualTimeProductionReportHandler>();
                 });
@@ -222,33 +231,56 @@ public sealed class MesActualTimeReadContractTests
 
         var operationResponse = await client.GetAsync(
             "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&take=10");
+        var reportListResponse = await client.GetAsync(
+            "/api/business/v1/mes/production-reports?organizationId=org-001&environmentId=env-dev&take=10");
         var reportResponse = await client.GetAsync(
             "/api/business/v1/mes/production-reports/PRPT-ACTUAL?organizationId=org-001&environmentId=env-dev");
         var openApiResponse = await client.GetAsync("/swagger/v1/swagger.json");
 
         Assert.Equal(HttpStatusCode.OK, operationResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reportListResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, reportResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, openApiResponse.StatusCode);
         using var operationJson = JsonDocument.Parse(await operationResponse.Content.ReadAsStringAsync());
+        using var reportListJson = JsonDocument.Parse(await reportListResponse.Content.ReadAsStringAsync());
         using var reportJson = JsonDocument.Parse(await reportResponse.Content.ReadAsStringAsync());
         var operations = operationJson.RootElement.GetProperty("items")
             .EnumerateArray()
             .ToDictionary(x => x.GetProperty("operationTaskId").GetString()!, StringComparer.Ordinal);
-        Assert.All(operations.Values, operation =>
-        {
-            Assert.False(operation.TryGetProperty("actualHours", out _));
-            Assert.False(operation.TryGetProperty("actualLaborHours", out _));
-            Assert.False(operation.TryGetProperty("actualMachineHours", out _));
-        });
+        Assert.Equal(1.25m, operations["OP-ACTUAL"].GetProperty("actualLaborHours").GetDecimal());
+        Assert.Equal(0.5m, operations["OP-ACTUAL"].GetProperty("actualMachineHours").GetDecimal());
+        Assert.Equal(0m, operations["OP-ZERO"].GetProperty("actualLaborHours").GetDecimal());
+        Assert.Equal(0m, operations["OP-ZERO"].GetProperty("actualMachineHours").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, operations["OP-NULL"].GetProperty("actualLaborHours").ValueKind);
+        Assert.Equal(JsonValueKind.Null, operations["OP-NULL"].GetProperty("actualMachineHours").ValueKind);
+        Assert.All(operations.Values, operation => Assert.False(operation.TryGetProperty("actualHours", out _)));
+
+        var reportRows = reportListJson.RootElement.GetProperty("items")
+            .EnumerateArray()
+            .ToDictionary(x => x.GetProperty("reportNo").GetString()!, StringComparer.Ordinal);
+        Assert.Equal(1.25m, reportRows["PRPT-ACTUAL"].GetProperty("operationActualLaborHours").GetDecimal());
+        Assert.Equal(0.5m, reportRows["PRPT-ACTUAL"].GetProperty("operationActualMachineHours").GetDecimal());
+        Assert.Equal(0m, reportRows["PRPT-ZERO"].GetProperty("operationActualLaborHours").GetDecimal());
+        Assert.Equal(0m, reportRows["PRPT-ZERO"].GetProperty("operationActualMachineHours").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, reportRows["PRPT-NULL"].GetProperty("operationActualLaborHours").ValueKind);
+        Assert.Equal(JsonValueKind.Null, reportRows["PRPT-NULL"].GetProperty("operationActualMachineHours").ValueKind);
+        Assert.All(reportRows.Values, reportRow => Assert.False(reportRow.TryGetProperty("operationActualHours", out _)));
+
         var report = reportJson.RootElement.GetProperty("report");
         Assert.False(report.TryGetProperty("operationActualHours", out _));
-        Assert.False(report.TryGetProperty("operationActualLaborHours", out _));
-        Assert.False(report.TryGetProperty("operationActualMachineHours", out _));
-        var openApi = await openApiResponse.Content.ReadAsStringAsync();
-        Assert.DoesNotContain("\"actualLaborHours\"", openApi, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"actualMachineHours\"", openApi, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"operationActualLaborHours\"", openApi, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"operationActualMachineHours\"", openApi, StringComparison.Ordinal);
+        Assert.Equal(1.25m, report.GetProperty("operationActualLaborHours").GetDecimal());
+        Assert.Equal(0.5m, report.GetProperty("operationActualMachineHours").GetDecimal());
+
+        using var openApi = JsonDocument.Parse(await openApiResponse.Content.ReadAsStringAsync());
+        var schemas = openApi.RootElement.GetProperty("components").GetProperty("schemas");
+        AssertNullableDecimalProperties(
+            FindSchemaWithProperty(schemas, "actualLaborHours"),
+            "actualLaborHours",
+            "actualMachineHours");
+        AssertNullableDecimalProperties(
+            FindSchemaWithProperty(schemas, "operationActualLaborHours"),
+            "operationActualLaborHours",
+            "operationActualMachineHours");
     }
 
     private static OperationTask CreateTask(string workOrderId, string operationTaskId, DateTimeOffset queuedAtUtc) =>
@@ -262,6 +294,30 @@ public sealed class MesActualTimeReadContractTests
             [],
             queuedAtUtc,
             TimeSpan.FromMinutes(30));
+
+    private static JsonElement FindSchemaWithProperty(JsonElement schemas, string propertyName) =>
+        schemas.EnumerateObject()
+            .Select(schema => schema.Value)
+            .Single(schema => schema.TryGetProperty("properties", out var properties)
+                && properties.TryGetProperty(propertyName, out _));
+
+    private static void AssertNullableDecimalProperties(JsonElement schema, params string[] propertyNames)
+    {
+        var properties = schema.GetProperty("properties");
+        foreach (var propertyName in propertyNames)
+        {
+            var property = properties.GetProperty(propertyName);
+            Assert.Equal("number", property.GetProperty("type").GetString());
+            Assert.Equal("decimal", property.GetProperty("format").GetString());
+            Assert.True(property.GetProperty("nullable").GetBoolean());
+            Assert.Contains("小时", property.GetProperty("description").GetString(), StringComparison.Ordinal);
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(value => value.GetString()));
+            }
+        }
+    }
 
     private sealed class ActualTimeOperationListHandler
         : IRequestHandler<ListOperationTasksQuery, MesOperationTaskListResponse>
@@ -328,5 +384,36 @@ public sealed class MesActualTimeReadContractTests
                 [],
                 []));
         }
+    }
+
+    private sealed class ActualTimeProductionReportListHandler
+        : IRequestHandler<ListProductionReportsQuery, ListProductionReportsResponse>
+    {
+        public Task<ListProductionReportsResponse> Handle(
+            ListProductionReportsQuery request,
+            CancellationToken cancellationToken)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromResult(new ListProductionReportsResponse(
+                [
+                    Report("PRPT-ACTUAL", new MesActualHours(1.25m, 0.5m)),
+                    Report("PRPT-ZERO", new MesActualHours(0m, 0m)),
+                    Report("PRPT-NULL", null),
+                ],
+                3));
+        }
+
+        private static ProductionReportFact Report(string reportNo, MesActualHours? actualHours) =>
+            new(
+                $"id-{reportNo}",
+                reportNo,
+                $"WO-{reportNo}",
+                $"OP-{reportNo}",
+                1m,
+                0m,
+                0m,
+                DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
+                OperationActualHours: actualHours);
     }
 }
