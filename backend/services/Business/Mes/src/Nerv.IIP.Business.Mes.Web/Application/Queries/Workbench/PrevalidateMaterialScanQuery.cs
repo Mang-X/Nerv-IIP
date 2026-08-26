@@ -14,7 +14,7 @@ using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 using ContractStockAvailabilityResponse = Nerv.IIP.Contracts.Inventory.StockAvailabilityResponse;
-using MesMaterialScanPrevalidationResponse = Nerv.IIP.Contracts.Mes.BusinessConsoleMesMaterialScanPrevalidationResponse;
+using MesMaterialScanPrevalidationResponse = Nerv.IIP.Contracts.Mes.MesMaterialScanPrevalidationResponse;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 

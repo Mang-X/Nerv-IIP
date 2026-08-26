@@ -917,9 +917,14 @@ public sealed class BusinessGatewayOpenApiTests
             "502",
             "503",
             "504");
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        Assert.True(schemas.TryGetProperty("NervIIPContractsMesMesMaterialScanPrevalidationRequest", out _));
+        Assert.True(schemas.TryGetProperty("NervIIPContractsMesMesMaterialScanPrevalidationResponse", out _));
+        Assert.False(schemas.TryGetProperty("NervIIPContractsMesBusinessConsoleMesMaterialScanPrevalidationRequest", out _));
+        Assert.False(schemas.TryGetProperty("NervIIPContractsMesBusinessConsoleMesMaterialScanPrevalidationResponse", out _));
         AssertRequiredSchemaProperties(
             document,
-            "BusinessConsoleMesMaterialScanPrevalidationRequest",
+            "MesMaterialScanPrevalidationRequest",
             "organizationId",
             "environmentId",
             "materialIssueRequestId",
@@ -927,7 +932,7 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskId");
         AssertRequiredSchemaProperties(
             document,
-            "BusinessConsoleMesMaterialScanPrevalidationResponse",
+            "MesMaterialScanPrevalidationResponse",
             "decision",
             "reasonCode",
             "materialIssueRequestId",
@@ -936,7 +941,7 @@ public sealed class BusinessGatewayOpenApiTests
             "evaluatedAtUtc");
         AssertStringEnumProperty(
             document,
-            "BusinessConsoleMesMaterialScanPrevalidationResponse",
+            "MesMaterialScanPrevalidationResponse",
             "decision",
             "accepted",
             "rejected");

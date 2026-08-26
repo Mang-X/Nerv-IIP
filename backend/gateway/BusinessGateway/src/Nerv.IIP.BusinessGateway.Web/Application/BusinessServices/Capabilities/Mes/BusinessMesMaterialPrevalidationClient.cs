@@ -5,23 +5,23 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessMesMaterialPrevalidationClient
 {
-    Task<BusinessConsoleMesMaterialScanPrevalidationResponse> PrevalidateAsync(
+    Task<MesMaterialScanPrevalidationResponse> PrevalidateAsync(
         string internalBearerToken,
         string correlationId,
-        BusinessConsoleMesMaterialScanPrevalidationRequest request,
+        MesMaterialScanPrevalidationRequest request,
         CancellationToken cancellationToken);
 }
 
 public sealed class HttpBusinessMesMaterialPrevalidationClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMesMaterialPrevalidationClient
 {
-    public async Task<BusinessConsoleMesMaterialScanPrevalidationResponse> PrevalidateAsync(
+    public async Task<MesMaterialScanPrevalidationResponse> PrevalidateAsync(
         string internalBearerToken,
         string correlationId,
-        BusinessConsoleMesMaterialScanPrevalidationRequest request,
+        MesMaterialScanPrevalidationRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await SendAsync<BusinessConsoleMesMaterialScanPrevalidationResponse>(
+        var result = await SendAsync<MesMaterialScanPrevalidationResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/mes/material-scan-prevalidation",

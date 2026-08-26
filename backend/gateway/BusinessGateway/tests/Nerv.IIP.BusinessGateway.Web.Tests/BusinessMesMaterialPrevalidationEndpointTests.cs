@@ -55,10 +55,10 @@ public sealed class BusinessMesMaterialPrevalidationEndpointTests
         public string? LastCorrelationId { get; private set; }
         public string? LastScopeCorrelationId { get; private set; }
 
-        public Task<BusinessConsoleMesMaterialScanPrevalidationResponse> PrevalidateAsync(
+        public Task<MesMaterialScanPrevalidationResponse> PrevalidateAsync(
             string internalBearerToken,
             string correlationId,
-            BusinessConsoleMesMaterialScanPrevalidationRequest request,
+            MesMaterialScanPrevalidationRequest request,
             CancellationToken cancellationToken)
         {
             _ = internalBearerToken;
@@ -73,7 +73,7 @@ public sealed class BusinessMesMaterialPrevalidationEndpointTests
                 }
             }, state: 0);
 
-            return Task.FromResult(new BusinessConsoleMesMaterialScanPrevalidationResponse(
+            return Task.FromResult(new MesMaterialScanPrevalidationResponse(
                 MesMaterialScanDecision.Accepted,
                 "material-scan-accepted",
                 request.MaterialIssueRequestId,

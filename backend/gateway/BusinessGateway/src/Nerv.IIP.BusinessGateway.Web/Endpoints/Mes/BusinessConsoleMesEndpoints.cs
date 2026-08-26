@@ -955,16 +955,16 @@ public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesMaterialPrevalidationClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesMaterialScanPrevalidationRequest, BusinessConsoleMesMaterialScanPrevalidationResponse>(
+    : AuthorizedBusinessProxyEndpoint<MesMaterialScanPrevalidationRequest, MesMaterialScanPrevalidationResponse>(
         auth,
         BusinessGatewayPermissions.MesMaterialsRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesMaterialScanPrevalidationRequest request) => request.OrganizationId;
+    protected override string OrganizationId(MesMaterialScanPrevalidationRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesMaterialScanPrevalidationRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(MesMaterialScanPrevalidationRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesMaterialScanPrevalidationResponse> ForwardAsync(
-        BusinessConsoleMesMaterialScanPrevalidationRequest request,
+    protected override Task<MesMaterialScanPrevalidationResponse> ForwardAsync(
+        MesMaterialScanPrevalidationRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {

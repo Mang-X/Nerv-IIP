@@ -40,7 +40,7 @@ public sealed class MesMaterialScanGatewaySeamTests
         var response = await gatewayClient.PrevalidateAsync(
             "test-internal-service-token",
             "corr-seam-001",
-            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+            new MesMaterialScanPrevalidationRequest(
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None);
 

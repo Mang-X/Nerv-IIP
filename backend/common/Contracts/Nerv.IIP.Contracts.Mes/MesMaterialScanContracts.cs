@@ -4,14 +4,14 @@ using System.Text.Json.Serialization;
 
 namespace Nerv.IIP.Contracts.Mes;
 
-public sealed record BusinessConsoleMesMaterialScanPrevalidationRequest(
+public sealed record MesMaterialScanPrevalidationRequest(
     [property: JsonRequired, Required] string OrganizationId,
     [property: JsonRequired, Required] string EnvironmentId,
     [property: JsonRequired, Required] string MaterialIssueRequestId,
     [property: JsonRequired, Required] string WorkOrderId,
     [property: JsonRequired, Required] string OperationTaskId);
 
-public sealed record BusinessConsoleMesMaterialScanPrevalidationResponse(
+public sealed record MesMaterialScanPrevalidationResponse(
     [property: JsonRequired, Required] MesMaterialScanDecision Decision,
     [property: JsonRequired, Required] string ReasonCode,
     [property: JsonRequired, Required] string MaterialIssueRequestId,

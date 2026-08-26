@@ -3497,7 +3497,7 @@ internal sealed class AcceptedMaterialScanSender : ISender
     {
         var query = Assert.IsType<PrevalidateMaterialScanQuery>(request);
         _ = cancellationToken;
-        return Task.FromResult((TResponse)(object)new BusinessConsoleMesMaterialScanPrevalidationResponse(
+        return Task.FromResult((TResponse)(object)new MesMaterialScanPrevalidationResponse(
             MesMaterialScanDecision.Accepted,
             "material-scan-accepted",
             query.MaterialIssueRequestId,

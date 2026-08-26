@@ -185,7 +185,7 @@ public sealed class BusinessGatewayHttpClientResilienceTests
             .PrevalidateAsync(
                 "internal-token",
                 "corr-001",
-                new BusinessConsoleMesMaterialScanPrevalidationRequest(
+                new MesMaterialScanPrevalidationRequest(
                     "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
                 CancellationToken.None);
 

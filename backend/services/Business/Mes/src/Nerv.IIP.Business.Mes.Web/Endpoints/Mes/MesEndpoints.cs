@@ -1004,11 +1004,11 @@ public sealed class GetMaterialIssueRequestEndpoint(ISender sender)
 }
 
 public sealed class PrevalidateMaterialScanEndpoint(ISender sender)
-    : MesEndpoint<BusinessConsoleMesMaterialScanPrevalidationRequest, BusinessConsoleMesMaterialScanPrevalidationResponse>
+    : MesEndpoint<MesMaterialScanPrevalidationRequest, MesMaterialScanPrevalidationResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<PrevalidateMaterialScanEndpoint>());
 
-    public override async Task HandleAsync(BusinessConsoleMesMaterialScanPrevalidationRequest req, CancellationToken ct)
+    public override async Task HandleAsync(MesMaterialScanPrevalidationRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new PrevalidateMaterialScanQuery(
             req.OrganizationId,

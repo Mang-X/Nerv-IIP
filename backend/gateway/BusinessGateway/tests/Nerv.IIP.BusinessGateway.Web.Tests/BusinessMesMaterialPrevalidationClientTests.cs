@@ -20,7 +20,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         var response = await client.PrevalidateAsync(
             "internal-token",
             "corr-001",
-            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+            new MesMaterialScanPrevalidationRequest(
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None);
 
@@ -88,7 +88,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
             "internal-token",
             "corr-001",
-            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+            new MesMaterialScanPrevalidationRequest(
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None));
     }
@@ -104,7 +104,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
     {
         var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = JsonContent.Create(new BusinessConsoleMesMaterialScanPrevalidationResponse(
+            Content = JsonContent.Create(new MesMaterialScanPrevalidationResponse(
                 MesMaterialScanDecision.Accepted,
                 "material-scan-accepted",
                 materialIssueRequestId,
@@ -123,7 +123,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
             "internal-token",
             "corr-001",
-            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+            new MesMaterialScanPrevalidationRequest(
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None));
     }
@@ -150,7 +150,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
             "internal-token",
             "corr-001",
-            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+            new MesMaterialScanPrevalidationRequest(
                 "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
             CancellationToken.None));
     }
@@ -176,7 +176,7 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
             return responseFactory?.Invoke() ?? new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new BusinessConsoleMesMaterialScanPrevalidationResponse(
+                Content = JsonContent.Create(new MesMaterialScanPrevalidationResponse(
                     MesMaterialScanDecision.Accepted, "material-scan-accepted", "MIR-001", "WO-001", "OP-10",
                     "MAT-001", "LOT-001", "primary", DateTimeOffset.Parse("2026-08-26T08:00:00Z"))),
             };

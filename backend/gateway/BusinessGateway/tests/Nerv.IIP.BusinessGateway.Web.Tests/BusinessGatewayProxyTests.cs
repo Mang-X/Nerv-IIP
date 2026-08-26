@@ -12548,19 +12548,19 @@ internal sealed class RecordingMesMaterialPrevalidationClient : IBusinessMesMate
 {
     public string? LastInternalToken { get; private set; }
     public string? LastCorrelationId { get; private set; }
-    public BusinessConsoleMesMaterialScanPrevalidationRequest? LastRequest { get; private set; }
+    public MesMaterialScanPrevalidationRequest? LastRequest { get; private set; }
 
-    public Task<BusinessConsoleMesMaterialScanPrevalidationResponse> PrevalidateAsync(
+    public Task<MesMaterialScanPrevalidationResponse> PrevalidateAsync(
         string internalBearerToken,
         string correlationId,
-        BusinessConsoleMesMaterialScanPrevalidationRequest request,
+        MesMaterialScanPrevalidationRequest request,
         CancellationToken cancellationToken)
     {
         _ = cancellationToken;
         LastInternalToken = internalBearerToken;
         LastCorrelationId = correlationId;
         LastRequest = request;
-        return Task.FromResult(new BusinessConsoleMesMaterialScanPrevalidationResponse(
+        return Task.FromResult(new MesMaterialScanPrevalidationResponse(
             MesMaterialScanDecision.Accepted,
             "material-scan-accepted",
             request.MaterialIssueRequestId,
