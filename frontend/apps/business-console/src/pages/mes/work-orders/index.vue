@@ -27,6 +27,7 @@ import {
   isTransformationConflict,
   type WorkOrderTransformationSource,
 } from '@/composables/mes/workOrderTransformation'
+import { toBaseUomBySku } from '@/composables/skuBaseUom'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -137,6 +138,7 @@ function refreshUrgency() {
 
 const router = useRouter()
 const { skus } = useBusinessSkus()
+const baseUomBySku = toBaseUomBySku(skus)
 const { resolveSku, resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 
@@ -233,8 +235,8 @@ const mergeSources = computed<
       skuId: order.skuId,
       productionVersionId: order.productionVersionId,
       quantity: order.quantity,
-      // PR-C 当前列表读契约没有返回 UOM；保留缺失值，让合并校验 fail-closed。
-      uomCode: undefined,
+      // PR-C 工单列表没有 UOM；使用既有 MasterData SKU 读面中的基本单位事实，不臆造单位。
+      uomCode: baseUomBySku.value.get((order.skuCode ?? order.skuId)?.trim() ?? ''),
       status: order.status,
     })),
 )
