@@ -149,7 +149,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     public void MasterData_client_declarations_live_together_in_its_capability_file()
     {
         var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
-        var expectedPath = "MasterData/BusinessMasterDataClient.cs";
+        var expectedPath = "Capabilities/MasterData/BusinessMasterDataClient.cs";
 
         foreach (var identity in new[]
         {
@@ -706,9 +706,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             .Distinct(StringComparer.Ordinal)
             .ToDictionary(
                 capability => capability,
-                capability => capability == "MasterData"
-                    ? "MasterData"
-                    : $"Capabilities/{capability}",
+                capability => $"Capabilities/{capability}",
                 StringComparer.Ordinal);
         var ignoredSharedIdentities = new HashSet<string>(StringComparer.Ordinal)
         {
