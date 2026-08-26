@@ -135,6 +135,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests",

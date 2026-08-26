@@ -675,8 +675,9 @@ $excludedSelectors = @(
 # 但该类含 Docker CLI 原语、必须整类排除，因此选择器总数不变。#1566 新增的保存边界类只含
 # PostgreSQL 用例，整类交给 real-postgres lane，选择器总数增加到 64。#2070 新增的周期巡检
 # PostgreSQL profile 同样整类交给 real-postgres lane，选择器总数增加到 65；报废原因码 profile 再增加 1 个类选择器。
-# #2247 的替代料快照 provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane，选择器总数增加到 67。
-Assert-Contract ($excludedSelectors.Count -eq 67) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# #1963 PR-A 新增 WorkOrderTransformation PostgreSQL 类后，选择器总数增加到 67；#2247 的替代料快照
+# provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane，选择器总数增加到 68。
+Assert-Contract ($excludedSelectors.Count -eq 68) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests'))) 'The Quality periodic-inspection PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests'))) 'The Quality scrap-reason PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests'))) 'The MES CAP save-boundary PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
