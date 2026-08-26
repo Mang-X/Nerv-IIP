@@ -23,6 +23,54 @@ public sealed class MesIntegrationEventTests
         });
 
     [Fact]
+    public void Actual_time_settlement_converter_preserves_revision_snapshot_and_request_lineage()
+    {
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
+        var settlement = new OperationActualTimeSettlementSnapshot(
+            "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
+            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"]);
+
+        var integrationEvent = new OperationActualTimeSettledIntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
+            .Convert(new OperationActualTimeSettledDomainEvent(settlement));
+
+        Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettled, integrationEvent.EventType);
+        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("corr-settled", integrationEvent.CorrelationId);
+        Assert.Equal("cause-report-completed", integrationEvent.CausationId);
+        Assert.Equal("mes:operation-actual-time-settled:org-001:env-dev:OP-001:2", integrationEvent.IdempotencyKey);
+        Assert.Equal(2, integrationEvent.Payload.SettlementRevision);
+        Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
+        Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
+    }
+
+    [Fact]
+    public void Actual_time_void_converter_references_the_same_settlement_revision_and_snapshot()
+    {
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
+        var voidedAtUtc = completedAtUtc.AddMinutes(10);
+        var settlement = new OperationActualTimeSettlementSnapshot(
+            "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
+            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"]);
+
+        var integrationEvent = new OperationActualTimeSettlementVoidedIntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
+            .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
+
+        Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettlementVoided, integrationEvent.EventType);
+        Assert.Equal("corr-voided", integrationEvent.CorrelationId);
+        Assert.Equal("cause-report-reversed", integrationEvent.CausationId);
+        Assert.Equal("mes:operation-actual-time-settlement-voided:org-001:env-dev:OP-001:2", integrationEvent.IdempotencyKey);
+        Assert.Equal(2, integrationEvent.Payload.SettlementRevision);
+        Assert.Equal(completedAtUtc, integrationEvent.Payload.CompletedAtUtc);
+        Assert.Equal(voidedAtUtc, integrationEvent.Payload.VoidedAtUtc);
+        Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
+        Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
+    }
+
+    [Fact]
     public void Manual_dispatch_clear_reason_converter_maps_every_domain_reason_to_wire_contract()
     {
         var expectedCodes = new Dictionary<OperationTaskManualDispatchClearReason, string>

@@ -341,7 +341,18 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
+            var coveredProductionReportNos = await dbContext.ProductionReports
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == request.WorkOrderId &&
+                    x.OperationTaskId == request.OperationTaskId)
+                .Select(x => x.ReportNo)
+                .ToArrayAsync(cancellationToken);
+            MesDomainRuleGuard.Enforce(() => operationTask.Complete(
+                request.ReportedAtUtc,
+                [.. coveredProductionReportNos, report.ReportNo]));
         }
 
         dbContext.ProductionReports.Add(report);
@@ -531,7 +542,7 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
         if (original.CompletesOperation)
         {
-            operationTask.ReopenAfterReportReversal();
+            operationTask.ReopenAfterReportReversal(request.ReversedAtUtc);
         }
 
         var reversal = ProductionReport.Reverse(

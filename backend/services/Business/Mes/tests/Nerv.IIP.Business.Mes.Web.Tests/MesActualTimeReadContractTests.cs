@@ -44,7 +44,7 @@ public sealed class MesActualTimeReadContractTests
         var reopened = CreateTask("WO-REOPENED", "OP-REOPENED", startedAtUtc);
         reopened.Start(startedAtUtc);
         reopened.Complete(startedAtUtc.AddMinutes(15));
-        reopened.ReopenAfterReportReversal();
+        reopened.ReopenAfterReportReversal(startedAtUtc.AddMinutes(30));
 
         dbContext.OperationTasks.AddRange(queued, inProgress, paused, completed, completedWithZero, reopened);
         await dbContext.SaveChangesAsync();

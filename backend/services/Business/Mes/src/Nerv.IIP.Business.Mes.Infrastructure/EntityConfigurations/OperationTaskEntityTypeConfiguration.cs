@@ -8,7 +8,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
     public void Configure(EntityTypeBuilder<OperationTask> builder)
     {
         builder.ToTable("operation_tasks", tableBuilder =>
-            tableBuilder.HasComment("MES operation task facts created from routing step snapshots for scheduling and execution tracking."));
+        {
+            tableBuilder.HasComment("MES operation task facts created from routing step snapshots for scheduling and execution tracking.");
+            tableBuilder.HasCheckConstraint(
+                "ck_operation_tasks_actual_time_settlement_revision_nonnegative",
+                "actual_time_settlement_revision >= 0");
+        });
         builder.HasKey(x => x.Id);
         builder.Ignore(x => x.OperationTaskId);
         builder.Ignore(x => x.Duration);
@@ -33,6 +38,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PausedDurationTicks).HasColumnName("paused_duration_ticks").IsRequired().HasDefaultValue(0L).HasComment("Accumulated paused duration stored as .NET ticks and excluded from actual work time.");
         builder.Property(x => x.LaborTimeTicks).HasColumnName("labor_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
         builder.Property(x => x.MachineTimeTicks).HasColumnName("machine_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
+        builder.Property(x => x.ActualTimeSettlementRevision)
+            .HasColumnName("actual_time_settlement_revision").IsRequired().HasDefaultValue(0L).IsConcurrencyToken()
+            .HasComment("Monotonic MES actual-time settlement revision; zero means the operation has never emitted a settlement.");
+        builder.Property(x => x.ActualTimeSettlementCoveredReportNosJson)
+            .HasColumnName("actual_time_settlement_covered_report_nos_json").IsRequired().HasDefaultValue("[]")
+            .HasComment("JSON array of ordinal-sorted production report numbers covered by the active settlement; producer is MES production reporting, consumers are MES settlement/reversal and downstream event converters, compatibility is append-only and readers must ignore unknown future members.");
         builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
         builder.Property(x => x.AssignedUserName).HasColumnName("assigned_user_name").HasMaxLength(200).HasComment("Display name snapshot of the assigned worker captured by MES dispatch.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");

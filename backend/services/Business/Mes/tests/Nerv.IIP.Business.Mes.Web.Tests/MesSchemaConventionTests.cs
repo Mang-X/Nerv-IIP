@@ -29,6 +29,52 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesSchemaConventionTests
 {
     [Fact]
+    public void Operation_actual_time_settlement_revision_and_covered_reports_are_governed_columns()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(OperationTask))!;
+        var revision = entity.FindProperty(nameof(OperationTask.ActualTimeSettlementRevision))!;
+        var coveredReports = entity.FindProperty(nameof(OperationTask.ActualTimeSettlementCoveredReportNosJson))!;
+
+        Assert.Equal("actual_time_settlement_revision", revision.GetColumnName());
+        Assert.Equal(0L, revision.GetDefaultValue());
+        Assert.True(revision.IsConcurrencyToken);
+        Assert.Equal("actual_time_settlement_covered_report_nos_json", coveredReports.GetColumnName());
+        Assert.Equal("[]", coveredReports.GetDefaultValue());
+        Assert.False(string.IsNullOrWhiteSpace(coveredReports.GetComment()));
+        Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative");
+    }
+
+    [Fact]
+    public void Operation_actual_time_settlement_migration_adds_revision_lineage_and_nonnegative_constraint()
+    {
+        var migration = new AddMesOperationActualTimeSettlement();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesOperationActualTimeSettlement)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        var columns = migrationBuilder.Operations.OfType<AddColumnOperation>().ToArray();
+        Assert.Contains(columns, x =>
+            x.Schema == MesFacts.Schema &&
+            x.Table == "operation_tasks" &&
+            x.Name == "actual_time_settlement_revision" &&
+            Equals(x.DefaultValue, 0L) &&
+            !string.IsNullOrWhiteSpace(x.Comment));
+        Assert.Contains(columns, x =>
+            x.Schema == MesFacts.Schema &&
+            x.Table == "operation_tasks" &&
+            x.Name == "actual_time_settlement_covered_report_nos_json" &&
+            Equals(x.DefaultValue, "[]") &&
+            !string.IsNullOrWhiteSpace(x.Comment));
+        Assert.Contains(migrationBuilder.Operations.OfType<AddCheckConstraintOperation>(), x =>
+            x.Schema == MesFacts.Schema &&
+            x.Table == "operation_tasks" &&
+            x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative" &&
+            x.Sql == "actual_time_settlement_revision >= 0");
+    }
+
+    [Fact]
     public void Operation_task_schedule_release_provenance_columns_are_explicit()
     {
         using var fixture = CreateFixture();
@@ -169,6 +215,7 @@ public sealed class MesSchemaConventionTests
             fixture.DbContext,
             MesFacts.ServiceName,
             [
+                new JsonColumnRule(typeof(OperationTask), nameof(OperationTask.ActualTimeSettlementCoveredReportNosJson)),
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AssignmentsJson)),
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AffectedWorkOrderIdsJson)),
             ]));
