@@ -102,6 +102,20 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.ThrowsAny<Exception>(() => AssertEventTransport(missingReceived, "evt-exact"));
     }
 
+    [Fact]
+    public void Received_snapshot_counts_distinct_cap_row_ids()
+    {
+        var rows = new Dictionary<long, byte>
+        {
+            [101L] = 0,
+            [102L] = 0,
+        };
+
+        Assert.Equal(2L, InventoryReceivedMessageSnapshot.CountReceivedRows(rows));
+        rows[101L] = 0;
+        Assert.Equal(2L, InventoryReceivedMessageSnapshot.CountReceivedRows(rows));
+    }
+
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
         string inventoryConnectionString,
         string redisConnectionString,
@@ -258,7 +272,8 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         private readonly string connectionString;
         private readonly IReadOnlyDictionary<string, string> eventIdempotencyKeys;
-        private readonly ConcurrentDictionary<string, byte> receivedEventIds = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, byte>> receivedRowsByEventId =
+            new(StringComparer.Ordinal);
         private readonly CancellationTokenSource stop = new();
         private readonly TaskCompletionSource<bool> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Task captureTask;
@@ -295,8 +310,12 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         public long GetReceivedCount(string eventId)
         {
             ThrowIfFaulted();
-            return receivedEventIds.ContainsKey(eventId) ? 1L : 0L;
+            return receivedRowsByEventId.TryGetValue(eventId, out var rows)
+                ? CountReceivedRows(rows)
+                : 0L;
         }
+
+        public static long CountReceivedRows(IReadOnlyDictionary<long, byte>? rows) => rows?.Count ?? 0L;
 
         public void ThrowIfFaulted()
         {
@@ -330,6 +349,9 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             {
                 await using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync(stop.Token);
+                // Establish the empty/clean baseline before the caller is allowed to publish. This
+                // prevents the first query from racing with the first CAP received row.
+                await CaptureOnceAsync(connection, stop.Token);
                 ready.TrySetResult(true);
                 while (!stop.IsCancellationRequested)
                 {
@@ -352,16 +374,16 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         private async Task CaptureOnceAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT \"Name\", \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
+            command.CommandText = "SELECT \"Id\", \"Name\", \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                var tableName = reader.IsDBNull(0) ? null : reader.GetString(0);
-                var content = reader.GetString(1);
+                var rowId = reader.GetInt64(0);
+                var tableName = reader.IsDBNull(1) ? null : reader.GetString(1);
+                var content = reader.GetString(2);
                 foreach (var (eventId, idempotencyKey) in eventIdempotencyKeys)
                 {
-                    if (receivedEventIds.ContainsKey(eventId) ||
-                        !ContentMatchesEvent(
+                    if (!ContentMatchesEvent(
                             content,
                             eventId,
                             idempotencyKey,
@@ -372,7 +394,9 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                         continue;
                     }
 
-                    receivedEventIds.TryAdd(eventId, 0);
+                    receivedRowsByEventId
+                        .GetOrAdd(eventId, static _ => new ConcurrentDictionary<long, byte>())
+                        .TryAdd(rowId, 0);
                 }
             }
         }

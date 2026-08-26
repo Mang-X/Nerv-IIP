@@ -216,10 +216,13 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             AssertEventTransport(transport.EventFacts, failureEvent.EventId);
             AssertEventTransport(transport.EventFacts, failureReplayEvent.EventId);
             AssertEventTransport(transport.EventFacts, pendingEvent.EventId);
-            var pendingRedisFact = observedPendingRedisFacts[pendingEvent.EventId];
+            // The latch only gates bounded completion. Final pending proof must come from a fresh
+            // PEL read, otherwise a later ACK/state change could be hidden by the latched value.
+            var pendingRedisFact = transport.PendingEventRedisFact;
             Assert.True(pendingRedisFact.IsPresent);
             Assert.Equal(pendingEvent.EventId, pendingRedisFact.EventId);
             Assert.Equal(pendingEvent.IdempotencyKey, pendingRedisFact.IdempotencyKey);
+            Assert.False(string.IsNullOrWhiteSpace(pendingRedisFact.ConsumerName));
             Assert.True(pendingRedisFact.DeliveryCount >= 1);
             Assert.Equal("Pending", transport.PendingAuthorityStatus);
             Assert.Equal("capitalized-unit-cost-not-ready", transport.PendingAuthorityReason);
