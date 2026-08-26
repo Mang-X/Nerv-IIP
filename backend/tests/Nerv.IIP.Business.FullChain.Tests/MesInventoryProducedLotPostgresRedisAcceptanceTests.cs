@@ -100,6 +100,17 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureReplayEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), pendingEvent);
 
+        var eventIdempotencyKeys = new Dictionary<string, string>
+        {
+            [successEvent.EventId] = successEvent.IdempotencyKey,
+            [successReplayEvent.EventId] = successReplayEvent.IdempotencyKey,
+            [failureEvent.EventId] = failureEvent.IdempotencyKey,
+            [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
+            [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
+        };
+        var requiredTransportEventIds = eventIdempotencyKeys.Keys.ToHashSet(StringComparer.Ordinal);
+        var observedTransportFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
+
         // Real cross-process Redis CAP transport: the observable facts live in the two PostgreSQL databases,
         // so poll them on a bounded budget instead of guessing a single completion instant.
         try
@@ -108,7 +119,16 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 condition: "MES and Inventory closed both Redis CAP produced-lot paths",
                 observe: async token => (
                     Mes: await ReadMesFactsAsync(mesPostgres, source, token),
-                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source, token)),
+                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source, token),
+                    Messaging: await ReadMessagingFactsAsync(
+                        mesPostgres,
+                        inventoryPostgres,
+                        redis,
+                        capVersion,
+                        pendingEvent.EventId,
+                        pendingEvent.IdempotencyKey,
+                        eventIdempotencyKeys,
+                        eventIdempotencyKeys.Keys.ToArray())),
                 isSatisfied: state => state.Mes.SuccessStatus == "Posted"
                     && state.Mes.SuccessMovementId is not null
                     && state.Mes.FailureStatus == "InventoryPostingFailed"
@@ -127,7 +147,11 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                     && state.Inventory.SuccessUnitCost == source.ErpCapitalizedUnitCost
                     && state.Inventory.SuccessMovementAmount == ReceiptQuantity * source.ErpCapitalizedUnitCost
                     && state.Inventory.LedgerMovingAverageUnitCost == source.ErpCapitalizedUnitCost
-                    && state.Inventory.LedgerInventoryValue == ReceiptQuantity * source.ErpCapitalizedUnitCost,
+                    && state.Inventory.LedgerInventoryValue == ReceiptQuantity * source.ErpCapitalizedUnitCost
+                    && CaptureObservedTransportFacts(
+                        state.Messaging,
+                        requiredTransportEventIds,
+                        observedTransportFacts),
                 describe: state =>
                     $"SuccessStatus={state.Mes.SuccessStatus}, SuccessMovement={state.Mes.SuccessMovementId}, " +
                     $"FailureStatus={state.Mes.FailureStatus}, FailureCode={state.Mes.FailureCode}, " +
@@ -163,6 +187,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal(0L, observed.Mes.PendingAuthorityProvenanceCount);
             Assert.Equal(1L, observed.Mes.PendingPublishedMessageCount);
             Assert.Equal(0, observed.Inventory.PendingMovementCount);
+            Assert.True(observedTransportFacts.Keys.ToHashSet(StringComparer.Ordinal)
+                .SetEquals(requiredTransportEventIds));
 
             var transport = await ReadMessagingFactsAsync(
                 mesPostgres,
@@ -171,24 +197,13 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 capVersion,
                 pendingEvent.EventId,
                 pendingEvent.IdempotencyKey,
-                new Dictionary<string, string>
-                {
-                    [successEvent.EventId] = successEvent.IdempotencyKey,
-                    [successReplayEvent.EventId] = successReplayEvent.IdempotencyKey,
-                    [failureEvent.EventId] = failureEvent.IdempotencyKey,
-                    [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
-                    [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
-                },
-                successEvent.EventId,
-                successReplayEvent.EventId,
-                failureEvent.EventId,
-                failureReplayEvent.EventId,
-                pendingEvent.EventId);
-            AssertEventTransport(transport, successEvent.EventId);
-            AssertEventTransport(transport, successReplayEvent.EventId);
-            AssertEventTransport(transport, failureEvent.EventId);
-            AssertEventTransport(transport, failureReplayEvent.EventId);
-            AssertEventTransport(transport, pendingEvent.EventId);
+                eventIdempotencyKeys,
+                eventIdempotencyKeys.Keys.ToArray());
+            AssertEventTransport(observedTransportFacts, successEvent.EventId);
+            AssertEventTransport(observedTransportFacts, successReplayEvent.EventId);
+            AssertEventTransport(observedTransportFacts, failureEvent.EventId);
+            AssertEventTransport(observedTransportFacts, failureReplayEvent.EventId);
+            AssertEventTransport(observedTransportFacts, pendingEvent.EventId);
             Assert.True(transport.PendingEventRedisFact.IsPresent);
             Assert.Equal(pendingEvent.EventId, transport.PendingEventRedisFact.EventId);
             Assert.Equal(pendingEvent.IdempotencyKey, transport.PendingEventRedisFact.IdempotencyKey);
@@ -208,19 +223,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 capVersion,
                 pendingEvent.EventId,
                 pendingEvent.IdempotencyKey,
-                new Dictionary<string, string>
-                {
-                    [successEvent.EventId] = successEvent.IdempotencyKey,
-                    [successReplayEvent.EventId] = successReplayEvent.IdempotencyKey,
-                    [failureEvent.EventId] = failureEvent.IdempotencyKey,
-                    [failureReplayEvent.EventId] = failureReplayEvent.IdempotencyKey,
-                    [pendingEvent.EventId] = pendingEvent.IdempotencyKey,
-                },
-                successEvent.EventId,
-                successReplayEvent.EventId,
-                failureEvent.EventId,
-                failureReplayEvent.EventId,
-                pendingEvent.EventId);
+                eventIdempotencyKeys,
+                eventIdempotencyKeys.Keys.ToArray());
             throw new TimeoutException(
                 $"{timeout.Message} " +
                 $"EventTransport={string.Join(",", finalMessagingFacts.EventFacts.Select(x => $"{x.Key}:published={x.Value.PublishedCount}/received={x.Value.ReceivedCount}"))}, " +
@@ -827,16 +831,17 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
             {
                 await using var published = mesConnection.CreateCommand();
-                published.CommandText = "SELECT \"Content\" FROM mes.cap_published_messages WHERE \"Content\" IS NOT NULL;";
+                published.CommandText = "SELECT \"Name\", \"Content\" FROM mes.cap_published_messages WHERE \"Content\" IS NOT NULL;";
                 var publishedCount = 0L;
                 await using var publishedReader = await published.ExecuteReaderAsync();
                 while (await publishedReader.ReadAsync())
                 {
                     if (ContentMatchesEvent(
-                        publishedReader.GetString(0),
+                        publishedReader.GetString(1),
                         eventId,
                         eventIdempotencyKeys[eventId],
-                        nameof(InventoryMovementRequestedIntegrationEvent)))
+                        nameof(InventoryMovementRequestedIntegrationEvent),
+                        publishedReader.IsDBNull(0) ? null : publishedReader.GetString(0)))
                     {
                         publishedCount++;
                     }
@@ -854,16 +859,17 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             foreach (var eventId in eventIds.Distinct(StringComparer.Ordinal))
             {
                 await using var consumed = inventoryConnection.CreateCommand();
-                consumed.CommandText = "SELECT \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
+                consumed.CommandText = "SELECT \"Name\", \"Content\" FROM inventory.cap_received_messages WHERE \"Content\" IS NOT NULL;";
                 var receivedCount = 0L;
                 await using var receivedReader = await consumed.ExecuteReaderAsync();
                 while (await receivedReader.ReadAsync())
                 {
                     if (ContentMatchesEvent(
-                        receivedReader.GetString(0),
+                        receivedReader.GetString(1),
                         eventId,
                         eventIdempotencyKeys[eventId],
-                        nameof(InventoryMovementRequestedIntegrationEvent)))
+                        nameof(InventoryMovementRequestedIntegrationEvent),
+                        receivedReader.IsDBNull(0) ? null : receivedReader.GetString(0)))
                     {
                         receivedCount++;
                     }
@@ -888,15 +894,6 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             }
         }
 
-        var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
-        redisOptions.AbortOnConnectFail = false;
-        await using var redisConnection = await ConnectionMultiplexer.ConnectAsync(redisOptions);
-        var redisDatabase = redisConnection.GetDatabase();
-        eventFacts = await ReadRedisEventFactsAsync(
-            redisDatabase,
-            capVersion,
-            eventIdempotencyKeys,
-            eventIds);
         var pendingEventRedisFact = await ReadPendingRedisFactAsync(
             redisConnectionString,
             capVersion,
@@ -911,64 +908,28 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             inventoryDeadLetterCount);
     }
 
-    private static async Task<Dictionary<string, EventMessageFact>> ReadRedisEventFactsAsync(
-        IDatabase database,
-        string capVersion,
-        IReadOnlyDictionary<string, string> eventIdempotencyKeys,
-        IReadOnlyCollection<string> eventIds)
+    private static bool CaptureObservedTransportFacts(
+        MessagingFacts messaging,
+        IReadOnlySet<string> requiredEventIds,
+        IDictionary<string, EventMessageFact> observedFacts)
     {
-        var stream = (RedisKey)nameof(InventoryMovementRequestedIntegrationEvent);
-        var groupName = (RedisValue)$"business-inventory.movement-requested.{capVersion}";
-        var groups = await database.StreamGroupInfoAsync(stream);
-        var group = groups.Single(x => x.Name == groupName);
-        var entries = await database.StreamRangeAsync(stream);
-        var facts = eventIds.Distinct(StringComparer.Ordinal)
-            .ToDictionary(x => x, _ => new EventMessageFact(0L, 0L), StringComparer.Ordinal);
-        var lastDeliveredId = group.LastDeliveredId!.ToString() ?? string.Empty;
-        var lastDelivered = string.IsNullOrEmpty(lastDeliveredId)
-            ? (long.MinValue, long.MinValue)
-            : ParseRedisStreamId(lastDeliveredId);
-        foreach (var entry in entries)
+        foreach (var eventId in requiredEventIds)
         {
-            var matchedEventId = eventIds.FirstOrDefault(eventId =>
-                entry.Values.Any(value =>
-                    ContentMatchesEvent(
-                        value.Value.ToString(),
-                        eventId,
-                        eventIdempotencyKeys[eventId],
-                        nameof(InventoryMovementRequestedIntegrationEvent))));
-            if (matchedEventId is null)
+            if (messaging.EventFacts.TryGetValue(eventId, out var fact) &&
+                fact.PublishedCount == 1L && fact.ReceivedCount == 1L)
             {
-                continue;
+                observedFacts[eventId] = fact;
             }
-
-            var entryId = ParseRedisStreamId(entry.Id.ToString());
-            var current = facts[matchedEventId];
-            facts[matchedEventId] = current with
-            {
-                PublishedCount = current.PublishedCount + 1,
-                ReceivedCount = current.ReceivedCount + (IsAtOrBefore(entryId, lastDelivered) ? 1L : 0L),
-            };
         }
 
-        return facts;
+        return observedFacts.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(requiredEventIds);
     }
 
-    private static (long Milliseconds, long Sequence) ParseRedisStreamId(string value)
+    private static void AssertEventTransport(
+        IReadOnlyDictionary<string, EventMessageFact> eventFacts,
+        string eventId)
     {
-        var parts = value.Split('-', 2);
-        return (long.Parse(parts[0]), long.Parse(parts[1]));
-    }
-
-    private static bool IsAtOrBefore(
-        (long Milliseconds, long Sequence) left,
-        (long Milliseconds, long Sequence) right) =>
-        left.Milliseconds < right.Milliseconds ||
-        (left.Milliseconds == right.Milliseconds && left.Sequence <= right.Sequence);
-
-    private static void AssertEventTransport(MessagingFacts facts, string eventId)
-    {
-        var eventFact = facts.EventFacts[eventId];
+        var eventFact = eventFacts[eventId];
         Assert.Equal(1L, eventFact.PublishedCount);
         Assert.Equal(1L, eventFact.ReceivedCount);
     }
@@ -1023,19 +984,13 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string content,
         string eventId,
         string idempotencyKey,
-        string eventType)
+        string eventType,
+        string? tableName = null)
     {
         try
         {
             using var document = JsonDocument.Parse(content);
-            var eventIds = ReadJsonStrings(document.RootElement, "EventId");
-            var idempotencyKeys = ReadJsonStrings(document.RootElement, "IdempotencyKey");
-            var eventTypes = ReadJsonStrings(document.RootElement, "EventType");
-            var names = ReadJsonStrings(document.RootElement, "Name");
-            return eventIds.Contains(eventId, StringComparer.Ordinal) &&
-                   idempotencyKeys.Contains(idempotencyKey, StringComparer.Ordinal) &&
-                   (eventTypes.Contains(eventType, StringComparer.Ordinal) ||
-                    names.Contains(eventType, StringComparer.Ordinal));
+            return JsonObjectMatchesAny(document.RootElement, eventId, idempotencyKey, eventType, tableName);
         }
         catch (JsonException)
         {
@@ -1043,47 +998,69 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
     }
 
-    private static IReadOnlyList<string> ReadJsonStrings(JsonElement element, string propertyName)
-    {
-        var values = new List<string>();
-        ReadJsonStrings(element, propertyName, values);
-        return values;
-    }
-
-    private static void ReadJsonStrings(JsonElement element, string propertyName, ICollection<string> values)
+    private static bool JsonObjectMatchesAny(
+        JsonElement element,
+        string eventId,
+        string idempotencyKey,
+        string eventType,
+        string? tableName)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in element.EnumerateObject())
+            if (JsonObjectMatches(element, eventId, idempotencyKey, eventType, tableName))
             {
-                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
-                    property.Value.ValueKind == JsonValueKind.String &&
-                    property.Value.GetString() is { } value)
-                {
-                    values.Add(value);
-                }
+                return true;
+            }
 
-                ReadJsonStrings(property.Value, propertyName, values);
-            }
+            return element.EnumerateObject()
+                .Any(property => JsonObjectMatchesAny(property.Value, eventId, idempotencyKey, eventType, null));
         }
-        else if (element.ValueKind == JsonValueKind.Array)
+
+        if (element.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in element.EnumerateArray())
-            {
-                ReadJsonStrings(item, propertyName, values);
-            }
+            return element.EnumerateArray()
+                .Any(item => JsonObjectMatchesAny(item, eventId, idempotencyKey, eventType, null));
         }
-        else if (element.ValueKind == JsonValueKind.String &&
-                 element.GetString() is { } nested &&
-                 nested.TrimStart().StartsWith('{') &&
-                 TryParseJson(nested, out var nestedDocument))
+
+        if (element.ValueKind == JsonValueKind.String &&
+            element.GetString() is { } nested &&
+            nested.TrimStart().StartsWith('{') &&
+            TryParseJson(nested, out var nestedDocument))
         {
             using (nestedDocument)
             {
-                ReadJsonStrings(nestedDocument!.RootElement, propertyName, values);
+                return JsonObjectMatchesAny(nestedDocument!.RootElement, eventId, idempotencyKey, eventType, null);
             }
         }
+
+        return false;
     }
+
+    private static bool JsonObjectMatches(
+        JsonElement element,
+        string eventId,
+        string idempotencyKey,
+        string eventType,
+        string? tableName)
+    {
+        var properties = element.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
+        var candidateEventId = ReadDirectJsonString(properties, "EventId");
+        var candidateIdempotencyKey = ReadDirectJsonString(properties, "IdempotencyKey");
+        var candidateEventType = ReadDirectJsonString(properties, "EventType");
+        var candidateName = ReadDirectJsonString(properties, "Name");
+        var typeMatches = candidateEventType == eventType || candidateName == eventType ||
+            (candidateEventType is null && candidateName is null && tableName == eventType);
+
+        return candidateEventId == eventId && candidateIdempotencyKey == idempotencyKey && typeMatches;
+    }
+
+    private static string? ReadDirectJsonString(
+        IReadOnlyDictionary<string, JsonElement> properties,
+        string propertyName) =>
+        properties.TryGetValue(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private static bool TryParseJson(string value, out JsonDocument? document)
     {
