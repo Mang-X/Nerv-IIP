@@ -107,6 +107,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         var inventoryConsumerGroup = $"business-inventory.movement-requested.{capVersion}";
         await using var receivedMessageSnapshot = await InventoryReceivedMessageSnapshot.StartAsync(
             inventoryPostgres,
+            capVersion,
             inventoryConsumerGroup,
             eventIdempotencyKeys);
         Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(successEvent.EventId));

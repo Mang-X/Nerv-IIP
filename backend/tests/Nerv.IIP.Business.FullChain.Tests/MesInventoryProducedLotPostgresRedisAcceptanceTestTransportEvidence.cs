@@ -304,6 +304,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(10);
 
         private readonly string connectionString;
+        private readonly string capVersion;
         private readonly string consumerGroup;
         private readonly IReadOnlyDictionary<string, string> eventIdempotencyKeys;
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, byte>> receivedRowsByEventId =
@@ -314,10 +315,12 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         private InventoryReceivedMessageSnapshot(
             string connectionString,
+            string capVersion,
             string consumerGroup,
             IReadOnlyDictionary<string, string> eventIdempotencyKeys)
         {
             this.connectionString = connectionString;
+            this.capVersion = capVersion;
             this.consumerGroup = consumerGroup;
             this.eventIdempotencyKeys = eventIdempotencyKeys.ToDictionary(
                 pair => pair.Key,
@@ -328,10 +331,15 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
         public static async Task<InventoryReceivedMessageSnapshot> StartAsync(
             string connectionString,
+            string capVersion,
             string consumerGroup,
             IReadOnlyDictionary<string, string> eventIdempotencyKeys)
         {
-            var snapshot = new InventoryReceivedMessageSnapshot(connectionString, consumerGroup, eventIdempotencyKeys);
+            var snapshot = new InventoryReceivedMessageSnapshot(
+                connectionString,
+                capVersion,
+                consumerGroup,
+                eventIdempotencyKeys);
             try
             {
                 await snapshot.ready.Task.ConfigureAwait(false);
@@ -412,21 +420,24 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         {
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT "Id", "Name", "Content"
-                FROM inventory.cap_received_messages
-                WHERE "Group" = @consumer_group
+                SELECT "Id", "Version", "Name", "Group", "Content", "StatusName"
+                FROM "cap"."received"
+                WHERE "Version" = @cap_version
+                  AND "Group" = @consumer_group
                   AND "Content" IS NOT NULL;
                 """;
-            // NetCorePalDataStorage.StoreReceivedMessageAsync writes the actual consumer group but
-            // leaves ReceivedMessage.Version unset. Filtering by CAP Version would therefore discard
-            // every real Inventory received row; Group is the populated production identity.
+            // Business Inventory registers DotNetCore.CAP.PostgreSql.UseEntityFramework. Its official
+            // storage uses EFOptions' default schema/table ("cap"."received"). The inventory
+            // cap_received_messages table is the separately mapped NetCorePal projection and is not the
+            // CAP storage used by this production process; querying it yields a false all-zero result.
+            command.Parameters.AddWithValue("cap_version", capVersion);
             command.Parameters.AddWithValue("consumer_group", consumerGroup);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
                 var rowId = reader.GetInt64(0);
-                var tableName = reader.IsDBNull(1) ? null : reader.GetString(1);
-                var content = reader.GetString(2);
+                var tableName = reader.IsDBNull(2) ? null : reader.GetString(2);
+                var content = reader.GetString(4);
                 foreach (var (eventId, idempotencyKey) in eventIdempotencyKeys)
                 {
                     if (!ContentMatchesEvent(
