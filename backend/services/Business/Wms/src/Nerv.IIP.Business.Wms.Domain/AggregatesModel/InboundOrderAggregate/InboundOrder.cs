@@ -294,7 +294,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         EnsureHasLines();
         var retryLines = RetryLines(failedLineNos);
         Status = InboundOrderStatus.Completed;
-        var singleLine = retryLines.Count == 1;
+        var singleLine = lines.Count == 1;
         var requests = retryLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,

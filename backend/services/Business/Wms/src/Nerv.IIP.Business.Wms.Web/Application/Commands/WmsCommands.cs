@@ -514,14 +514,15 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
-        var failedRequests = await dbContext.InventoryMovementRequests
+        var postingAttempts = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == inbound.OrganizationId
                 && x.EnvironmentId == inbound.EnvironmentId
                 && x.MovementType == InventoryMovementTypes.Inbound
-                && x.SourceDocumentId == inbound.InboundOrderNo
-                && x.Status == InventoryMovementRequestStatus.Failed)
+                && x.SourceDocumentId == inbound.InboundOrderNo)
             .ToArrayAsync(cancellationToken);
-        var failedRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(failedRequests);
+        var failedRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingAttempts)
+            .Where(pair => pair.Value.Status == InventoryMovementRequestStatus.Failed)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         var failedLineNos = failedRequestsByLine.Keys.ToArray();
         var retryLocationsByLine = failedRequestsByLine.ToDictionary(
             pair => pair.Key,
