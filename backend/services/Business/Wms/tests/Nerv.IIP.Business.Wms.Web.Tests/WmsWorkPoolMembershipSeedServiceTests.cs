@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
@@ -167,6 +168,195 @@ public sealed class WmsWorkPoolMembershipSeedServiceTests
         Assert.Single(await dbContext.WarehouseWorkPoolMemberships.ToArrayAsync());
         Assert.Single(await dbContext.InboundOrders.ToArrayAsync());
     }
+
+    [Fact]
+    public async Task Existing_unapproved_memberships_fail_closed_before_writing_any_seed_fact()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+            "org-001",
+            "env-dev",
+            "POOL-WMS-RECEIVING",
+            "收货与上架",
+            "SITE-001"));
+        dbContext.WarehouseWorkPoolMemberships.AddRange(
+            WarehouseWorkPoolMembership.Create(
+                "org-001",
+                "env-dev",
+                "POOL-WMS-RECEIVING",
+                "user-admin",
+                Now.AddDays(-1)),
+            WarehouseWorkPoolMembership.Create(
+                "org-001",
+                "env-dev",
+                "POOL-WMS-RECEIVING",
+                "user-emp-048",
+                Now.AddDays(-1)));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new WmsWorkPoolMembershipSeedService(dbContext, new StaticTimeProvider(Now))
+                .SeedAsync("org-001", "env-dev", CancellationToken.None));
+
+        Assert.Contains("user-admin", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("user-emp-048", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, await dbContext.WarehouseWorkPools.CountAsync());
+        Assert.Equal(2, await dbContext.WarehouseWorkPoolMemberships.CountAsync());
+        Assert.Empty(await dbContext.InboundOrders.ToArrayAsync());
+    }
+
+    [Theory]
+    [InlineData(InboundOrderStatus.Completed)]
+    [InlineData(InboundOrderStatus.Cancelled)]
+    public async Task Existing_non_open_inbound_order_fails_closed_without_partial_seed_writes(
+        InboundOrderStatus status)
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inboundOrder = CreateCanonicalInboundOrder();
+        if (status == InboundOrderStatus.Completed)
+        {
+            _ = inboundOrder.Complete("seed-conflict-complete", inboundOrder.Version);
+        }
+        else
+        {
+            inboundOrder.Cancel("seed-conflict-cancelled");
+        }
+
+        dbContext.InboundOrders.Add(inboundOrder);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new WmsWorkPoolMembershipSeedService(dbContext, new StaticTimeProvider(Now))
+                .SeedAsync("org-001", "env-dev", CancellationToken.None));
+
+        Assert.Contains("canonical", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(await dbContext.WarehouseWorkPools.ToArrayAsync());
+        Assert.Empty(await dbContext.WarehouseWorkPoolMemberships.ToArrayAsync());
+        var persisted = Assert.Single(await dbContext.InboundOrders.ToArrayAsync());
+        Assert.Equal(status, persisted.Status);
+    }
+
+    [Fact]
+    public async Task Existing_inbound_assignment_conflict_fails_closed_without_partial_seed_writes()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inboundOrder = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IB-WMS-SEED-001",
+            "wms-walkthrough-seed",
+            "WMS-WALKTHROUGH-SEED-001",
+            "SITE-001",
+            [
+                new InboundOrderLineDraft(
+                    "10",
+                    "RM-TUB-01",
+                    "kg",
+                    1m,
+                    "loc-raw-01",
+                    "LOT-WMS-SEED-001",
+                    SerialNo: null,
+                    "unrestricted",
+                    "company",
+                    OwnerId: null),
+            ],
+            assignedOperatorUserId: "user-emp-048",
+            assignedPoolCode: "POOL-WMS-SHIPPING");
+        dbContext.InboundOrders.Add(inboundOrder);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new WmsWorkPoolMembershipSeedService(dbContext, new StaticTimeProvider(Now))
+                .SeedAsync("org-001", "env-dev", CancellationToken.None));
+
+        Assert.Contains("canonical", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(await dbContext.WarehouseWorkPools.ToArrayAsync());
+        Assert.Empty(await dbContext.WarehouseWorkPoolMemberships.ToArrayAsync());
+        var persisted = Assert.Single(await dbContext.InboundOrders.ToArrayAsync());
+        Assert.Equal("user-emp-048", persisted.AssignedOperatorUserId);
+        Assert.Equal("POOL-WMS-SHIPPING", persisted.AssignedPoolCode);
+    }
+
+    [Fact]
+    public async Task Existing_inbound_identity_and_line_conflict_fails_closed_without_partial_seed_writes()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inboundOrder = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IB-WMS-SEED-001",
+            "purchase-order",
+            "PO-WMS-SEED-001",
+            "SITE-002",
+            [
+                new InboundOrderLineDraft(
+                    "10",
+                    "RM-TUB-02",
+                    "pcs",
+                    2m,
+                    "loc-other-01",
+                    "LOT-OTHER-001",
+                    SerialNo: null,
+                    "unrestricted",
+                    "customer",
+                    OwnerId: "owner-001"),
+            ],
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-WMS-RECEIVING");
+        dbContext.InboundOrders.Add(inboundOrder);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new WmsWorkPoolMembershipSeedService(dbContext, new StaticTimeProvider(Now))
+                .SeedAsync("org-001", "env-dev", CancellationToken.None));
+
+        Assert.Contains("canonical", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(await dbContext.WarehouseWorkPools.ToArrayAsync());
+        Assert.Empty(await dbContext.WarehouseWorkPoolMemberships.ToArrayAsync());
+        var persisted = await dbContext.InboundOrders
+            .Include(order => order.Lines)
+            .SingleAsync();
+        Assert.Equal("SITE-002", persisted.SiteCode);
+        var persistedLine = Assert.Single(persisted.Lines);
+        Assert.Equal("RM-TUB-02", persistedLine.SkuCode);
+        Assert.Equal(2m, persistedLine.ReceivedQuantity);
+    }
+
+    private static InboundOrder CreateCanonicalInboundOrder() => InboundOrder.Create(
+        "org-001",
+        "env-dev",
+        "IB-WMS-SEED-001",
+        "wms-walkthrough-seed",
+        "WMS-WALKTHROUGH-SEED-001",
+        "SITE-001",
+        [
+            new InboundOrderLineDraft(
+                "10",
+                "RM-TUB-01",
+                "kg",
+                1m,
+                "loc-raw-01",
+                "LOT-WMS-SEED-001",
+                SerialNo: null,
+                "unrestricted",
+                "company",
+                OwnerId: null),
+        ],
+        assignedOperatorUserId: "user-emp-049",
+        assignedPoolCode: "POOL-WMS-RECEIVING");
 
     private static IConfiguration Configuration(params (string Key, string Value)[] values) =>
         new ConfigurationBuilder()

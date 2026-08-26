@@ -29,39 +29,19 @@ public sealed class WmsWorkPoolMembershipSeedService(
     private const string StagingLocationCode = "loc-raw-01";
     private const string LotNo = "LOT-WMS-SEED-001";
 
-    private static readonly DateTime EffectiveFromUtc = WorldHistoryCalendar.GoLiveDate.ToDateTime(
-        TimeOnly.MinValue,
-        DateTimeKind.Utc);
-
     public async Task<WmsWorkPoolMembershipSeedReport> SeedAsync(
         string organizationId,
         string environmentId,
         CancellationToken cancellationToken = default)
     {
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
         var pool = await dbContext.WarehouseWorkPools
+            .AsNoTracking()
             .SingleOrDefaultAsync(candidate =>
                 candidate.OrganizationId == organizationId
                 && candidate.EnvironmentId == environmentId
                 && candidate.PoolCode == PoolCode,
                 cancellationToken);
-
-        var poolsWritten = 0;
-        if (pool is null)
-        {
-            pool = WarehouseWorkPool.Create(
-                organizationId,
-                environmentId,
-                PoolCode,
-                PoolDisplayName,
-                SiteCode);
-            dbContext.WarehouseWorkPools.Add(pool);
-            poolsWritten++;
-        }
-        else if (!pool.Active || !string.Equals(pool.SiteCode, SiteCode, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"WMS demo work pool '{PoolCode}' must be active at site '{SiteCode}'.");
-        }
 
         var existingMemberships = await dbContext.WarehouseWorkPoolMemberships
             .AsNoTracking()
@@ -69,33 +49,72 @@ public sealed class WmsWorkPoolMembershipSeedService(
                 candidate.OrganizationId == organizationId
                 && candidate.EnvironmentId == environmentId
                 && candidate.PoolCode == PoolCode
-                && candidate.PrincipalId == PrincipalId)
+                && candidate.Active
+                && candidate.EffectiveFromUtc <= nowUtc
+                && (candidate.EffectiveToUtc == null || nowUtc < candidate.EffectiveToUtc))
             .ToArrayAsync(cancellationToken);
 
+        var unapprovedPrincipalIds = existingMemberships
+            .Select(membership => membership.PrincipalId)
+            .Where(principalId => !string.Equals(principalId, PrincipalId, StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (unapprovedPrincipalIds.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"WMS demo work pool '{PoolCode}' has unapproved effective members: " +
+                string.Join(", ", unapprovedPrincipalIds));
+        }
+
+        if (pool is not null
+            && (!pool.Active || !string.Equals(pool.SiteCode, SiteCode, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"WMS demo work pool '{PoolCode}' must be active at site '{SiteCode}'.");
+        }
+
+        var existingInboundOrder = await dbContext.InboundOrders
+            .AsNoTracking()
+            .Include(candidate => candidate.Lines)
+            .SingleOrDefaultAsync(candidate =>
+                candidate.OrganizationId == organizationId
+                && candidate.EnvironmentId == environmentId
+                && candidate.InboundOrderNo == InboundOrderNo,
+                cancellationToken);
+
+        if (existingInboundOrder is not null
+            && !IsCanonicalInboundOrder(existingInboundOrder, organizationId, environmentId))
+        {
+            throw new InvalidOperationException(
+                $"WMS demo inbound order '{InboundOrderNo}' exists with non-canonical facts.");
+        }
+
+        // All conflict checks complete before the first Add. A failing opt-in cannot leave
+        // a newly-created pool or membership behind an unsafe existing fact.
+        var poolsWritten = 0;
+        if (pool is null)
+        {
+            dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+                organizationId,
+                environmentId,
+                PoolCode,
+                PoolDisplayName,
+                SiteCode));
+            poolsWritten++;
+        }
+
         var membershipsWritten = 0;
-        if (existingMemberships.Length == 0)
+        if (!existingMemberships.Any())
         {
             dbContext.WarehouseWorkPoolMemberships.Add(WarehouseWorkPoolMembership.Create(
                 organizationId,
                 environmentId,
                 PoolCode,
                 PrincipalId,
-                EffectiveFromUtc));
+                nowUtc));
             membershipsWritten++;
         }
-        else if (!existingMemberships.Any(membership => membership.IsEffectiveAt(clock.GetUtcNow().UtcDateTime)))
-        {
-            throw new InvalidOperationException(
-                $"WMS demo work-pool membership '{PoolCode}/{PrincipalId}' is not currently effective.");
-        }
-
-        var existingInboundOrder = await dbContext.InboundOrders
-            .AsNoTracking()
-            .SingleOrDefaultAsync(candidate =>
-                candidate.OrganizationId == organizationId
-                && candidate.EnvironmentId == environmentId
-                && candidate.InboundOrderNo == InboundOrderNo,
-                cancellationToken);
 
         var inboundOrdersWritten = 0;
         if (existingInboundOrder is null)
@@ -136,6 +155,47 @@ public sealed class WmsWorkPoolMembershipSeedService(
             poolsWritten,
             membershipsWritten,
             inboundOrdersWritten);
+    }
+
+    private static bool IsCanonicalInboundOrder(
+        InboundOrder order,
+        string organizationId,
+        string environmentId)
+    {
+        if (!string.Equals(order.OrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(order.EnvironmentId, environmentId, StringComparison.Ordinal)
+            || !string.Equals(order.InboundOrderNo, InboundOrderNo, StringComparison.Ordinal)
+            || !string.Equals(order.SourceDocumentType, SeedSourceDocumentType, StringComparison.Ordinal)
+            || !string.Equals(order.SourceDocumentId, SeedSourceDocumentId, StringComparison.Ordinal)
+            || !string.Equals(order.SiteCode, SiteCode, StringComparison.Ordinal)
+            || !string.Equals(order.AssignedOperatorUserId, PrincipalId, StringComparison.Ordinal)
+            || !string.Equals(order.AssignedPoolCode, PoolCode, StringComparison.Ordinal)
+            || order.Status != InboundOrderStatus.Open
+            || order.Version != 1
+            || order.CompletedAtUtc is not null
+            || order.CancelledAtUtc is not null
+            || order.CancellationReason is not null
+            || order.Lines.Count != 1)
+        {
+            return false;
+        }
+
+        var line = order.Lines.Single();
+        return string.Equals(line.LineNo, WorldHistoryWmsSpec.LineNo, StringComparison.Ordinal)
+            && string.Equals(line.SkuCode, SkuCode, StringComparison.Ordinal)
+            && string.Equals(line.UomCode, UomCode, StringComparison.Ordinal)
+            && line.ReceivedQuantity == 1m
+            && string.Equals(line.StagingLocationCode, StagingLocationCode, StringComparison.Ordinal)
+            && string.Equals(line.LotNo, LotNo, StringComparison.Ordinal)
+            && line.SerialNo is null
+            && string.Equals(line.QualityStatus, WorldHistoryWmsSpec.Unrestricted, StringComparison.Ordinal)
+            && string.Equals(line.QualityGateStatus, InboundQualityGateStatuses.NotRequired, StringComparison.Ordinal)
+            && line.InspectionRecordId is null
+            && line.QualityDispositionReason is null
+            && string.Equals(line.OwnerType, WorldHistoryWmsSpec.OwnerType, StringComparison.Ordinal)
+            && line.OwnerId is null
+            && line.ProductionDate is null
+            && line.ExpiryDate is null;
     }
 }
 
