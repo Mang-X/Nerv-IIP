@@ -61,7 +61,7 @@ flowchart LR
   end
   subgraph MES["制造执行"]
     M1["角色: 生产主管<br/>入口: /mes/plans<br/>对象/状态: ProductionPlan Ready -> Converted<br/>缺口: 无"]
-    M2["角色: 生产主管<br/>入口: /mes/work-orders<br/>对象/状态: WorkOrder Created -> Released<br/>缺口: 无"]
+    M2["角色: 生产主管<br/>入口: /mes/work-orders[+详情]<br/>对象/状态: WorkOrder Created -> Released；拆分/合并受理后回读<br/>缺口: 无"]
     M3["角色: 班组长<br/>入口: /mes/dispatch<br/>对象/状态: Dispatch Pending -> Assigned<br/>缺口: 无"]
     M4["角色: 操作员<br/>入口: /mes/operation-tasks<br/>对象/状态: OperationTask Running -> Completed<br/>缺口: 无"]
     M5["角色: 操作员<br/>入口: /mes/production-reports<br/>对象/状态: ProductionReport Submitted<br/>缺口: 无"]
@@ -79,7 +79,7 @@ flowchart LR
 | 需求 / MRP / 建议 | `/planning`                                         | `/api/business-console/v1/planning/demands`, `/api/business-console/v1/planning/mrp-runs`, `/api/business-console/v1/planning/suggestions` | 支持需求、MRP、pegging 和计划建议处理。                              |
 | APS 轻量版 / 排程 | `/scheduling`                                       | `/api/business-console/v1/scheduling/**`                                                                                                   | 当前采用确定性有限产能启发式算法；不包含全局优化器、仿真或自动重排。 |
 | 生产计划          | `/mes/plans`                                        | `/api/business-console/v1/mes/production-plans`                                                                                            | MES 可回显来源计划和转工单状态。                                     |
-| 工单 / 工单详情   | `/mes/work-orders`, `/mes/work-orders/:workOrderId` | `/api/business-console/v1/mes/work-orders/**`                                                                                              | 工单详情页存在，但不是常驻菜单入口。                                 |
+| 工单 / 工单详情   | `/mes/work-orders`, `/mes/work-orders/:workOrderId` | `/api/business-console/v1/mes/work-orders/**`                                                                                              | 列表支持同上下文工单合并，详情支持数量守恒拆分；提交后按变更标识回读，冲突不显示未经确认的成功。 |
 | 派工 / 工序执行   | `/mes/dispatch`, `/mes/operation-tasks`             | `/api/business-console/v1/mes/dispatch/**`, `/api/business-console/v1/mes/operation-tasks/**`                                              | 支撑派工、开工、暂停、恢复和完工的执行视图。                         |
 | 报工 / 完工入库   | `/mes/production-reports`, `/mes/receipts`          | `/api/business-console/v1/mes/production-reports`, `/api/business-console/v1/mes/finished-goods-receipt-requests`                          | 完工入库等待 Inventory/WMS 过账事实回写。                            |
 | 库存移动          | `/inventory/movements`                              | `/api/business-console/v1/inventory/movements`                                                                                             | 可解释 posted 或 failed 的库存过账结果。                             |

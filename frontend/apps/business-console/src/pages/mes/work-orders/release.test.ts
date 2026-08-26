@@ -114,6 +114,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
   }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
+  }),
 }))
 
 const uiStubs = {

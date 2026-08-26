@@ -30,6 +30,7 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesMaterialIssueRequests,
@@ -55,10 +56,12 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
+  mergeBusinessConsoleMesWorkOrdersMutationOptions,
   recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
+  splitBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
@@ -273,7 +276,7 @@ function defaultContext(): MesContextFilters {
   )
 }
 
-interface MesSelectedWorkScope {
+export interface MesSelectedWorkScope {
   kind: string
   id: string
   displayName?: string
@@ -1168,9 +1171,178 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
+    workOrderManageScope: workOrderManageScope.selectedScope,
     workOrderManageScopeMessage: workOrderManageScope.scopeMessage,
     workOrderManageScopePending: workOrderManageScope.scopePending,
     workOrderManageScopeReady: workOrderManageScope.scopeReady,
+  }
+}
+
+export interface MesWorkOrderTransformationMutation {
+  accepted: boolean
+  transformationId: string
+  type: string
+  sourceWorkOrderIds: string[]
+  targetWorkOrderIds: string[]
+  isIdempotentReplay: boolean
+}
+
+export interface MesWorkOrderTransformationLine {
+  sourceWorkOrderId: string
+  targetWorkOrderId: string
+  quantity: number
+  uomCode: string
+  sourceStatus: string
+  targetStatus: string
+  sourceVersion: number
+  targetVersion: number
+}
+
+export interface MesWorkOrderTransformationReadback {
+  transformationId: string
+  type: string
+  idempotencyKey: string
+  actor: string
+  reason: string
+  occurredAtUtc: string
+  lines: MesWorkOrderTransformationLine[]
+}
+
+export interface MesWorkOrderTransformationResult {
+  mutation: MesWorkOrderTransformationMutation
+  readback?: MesWorkOrderTransformationReadback
+  readbackError?: unknown
+}
+
+export interface MesWorkOrderTransformationContext {
+  filters: Pick<BusinessContextFields, 'organizationId' | 'environmentId'>
+  readScope: { value: MesSelectedWorkScope | undefined }
+  manageScope: { value: MesSelectedWorkScope | undefined }
+}
+
+type WorkOrderTransformationMutationEnvelope = {
+  success?: boolean
+  message?: string
+  data?: MesWorkOrderTransformationMutation | null
+}
+
+type WorkOrderTransformationReadbackEnvelope = {
+  success?: boolean
+  message?: string
+  data?: MesWorkOrderTransformationReadback | null
+}
+
+export function useMesWorkOrderTransformations(context: MesWorkOrderTransformationContext) {
+  const queryCache = useQueryCache()
+  const splitMutation = useMutation({
+    ...splitBusinessConsoleMesWorkOrderMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesDispatchTasks',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+  const mergeMutation = useMutation({
+    ...mergeBusinessConsoleMesWorkOrdersMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesDispatchTasks',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+
+  function requireScope(scope: { value: MesSelectedWorkScope | undefined }) {
+    if (!scope.value) throw new Error(MES_WORK_SCOPE_REQUIRED_MESSAGE)
+    return scope.value
+  }
+
+  function scopedQuery(scope: MesSelectedWorkScope) {
+    return {
+      organizationId: context.filters.organizationId,
+      environmentId: context.filters.environmentId,
+      scopeKind: scope.kind,
+      scopeId: scope.id,
+    }
+  }
+
+  async function readTransformation(transformationId: string) {
+    const scope = requireScope(context.readScope)
+    const query = getBusinessConsoleMesWorkOrderTransformationQueryOptions({
+      path: { transformationId },
+      query: scopedQuery(scope),
+    })
+    const response = (await query.query({
+      signal: new AbortController().signal,
+    } as Parameters<typeof query.query>[0])) as WorkOrderTransformationReadbackEnvelope
+    if (response.success !== true || !response.data) {
+      throw new Error(response.message ?? '工单拆分或合并已受理，但回读结果暂不可用。')
+    }
+    return response.data
+  }
+
+  async function readAfterAccepted(mutation: MesWorkOrderTransformationMutation) {
+    try {
+      return { readback: await readTransformation(mutation.transformationId) }
+    } catch (readbackError) {
+      return { readbackError }
+    }
+  }
+
+  async function splitWorkOrder(
+    workOrderId: string,
+    body: {
+      targets: Array<{ workOrderId: string; quantity: number }>
+      reason: string
+      idempotencyKey: string
+    },
+  ): Promise<MesWorkOrderTransformationResult> {
+    const scope = requireScope(context.manageScope)
+    const response = (await splitMutation.mutateAsync({
+      path: { workOrderId },
+      query: scopedQuery(scope),
+      body,
+    })) as WorkOrderTransformationMutationEnvelope
+    if (response.success !== true || !response.data?.accepted || !response.data.transformationId) {
+      throw new Error(response.message ?? '拆分结果未确认，请先刷新工单核实。')
+    }
+    return { mutation: response.data, ...(await readAfterAccepted(response.data)) }
+  }
+
+  async function mergeWorkOrders(body: {
+    sourceWorkOrderIds: string[]
+    targetWorkOrderId: string
+    reason: string
+    idempotencyKey: string
+  }): Promise<MesWorkOrderTransformationResult> {
+    const scope = requireScope(context.manageScope)
+    const response = (await mergeMutation.mutateAsync({
+      query: scopedQuery(scope),
+      body,
+    })) as WorkOrderTransformationMutationEnvelope
+    if (response.success !== true || !response.data?.accepted || !response.data.transformationId) {
+      throw new Error(response.message ?? '合并结果未确认，请先刷新工单核实。')
+    }
+    return { mutation: response.data, ...(await readAfterAccepted(response.data)) }
+  }
+
+  return {
+    mergeWorkOrders,
+    mergeWorkOrdersError: mergeMutation.error,
+    mergeWorkOrdersPending: mergeMutation.isLoading,
+    readTransformation,
+    splitWorkOrder,
+    splitWorkOrderError: splitMutation.error,
+    splitWorkOrderPending: splitMutation.isLoading,
   }
 }
 
@@ -1638,6 +1810,7 @@ export function useMesWorkOrderDetail() {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
+    workOrderManageScope: workOrderManageScope.selectedScope,
     workOrderManageScopeMessage: workOrderManageScope.scopeMessage,
     workOrderManageScopePending: workOrderManageScope.scopePending,
     workOrderManageScopeReady: workOrderManageScope.scopeReady,
