@@ -379,8 +379,8 @@ try {
         -GovernancePath (Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md') `
         -ActiveMembers $activeMembers `
         -HostedMemberIds $script:HostedPostgresMemberIds
-    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 97) 'The active PostgreSQL manifest inventory must remain 15 members and 97 frozen identities.'
-    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 89) 'The hosted PostgreSQL workflow subset must remain 14 members and 89 frozen identities.'
+    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 102) 'The active PostgreSQL manifest inventory must remain 15 members and 102 frozen identities.'
+    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 94) 'The hosted PostgreSQL workflow subset must remain 14 members and 94 frozen identities.'
     Assert-Contract ($laneInventory.activeNotHostedIds.Count -eq 1 -and [string]::Equals([string]$laneInventory.activeNotHostedIds[0], 'masterdata-device-reference-concurrency', [StringComparison]::Ordinal) -and $laneInventory.activeNotHostedIdentities -eq 8) 'The active-but-not-hosted inventory must explicitly identify the eight-test MasterData device-reference concurrency member.'
     $testOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'test-owned', [StringComparison]::Ordinal) }).Count
     $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
