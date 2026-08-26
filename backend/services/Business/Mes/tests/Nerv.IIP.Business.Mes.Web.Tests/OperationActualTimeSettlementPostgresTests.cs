@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class OperationActualTimeSettlementPostgresTests
 {
-    [PostgreSqlFact]
+    [MesRealPostgresFact]
     public async Task Completion_state_and_settlement_outbox_are_committed_together_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -56,7 +56,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Contains(completing.ReportNo, settlementOutbox, StringComparison.Ordinal);
     }
 
-    [PostgreSqlFact]
+    [MesRealPostgresFact]
     public async Task Completion_reversal_commits_reopen_state_and_void_outbox_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -95,7 +95,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Contains(completing.ReportNo, voidOutbox, StringComparison.Ordinal);
     }
 
-    [PostgreSqlFact]
+    [MesRealPostgresFact]
     public async Task Settlement_outbox_failure_rolls_back_state_lineage_and_reports_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -126,7 +126,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
             content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal));
     }
 
-    [PostgreSqlFact]
+    [MesRealPostgresFact]
     public async Task Concurrent_completion_rejects_the_stale_settlement_revision_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
