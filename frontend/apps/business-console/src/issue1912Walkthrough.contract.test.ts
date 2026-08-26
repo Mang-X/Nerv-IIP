@@ -18,6 +18,7 @@ import {
 } from '../e2e/issue1912-walkthrough-runtime'
 import {
   classifyRequestFailure,
+  type RequestCancellationEvidence,
   RequestFailureEvidenceTracker,
 } from '../e2e/issue1912-walkthrough-policy'
 
@@ -278,7 +279,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('emptyText')
     expect(scenarioSource).toContain('await targetPage.screenshot')
     expect(scenarioSource).toContain('fillFilterAndWaitForListResponse')
-    expect(scenarioSource).toContain("'component-unmount'")
+    expect(scenarioSource).toContain('clickTabAndConfirmUnmount')
     expect(scenarioSource).toContain('failedRequests')
     expect(scenarioSource).toContain('classifyRequestFailure')
     expect(scenarioSource).toContain('expectedRequestCancellations')
@@ -607,15 +608,17 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(result.record.classification).toBe('api-request-failure')
   })
 
-  it('classifies an API abort only when a superseding lifecycle transition is evidenced', () => {
+  it('classifies an API abort only when a confirmed lifecycle transition is evidenced', () => {
     const tracker = new RequestFailureEvidenceTracker()
     const request = {}
     tracker.observeRequest(request, 'https://console.fixture/erp/purchase-orders')
-    const transition = tracker.beginTransition(
-      'component-unmount',
-      'https://console.fixture/erp/purchase-orders',
-    )
-    transition.complete()
+    const transition = tracker.beginLifecycleAttempt('https://console.fixture/erp/purchase-orders')
+    let cancellationEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(request, (evidence) => {
+      cancellationEvidence = evidence
+    })
+    expect(cancellationEvidence).toBeUndefined()
+    transition.confirm('component-unmount')
 
     const result = classifyRequestFailure({
       method: 'GET',
@@ -623,7 +626,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
       failure: 'net::ERR_ABORTED',
       resourceType: 'fetch',
       isNavigationRequest: false,
-      cancellationEvidence: tracker.cancellationEvidenceFor(request),
+      cancellationEvidence,
     })
 
     expect(result.expected).toBe(true)
@@ -634,9 +637,77 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
       transitionId: transition.id,
     })
 
-    const requestStartedAfterTransition = {}
-    tracker.observeRequest(requestStartedAfterTransition, 'https://console.fixture/erp/purchase-orders')
-    expect(tracker.cancellationEvidenceFor(requestStartedAfterTransition)).toBeUndefined()
+    transition.complete()
+  })
+
+  it('does not associate stale or unrelated lifecycle attempts', () => {
+    const tracker = new RequestFailureEvidenceTracker()
+    const staleRequest = {}
+    tracker.observeRequest(staleRequest, 'https://console.fixture/erp/purchase-orders')
+    const staleAttempt = tracker.beginLifecycleAttempt(
+      'https://console.fixture/erp/purchase-orders',
+    )
+    staleAttempt.confirm('navigation')
+    staleAttempt.complete()
+
+    let staleEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(staleRequest, (evidence) => {
+      staleEvidence = evidence
+    })
+    expect(staleEvidence).toBeUndefined()
+
+    const unrelatedRequest = {}
+    tracker.observeRequest(unrelatedRequest, 'https://console.fixture/erp/purchase-orders')
+    const unrelatedAttempt = tracker.beginLifecycleAttempt(
+      'https://console.fixture/erp/sales-orders',
+    )
+    unrelatedAttempt.confirm('navigation')
+    let unrelatedEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(unrelatedRequest, (evidence) => {
+      unrelatedEvidence = evidence
+    })
+    expect(unrelatedEvidence).toBeUndefined()
+    unrelatedAttempt.complete()
+  })
+
+  it('cancels an unconfirmed click attempt without allowing an API abort', () => {
+    const tracker = new RequestFailureEvidenceTracker()
+    const request = {}
+    tracker.observeRequest(request, 'https://console.fixture/planning')
+    const clickAttempt = tracker.beginLifecycleAttempt('https://console.fixture/planning')
+    let cancellationEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(request, (evidence) => {
+      cancellationEvidence = evidence
+    })
+    clickAttempt.cancel()
+
+    expect(cancellationEvidence).toBeUndefined()
+    const result = classifyRequestFailure({
+      method: 'GET',
+      url: 'https://console.fixture/api/planning/suggestions',
+      failure: 'net::ERR_ABORTED',
+      resourceType: 'fetch',
+      isNavigationRequest: false,
+      cancellationEvidence,
+    })
+    expect(result.expected).toBe(false)
+    expect(result.record.classification).toBe('api-request-failure')
+  })
+
+  it('does not allow a failure after a confirmed transition is complete', () => {
+    const tracker = new RequestFailureEvidenceTracker()
+    const request = {}
+    tracker.observeRequest(request, 'https://console.fixture/planning')
+    const transition = tracker.beginLifecycleAttempt('https://console.fixture/planning')
+    transition.confirm('navigation')
+    transition.complete()
+
+    let cancellationEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(request, (evidence) => {
+      cancellationEvidence = evidence
+    })
+
+    expect(cancellationEvidence).toBeUndefined()
   })
 
   it('keeps a different API network failure fail-closed even with transition evidence', () => {

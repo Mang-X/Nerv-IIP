@@ -309,10 +309,6 @@ test('request failure policy keeps superseded navigation aborts but records API 
   const expectedCancellations: JsonRecord[] = []
   const unexpectedFailures: JsonRecord[] = []
   const apiFailures: JsonRecord[] = []
-  const requestFailureEvidence = new RequestFailureEvidenceTracker()
-  page.on('request', (request) =>
-    requestFailureEvidence.observeRequest(request, page.url()),
-  )
   page.on('requestfailed', (request) => {
     const classified = classifyRequestFailure({
       method: request.method(),
@@ -320,7 +316,6 @@ test('request failure policy keeps superseded navigation aborts but records API 
       failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
       resourceType: request.resourceType(),
       isNavigationRequest: request.isNavigationRequest(),
-      cancellationEvidence: requestFailureEvidence.cancellationEvidenceFor(request),
     })
     if (classified.expected) expectedCancellations.push(classified.record)
     else unexpectedFailures.push(classified.record)
@@ -490,21 +485,23 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       runtime.tracker.observeRequest({ page: runtime.page, request })
     })
     runtime.page.on('requestfailed', (request) => {
-      const classified = classifyRequestFailure({
-        method: request.method(),
-        url: request.url(),
-        failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
-        resourceType: request.resourceType(),
-        isNavigationRequest: request.isNavigationRequest(),
-        cancellationEvidence: runtime.requestFailureEvidence.cancellationEvidenceFor(request),
+      runtime.requestFailureEvidence.resolveFailureEvidence(request, (cancellationEvidence) => {
+        const classified = classifyRequestFailure({
+          method: request.method(),
+          url: request.url(),
+          failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
+          resourceType: request.resourceType(),
+          isNavigationRequest: request.isNavigationRequest(),
+          cancellationEvidence,
+        })
+        const record = {
+          ...classified.record,
+          actor: runtime.actor,
+          principalId: runtime.principalId || runtime.expectedPrincipalId,
+        }
+        if (classified.expected) expectedRequestCancellations.push(record)
+        else failedRequests.push(record)
       })
-      const record = {
-        ...classified.record,
-        actor: runtime.actor,
-        principalId: runtime.principalId || runtime.expectedPrincipalId,
-      }
-      if (classified.expected) expectedRequestCancellations.push(record)
-      else failedRequests.push(record)
     })
     runtime.page.on('response', (response: Response) => {
       const url = new URL(response.url())
@@ -731,32 +728,25 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
     const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
     const targetPage = runtime.page
-    const initialListResponse = targetPage.waitForResponse(
-      (response) => {
-        const url = new URL(response.url())
-        return (
-          response.request().method() === 'GET' &&
-          url.pathname === options.listPath &&
-          response.status() === 200
-        )
-      },
-      { timeout: 120_000 },
-    )
-    const navigationTransition = runtime.requestFailureEvidence.beginTransition(
-      'navigation',
-      targetPage.url(),
-    )
+    const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(targetPage.url())
+    let navigation: Response | null = null
     let firstList!: Response
+    let navigationConfirmed = false
     try {
-      const navigation = await targetPage.goto(options.route, {
-        waitUntil: 'domcontentloaded',
-        timeout: 120_000,
+      const initialPage = await navigateAndWaitForInitialList(targetPage, {
+        route: options.route,
+        listPath: options.listPath,
+        timeoutMs: 120_000,
       })
+      navigation = initialPage.navigation
+      firstList = initialPage.firstList
       expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
-      firstList = await initialListResponse
       expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
+      navigationAttempt.confirm('navigation')
+      navigationConfirmed = true
     } finally {
-      navigationTransition.complete()
+      if (navigationConfirmed) navigationAttempt.complete()
+      else navigationAttempt.cancel()
     }
 
     if (options.filterLabel) {
@@ -770,15 +760,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     }
 
     if (options.tabText) {
-      const tabTransition = runtime.requestFailureEvidence.beginTransition(
-        'component-unmount',
-        targetPage.url(),
-      )
-      try {
-        await targetPage.getByRole('tab', { name: options.tabText }).click()
-      } finally {
-        tabTransition.complete()
-      }
+      await clickTabAndConfirmUnmount(targetPage, options.tabText, runtime.requestFailureEvidence)
     }
 
     for (const selectOption of options.selectOptions ?? []) {
