@@ -143,6 +143,37 @@ public sealed class MesSchemaConventionTests
     }
 
     [Fact]
+    public void Material_substitute_foundation_migration_is_latest_and_targets_the_complete_mes_model()
+    {
+        const string releasedRebindComment =
+            "Production version provenance for the frozen material requirement outcome; it normally matches the current work order version, while a released engineering-change auto-rebind retains the release version.";
+        var foundationMigration = new AddMesMaterialSubstituteSnapshotFoundation();
+        var foundationId = GetMigrationId(typeof(AddMesMaterialSubstituteSnapshotFoundation));
+
+        Assert.True(
+            string.CompareOrdinal(foundationId, GetMigrationId(typeof(AddMesCollaborativeLaborAllocation))) > 0,
+            $"{foundationId} must sort after the collaborative labor migration.");
+        Assert.True(
+            string.CompareOrdinal(foundationId, GetMigrationId(typeof(AddMesOperationTaskRequiredSkillSnapshot))) > 0,
+            $"{foundationId} must sort after the required-skill migration.");
+
+        var targetModel = foundationMigration.TargetModel;
+        Assert.NotNull(targetModel.FindEntityType(typeof(MaterialRequirement))!
+            .FindProperty(nameof(MaterialRequirement.SubstituteMaterialIdsJson)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(MaterialIssueRequest))!
+            .FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(OperationTask))!
+            .FindProperty(nameof(OperationTask.RequiredSkillCode)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(OperationTaskParticipant)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(ProductionReportLaborAllocation)));
+        Assert.Equal(
+            releasedRebindComment,
+            targetModel.FindEntityType(typeof(WorkOrder))!
+                .FindProperty(nameof(WorkOrder.MaterialRequirementSnapshotProductionVersionId))!
+                .GetComment());
+    }
+
+    [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {
         using var fixture = CreateFixture();
@@ -458,5 +489,10 @@ public sealed class MesSchemaConventionTests
             scope.Dispose();
             serviceProvider.Dispose();
         }
+    }
+
+    private static string GetMigrationId(Type migrationType)
+    {
+        return ((MigrationAttribute)Attribute.GetCustomAttribute(migrationType, typeof(MigrationAttribute))!).Id;
     }
 }

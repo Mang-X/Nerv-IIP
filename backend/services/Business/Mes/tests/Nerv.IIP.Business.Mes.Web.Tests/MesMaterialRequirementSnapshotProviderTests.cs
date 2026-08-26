@@ -298,7 +298,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                             isPhantom = false,
                             alternateGroup = (string?)null,
                             alternatePriority = (int?)null,
-                            substituteSkuCodes = (string?)null,
+                            substituteSkuCodes = "mat-alt-a ; MAT-ALT-B ; MAT-OIL",
                             referenceDesignators = (string?)null,
                             yieldRate = 1m,
                             backflush = false,
@@ -312,7 +312,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                             isPhantom = false,
                             alternateGroup = (string?)null,
                             alternatePriority = (int?)null,
-                            substituteSkuCodes = (string?)null,
+                            substituteSkuCodes = " MAT-ALT-B ; MAT-OIL ; mat-alt-shared ",
                             referenceDesignators = (string?)null,
                             yieldRate = 1m,
                             backflush = false,
@@ -398,6 +398,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         Assert.Equal(12m, oil.AvailableQuantity);
         Assert.Equal(0m, oil.StagedQuantity);
         Assert.Equal("MBOM-1000:A:MAT-OIL", oil.SourceSnapshotId);
+        Assert.Equal(["mat-alt-a", "MAT-ALT-B", "mat-alt-shared"], oil.SubstituteMaterialIds);
         var alternate = Assert.Single(result.Lines, x => x.MaterialId == "MAT-ALT-B");
         Assert.Equal(20m, alternate.RequiredQuantity);
         Assert.Equal(3m, alternate.AvailableQuantity);
