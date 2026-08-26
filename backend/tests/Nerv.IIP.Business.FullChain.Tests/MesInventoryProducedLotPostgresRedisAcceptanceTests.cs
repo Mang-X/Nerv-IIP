@@ -1,4 +1,6 @@
 using System.Data;
+using System.Text;
+using System.Text.Json;
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +8,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Nerv.IIP.Business.Mes.Domain;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -16,8 +25,12 @@ using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.FullChain.Tests;
 
-public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
+public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 {
+    private const decimal ClientSuppliedUnitCost = 99.99m;
+    private const decimal ErpCapitalizedUnitCost = 12.34m;
+    private const decimal ReceiptQuantity = 5m;
+
     [RealPostgresRedisMesInventoryFact]
     public async Task External_process_proves_exact_produced_lot_link_for_success_and_explicit_failure()
     {
@@ -50,42 +63,141 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
         await WaitForConsumerGroupsAsync(redis, capVersion);
+        await SeedProducedLotsAsync(provider, source);
+        var receiptBoundary = await CreateReceiptRequestsAsync(provider, source);
+        source = receiptBoundary.Source;
         var publisher = provider.GetRequiredService<ICapPublisher>();
-        var successEvent = MovementRequested(
-            source,
-            source.SuccessRequestNo,
-            source.SuccessLotNo,
-            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.SuccessRequestNo}",
-            inventoryReservationId: null);
-        var failureEvent = MovementRequested(
-            source,
-            source.FailureRequestNo,
-            source.FailureLotNo,
-            $"mes:finished-goods-receipt:{source.OrganizationId}:{source.EnvironmentId}:{source.FailureRequestNo}",
-            inventoryReservationId: "not-a-guid");
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
-        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
+        var successEvent = receiptBoundary.SuccessEvent;
+        var successReplayEvent = receiptBoundary.SuccessReplayEvent;
+        var failureEvent = receiptBoundary.FailureEvent;
+        var failureReplayEvent = receiptBoundary.FailureReplayEvent;
+        var pendingEvent = receiptBoundary.PendingEvent;
+        Assert.NotEqual(successEvent.EventId, successReplayEvent.EventId);
+        Assert.Equal(successEvent.IdempotencyKey, successReplayEvent.IdempotencyKey);
+        Assert.NotEqual(failureEvent.EventId, failureReplayEvent.EventId);
+        Assert.Equal(failureEvent.IdempotencyKey, failureReplayEvent.IdempotencyKey);
+        var allEventIds = new[]
+        {
+            successEvent.EventId,
+            successReplayEvent.EventId,
+            failureEvent.EventId,
+            failureReplayEvent.EventId,
+            pendingEvent.EventId,
+        };
+        Assert.Equal(5, allEventIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.NotEqual(ErpCapitalizedUnitCost, source.ClientSuppliedUnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, successEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, successReplayEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, failureEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, failureReplayEvent.Payload.UnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, pendingEvent.Payload.UnitCost);
+        Assert.Equal(
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+            pendingEvent.Payload.UnitCostAuthorityReference);
+        Assert.Equal(source.ClientSuppliedUnitCost, receiptBoundary.SuccessCommandUnitCost);
+        Assert.Equal(source.ClientSuppliedUnitCost, receiptBoundary.PendingCommandUnitCost);
+        Assert.Null(receiptBoundary.PendingUnitCost);
+        Assert.Equal(0, receiptBoundary.PendingDomainEventCount);
+        var pendingRedisBeforePublish = await ReadPendingRedisFactAsync(
+            redis,
+            capVersion,
+            pendingEvent.EventId,
+            pendingEvent.IdempotencyKey);
+        Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), pendingRedisBeforePublish.StreamName);
+        Assert.Equal($"business-inventory.movement-requested.{capVersion}", pendingRedisBeforePublish.ConsumerGroup);
+        Assert.False(pendingRedisBeforePublish.IsPresent);
 
-        // Real cross-process Redis CAP transport: the observable facts live in the two PostgreSQL databases,
-        // so poll them on a bounded budget instead of guessing a single completion instant.
+        var eventIdempotencyKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        eventIdempotencyKeys.Add(successEvent.EventId, successEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(successReplayEvent.EventId, successReplayEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(failureEvent.EventId, failureEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(failureReplayEvent.EventId, failureReplayEvent.IdempotencyKey);
+        eventIdempotencyKeys.Add(pendingEvent.EventId, pendingEvent.IdempotencyKey);
+        var inventoryConsumerGroup = $"business-inventory.movement-requested.{capVersion}";
+        await using var receivedMessageSnapshot = await InventoryReceivedMessageSnapshot.StartAsync(
+            inventoryPostgres,
+            capVersion,
+            inventoryConsumerGroup,
+            eventIdempotencyKeys);
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(successEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(successReplayEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(failureEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(failureReplayEvent.EventId));
+        Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(pendingEvent.EventId));
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureReplayEvent);
+        await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), pendingEvent);
+
+        var requiredTransportEventIds = eventIdempotencyKeys.Keys.ToHashSet(StringComparer.Ordinal);
+        var observedTransportFacts = new Dictionary<string, EventMessageFact>(StringComparer.Ordinal);
+        var observedPendingCapReceivedFacts = new Dictionary<string, CapReceivedEventFact>(StringComparer.Ordinal);
+
+        // Real cross-process Redis CAP transport: stream history is the durable published fact. CAP stores
+        // the exact received row before enqueueing the subscriber. A successful consumer callback is
+        // XACKed, while RejectAsync leaves a failed subscriber entry in the PEL; depending on CAP's
+        // execution mode, the pending authority path can therefore have either an exact PEL entry or
+        // only its durable CAP received Failed/Retries row. The snapshot latches the exact row identity
+        // and latest status.
         try
         {
             var observed = await Eventually.WaitAsync(
                 condition: "MES and Inventory closed both Redis CAP produced-lot paths",
                 observe: async token => (
                     Mes: await ReadMesFactsAsync(mesPostgres, source, token),
-                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source, token)),
+                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source, token),
+                    Messaging: await ReadMessagingFactsAsync(
+                        inventoryPostgres,
+                        redis,
+                        capVersion,
+                        pendingEvent.EventId,
+                        pendingEvent.IdempotencyKey,
+                        eventIdempotencyKeys,
+                        receivedMessageSnapshot,
+                        eventIdempotencyKeys.Keys.ToArray())),
                 isSatisfied: state => state.Mes.SuccessStatus == "Posted"
                     && state.Mes.SuccessMovementId is not null
                     && state.Mes.FailureStatus == "InventoryPostingFailed"
                     && !string.IsNullOrWhiteSpace(state.Mes.FailureCode)
+                    && state.Mes.SuccessUnitCost == ErpCapitalizedUnitCost
+                    && state.Mes.ErpCapitalizedUnitCost == ErpCapitalizedUnitCost
+                    && state.Mes.PendingStatus == "Requested"
+                    && state.Mes.PendingUnitCost is null
+                    && state.Mes.PendingErpCapitalizedUnitCost is null
+                    && state.Mes.PendingAuthorityProvenanceCount == 0
                     && state.Inventory.SuccessMovementCount == 1
-                    && state.Inventory.FailureMovementCount == 0,
+                    && state.Inventory.FailureMovementCount == 0
+                    && state.Inventory.PendingMovementCount == 0
+                    && state.Inventory.SuccessRequestedUnitCost == ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessUnitCost == ErpCapitalizedUnitCost
+                    && state.Inventory.SuccessQuantity == ReceiptQuantity
+                    && state.Inventory.SuccessMovementAmount == ReceiptQuantity * ErpCapitalizedUnitCost
+                    && state.Inventory.LedgerMovingAverageUnitCost == ErpCapitalizedUnitCost
+                    && state.Inventory.LedgerInventoryValue == ReceiptQuantity * ErpCapitalizedUnitCost
+                    && CaptureObservedTransportFacts(
+                        state.Messaging,
+                        requiredTransportEventIds,
+                        observedTransportFacts)
+                    && CaptureObservedPendingCapReceivedFact(
+                        state.Messaging.PendingCapReceivedFact,
+                        pendingEvent.EventId,
+                        inventoryConsumerGroup,
+                        observedPendingCapReceivedFacts),
                 describe: state =>
                     $"SuccessStatus={state.Mes.SuccessStatus}, SuccessMovement={state.Mes.SuccessMovementId}, " +
                     $"FailureStatus={state.Mes.FailureStatus}, FailureCode={state.Mes.FailureCode}, " +
                     $"InventorySuccess={state.Inventory.SuccessMovementCount}, " +
-                    $"InventoryFailure={state.Inventory.FailureMovementCount}",
+                    $"InventoryFailure={state.Inventory.FailureMovementCount}, " +
+                    $"PendingStatus={state.Mes.PendingStatus}, " +
+                    $"PendingInventory={state.Inventory.PendingMovementCount}, " +
+                    $"MesUnitCost={state.Mes.SuccessUnitCost}, " +
+                    $"RequestedUnitCost={state.Inventory.SuccessRequestedUnitCost}, " +
+                    $"EffectiveUnitCost={state.Inventory.SuccessUnitCost}, " +
+                    $"MovementQuantity={state.Inventory.SuccessQuantity}, " +
+                    $"MovementAmount={state.Inventory.SuccessMovementAmount}, " +
+                    $"LedgerMovingAverage={state.Inventory.LedgerMovingAverageUnitCost}, " +
+                    $"LedgerValue={state.Inventory.LedgerInventoryValue}",
                 options: new EventuallyOptions(
                     Timeout: TimeSpan.FromSeconds(90),
                     PollInterval: TimeSpan.FromMilliseconds(500),
@@ -95,388 +207,105 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal(source.WorkOrderId, observed.Inventory.SuccessSourceDocumentLineId);
             Assert.Equal("business-mes", observed.Inventory.SuccessSourceService);
             Assert.Equal(0, observed.Inventory.SimilarSourceMovementCount);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Mes.SuccessUnitCost);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Inventory.SuccessRequestedUnitCost);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Inventory.SuccessUnitCost);
+            Assert.Equal(ReceiptQuantity, observed.Inventory.SuccessQuantity);
+            Assert.Equal(ReceiptQuantity * ErpCapitalizedUnitCost, observed.Inventory.SuccessMovementAmount);
+            Assert.Equal(ErpCapitalizedUnitCost, observed.Inventory.LedgerMovingAverageUnitCost);
+            Assert.Equal(ReceiptQuantity * ErpCapitalizedUnitCost, observed.Inventory.LedgerInventoryValue);
+            Assert.Equal("Requested", observed.Mes.PendingStatus);
+            Assert.Null(observed.Mes.PendingUnitCost);
+            Assert.Null(observed.Mes.PendingErpCapitalizedUnitCost);
+            Assert.Equal(0L, observed.Mes.PendingAuthorityProvenanceCount);
+            Assert.Equal(0, observed.Inventory.PendingMovementCount);
+
+            var finalInventory = await ReadInventoryFactsAsync(
+                inventoryPostgres,
+                source,
+                CancellationToken.None);
+            Assert.Equal(ReceiptQuantity, finalInventory.SuccessQuantity);
+            Assert.True(observedTransportFacts.Keys.ToHashSet(StringComparer.Ordinal)
+                .SetEquals(requiredTransportEventIds));
+
+            var transport = await ReadMessagingFactsAsync(
+                inventoryPostgres,
+                redis,
+                capVersion,
+                pendingEvent.EventId,
+                pendingEvent.IdempotencyKey,
+                eventIdempotencyKeys,
+                receivedMessageSnapshot,
+                eventIdempotencyKeys.Keys.ToArray());
+            // The bounded latch only proves that every event was observed at least once during
+            // processing. Final exact-once evidence must come from a fresh durable/snapshot read,
+            // so a later duplicate cannot be hidden by the latch.
+            AssertEventTransport(transport.EventFacts, successEvent.EventId);
+            AssertEventTransport(transport.EventFacts, successReplayEvent.EventId);
+            AssertEventTransport(transport.EventFacts, failureEvent.EventId);
+            AssertEventTransport(transport.EventFacts, failureReplayEvent.EventId);
+            AssertEventTransport(transport.EventFacts, pendingEvent.EventId);
+            // CAP XACKs only after the consumer callback completes successfully. RejectAsync does not ACK,
+            // so a failed authority subscriber may retain the exact event in the PEL. If the callback has
+            // already ACKed after enqueueing, the PEL may instead be absent. Both shapes are accepted only
+            // with their complete fail-closed identity evidence; neither replaces the CAP received proof.
+            var pendingRedisFact = transport.PendingEventRedisFact;
+            Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), pendingRedisFact.StreamName);
+            Assert.Equal(inventoryConsumerGroup, pendingRedisFact.ConsumerGroup);
+            var pendingReceivedFact = transport.PendingCapReceivedFact;
+            Assert.NotNull(pendingReceivedFact);
+            Assert.Equal(pendingEvent.EventId, pendingReceivedFact!.EventId);
+            Assert.Equal(nameof(InventoryMovementRequestedIntegrationEvent), pendingReceivedFact.Name);
+            Assert.Equal(inventoryConsumerGroup, pendingReceivedFact.Group);
+            Assert.Equal("Failed", pendingReceivedFact.StatusName);
+            Assert.True(pendingReceivedFact.RetryCount >= 1);
+            if (pendingRedisFact.IsPresent)
+            {
+                Assert.Equal(pendingEvent.EventId, pendingRedisFact.EventId);
+                Assert.Equal(pendingEvent.IdempotencyKey, pendingRedisFact.IdempotencyKey);
+                Assert.False(string.IsNullOrWhiteSpace(pendingRedisFact.StreamEntryId));
+                Assert.False(string.IsNullOrWhiteSpace(pendingRedisFact.ConsumerName));
+                Assert.True(pendingRedisFact.DeliveryCount >= 1);
+                Assert.Equal(pendingReceivedFact.EventId, pendingRedisFact.EventId);
+                Assert.Equal(pendingReceivedFact.Group, pendingRedisFact.ConsumerGroup);
+            }
+            else
+            {
+                Assert.Null(pendingRedisFact.EventId);
+                Assert.Null(pendingRedisFact.IdempotencyKey);
+                Assert.Null(pendingRedisFact.StreamEntryId);
+                Assert.Null(pendingRedisFact.ConsumerName);
+                Assert.Equal(0, pendingRedisFact.DeliveryCount);
+            }
+            Assert.Equal("Pending", transport.PendingAuthorityStatus);
+            Assert.Equal("erp-capitalization-provenance-not-observed", transport.PendingAuthorityReason);
+            Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
         {
-            // The messaging tables are only read once, on failure: they are diagnostics for the timeout, not
-            // part of the awaited condition.
+            // The final read is diagnostic only. CAP may retain or ACK the PEL depending on where the
+            // subscriber failure occurred; the final facts preserve both the exact PEL shape and the CAP
+            // received status/retry fact for diagnosis.
             var finalMessagingFacts = await ReadMessagingFactsAsync(
-                mesPostgres,
                 inventoryPostgres,
-                successEvent.EventId,
-                failureEvent.EventId);
+                redis,
+                capVersion,
+                pendingEvent.EventId,
+                pendingEvent.IdempotencyKey,
+                eventIdempotencyKeys,
+                receivedMessageSnapshot,
+                eventIdempotencyKeys.Keys.ToArray());
             throw new TimeoutException(
                 $"{timeout.Message} " +
-                $"PublisherSuccess={finalMessagingFacts.SuccessPublishStatus}, " +
-                $"PublisherFailure={finalMessagingFacts.FailurePublishStatus}, " +
-                $"InventoryRetainedReceipts={finalMessagingFacts.InventoryRetainedReceiptCount}, " +
+                $"EventTransport={string.Join(",", finalMessagingFacts.EventFacts.Select(x => $"{x.Key}:published={x.Value.PublishedCount}/received={x.Value.ReceivedCount}"))}, " +
+                $"PendingEntry={finalMessagingFacts.PendingEventRedisFact.StreamEntryId}, " +
+                $"PendingCapReceived={finalMessagingFacts.PendingCapReceivedFact?.StatusName}/{finalMessagingFacts.PendingCapReceivedFact?.RetryCount}, " +
                 $"InventoryDeadLetters={finalMessagingFacts.InventoryDeadLetterCount}.",
                 timeout);
         }
     }
 
-    private static InventoryMovementRequestedIntegrationEvent MovementRequested(
-        ProbeSource source,
-        string requestNo,
-        string lotNo,
-        string idempotencyKey,
-        string? inventoryReservationId)
-    {
-        var now = DateTimeOffset.UtcNow;
-        return new InventoryMovementRequestedIntegrationEvent(
-            $"evt-man528-{Guid.CreateVersion7():N}",
-            InventoryIntegrationEventTypes.InventoryMovementRequested,
-            InventoryIntegrationEventVersions.V1,
-            now,
-            InventoryIntegrationEventSources.BusinessMes,
-            $"corr-man528-{source.ProbeRunId}",
-            requestNo,
-            source.OrganizationId,
-            source.EnvironmentId,
-            "system:acceptance-probe",
-            idempotencyKey,
-            new InventoryMovementRequestedPayload(
-                "inbound",
-                InventoryIntegrationEventSources.BusinessMes,
-                requestNo,
-                source.WorkOrderId,
-                idempotencyKey,
-                source.SkuId,
-                source.UomCode,
-                "finished-goods",
-                "receiving",
-                lotNo,
-                null,
-                InventoryQualityStatuses.Unrestricted,
-                "production",
-                null,
-                5m,
-                now,
-                inventoryReservationId,
-                UnitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt));
-    }
 
-    private static async Task WaitForConsumerGroupsAsync(string redisConnectionString, string capVersion)
-    {
-        var options = ConfigurationOptions.Parse(redisConnectionString);
-        options.AbortOnConnectFail = false;
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(options);
-        var database = connection.GetDatabase();
-        var required = new[]
-        {
-            (Stream: nameof(InventoryMovementRequestedIntegrationEvent), Group: $"business-inventory.movement-requested.{capVersion}"),
-            (Stream: nameof(StockMovementPostedIntegrationEvent), Group: $"business-mes.stock-movement-posted.{capVersion}"),
-            (Stream: nameof(StockMovementPostingFailedIntegrationEvent), Group: $"business-mes.stock-movement-posting-failed.{capVersion}"),
-        };
-        // Real external processes registering CAP consumer groups on Redis: bounded polling of an observable
-        // fact, reporting per-group readiness so a timeout names the group that never appeared.
-        // StackExchange.Redis has no CancellationToken overloads, so the window token is genuinely unusable
-        // in this observation rather than dropped; Eventually still abandons it when the window closes.
-        await Eventually.WaitAsync(
-            condition: "the Inventory request and MES posted/failed CAP consumer groups exist on Redis",
-            observe: async _ =>
-            {
-                var missing = new List<string>();
-                foreach (var item in required)
-                {
-                    try
-                    {
-                        var groups = await database.StreamGroupInfoAsync(item.Stream);
-                        if (!groups.Any(group => group.Name == item.Group))
-                        {
-                            missing.Add(item.Group);
-                        }
-                    }
-                    catch (RedisServerException exception) when (
-                        exception.Message.Contains("no such key", StringComparison.OrdinalIgnoreCase))
-                    {
-                        missing.Add($"{item.Group} (stream {item.Stream} not created yet)");
-                    }
-                }
-
-                return missing;
-            },
-            isSatisfied: missing => missing.Count == 0,
-            describe: missing => missing.Count == 0
-                ? "all consumer groups registered"
-                : $"missing={string.Join(", ", missing)}",
-            options: new EventuallyOptions(
-                Timeout: TimeSpan.FromMinutes(6),
-                PollInterval: TimeSpan.FromMilliseconds(500),
-                SensitiveValues: [redisConnectionString]));
-    }
-
-    private static async Task<ProbeSource> SeedReceiptPairAsync(string connectionString, string probeRunId)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        var suffix = probeRunId.Replace("-", string.Empty, StringComparison.Ordinal);
-        suffix = suffix.Length <= 20 ? suffix : suffix[^20..];
-        var source = new ProbeSource(
-            $"org-man528-{suffix}",
-            $"env-man528-{suffix}",
-            $"WO-MAN528-{suffix}",
-            $"SKU-MAN528-{suffix}",
-            "EA",
-            $"FGR-MAN528-S-{suffix}",
-            $"FGR-MAN528-F-{suffix}",
-            $"LOT-MAN528-S-{suffix}",
-            $"LOT-MAN528-F-{suffix}",
-            probeRunId);
-
-        await using var transaction = await connection.BeginTransactionAsync();
-        await using var insert = connection.CreateCommand();
-        insert.Transaction = transaction;
-        insert.CommandText = """
-            INSERT INTO mes.work_orders
-                (id, organization_id, environment_id, work_order_id, sku_id, uom_code, quantity, priority,
-                 due_utc, status, created_at_utc, completed_quantity, scrap_quantity, cost_report_count,
-                 material_movement_count, over_receipt_tolerance_percent, capitalized_unit_cost)
-            VALUES
-                (@work_order_row_id, @organization_id, @environment_id, @work_order_id, @sku_id, @uom_code, 10, 10,
-                 @due_utc, 'created', @requested_at_utc, 0, 0, 0, 0, 0, @capitalized_unit_cost);
-
-            INSERT INTO mes.finished_goods_receipt_requests
-                (id, organization_id, environment_id, request_no, work_order_id, sku_id, quantity, uom_code,
-                 requested_at_utc, produced_lot_no, status, posted_quantity)
-            VALUES
-                (@success_id, @organization_id, @environment_id, @success_request_no, @work_order_id, @sku_id, 5, @uom_code,
-                 @requested_at_utc, @success_lot_no, 'Requested', 0),
-                (@failure_id, @organization_id, @environment_id, @failure_request_no, @work_order_id, @sku_id, 5, @uom_code,
-                 @requested_at_utc, @failure_lot_no, 'Requested', 0);
-
-            INSERT INTO mes.processed_integration_events
-                ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
-            VALUES
-                (@cost_event_row_id, @cost_consumer_name, @cost_event_id, @cost_event_type, @cost_event_version,
-                 @cost_source_service, @cost_idempotency_key, @requested_at_utc);
-            """;
-        insert.Parameters.AddWithValue("work_order_row_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("success_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("failure_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("organization_id", source.OrganizationId);
-        insert.Parameters.AddWithValue("environment_id", source.EnvironmentId);
-        insert.Parameters.AddWithValue("success_request_no", source.SuccessRequestNo);
-        insert.Parameters.AddWithValue("failure_request_no", source.FailureRequestNo);
-        insert.Parameters.AddWithValue("work_order_id", source.WorkOrderId);
-        insert.Parameters.AddWithValue("sku_id", source.SkuId);
-        insert.Parameters.AddWithValue("uom_code", source.UomCode);
-        insert.Parameters.AddWithValue("requested_at_utc", DateTimeOffset.UtcNow);
-        insert.Parameters.AddWithValue("due_utc", DateTimeOffset.UtcNow.AddHours(8));
-        insert.Parameters.AddWithValue("success_lot_no", source.SuccessLotNo);
-        insert.Parameters.AddWithValue("failure_lot_no", source.FailureLotNo);
-        insert.Parameters.AddWithValue("capitalized_unit_cost", 12.34m);
-        insert.Parameters.AddWithValue("cost_event_row_id", Guid.CreateVersion7());
-        insert.Parameters.AddWithValue("cost_consumer_name", "business-mes.work-order-cost-capitalized");
-        insert.Parameters.AddWithValue("cost_event_id", $"evt-man528-cost-{suffix}");
-        insert.Parameters.AddWithValue("cost_event_type", ErpIntegrationEventTypes.WorkOrderCostCapitalized);
-        insert.Parameters.AddWithValue("cost_event_version", ErpIntegrationEventVersions.V1);
-        insert.Parameters.AddWithValue("cost_source_service", ErpIntegrationEventSources.BusinessErp);
-        insert.Parameters.AddWithValue(
-            "cost_idempotency_key",
-            $"work-order-cost-capitalized:{source.OrganizationId}:{source.EnvironmentId}:{source.WorkOrderId}");
-        await insert.ExecuteNonQueryAsync();
-        await transaction.CommitAsync();
-        return source;
-    }
-
-    private static async Task<ReceiptFacts> ReadMesFactsAsync(
-        string connectionString,
-        ProbeSource source,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandType = CommandType.Text;
-        command.CommandText = """
-            SELECT request_no, status, posted_inventory_movement_id, inventory_posting_failure_code
-            FROM mes.finished_goods_receipt_requests
-            WHERE organization_id = @organization_id
-              AND environment_id = @environment_id
-              AND request_no IN (@success_request_no, @failure_request_no);
-            """;
-        command.Parameters.AddWithValue("organization_id", source.OrganizationId);
-        command.Parameters.AddWithValue("environment_id", source.EnvironmentId);
-        command.Parameters.AddWithValue("success_request_no", source.SuccessRequestNo);
-        command.Parameters.AddWithValue("failure_request_no", source.FailureRequestNo);
-        string? successStatus = null;
-        string? successMovementId = null;
-        string? failureStatus = null;
-        string? failureCode = null;
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            if (reader.GetString(0) == source.SuccessRequestNo)
-            {
-                successStatus = reader.GetString(1);
-                successMovementId = reader.IsDBNull(2) ? null : reader.GetString(2);
-            }
-            else
-            {
-                failureStatus = reader.GetString(1);
-                failureCode = reader.IsDBNull(3) ? null : reader.GetString(3);
-            }
-        }
-
-        return new ReceiptFacts(successStatus, successMovementId, failureStatus, failureCode);
-    }
-
-    private static async Task<InventoryFacts> ReadInventoryFactsAsync(
-        string connectionString,
-        ProbeSource source,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandType = CommandType.Text;
-        command.CommandText = """
-            SELECT source_document_id, source_service, source_document_line_id, lot_no
-            FROM inventory.stock_movements
-            WHERE organization_id = @organization_id
-              AND environment_id = @environment_id
-              AND source_service = 'business-mes'
-              AND source_document_id IN (@success_request_no, @failure_request_no, @similar_request_no);
-            """;
-        command.Parameters.AddWithValue("organization_id", source.OrganizationId);
-        command.Parameters.AddWithValue("environment_id", source.EnvironmentId);
-        command.Parameters.AddWithValue("success_request_no", source.SuccessRequestNo);
-        command.Parameters.AddWithValue("failure_request_no", source.FailureRequestNo);
-        command.Parameters.AddWithValue("similar_request_no", source.SuccessRequestNo + "-SIMILAR");
-        var successCount = 0;
-        var failureCount = 0;
-        var similarCount = 0;
-        string? successSourceService = null;
-        string? successSourceDocumentLineId = null;
-        string? successLotNo = null;
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var requestNo = reader.GetString(0);
-            if (requestNo == source.SuccessRequestNo)
-            {
-                successCount++;
-                successSourceService = reader.GetString(1);
-                successSourceDocumentLineId = reader.IsDBNull(2) ? null : reader.GetString(2);
-                successLotNo = reader.IsDBNull(3) ? null : reader.GetString(3);
-            }
-            else if (requestNo == source.FailureRequestNo)
-            {
-                failureCount++;
-            }
-            else
-            {
-                similarCount++;
-            }
-        }
-
-        return new InventoryFacts(
-            successCount,
-            failureCount,
-            similarCount,
-            successSourceService,
-            successSourceDocumentLineId,
-            successLotNo);
-    }
-
-    private static async Task<MessagingFacts> ReadMessagingFactsAsync(
-        string mesConnectionString,
-        string inventoryConnectionString,
-        string successEventId,
-        string failureEventId)
-    {
-        string? successPublishStatus = null;
-        string? failurePublishStatus = null;
-        await using (var mesConnection = new NpgsqlConnection(mesConnectionString))
-        {
-            await mesConnection.OpenAsync();
-            await using var published = mesConnection.CreateCommand();
-            published.CommandText = """
-                SELECT "Content", "StatusName"
-                FROM mes.cap_published_messages
-                WHERE "Content" LIKE @success_event_id OR "Content" LIKE @failure_event_id;
-                """;
-            published.Parameters.AddWithValue("success_event_id", $"%{successEventId}%");
-            published.Parameters.AddWithValue("failure_event_id", $"%{failureEventId}%");
-            await using var reader = await published.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                var content = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
-                if (content.Contains(successEventId, StringComparison.Ordinal))
-                {
-                    successPublishStatus = reader.GetString(1);
-                }
-                else if (content.Contains(failureEventId, StringComparison.Ordinal))
-                {
-                    failurePublishStatus = reader.GetString(1);
-                }
-            }
-        }
-
-        var inventoryRetainedReceiptCount = 0;
-        var inventoryDeadLetterCount = 0;
-        await using (var inventoryConnection = new NpgsqlConnection(inventoryConnectionString))
-        {
-            await inventoryConnection.OpenAsync();
-            await using var consumed = inventoryConnection.CreateCommand();
-            consumed.CommandText = """
-                SELECT
-                    (SELECT COUNT(*) FROM inventory.cap_received_messages
-                     WHERE "Content" LIKE @success_event_pattern OR "Content" LIKE @failure_event_pattern),
-                    (SELECT COUNT(*) FROM inventory.integration_event_dead_letters
-                     WHERE event_id IN (@success_event_id, @failure_event_id));
-                """;
-            consumed.Parameters.AddWithValue("success_event_id", successEventId);
-            consumed.Parameters.AddWithValue("failure_event_id", failureEventId);
-            consumed.Parameters.AddWithValue("success_event_pattern", $"%{successEventId}%");
-            consumed.Parameters.AddWithValue("failure_event_pattern", $"%{failureEventId}%");
-            await using var reader = await consumed.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
-            {
-                inventoryRetainedReceiptCount = reader.GetInt32(0);
-                inventoryDeadLetterCount = reader.GetInt32(1);
-            }
-        }
-
-        return new MessagingFacts(
-            successPublishStatus,
-            failurePublishStatus,
-            inventoryRetainedReceiptCount,
-            inventoryDeadLetterCount);
-    }
-
-    private sealed record ProbeSource(
-        string OrganizationId,
-        string EnvironmentId,
-        string WorkOrderId,
-        string SkuId,
-        string UomCode,
-        string SuccessRequestNo,
-        string FailureRequestNo,
-        string SuccessLotNo,
-        string FailureLotNo,
-        string ProbeRunId);
-
-    private sealed record ReceiptFacts(
-        string? SuccessStatus,
-        string? SuccessMovementId,
-        string? FailureStatus,
-        string? FailureCode);
-
-    private sealed record InventoryFacts(
-        int SuccessMovementCount,
-        int FailureMovementCount,
-        int SimilarSourceMovementCount,
-        string? SuccessSourceService,
-        string? SuccessSourceDocumentLineId,
-        string? SuccessLotNo);
-
-    private sealed record MessagingFacts(
-        string? SuccessPublishStatus,
-        string? FailurePublishStatus,
-        int InventoryRetainedReceiptCount,
-        int InventoryDeadLetterCount);
 }
 
 internal sealed class RealPostgresRedisMesInventoryFactAttribute : FactAttribute
