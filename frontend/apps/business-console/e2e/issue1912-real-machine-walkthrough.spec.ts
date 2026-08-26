@@ -4,7 +4,6 @@ import {
   type APIResponse,
   type BrowserContext,
   type Page,
-  type Request,
   type Response,
 } from '@playwright/test'
 import { createHash } from 'node:crypto'
@@ -24,6 +23,13 @@ import {
   type AuthorizedWorkPoolScope,
   type AuthorizedWorkSiteScope,
 } from './issue1912-walkthrough-runtime'
+import {
+  classifyRequestFailure,
+  clickTabAndConfirmUnmount,
+  fillFilterAndWaitForListResponse,
+  navigateAndWaitForInitialList,
+  RequestFailureEvidenceTracker,
+} from './issue1912-walkthrough-policy'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -122,21 +128,11 @@ type ActorRuntime = {
   expectedPrincipalId: string
   page: Page
   tracker: SessionCredentialTracker
+  requestFailureEvidence: RequestFailureEvidenceTracker
   principalId: string
   principalType: string
   permissionCodes: string[]
 }
-
-const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
-  'document',
-  'stylesheet',
-  'script',
-  'image',
-  'font',
-  'media',
-  'manifest',
-  'texttrack',
-])
 
 class PublicCallError extends Error {
   constructor(
@@ -281,33 +277,6 @@ function publicJson(value: unknown): unknown {
   )
 }
 
-function classifyRequestFailure(request: Request): { expected: boolean; record: JsonRecord } {
-  const url = new URL(request.url())
-  const failure = safeText(request.failure()?.errorText ?? 'unknown request failure')
-  const resourceType = request.resourceType()
-  const isApi = url.pathname.startsWith('/api/')
-  const expected =
-    !isApi && failure === 'net::ERR_ABORTED' && EXPECTED_ABORT_RESOURCE_TYPES.has(resourceType)
-  return {
-    expected,
-    record: {
-      kind: 'requestfailed',
-      method: request.method(),
-      path: url.pathname + url.search,
-      failure,
-      resourceType,
-      isNavigationRequest: request.isNavigationRequest(),
-      classification: expected
-        ? 'expected-superseded-document-or-resource'
-        : isApi
-          ? 'api-request-failure'
-          : request.isNavigationRequest()
-            ? 'page-navigation-failure'
-            : 'resource-failure',
-    },
-  }
-}
-
 async function jsonOf(response: APIResponse): Promise<unknown> {
   const contentType = response.headers()['content-type'] ?? ''
   if (!contentType.includes('json')) return { text: safeText(await response.text()) }
@@ -343,7 +312,13 @@ test('request failure policy keeps superseded navigation aborts but records API 
   const unexpectedFailures: JsonRecord[] = []
   const apiFailures: JsonRecord[] = []
   page.on('requestfailed', (request) => {
-    const classified = classifyRequestFailure(request)
+    const classified = classifyRequestFailure({
+      method: request.method(),
+      url: request.url(),
+      failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
+      resourceType: request.resourceType(),
+      isNavigationRequest: request.isNavigationRequest(),
+    })
     if (classified.expected) expectedCancellations.push(classified.record)
     else unexpectedFailures.push(classified.record)
   })
@@ -465,6 +440,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     expectedPrincipalId: 'user-admin',
     page,
     tracker: sessionCredentialTracker,
+    requestFailureEvidence: new RequestFailureEvidenceTracker(),
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -475,6 +451,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     expectedPrincipalId: 'user-emp-049',
     page: workerPage,
     tracker: workerSessionCredentialTracker,
+    requestFailureEvidence: new RequestFailureEvidenceTracker(),
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -505,18 +482,28 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
 
   const attachObservers = (runtime: ActorRuntime) => {
-    runtime.page.on('request', (request) =>
-      runtime.tracker.observeRequest({ page: runtime.page, request }),
-    )
+    runtime.page.on('request', (request) => {
+      runtime.requestFailureEvidence.observeRequest(request, runtime.page.url())
+      runtime.tracker.observeRequest({ page: runtime.page, request })
+    })
     runtime.page.on('requestfailed', (request) => {
-      const classified = classifyRequestFailure(request)
-      const record = {
-        ...classified.record,
-        actor: runtime.actor,
-        principalId: runtime.principalId || runtime.expectedPrincipalId,
-      }
-      if (classified.expected) expectedRequestCancellations.push(record)
-      else failedRequests.push(record)
+      runtime.requestFailureEvidence.resolveFailureEvidence(request, (cancellationEvidence) => {
+        const classified = classifyRequestFailure({
+          method: request.method(),
+          url: request.url(),
+          failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
+          resourceType: request.resourceType(),
+          isNavigationRequest: request.isNavigationRequest(),
+          cancellationEvidence,
+        })
+        const record = {
+          ...classified.record,
+          actor: runtime.actor,
+          principalId: runtime.principalId || runtime.expectedPrincipalId,
+        }
+        if (classified.expected) expectedRequestCancellations.push(record)
+        else failedRequests.push(record)
+      })
     })
     runtime.page.on('response', (response: Response) => {
       const url = new URL(response.url())
@@ -743,43 +730,39 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
     const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
     const targetPage = runtime.page
-    const initialListResponse = targetPage.waitForResponse(
-      (response) => {
-        const url = new URL(response.url())
-        return (
-          response.request().method() === 'GET' &&
-          url.pathname === options.listPath &&
-          response.status() === 200
-        )
-      },
-      { timeout: 120_000 },
-    )
-    const navigation = await targetPage.goto(options.route, {
-      waitUntil: 'domcontentloaded',
-      timeout: 120_000,
-    })
-    expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
-    const firstList = await initialListResponse
-    expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
+    const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(targetPage.url())
+    let navigation: Response | null = null
+    let firstList!: Response
+    let navigationConfirmed = false
+    try {
+      const initialPage = await navigateAndWaitForInitialList(targetPage, {
+        route: options.route,
+        listPath: options.listPath,
+        timeoutMs: 120_000,
+      })
+      navigation = initialPage.navigation
+      firstList = initialPage.firstList
+      expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
+      expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
+      navigationAttempt.confirm('navigation')
+      navigationConfirmed = true
+    } finally {
+      if (navigationConfirmed) navigationAttempt.complete()
+      else navigationAttempt.cancel()
+    }
 
     if (options.filterLabel) {
-      const filteredListResponse = targetPage.waitForResponse(
-        (response) => {
-          const url = new URL(response.url())
-          return (
-            response.request().method() === 'GET' &&
-            url.pathname === options.listPath &&
-            response.status() === 200
-          )
-        },
-        { timeout: 120_000 },
-      )
-      await targetPage.getByLabel(options.filterLabel).fill(options.stableText)
-      await filteredListResponse
+      await fillFilterAndWaitForListResponse(targetPage, {
+        route: targetPage.url(),
+        listPath: options.listPath,
+        filterLabel: options.filterLabel,
+        stableText: options.stableText,
+        timeoutMs: 120_000,
+      })
     }
 
     if (options.tabText) {
-      await targetPage.getByRole('tab', { name: options.tabText }).click()
+      await clickTabAndConfirmUnmount(targetPage, options.tabText, runtime.requestFailureEvidence)
     }
 
     for (const selectOption of options.selectOptions ?? []) {
@@ -2376,7 +2359,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
                 assertionBoundary:
                   'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
                 requestFailurePolicy:
-                  'Only non-API ERR_ABORTED document/resource requests classified as superseded are separated; API failures, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
+                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
                 setup,
                 identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
                 expectedBusinessRejections,
