@@ -134,7 +134,9 @@ if (usesPostgreSql && autoMigrate)
     await migrationRunner.MigrateAsync();
     var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
     await seed.SeedAsync();
-    if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
+    if (WorldBibleSeedGate.ShouldRunWorkerSeeds(
+        builder.Configuration.GetValue("LeaderDemo:World:Enabled", false),
+        builder.Configuration["Iam:Seed:DemoWorkerPassword"]))
     {
         await scope.ServiceProvider.GetRequiredService<WorldBibleWorkerSeedService>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<WorldBiblePdaDemoAccountSeedService>().SeedAsync();

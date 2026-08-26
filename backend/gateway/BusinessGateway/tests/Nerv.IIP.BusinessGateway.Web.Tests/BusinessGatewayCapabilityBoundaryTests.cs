@@ -146,6 +146,50 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void MasterData_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/MasterData/BusinessMasterDataClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessMasterDataClient"),
+            Identity("Class", "HttpBusinessMasterDataClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void Quality_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Quality/BusinessQualityClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessQualityClient"),
+            Identity("Class", "HttpBusinessQualityClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
     public void Capability_boundary_mutation_matrix_rejects_escapes_and_preserves_non_clients()
     {
         var baseDocuments = new[]
@@ -645,7 +689,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"IBusiness{clientName}Client",
                 capability,
                 sourcePath,
-                includeInLegacy: capability != "Inventory" && capability != "Approval" && capability != "Notification");
+                includeInLegacy: capability != "MasterData" &&
+                    capability != "Inventory" &&
+                    capability != "Quality" &&
+                    capability != "Approval" &&
+                    capability != "Notification");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -653,7 +701,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 $"HttpBusiness{clientName}Client",
                 capability,
                 sourcePath,
-                includeInLegacy: capability != "Inventory" && capability != "Approval" && capability != "Notification");
+                includeInLegacy: capability != "MasterData" &&
+                    capability != "Inventory" &&
+                    capability != "Quality" &&
+                    capability != "Approval" &&
+                    capability != "Notification");
         }
 
         seedCapabilities.Add(

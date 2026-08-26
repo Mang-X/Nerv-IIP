@@ -74,6 +74,8 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    // Contract: DomainInvariant + Regression. Authority: Issue #2246 acceptance 2 and PR #2238 review 5024078243,
+    // which confirmed that Released AutoRebind must preserve the frozen provenance without changing readiness.
     [Fact]
     public async Task EngineeringChangeReleasedHandler_KeepsReleasedMaterialSnapshotsReadyToStartAfterRebind()
     {

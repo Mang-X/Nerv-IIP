@@ -15,6 +15,8 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesEngineeringChangeReadinessTests
 {
+    // Contract: DomainInvariant + Regression. Authority: Issue #2246 acceptance 2, Issue #2222 scope,
+    // and PR #2238 review 5024591869, which confirmed the consecutive AutoRebind reachability regression.
     [Fact]
     public async Task EngineeringChangeReleasedHandler_KeepsOriginalReleaseSnapshotReadyAcrossConsecutiveRebinds()
     {
@@ -83,6 +85,8 @@ public sealed class MesEngineeringChangeReadinessTests
         Assert.Empty(readiness.BlockReasons);
     }
 
+    // Contract: DomainInvariant + Regression. Authority: PR #2238 reviews 5024591869 and 5024954741,
+    // which confirmed fail-closed scope/version/chain requirements and the organization/environment/status/cycle matrix.
     [Theory]
     [InlineData("wrong-work-order")]
     [InlineData("wrong-archived-version")]
