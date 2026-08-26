@@ -757,7 +757,8 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-main-chain')
 elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervIssue1912WalkthroughScenario `
                                     -Manifest $InputManifest `
-                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                                    -SessionAdminPassword $sessionAdminPassword `
+                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
                             }
 elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-quality-branch'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoQualityBranchScenario `
