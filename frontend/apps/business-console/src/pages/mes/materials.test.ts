@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 const refreshLineSideInventory = vi.fn(async () => {})
-const nextLineSideInventoryPage = vi.fn()
-const previousLineSideInventoryPage = vi.fn()
+const goToLineSideInventoryPage = vi.fn()
 const lineSideInventoryPending = ref(false)
 const lineSideInventoryError = ref<unknown>(null)
 const lineSideInventoryReady = ref(true)
+const lineSideInventoryTotal = ref(201)
 const lineSideInventoryBalances = ref([
   {
     siteCode: 'SITE-SH',
@@ -62,7 +62,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
   useMesLineSideInventoryBalances: () => ({
     lineSideInventoryBalances: computed(() => lineSideInventoryBalances.value),
-    lineSideInventoryTotal: computed(() => lineSideInventoryBalances.value.length),
+    lineSideInventoryTotal,
     lineSideInventoryPending,
     lineSideInventoryError,
     lineSideInventoryReady,
@@ -70,8 +70,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     lineSideInventoryPageCount: ref(2),
     lineSideInventoryHasPreviousPage: ref(false),
     lineSideInventoryHasNextPage: ref(true),
-    previousLineSideInventoryPage,
-    nextLineSideInventoryPage,
+    goToLineSideInventoryPage,
     refreshLineSideInventory,
   }),
 }))
@@ -99,11 +98,11 @@ import MaterialsPage from './materials.vue'
 describe('Console MES materials page line-side inventory', () => {
   beforeEach(() => {
     refreshLineSideInventory.mockClear()
-    nextLineSideInventoryPage.mockClear()
-    previousLineSideInventoryPage.mockClear()
+    goToLineSideInventoryPage.mockClear()
     lineSideInventoryPending.value = false
     lineSideInventoryError.value = null
     lineSideInventoryReady.value = true
+    lineSideInventoryTotal.value = 201
     lineSideInventoryBalances.value = initialLineSideInventoryBalances
   })
 
@@ -123,11 +122,8 @@ describe('Console MES materials page line-side inventory', () => {
     expect(wrapper.text()).not.toContain('0 天')
     expect(wrapper.text()).toContain('第 1 / 2 页')
 
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === '下一页')!
-      .trigger('click')
-    expect(nextLineSideInventoryPage).toHaveBeenCalledTimes(1)
+    await wrapper.get('button[aria-label="第 2 页"]').trigger('click')
+    expect(goToLineSideInventoryPage).toHaveBeenCalledWith(2)
   })
 
   it('distinguishes loading, error, empty, and refresh behavior', async () => {

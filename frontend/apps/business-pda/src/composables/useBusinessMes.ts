@@ -1641,13 +1641,21 @@ export function useMesLineSideInventoryBalances() {
     if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
     return response
   })
+  const responsePageMismatch = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== identity.value) return false
+    const response = scopedResponse.response
+    return response?.success === true && (response.data?.page ?? 1) !== page.value
+  })
   const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
   const failure = computed(() =>
     query.error.value != null
       ? query.error.value
-      : currentResponse.value !== undefined && currentResponse.value.success !== true
-        ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
-        : null,
+      : responsePageMismatch.value
+        ? new Error('线边库存响应页码与请求不一致，请重试。')
+        : currentResponse.value !== undefined && currentResponse.value.success !== true
+          ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
+          : null,
   )
   const total = computed(() =>
     currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
@@ -1659,10 +1667,11 @@ export function useMesLineSideInventoryBalances() {
   )
 
   watch(
-    [page, currentResponse, () => query.error.value],
-    ([currentPage, response, error]) => {
+    [page, currentResponse, responsePageMismatch, () => query.error.value],
+    ([currentPage, response, pageMismatch, error]) => {
       if (
         error != null ||
+        pageMismatch ||
         (response !== undefined &&
           (response.success !== true || (response.data?.page ?? 1) === currentPage))
       ) {

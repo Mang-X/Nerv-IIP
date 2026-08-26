@@ -2067,6 +2067,12 @@ export function useMesLineSideInventoryBalances() {
     if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
     return response
   })
+  const responsePageMismatch = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== responseIdentity.value) return false
+    const response = scopedResponse.response
+    return response?.success === true && (response.data?.page ?? 1) !== page.value
+  })
   const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
   const state = businessReadState(
     { data: currentResponse, error: query.error, isLoading: pending },
@@ -2075,9 +2081,11 @@ export function useMesLineSideInventoryBalances() {
   const failure = computed(() =>
     query.error.value != null
       ? query.error.value
-      : currentResponse.value !== undefined && currentResponse.value.success !== true
-        ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
-        : null,
+      : responsePageMismatch.value
+        ? new Error('线边库存响应页码与请求不一致，请重试。')
+        : currentResponse.value !== undefined && currentResponse.value.success !== true
+          ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
+          : null,
   )
   const total = computed(() =>
     currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
@@ -2089,10 +2097,11 @@ export function useMesLineSideInventoryBalances() {
   )
 
   watch(
-    [page, currentResponse, () => query.error.value],
-    ([currentPage, response, error]) => {
+    [page, currentResponse, responsePageMismatch, () => query.error.value],
+    ([currentPage, response, pageMismatch, error]) => {
       if (
         error != null ||
+        pageMismatch ||
         (response !== undefined &&
           (response.success !== true || (response.data?.page ?? 1) === currentPage))
       ) {
@@ -2114,6 +2123,19 @@ export function useMesLineSideInventoryBalances() {
     page.value += 1
   }
 
+  function goToPage(targetPage: number) {
+    if (
+      pending.value ||
+      !Number.isInteger(targetPage) ||
+      targetPage < 1 ||
+      targetPage > pageCount.value ||
+      targetPage === page.value
+    )
+      return
+    pageNavigationPending.value = true
+    page.value = targetPage
+  }
+
   return {
     lineSideInventoryBalances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
       envelopeItems<
@@ -2131,6 +2153,7 @@ export function useMesLineSideInventoryBalances() {
     lineSideInventoryReady: computed(() => state.value === 'ready'),
     previousLineSideInventoryPage: previousPage,
     nextLineSideInventoryPage: nextPage,
+    goToLineSideInventoryPage: goToPage,
     refreshLineSideInventory: () => refetchWithBusinessContext(filters, query),
   }
 }

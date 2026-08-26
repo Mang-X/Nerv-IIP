@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import LineSideInventoryBalancesPanel from './LineSideInventoryBalancesPanel.vue'
 
 describe('LineSideInventoryBalancesPanel', () => {
-  it('桌面表格完整渲染服务端当前页的 200 行且不产生第二套分页', () => {
+  it('桌面表格完整渲染 200 行并由内建 manual 分页发出目标页', async () => {
     const items = Array.from({ length: 200 }, (_, index) => ({
       siteCode: 'SITE-A',
       locationCode: `LINE-${index + 1}`,
@@ -21,8 +21,6 @@ describe('LineSideInventoryBalancesPanel', () => {
       props: {
         error: null,
         items,
-        hasNextPage: true,
-        hasPreviousPage: false,
         page: 1,
         pageCount: 2,
         pending: false,
@@ -33,6 +31,10 @@ describe('LineSideInventoryBalancesPanel', () => {
 
     expect(wrapper.findAll('tbody tr')).toHaveLength(200)
     expect(wrapper.text()).toContain('SKU-200')
-    expect(wrapper.find('[data-slot="pagination"]').exists()).toBe(false)
+    expect(wrapper.findAll('nav[aria-label="分页"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('显示 1–200 / 201 条')
+
+    await wrapper.get('button[aria-label="第 2 页"]').trigger('click')
+    expect(wrapper.emitted('updatePage')).toEqual([[2]])
   })
 })

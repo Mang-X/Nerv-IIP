@@ -2271,6 +2271,10 @@ describe('business MES composables', () => {
 
     expect(result.lineSideInventoryBalances.value).toEqual([])
     expect(result.lineSideInventoryReady.value).toBe(false)
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.lineSideInventoryPending.value).toBe(false)
   })
 
   it('翻页后带当前请求身份的迟到错页 payload 不得投影', async () => {
@@ -2304,6 +2308,13 @@ describe('business MES composables', () => {
     expect(result.lineSideInventoryPage.value).toBe(2)
     expect(result.lineSideInventoryBalances.value).toEqual([])
     expect(result.lineSideInventoryReady.value).toBe(false)
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.lineSideInventoryPending.value).toBe(false)
+
+    result.previousLineSideInventoryPage()
+    expect(result.lineSideInventoryPage.value).toBe(1)
   })
 
   it('切换组织环境时同页旧响应立即失效', () => {

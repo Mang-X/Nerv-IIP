@@ -10,8 +10,6 @@ import { inlineErrorMessage } from '@/utils/notify'
 const props = defineProps<{
   error: unknown
   items: BusinessConsoleMesLineSideInventoryBalanceItem[]
-  hasNextPage: boolean
-  hasPreviousPage: boolean
   page: number
   pageCount: number
   pending: boolean
@@ -19,7 +17,7 @@ const props = defineProps<{
   total: number
 }>()
 
-const emit = defineEmits<{ nextPage: []; previousPage: []; refresh: [] }>()
+const emit = defineEmits<{ updatePage: [page: number]; refresh: [] }>()
 
 const columns: NvDataTableColumn<BusinessConsoleMesLineSideInventoryBalanceItem>[] = [
   { key: 'skuCode', header: '物料', cellClass: 'font-medium' },
@@ -53,24 +51,6 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <NvButton
-          type="button"
-          size="sm"
-          variant="outline"
-          :disabled="pending || !hasPreviousPage"
-          @click="emit('previousPage')"
-        >
-          上一页
-        </NvButton>
-        <NvButton
-          type="button"
-          size="sm"
-          variant="outline"
-          :disabled="pending || !hasNextPage"
-          @click="emit('nextPage')"
-        >
-          下一页
-        </NvButton>
         <NvButton
           type="button"
           size="sm"
@@ -130,7 +110,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
         </article>
       </div>
 
-      <div class="hidden md:block">
+      <div class="line-side-inventory-table">
         <NvDataTable
           :columns="columns"
           :rows="items"
@@ -138,7 +118,12 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
           :loading="pending"
           :searchable="false"
           :column-settings="false"
-          :pagination="false"
+          manual
+          :page="page"
+          :page-size="200"
+          :page-size-options="[200]"
+          :total-items="total"
+          @update:page="emit('updatePage', $event)"
         >
           <template #cell-locationCode="{ row }">
             <div class="flex flex-col">
@@ -170,3 +155,11 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
     </template>
   </section>
 </template>
+
+<style scoped>
+@media (max-width: 767px) {
+  .line-side-inventory-table :deep([data-slot='table-container']) {
+    display: none;
+  }
+}
+</style>

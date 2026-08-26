@@ -2058,6 +2058,10 @@ describe('pda useBusinessMes composables', () => {
 
     expect(result.balances.value).toEqual([])
     expect(result.ready.value).toBe(false)
+    expect(result.error.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.pending.value).toBe(false)
   })
 
   it('翻页后带当前请求身份的迟到错页 payload 不得投影', async () => {
@@ -2092,6 +2096,13 @@ describe('pda useBusinessMes composables', () => {
     expect(result.page.value).toBe(2)
     expect(result.balances.value).toEqual([])
     expect(result.ready.value).toBe(false)
+    expect(result.error.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.pending.value).toBe(false)
+
+    result.previousPage()
+    expect(result.page.value).toBe(1)
   })
 
   it('切换组织环境时同页旧响应立即失效', async () => {
