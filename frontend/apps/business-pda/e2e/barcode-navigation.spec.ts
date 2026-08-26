@@ -32,6 +32,17 @@ async function scan(page: Page, value: string) {
 
 test('唯一结果：首页仅凭 MES 双强 ID 直达并由目标页精确回读', async ({ page }) => {
   let requestBody: unknown
+  const businessWriteRequests: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (
+      url.pathname.startsWith('/api/business-console/v1/') &&
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method()) &&
+      url.pathname !== '/api/business-console/v1/barcode/resolve'
+    ) {
+      businessWriteRequests.push(`${request.method()} ${url.pathname}`)
+    }
+  })
   await page.route('**/api/business-console/v1/barcode/resolve', async (route) => {
     requestBody = route.request().postDataJSON()
     await fulfillResolve(route, 'resolved', [
@@ -54,6 +65,7 @@ test('唯一结果：首页仅凭 MES 双强 ID 直达并由目标页精确回�
     pageIndex: 1,
     pageSize: 20,
   })
+  expect(businessWriteRequests).toEqual([])
   await expectNoHorizontalOverflow(page)
 })
 

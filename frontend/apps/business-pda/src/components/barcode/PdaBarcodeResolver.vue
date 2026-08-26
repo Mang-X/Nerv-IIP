@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeResolveCandidate } from '@nerv-iip/api-client'
 import { NvMobileButton, NvScanBar } from '@nerv-iip/ui-mobile'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
@@ -11,9 +11,10 @@ const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true }
 const identity = usePdaIdentity()
 const router = useRouter()
 const resolver = usePdaBarcodeResolver({
-  organizationId: identity.organizationId.value,
-  environmentId: identity.environmentId.value,
+  organizationId: identity.organizationId,
+  environmentId: identity.environmentId,
 })
+onBeforeUnmount(resolver.cancel)
 
 const statusCopy = computed(() => {
   switch (resolver.status.value) {

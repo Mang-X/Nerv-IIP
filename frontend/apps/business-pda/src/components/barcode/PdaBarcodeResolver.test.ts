@@ -143,4 +143,25 @@ describe('PdaBarcodeResolver', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="barcode-status"]').text()).toContain('暂不支持直达')
   })
+
+  it('does not navigate when a pending resolve completes after unmount', async () => {
+    let settle!: (value: unknown) => void
+    api.resolve.mockReturnValue(new Promise((resolve) => (settle = resolve)))
+    const { wrapper, router } = await setup()
+
+    await scan(wrapper, 'WO-LATE')
+    wrapper.unmount()
+    settle({
+      data: {
+        success: true,
+        data: {
+          status: 'resolved',
+          candidates: [{ objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-LATE' } }],
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
 })

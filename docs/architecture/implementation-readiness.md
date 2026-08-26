@@ -279,7 +279,7 @@ Business PDA 现在以固定底部四入口组织现场作业：工作台、任�
 
 Business PDA 首页与 `/scan` 现在共用同一解析状态机，调用 #1179 已交付的 `POST /api/business-console/v1/barcode/resolve`，并明确区分 pending、resolved、ambiguous、unknown、unsupported、forbidden 与服务失败。只有唯一且已具备目标页实时重核验能力的类型才允许导航：生产工单携带 `workOrderId` 进入报工页；MES 工序必须同时携带 `workOrderId + operationTaskId` 才能进入工序执行页。目标页仍按当前 principal、组织/环境、实时授权作业范围和完整强 ID 精确回读；过期或越权 ID 会在目标页 fail closed。设备、库存、WMS、ERP 等虽可能被 resolve 识别，但在对应 PDA 目标页尚无强 ID 实时重核验前统一显示 unsupported，不用客户端映射补造可信度。
 
-ambiguous 结果只展示服务端候选并等待人工选择，不按顺序或类型猜测。unknown 结果可显式查询既有授权服务端搜索面；返回项只标为“仅供核对的候选（未验证主数据）”，不消费 PC route、不导航，也不冒充已解析对象。每次新扫码都会推进请求 generation，较早请求的迟到结果不能覆盖当前码；本切片只做键盘楔入扫码后的只读解析与导航，不记录扫码、不触发任何业务写操作，也不包含相机、离线解析或 PC 全局搜索改造。
+ambiguous 结果只展示服务端候选并等待人工选择，不按顺序或类型猜测。unknown 结果可显式查询既有授权服务端搜索面；返回项只标为“仅供核对的候选（未验证主数据）”，不消费 PC route、不导航，也不冒充已解析对象。resolve 与 unknown 候选搜索共用同一请求 generation；每次新扫码或 principal 的组织/环境 scope 漂移都会推进 generation 并清空旧状态，较早请求的迟到成功或失败均不能覆盖当前码，组件卸载也会使在途请求失效而不再导航。本切片只做键盘楔入扫码后的只读解析与导航，不记录扫码、不触发任何业务写操作，也不包含相机、离线解析或 PC 全局搜索改造。
 
 ## DeviceAsset 供应商与父设备引用闭环（MAN-424 / #772）
 

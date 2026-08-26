@@ -7,7 +7,7 @@ import {
   type BusinessConsoleSearchEnvelope,
   type BusinessConsoleSearchResult,
 } from '@nerv-iip/api-client'
-import { shallowRef } from 'vue'
+import { shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import { barcodeCandidateRoute } from '@/components/barcode/barcodeRoute'
@@ -25,8 +25,8 @@ export type BarcodeResolveStatus =
 type SearchStatus = 'idle' | 'pending' | 'resolved' | 'forbidden' | 'error'
 
 interface BarcodeResolverOptions {
-  organizationId: string
-  environmentId: string
+  organizationId: MaybeRefOrGetter<string>
+  environmentId: MaybeRefOrGetter<string>
   resolveBarcode?: (
     request: BusinessConsoleBarcodeResolveRequest,
   ) => Promise<BusinessConsoleBarcodeResolveEnvelope>
@@ -64,20 +64,43 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
   const resolveBarcode = options.resolveBarcode ?? defaultResolveBarcode
   const searchCandidates = options.searchCandidates ?? defaultSearchCandidates
 
+  function currentScope() {
+    return {
+      organizationId: toValue(options.organizationId).trim(),
+      environmentId: toValue(options.environmentId).trim(),
+    }
+  }
+
   function resetSearch() {
     searchStatus.value = 'idle'
     searchResults.value = []
   }
 
+  function invalidate() {
+    generation += 1
+    status.value = 'idle'
+    scannedValue.value = ''
+    reasonCode.value = null
+    candidates.value = []
+    resetSearch()
+  }
+
+  watch(
+    [() => toValue(options.organizationId).trim(), () => toValue(options.environmentId).trim()],
+    invalidate,
+    { flush: 'sync' },
+  )
+
   async function resolve(value: string): Promise<RouteLocationRaw | null> {
     const currentGeneration = ++generation
     const normalized = value.trim()
+    const scope = currentScope()
     scannedValue.value = normalized
     reasonCode.value = null
     candidates.value = []
     resetSearch()
 
-    if (!normalized || !options.organizationId || !options.environmentId) {
+    if (!normalized || !scope.organizationId || !scope.environmentId) {
       status.value = 'error'
       return null
     }
@@ -85,8 +108,8 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
     status.value = 'pending'
     try {
       const envelope = await resolveBarcode({
-        organizationId: options.organizationId,
-        environmentId: options.environmentId,
+        organizationId: scope.organizationId,
+        environmentId: scope.environmentId,
         scannedValue: normalized,
         pageIndex: 1,
         pageSize: 20,
@@ -117,6 +140,10 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
         status.value = 'unknown'
         return null
       }
+      if (envelope.data.status === 'forbidden') {
+        status.value = 'forbidden'
+        return null
+      }
       status.value = 'unsupported'
       return null
     } catch (error) {
@@ -134,9 +161,17 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
 
   async function searchUnknownCandidates() {
     if (status.value !== 'unknown' || !scannedValue.value) return
+    const currentGeneration = generation
+    const query = scannedValue.value
     searchStatus.value = 'pending'
     try {
-      const envelope = await searchCandidates(scannedValue.value)
+      const envelope = await searchCandidates(query)
+      if (
+        currentGeneration !== generation ||
+        status.value !== 'unknown' ||
+        scannedValue.value !== query
+      )
+        return
       if (!envelope.success || !envelope.data) {
         searchStatus.value = 'error'
         return
@@ -144,6 +179,12 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
       searchResults.value = envelope.data.results ?? []
       searchStatus.value = 'resolved'
     } catch (error) {
+      if (
+        currentGeneration !== generation ||
+        status.value !== 'unknown' ||
+        scannedValue.value !== query
+      )
+        return
       searchStatus.value = isForbidden(error) ? 'forbidden' : 'error'
     }
   }
@@ -158,5 +199,6 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
     resolve,
     selectCandidate,
     searchUnknownCandidates,
+    cancel: invalidate,
   }
 }

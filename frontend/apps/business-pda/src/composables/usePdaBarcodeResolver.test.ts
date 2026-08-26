@@ -3,6 +3,7 @@ import type {
   BusinessConsoleBarcodeResolveEnvelope,
   BusinessConsoleSearchEnvelope,
 } from '@nerv-iip/api-client'
+import { nextTick, shallowRef } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import { usePdaBarcodeResolver } from './usePdaBarcodeResolver'
@@ -91,7 +92,7 @@ describe('usePdaBarcodeResolver', () => {
     expect(resolver.searchStatus.value).toBe('resolved')
   })
 
-  it.each(['unsupported', 'unknown'] as const)(
+  it.each(['unsupported', 'unknown', 'forbidden'] as const)(
     'represents the %s outcome explicitly',
     async (status) => {
       const resolver = usePdaBarcodeResolver({
@@ -139,5 +140,70 @@ describe('usePdaBarcodeResolver', () => {
     await expect(first).resolves.toBeNull()
     expect(resolver.scannedValue.value).toBe('SECOND')
     expect(resolver.status.value).toBe('unknown')
+  })
+
+  it('discards an unknown search response after a newer scan starts', async () => {
+    let settleSearch!: (value: BusinessConsoleSearchEnvelope) => void
+    const resolver = usePdaBarcodeResolver({
+      ...scope,
+      resolveBarcode: vi.fn().mockResolvedValue(envelope('unknown')),
+      searchCandidates: vi.fn(
+        () => new Promise<BusinessConsoleSearchEnvelope>((resolve) => (settleSearch = resolve)),
+      ),
+    })
+
+    await resolver.resolve('FIRST')
+    const firstSearch = resolver.searchUnknownCandidates()
+    expect(resolver.searchStatus.value).toBe('pending')
+
+    await resolver.resolve('SECOND')
+    settleSearch({
+      success: true,
+      data: { results: [{ objectType: 'mes-work-order', title: '过期候选' }] },
+    })
+    await firstSearch
+
+    expect(resolver.scannedValue.value).toBe('SECOND')
+    expect(resolver.status.value).toBe('unknown')
+    expect(resolver.searchStatus.value).toBe('idle')
+    expect(resolver.searchResults.value).toEqual([])
+  })
+
+  it('invalidates pending work on scope drift and freezes the latest scope per request', async () => {
+    const organizationId = shallowRef('org-1')
+    const environmentId = shallowRef('env-1')
+    let settleFirst!: (value: BusinessConsoleBarcodeResolveEnvelope) => void
+    const resolveBarcode = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<BusinessConsoleBarcodeResolveEnvelope>((resolve) => (settleFirst = resolve)),
+      )
+      .mockResolvedValueOnce(envelope('unknown'))
+    const resolver = usePdaBarcodeResolver({
+      organizationId,
+      environmentId,
+      resolveBarcode,
+    })
+
+    const first = resolver.resolve('FIRST')
+    organizationId.value = 'org-2'
+    await nextTick()
+    settleFirst(
+      envelope('resolved', [{ objectType: 'mes-work-order', strongIds: { workOrderId: 'OLD' } }]),
+    )
+
+    await expect(first).resolves.toBeNull()
+    expect(resolver.status.value).toBe('idle')
+    expect(resolver.scannedValue.value).toBe('')
+
+    await resolver.resolve('SECOND')
+    expect(resolveBarcode).toHaveBeenLastCalledWith({
+      organizationId: 'org-2',
+      environmentId: 'env-1',
+      scannedValue: 'SECOND',
+      pageIndex: 1,
+      pageSize: 20,
+    })
   })
 })
