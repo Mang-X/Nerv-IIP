@@ -21,6 +21,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 type: "integer", nullable: false, defaultValue: 0,
                 comment: "Optimistic row version.");
 
+            migrationBuilder.AddUniqueConstraint(
+                name: "ak_production_reports_scope_report_task",
+                schema: "mes",
+                table: "production_reports",
+                columns: new[] { "organization_id", "environment_id", "report_no", "work_order_id", "operation_task_id" });
+
             migrationBuilder.CreateTable(
                 name: "operation_actual_time_settlements",
                 schema: "mes",
@@ -41,9 +47,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_operation_actual_time_settlements", x => x.id);
-                    table.UniqueConstraint("ak_operation_actual_time_settlements_id_scope", x => new { x.id, x.organization_id, x.environment_id });
+                    table.UniqueConstraint("ak_operation_actual_time_settlements_id_scope_task", x => new { x.id, x.organization_id, x.environment_id, x.work_order_id, x.operation_task_id });
                     table.CheckConstraint("ck_operation_actual_time_settlements_revision_positive", "revision > 0");
                     table.CheckConstraint("ck_operation_actual_time_settlements_ticks_nonnegative", "actual_labor_ticks >= 0 AND actual_machine_ticks >= 0");
+                    table.CheckConstraint("ck_operation_actual_time_settlements_void_order", "voided_at_utc IS NULL OR voided_at_utc >= completed_at_utc");
                     table.ForeignKey(
                         name: "fk_operation_actual_time_settlements_operation_tasks",
                         columns: x => new { x.organization_id, x.environment_id, x.operation_task_id, x.work_order_id },
@@ -62,6 +69,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     settlement_id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Owning actual-time settlement revision identifier."),
                     organization_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Organization tenant id copied for report foreign-key isolation."),
                     environment_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Environment id copied for report foreign-key isolation."),
+                    work_order_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "MES work order id copied to enforce report ownership."),
+                    operation_task_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "MES operation task id copied to enforce report ownership."),
                     report_no = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Covered MES production report number.")
                 },
                 constraints: table =>
@@ -69,15 +78,15 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     table.PrimaryKey("PK_operation_actual_time_settlement_reports", x => x.id);
                     table.ForeignKey(
                         name: "fk_operation_actual_time_settlement_reports_production_reports",
-                        columns: x => new { x.organization_id, x.environment_id, x.report_no },
+                        columns: x => new { x.organization_id, x.environment_id, x.report_no, x.work_order_id, x.operation_task_id },
                         principalSchema: "mes", principalTable: "production_reports",
-                        principalColumns: new[] { "organization_id", "environment_id", "report_no" },
+                        principalColumns: new[] { "organization_id", "environment_id", "report_no", "work_order_id", "operation_task_id" },
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "fk_operation_actual_time_settlement_reports_settlement",
-                        columns: x => new { x.settlement_id, x.organization_id, x.environment_id },
+                        columns: x => new { x.settlement_id, x.organization_id, x.environment_id, x.work_order_id, x.operation_task_id },
                         principalSchema: "mes", principalTable: "operation_actual_time_settlements",
-                        principalColumns: new[] { "id", "organization_id", "environment_id" },
+                        principalColumns: new[] { "id", "organization_id", "environment_id", "work_order_id", "operation_task_id" },
                         onDelete: ReferentialAction.Cascade);
                 },
                 comment: "Relational production-report lineage covered by one MES actual-time settlement revision.");
@@ -87,14 +96,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 schema: "mes", table: "operation_tasks", sql: "actual_time_settlement_revision >= 0");
 
             migrationBuilder.CreateIndex(
-                name: "ix_operation_actual_time_settlement_reports_scope_report",
+                name: "ix_operation_actual_time_settlement_reports_report_owner",
                 schema: "mes", table: "operation_actual_time_settlement_reports",
-                columns: new[] { "organization_id", "environment_id", "report_no" });
+                columns: new[] { "organization_id", "environment_id", "report_no", "work_order_id", "operation_task_id" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_operation_actual_time_settlement_reports_settlement_scope",
+                name: "ix_operation_actual_time_settlement_reports_settlement_owner",
                 schema: "mes", table: "operation_actual_time_settlement_reports",
-                columns: new[] { "settlement_id", "organization_id", "environment_id" });
+                columns: new[] { "settlement_id", "organization_id", "environment_id", "work_order_id", "operation_task_id" });
 
             migrationBuilder.CreateIndex(
                 name: "ux_operation_actual_time_settlement_reports_settlement_report",
@@ -117,6 +126,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(name: "operation_actual_time_settlement_reports", schema: "mes");
             migrationBuilder.DropTable(name: "operation_actual_time_settlements", schema: "mes");
+            migrationBuilder.DropUniqueConstraint(
+                name: "ak_production_reports_scope_report_task",
+                schema: "mes",
+                table: "production_reports");
             migrationBuilder.DropCheckConstraint(
                 name: "ck_operation_tasks_actual_time_settlement_revision_nonnegative",
                 schema: "mes", table: "operation_tasks");

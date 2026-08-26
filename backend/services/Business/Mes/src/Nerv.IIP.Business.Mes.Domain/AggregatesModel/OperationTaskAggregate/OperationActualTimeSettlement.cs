@@ -28,6 +28,8 @@ public sealed class OperationActualTimeSettlement : Entity<OperationActualTimeSe
             OperationActualTimeSettlementReport.Create(
                 snapshot.OrganizationId,
                 snapshot.EnvironmentId,
+                snapshot.WorkOrderId,
+                snapshot.OperationTaskId,
                 reportNo)));
     }
 
@@ -74,6 +76,11 @@ public sealed class OperationActualTimeSettlement : Entity<OperationActualTimeSe
             throw new InvalidOperationException("Actual-time settlement is already voided.");
         }
 
+        if (voidedAtUtc < CompletedAtUtc)
+        {
+            throw new InvalidOperationException("Actual-time settlement cannot be voided before its completion time.");
+        }
+
         VoidedAtUtc = voidedAtUtc;
     }
 }
@@ -87,21 +94,29 @@ public sealed class OperationActualTimeSettlementReport : Entity<OperationActual
     private OperationActualTimeSettlementReport(
         string organizationId,
         string environmentId,
+        string workOrderId,
+        string operationTaskId,
         string reportNo)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
+        OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
         ReportNo = DomainGuard.Required(reportNo, nameof(reportNo));
     }
 
     public OperationActualTimeSettlementId SettlementId { get; private set; } = default!;
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public string WorkOrderId { get; private set; } = string.Empty;
+    public string OperationTaskId { get; private set; } = string.Empty;
     public string ReportNo { get; private set; } = string.Empty;
 
     internal static OperationActualTimeSettlementReport Create(
         string organizationId,
         string environmentId,
+        string workOrderId,
+        string operationTaskId,
         string reportNo) =>
-        new(organizationId, environmentId, reportNo);
+        new(organizationId, environmentId, workOrderId, operationTaskId, reportNo);
 }

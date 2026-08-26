@@ -126,6 +126,27 @@ public sealed class OperationActualTimeSettlementTests
     }
 
     [Fact]
+    public void Reversal_before_completion_is_rejected_without_reopening_or_enabling_recompletion()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Start(startedAtUtc);
+        task.Complete(startedAtUtc.AddHours(2), ["PR-001"]);
+        var settlement = Settlement(task);
+        task.ClearDomainEvents();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            task.ReopenAfterReportReversal(settlement, startedAtUtc.AddHours(1)));
+
+        Assert.Contains("completion", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
+        Assert.Equal(1, task.ActualTimeSettlementRevision);
+        Assert.Empty(task.GetDomainEvents().OfType<OperationActualTimeSettlementVoidedDomainEvent>());
+        Assert.Throws<InvalidOperationException>(() =>
+            task.Complete(startedAtUtc.AddHours(3), ["PR-001", "PR-002"]));
+    }
+
+    [Fact]
     public void Repeated_reopen_does_not_publish_another_void_or_change_the_revision()
     {
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");

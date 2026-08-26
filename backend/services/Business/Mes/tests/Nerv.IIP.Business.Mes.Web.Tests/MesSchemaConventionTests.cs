@@ -61,6 +61,8 @@ public sealed class MesSchemaConventionTests
                 nameof(OperationActualTimeSettlementReport.SettlementId),
                 nameof(OperationActualTimeSettlementReport.OrganizationId),
                 nameof(OperationActualTimeSettlementReport.EnvironmentId),
+                nameof(OperationActualTimeSettlementReport.WorkOrderId),
+                nameof(OperationActualTimeSettlementReport.OperationTaskId),
             ]));
         Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_operation_tasks_actual_time_settlement_revision_nonnegative");
     }

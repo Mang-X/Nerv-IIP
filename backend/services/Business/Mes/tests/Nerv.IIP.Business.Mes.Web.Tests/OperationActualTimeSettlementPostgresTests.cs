@@ -129,6 +129,50 @@ public sealed class OperationActualTimeSettlementPostgresTests
     }
 
     [MesRealPostgresFact]
+    public async Task Void_outbox_failure_rolls_back_task_settlement_and_reversal_report_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory();
+        await MigrateAndInitializeCapAsync(factory);
+        await SeedRunningTaskAsync(factory);
+
+        string completedReportNo;
+        using (var completionScope = factory.Services.CreateScope())
+        {
+            var sender = completionScope.ServiceProvider.GetRequiredService<ISender>();
+            completedReportNo = (await sender.Send(new RecordProductionReportCommand(
+                "org-001", "env-dev", "WO-001", "OP-001", 10m, 0m, true,
+                At(60), "report-complete-postgres-void-failure-001"))).ReportNo;
+        }
+
+        await InstallVoidOutboxFailureTriggerAsync();
+        using (var reversalScope = factory.Services.CreateScope())
+        {
+            var sender = reversalScope.ServiceProvider.GetRequiredService<ISender>();
+            var exception = await Assert.ThrowsAnyAsync<Exception>(() => sender.Send(
+                new ReverseProductionReportCommand(
+                    "org-001", "env-dev", completedReportNo, "故障注入", At(70),
+                    "user:operator-001", "report-reverse-postgres-void-failure-001")));
+            Assert.Contains("injected void outbox failure", exception.ToString(), StringComparison.Ordinal);
+        }
+
+        using var assertionScope = factory.Services.CreateScope();
+        var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var task = await dbContext.OperationTasks.AsNoTracking().SingleAsync();
+        var settlement = await dbContext.OperationActualTimeSettlements.AsNoTracking().SingleAsync();
+        var reports = await dbContext.ProductionReports.AsNoTracking().ToArrayAsync();
+        Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
+        Assert.Equal(1, task.ActualTimeSettlementRevision);
+        Assert.Null(settlement.VoidedAtUtc);
+        Assert.Single(reports);
+        Assert.Equal(completedReportNo, reports[0].ReportNo);
+        Assert.False(reports[0].IsReversal);
+        Assert.DoesNotContain(
+            await ReadCapOutboxContentAsync(),
+            content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal));
+    }
+
+    [MesRealPostgresFact]
     public async Task Concurrent_completion_rejects_the_stale_settlement_revision_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -158,7 +202,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
     }
 
     [MesRealPostgresFact]
-    public async Task Settlement_lineage_rejects_a_report_from_another_scope_on_postgres()
+    public async Task Settlement_lineage_rejects_a_report_from_another_scope_or_task_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var options = MesPostgresLaneDatabase.CreateOptions();
@@ -179,6 +223,15 @@ public sealed class OperationActualTimeSettlementPostgresTests
             setup.ProductionReports.Add(ProductionReport.Record(
                 "org-002", "env-dev", "PR-OTHER", "WO-002", "OP-002",
                 1m, 0m, false, At(30)));
+            setup.WorkOrders.Add(WorkOrder.Create(
+                "org-001", "env-dev", "WO-003", "SKU-003", "PV-003", 10m, 1, At(480)));
+            setup.OperationTasks.Add(OperationTask.Create(
+                "org-001", "env-dev", "WO-003", "OP-003",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-003", [], At(0),
+                TimeSpan.FromHours(1), At(0), null));
+            setup.ProductionReports.Add(ProductionReport.Record(
+                "org-001", "env-dev", "PR-OTHER-TASK", "WO-003", "OP-003",
+                1m, 0m, false, At(30)));
             task.Complete(At(60), []);
             settlement = OperationActualTimeSettlement.Capture(
                 Assert.Single(task.GetDomainEvents()
@@ -189,15 +242,43 @@ public sealed class OperationActualTimeSettlementPostgresTests
 
         await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
         await connection.OpenAsync();
+        await AssertLineageRejectedAsync(
+            connection,
+            settlement.Id.Id,
+            "org-002",
+            "WO-002",
+            "OP-002",
+            "PR-OTHER");
+        await AssertLineageRejectedAsync(
+            connection,
+            settlement.Id.Id,
+            "org-001",
+            "WO-003",
+            "OP-003",
+            "PR-OTHER-TASK");
+    }
+
+    private static async Task AssertLineageRejectedAsync(
+        NpgsqlConnection connection,
+        Guid settlementId,
+        string organizationId,
+        string workOrderId,
+        string operationTaskId,
+        string reportNo)
+    {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO mes.operation_actual_time_settlement_reports
-                (id, settlement_id, organization_id, environment_id, report_no)
+                (id, settlement_id, organization_id, environment_id, work_order_id, operation_task_id, report_no)
             VALUES
-                (@id, @settlement_id, 'org-002', 'env-dev', 'PR-OTHER')
+                (@id, @settlement_id, @organization_id, 'env-dev', @work_order_id, @operation_task_id, @report_no)
             """;
         command.Parameters.AddWithValue("id", Guid.CreateVersion7());
-        command.Parameters.AddWithValue("settlement_id", settlement.Id.Id);
+        command.Parameters.AddWithValue("settlement_id", settlementId);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("work_order_id", workOrderId);
+        command.Parameters.AddWithValue("operation_task_id", operationTaskId);
+        command.Parameters.AddWithValue("report_no", reportNo);
 
         var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
@@ -295,6 +376,28 @@ public sealed class OperationActualTimeSettlementPostgresTests
             CREATE TRIGGER reject_actual_time_settlement_outbox
             BEFORE INSERT ON cap.published
             FOR EACH ROW EXECUTE FUNCTION cap.reject_actual_time_settlement_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task InstallVoidOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE OR REPLACE FUNCTION cap.reject_actual_time_settlement_void_outbox()
+            RETURNS trigger AS $$
+            BEGIN
+                IF NEW."Content" LIKE '%mes.OperationActualTimeSettlementVoided%' THEN
+                    RAISE EXCEPTION 'injected void outbox failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_actual_time_settlement_void_outbox
+            BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_actual_time_settlement_void_outbox();
             """;
         await command.ExecuteNonQueryAsync();
     }

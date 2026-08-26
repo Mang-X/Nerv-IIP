@@ -326,6 +326,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationException("Completed operation task has no matching active actual-time settlement.");
         }
 
+        if (voidedAtUtc < settlement.CompletedAtUtc)
+        {
+            throw new InvalidOperationException("Actual-time settlement cannot be voided before its completion time.");
+        }
+
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingStartUtc = voidedAtUtc;
         ExistingEndUtc = null;

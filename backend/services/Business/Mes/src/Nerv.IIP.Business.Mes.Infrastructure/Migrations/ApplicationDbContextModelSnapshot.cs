@@ -732,8 +732,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("Id", "OrganizationId", "EnvironmentId")
-                        .HasName("ak_operation_actual_time_settlements_id_scope");
+                    b.HasAlternateKey("Id", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
+                        .HasName("ak_operation_actual_time_settlements_id_scope_task");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "Revision")
                         .IsUnique()
@@ -749,6 +749,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_operation_actual_time_settlements_revision_positive", "revision > 0");
 
                             t.HasCheckConstraint("ck_operation_actual_time_settlements_ticks_nonnegative", "actual_labor_ticks >= 0 AND actual_machine_ticks >= 0");
+
+                            t.HasCheckConstraint("ck_operation_actual_time_settlements_void_order", "voided_at_utc IS NULL OR voided_at_utc >= completed_at_utc");
                         });
                 });
 
@@ -765,6 +767,13 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id copied for report foreign-key isolation.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation task id copied to enforce report ownership.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -785,17 +794,24 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("settlement_id")
                         .HasComment("Owning actual-time settlement revision identifier.");
 
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work order id copied to enforce report ownership.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("SettlementId", "ReportNo")
                         .IsUnique()
                         .HasDatabaseName("ux_operation_actual_time_settlement_reports_settlement_report");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo")
-                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_scope_report");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
+                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_report_owner");
 
-                    b.HasIndex("SettlementId", "OrganizationId", "EnvironmentId")
-                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_settlement_scope");
+                    b.HasIndex("SettlementId", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
+                        .HasDatabaseName("ix_operation_actual_time_settlement_reports_settlement_owner");
 
                     b.ToTable("operation_actual_time_settlement_reports", "mes", t =>
                         {
@@ -1481,6 +1497,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasAlternateKey("OrganizationId", "EnvironmentId", "ReportNo")
                         .HasName("ak_production_reports_scope_report_no");
+
+                    b.HasAlternateKey("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
+                        .HasName("ak_production_reports_scope_report_task");
 
                     b.HasIndex("OperationTaskId")
                         .HasDatabaseName("ix_production_reports_operation_task_id");
@@ -3522,16 +3541,16 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 {
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", null)
                         .WithMany()
-                        .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo")
-                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "ReportNo", "WorkOrderId", "OperationTaskId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_operation_actual_time_settlement_reports_production_reports");
 
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationActualTimeSettlement", null)
                         .WithMany("CoveredReports")
-                        .HasForeignKey("SettlementId", "OrganizationId", "EnvironmentId")
-                        .HasPrincipalKey("Id", "OrganizationId", "EnvironmentId")
+                        .HasForeignKey("SettlementId", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
+                        .HasPrincipalKey("Id", "OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_operation_actual_time_settlement_reports_settlement");
