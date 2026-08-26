@@ -3323,6 +3323,124 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_http_client_preserves_registered_routing_snapshot_missing_code()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.UnprocessableEntity,
+            """{"success":false,"message":"ROUTING_SNAPSHOT_MISSING"}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var mes = new HttpBusinessMesClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => mes.ConvertPlanToWorkOrderAsync(
+            "internal-token-001",
+            "PLAN-001",
+            new BusinessConsoleMesConvertPlanToWorkOrderRequest(
+                "PLAN-001",
+                "org-001",
+                "env-dev",
+                null,
+                "SKU-001",
+                null,
+                10m,
+                "PCS",
+                null,
+                null),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, ex.StatusCode);
+        Assert.Equal("ROUTING_SNAPSHOT_MISSING", ex.SemanticCode);
+        Assert.Equal("ROUTING_SNAPSHOT_MISSING", ex.Message);
+        Assert.Empty(ex.ErrorData);
+        var downstreamRequest = Assert.Single(handler.Requests);
+        AssertRequest(
+            downstreamRequest,
+            HttpMethod.Post,
+            "/api/business/v1/mes/production-plans/PLAN-001/work-orders");
+        Assert.Equal("internal-token-001", downstreamRequest.Headers.Authorization?.Parameter);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_does_not_promote_unregistered_uppercase_snake_message()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.UnprocessableEntity,
+            """{"success":false,"message":"UNREGISTERED_MES_FAILURE"}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var mes = new HttpBusinessMesClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => mes.ConvertPlanToWorkOrderAsync(
+            "internal-token-001",
+            "PLAN-001",
+            new BusinessConsoleMesConvertPlanToWorkOrderRequest(
+                "PLAN-001",
+                "org-001",
+                "env-dev",
+                null,
+                "SKU-001",
+                null,
+                10m,
+                "PCS",
+                null,
+                null),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, ex.StatusCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, ex.SemanticCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, ex.Message);
+        Assert.Empty(ex.ErrorData);
+    }
+
+    [Fact]
+    public async Task Mes_convert_public_http_preserves_registered_routing_snapshot_missing_code()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.UnprocessableEntity,
+            """{"success":false,"message":"ROUTING_SNAPSHOT_MISSING"}"""));
+        using var downstreamHttpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var mes = new HttpBusinessMesClient(downstreamHttpClient);
+        await using var lease = LeaseHost(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-mes-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-plans/PLAN-001/work-orders?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                workOrderId = (string?)null,
+                skuId = "SKU-001",
+                productionVersionId = (string?)null,
+                plannedQuantity = 10m,
+                uomCode = "PCS",
+                workCenterId = (string?)null,
+                dueUtc = (DateTimeOffset?)null,
+                sourceSystem = "DemandPlanning",
+                sourceDocumentType = "PlanningSuggestion",
+                sourceDocumentId = "PLAN-001",
+                sourceDemandReference = "DEMAND-001",
+                idempotencyKey = "convert-plan-001",
+            });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("ROUTING_SNAPSHOT_MISSING", document.RootElement.GetProperty("code").GetString());
+        Assert.Equal("ROUTING_SNAPSHOT_MISSING", document.RootElement.GetProperty("message").GetString());
+        Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        var downstreamRequest = Assert.Single(handler.Requests);
+        Assert.Equal("internal-mes-token", downstreamRequest.Headers.Authorization?.Parameter);
+    }
+
+    [Fact]
     public async Task Mes_release_preserves_safe_downstream_readiness_reason_code()
     {
         var mes = new RecordingMesClient
@@ -10538,12 +10656,14 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Forbidden, "403", "missing-work-pool-assignment", "missing-work-pool-assignment")]
-    [InlineData(HttpStatusCode.NotFound, "\"404\"", "resource-not-found", "resource-not-found")]
-    [InlineData(HttpStatusCode.Conflict, "409", "stale-version", "stale-version")]
-    [InlineData(HttpStatusCode.UnprocessableEntity, "\"422\"", "assignment-target-invalid", "assignment-target-invalid")]
-    [InlineData(HttpStatusCode.InternalServerError, "500", "downstream-unavailable", "downstream-unavailable")]
-    [InlineData(HttpStatusCode.ServiceUnavailable, "\"503\"", "downstream-unavailable", "downstream-unavailable")]
+    [InlineData(HttpStatusCode.Forbidden, "\"missing-work-pool-assignment\"", "missing-work-pool-assignment", "missing-work-pool-assignment")]
+    [InlineData(HttpStatusCode.NotFound, "\"resource-not-found\"", "resource-not-found", "resource-not-found")]
+    [InlineData(HttpStatusCode.Conflict, "\"stale-version\"", "stale-version", "stale-version")]
+    [InlineData(HttpStatusCode.Conflict, "409", "idempotency-conflict", "idempotency-conflict")]
+    [InlineData(HttpStatusCode.Conflict, "\"409\"", "lifecycle-conflict", "lifecycle-conflict")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "\"assignment-target-invalid\"", "assignment-target-invalid", "assignment-target-invalid")]
+    [InlineData(HttpStatusCode.InternalServerError, "\"downstream-unavailable\"", "downstream-unavailable", "downstream-unavailable")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "\"downstream-unavailable\"", "downstream-unavailable", "downstream-unavailable")]
     public async Task Master_data_http_client_preserves_semantic_code_for_valid_downstream_error_envelopes(
         HttpStatusCode statusCode,
         string downstreamCodeJson,
@@ -10572,8 +10692,99 @@ public sealed class BusinessGatewayProxyTests
         Assert.DoesNotContain("top-secret", errorData.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("Forbidden", false)]
+    [InlineData("top-secret", true)]
+    [InlineData("xxx.yyy.zzz", false)]
+    [InlineData("403.0", true)]
+    [InlineData("hello-world", false)]
+    public async Task Master_data_http_client_does_not_promote_unregistered_messages_to_semantic_codes(
+        string downstreamMessage,
+        bool includeTransportCode)
+    {
+        var envelope = new JsonObject
+        {
+            ["success"] = false,
+            ["message"] = downstreamMessage,
+        };
+        if (includeTransportCode)
+        {
+            envelope["code"] = (int)HttpStatusCode.Forbidden;
+        }
+
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.Forbidden,
+            envelope.ToJsonString()));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, ex.StatusCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, ex.SemanticCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, ex.Message);
+        Assert.Empty(ex.ErrorData);
+    }
+
+    [Theory]
+    [InlineData("errorData")]
+    [InlineData("data")]
+    public async Task Master_data_http_client_projects_only_contract_safe_error_data_fields(
+        string downstreamDataProperty)
+    {
+        var downstreamData = downstreamDataProperty == "errorData"
+            ? """[{"field":"poolCode","reason":"assignment-required","detail":"internal-detail","pin":"7314","actorId":"user-admin"},{"field":"actorId","reason":"top-secret"}]"""
+            : """{"field":"poolCode","reason":"assignment-required","detail":"internal-detail","pin":"7314","actorId":"user-admin"}""";
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.UnprocessableEntity,
+            $$"""{"success":false,"message":"assignment-target-invalid","code":"assignment-target-invalid","{{downstreamDataProperty}}":{{downstreamData}}}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, ex.StatusCode);
+        Assert.Equal("assignment-target-invalid", ex.SemanticCode);
+        var errorData = Assert.Single(ex.ErrorData);
+        Assert.Equal(2, errorData.EnumerateObject().Count());
+        Assert.Equal("poolCode", errorData.GetProperty("field").GetString());
+        Assert.Equal("assignment-required", errorData.GetProperty("reason").GetString());
+        Assert.False(errorData.TryGetProperty("detail", out _));
+        Assert.False(errorData.TryGetProperty("pin", out _));
+        Assert.False(errorData.TryGetProperty("actorId", out _));
+        Assert.DoesNotContain("internal-detail", errorData.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("7314", errorData.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("user-admin", errorData.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("top-secret", errorData.GetRawText(), StringComparison.Ordinal);
+    }
+
     [Fact]
-    public async Task Master_data_http_client_prefers_a_safe_downstream_code_over_a_generic_message()
+    public async Task Master_data_http_client_drops_error_data_entries_with_unsafe_contract_field_values()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.UnprocessableEntity,
+            """{"success":false,"message":"assignment-target-invalid","code":"assignment-target-invalid","errorData":[{"field":"actorId","reason":"top-secret"}]}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, ex.StatusCode);
+        Assert.Equal("assignment-target-invalid", ex.SemanticCode);
+        Assert.Empty(ex.ErrorData);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_preserves_code_but_redacts_a_distinct_generic_message()
     {
         var handler = new RecordingHandler(_ => StringJsonResponse(
             HttpStatusCode.Forbidden,
@@ -10588,7 +10799,46 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.Forbidden, ex.StatusCode);
         Assert.Equal("work-pool-assignment-required", ex.SemanticCode);
-        Assert.Equal("Forbidden", ex.Message);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("eyJhbGciOiJIUzI1NiJ9.e30.x")]
+    [InlineData("TOP-SECRET")]
+    [InlineData("sk_live_51H8ExampleApiKey")]
+    [InlineData("AKIAIOSFODNN7EXAMPLE")]
+    public async Task Master_data_http_client_redacts_untrusted_message_when_explicit_semantic_code_is_valid(
+        string downstreamMessage)
+    {
+        var envelope = new JsonObject
+        {
+            ["success"] = false,
+            ["message"] = downstreamMessage,
+            ["code"] = "downstream-internal-error",
+            ["data"] = new JsonObject
+            {
+                ["field"] = "poolCode",
+                ["reason"] = "assignment-required",
+            },
+        };
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.InternalServerError,
+            envelope.ToJsonString()));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
+        Assert.Equal("downstream-internal-error", ex.SemanticCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, ex.Message);
+        var errorData = Assert.Single(ex.ErrorData);
+        Assert.Equal("poolCode", errorData.GetProperty("field").GetString());
+        Assert.Equal("assignment-required", errorData.GetProperty("reason").GetString());
+        Assert.DoesNotContain(downstreamMessage, ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -10618,9 +10868,14 @@ public sealed class BusinessGatewayProxyTests
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, "not-json")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"Authorization: Bearer top-secret\",\"code\":403}")]
+    [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"Forbidden\",\"code\":\"Forbidden\"}")]
+    [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"top-secret\",\"code\":\"top-secret\"}")]
     [InlineData(HttpStatusCode.NotFound, "[]")]
+    [InlineData(HttpStatusCode.NotFound, "{\"success\":false,\"message\":\"xxx.yyy.zzz\",\"code\":\"xxx.yyy.zzz\"}")]
     [InlineData(HttpStatusCode.Conflict, "{\"success\":false,\"message\":\"stale-version\",\"code\":\"403\"}")]
+    [InlineData(HttpStatusCode.Conflict, "{\"success\":false,\"message\":\"hello-world\",\"code\":\"hello--world\"}")]
     [InlineData(HttpStatusCode.UnprocessableEntity, "{\"success\":false,\"message\":\"assignment-target-invalid\",\"code\":\"<secret>\"}")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "{\"success\":false,\"message\":\"403.0\",\"code\":\"403.0\"}")]
     [InlineData(HttpStatusCode.Conflict, "{\"success\":false,\"message\":null,\"code\":{\"secret\":\"Bearer top-secret\"}}")]
     [InlineData(HttpStatusCode.UnprocessableEntity, "{\"success\":false,\"message\":\"<html>secret stack trace</html>\",\"code\":\"<secret>\"}")]
     [InlineData(HttpStatusCode.InternalServerError, "{\"success\":false,\"message\":\"Authorization: Bearer top-secret\",\"code\":\"Authorization: Bearer top-secret\"}")]

@@ -9,6 +9,14 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<string> RegisteredSharedLegacySemanticCodes = new(StringComparer.Ordinal)
+    {
+        "idempotency-conflict",
+        "lifecycle-conflict",
+    };
+
+    protected virtual bool IsRegisteredLegacySemanticCode(string? code) =>
+        code is not null && RegisteredSharedLegacySemanticCodes.Contains(code);
 
     protected async Task<TResponse> SendAsync<TResponse>(
         string internalBearerToken,
@@ -181,7 +189,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
     }
 
-    private static async Task<DownstreamErrorEnvelope> ReadDownstreamErrorEnvelopeAsync(
+    private async Task<DownstreamErrorEnvelope> ReadDownstreamErrorEnvelopeAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
@@ -202,7 +210,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
     }
 
-    private static DownstreamErrorEnvelope ParseDownstreamErrorEnvelope(
+    private DownstreamErrorEnvelope ParseDownstreamErrorEnvelope(
         JsonElement root,
         HttpStatusCode statusCode)
     {
@@ -219,19 +227,23 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             : null;
         if (!root.TryGetProperty("code", out var codeValue))
         {
-            // 兼容既有 success=false envelope：缺少 code 时，稳定 reason 由 message 承载。
+            // 兼容 capability 已登记的既有 success=false envelope；Shared 默认不从 message 猜 code。
             return new(
                 null,
                 message,
                 ReadDownstreamErrorData(root),
-                AllowMessageAsSemanticCode: true);
+                AllowMessageAsSemanticCode: IsRegisteredLegacySemanticCode(message));
         }
 
         if (codeValue.ValueKind == JsonValueKind.String)
         {
             var code = codeValue.GetString();
             return IsMatchingTransportStatus(code, statusCode)
-                ? new(null, message, ReadDownstreamErrorData(root), AllowMessageAsSemanticCode: true)
+                ? new(
+                    null,
+                    message,
+                    ReadDownstreamErrorData(root),
+                    AllowMessageAsSemanticCode: IsRegisteredLegacySemanticCode(message))
                 : new(code, message, ReadDownstreamErrorData(root), AllowMessageAsSemanticCode: false);
         }
 
@@ -243,7 +255,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 null,
                 message,
                 ReadDownstreamErrorData(root),
-                AllowMessageAsSemanticCode: true);
+                AllowMessageAsSemanticCode: IsRegisteredLegacySemanticCode(message));
         }
 
         return DownstreamErrorEnvelope.Invalid;
@@ -254,17 +266,19 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         if (root.TryGetProperty("errorData", out var errorData) &&
             errorData.ValueKind == JsonValueKind.Array)
         {
-            return errorData.EnumerateArray().Select(item => item.Clone()).ToArray();
+            return BusinessServiceProxyException.ProjectSafeErrorData(
+                errorData.EnumerateArray().ToArray());
         }
 
         if (root.TryGetProperty("data", out var data))
         {
-            return data.ValueKind switch
+            var candidates = data.ValueKind switch
             {
-                JsonValueKind.Array => data.EnumerateArray().Select(item => item.Clone()).ToArray(),
-                JsonValueKind.Object => [data.Clone()],
+                JsonValueKind.Array => data.EnumerateArray().ToArray(),
+                JsonValueKind.Object => [data],
                 _ => [],
             };
+            return BusinessServiceProxyException.ProjectSafeErrorData(candidates);
         }
 
         return [];

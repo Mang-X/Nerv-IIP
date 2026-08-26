@@ -8,10 +8,25 @@ public sealed class BusinessServiceProxyException : Exception
     public const string DownstreamRequestFailedMessage = "downstream-request-failed";
 
     private const int MaxErrorDataItems = 32;
-    private const int MaxErrorDataDepth = 4;
     private const int MaxErrorDataValueLength = 4096;
 
-    private static readonly string[] SensitivePropertyFragments =
+    private static readonly HashSet<string> SensitiveSemanticCodeSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "authorization",
+        "cookie",
+        "password",
+        "secret",
+        "token",
+        "jwt",
+        "credential",
+        "session",
+        "pin",
+        "actor",
+        "csrf",
+        "xsrf",
+    };
+
+    private static readonly string[] SensitiveFieldValueFragments =
     [
         "authorization",
         "cookie",
@@ -27,8 +42,10 @@ public sealed class BusinessServiceProxyException : Exception
         "clientkey",
         "credential",
         "sessionid",
+        "actorid",
         "csrf",
         "xsrf",
+        "pin",
     ];
 
     public BusinessServiceProxyException(
@@ -80,7 +97,7 @@ public sealed class BusinessServiceProxyException : Exception
         Exception? innerException = null) =>
         new(
             statusCode,
-            IsStrictSafeDownstreamMessage(downstreamMessage)
+            IsExplicitSafeProxyReason(downstreamMessage)
                 ? downstreamMessage!
                 : DownstreamRequestFailedMessage,
             innerException,
@@ -107,46 +124,28 @@ public sealed class BusinessServiceProxyException : Exception
     {
         var semanticCodeIsValid = IsSemanticDownstreamCode(downstreamCode);
         var messageIsSemanticCode =
-            allowMessageAsSemanticCode && IsSemanticDownstreamCode(downstreamMessage);
+            allowMessageAsSemanticCode && IsExplicitSafeProxyReason(downstreamMessage);
         var envelopeCodeIsValid = semanticCodeIsValid || messageIsSemanticCode;
-        var safeMessage = statusCode == HttpStatusCode.BadRequest
-            ? IsSafeDownstreamBusinessMessage(downstreamMessage)
-                ? downstreamMessage!
-                : DownstreamRequestFailedMessage
-            : IsStrictSafeDownstreamMessage(downstreamMessage)
-                ? downstreamMessage!
-                : DownstreamRequestFailedMessage;
         var semanticCode = semanticCodeIsValid
             ? downstreamCode!
             : messageIsSemanticCode
                 ? downstreamMessage!
+                : DownstreamRequestFailedMessage;
+        var safeMessage = statusCode == HttpStatusCode.BadRequest
+            ? IsSafeDownstreamBusinessMessage(downstreamMessage)
+                ? downstreamMessage!
+                : DownstreamRequestFailedMessage
+            : envelopeCodeIsValid &&
+                string.Equals(downstreamMessage, semanticCode, StringComparison.Ordinal)
+                ? semanticCode
                 : DownstreamRequestFailedMessage;
 
         return new(
             statusCode,
             envelopeCodeIsValid ? safeMessage : DownstreamRequestFailedMessage,
             semanticCode,
-            envelopeCodeIsValid ? SanitizeErrorData(errorData) : [],
+            envelopeCodeIsValid ? ProjectSafeErrorData(errorData) : [],
             innerException);
-    }
-
-    private static bool IsStrictSafeDownstreamMessage(string? downstreamMessage)
-    {
-        if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 128)
-        {
-            return false;
-        }
-
-        var first = downstreamMessage[0];
-        if (!IsAsciiLetter(first) && !char.IsAsciiDigit(first))
-        {
-            return false;
-        }
-
-        return downstreamMessage.All(static value =>
-            IsAsciiLetter(value) ||
-            char.IsAsciiDigit(value) ||
-            value is '-' or '_' or '.');
     }
 
     private static bool IsSafeDownstreamBusinessMessage(string? downstreamMessage)
@@ -169,11 +168,52 @@ public sealed class BusinessServiceProxyException : Exception
 
     private static bool IsAsciiLetter(char value) => value is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
 
-    private static bool IsSemanticDownstreamCode(string? downstreamCode) =>
-        IsStrictSafeDownstreamMessage(downstreamCode) &&
-        !downstreamCode!.All(static value => char.IsAsciiDigit(value));
+    private static bool IsSemanticDownstreamCode(string? downstreamCode)
+    {
+        if (string.IsNullOrWhiteSpace(downstreamCode) ||
+            downstreamCode.Length > 128 ||
+            downstreamCode[0] is < 'a' or > 'z' ||
+            !downstreamCode.Contains('-', StringComparison.Ordinal) ||
+            downstreamCode.Contains("--", StringComparison.Ordinal) ||
+            downstreamCode[^1] == '-' ||
+            ContainsSensitiveSemanticCodeSegment(downstreamCode))
+        {
+            return false;
+        }
 
-    private static IReadOnlyCollection<JsonElement> SanitizeErrorData(
+        return downstreamCode.All(static value =>
+            value is >= 'a' and <= 'z' ||
+            char.IsAsciiDigit(value) ||
+            value == '-');
+    }
+
+    private static bool IsExplicitSafeProxyReason(string? value) =>
+        IsSemanticDownstreamCode(value) || IsLegacyUpperSnakeReasonCode(value);
+
+    private static bool IsLegacyUpperSnakeReasonCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length > 128 ||
+            value[0] is < 'A' or > 'Z' ||
+            !value.Contains('_', StringComparison.Ordinal) ||
+            value.Contains("__", StringComparison.Ordinal) ||
+            value[^1] == '_' ||
+            ContainsSensitiveSemanticCodeSegment(value))
+        {
+            return false;
+        }
+
+        return value.All(static character =>
+            character is >= 'A' and <= 'Z' ||
+            char.IsAsciiDigit(character) ||
+            character == '_');
+    }
+
+    private static bool ContainsSensitiveSemanticCodeSegment(string value) =>
+        value.Split(['-', '_', '.'], StringSplitOptions.RemoveEmptyEntries)
+            .Any(SensitiveSemanticCodeSegments.Contains);
+
+    internal static IReadOnlyCollection<JsonElement> ProjectSafeErrorData(
         IReadOnlyCollection<JsonElement>? errorData)
     {
         if (errorData is null || errorData.Count == 0)
@@ -184,7 +224,7 @@ public sealed class BusinessServiceProxyException : Exception
         var sanitized = new List<JsonElement>(Math.Min(errorData.Count, MaxErrorDataItems));
         foreach (var item in errorData.Take(MaxErrorDataItems))
         {
-            if (TrySanitizeJsonElement(item, depth: 0, out var value))
+            if (TryProjectContractErrorData(item, out var value))
             {
                 sanitized.Add(value);
             }
@@ -193,83 +233,52 @@ public sealed class BusinessServiceProxyException : Exception
         return sanitized.ToArray();
     }
 
-    private static bool TrySanitizeJsonElement(
+    private static bool TryProjectContractErrorData(
         JsonElement value,
-        int depth,
         out JsonElement sanitized)
     {
         sanitized = default;
-        if (depth > MaxErrorDataDepth || value.GetRawText().Length > MaxErrorDataValueLength)
+        if (value.ValueKind != JsonValueKind.Object ||
+            value.GetRawText().Length > MaxErrorDataValueLength)
         {
             return false;
         }
 
-        switch (value.ValueKind)
+        var properties = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (value.TryGetProperty("field", out var field) &&
+            field.ValueKind == JsonValueKind.String &&
+            IsContractSafeFieldValue(field.GetString()))
         {
-            case JsonValueKind.Object:
-            {
-                var properties = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-                foreach (var property in value.EnumerateObject())
-                {
-                    if (!IsStrictSafeDownstreamMessage(property.Name) ||
-                        IsSensitiveProperty(property.Name) ||
-                        !TrySanitizeJsonElement(property.Value, depth + 1, out var child))
-                    {
-                        continue;
-                    }
-
-                    properties[property.Name] = child;
-                }
-
-                sanitized = JsonSerializer.SerializeToElement(properties);
-                return true;
-            }
-            case JsonValueKind.Array:
-            {
-                var items = new List<JsonElement>();
-                foreach (var item in value.EnumerateArray().Take(MaxErrorDataItems))
-                {
-                    if (TrySanitizeJsonElement(item, depth + 1, out var child))
-                    {
-                        items.Add(child);
-                    }
-                }
-
-                sanitized = JsonSerializer.SerializeToElement(items);
-                return true;
-            }
-            case JsonValueKind.String:
-            {
-                var text = value.GetString();
-                if (!IsStrictSafeDownstreamMessage(text))
-                {
-                    return false;
-                }
-
-                sanitized = JsonSerializer.SerializeToElement(text);
-                return true;
-            }
-            case JsonValueKind.Number:
-            case JsonValueKind.True:
-            case JsonValueKind.False:
-            case JsonValueKind.Null:
-            {
-                using var document = JsonDocument.Parse(value.GetRawText());
-                sanitized = document.RootElement.Clone();
-                return true;
-            }
-            default:
-                return false;
+            properties["field"] = field.GetString()!;
         }
+
+        if (value.TryGetProperty("reason", out var reason) &&
+            reason.ValueKind == JsonValueKind.String &&
+            IsSemanticDownstreamCode(reason.GetString()))
+        {
+            properties["reason"] = reason.GetString()!;
+        }
+
+        if (properties.Count == 0)
+        {
+            return false;
+        }
+
+        sanitized = JsonSerializer.SerializeToElement(properties);
+        return true;
     }
 
-    private static bool IsSensitiveProperty(string propertyName)
+    private static bool IsContractSafeFieldValue(string? value)
     {
-        var normalized = propertyName
-            .Replace("_", string.Empty, StringComparison.Ordinal)
-            .Replace("-", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
-        return SensitivePropertyFragments.Any(fragment =>
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 ||
+            !IsAsciiLetter(value[0]) ||
+            !value.All(static character => IsAsciiLetter(character) || char.IsAsciiDigit(character)))
+        {
+            return false;
+        }
+
+        var normalized = value.ToLowerInvariant();
+        return !SensitiveFieldValueFragments.Any(fragment =>
             normalized.Contains(fragment, StringComparison.Ordinal));
     }
 }
