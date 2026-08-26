@@ -201,9 +201,9 @@ test('MES 实际工时读面在工序与报工页使用同一累计口径', asyn
   await page.goto('/mes/production-reports', { waitUntil: 'domcontentloaded' })
   const reportActualHours = page.locator('[data-testid="actual-hours"]').first()
   await expect(reportActualHours).toContainText('人工')
-  await expect(reportActualHours).toContainText('1.25 小时')
+  await expect(reportActualHours).toContainText('2.75 小时')
   await expect(reportActualHours).toContainText('机器')
-  await expect(reportActualHours).toContainText('0.5 小时')
+  await expect(reportActualHours).toContainText('1.5 小时')
   await page.screenshot({ path: testInfo.outputPath('report-actual-hours.png') })
 })
 
@@ -601,8 +601,8 @@ async function routeBusinessConsoleApi(route: Route) {
             goodQuantity: 5,
             scrapQuantity: 0,
             reportedAtUtc: '2026-05-25T13:00:00.000Z',
-            operationActualLaborHours: 1.25,
-            operationActualMachineHours: 0.5,
+            operationActualLaborHours: 2.75,
+            operationActualMachineHours: 1.5,
           },
         ],
         total: 1,

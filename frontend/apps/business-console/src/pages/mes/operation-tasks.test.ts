@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { computed, reactive, ref, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -55,7 +56,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 
 const state = vi.hoisted(() => ({
   filters: undefined as unknown as Record<string, unknown>,
-  operationRows: [] as Array<Record<string, unknown>>,
+  operationRows: [] as BusinessConsoleMesOperationTaskRow[],
 }))
 
 // 派工弹窗的技能筛选改取技能目录主数据（中文 skillName）；目录不是本用例被测对象。
@@ -254,6 +255,13 @@ describe('operation-tasks 排程已失效 quick filter', () => {
         actualLaborHours: null,
         actualMachineHours: null,
       },
+      {
+        operationTaskId: 'OP-TINY',
+        workOrderId: 'WO-TINY',
+        operationSequence: 40,
+        actualLaborHours: 0.00004,
+        actualMachineHours: 0.00004,
+      },
     ]
 
     const wrapper = mountPage()
@@ -261,12 +269,14 @@ describe('operation-tasks 排程已失效 quick filter', () => {
 
     expect(wrapper.text()).toContain('实际工时')
     const actualHourCells = wrapper.findAll('[data-testid="actual-hours"]')
-    expect(actualHourCells).toHaveLength(3)
+    expect(actualHourCells).toHaveLength(4)
     expect(actualHourCells[0].text()).toMatch(/人工\s*1\.25 小时/)
     expect(actualHourCells[0].text()).toMatch(/机器\s*0\.5 小时/)
     expect(actualHourCells[1].text()).toMatch(/人工\s*0 小时/)
     expect(actualHourCells[1].text()).toMatch(/机器\s*0 小时/)
     expect(actualHourCells[2].text()).toMatch(/人工\s*暂无实绩/)
     expect(actualHourCells[2].text()).toMatch(/机器\s*暂无实绩/)
+    expect(actualHourCells[3].text()).toMatch(/人工\s*小于 0\.0001 小时/)
+    expect(actualHourCells[3].text()).toMatch(/机器\s*小于 0\.0001 小时/)
   })
 })
