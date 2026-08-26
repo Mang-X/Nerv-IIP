@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -256,6 +257,7 @@ const columns: NvDataTableColumn<Row>[] = [
   },
   { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'assignedUserName', header: '派工', width: 'w-40' },
+  { key: 'actualHours', header: '实际工时', width: 'w-36' },
   {
     key: 'plannedStartUtc',
     header: '计划开始',
@@ -676,6 +678,12 @@ function formatError(error: unknown) {
         <NvStatusBadge
           :label="resolveDispatchState(row).label"
           :tone="resolveDispatchState(row).tone"
+        />
+      </template>
+      <template #cell-actualHours="{ row }">
+        <ActualHoursCell
+          :labor-hours="row.actualLaborHours"
+          :machine-hours="row.actualMachineHours"
         />
       </template>
       <template #cell-plannedStartUtc="{ row }">

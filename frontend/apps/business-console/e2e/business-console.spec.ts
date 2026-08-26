@@ -189,6 +189,24 @@ test('报工记录：报工历史渲染产量、查看工单就地速览不跳�
   await expect(page).toHaveURL(/\/mes\/production-reports/)
 })
 
+test('MES 实际工时读面在工序与报工页使用同一累计口径', async ({ page }, testInfo) => {
+  await page.goto('/mes/operation-tasks', { waitUntil: 'domcontentloaded' })
+  const operationActualHours = page.locator('[data-testid="actual-hours"]').first()
+  await expect(operationActualHours).toContainText('人工')
+  await expect(operationActualHours).toContainText('1.25 小时')
+  await expect(operationActualHours).toContainText('机器')
+  await expect(operationActualHours).toContainText('0.5 小时')
+  await page.screenshot({ path: testInfo.outputPath('operation-actual-hours.png') })
+
+  await page.goto('/mes/production-reports', { waitUntil: 'domcontentloaded' })
+  const reportActualHours = page.locator('[data-testid="actual-hours"]').first()
+  await expect(reportActualHours).toContainText('人工')
+  await expect(reportActualHours).toContainText('2.75 小时')
+  await expect(reportActualHours).toContainText('机器')
+  await expect(reportActualHours).toContainText('1.5 小时')
+  await page.screenshot({ path: testInfo.outputPath('report-actual-hours.png') })
+})
+
 test('完工入库：直接开为只读、回链工单；带工单上下文进来自动开登记弹窗', async ({ page }) => {
   // 直接打开：登记需从工单详情带上下文，按钮禁用并提示「从工单详情发起」。
   await page.goto('/mes/receipts', { waitUntil: 'domcontentloaded' })
@@ -264,6 +282,25 @@ async function routeConsoleApi(route: Route) {
 async function routeBusinessConsoleApi(route: Route) {
   const url = new URL(route.request().url())
   const { pathname } = url
+
+  if (pathname === '/api/business-console/v1/me/work-context') {
+    const scope = { kind: 'organization', id: 'org-001', displayName: '一号工厂' }
+    return fulfillJson(
+      route,
+      envelope({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        applicablePermissionCode: url.searchParams.get('permissionCode'),
+        resolvedAtUtc: '2026-08-26T01:00:00.000Z',
+        principal: { id: principal.principalId, principalType: principal.principalType },
+        resolutionStatus: 'resolved',
+        authorizedScopes: [scope],
+        availableScopeKinds: ['organization'],
+        selectedScope: scope,
+        issues: [],
+      }),
+    )
+  }
 
   if (pathname === '/api/business-console/v1/master-data/skus') {
     return fulfillJson(
@@ -463,6 +500,18 @@ async function routeBusinessConsoleApi(route: Route) {
       envelope({
         items: [
           {
+            operationTaskId: 'WO-2026-08001-OP-10',
+            operationTaskNo: 'WO-2026-08001-OP-10',
+            workOrderId: 'WO-2026-08001',
+            workOrderNo: 'WO-2026-08001',
+            status: 'Completed',
+            operationSequence: 10,
+            workCenterId: 'WC-001',
+            qualityStatus: 'Ready',
+            actualLaborHours: 1.25,
+            actualMachineHours: 0.5,
+          },
+          {
             operationTaskId: 'op-1',
             workOrderId: 'WO-001',
             status: 'Ready',
@@ -471,6 +520,7 @@ async function routeBusinessConsoleApi(route: Route) {
             qualityStatus: 'Ready',
           },
         ],
+        total: 2,
       }),
     )
   }
@@ -543,13 +593,19 @@ async function routeBusinessConsoleApi(route: Route) {
         items: [
           {
             productionReportId: 'report-1',
+            reportNo: 'PRPT-20260826-001',
             workOrderId: 'WO-001',
+            workOrderNo: 'WO-001',
             operationTaskId: 'op-1',
+            operationTaskNo: 'WO-001-OP-10',
             goodQuantity: 5,
             scrapQuantity: 0,
             reportedAtUtc: '2026-05-25T13:00:00.000Z',
+            operationActualLaborHours: 2.75,
+            operationActualMachineHours: 1.5,
           },
         ],
+        total: 1,
       }),
     )
   }
