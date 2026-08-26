@@ -244,6 +244,23 @@ export async function navigateAndWaitForInitialList(
   return { firstList, navigation }
 }
 
+export async function clickRefreshAndWaitForListResponse(
+  page: Page,
+  listPath: string,
+  timeoutMs = 120_000,
+): Promise<Response> {
+  const refreshedListRequest = page.waitForRequest(
+    (request) => request.method() === 'GET' && new URL(request.url()).pathname === listPath,
+    { timeout: timeoutMs },
+  )
+  await page.getByRole('button', { name: '刷新', exact: true }).click({ timeout: timeoutMs })
+  const request = await refreshedListRequest
+  return page.waitForResponse(
+    (response) => response.request() === request && response.status() === 200,
+    { timeout: timeoutMs },
+  )
+}
+
 export async function clickTabAndConfirmUnmount(
   page: Page,
   tabText: string | RegExp,
@@ -296,7 +313,14 @@ export type FilterResponseWaitOptions = {
   listPath: string
   filterLabel: string
   stableText: string
+  responseMode: 'server' | 'client'
+  initialListResponse?: Response
   timeoutMs?: number
+}
+
+export type FilterResponseWaitResult = {
+  waitedForResponse: boolean
+  reason: 'already-applied' | 'response-already-complete' | 'client-side-filter' | 'server-response'
 }
 
 function normalizedFilterValue(value: string): string {
@@ -315,24 +339,55 @@ export function isFilterAlreadyApplied(
   return routeKeyword !== null && normalizedFilterValue(routeKeyword) === expected
 }
 
+function isMatchingListResponse(
+  response: Response | undefined,
+  listPath: string,
+  stableText: string,
+): boolean {
+  if (!response) return false
+  const url = new URL(response.url())
+  return (
+    response.request().method() === 'GET' &&
+    url.pathname === listPath &&
+    response.status() === 200 &&
+    normalizedFilterValue(url.searchParams.get('keyword') ?? '') ===
+      normalizedFilterValue(stableText)
+  )
+}
+
 export async function fillFilterAndWaitForListResponse(
   page: Page,
   options: FilterResponseWaitOptions,
-): Promise<{ waitedForResponse: boolean }> {
+): Promise<FilterResponseWaitResult> {
   const filter = page.getByLabel(options.filterLabel)
   const currentFilterValue = await filter.inputValue()
   if (isFilterAlreadyApplied(options.route, currentFilterValue, options.stableText)) {
-    return { waitedForResponse: false }
+    return { waitedForResponse: false, reason: 'already-applied' }
+  }
+
+  if (
+    options.responseMode === 'server' &&
+    normalizedFilterValue(currentFilterValue) === normalizedFilterValue(options.stableText) &&
+    isMatchingListResponse(options.initialListResponse, options.listPath, options.stableText)
+  ) {
+    return { waitedForResponse: false, reason: 'response-already-complete' }
+  }
+
+  if (options.responseMode === 'client') {
+    await filter.fill(options.stableText)
+    return { waitedForResponse: false, reason: 'client-side-filter' }
   }
 
   const filteredListResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'GET' &&
       new URL(response.url()).pathname === options.listPath &&
+      normalizedFilterValue(new URL(response.url()).searchParams.get('keyword') ?? '') ===
+        normalizedFilterValue(options.stableText) &&
       response.status() === 200,
     { timeout: options.timeoutMs ?? 120_000 },
   )
   await filter.fill(options.stableText)
   await filteredListResponse
-  return { waitedForResponse: true }
+  return { waitedForResponse: true, reason: 'server-response' }
 }

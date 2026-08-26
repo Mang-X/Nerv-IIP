@@ -279,6 +279,11 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('emptyText')
     expect(scenarioSource).toContain('await targetPage.screenshot')
     expect(scenarioSource).toContain('fillFilterAndWaitForListResponse')
+    expect(scenarioSource).toContain('clickRefreshAndWaitForListResponse')
+    expect(scenarioSource).toContain("filterResponseMode: 'client'")
+    expect(scenarioSource).toContain('initialListResponse')
+    expect(scenarioSource).toContain('reuseCurrentRoute: true')
+    expect(scenarioSource).toContain('refreshListBeforeProof: true')
     expect(scenarioSource).toContain('clickTabAndConfirmUnmount')
     expect(scenarioSource).toContain('failedRequests')
     expect(scenarioSource).toContain('classifyRequestFailure')
@@ -708,6 +713,59 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     })
 
     expect(cancellationEvidence).toBeUndefined()
+  })
+
+  it('keeps an API abort whose request starts after the transition fail-closed', () => {
+    const tracker = new RequestFailureEvidenceTracker()
+    const transition = tracker.beginLifecycleAttempt('https://console.fixture/planning')
+    transition.confirm('component-unmount')
+
+    const request = {}
+    tracker.observeRequest(request, 'https://console.fixture/planning')
+    let cancellationEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(request, (evidence) => {
+      cancellationEvidence = evidence
+    })
+
+    const result = classifyRequestFailure({
+      method: 'GET',
+      url: 'https://console.fixture/api/planning/suggestions',
+      failure: 'net::ERR_ABORTED',
+      resourceType: 'fetch',
+      isNavigationRequest: false,
+      cancellationEvidence,
+    })
+
+    expect(cancellationEvidence).toBeUndefined()
+    expect(result.expected).toBe(false)
+    expect(result.record.classification).toBe('api-request-failure')
+    transition.complete()
+  })
+
+  it('keeps a late API abort fail-closed after the transition evidence window closes', () => {
+    const tracker = new RequestFailureEvidenceTracker()
+    const request = {}
+    tracker.observeRequest(request, 'https://console.fixture/planning')
+    const transition = tracker.beginLifecycleAttempt('https://console.fixture/planning')
+    transition.confirm('navigation')
+    transition.complete()
+
+    let cancellationEvidence: RequestCancellationEvidence | undefined
+    tracker.resolveFailureEvidence(request, (evidence) => {
+      cancellationEvidence = evidence
+    })
+    const result = classifyRequestFailure({
+      method: 'GET',
+      url: 'https://console.fixture/api/planning/suggestions',
+      failure: 'net::ERR_ABORTED',
+      resourceType: 'xhr',
+      isNavigationRequest: false,
+      cancellationEvidence,
+    })
+
+    expect(cancellationEvidence).toBeUndefined()
+    expect(result.expected).toBe(false)
+    expect(result.record.classification).toBe('api-request-failure')
   })
 
   it('keeps a different API network failure fail-closed even with transition evidence', () => {

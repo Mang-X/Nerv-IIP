@@ -25,6 +25,7 @@ import {
 } from './issue1912-walkthrough-runtime'
 import {
   classifyRequestFailure,
+  clickRefreshAndWaitForListResponse,
   clickTabAndConfirmUnmount,
   fillFilterAndWaitForListResponse,
   navigateAndWaitForInitialList,
@@ -129,6 +130,9 @@ type ActorRuntime = {
   page: Page
   tracker: SessionCredentialTracker
   requestFailureEvidence: RequestFailureEvidenceTracker
+  successfulListResponses: Map<string, Response>
+  lastNavigationResponse: Response | null
+  lastNavigationRoute: string | null
   principalId: string
   principalType: string
   permissionCodes: string[]
@@ -441,6 +445,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     page,
     tracker: sessionCredentialTracker,
     requestFailureEvidence: new RequestFailureEvidenceTracker(),
+    successfulListResponses: new Map(),
+    lastNavigationResponse: null,
+    lastNavigationRoute: null,
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -452,6 +459,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     page: workerPage,
     tracker: workerSessionCredentialTracker,
     requestFailureEvidence: new RequestFailureEvidenceTracker(),
+    successfulListResponses: new Map(),
+    lastNavigationResponse: null,
+    lastNavigationRoute: null,
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -520,6 +530,13 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
               error: errorText(error),
             })
           })
+      }
+      if (
+        response.request().method() === 'GET' &&
+        response.status() === 200 &&
+        url.pathname.startsWith('/api/')
+      ) {
+        runtime.successfulListResponses.set(url.pathname, response)
       }
       if (url.pathname.startsWith('/api/') && response.status() >= 400) {
         failedRequests.push({
@@ -721,35 +738,87 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     listPath: string
     stableText: string
     filterLabel?: string
+    // `client` proves the rendered table after a local filter; `server` requires an exact 200 list response.
+    filterResponseMode?: 'server' | 'client'
     tabText?: string | RegExp
+    // Reuse a settled route when a tab proof only needs refreshed data; a full reload can supersede API work.
+    reuseCurrentRoute?: boolean
+    refreshListBeforeProof?: boolean
     selectOptions?: Array<{ label: string; option: string }>
     emptyText: string
     screenshotName: string
   }
 
+  const samePageRoute = (currentUrl: string, route: string): boolean => {
+    if (!currentUrl) return false
+    const current = new URL(currentUrl)
+    const expected = new URL(route, currentUrl)
+    return (
+      current.origin === expected.origin &&
+      current.pathname === expected.pathname &&
+      current.search === expected.search
+    )
+  }
+
   const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
     const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
     const targetPage = runtime.page
-    const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(targetPage.url())
-    let navigation: Response | null = null
-    let firstList!: Response
-    let navigationConfirmed = false
-    try {
-      const initialPage = await navigateAndWaitForInitialList(targetPage, {
-        route: options.route,
-        listPath: options.listPath,
-        timeoutMs: 120_000,
-      })
-      navigation = initialPage.navigation
-      firstList = initialPage.firstList
-      expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
-      expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
-      navigationAttempt.confirm('navigation')
-      navigationConfirmed = true
-    } finally {
-      if (navigationConfirmed) navigationAttempt.complete()
-      else navigationAttempt.cancel()
+    const reuseCurrentRoute = options.reuseCurrentRoute === true
+    if (reuseCurrentRoute && !samePageRoute(targetPage.url(), options.route)) {
+      throw new Error(`page ${options.route} cannot reuse the current route ${targetPage.url()}`)
     }
+    let navigation: Response | null = null
+    let firstList: Response | null = null
+
+    if (reuseCurrentRoute) {
+      if (
+        !runtime.lastNavigationRoute ||
+        !samePageRoute(runtime.lastNavigationRoute, options.route)
+      ) {
+        throw new Error(`page ${options.route} has no matching completed navigation to reuse`)
+      }
+      navigation = runtime.lastNavigationResponse
+      if (!navigation || navigation.status() !== 200) {
+        throw new Error(`page ${options.route} has no completed HTTP 200 navigation to reuse`)
+      }
+      firstList = runtime.successfulListResponses.get(options.listPath) ?? null
+    } else {
+      const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(
+        targetPage.url(),
+      )
+      let navigationConfirmed = false
+      try {
+        const initialPage = await navigateAndWaitForInitialList(targetPage, {
+          route: options.route,
+          listPath: options.listPath,
+          timeoutMs: 120_000,
+        })
+        navigation = initialPage.navigation
+        firstList = initialPage.firstList
+        runtime.lastNavigationResponse = navigation
+        runtime.lastNavigationRoute = targetPage.url()
+        runtime.successfulListResponses.set(options.listPath, firstList)
+        expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
+        expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
+        navigationAttempt.confirm('navigation')
+        navigationConfirmed = true
+      } finally {
+        if (navigationConfirmed) navigationAttempt.complete()
+        else navigationAttempt.cancel()
+      }
+    }
+
+    if (options.refreshListBeforeProof) {
+      // A data refresh is not a lifecycle transition: any API abort remains an unexpected failure.
+      firstList = await clickRefreshAndWaitForListResponse(targetPage, options.listPath)
+      runtime.successfulListResponses.set(options.listPath, firstList)
+    }
+
+    if (!firstList) {
+      throw new Error(`list ${options.listPath} has no completed HTTP 200 response to prove`)
+    }
+    expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
+    expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
 
     if (options.filterLabel) {
       await fillFilterAndWaitForListResponse(targetPage, {
@@ -757,6 +826,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         listPath: options.listPath,
         filterLabel: options.filterLabel,
         stableText: options.stableText,
+        responseMode: options.filterResponseMode ?? 'server',
+        initialListResponse: firstList,
         timeoutMs: 120_000,
       })
     }
@@ -1643,6 +1714,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: `/erp/sales/orders?keyword=${encodeURIComponent(SALES_ORDER_NO)}`,
       listPath: '/api/business-console/v1/erp/sales/sales-orders',
       filterLabel: '销售订单关键字',
+      filterResponseMode: 'server',
       stableText: SALES_ORDER_NO,
       emptyText: '还没有销售订单。批准报价后可在这里生成订单。',
       screenshotName: '09-sales-order.png',
@@ -1674,6 +1746,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/planning',
       listPath: '/api/business-console/v1/planning/demands',
       filterLabel: '需求池关键字',
+      filterResponseMode: 'client',
       stableText: SALES_ORDER_NO,
       emptyText: '当前范围没有计划需求。',
       screenshotName: '10-planning-demand.png',
@@ -1723,6 +1796,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       listPath: '/api/business-console/v1/planning/suggestions',
       stableText: FINISHED_SKU,
       tabText: /计划建议/,
+      reuseCurrentRoute: true,
+      refreshListBeforeProof: true,
       emptyText: '当前范围没有计划建议。',
       screenshotName: '11-planning-suggestion.png',
     })
@@ -2359,7 +2434,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
                 assertionBoundary:
                   'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
                 requestFailurePolicy:
-                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
+                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, including requests started after the transition or reported after completion, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Client-side planning demand filtering proves the rendered row without a second list wait, while same-route suggestion proof refreshes its completed list before confirming tab unmount.',
                 setup,
                 identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
                 expectedBusinessRejections,
