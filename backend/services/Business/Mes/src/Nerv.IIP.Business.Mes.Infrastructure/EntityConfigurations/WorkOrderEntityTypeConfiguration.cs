@@ -7,7 +7,10 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
     public void Configure(EntityTypeBuilder<WorkOrder> builder)
     {
         builder.ToTable("work_orders", tableBuilder =>
-            tableBuilder.HasComment("MES durable work orders created from business demand and ProductEngineering production version references."));
+        {
+            tableBuilder.HasComment("MES durable work orders created from business demand and ProductEngineering production version references.");
+            tableBuilder.HasCheckConstraint("ck_work_orders_version_positive", "version > 0");
+        });
         builder.HasKey(x => x.Id);
         builder.Ignore(x => x.WorkOrderId);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work order aggregate id.");
@@ -21,6 +24,7 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasComment("Scheduling priority; rush work orders use a high priority value.");
         builder.Property(x => x.DueUtc).HasColumnName("due_utc").IsRequired().HasComment("UTC due time used by the deterministic rule scheduler.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("MES work order lifecycle status.");
+        builder.Property(x => x.Version).HasColumnName("version").HasDefaultValue(1L).IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for every work-order lifecycle or execution mutation.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the MES work order fact was created.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).IsRequired().HasComment("Cumulative good production quantity reported against the work order.");
         builder.Property(x => x.ScrapQuantity).HasColumnName("scrap_quantity").HasPrecision(18, 6).IsRequired().HasComment("Cumulative scrap quantity reported against the work order.");

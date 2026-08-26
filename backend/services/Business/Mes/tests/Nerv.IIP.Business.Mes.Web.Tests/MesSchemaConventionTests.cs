@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Data.Sqlite;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -15,6 +16,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
@@ -46,6 +48,40 @@ public sealed class MesSchemaConventionTests
         Assert.Equal("required_skill_code", property.GetColumnName());
         Assert.Equal(100, property.GetMaxLength());
         Assert.True(property.IsNullable);
+    }
+
+    [Fact]
+    public void Work_order_version_is_a_positive_postgresql_concurrency_token()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(WorkOrder))!;
+        var version = entity.FindProperty(nameof(WorkOrder.Version))!;
+
+        Assert.True(version.IsConcurrencyToken);
+        Assert.Equal(1L, version.GetDefaultValue());
+        Assert.Contains(entity.GetCheckConstraints(), x => x.Name == "ck_work_orders_version_positive");
+    }
+
+    [Fact]
+    public async Task Work_order_transformation_uom_constraint_is_sqlite_creatable_and_uses_common_trim()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using (var sqliteContext = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await sqliteContext.Database.EnsureCreatedAsync();
+        }
+
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(WorkOrderTransformationLine))!;
+        var uomConstraint = Assert.Single(
+            entity.GetCheckConstraints(),
+            x => x.Name == "ck_work_order_transformation_lines_uom_present");
+
+        Assert.Equal("trim(uom_code) <> ''", uomConstraint.Sql);
     }
 
     [Fact]
@@ -170,6 +206,8 @@ public sealed class MesSchemaConventionTests
             .FindProperty(nameof(OperationTask.RequiredSkillCode)));
         Assert.NotNull(targetModel.FindEntityType(typeof(OperationTaskParticipant)));
         Assert.NotNull(targetModel.FindEntityType(typeof(ProductionReportLaborAllocation)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(WorkOrderTransformation)));
+        Assert.NotNull(targetModel.FindEntityType(typeof(WorkOrderTransformationLine)));
         Assert.Equal(
             releasedRebindComment,
             targetModel.FindEntityType(typeof(WorkOrder))!
@@ -184,6 +222,8 @@ public sealed class MesSchemaConventionTests
         var businessEntities = new[]
         {
             typeof(WorkOrder),
+            typeof(WorkOrderTransformation),
+            typeof(WorkOrderTransformationLine),
             typeof(MesEngineeringChangeWorkOrderImpact),
             typeof(OperationTask),
             typeof(ProductionReport),
@@ -226,6 +266,7 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
         failures.AddRange(QualityHoldTransitionHasGovernedIdempotencyIndex(fixture.DbContext.Model));
         failures.AddRange(OperationTaskHasScheduleProvenanceIndex(fixture.DbContext.Model));
+        failures.AddRange(WorkOrderTransformationHasIdempotencyIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
@@ -241,6 +282,22 @@ public sealed class MesSchemaConventionTests
                 nameof(OperationTask.SchedulePlanId),
             ])) == true;
         return found ? [] : ["MES: operation task schedule provenance index is missing."];
+    }
+
+    private static IReadOnlyCollection<string> WorkOrderTransformationHasIdempotencyIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(WorkOrderTransformation));
+        var found = entity?.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_work_order_transformations_scope_idempotency" &&
+            index.Properties.Select(x => x.Name).SequenceEqual([
+                nameof(WorkOrderTransformation.OrganizationId),
+                nameof(WorkOrderTransformation.EnvironmentId),
+                nameof(WorkOrderTransformation.IdempotencyKey),
+            ])) == true;
+        return found
+            ? []
+            : [$"{MesFacts.ServiceName}: work-order transformations require a scoped unique idempotency index."];
     }
 
     private static IReadOnlyCollection<string> QualityHoldTransitionHasGovernedIdempotencyIndex(IModel model)
@@ -404,6 +461,9 @@ public sealed class MesSchemaConventionTests
         AssertForeignKey(model, typeof(MaterialRequirement), "fk_material_requirements_work_orders", failures);
         AssertForeignKey(model, typeof(MaterialIssueRequest), "fk_material_issue_requests_work_orders", failures);
         AssertForeignKey(model, typeof(FinishedGoodsReceiptRequest), "fk_receipt_requests_work_orders", failures);
+        AssertForeignKey(model, typeof(WorkOrderTransformationLine), "fk_work_order_transformation_lines_source_work_order", failures);
+        AssertForeignKey(model, typeof(WorkOrderTransformationLine), "fk_work_order_transformation_lines_target_work_order", failures);
+        AssertForeignKey(model, typeof(WorkOrderTransformationLine), "fk_work_order_transformation_lines_transformations", failures);
         return failures;
     }
 
