@@ -303,7 +303,7 @@ public sealed class MesOeeDimensionSnapshotProviderTests
             var query = request.RequestUri?.Query ?? string.Empty;
             if (query.Contains("resourceType=device-asset", StringComparison.Ordinal))
             {
-                return deviceResponse.Task;
+                return deviceResponse.Task.WaitAsync(cancellationToken);
             }
 
             if (query.Contains("resourceType=shift", StringComparison.Ordinal))
