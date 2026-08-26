@@ -58,6 +58,7 @@ import {
   completePendingBusinessIntent,
   formatWorkScopeKey,
   isAvailableMaterialLot,
+  lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
   statusActionGate,
@@ -69,7 +70,7 @@ import {
   useListResponseState,
   useScopeBoundListResponse,
 } from '@/composables/useListFreshness'
-import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
+import { computed, nextTick, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import {
   assertLifecycleActionExecutable,
   LifecycleActionUnavailableError,
@@ -1600,6 +1601,7 @@ export function useMesLineSideInventoryBalances() {
   const pageSize = 200
   const page = shallowRef(1)
   const pageNavigationPending = shallowRef(false)
+  const correctedPageIdentity = shallowRef('')
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
   const scopeReady = computed(() => hasScope(scope))
   const scopeIdentity = computed(() => (scopeReady.value ? scopeKey(scope) : ''))
@@ -1607,6 +1609,7 @@ export function useMesLineSideInventoryBalances() {
     scopeIdentity,
     () => {
       pageNavigationPending.value = false
+      correctedPageIdentity.value = ''
       page.value = 1
     },
     { flush: 'sync' },
@@ -1647,7 +1650,41 @@ export function useMesLineSideInventoryBalances() {
     const response = scopedResponse.response
     return response?.success === true && (response.data?.page ?? 1) !== page.value
   })
-  const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
+  watch(
+    currentResponse,
+    (response) => {
+      if (response?.success !== true) return
+      const lastPage = lastPageForTotal(response.data?.totalCount ?? 0, pageSize)
+      if (page.value > lastPage) {
+        pageNavigationPending.value = true
+        correctedPageIdentity.value = `${scopeIdentity.value}:page:${lastPage}`
+        page.value = lastPage
+        const targetIdentity = correctedPageIdentity.value
+        void nextTick(() => {
+          if (correctedPageIdentity.value !== targetIdentity) return
+          void query
+            .refetch()
+            .catch(ignoreBackgroundError)
+            .finally(() => {
+              if (
+                correctedPageIdentity.value === targetIdentity &&
+                identity.value === targetIdentity
+              ) {
+                correctedPageIdentity.value = ''
+                pageNavigationPending.value = false
+              }
+            })
+        })
+      }
+    },
+    { flush: 'sync', immediate: true },
+  )
+  const pending = computed(
+    () =>
+      query.isLoading.value ||
+      pageNavigationPending.value ||
+      (correctedPageIdentity.value !== '' && correctedPageIdentity.value === identity.value),
+  )
   const failure = computed(() =>
     query.error.value != null
       ? query.error.value
@@ -1660,7 +1697,7 @@ export function useMesLineSideInventoryBalances() {
   const total = computed(() =>
     currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
   )
-  const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+  const pageCount = computed(() => lastPageForTotal(total.value, pageSize))
   const hasPreviousPage = computed(() => page.value > 1)
   const hasNextPage = computed(
     () => currentResponse.value?.success === true && page.value < pageCount.value,

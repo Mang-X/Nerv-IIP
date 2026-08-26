@@ -126,6 +126,7 @@ export type {
   LineSideInventoryAgeLike,
   LineSideInventoryAgePresentation,
 } from './inventory/lineSideAge'
+export { lastPageForTotal } from './pagination/pageBounds'
 export {
   aggregateReceivingGateStatus,
   isReleasedForPutaway,

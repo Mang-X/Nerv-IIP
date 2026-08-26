@@ -2156,6 +2156,86 @@ describe('pda useBusinessMes composables', () => {
     expect(result.page.value).toBe(1)
   })
 
+  it('总量收缩使当前页越界时回到最后有效页并忽略迟到旧页', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    let resolveCorrectedPage!: (value: {
+      data: {
+        success: boolean
+        data: {
+          items: Array<{
+            siteCode: string
+            locationCode: string
+            skuCode: string
+            uomCode: string
+          }>
+          totalCount: number
+          page: number
+          pageSize: number
+        }
+      }
+    }) => void
+    const correctedPage = new Promise<Parameters<typeof resolveCorrectedPage>[0]>((resolve) => {
+      resolveCorrectedPage = resolve
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [], totalCount: 200, page: 2, pageSize: 200 },
+        },
+      })
+      .mockImplementationOnce(() => correctedPage)
+    const result = useMesLineSideInventoryBalances()
+    await nextTick()
+
+    result.nextPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const shrunkenPageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    await nextTick()
+
+    expect(result.page.value).toBe(1)
+    expect(result.pending.value).toBe(true)
+    expect(result.balances.value).toEqual([])
+
+    await vi.waitFor(() => expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2))
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ page: 1, pageSize: 200 }) }),
+    )
+
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    await nextTick()
+    expect(result.page.value).toBe(1)
+    expect(result.balances.value).toEqual([])
+
+    resolveCorrectedPage({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-VALID', uomCode: 'pcs' },
+          ],
+          totalCount: 200,
+          page: 1,
+          pageSize: 200,
+        },
+      },
+    })
+    await vi.waitFor(() => {
+      expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-VALID'])
+      expect(result.pending.value).toBe(false)
+    })
+  })
+
   it('通过服务端分页访问第 201 条线边库存且把页码纳入请求身份', async () => {
     coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
       success: true,

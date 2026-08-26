@@ -170,9 +170,11 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
 </template>
 
 <style scoped>
-@media (max-width: 767px) {
-  .line-side-inventory-table :deep([data-slot='table-container']) {
-    display: none;
+@layer app {
+  @media (max-width: 767px) {
+    .line-side-inventory-table :deep([data-slot='table-container']) {
+      display: none;
+    }
   }
 }
 </style>

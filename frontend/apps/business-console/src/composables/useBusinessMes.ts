@@ -131,6 +131,7 @@ import {
   completePendingBusinessIntent,
   formatWorkScopeKey,
   isAvailableMaterialLot,
+  lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
@@ -139,7 +140,7 @@ export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-i
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, nextTick, reactive, shallowRef, watch } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -2021,6 +2022,7 @@ export function useMesLineSideInventoryBalances() {
   const pageSize = 200
   const page = shallowRef(1)
   const pageNavigationPending = shallowRef(false)
+  const correctedPageIdentity = shallowRef('')
   const lastSuccessfulTotal = shallowRef(0)
   const filters = defaultContext()
   const scopeIdentity = computed(() =>
@@ -2032,6 +2034,7 @@ export function useMesLineSideInventoryBalances() {
     () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
     () => {
       pageNavigationPending.value = false
+      correctedPageIdentity.value = ''
       lastSuccessfulTotal.value = 0
       page.value = 1
     },
@@ -2079,12 +2082,41 @@ export function useMesLineSideInventoryBalances() {
     currentResponse,
     (response) => {
       if (response?.success === true) {
-        lastSuccessfulTotal.value = response.data?.totalCount ?? 0
+        const responseTotal = response.data?.totalCount ?? 0
+        lastSuccessfulTotal.value = responseTotal
+        const lastPage = lastPageForTotal(responseTotal, pageSize)
+        if (page.value > lastPage) {
+          pageNavigationPending.value = true
+          correctedPageIdentity.value = `${scopeIdentity.value}:page:${lastPage}`
+          page.value = lastPage
+          const targetIdentity = correctedPageIdentity.value
+          void nextTick(() => {
+            if (correctedPageIdentity.value !== targetIdentity) return
+            void query
+              .refetch()
+              .catch(ignoreBackgroundError)
+              .finally(() => {
+                if (
+                  correctedPageIdentity.value === targetIdentity &&
+                  responseIdentity.value === targetIdentity
+                ) {
+                  correctedPageIdentity.value = ''
+                  pageNavigationPending.value = false
+                }
+              })
+          })
+        }
       }
     },
     { flush: 'sync', immediate: true },
   )
-  const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
+  const pending = computed(
+    () =>
+      query.isLoading.value ||
+      pageNavigationPending.value ||
+      (correctedPageIdentity.value !== '' &&
+        correctedPageIdentity.value === responseIdentity.value),
+  )
   const state = businessReadState(
     { data: currentResponse, error: query.error, isLoading: pending },
     () => hasBusinessContext(filters),
@@ -2103,7 +2135,7 @@ export function useMesLineSideInventoryBalances() {
       ? (currentResponse.value.data?.totalCount ?? 0)
       : lastSuccessfulTotal.value,
   )
-  const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+  const pageCount = computed(() => lastPageForTotal(total.value, pageSize))
   const hasPreviousPage = computed(() => page.value > 1)
   const hasNextPage = computed(
     () => currentResponse.value?.success === true && page.value < pageCount.value,
