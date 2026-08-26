@@ -2018,42 +2018,100 @@ export function useMesMaterialIssueRequests() {
 }
 
 export function useMesLineSideInventoryBalances() {
+  const pageSize = 200
+  const page = shallowRef(1)
+  const pageNavigationPending = shallowRef(false)
   const filters = defaultContext()
+  watch(
+    () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
+    () => {
+      pageNavigationPending.value = false
+      page.value = 1
+    },
+    { flush: 'sync' },
+  )
   const query = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          page: 1,
-          pageSize: 200,
+          page: page.value,
+          pageSize,
         },
       }),
       filters,
     ),
   )
-  const state = businessReadState(query, () => hasBusinessContext(filters))
+  const currentResponse = computed(() => {
+    const response = query.data.value
+    if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
+    return response
+  })
+  const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
+  const state = businessReadState(
+    { data: currentResponse, error: query.error, isLoading: pending },
+    () => hasBusinessContext(filters),
+  )
   const failure = computed(() =>
     query.error.value != null
       ? query.error.value
-      : query.data.value !== undefined && query.data.value.success !== true
-        ? new Error(query.data.value.message ?? '线边库存服务未返回成功结果，请重试。')
+      : currentResponse.value !== undefined && currentResponse.value.success !== true
+        ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
         : null,
   )
+  const total = computed(() =>
+    currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
+  )
+  const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+  const hasPreviousPage = computed(() => page.value > 1)
+  const hasNextPage = computed(
+    () => currentResponse.value?.success === true && page.value < pageCount.value,
+  )
+
+  watch(
+    [page, () => query.data.value, () => query.error.value],
+    ([currentPage, response, error]) => {
+      if (
+        error != null ||
+        (response !== undefined &&
+          (response.success !== true || (response.data?.page ?? 1) === currentPage))
+      ) {
+        pageNavigationPending.value = false
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  function previousPage() {
+    if (pending.value || !hasPreviousPage.value) return
+    pageNavigationPending.value = true
+    page.value -= 1
+  }
+
+  function nextPage() {
+    if (pending.value || !hasNextPage.value) return
+    pageNavigationPending.value = true
+    page.value += 1
+  }
 
   return {
     lineSideInventoryBalances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
       envelopeItems<
         BusinessConsoleMesLineSideInventoryBalanceItem,
         BusinessConsoleMesLineSideInventoryBalancesEnvelope
-      >(query.data.value),
+      >(currentResponse.value),
     ),
-    lineSideInventoryTotal: computed(() =>
-      query.data.value?.success ? (query.data.value.data?.totalCount ?? 0) : 0,
-    ),
-    lineSideInventoryPending: query.isLoading,
+    lineSideInventoryTotal: total,
+    lineSideInventoryPage: page,
+    lineSideInventoryPageCount: pageCount,
+    lineSideInventoryHasPreviousPage: hasPreviousPage,
+    lineSideInventoryHasNextPage: hasNextPage,
+    lineSideInventoryPending: pending,
     lineSideInventoryError: failure,
     lineSideInventoryReady: computed(() => state.value === 'ready'),
+    previousLineSideInventoryPage: previousPage,
+    nextLineSideInventoryPage: nextPage,
     refreshLineSideInventory: () => refetchWithBusinessContext(filters, query),
   }
 }

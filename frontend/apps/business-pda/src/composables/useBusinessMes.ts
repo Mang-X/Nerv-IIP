@@ -1597,21 +1597,36 @@ export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideRecei
 export type ReturnLineSideMaterialInput = BusinessConsoleMesReturnLineSideMaterialRequest
 
 export function useMesLineSideInventoryBalances() {
+  const pageSize = 200
+  const page = shallowRef(1)
+  const pageNavigationPending = shallowRef(false)
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
   const scopeReady = computed(() => hasScope(scope))
-  const identity = computed(() => (scopeReady.value ? scopeKey(scope) : ''))
+  const scopeIdentity = computed(() => (scopeReady.value ? scopeKey(scope) : ''))
+  watch(
+    scopeIdentity,
+    () => {
+      pageNavigationPending.value = false
+      page.value = 1
+    },
+    { flush: 'sync' },
+  )
+  const identity = computed(() =>
+    scopeIdentity.value ? `${scopeIdentity.value}:page:${page.value}` : '',
+  )
   const query = useQuery(() => ({
     ...listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
       query: {
         organizationId: scope.organizationId,
         environmentId: scope.environmentId,
-        page: 1,
-        pageSize: 200,
+        page: page.value,
+        pageSize,
       },
     }),
     enabled: scopeReady.value,
   }))
   const currentResponse = useScopeBoundListResponse(() => query.data.value, identity, scopeReady)
+  const pending = computed(() => query.isLoading.value || pageNavigationPending.value)
   const failure = computed(() =>
     query.error.value != null
       ? query.error.value
@@ -1619,6 +1634,40 @@ export function useMesLineSideInventoryBalances() {
         ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
         : null,
   )
+  const total = computed(() =>
+    currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
+  )
+  const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+  const hasPreviousPage = computed(() => page.value > 1)
+  const hasNextPage = computed(
+    () => currentResponse.value?.success === true && page.value < pageCount.value,
+  )
+
+  watch(
+    [page, currentResponse, () => query.error.value],
+    ([currentPage, response, error]) => {
+      if (
+        error != null ||
+        (response !== undefined &&
+          (response.success !== true || (response.data?.page ?? 1) === currentPage))
+      ) {
+        pageNavigationPending.value = false
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  function previousPage() {
+    if (pending.value || !hasPreviousPage.value) return
+    pageNavigationPending.value = true
+    page.value -= 1
+  }
+
+  function nextPage() {
+    if (pending.value || !hasNextPage.value) return
+    pageNavigationPending.value = true
+    page.value += 1
+  }
 
   return {
     balances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
@@ -1627,12 +1676,16 @@ export function useMesLineSideInventoryBalances() {
         BusinessConsoleMesLineSideInventoryBalancesEnvelope
       >(currentResponse.value),
     ),
-    total: computed(() =>
-      currentResponse.value?.success ? (currentResponse.value.data?.totalCount ?? 0) : 0,
-    ),
-    pending: query.isLoading,
+    total,
+    page,
+    pageCount,
+    hasPreviousPage,
+    hasNextPage,
+    pending,
     error: failure,
     ready: computed(() => currentResponse.value?.success === true),
+    previousPage,
+    nextPage,
     refresh: () => (scopeReady.value ? query.refetch() : Promise.resolve()),
   }
 }

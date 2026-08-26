@@ -7,12 +7,16 @@ import RetryableListError from '@/components/RetryableListError.vue'
 defineProps<{
   error: unknown
   items: BusinessConsoleMesLineSideInventoryBalanceItem[]
+  hasNextPage: boolean
+  hasPreviousPage: boolean
+  page: number
+  pageCount: number
   pending: boolean
   ready: boolean
   total: number
 }>()
 
-const emit = defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{ nextPage: []; previousPage: []; refresh: [] }>()
 
 function quantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
@@ -22,19 +26,37 @@ function quantity(value?: number | null) {
 <template>
   <section class="space-y-3" aria-labelledby="pda-line-side-inventory-title">
     <div class="flex items-center justify-between gap-3">
-      <div>
-        <h2 id="pda-line-side-inventory-title" class="text-base font-semibold text-foreground">
-          线边库存
-        </h2>
-        <p class="text-xs text-muted-foreground">已加载 {{ items.length }} / 共 {{ total }} 条</p>
-      </div>
+      <h2 id="pda-line-side-inventory-title" class="text-base font-semibold text-foreground">
+        线边库存
+      </h2>
       <button
         type="button"
-        class="min-h-touch shrink-0 rounded-lg border border-border bg-card px-4 text-sm font-medium text-primary"
+        class="min-h-touch shrink-0 rounded-lg border border-border bg-card px-3 text-sm font-medium text-primary disabled:opacity-50"
         :disabled="pending"
         @click="emit('refresh')"
       >
         刷新库存
+      </button>
+    </div>
+    <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+      <button
+        type="button"
+        class="min-h-touch rounded-lg border border-border bg-card px-3 text-sm font-medium text-primary disabled:opacity-50"
+        :disabled="pending || !hasPreviousPage"
+        @click="emit('previousPage')"
+      >
+        上一页
+      </button>
+      <p class="text-center text-xs text-muted-foreground">
+        第 {{ page }} / {{ pageCount }} 页<br />本页 {{ items.length }} 条 · 共 {{ total }} 条
+      </p>
+      <button
+        type="button"
+        class="min-h-touch rounded-lg border border-border bg-card px-3 text-sm font-medium text-primary disabled:opacity-50"
+        :disabled="pending || !hasNextPage"
+        @click="emit('nextPage')"
+      >
+        下一页
       </button>
     </div>
 

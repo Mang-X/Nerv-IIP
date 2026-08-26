@@ -49,9 +49,15 @@ const {
 const {
   lineSideInventoryBalances,
   lineSideInventoryError,
+  lineSideInventoryHasNextPage,
+  lineSideInventoryHasPreviousPage,
+  lineSideInventoryPage,
+  lineSideInventoryPageCount,
   lineSideInventoryPending,
   lineSideInventoryReady,
   lineSideInventoryTotal,
+  nextLineSideInventoryPage,
+  previousLineSideInventoryPage,
   refreshLineSideInventory,
 } = useMesLineSideInventoryBalances()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
@@ -167,10 +173,16 @@ function formatError(error: unknown) {
 
     <LineSideInventoryBalancesPanel
       :items="lineSideInventoryBalances"
+      :page="lineSideInventoryPage"
+      :page-count="lineSideInventoryPageCount"
+      :has-previous-page="lineSideInventoryHasPreviousPage"
+      :has-next-page="lineSideInventoryHasNextPage"
       :total="lineSideInventoryTotal"
       :pending="lineSideInventoryPending"
       :error="lineSideInventoryError"
       :ready="lineSideInventoryReady"
+      @previous-page="previousLineSideInventoryPage"
+      @next-page="nextLineSideInventoryPage"
       @refresh="refreshLineSideInventory"
     />
 

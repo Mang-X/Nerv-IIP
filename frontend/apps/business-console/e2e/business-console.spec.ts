@@ -163,6 +163,18 @@ test('领料与齐套：领料申请渲染收料进度与「查看出库」闭�
   await expect(
     page.getByText('账龄未知（批次缺少生产日期）', { exact: true }).filter({ visible: true }),
   ).toBeVisible()
+  const lineSideInventory = page.locator('section[aria-labelledby="line-side-inventory-title"]')
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
+  await lineSideInventory.getByRole('button', { name: '下一页' }).click()
+  await expect(
+    lineSideInventory.getByText('SKU-PAGE-201', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 2 / 2 页')
+  await lineSideInventory.getByRole('button', { name: '上一页' }).click()
+  await expect(
+    lineSideInventory.getByText('SKU-DAMPER-001', { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
   const mobileInventory = page.getByTestId('line-side-inventory-mobile')
   if ((page.viewportSize()?.width ?? 0) < 768) {
     await expect(mobileInventory).toBeVisible()
@@ -565,52 +577,71 @@ async function routeBusinessConsoleApi(route: Route) {
   }
 
   if (pathname === '/api/business-console/v1/mes/line-side-inventory-balances') {
+    const requestedPage = Number(url.searchParams.get('page') ?? 1)
+    const items =
+      requestedPage === 2
+        ? [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A04',
+              skuCode: 'SKU-PAGE-201',
+              uomCode: 'pcs',
+              onHandQuantity: 8,
+              reservedQuantity: 1,
+              availableQuantity: 7,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ]
+        : [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-DAMPER-001',
+              uomCode: 'pcs',
+              onHandQuantity: 120,
+              reservedQuantity: 20,
+              availableQuantity: 100,
+              lotCount: 3,
+              oldestProductionDate: '2026-08-20',
+              ageDays: 6,
+              ageCompleteness: 'complete',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A02',
+              skuCode: 'SKU-SEAL-008',
+              uomCode: 'pcs',
+              onHandQuantity: 45,
+              reservedQuantity: 5,
+              availableQuantity: 40,
+              lotCount: 2,
+              oldestProductionDate: '2026-08-22',
+              ageDays: 4,
+              ageCompleteness: 'partial',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A03',
+              skuCode: 'SKU-OIL-012',
+              uomCode: 'l',
+              onHandQuantity: 18,
+              reservedQuantity: 0,
+              availableQuantity: 18,
+              lotCount: 1,
+              oldestProductionDate: null,
+              ageDays: null,
+              ageCompleteness: 'unavailable',
+            },
+          ]
     return fulfillJson(
       route,
       envelope({
-        items: [
-          {
-            siteCode: 'SITE-SH',
-            locationCode: 'LINE-A01',
-            skuCode: 'SKU-DAMPER-001',
-            uomCode: 'pcs',
-            onHandQuantity: 120,
-            reservedQuantity: 20,
-            availableQuantity: 100,
-            lotCount: 3,
-            oldestProductionDate: '2026-08-20',
-            ageDays: 6,
-            ageCompleteness: 'complete',
-          },
-          {
-            siteCode: 'SITE-SH',
-            locationCode: 'LINE-A02',
-            skuCode: 'SKU-SEAL-008',
-            uomCode: 'pcs',
-            onHandQuantity: 45,
-            reservedQuantity: 5,
-            availableQuantity: 40,
-            lotCount: 2,
-            oldestProductionDate: '2026-08-22',
-            ageDays: 4,
-            ageCompleteness: 'partial',
-          },
-          {
-            siteCode: 'SITE-SH',
-            locationCode: 'LINE-A03',
-            skuCode: 'SKU-OIL-012',
-            uomCode: 'l',
-            onHandQuantity: 18,
-            reservedQuantity: 0,
-            availableQuantity: 18,
-            lotCount: 1,
-            oldestProductionDate: null,
-            ageDays: null,
-            ageCompleteness: 'unavailable',
-          },
-        ],
-        totalCount: 3,
-        page: 1,
+        items,
+        totalCount: 201,
+        page: requestedPage,
         pageSize: 200,
         asOfDate: '2026-08-26',
       }),

@@ -107,6 +107,8 @@ const lineSideInventoryBalances = ref([
 ])
 const initialLineSideInventoryBalances = lineSideInventoryBalances.value
 const refreshLineSideInventory = vi.fn(async () => {})
+const nextLineSideInventoryPage = vi.fn()
+const previousLineSideInventoryPage = vi.fn()
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesMaterialIssue: () => ({
@@ -137,6 +139,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: lineSideInventoryPending,
     error: lineSideInventoryError,
     ready: lineSideInventoryReady,
+    page: ref(1),
+    pageCount: ref(2),
+    hasPreviousPage: ref(false),
+    hasNextPage: ref(true),
+    previousPage: previousLineSideInventoryPage,
+    nextPage: nextLineSideInventoryPage,
     refresh: refreshLineSideInventory,
   }),
 }))
@@ -167,6 +175,8 @@ describe('PDA MES material issue page', () => {
     lineSideInventoryReady.value = true
     lineSideInventoryBalances.value = initialLineSideInventoryBalances
     refreshLineSideInventory.mockClear()
+    nextLineSideInventoryPage.mockClear()
+    previousLineSideInventoryPage.mockClear()
   })
 
   it('lists material issue requests with readable info', () => {
@@ -196,6 +206,13 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).toContain('4 天（部分批次缺少生产日期） · 账龄部分可知')
     expect(wrapper.text()).toContain('账龄未知（批次缺少生产日期）')
     expect(wrapper.text()).not.toContain('0 天')
+    expect(wrapper.text()).toContain('第 1 / 2 页')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '下一页')!
+      .trigger('click')
+    expect(nextLineSideInventoryPage).toHaveBeenCalledTimes(1)
   })
 
   it('distinguishes line-side loading, error, empty, and refresh behavior', async () => {

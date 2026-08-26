@@ -10,12 +10,16 @@ import { inlineErrorMessage } from '@/utils/notify'
 const props = defineProps<{
   error: unknown
   items: BusinessConsoleMesLineSideInventoryBalanceItem[]
+  hasNextPage: boolean
+  hasPreviousPage: boolean
+  page: number
+  pageCount: number
   pending: boolean
   ready: boolean
   total: number
 }>()
 
-const emit = defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{ nextPage: []; previousPage: []; refresh: [] }>()
 
 const columns: NvDataTableColumn<BusinessConsoleMesLineSideInventoryBalanceItem>[] = [
   { key: 'skuCode', header: '物料', cellClass: 'font-medium' },
@@ -44,19 +48,40 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
           线边库存余额与账龄
         </h2>
         <p class="mt-1 text-sm text-muted-foreground">
-          库存服务权威余额；已加载 {{ items.length }} / 共 {{ total }} 条。
+          库存服务权威余额；第 {{ page }} / {{ pageCount }} 页，本页 {{ items.length }} 条，共
+          {{ total }} 条。
         </p>
       </div>
-      <NvButton
-        type="button"
-        size="sm"
-        variant="outline"
-        :disabled="pending"
-        @click="emit('refresh')"
-      >
-        <RefreshCwIcon aria-hidden="true" />
-        刷新库存
-      </NvButton>
+      <div class="flex flex-wrap items-center gap-2">
+        <NvButton
+          type="button"
+          size="sm"
+          variant="outline"
+          :disabled="pending || !hasPreviousPage"
+          @click="emit('previousPage')"
+        >
+          上一页
+        </NvButton>
+        <NvButton
+          type="button"
+          size="sm"
+          variant="outline"
+          :disabled="pending || !hasNextPage"
+          @click="emit('nextPage')"
+        >
+          下一页
+        </NvButton>
+        <NvButton
+          type="button"
+          size="sm"
+          variant="outline"
+          :disabled="pending"
+          @click="emit('refresh')"
+        >
+          <RefreshCwIcon aria-hidden="true" />
+          刷新库存
+        </NvButton>
+      </div>
     </div>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">

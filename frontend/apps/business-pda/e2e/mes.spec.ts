@@ -782,6 +782,14 @@ test('领料：列表渲染领料申请行（不退化为空态）', async ({ pa
   await expect(page.getByText(/可用 100 pcs/)).toBeVisible()
   await expect(page.getByText(/6 天 · 账龄完整/)).toBeVisible()
   await expect(page.getByText(/账龄未知（批次缺少生产日期）/)).toBeVisible()
+  const lineSideInventory = page.locator('section[aria-labelledby="pda-line-side-inventory-title"]')
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
+  await lineSideInventory.getByRole('button', { name: '下一页' }).click()
+  await expect(lineSideInventory.getByText('SKU-PAGE-201', { exact: true })).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 2 / 2 页')
+  await lineSideInventory.getByRole('button', { name: '上一页' }).click()
+  await expect(lineSideInventory.getByText('SKU-DAMPER-001', { exact: true })).toBeVisible()
+  await expect(lineSideInventory).toContainText('第 1 / 2 页')
 })
 
 test('完工入库：列表渲染入库申请行（不退化为空态）', async ({ page }) => {

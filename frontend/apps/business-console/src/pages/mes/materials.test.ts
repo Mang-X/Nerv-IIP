@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 const refreshLineSideInventory = vi.fn(async () => {})
+const nextLineSideInventoryPage = vi.fn()
+const previousLineSideInventoryPage = vi.fn()
 const lineSideInventoryPending = ref(false)
 const lineSideInventoryError = ref<unknown>(null)
 const lineSideInventoryReady = ref(true)
@@ -64,6 +66,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     lineSideInventoryPending,
     lineSideInventoryError,
     lineSideInventoryReady,
+    lineSideInventoryPage: ref(1),
+    lineSideInventoryPageCount: ref(2),
+    lineSideInventoryHasPreviousPage: ref(false),
+    lineSideInventoryHasNextPage: ref(true),
+    previousLineSideInventoryPage,
+    nextLineSideInventoryPage,
     refreshLineSideInventory,
   }),
 }))
@@ -91,6 +99,8 @@ import MaterialsPage from './materials.vue'
 describe('Console MES materials page line-side inventory', () => {
   beforeEach(() => {
     refreshLineSideInventory.mockClear()
+    nextLineSideInventoryPage.mockClear()
+    previousLineSideInventoryPage.mockClear()
     lineSideInventoryPending.value = false
     lineSideInventoryError.value = null
     lineSideInventoryReady.value = true
@@ -111,6 +121,13 @@ describe('Console MES materials page line-side inventory', () => {
     expect(wrapper.text()).toContain('账龄部分可知')
     expect(wrapper.text()).toContain('账龄未知（批次缺少生产日期）')
     expect(wrapper.text()).not.toContain('0 天')
+    expect(wrapper.text()).toContain('第 1 / 2 页')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '下一页')!
+      .trigger('click')
+    expect(nextLineSideInventoryPage).toHaveBeenCalledTimes(1)
   })
 
   it('distinguishes loading, error, empty, and refresh behavior', async () => {

@@ -72,7 +72,13 @@ const {
   total: lineSideInventoryTotal,
   pending: lineSideInventoryPending,
   error: lineSideInventoryError,
+  hasNextPage: lineSideInventoryHasNextPage,
+  hasPreviousPage: lineSideInventoryHasPreviousPage,
+  page: lineSideInventoryPage,
+  pageCount: lineSideInventoryPageCount,
   ready: lineSideInventoryReady,
+  nextPage: nextLineSideInventoryPage,
+  previousPage: previousLineSideInventoryPage,
   refresh: refreshLineSideInventory,
 } = useMesLineSideInventoryBalances()
 
@@ -463,10 +469,16 @@ function onScanWorkOrder(value: string) {
 
       <LineSideInventoryBalancesPanel
         :items="lineSideInventoryBalances"
+        :page="lineSideInventoryPage"
+        :page-count="lineSideInventoryPageCount"
+        :has-previous-page="lineSideInventoryHasPreviousPage"
+        :has-next-page="lineSideInventoryHasNextPage"
         :total="lineSideInventoryTotal"
         :pending="lineSideInventoryPending"
         :error="lineSideInventoryError"
         :ready="lineSideInventoryReady"
+        @previous-page="previousLineSideInventoryPage"
+        @next-page="nextLineSideInventoryPage"
         @refresh="refreshLineSideInventory"
       />
 
