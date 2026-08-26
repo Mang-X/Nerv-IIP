@@ -517,7 +517,7 @@ public sealed partial class MesMaterialScanPrevalidationTests
                 operation: "observe caller cancellation propagation through Inventory provider",
                 action: token => new ValueTask(pending.WaitAsync(token)),
                 timeout: TimeSpan.FromSeconds(2)));
-        Assert.True(inventoryHandler.LastCancellationToken.CanBeCanceled);
+        Assert.True(inventoryHandler.LastCancellationToken.IsCancellationRequested);
     }
 
     [Theory]
