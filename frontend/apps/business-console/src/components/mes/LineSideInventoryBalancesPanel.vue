@@ -138,6 +138,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
           :loading="pending"
           :searchable="false"
           :column-settings="false"
+          :pagination="false"
         >
           <template #cell-locationCode="{ row }">
             <div class="flex flex-col">

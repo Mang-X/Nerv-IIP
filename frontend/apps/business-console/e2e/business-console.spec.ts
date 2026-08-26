@@ -164,6 +164,13 @@ test('领料与齐套：领料申请渲染收料进度与「查看出库」闭�
     page.getByText('账龄未知（批次缺少生产日期）', { exact: true }).filter({ visible: true }),
   ).toBeVisible()
   const lineSideInventory = page.locator('section[aria-labelledby="line-side-inventory-title"]')
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await expect(lineSideInventory.locator('tbody tr')).toHaveCount(200)
+    await expect(
+      lineSideInventory.getByText('SKU-PAGE-200', { exact: true }).filter({ visible: true }),
+    ).toBeVisible()
+    await expect(lineSideInventory.locator('[data-slot="pagination"]')).toHaveCount(0)
+  }
   await expect(lineSideInventory).toContainText('第 1 / 2 页')
   await lineSideInventory.getByRole('button', { name: '下一页' }).click()
   await expect(
@@ -635,6 +642,19 @@ async function routeBusinessConsoleApi(route: Route) {
               ageDays: null,
               ageCompleteness: 'unavailable',
             },
+            ...Array.from({ length: 197 }, (_, index) => ({
+              siteCode: 'SITE-SH',
+              locationCode: `LINE-${String(index + 4).padStart(3, '0')}`,
+              skuCode: `SKU-PAGE-${String(index + 4).padStart(3, '0')}`,
+              uomCode: 'pcs',
+              onHandQuantity: index + 1_000,
+              reservedQuantity: 0,
+              availableQuantity: index + 1_000,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            })),
           ]
     return fulfillJson(
       route,

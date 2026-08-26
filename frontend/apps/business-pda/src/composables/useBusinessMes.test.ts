@@ -2042,6 +2042,58 @@ describe('pda useBusinessMes composables', () => {
     expect(result.availableMaterialLots.value.map((row) => row.requestId)).toEqual(['MIR-RECEIVED'])
   })
 
+  it('首次请求身份正确但 payload 页码错误时失败关闭', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [
+          { siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-WRONG', uomCode: 'pcs' },
+        ],
+        totalCount: 1,
+        page: 2,
+        pageSize: 200,
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    expect(result.balances.value).toEqual([])
+    expect(result.ready.value).toBe(false)
+  })
+
+  it('翻页后带当前请求身份的迟到错页 payload 不得投影', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-LATE', uomCode: 'pcs' },
+          ],
+          totalCount: 401,
+          page: 1,
+          pageSize: 200,
+        },
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextPage()
+    const options = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const lateWrongPage = await options?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      lateWrongPage
+    await nextTick()
+
+    expect(result.page.value).toBe(2)
+    expect(result.balances.value).toEqual([])
+    expect(result.ready.value).toBe(false)
+  })
+
   it('切换组织环境时同页旧响应立即失效', async () => {
     coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
       success: true,
