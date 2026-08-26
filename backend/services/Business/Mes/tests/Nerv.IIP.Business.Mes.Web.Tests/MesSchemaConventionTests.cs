@@ -111,6 +111,8 @@ public sealed class MesSchemaConventionTests
             issue.FindProperty(nameof(MaterialIssueRequest.SubstitutedMaterialId))!.GetColumnName());
     }
 
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
+    // the migration must update the approved Released AutoRebind provenance comment and restore the prior contract on rollback.
     [Fact]
     public void Material_substitute_foundation_migration_updates_snapshot_provenance_comment_symmetrically()
     {
@@ -142,6 +144,8 @@ public sealed class MesSchemaConventionTests
         Assert.Equal(releasedRebindComment, restoredComment.OldColumn.Comment);
     }
 
+    // Contract: Governance. Authority: Issue #2246 acceptance 4 and docs/architecture/database-schema-conventions.md "权威来源"/"迁移与发布";
+    // the generated migration must follow existing MES migrations and carry the configuration-complete target model.
     [Fact]
     public void Material_substitute_foundation_migration_is_latest_and_targets_the_complete_mes_model()
     {
