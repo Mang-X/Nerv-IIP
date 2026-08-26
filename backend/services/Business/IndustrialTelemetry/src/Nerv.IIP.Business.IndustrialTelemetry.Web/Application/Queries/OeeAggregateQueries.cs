@@ -209,17 +209,46 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                     .ThenBy(y => y.SourceSequence, StringComparer.Ordinal)
                     .ToArray(),
                 StringComparer.Ordinal);
+        var devicesWithAmbiguousHistoricalDimension = FindDevicesWithAmbiguousHistoricalDimension(
+            facts,
+            request.Dimension);
 
         var buckets = groups
-            .Select(group => CalculateBucket(request.Dimension, group, statesByDevice))
+            .Select(group => CalculateBucket(
+                request.Dimension,
+                group,
+                statesByDevice,
+                devicesWithAmbiguousHistoricalDimension))
             .ToArray();
         return Response(request, buckets);
+    }
+
+    private static IReadOnlySet<string> FindDevicesWithAmbiguousHistoricalDimension(
+        IReadOnlyCollection<OeeProductionFact> facts,
+        string dimension)
+    {
+        if (dimension is not (OeeAggregateDimensions.WorkCenter or OeeAggregateDimensions.Line or OeeAggregateDimensions.Workshop))
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        return facts
+            .Where(x => !string.IsNullOrWhiteSpace(x.DeviceAssetId))
+            .GroupBy(x => x.DeviceAssetId!, StringComparer.Ordinal)
+            .Where(group => group
+                .Select(x => BucketKey.DimensionValueFor(x, dimension))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static OeeAggregateBucket CalculateBucket(
         string dimension,
         FactBucket group,
-        IReadOnlyDictionary<string, IReadOnlyList<DeviceStateSnapshot>> statesByDevice)
+        IReadOnlyDictionary<string, IReadOnlyList<DeviceStateSnapshot>> statesByDevice,
+        IReadOnlySet<string> devicesWithAmbiguousHistoricalDimension)
     {
         var degradedReasons = new HashSet<string>(StringComparer.Ordinal);
         var hasCompleteRuntimeCoverage = group.Facts.All(x => !string.IsNullOrWhiteSpace(x.DeviceAssetId));
@@ -230,6 +259,13 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         var productiveHoursByDevice = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (var deviceId in deviceIds)
         {
+            if (devicesWithAmbiguousHistoricalDimension.Contains(deviceId))
+            {
+                hasCompleteRuntimeCoverage = false;
+                degradedReasons.Add("historical-dimension-effective-range-ambiguous");
+                continue;
+            }
+
             statesByDevice.TryGetValue(deviceId, out var deviceStates);
             var runtime = CalculateRuntime(deviceStates ?? [], group.StartUtc, group.EndUtc);
             loadingTicks += runtime.LoadingTicks;
@@ -268,6 +304,12 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         var hasUsableTheory = true;
         foreach (var deviceGroup in group.Facts.Where(x => x.DeviceAssetId != null).GroupBy(x => x.DeviceAssetId!, StringComparer.Ordinal))
         {
+            if (!productiveHoursByDevice.TryGetValue(deviceGroup.Key, out var productiveHours))
+            {
+                hasUsableTheory = false;
+                break;
+            }
+
             var rates = deviceGroup.Select(x => x.TheoreticalRatePerHour).Where(x => x is > 0m).Select(x => x!.Value).Distinct().ToArray();
             if (rates.Length != 1 || deviceGroup.Any(x => x.TheoreticalRatePerHour is not > 0m))
             {
@@ -275,7 +317,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                 break;
             }
 
-            expectedOutputQuantity += productiveHoursByDevice[deviceGroup.Key] * rates[0];
+            expectedOutputQuantity += productiveHours * rates[0];
         }
 
         decimal? performanceRate = hasUsableTheory && outputUomCode is not null && expectedOutputQuantity > 0m && totalOutputQuantity > 0m
@@ -439,6 +481,18 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         DateTimeOffset StartUtc,
         DateTimeOffset EndUtc)
     {
+        internal static string? DimensionValueFor(OeeProductionFact fact, string dimension) =>
+            dimension switch
+            {
+                OeeAggregateDimensions.Device => fact.DeviceAssetId,
+                OeeAggregateDimensions.WorkCenter => fact.WorkCenterId,
+                OeeAggregateDimensions.Line => fact.LineCode,
+                OeeAggregateDimensions.Workshop => fact.WorkshopCode,
+                OeeAggregateDimensions.Shift => fact.ShiftCode,
+                OeeAggregateDimensions.Day => fact.SiteCode,
+                _ => null,
+            };
+
         public static BucketKey From(OeeProductionFact fact, QueryOeeAggregateBucketsQuery request) =>
             request.Dimension switch
             {

@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.MasterData;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
@@ -117,7 +118,7 @@ public sealed record CreateSkuRequest(
     bool SalesEnabled = true);
 
 public sealed class ListMasterDataResourcesEndpoint(ISender sender)
-    : MasterDataEndpoint<ListMasterDataResourcesRequest, ResponseData<ListMasterDataResourcesResponse>>
+    : MasterDataEndpoint<ListMasterDataResourcesRequest, ResponseData<MasterDataResourceListResponse>>
 {
     public override void Configure()
     {

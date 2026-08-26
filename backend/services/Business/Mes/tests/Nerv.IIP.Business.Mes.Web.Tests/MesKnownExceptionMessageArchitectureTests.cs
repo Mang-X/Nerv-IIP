@@ -23,6 +23,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/TelemetryProductionReportCandidateCommands.cs", "PromoteTelemetryProductionReportCandidateCommandHandler", "Handle", 1, "同步公开遥测报工候选操作"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "GetUomConversionsAsync", 1, "稳定错误码 MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendAsync", 2, "稳定错误码与 provider 失败透传"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendMasterDataResourcesAsync", 2, "稳定错误码与 MasterData provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendOptionalAsync", 1, "稳定错误码与 provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendRequestAsync", 2, "稳定错误码与 provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "GetAvailabilityAsync", 3, "稳定错误码与 Inventory provider 失败透传"),
@@ -72,9 +73,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(58, discovered.Count);
-        Assert.Equal(140, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(137, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(59, discovered.Count);
+        Assert.Equal(142, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(139, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);

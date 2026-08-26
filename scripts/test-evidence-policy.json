@@ -911,9 +911,11 @@
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Cross_day_reversal_reuses_original_historical_buckets_and_nets_original_bucket_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Combined_carry_in_and_window_state_limit_executes_exact_boundary_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests.Full_scale_device_history_seed_stays_within_the_startup_budget_and_reruns_clean",
-        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Same_occurred_at_states_use_recorded_at_and_source_sequence_for_carry_in_and_window_tail_on_postgres"
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Same_occurred_at_states_use_recorded_at_and_source_sequence_for_carry_in_and_window_tail_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Device_hierarchy_migration_degrades_runtime_metrics_instead_of_reusing_the_full_window_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.State_queries_ignore_same_device_and_environment_from_other_organizations_on_postgres"
       ],
-      "expectedRuntimeTestCount": 16
+      "expectedRuntimeTestCount": 18
     },
     {
       "id": "maintenance-world-history",
@@ -1073,7 +1075,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token",
         "Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Production_report_handler_persists_dimension_snapshot_after_postgres_migration"
       ],
-      "expectedRuntimeTestCount": 18
+      "expectedRuntimeTestCount": 19
     },
     {
       "id": "mes-cap-postgres",

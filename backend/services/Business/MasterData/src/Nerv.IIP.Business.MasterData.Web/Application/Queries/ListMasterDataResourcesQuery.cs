@@ -1,68 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using System.Text;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
-
-public sealed record MasterDataResourceItem(
-    string ResourceType,
-    string Code,
-    string DisplayName,
-    bool Active,
-    string SnapshotVersion,
-    string? PartnerType = null,
-    IReadOnlyCollection<string>? PartnerRoles = null,
-    string? SiteCode = null,
-    string? PlantCode = null,
-    string? LineCode = null,
-    string? WorkshopCode = null,
-    int? CapacityMinutesPerDay = null,
-    string? WorkCenterCode = null,
-    string? Status = null,
-    string? Category = null,
-    string? MaterialType = null,
-    string? CodeSet = null,
-    string? BaseUomCode = null,
-    string? TaxId = null,
-    string? ParentDepartmentCode = null,
-    string? DepartmentCode = null,
-    string? ShiftCode = null,
-    string? UserId = null,
-    string? SkillCode = null,
-    string? SkillLevel = null,
-    DateOnly? EffectiveFrom = null,
-    DateOnly? EffectiveTo = null,
-    string? FromUomCode = null,
-    string? ToUomCode = null,
-    decimal? Factor = null,
-    decimal? Offset = null,
-    int? Precision = null,
-    string? RoundingMode = null,
-    string? DeviceAssetId = null,
-    DateOnly? PurchaseDate = null,
-    decimal? PurchaseCost = null,
-    string? PurchaseCurrencyCode = null,
-    DateOnly? WarrantyExpiresOn = null,
-    string? SupplierPartnerCode = null,
-    string? StationCode = null,
-    string? ParentDeviceId = null,
-    DateOnly? RetiredOn = null,
-    decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null,
-    string? JobTitle = null,
-    string? EmploymentStatus = null,
-    string? Phone = null,
-    string? Timezone = null,
-    TimeOnly? StartsAt = null,
-    TimeOnly? EndsAt = null,
-    bool? CrossesMidnight = null,
-    int? PaidMinutes = null,
-    int? BreakMinutes = null);
-
-public sealed record ListMasterDataResourcesResponse(
-    IReadOnlyCollection<MasterDataResourceItem> Resources,
-    int Total,
-    bool Truncated = false,
-    int? Limit = null);
 
 public sealed record ListMasterDataResourcesQuery(
     string OrganizationId,
@@ -84,7 +24,7 @@ public sealed record ListMasterDataResourcesQuery(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null) : IQuery<ListMasterDataResourcesResponse>;
+    string? WorkshopCode = null) : IQuery<MasterDataResourceListResponse>;
 
 public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<ListMasterDataResourcesQuery>
 {
@@ -95,9 +35,9 @@ public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<Li
 }
 
 public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListMasterDataResourcesQuery, ListMasterDataResourcesResponse>
+    : IQueryHandler<ListMasterDataResourcesQuery, MasterDataResourceListResponse>
 {
-    public async Task<ListMasterDataResourcesResponse> Handle(ListMasterDataResourcesQuery request, CancellationToken cancellationToken)
+    public async Task<MasterDataResourceListResponse> Handle(ListMasterDataResourcesQuery request, CancellationToken cancellationToken)
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
@@ -125,11 +65,11 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             _ => null,
         };
         return query is null
-            ? new ListMasterDataResourcesResponse([], 0)
+            ? new MasterDataResourceListResponse([], 0)
             : await ToPageAsync(query, request, tenant, page, cancellationToken);
     }
 
-    private static async Task<ListMasterDataResourcesResponse> ToPageAsync(
+    private static async Task<MasterDataResourceListResponse> ToPageAsync(
         IQueryable<MasterDataResourceItem> query,
         ListMasterDataResourcesQuery request,
         TenantScope tenant,
@@ -159,7 +99,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 .ToList();
         }
 
-        return new ListMasterDataResourcesResponse(resources, total, request.All && total > limit, request.All ? limit : null);
+        return new MasterDataResourceListResponse(resources, total, request.All && total > limit, request.All ? limit : null);
     }
 
     private static string StableStationId(params string?[] components)

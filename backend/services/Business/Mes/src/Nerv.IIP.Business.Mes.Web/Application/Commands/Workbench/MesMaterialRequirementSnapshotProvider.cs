@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.ServiceAuth;
 using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
@@ -300,7 +301,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             return FilterRequiredConversions(cachedConversions, requiredUoms);
         }
 
-        var response = await SendAsync<MasterDataResourceListResponse>(
+        var response = await SendMasterDataResourcesAsync(
             masterDataClient.HttpClient,
             "MasterData",
             "/api/business/v1/master-data/resources?" + Query(
@@ -433,6 +434,22 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         }
 
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+        return envelope?.Data ?? throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回空响应。");
+    }
+
+    private async Task<MasterDataResourceListResponse> SendMasterDataResourcesAsync(
+        HttpClient client,
+        string serviceName,
+        string requestUri,
+        CancellationToken cancellationToken)
+    {
+        using var response = await SendRequestAsync(client, serviceName, requestUri, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<MasterDataResourceListEnvelope>(cancellationToken);
         return envelope?.Data ?? throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回空响应。");
     }
 
@@ -585,47 +602,6 @@ internal sealed record MaterialRequirementLineDraft(
     string UomCode,
     decimal RequiredQuantity,
     IReadOnlyCollection<string> SubstituteMaterialIds);
-
-internal sealed record MasterDataResourceListResponse(
-    IReadOnlyCollection<MasterDataResourceListItem> Resources,
-    int Total,
-    bool Truncated = false,
-    int? Limit = null);
-
-internal sealed record MasterDataResourceListItem(
-    string ResourceType,
-    string Code,
-    string DisplayName,
-    bool Active,
-    string SnapshotVersion,
-    string? PartnerType = null,
-    IReadOnlyCollection<string>? PartnerRoles = null,
-    string? SiteCode = null,
-    string? PlantCode = null,
-    string? LineCode = null,
-    string? WorkshopCode = null,
-    int? CapacityMinutesPerDay = null,
-    string? WorkCenterCode = null,
-    string? Status = null,
-    string? Category = null,
-    string? MaterialType = null,
-    string? CodeSet = null,
-    string? BaseUomCode = null,
-    string? TaxId = null,
-    string? ParentDepartmentCode = null,
-    string? DepartmentCode = null,
-    string? ShiftCode = null,
-    string? UserId = null,
-    string? SkillCode = null,
-    string? SkillLevel = null,
-    DateOnly? EffectiveFrom = null,
-    DateOnly? EffectiveTo = null,
-    string? FromUomCode = null,
-    string? ToUomCode = null,
-    decimal? Factor = null,
-    decimal? Offset = null,
-    int? Precision = null,
-    string? RoundingMode = null);
 
 internal sealed record MesUomConversionSnapshot(
     string FromUomCode,

@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -64,10 +65,10 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             ShiftCode: Normalize(request.ShiftCode));
         var shiftCode = Normalize(request.ShiftCode);
         var deviceTask = fallback.DeviceAssetId is null
-            ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
+            ? Task.FromResult<MasterDataResourceListResponse?>(null)
             : ListAsync(request, "device-asset", ("keyword", fallback.DeviceAssetId), cancellationToken);
         var shiftTask = shiftCode is null
-            ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
+            ? Task.FromResult<MasterDataResourceListResponse?>(null)
             : ListAsync(request, "shift", ("shiftCode", shiftCode), cancellationToken);
         await Task.WhenAll(deviceTask, shiftTask);
 
@@ -81,7 +82,7 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         var device = devices is { Length: 1 } ? devices[0] : null;
         var siteCode = Normalize(device?.SiteCode);
         var siteResponse = await (siteCode is null
-            ? Task.FromResult<OeeMasterDataResourceListResponse?>(null)
+            ? Task.FromResult<MasterDataResourceListResponse?>(null)
             : ListAsync(request, "site", ("siteCode", siteCode), cancellationToken));
 
         var sites = siteResponse?.Resources.Where(x =>
@@ -109,7 +110,7 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             shift?.BreakMinutes);
     }
 
-    private async Task<OeeMasterDataResourceListResponse?> ListAsync(
+    private async Task<MasterDataResourceListResponse?> ListAsync(
         MesOeeDimensionSnapshotRequest request,
         string resourceType,
         (string Name, string Value) filter,
@@ -161,12 +162,12 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         }
     }
 
-    private async Task<OeeMasterDataResourceListResponse?> ReadResponseAsync(
+    private async Task<MasterDataResourceListResponse?> ReadResponseAsync(
         HttpContent content,
         string resourceType,
         CancellationToken cancellationToken)
     {
-        var envelope = await ReadJsonAsync<OeeResponseDataEnvelope<OeeMasterDataResourceListResponse>>(
+        var envelope = await ReadJsonAsync<MasterDataResourceListEnvelope>(
             content,
             resourceType,
             cancellationToken);
@@ -209,29 +210,4 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private sealed record OeeResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
-
-    private sealed record OeeMasterDataResourceListResponse(
-        IReadOnlyCollection<OeeMasterDataResourceItem> Resources,
-        int Total,
-        bool Truncated = false,
-        int? Limit = null);
-
-    private sealed record OeeMasterDataResourceItem(
-        string ResourceType,
-        string Code,
-        string DisplayName,
-        bool Active,
-        string SnapshotVersion,
-        string? SiteCode = null,
-        string? LineCode = null,
-        string? WorkshopCode = null,
-        string? WorkCenterCode = null,
-        string? DeviceAssetId = null,
-        string? Timezone = null,
-        TimeOnly? StartsAt = null,
-        TimeOnly? EndsAt = null,
-        bool? CrossesMidnight = null,
-        int? PaidMinutes = null,
-        int? BreakMinutes = null);
 }

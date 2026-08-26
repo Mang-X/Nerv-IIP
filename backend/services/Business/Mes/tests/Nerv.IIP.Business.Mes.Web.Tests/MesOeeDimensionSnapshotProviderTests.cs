@@ -358,6 +358,30 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     }
 
     [Fact]
+    public async Task MasterData_provider_degrades_only_the_resource_that_times_out_without_caller_cancellation()
+    {
+        using var httpClient = new HttpClient(new TimedOutDimensionHandler("device-asset"))
+        {
+            BaseAddress = new Uri("http://master-data"),
+        };
+        var provider = new HttpMesOeeDimensionSnapshotProvider(new MesMasterDataHttpClient(httpClient));
+
+        var snapshot = await provider.CaptureAsync(
+            new MesOeeDimensionSnapshotRequest("org-001", "env-dev", "WC-01", "DEV-01", "NIGHT"),
+            CancellationToken.None);
+
+        Assert.Equal("WC-01", snapshot.WorkCenterCode);
+        Assert.Equal("DEV-01", snapshot.DeviceAssetId);
+        Assert.Null(snapshot.SiteCode);
+        Assert.Null(snapshot.WorkshopCode);
+        Assert.Null(snapshot.LineCode);
+        Assert.Equal("NIGHT", snapshot.ShiftCode);
+        Assert.Equal(new TimeOnly(20, 0), snapshot.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(4, 0), snapshot.ShiftEndsAt);
+        Assert.True(snapshot.ShiftCrossesMidnight);
+    }
+
+    [Fact]
     public async Task MasterData_provider_returns_missing_snapshot_when_dimension_service_is_unavailable()
     {
         using var httpClient = new HttpClient(new UnavailableHandler())
@@ -469,6 +493,33 @@ public sealed class MesOeeDimensionSnapshotProviderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromException<HttpResponseMessage>(exception);
+    }
+
+    private sealed class TimedOutDimensionHandler(string timedOutResourceType) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var query = request.RequestUri?.Query ?? string.Empty;
+            var resourceType = query.Contains("resourceType=device-asset", StringComparison.Ordinal)
+                ? "device-asset"
+                : query.Contains("resourceType=site", StringComparison.Ordinal)
+                    ? "site"
+                    : "shift";
+            if (string.Equals(resourceType, timedOutResourceType, StringComparison.Ordinal))
+            {
+                return Task.FromException<HttpResponseMessage>(new TaskCanceledException("MasterData resource request timed out."));
+            }
+
+            var data = resourceType switch
+            {
+                "site" => "{\"resources\":[{\"resourceType\":\"site\",\"code\":\"SITE-SH\",\"displayName\":\"Shanghai\",\"active\":true,\"snapshotVersion\":\"v1\",\"timezone\":\"Asia/Shanghai\"}],\"total\":1}",
+                _ => "{\"resources\":[{\"resourceType\":\"shift\",\"code\":\"NIGHT\",\"displayName\":\"Night\",\"active\":true,\"snapshotVersion\":\"v1\",\"startsAt\":\"20:00:00\",\"endsAt\":\"04:00:00\",\"crossesMidnight\":true,\"paidMinutes\":450,\"breakMinutes\":30}],\"total\":1}",
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($"{{\"data\":{data},\"success\":true,\"message\":\"\",\"code\":0}}", Encoding.UTF8, "application/json"),
+            });
+        }
     }
 
     private sealed class CallerCancellationHandler : HttpMessageHandler

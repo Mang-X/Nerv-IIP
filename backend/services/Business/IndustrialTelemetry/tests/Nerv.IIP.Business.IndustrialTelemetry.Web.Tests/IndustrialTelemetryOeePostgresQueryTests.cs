@@ -243,6 +243,96 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
     }
 
     [RealPostgresFact]
+    public async Task Device_hierarchy_migration_degrades_runtime_metrics_instead_of_reusing_the_full_window_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var start = DateTimeOffset.Parse("2026-07-10T08:00:00Z");
+        var end = start.AddHours(2);
+        dbContext.DeviceStateSnapshots.Add(State("org-001", "DEV-MOVED", "running", start, "state-moved"));
+        dbContext.OeeProductionFacts.AddRange(
+            FactWithHierarchy("PRPT-MOVED-A", start.AddMinutes(30), "DEV-MOVED", "WC-A", "LINE-A", "WORKSHOP-A", 10m, 10m),
+            FactWithHierarchy("PRPT-MOVED-B", start.AddMinutes(90), "DEV-MOVED", "WC-B", "LINE-B", "WORKSHOP-B", 10m, 10m));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new QueryOeeAggregateBucketsQueryHandler(dbContext).Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Line, start, end),
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["LINE-A", "LINE-B"],
+            result.Buckets.Select(x => Assert.IsType<string>(x.DimensionValue)).Order().ToArray());
+        Assert.All(result.Buckets, bucket =>
+        {
+            Assert.Equal(10m, bucket.GoodQuantity);
+            Assert.Null(bucket.AvailabilityRate);
+            Assert.Null(bucket.PerformanceRate);
+            Assert.Null(bucket.QualityRate);
+            Assert.Null(bucket.OeeRate);
+            Assert.Null(bucket.ExpectedOutputQuantity);
+            Assert.True(bucket.IsDegraded);
+            Assert.Contains("historical-dimension-effective-range-ambiguous", bucket.DegradedReasons);
+        });
+    }
+
+    [RealPostgresFact]
+    public async Task State_queries_ignore_same_device_and_environment_from_other_organizations_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var start = DateTimeOffset.Parse("2026-07-10T08:00:00Z");
+        var end = start.AddHours(1);
+        dbContext.OeeProductionFacts.AddRange(
+            Fact("PRPT-ORG-IN", start.AddMinutes(45), "DEV-ORG-IN", "WC-ORG-IN", 10m, 0m, "PCS", 10m),
+            Fact("PRPT-ORG-CARRY", start.AddMinutes(45), "DEV-ORG-CARRY", "WC-ORG-CARRY", 10m, 0m, "PCS", 10m));
+        await dbContext.SaveChangesAsync();
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO industrial_telemetry.device_state_snapshots
+                ("Id", organization_id, environment_id, device_asset_id, state, occurred_at_utc,
+                 occurred_at_unix_time_milliseconds, source_sequence, source_system, source_connector,
+                 recorded_at_utc, recorded_at_unix_time_milliseconds)
+            VALUES
+                ((md5('org-in-target'))::uuid, 'org-001', 'env-dev', 'DEV-ORG-IN', 'running',
+                 TIMESTAMPTZ '2026-07-10T08:00:00Z', 1783670400000, 'target-in', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-10T08:00:01Z', 1783670401000),
+                ((md5('org-in-interference'))::uuid, 'org-other', 'env-dev', 'DEV-ORG-IN', 'planned-down',
+                 TIMESTAMPTZ '2026-07-10T08:30:00Z', 1783672200000, 'other-in', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-10T08:30:01Z', 1783672201000),
+                ((md5('org-carry-target'))::uuid, 'org-001', 'env-dev', 'DEV-ORG-CARRY', 'running',
+                 TIMESTAMPTZ '2026-07-10T07:50:00Z', 1783669800000, 'target-carry', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-10T07:50:01Z', 1783669801000),
+                ((md5('org-carry-interference'))::uuid, 'org-other', 'env-dev', 'DEV-ORG-CARRY', 'planned-down',
+                 TIMESTAMPTZ '2026-07-10T07:59:00Z', 1783670340000, 'other-carry', NULL, NULL,
+                 TIMESTAMPTZ '2026-07-10T07:59:01Z', 1783670341000);
+            """);
+
+        var handler = new QueryOeeAggregateBucketsQueryHandler(dbContext);
+        var inWindow = await handler.Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Device, start, end, DeviceAssetId: "DEV-ORG-IN"),
+            CancellationToken.None);
+        var carryIn = await handler.Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Device, start, end, DeviceAssetId: "DEV-ORG-CARRY"),
+            CancellationToken.None);
+
+        var inWindowBucket = Assert.Single(inWindow.Buckets);
+        Assert.Equal(1m, inWindowBucket.AvailabilityRate);
+        Assert.Equal(1m, inWindowBucket.PerformanceRate);
+        Assert.Equal(10m, inWindowBucket.ExpectedOutputQuantity);
+        var carryInBucket = Assert.Single(carryIn.Buckets);
+        Assert.Equal(1m, carryInBucket.AvailabilityRate);
+        Assert.Equal(1m, carryInBucket.PerformanceRate);
+        Assert.Equal(10m, carryInBucket.ExpectedOutputQuantity);
+    }
+
+    [RealPostgresFact]
     public async Task State_starting_after_the_window_start_degrades_apq_instead_of_assuming_prefix_coverage_on_postgres()
     {
         await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
@@ -513,6 +603,45 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
                 "SITE-01",
                 "WORKSHOP-01",
                 "LINE-01",
+                "SHIFT-01",
+                "UTC",
+                new TimeOnly(8, 0),
+                new TimeOnly(16, 0),
+                false,
+                450,
+                30,
+                DateOnly.FromDateTime(reportedAtUtc.UtcDateTime),
+                new DateTimeOffset(reportedAtUtc.UtcDateTime.Date, TimeSpan.Zero),
+                new DateTimeOffset(reportedAtUtc.UtcDateTime.Date.AddDays(1), TimeSpan.Zero),
+                DateOnly.FromDateTime(reportedAtUtc.UtcDateTime),
+                new DateTimeOffset(reportedAtUtc.UtcDateTime.Date.AddHours(8), TimeSpan.Zero),
+                new DateTimeOffset(reportedAtUtc.UtcDateTime.Date.AddHours(16), TimeSpan.Zero)));
+
+    private static OeeProductionFact FactWithHierarchy(
+        string reportNo,
+        DateTimeOffset reportedAtUtc,
+        string deviceAssetId,
+        string workCenterId,
+        string lineCode,
+        string workshopCode,
+        decimal goodQuantity,
+        decimal theoreticalRatePerHour) =>
+        OeeProductionFact.Project(
+            "org-001",
+            "env-dev",
+            reportNo,
+            workCenterId,
+            deviceAssetId,
+            goodQuantity,
+            0m,
+            0m,
+            "PCS",
+            theoreticalRatePerHour,
+            reportedAtUtc,
+            new OeeHistoricalDimensionSnapshot(
+                "SITE-01",
+                workshopCode,
+                lineCode,
                 "SHIFT-01",
                 "UTC",
                 new TimeOnly(8, 0),

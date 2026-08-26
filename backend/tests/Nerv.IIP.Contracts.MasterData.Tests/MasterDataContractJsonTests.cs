@@ -59,4 +59,30 @@ public sealed class MasterDataContractJsonTests
         Assert.Equal(1200m, root.GetProperty("creditLimit").GetDecimal());
         Assert.Equal("CNY", root.GetProperty("currencyCode").GetString());
     }
+
+    [Fact]
+    public void Resource_list_envelope_round_trips_the_canonical_service_wire()
+    {
+        const string json =
+            """
+            {"data":{"resources":[{"resourceType":"device-asset","code":"DEV-01","displayName":"Device","active":true,"snapshotVersion":"v1","siteCode":"SITE-SH","workshopCode":"WS-01","lineCode":"LINE-01","workCenterCode":"WC-01","deviceAssetId":"DEV-01","timezone":"Asia/Shanghai","startsAt":"20:00:00","endsAt":"04:00:00","crossesMidnight":true,"paidMinutes":450,"breakMinutes":30}],"total":1,"truncated":false,"limit":5000},"success":true,"message":"OK","code":200}
+            """;
+
+        var envelope = JsonSerializer.Deserialize<MasterDataResourceListEnvelope>(json, JsonOptions);
+
+        var item = Assert.Single(Assert.IsType<MasterDataResourceListResponse>(envelope?.Data).Resources);
+        Assert.Equal("DEV-01", item.DeviceAssetId);
+        Assert.Equal("WC-01", item.WorkCenterCode);
+        Assert.Equal("Asia/Shanghai", item.Timezone);
+        Assert.Equal(new TimeOnly(20, 0), item.StartsAt);
+        Assert.Equal(5000, envelope.Data.Limit);
+
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(envelope, JsonOptions));
+        var root = document.RootElement;
+        Assert.True(root.GetProperty("success").GetBoolean());
+        var serializedItem = root.GetProperty("data").GetProperty("resources")[0];
+        Assert.Equal("device-asset", serializedItem.GetProperty("resourceType").GetString());
+        Assert.Equal("DEV-01", serializedItem.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("20:00:00", serializedItem.GetProperty("startsAt").GetString());
+    }
 }
