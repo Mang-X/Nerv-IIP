@@ -77,7 +77,10 @@ $lifecycleSectionAllowlist = @('实施说明')
 # 只查标题不查正文——正文里的票号与日期是耐久指针，下探正文会误伤（见门禁小节）。
 $dateStampedHeadingPattern = '\d{4}-\d{2}-\d{2}'
 
-$adrFiles = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
+$adrFiles = @(Get-NervItemsSortedByString -Items @(
+        Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File |
+            Where-Object { -not [string]::Equals($_.Name, 'README.md', [StringComparison]::Ordinal) }
+    ) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
 if ($adrFiles.Count -eq 0) { Write-Host "No ADR found under $AdrRoot"; exit 1 }
 
 $findings = [System.Collections.Generic.List[string]]::new()

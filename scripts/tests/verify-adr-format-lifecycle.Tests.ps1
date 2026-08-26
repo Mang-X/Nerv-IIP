@@ -186,8 +186,14 @@ try {
     $baselineRoot = Join-Path $temporaryRoot 'baseline'
     [IO.Directory]::CreateDirectory($baselineRoot) | Out-Null
     [IO.File]::WriteAllText((Join-Path $baselineRoot '0001-baseline.md'), $baselineRecord, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText(
+        (Join-Path $baselineRoot 'README.md'),
+        "# ADR 导航`n`n本文件只导航正式决策记录。`n",
+        [Text.UTF8Encoding]::new($false)
+    )
     $baseline = Invoke-Gate -AdrRoot $baselineRoot
-    Assert-Contract ($baseline.ExitCode -eq 0) "基线夹具必须通过门禁，实际 exit $($baseline.ExitCode)：`n$($baseline.Output)"
+    Assert-Contract ($baseline.ExitCode -eq 0) `
+        "目录导航 README 与合规正式 ADR 共存时必须通过门禁，实际 exit $($baseline.ExitCode)：`n$($baseline.Output)"
 
     $redCases = [System.Collections.Generic.List[object]]::new()
 
