@@ -437,6 +437,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Erp_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Erp/BusinessErpClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessErpClient"),
+            Identity("Class", "HttpBusinessErpClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
     private static IReadOnlyList<string> AnalyzeSharedBoundary(
         string businessServicesDirectory,
         IReadOnlyDictionary<string, string> expectedFiles) =>
@@ -781,6 +803,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Planning" &&
                     capability != "Scheduling" &&
                     capability != "FileStorage" &&
+                    capability != "Erp" &&
                     capability != "MasterData" &&
                     capability != "Inventory" &&
                     capability != "Quality" &&
@@ -797,6 +820,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Planning" &&
                     capability != "Scheduling" &&
                     capability != "FileStorage" &&
+                    capability != "Erp" &&
                     capability != "MasterData" &&
                     capability != "Inventory" &&
                     capability != "Quality" &&
