@@ -1,4 +1,4 @@
-import { expect, type Page, type Response } from '@playwright/test'
+import { expect, type Page, type Request, type Response } from '@playwright/test'
 
 const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
   'document',
@@ -12,6 +12,9 @@ const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
 ])
 
 const API_ABORT_RESOURCE_TYPES = new Set(['fetch', 'xhr'])
+
+const navigationEpochs = new WeakMap<Page, number>()
+const listResponseOwnership = new WeakMap<Response, { page: Page; navigationEpoch: number }>()
 
 export type RequestCancellationKind = 'navigation' | 'component-unmount'
 
@@ -224,24 +227,55 @@ export type InitialPageNavigationOptions = {
   timeoutMs?: number
 }
 
+function isListRequest(request: Request, listPath: string): boolean {
+  return request.method() === 'GET' && new URL(request.url()).pathname === listPath
+}
+
+function startNavigationEpoch(page: Page): number {
+  const navigationEpoch = (navigationEpochs.get(page) ?? 0) + 1
+  navigationEpochs.set(page, navigationEpoch)
+  return navigationEpoch
+}
+
+function rememberListResponseOwnership(
+  page: Page,
+  response: Response,
+  navigationEpoch = navigationEpochs.get(page),
+): void {
+  if (navigationEpoch === undefined) return
+  listResponseOwnership.set(response, { page, navigationEpoch })
+}
+
 export async function navigateAndWaitForInitialList(
   page: Page,
   options: InitialPageNavigationOptions,
-): Promise<{ firstList: Response; navigation: Response | null }> {
+): Promise<{ firstList: Response; navigation: Response | null; navigationEpoch: number }> {
   const timeoutMs = options.timeoutMs ?? 120_000
+  const navigationEpoch = startNavigationEpoch(page)
+  let navigationStarted = false
+  const navigationListRequests = new WeakSet<Request>()
+  const requestObserver = (request: Request) => {
+    if (navigationStarted && isListRequest(request, options.listPath)) {
+      navigationListRequests.add(request)
+    }
+  }
+  page.on('request', requestObserver)
   const initialListResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'GET' &&
-      new URL(response.url()).pathname === options.listPath &&
-      response.status() === 200,
+    (response) => navigationListRequests.has(response.request()) && response.status() === 200,
     { timeout: timeoutMs },
   )
-  const navigation = await page.goto(options.route, {
-    waitUntil: 'domcontentloaded',
-    timeout: timeoutMs,
-  })
-  const firstList = await initialListResponse
-  return { firstList, navigation }
+  try {
+    navigationStarted = true
+    const navigation = await page.goto(options.route, {
+      waitUntil: 'domcontentloaded',
+      timeout: timeoutMs,
+    })
+    const firstList = await initialListResponse
+    rememberListResponseOwnership(page, firstList, navigationEpoch)
+    return { firstList, navigation, navigationEpoch }
+  } finally {
+    page.off('request', requestObserver)
+  }
 }
 
 export async function clickRefreshAndWaitForListResponse(
@@ -249,16 +283,38 @@ export async function clickRefreshAndWaitForListResponse(
   listPath: string,
   timeoutMs = 120_000,
 ): Promise<Response> {
+  let refreshStarted = false
+  let refreshRequest: Request | undefined
+  const requestObserver = (request: Request) => {
+    if (refreshStarted && !refreshRequest && isListRequest(request, listPath)) {
+      refreshRequest = request
+    }
+  }
+  page.on('request', requestObserver)
   const refreshedListRequest = page.waitForRequest(
-    (request) => request.method() === 'GET' && new URL(request.url()).pathname === listPath,
+    (request) => refreshStarted && isListRequest(request, listPath),
     { timeout: timeoutMs },
   )
-  await page.getByRole('button', { name: '刷新', exact: true }).click({ timeout: timeoutMs })
-  const request = await refreshedListRequest
-  return page.waitForResponse(
-    (response) => response.request() === request && response.status() === 200,
+  const refreshedListResponse = page.waitForResponse(
+    (response) =>
+      refreshRequest !== undefined &&
+      response.request() === refreshRequest &&
+      response.status() === 200,
     { timeout: timeoutMs },
   )
+  try {
+    refreshStarted = true
+    await page.getByRole('button', { name: '刷新', exact: true }).click({ timeout: timeoutMs })
+    const request = await refreshedListRequest
+    if (request !== refreshRequest) {
+      throw new Error('refresh response was not bound to the request emitted by the refresh action')
+    }
+    const response = await refreshedListResponse
+    rememberListResponseOwnership(page, response)
+    return response
+  } finally {
+    page.off('request', requestObserver)
+  }
 }
 
 export async function clickTabAndConfirmUnmount(
@@ -315,6 +371,7 @@ export type FilterResponseWaitOptions = {
   stableText: string
   responseMode: 'server' | 'client'
   initialListResponse?: Response
+  initialListNavigationEpoch?: number
   timeoutMs?: number
 }
 
@@ -340,14 +397,25 @@ export function isFilterAlreadyApplied(
 }
 
 function isMatchingListResponse(
+  page: Page,
   response: Response | undefined,
   listPath: string,
   stableText: string,
+  navigationEpoch: number | undefined,
 ): boolean {
   if (!response) return false
+  const ownership = listResponseOwnership.get(response)
+  if (
+    navigationEpoch === undefined ||
+    navigationEpochs.get(page) !== navigationEpoch ||
+    ownership?.page !== page ||
+    ownership.navigationEpoch !== navigationEpoch
+  ) {
+    return false
+  }
   const url = new URL(response.url())
   return (
-    response.request().method() === 'GET' &&
+    isListRequest(response.request(), listPath) &&
     url.pathname === listPath &&
     response.status() === 200 &&
     normalizedFilterValue(url.searchParams.get('keyword') ?? '') ===
@@ -368,7 +436,13 @@ export async function fillFilterAndWaitForListResponse(
   if (
     options.responseMode === 'server' &&
     normalizedFilterValue(currentFilterValue) === normalizedFilterValue(options.stableText) &&
-    isMatchingListResponse(options.initialListResponse, options.listPath, options.stableText)
+    isMatchingListResponse(
+      page,
+      options.initialListResponse,
+      options.listPath,
+      options.stableText,
+      options.initialListNavigationEpoch,
+    )
   ) {
     return { waitedForResponse: false, reason: 'response-already-complete' }
   }

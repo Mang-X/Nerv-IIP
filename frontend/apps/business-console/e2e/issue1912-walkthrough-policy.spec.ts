@@ -116,7 +116,7 @@ test.describe('walkthrough filter response boundary', () => {
       })
     })
 
-    const { firstList } = await navigateAndWaitForInitialList(page, {
+    const { firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
       route: `${fixturePath}?initial=SO-WALK-001`,
       listPath,
       timeoutMs: 2_000,
@@ -129,6 +129,7 @@ test.describe('walkthrough filter response boundary', () => {
       stableText: 'SO-WALK-001',
       responseMode: 'server',
       initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
       timeoutMs: 500,
     })
 
@@ -137,6 +138,49 @@ test.describe('walkthrough filter response boundary', () => {
       reason: 'response-already-complete',
     })
     expect(queries).toEqual(['SO-WALK-001'])
+  })
+
+  test('不同导航的同路径同 keyword 响应不能作为当前已完成响应', async ({ page }) => {
+    const queries: string[] = []
+
+    await page.route(`**${fixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: fixtureHtml,
+      }),
+    )
+    await page.route(`**${listPath}*`, async (route) => {
+      queries.push(new URL(route.request().url()).searchParams.get('keyword') ?? '')
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: 'SO-WALK-001' }] }),
+      })
+    })
+
+    const firstNavigation = await navigateAndWaitForInitialList(page, {
+      route: `${fixturePath}?initial=SO-WALK-001&navigation=first`,
+      listPath,
+      timeoutMs: 2_000,
+    })
+    await navigateAndWaitForInitialList(page, {
+      route: `${fixturePath}?initial=SO-WALK-001&navigation=second`,
+      listPath,
+      timeoutMs: 2_000,
+    })
+
+    const result = await fillFilterAndWaitForListResponse(page, {
+      route: page.url(),
+      listPath,
+      filterLabel: '关键字搜索',
+      stableText: 'SO-WALK-001',
+      responseMode: 'server',
+      initialListResponse: firstNavigation.firstList,
+      initialListNavigationEpoch: firstNavigation.navigationEpoch,
+      timeoutMs: 2_000,
+    })
+
+    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(queries).toEqual(['SO-WALK-001', 'SO-WALK-001', 'SO-WALK-001'])
   })
 
   test('真正变更筛选值时仍等待 200 列表响应', async ({ page }) => {
@@ -348,7 +392,7 @@ test.describe('walkthrough filter response boundary', () => {
     await page.route(`**${refreshPath}*`, async (route) => {
       const revision = new URL(route.request().url()).searchParams.get('revision') ?? ''
       revisions.push(revision)
-      await new Promise((resolve) => setTimeout(resolve, revision === 'stale' ? 100 : 10))
+      if (revision === 'stale') await new Promise((resolve) => setTimeout(resolve, 100))
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({ revision }),

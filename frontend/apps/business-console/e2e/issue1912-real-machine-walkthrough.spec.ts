@@ -133,6 +133,7 @@ type ActorRuntime = {
   successfulListResponses: Map<string, Response>
   lastNavigationResponse: Response | null
   lastNavigationRoute: string | null
+  lastNavigationEpoch: number | null
   principalId: string
   principalType: string
   permissionCodes: string[]
@@ -448,6 +449,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     successfulListResponses: new Map(),
     lastNavigationResponse: null,
     lastNavigationRoute: null,
+    lastNavigationEpoch: null,
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -462,6 +464,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     successfulListResponses: new Map(),
     lastNavigationResponse: null,
     lastNavigationRoute: null,
+    lastNavigationEpoch: null,
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -769,6 +772,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     }
     let navigation: Response | null = null
     let firstList: Response | null = null
+    let firstListNavigationEpoch: number | undefined
 
     if (reuseCurrentRoute) {
       if (
@@ -782,6 +786,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         throw new Error(`page ${options.route} has no completed HTTP 200 navigation to reuse`)
       }
       firstList = runtime.successfulListResponses.get(options.listPath) ?? null
+      firstListNavigationEpoch = runtime.lastNavigationEpoch ?? undefined
     } else {
       const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(
         targetPage.url(),
@@ -795,8 +800,10 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         })
         navigation = initialPage.navigation
         firstList = initialPage.firstList
+        firstListNavigationEpoch = initialPage.navigationEpoch
         runtime.lastNavigationResponse = navigation
         runtime.lastNavigationRoute = targetPage.url()
+        runtime.lastNavigationEpoch = initialPage.navigationEpoch
         runtime.successfulListResponses.set(options.listPath, firstList)
         expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
         expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
@@ -811,6 +818,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     if (options.refreshListBeforeProof) {
       // A data refresh is not a lifecycle transition: any API abort remains an unexpected failure.
       firstList = await clickRefreshAndWaitForListResponse(targetPage, options.listPath)
+      firstListNavigationEpoch = runtime.lastNavigationEpoch ?? undefined
       runtime.successfulListResponses.set(options.listPath, firstList)
     }
 
@@ -828,6 +836,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         stableText: options.stableText,
         responseMode: options.filterResponseMode ?? 'server',
         initialListResponse: firstList,
+        initialListNavigationEpoch: firstListNavigationEpoch,
         timeoutMs: 120_000,
       })
     }

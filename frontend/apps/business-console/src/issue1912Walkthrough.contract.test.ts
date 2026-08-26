@@ -282,6 +282,8 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain('clickRefreshAndWaitForListResponse')
     expect(scenarioSource).toContain("filterResponseMode: 'client'")
     expect(scenarioSource).toContain('initialListResponse')
+    expect(scenarioSource).toContain('initialListNavigationEpoch')
+    expect(scenarioSource).toContain('lastNavigationEpoch')
     expect(scenarioSource).toContain('reuseCurrentRoute: true')
     expect(scenarioSource).toContain('refreshListBeforeProof: true')
     expect(scenarioSource).toContain('clickTabAndConfirmUnmount')
