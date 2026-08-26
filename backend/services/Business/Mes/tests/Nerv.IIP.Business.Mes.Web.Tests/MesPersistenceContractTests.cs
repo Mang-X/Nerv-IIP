@@ -332,7 +332,7 @@ public sealed class MesPersistenceContractTests
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-001",
                 capturedAtUtc: now,
-                substituteMaterialIds: []));
+                substituteMaterialIds: ["MAT-OIL-ALT-A", "MAT-OIL-ALT-B"]));
             await dbContext.SaveChangesAsync();
         }
 
@@ -374,6 +374,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(4m, row.ReceivedQuantity);
         Assert.Equal(2m, row.ShortageQuantity);
         Assert.Equal("Shortage", row.Status);
+        Assert.Equal(["MAT-OIL-ALT-A", "MAT-OIL-ALT-B"], row.SubstituteMaterialIds);
         // 齐套口径显式带出(#1291):读面据此写明「线边 + 已备 + 已收」范围,不让用户拿它和 MRP 全厂口径对撞。
         Assert.Equal(MesMaterialReadinessScopes.LineSideAndStaged, readiness.ReadinessScope);
         // 已发起的 4 已经全部收齐(requested == received),残余的 2 没有任何在途领料

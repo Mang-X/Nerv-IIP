@@ -195,12 +195,19 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         var lines = new List<MesMaterialRequirementSnapshotLine>(requiredLines.Length);
         foreach (var line in requiredLines)
         {
-            var availableQuantity = await GetAvailableQuantityAsync(
-                request,
-                line.MaterialId,
-                line.UomCode,
-                conversions,
-                cancellationToken);
+            var availableQuantity = 0m;
+            foreach (var candidateMaterialId in new[] { line.MaterialId }
+                .Concat(line.SubstituteMaterialIds)
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                availableQuantity += await GetAvailableQuantityAsync(
+                    request,
+                    candidateMaterialId,
+                    line.UomCode,
+                    conversions,
+                    cancellationToken);
+            }
+
             lines.Add(new MesMaterialRequirementSnapshotLine(
                 null,
                 line.MaterialId,

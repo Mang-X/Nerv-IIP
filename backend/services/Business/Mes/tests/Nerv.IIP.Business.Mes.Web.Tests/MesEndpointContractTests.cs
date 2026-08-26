@@ -31,6 +31,35 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesEndpointContractTests
 {
+    // Contract: HttpApi + Regression. Authority: Issue #2223 acceptance 3.
+    [Fact]
+    public async Task Material_readiness_endpoint_exposes_the_frozen_substitute_candidate_ids()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new MaterialReadinessSender());
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.GetAsync(
+            "/api/business/v1/mes/work-orders/WO-SUB-HTTP/material-readiness?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var row = body.RootElement.GetProperty("items")[0];
+        Assert.Equal(
+            ["MAT-ALT-A", "MAT-ALT-B"],
+            row.GetProperty("substituteMaterialIds").EnumerateArray().Select(x => x.GetString()!).ToArray());
+    }
+
     [Fact]
     public async Task Record_downtime_rejects_missing_real_context_before_sending_command()
     {
@@ -2613,6 +2642,42 @@ public sealed class MesEndpointContractTests
     public static IEnumerable<object[]> EndpointTypes()
     {
         return MesEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+
+    private sealed class MaterialReadinessSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = Assert.IsType<GetMaterialReadinessQuery>(request);
+            var response = new MesMaterialReadinessResponse(
+                "WO-SUB-HTTP",
+                "Ready",
+                [],
+                [new MesMaterialReadinessRow(
+                    "MAT-PRIMARY",
+                    null,
+                    10m,
+                    12m,
+                    0m,
+                    0m,
+                    0m,
+                    0m,
+                    "Ready",
+                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"])]);
+            return Task.FromResult((TResponse)(object)response);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class CapturingReverseProductionReportSender : ISender

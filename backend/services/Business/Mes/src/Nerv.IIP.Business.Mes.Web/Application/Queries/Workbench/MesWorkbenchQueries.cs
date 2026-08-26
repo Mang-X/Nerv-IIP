@@ -1415,7 +1415,8 @@ public sealed record MesMaterialReadinessRow(
     decimal ReceivedQuantity,
     decimal ShortageQuantity,
     string Status,
-    string ShortageStage = MesMaterialShortageStages.None);
+    string ShortageStage = MesMaterialShortageStages.None,
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
 
 public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMaterialReadinessQuery, MesMaterialReadinessResponse>
@@ -1434,12 +1435,25 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        var requirements = await dbContext.MaterialRequirements
+        var persistedRequirements = await dbContext.MaterialRequirements
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
+            .Select(x => new
+            {
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity,
+                x.CapturedAtUtc,
+                x.SubstituteMaterialIdsJson,
+            })
+            .ToArrayAsync(cancellationToken);
+        var requirements = persistedRequirements
             .Select(x => new MaterialReadinessGuards.MaterialRequirementSnapshot(
                 x.OperationTaskId,
                 x.MaterialId,
@@ -1447,8 +1461,9 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 x.RequiredQuantity,
                 x.AvailableQuantity,
                 x.StagedQuantity,
-                x.CapturedAtUtc))
-            .ToArrayAsync(cancellationToken);
+                x.CapturedAtUtc,
+                System.Text.Json.JsonSerializer.Deserialize<string[]>(x.SubstituteMaterialIdsJson) ?? []))
+            .ToArray();
         requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(requirements);
 
         if (requirements.Length == 0)
@@ -1492,6 +1507,9 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 // 这里再过滤一次反而会把已消耗的量凭空抹掉,改动齐套结论。
                 var received = issueRows.Sum(y => y.ReceivedQuantity);
                 var shortage = Math.Max(0m, required - available - staged - received);
+                var substituteMaterialIds = MaterialSubstituteCandidateNormalizer.Normalize(
+                    x.Key.MaterialId,
+                    x.SelectMany(y => y.SubstituteMaterialIds ?? []));
                 return new MesMaterialReadinessRow(
                     x.Key.MaterialId,
                     x.Key.MaterialLotId,
@@ -1507,7 +1525,8 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                         ? MesMaterialShortageStages.None
                         : requested > received
                             ? MesMaterialShortageStages.AwaitingDelivery
-                            : MesMaterialShortageStages.AwaitingPreparation);
+                            : MesMaterialShortageStages.AwaitingPreparation,
+                    substituteMaterialIds);
             })
             .OrderBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.MaterialLotId, StringComparer.OrdinalIgnoreCase)

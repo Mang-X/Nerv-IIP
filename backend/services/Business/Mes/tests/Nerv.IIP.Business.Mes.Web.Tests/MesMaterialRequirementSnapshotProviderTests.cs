@@ -9,9 +9,10 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
-    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 2 and its explicit exclusion of substitute inventory aggregation.
+    // Contract: DomainInvariant + Regression. Authority: Issue #2223 acceptance 1-2.
+    // Removing substitute queries, counting the primary requirement once per candidate, or skipping candidate normalization makes this test fail.
     [Fact]
-    public async Task Http_provider_freezes_normalized_mbom_substitute_candidates_without_counting_their_inventory_yet()
+    public async Task Http_provider_counts_the_normalized_substitute_pool_without_repeating_the_primary_requirement()
     {
         var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
             "MAT-PRIMARY",
@@ -20,8 +21,22 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         var inventoryRequests = new List<string>();
         var inventoryHandler = new StubHttpMessageHandler(request =>
         {
-            inventoryRequests.Add(request.RequestUri!.PathAndQuery);
-            return JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 3m));
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            inventoryRequests.Add(pathAndQuery);
+            Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("uomCode=PCS", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("siteCode=production", pathAndQuery, StringComparison.Ordinal);
+            return pathAndQuery switch
+            {
+                var value when value.Contains("skuCode=MAT-PRIMARY", StringComparison.Ordinal) =>
+                    JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 3m)),
+                var value when value.Contains("skuCode=mat-alt-a", StringComparison.Ordinal) =>
+                    JsonEnvelope(Availability("mat-alt-a", "PCS", "production", 4m)),
+                var value when value.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal) =>
+                    JsonEnvelope(Availability("MAT-ALT-B", "PCS", "production", 5m)),
+                _ => throw new InvalidOperationException($"Unexpected Inventory request: {pathAndQuery}"),
+            };
         });
         var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
             new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
@@ -32,15 +47,18 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
 
         var line = Assert.Single(result.Lines);
         Assert.Equal(["mat-alt-a", "MAT-ALT-B"], line.SubstituteMaterialIds);
-        Assert.Equal(3m, line.AvailableQuantity);
-        Assert.Single(inventoryRequests);
-        Assert.Contains("skuCode=MAT-PRIMARY", inventoryRequests[0], StringComparison.Ordinal);
+        Assert.Equal(10m, line.RequiredQuantity);
+        Assert.Equal(12m, line.AvailableQuantity);
+        Assert.Equal(3, inventoryRequests.Count);
+        Assert.Single(inventoryRequests, x => x.Contains("skuCode=MAT-PRIMARY", StringComparison.Ordinal));
+        Assert.Single(inventoryRequests, x => x.Contains("skuCode=mat-alt-a", StringComparison.Ordinal));
+        Assert.Single(inventoryRequests, x => x.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task Http_provider_floors_converted_availability_for_material_readiness()
     {
-        var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-BOXED", "ea");
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-BOXED", "ea", "MAT-ALT-BOXED");
         var masterDataHandler = new StubHttpMessageHandler(_ => JsonEnvelope(new
         {
             resources = new[]
@@ -69,9 +87,12 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         var inventoryHandler = new StubHttpMessageHandler(request =>
         {
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal))
+            Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+            if (pathAndQuery.Contains("skuCode=MAT-ALT-BOXED", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal))
             {
-                return JsonEnvelope(Availability("MAT-BOXED", "box", "production", 1m));
+                return JsonEnvelope(Availability("MAT-ALT-BOXED", "box", "production", 1m));
             }
 
             return JsonEnvelope(Availability("MAT-BOXED", "ea", "production", 0m));
@@ -86,6 +107,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
 
         var line = Assert.Single(result.Lines);
         Assert.Equal("ea", line.UomCode);
+        Assert.Equal(["MAT-ALT-BOXED"], line.SubstituteMaterialIds);
         Assert.Equal(2m, line.AvailableQuantity);
     }
 
@@ -367,11 +389,21 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                 return JsonEnvelope(Availability("MAT-OIL", "L", 12m));
             }
 
-            if (pathAndQuery.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal))
+            if (pathAndQuery.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("uomCode=KG", StringComparison.Ordinal))
             {
-                Assert.Contains("uomCode=KG", pathAndQuery, StringComparison.Ordinal);
                 Assert.Contains("siteCode=production", pathAndQuery, StringComparison.Ordinal);
                 return JsonEnvelope(Availability("MAT-ALT-B", "KG", 3m));
+            }
+
+            if (pathAndQuery.Contains("skuCode=mat-alt-a", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("skuCode=MAT-ALT-A", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("skuCode=mat-alt-shared", StringComparison.Ordinal))
+            {
+                Assert.Contains("siteCode=production", pathAndQuery, StringComparison.Ordinal);
+                var uomCode = pathAndQuery.Contains("uomCode=KG", StringComparison.Ordinal) ? "KG" : "L";
+                return JsonEnvelope(Availability("candidate", uomCode, 0m));
             }
 
             throw new InvalidOperationException($"Unexpected Inventory request: {pathAndQuery}");
@@ -394,7 +426,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
 
         Assert.Equal(MesMaterialRequirementSnapshotStatus.Captured, result.Status);
         Assert.Equal(2, result.Lines.Count);
-        Assert.Equal(2, inventoryRequests.Count);
+        Assert.Equal(6, inventoryRequests.Count);
         var oil = Assert.Single(result.Lines, x => x.MaterialId == "MAT-OIL");
         Assert.Equal(15m, oil.RequiredQuantity);
         Assert.Equal(12m, oil.AvailableQuantity);
