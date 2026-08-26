@@ -16,10 +16,11 @@ import {
   withSessionCredentialCleanup,
 } from './session-credential-tracker'
 import {
+  buildAuthorizedWorkPoolAssignment,
   extractPublicError,
   runWithActorContext,
-  selectAuthorizedWorkScope,
-  type AuthorizedWorkScope,
+  selectAuthorizedWorkPoolScope,
+  type AuthorizedWorkPoolScope,
 } from './issue1912-walkthrough-runtime'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
@@ -1283,15 +1284,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         environmentId,
       }),
     )
-    const receiptScope: AuthorizedWorkScope | undefined = selectAuthorizedWorkScope(
+    const receiptScope: AuthorizedWorkPoolScope | undefined = selectAuthorizedWorkPoolScope(
       receiptScopes.payload,
+      SITE_CODE,
     )
-    if (!receiptScope) throw new Error('WMS receipt scope catalog returned no authorized scope.')
+    if (!receiptScope)
+      throw new Error('WMS receipt scope catalog returned no authorized work-pool scope.')
     expect(textOf(asRecord(dataOf(receiptScopes.payload)).actorPrincipalId)).toBe(
       workerRuntime.principalId,
     )
     const receiptScopeKind = textOf(receiptScope.scopeKind).trim()
     const receiptScopeId = textOf(receiptScope.scopeId).trim()
+    const receiptPoolCode = textOf(receiptScope.poolCode).trim()
+    expect(receiptPoolCode).not.toBe('')
+    expect(textOf(receiptScope.siteCode)).toBe(SITE_CODE)
     setup.push({
       kind: 'wms-scope-catalog',
       actor: workerRuntime.actor,
@@ -1458,6 +1464,69 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       sideEffectProbe: noScopeSideEffectProbe,
       scope: 'not-supplied',
     })
+    const inboundAssignmentPlan = buildAuthorizedWorkPoolAssignment(
+      {
+        actor: workerRuntime.actor,
+        principalId: workerRuntime.principalId,
+      },
+      receiptScope,
+      inboundOrderId,
+      `issue1912-${INBOUND_ORDER_NO}-assignment`,
+      inboundVersion,
+    )
+    if (!inboundAssignmentPlan.called) {
+      throw new Error(
+        `WMS inbound ${INBOUND_ORDER_NO} cannot be assigned without an authorized work-pool scope: ${inboundAssignmentPlan.reason}`,
+      )
+    }
+    const inboundAssignment = await workerCall(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundAssignmentPlan.request.resourceId)}/assignment`,
+        { organizationId, environmentId },
+      ),
+      inboundAssignmentPlan.request.body,
+    )
+    const inboundAssignmentData = asRecord(dataOf(inboundAssignment.payload))
+    expect(textOf(inboundAssignmentData.resourceCategory)).toBe('inbound')
+    expect(textOf(inboundAssignmentData.resourceId)).toBe(inboundOrderId)
+    expect(textOf(inboundAssignmentData.siteCode)).toBe(receiptScope.siteCode)
+    expect(textOf(inboundAssignmentData.poolCode)).toBe(receiptPoolCode)
+    expect(textOf(inboundAssignmentData.operatorPrincipalId)).toBe(workerRuntime.principalId)
+    expect(textOf(inboundAssignmentData.assignedByPrincipalId)).toBe(workerRuntime.principalId)
+    const assignedInbound = await workerPollRows(
+      '/api/business-console/v1/wms/inbound-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: INBOUND_ORDER_NO,
+        scopeKind: receiptScopeKind,
+        scopeId: receiptScopeId,
+        skip: 0,
+        take: 100,
+      },
+      (row) =>
+        textOf(row.inboundOrderNo) === INBOUND_ORDER_NO &&
+        textOf(row.assignedPoolCode) === receiptPoolCode &&
+        textOf(row.assignedOperatorUserId) === workerRuntime.principalId,
+    )
+    const assignedInboundVersion = Number(assignedInbound.match.version ?? 0)
+    expect(assignedInboundVersion).toBeGreaterThan(inboundVersion)
+    setup.push({
+      kind: 'wms-assignment',
+      actor: workerRuntime.actor,
+      principalId: workerRuntime.principalId,
+      operation: 'inbound-order',
+      resourceId: inboundOrderId,
+      scope: publicJson(receiptScope),
+      request: inboundAssignment.summary,
+      response: inboundAssignment.publicPayload,
+      bound: {
+        poolCode: textOf(assignedInbound.match.assignedPoolCode),
+        operatorPrincipalId: textOf(assignedInbound.match.assignedOperatorUserId),
+        version: assignedInboundVersion,
+      },
+    })
     const putaway = await workerCall(
       'POST',
       queryPath(
@@ -1483,7 +1552,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
         scopeKind: receiptScopeKind,
         scopeId: receiptScopeId,
-        expectedVersion: inboundVersion,
+        expectedVersion: assignedInboundVersion,
       },
     )
     const inventory = await workerPollData(
@@ -2048,15 +2117,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         environmentId,
       }),
     )
-    const shipmentScope: AuthorizedWorkScope | undefined = selectAuthorizedWorkScope(
+    const shipmentScope: AuthorizedWorkPoolScope | undefined = selectAuthorizedWorkPoolScope(
       shipmentScopes.payload,
+      SITE_CODE,
     )
-    if (!shipmentScope) throw new Error('WMS shipment scope catalog returned no authorized scope.')
+    if (!shipmentScope)
+      throw new Error('WMS shipment scope catalog returned no authorized work-pool scope.')
     expect(textOf(asRecord(dataOf(shipmentScopes.payload)).actorPrincipalId)).toBe(
       workerRuntime.principalId,
     )
     const shipmentScopeKind = textOf(shipmentScope.scopeKind).trim()
     const shipmentScopeId = textOf(shipmentScope.scopeId).trim()
+    const shipmentPoolCode = textOf(shipmentScope.poolCode).trim()
+    expect(shipmentPoolCode).not.toBe('')
+    expect(textOf(shipmentScope.siteCode)).toBe(SITE_CODE)
     setup.push({
       kind: 'wms-scope-catalog',
       actor: workerRuntime.actor,
@@ -2105,6 +2179,70 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
     const outboundId = textOf(outbound.match.outboundOrderId)
     const outboundVersion = Number(outbound.match.version ?? 1)
+    const outboundAssignmentPlan = buildAuthorizedWorkPoolAssignment(
+      {
+        actor: workerRuntime.actor,
+        principalId: workerRuntime.principalId,
+      },
+      shipmentScope,
+      outboundId,
+      `issue1912-${DELIVERY_ORDER_NO}-assignment`,
+      outboundVersion,
+    )
+    if (!outboundAssignmentPlan.called) {
+      throw new Error(
+        `WMS outbound ${DELIVERY_ORDER_NO} cannot be assigned without an authorized work-pool scope: ${outboundAssignmentPlan.reason}`,
+      )
+    }
+    const outboundAssignment = await workerCall(
+      'POST',
+      queryPath(
+        `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(outboundAssignmentPlan.request.resourceId)}/assignment`,
+        { organizationId, environmentId },
+      ),
+      outboundAssignmentPlan.request.body,
+    )
+    const outboundAssignmentData = asRecord(dataOf(outboundAssignment.payload))
+    expect(textOf(outboundAssignmentData.resourceCategory)).toBe('outbound')
+    expect(textOf(outboundAssignmentData.resourceId)).toBe(outboundId)
+    expect(textOf(outboundAssignmentData.siteCode)).toBe(shipmentScope.siteCode)
+    expect(textOf(outboundAssignmentData.poolCode)).toBe(shipmentPoolCode)
+    expect(textOf(outboundAssignmentData.operatorPrincipalId)).toBe(workerRuntime.principalId)
+    expect(textOf(outboundAssignmentData.assignedByPrincipalId)).toBe(workerRuntime.principalId)
+    const assignedOutbound = await workerPollRows(
+      '/api/business-console/v1/wms/outbound-orders',
+      {
+        organizationId,
+        environmentId,
+        keyword: DELIVERY_ORDER_NO,
+        scopeKind: shipmentScopeKind,
+        scopeId: shipmentScopeId,
+        skip: 0,
+        take: 100,
+      },
+      (row) =>
+        textOf(row.outboundOrderNo) === DELIVERY_ORDER_NO &&
+        textOf(row.assignedPoolCode) === shipmentPoolCode &&
+        textOf(row.assignedOperatorUserId) === workerRuntime.principalId,
+      180_000,
+    )
+    const assignedOutboundVersion = Number(assignedOutbound.match.version ?? 0)
+    expect(assignedOutboundVersion).toBeGreaterThan(outboundVersion)
+    setup.push({
+      kind: 'wms-assignment',
+      actor: workerRuntime.actor,
+      principalId: workerRuntime.principalId,
+      operation: 'outbound-order',
+      resourceId: outboundId,
+      scope: publicJson(shipmentScope),
+      request: outboundAssignment.summary,
+      response: outboundAssignment.publicPayload,
+      bound: {
+        poolCode: textOf(assignedOutbound.match.assignedPoolCode),
+        operatorPrincipalId: textOf(assignedOutbound.match.assignedOperatorUserId),
+        version: assignedOutboundVersion,
+      },
+    })
     const completedOutbound = await workerCall(
       'POST',
       queryPath(
@@ -2117,7 +2255,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         idempotencyKey: `issue1912-complete-${DELIVERY_ORDER_NO}`,
         scopeKind: shipmentScopeKind,
         scopeId: shipmentScopeId,
-        expectedVersion: outboundVersion,
+        expectedVersion: assignedOutboundVersion,
       },
     )
     const completedDelivery = await pollRows(
