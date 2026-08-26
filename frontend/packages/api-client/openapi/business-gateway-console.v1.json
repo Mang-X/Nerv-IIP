@@ -31002,8 +31002,15 @@
             "type": "string"
           },
           "code": {
-            "type": "integer",
-            "format": "int32"
+            "oneOf": [
+              {
+                "type": "integer",
+                "format": "int32"
+              },
+              {
+                "type": "string"
+              }
+            ]
           },
           "errorData": {
             "type": "array",

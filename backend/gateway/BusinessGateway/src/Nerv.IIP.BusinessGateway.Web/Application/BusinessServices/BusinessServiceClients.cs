@@ -3725,6 +3725,10 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
 public sealed class HttpBusinessMesClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMesClient
 {
+    // MES middleware 以仅含 message 的 HTTP 422 失败 envelope 返回此既有协议。
+    // capability 登记必须保持精确；readiness code 与任意大写消息都不是本路径的错误码。
+    private const string RoutingSnapshotMissingLegacyCode = "ROUTING_SNAPSHOT_MISSING";
+
     // #1341: downstreamService / downstreamDocumentType 是全仓共用的一张词表（PascalCase），
     // 由 DemandPlanningDownstreamReferences（BusinessErp/PurchaseRequisition/BusinessMes/WorkOrder）
     // 定下口径，网关既有读面（BusinessConsoleMesEndpoints 的 "BusinessMes"/"ProductionPlan"）与前端
@@ -3739,6 +3743,10 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     private const string MesDefectDocumentType = "Defect";
     private const string MesDowntimeEventDocumentType = "DowntimeEvent";
     private const string MesShiftHandoverDocumentType = "ShiftHandover";
+
+    protected override bool IsRegisteredLegacySemanticCode(string? code) =>
+        base.IsRegisteredLegacySemanticCode(code) ||
+        string.Equals(code, RoutingSnapshotMissingLegacyCode, StringComparison.Ordinal);
 
     /// <summary>MES accepted-receipt body as returned by the service endpoints.</summary>
     private sealed record MesServiceAcceptedResponse(string? Status, string? ReferenceId, DateTimeOffset? AcceptedAtUtc);
