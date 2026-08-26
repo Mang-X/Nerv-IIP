@@ -506,10 +506,17 @@ public sealed partial class MesMaterialScanPrevalidationTests
         using var cancellation = new CancellationTokenSource();
 
         var pending = provider.GetAsync(AvailabilityRequest(), cancellation.Token);
-        await inventoryHandler.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await TestTimeout.RunAsync(
+            operation: "observe Inventory request start for cancellation propagation",
+            action: token => new ValueTask(inventoryHandler.Started.Task.WaitAsync(token)),
+            timeout: TimeSpan.FromSeconds(5));
         cancellation.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending.WaitAsync(TimeSpan.FromSeconds(2)));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await TestTimeout.RunAsync(
+                operation: "observe caller cancellation propagation through Inventory provider",
+                action: token => new ValueTask(pending.WaitAsync(token)),
+                timeout: TimeSpan.FromSeconds(2)));
         Assert.True(inventoryHandler.LastCancellationToken.CanBeCanceled);
     }
 
