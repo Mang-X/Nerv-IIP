@@ -252,6 +252,8 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         Assert.Contains(inventoryRequests, x => x.Contains("uomCode=g", StringComparison.Ordinal) && x.Contains("siteCode=SITE-B", StringComparison.Ordinal));
     }
 
+    // Contract: DomainInvariant + Regression. Authority: Issue #2246 acceptance 1 and PR #2238 review 5025552710,
+    // which confirmed that duplicate MBOM rows must merge every normalized substitute candidate, not only the first row.
     [Fact]
     public async Task Http_provider_captures_mbom_requirements_with_inventory_availability()
     {
