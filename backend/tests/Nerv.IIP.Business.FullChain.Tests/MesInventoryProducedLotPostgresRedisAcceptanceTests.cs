@@ -994,14 +994,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         try
         {
             using var document = JsonDocument.Parse(content);
-            return JsonObjectMatchesAny(
+            return JsonMessageMatches(
                 document.RootElement,
                 eventId,
                 idempotencyKey,
                 expectedTopic,
                 expectedEventType,
                 tableName,
-                inheritedHeaderTopic: null);
+                headerTopic: null);
         }
         catch (JsonException)
         {
@@ -1040,14 +1040,14 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         try
         {
             using var bodyDocument = JsonDocument.Parse(RedisValueToUtf8(body));
-            return JsonObjectMatchesAny(
+            return JsonMessageMatches(
                 bodyDocument.RootElement,
                 eventId,
                 idempotencyKey,
                 expectedTopic,
                 expectedEventType,
                 tableName: null,
-                inheritedHeaderTopic: ReadHeaderTopicJson(RedisValueToUtf8(headers)));
+                headerTopic: ReadHeaderTopicJson(RedisValueToUtf8(headers)));
         }
         catch (JsonException)
         {
@@ -1058,73 +1058,148 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
     private static string RedisValueToUtf8(RedisValue value)
     {
         var bytes = (byte[]?)value;
-        return bytes is null ? string.Empty : Encoding.UTF8.GetString(bytes);
+        if (bytes is null)
+        {
+            return string.Empty;
+        }
+
+        var serializedBytes = Encoding.UTF8.GetString(bytes);
+        try
+        {
+            using var document = JsonDocument.Parse(serializedBytes);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return serializedBytes;
+            }
+
+            var decodedBytes = new List<byte>();
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                if (!item.TryGetInt32(out var byteValue) || byteValue is < byte.MinValue or > byte.MaxValue)
+                {
+                    return serializedBytes;
+                }
+
+                decodedBytes.Add((byte)byteValue);
+            }
+
+            return Encoding.UTF8.GetString(decodedBytes.ToArray());
+        }
+        catch (JsonException)
+        {
+            return serializedBytes;
+        }
     }
 
-    private static bool JsonObjectMatchesAny(
+    private static bool JsonMessageMatches(
         JsonElement element,
         string eventId,
         string idempotencyKey,
         string expectedTopic,
         string expectedEventType,
         string? tableName,
-        string? inheritedHeaderTopic)
+        string? headerTopic)
     {
-        if (element.ValueKind == JsonValueKind.Object)
+        if (element.ValueKind != JsonValueKind.Object)
         {
-            var headerTopic = ReadHeaderTopic(element) ?? inheritedHeaderTopic;
-            if (JsonObjectMatches(
-                    element,
-                    eventId,
-                    idempotencyKey,
-                    expectedTopic,
-                    expectedEventType,
-                    tableName,
-                    headerTopic))
+            return false;
+        }
+
+        var messageHeaderTopic = ReadHeaderTopic(element) ?? headerTopic;
+        if (JsonObjectMatches(
+                element,
+                eventId,
+                idempotencyKey,
+                expectedTopic,
+                expectedEventType,
+                tableName,
+                messageHeaderTopic))
+        {
+            return true;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!property.Name.Equals("Value", StringComparison.OrdinalIgnoreCase) &&
+                !property.Name.Equals("Content", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                continue;
             }
 
-            return element.EnumerateObject()
-                .Where(property => !property.Name.Equals("Headers", StringComparison.OrdinalIgnoreCase))
-                .Any(property => JsonObjectMatchesAny(
+            if (JsonPayloadMatches(
                     property.Value,
                     eventId,
                     idempotencyKey,
                     expectedTopic,
                     expectedEventType,
                     tableName,
-                    headerTopic));
+                    messageHeaderTopic))
+            {
+                return true;
+            }
         }
 
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            return element.EnumerateArray()
-                .Any(item => JsonObjectMatchesAny(
-                    item,
-                    eventId,
-                    idempotencyKey,
-                    expectedTopic,
-                    expectedEventType,
-                    tableName,
-                    inheritedHeaderTopic));
-        }
+        return false;
+    }
 
+    private static bool JsonPayloadMatches(
+        JsonElement element,
+        string eventId,
+        string idempotencyKey,
+        string expectedTopic,
+        string expectedEventType,
+        string? tableName,
+        string? headerTopic)
+    {
         if (element.ValueKind == JsonValueKind.String &&
             element.GetString() is { } nested &&
-            nested.TrimStart().StartsWith('{') &&
             TryParseJson(nested, out var nestedDocument))
         {
             using (nestedDocument)
             {
-                return JsonObjectMatchesAny(
+                return JsonPayloadMatches(
                     nestedDocument!.RootElement,
                     eventId,
                     idempotencyKey,
                     expectedTopic,
                     expectedEventType,
                     tableName,
-                    inheritedHeaderTopic);
+                    headerTopic);
+            }
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var payloadHeaderTopic = ReadHeaderTopic(element) ?? headerTopic;
+        if (JsonObjectMatches(
+                element,
+                eventId,
+                idempotencyKey,
+                expectedTopic,
+                expectedEventType,
+                tableName,
+                payloadHeaderTopic))
+        {
+            return true;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if ((property.Name.Equals("Value", StringComparison.OrdinalIgnoreCase) ||
+                 property.Name.Equals("Content", StringComparison.OrdinalIgnoreCase)) &&
+                JsonPayloadMatches(
+                    property.Value,
+                    eventId,
+                    idempotencyKey,
+                    expectedTopic,
+                    expectedEventType,
+                    tableName,
+                    payloadHeaderTopic))
+            {
+                return true;
             }
         }
 
