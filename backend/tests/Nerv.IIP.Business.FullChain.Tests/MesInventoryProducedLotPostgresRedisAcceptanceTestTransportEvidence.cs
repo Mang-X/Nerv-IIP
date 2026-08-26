@@ -28,6 +28,57 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 
 public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 {
+    [Fact]
+    public void Cap_transport_evidence_parses_official_pg_envelope_and_redis_body_shapes()
+    {
+        const string eventId = "evt-parser-shape";
+        const string idempotencyKey = "idem-parser-shape";
+        const string topic = nameof(InventoryMovementRequestedIntegrationEvent);
+        const string eventType = InventoryIntegrationEventTypes.InventoryMovementRequested;
+        const string payload = "{\"EventId\":\"evt-parser-shape\",\"IdempotencyKey\":\"idem-parser-shape\",\"EventType\":\"inventory.InventoryMovementRequested\"}";
+
+        using var payloadDocument = JsonDocument.Parse(payload);
+        var capContent = JsonSerializer.Serialize(new
+        {
+            Headers = new Dictionary<string, string> { ["cap-msg-name"] = topic },
+            Value = payloadDocument.RootElement,
+        });
+        Assert.True(ContentMatchesEvent(
+            capContent,
+            eventId,
+            idempotencyKey,
+            topic,
+            eventType,
+            tableName: topic));
+        Assert.False(ContentMatchesEvent(
+            capContent,
+            eventId,
+            idempotencyKey,
+            "OtherTopic",
+            eventType,
+            tableName: "OtherTopic"));
+
+        var utf8Payload = Encoding.UTF8.GetBytes(payload);
+        var redisHeaders = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["cap-msg-name"] = topic,
+        });
+        var redisBase64Body = JsonSerializer.Serialize(utf8Payload);
+        var redisArrayBody = JsonSerializer.Serialize(utf8Payload.Select(static value => (int)value).ToArray());
+        var entry = new StreamEntry(
+            "1-0",
+            [
+                new NameValueEntry("headers", redisHeaders),
+                new NameValueEntry("body", redisBase64Body),
+            ]);
+
+        Assert.Equal(payload, RedisValueToUtf8(redisBase64Body));
+        Assert.Equal(payload, RedisValueToUtf8(redisArrayBody));
+        Assert.Equal(payload, RedisValueToUtf8(payload));
+        Assert.True(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, topic, eventType));
+        Assert.False(RedisStreamEntryMatchesEvent(entry, eventId, idempotencyKey, "OtherTopic", eventType));
+    }
+
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
         string mesConnectionString,
         string inventoryConnectionString,
@@ -279,29 +330,53 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         var serializedBytes = Encoding.UTF8.GetString(bytes);
         try
         {
-            using var document = JsonDocument.Parse(serializedBytes);
-            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            // CAP 10.0.1 serializes TransportMessage.Body with
+            // JsonSerializer.Serialize(byte[]). System.Text.Json encodes byte[] as a
+            // base64 JSON string; older/alternate captures may expose a numeric JSON
+            // array, while a raw UTF-8 body is also useful for diagnostics.
+            var decodedBytes = JsonSerializer.Deserialize<byte[]>(serializedBytes);
+            if (decodedBytes is not null)
             {
-                return serializedBytes;
+                return Encoding.UTF8.GetString(decodedBytes);
             }
-
-            var decodedBytes = new List<byte>();
-            foreach (var item in document.RootElement.EnumerateArray())
-            {
-                if (!item.TryGetInt32(out var byteValue) || byteValue is < byte.MinValue or > byte.MaxValue)
-                {
-                    return serializedBytes;
-                }
-
-                decodedBytes.Add((byte)byteValue);
-            }
-
-            return Encoding.UTF8.GetString(decodedBytes.ToArray());
         }
         catch (JsonException)
         {
-            return serializedBytes;
+            // Preserve raw UTF-8 compatibility when the stream value is already the
+            // body JSON rather than CAP's serialized byte[].
         }
+        catch (FormatException)
+        {
+            // A JSON string that is not valid base64 is likewise a raw diagnostic
+            // value, not a CAP byte[] envelope.
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(serializedBytes);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                var decodedBytes = new List<byte>();
+                foreach (var item in document.RootElement.EnumerateArray())
+                {
+                    if (!item.TryGetInt32(out var byteValue) || byteValue is < byte.MinValue or > byte.MaxValue)
+                    {
+                        return serializedBytes;
+                    }
+
+                    decodedBytes.Add((byte)byteValue);
+                }
+
+                return Encoding.UTF8.GetString(decodedBytes.ToArray());
+            }
+        }
+        catch (JsonException)
+        {
+            // Preserve raw UTF-8 compatibility when the stream value is already the
+            // body JSON rather than a JSON byte[] shape.
+        }
+
+        return serializedBytes;
     }
 
     private static bool JsonMessageMatches(
