@@ -45,11 +45,12 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("substituteMaterialIds", exception.ParamName);
     }
 
-    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 1 and 3; this InMemory test proves scope recreation, not provider behavior.
+    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 1 and the #2246 schema-first boundary;
+    // this InMemory test proves substitute snapshot scope recreation and that issue auditing remains inactive, not persistence of a non-null audit value.
     [Fact]
-    public async Task Material_substitute_snapshot_and_nullable_issue_audit_survive_persistence_scope_recreation()
+    public async Task Material_substitute_snapshot_survives_scope_recreation_without_activating_issue_audit()
     {
-        var services = CreateServices(nameof(Material_substitute_snapshot_and_nullable_issue_audit_survive_persistence_scope_recreation));
+        var services = CreateServices(nameof(Material_substitute_snapshot_survives_scope_recreation_without_activating_issue_audit));
         var now = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
 
         using (var scope = services.CreateScope())
