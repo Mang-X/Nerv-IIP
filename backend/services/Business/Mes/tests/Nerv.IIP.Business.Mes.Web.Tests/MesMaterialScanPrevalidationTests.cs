@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Json;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -46,7 +47,7 @@ public sealed class MesMaterialScanPrevalidationTests
     }
 
     [Fact]
-    public async Task Convert_then_release_preserves_capture_identity_and_allows_material_scan()
+    public async Task Convert_release_rebind_receipt_then_scan_preserves_the_released_snapshot_chain()
     {
         await using var db = CreateDbContext();
         var snapshotProvider = new StaticMaterialSnapshotProvider(
@@ -76,6 +77,10 @@ public sealed class MesMaterialScanPrevalidationTests
             CancellationToken.None);
         var workOrder = await db.WorkOrders.SingleAsync();
         Assert.Equal(captureIdentity, workOrder.MaterialRequirementSnapshotEvaluatedAtUtc);
+        workOrder.RebindProductionVersionForEngineeringChange("PV-002");
+        db.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.AutoRebound(
+            "org-001", "env-dev", workOrderId, "FG-001", WorkOrder.ReleasedStatus,
+            "ECO-SCAN-001", "PV-001", "PV-002", new DateOnly(2026, 8, 26), Now.AddMinutes(2)));
 
         var issue = MaterialIssueRequest.Create(
             "org-001", "env-dev", "MIR-LIFECYCLE-001", workOrderId, operationTaskId,
@@ -95,6 +100,39 @@ public sealed class MesMaterialScanPrevalidationTests
 
         Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
         Assert.Equal("material-scan-accepted", response.ReasonCode);
+        Assert.Equal("PV-001", workOrder.MaterialRequirementSnapshotProductionVersionId);
+        Assert.Equal("PV-002", workOrder.ProductionVersionId);
+    }
+
+    [Theory]
+    [InlineData("wrong-organization")]
+    [InlineData("non-released-impact")]
+    [InlineData("broken-version-chain")]
+    public async Task Scan_fails_closed_when_the_rebind_is_not_a_scoped_released_chain(string mutation)
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: true, completeReceipt: true);
+        var workOrder = Assert.Single(db.WorkOrders.Local);
+        workOrder.MarkReleased();
+        workOrder.RebindProductionVersionForEngineeringChange("PV-002");
+        db.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.AutoRebound(
+            mutation == "wrong-organization" ? "org-other" : "org-001",
+            "env-dev",
+            "WO-001",
+            "FG-001",
+            mutation == "non-released-impact" ? WorkOrder.CreatedStatus : WorkOrder.ReleasedStatus,
+            "ECO-SCAN-MUTATION",
+            mutation == "broken-version-chain" ? "PV-OTHER" : "PV-001",
+            "PV-002",
+            new DateOnly(2026, 8, 26),
+            Now.AddMinutes(2)));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(db, new StubAvailabilityProvider(new(true, false, true)))
+                .Handle(Request(), CancellationToken.None));
+
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableMessage, exception.Message);
     }
 
     [Fact]
@@ -654,6 +692,41 @@ public sealed class MesMaterialScanPrevalidationTests
             failureKind == "exception" ? nameof(HttpRequestException) : "503",
             entry.Message,
             StringComparison.Ordinal);
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableCode, entry.Properties["errorCode"]);
+        Assert.Equal("Inventory", entry.Properties["serviceName"]);
+        Assert.Equal("MAT-001", entry.Properties["materialId"]);
+        Assert.Equal("LOT-001", entry.Properties["materialLotId"]);
+        Assert.Equal("corr-001", entry.Properties["correlationId"]);
+        Assert.Equal(failureKind == "exception" ? "transport" : "http-status", entry.Properties["failureKind"]);
+        Assert.DoesNotContain("CorrelationId", entry.Properties.Keys, StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("failure-envelope")]
+    [InlineData("null-data")]
+    [InlineData("contract-shape")]
+    [InlineData("response-scope")]
+    [InlineData("line-scope")]
+    [InlineData("inventory-contradiction")]
+    public async Task Inventory_success_semantic_failures_emit_structured_safe_classification(string failureKind)
+    {
+        var logger = new RecordingLogger<HttpMesMaterialLotAvailabilityProvider>();
+        var provider = CreateHttpProvider(
+            new RecordingHttpHandler(_ => InventorySemanticFailureResponse(failureKind)),
+            logger);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            provider.GetAsync(AvailabilityRequest(), CancellationToken.None));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Equal(MaterialScanPrevalidationErrors.SourceUnavailableCode, entry.Properties["errorCode"]);
+        Assert.Equal("Inventory", entry.Properties["serviceName"]);
+        Assert.Equal("MAT-001", entry.Properties["materialId"]);
+        Assert.Equal("LOT-001", entry.Properties["materialLotId"]);
+        Assert.Equal("corr-001", entry.Properties["correlationId"]);
+        Assert.Equal(failureKind, entry.Properties["failureKind"]);
     }
 
     private static PrevalidateMaterialScanQueryHandler CreateHandler(
@@ -696,6 +769,25 @@ public sealed class MesMaterialScanPrevalidationTests
             System.Text.Encoding.UTF8,
             "application/json"),
     };
+
+    private static HttpResponseMessage InventorySemanticFailureResponse(string failureKind)
+    {
+        const string validData = "{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"expiryDate\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}]}";
+        var body = failureKind switch
+        {
+            "failure-envelope" => $"{{\"success\":false,\"message\":\"no\",\"code\":500,\"data\":{validData}}}",
+            "null-data" => "{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":null}",
+            "contract-shape" => "{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{\"organizationId\":\"org-001\"}}",
+            "response-scope" => $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{validData.Replace("\"organizationId\":\"org-001\"", "\"organizationId\":\"org-other\"", StringComparison.Ordinal)}}}",
+            "line-scope" => $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{validData.Replace("\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"expiryDate\"", "\"locationCode\":\"LINE-OTHER\",\"lotNo\":\"LOT-001\",\"expiryDate\"", StringComparison.Ordinal)}}}",
+            "inventory-contradiction" => $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{validData.Replace("\"onHandQuantity\":5,\"items\"", "\"onHandQuantity\":0,\"items\"", StringComparison.Ordinal)}}}",
+            _ => throw new ArgumentOutOfRangeException(nameof(failureKind), failureKind, null),
+        };
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+        };
+    }
 
 
     private static void SeedMesFacts(
@@ -809,7 +901,7 @@ public sealed class MesMaterialScanPrevalidationTests
 
     private sealed class RecordingLogger<T> : ILogger<T>
     {
-        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+        public List<LogEntry> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -820,8 +912,19 @@ public sealed class MesMaterialScanPrevalidationTests
             EventId eventId,
             TState state,
             Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            Entries.Add((logLevel, formatter(state, exception), exception));
+            Func<TState, Exception?, string> formatter)
+        {
+            var properties = state is IEnumerable<KeyValuePair<string, object?>> values
+                ? values.Where(x => x.Key != "{OriginalFormat}").ToDictionary(x => x.Key, x => x.Value)
+                : [];
+            Entries.Add(new(logLevel, formatter(state, exception), exception, properties));
+        }
+
+        public sealed record LogEntry(
+            LogLevel Level,
+            string Message,
+            Exception? Exception,
+            IReadOnlyDictionary<string, object?> Properties);
     }
 
     private sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider

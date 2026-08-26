@@ -1928,6 +1928,62 @@ internal static class MaterialReadinessGuards
     internal const string MissingRequirementSnapshotReason =
         "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。";
 
+    internal sealed record AutomaticRebindEdge(
+        string WorkOrderId,
+        string ArchivedProductionVersionId,
+        string? SupersededByProductionVersionId);
+
+    internal static bool IsSnapshotVersionCompatible(
+        string workOrderId,
+        string? snapshotProductionVersionId,
+        string? currentProductionVersionId,
+        IReadOnlyCollection<AutomaticRebindEdge> automaticRebinds)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotProductionVersionId)
+            || string.IsNullOrWhiteSpace(currentProductionVersionId))
+        {
+            return false;
+        }
+
+        if (string.Equals(snapshotProductionVersionId, currentProductionVersionId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var successorsByArchivedVersion = automaticRebinds
+            .Where(x => x.WorkOrderId == workOrderId && !string.IsNullOrWhiteSpace(x.SupersededByProductionVersionId))
+            .GroupBy(x => x.ArchivedProductionVersionId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.SupersededByProductionVersionId!).Distinct(StringComparer.Ordinal).ToArray(),
+                StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal) { snapshotProductionVersionId };
+        var pending = new Queue<string>();
+        pending.Enqueue(snapshotProductionVersionId);
+        while (pending.TryDequeue(out var archivedVersionId))
+        {
+            if (!successorsByArchivedVersion.TryGetValue(archivedVersionId, out var successors))
+            {
+                continue;
+            }
+
+            foreach (var successor in successors)
+            {
+                if (string.Equals(successor, currentProductionVersionId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (visited.Add(successor))
+                {
+                    pending.Enqueue(successor);
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// 仍然算数的领料单状态:已发起、部分收料、已收料。
     /// 取消 / 退料中 / 预留失效的单子不代表仓库还在配货,聚合「应领」时必须排除,

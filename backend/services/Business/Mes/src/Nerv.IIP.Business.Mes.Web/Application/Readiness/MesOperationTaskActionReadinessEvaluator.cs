@@ -73,7 +73,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 workOrderIds.Contains(x.WorkOrderId) &&
                 x.Status == MesEngineeringChangeImpactStatuses.AutoRebound &&
                 x.WorkOrderStatusAtDetection == WorkOrder.ReleasedStatus)
-            .Select(x => new AutomaticRebindFact(
+            .Select(x => new MaterialReadinessGuards.AutomaticRebindEdge(
                 x.WorkOrderId,
                 x.ArchivedProductionVersionId,
                 x.SupersededByProductionVersionId))
@@ -175,7 +175,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         DateTimeOffset evaluatedAtUtc,
         IReadOnlyCollection<OperationFact> allOperations,
         IReadOnlyDictionary<string, WorkOrderFact> workOrders,
-        IReadOnlyCollection<AutomaticRebindFact> automaticRebinds,
+        IReadOnlyCollection<MaterialReadinessGuards.AutomaticRebindEdge> automaticRebinds,
         IReadOnlyCollection<QualityHoldFact> activeQualityHolds,
         IReadOnlyCollection<UnavailabilityFact> activeUnavailabilities,
         IReadOnlyCollection<MaterialRequirementFact> requirements,
@@ -251,16 +251,11 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 expectedSnapshotStatus,
                 StringComparison.Ordinal))
         {
-            var snapshotVersionMatchesCurrent = string.Equals(
-                materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
-                materialWorkOrder.ProductionVersionId,
-                StringComparison.Ordinal);
-            var snapshotVersionMatchesReleasedRebind = HasAutomaticRebindPath(
+            materialSnapshotProven = MaterialReadinessGuards.IsSnapshotVersionCompatible(
                 task.WorkOrderId,
                 materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
                 materialWorkOrder.ProductionVersionId,
                 automaticRebinds);
-            materialSnapshotProven = snapshotVersionMatchesCurrent || snapshotVersionMatchesReleasedRebind;
         }
         if (!materialSnapshotProven)
         {
@@ -302,55 +297,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             evaluatedAtUtc);
     }
 
-    private static bool HasAutomaticRebindPath(
-        string workOrderId,
-        string? snapshotProductionVersionId,
-        string? currentProductionVersionId,
-        IReadOnlyCollection<AutomaticRebindFact> automaticRebinds)
-    {
-        if (string.IsNullOrWhiteSpace(snapshotProductionVersionId)
-            || string.IsNullOrWhiteSpace(currentProductionVersionId))
-        {
-            return false;
-        }
-
-        var successorsByArchivedVersion = automaticRebinds
-            .Where(x => x.WorkOrderId == workOrderId && !string.IsNullOrWhiteSpace(x.SupersededByProductionVersionId))
-            .GroupBy(x => x.ArchivedProductionVersionId, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .Select(x => x.SupersededByProductionVersionId!)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray(),
-                StringComparer.Ordinal);
-        var visited = new HashSet<string>(StringComparer.Ordinal) { snapshotProductionVersionId };
-        var pending = new Queue<string>();
-        pending.Enqueue(snapshotProductionVersionId);
-        while (pending.TryDequeue(out var archivedVersionId))
-        {
-            if (!successorsByArchivedVersion.TryGetValue(archivedVersionId, out var successors))
-            {
-                continue;
-            }
-
-            foreach (var successor in successors)
-            {
-                if (string.Equals(successor, currentProductionVersionId, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                if (visited.Add(successor))
-                {
-                    pending.Enqueue(successor);
-                }
-            }
-        }
-
-        return false;
-    }
-
     private sealed record MaterialRequirementFact(
         string WorkOrderId,
         string? OperationTaskId,
@@ -371,11 +317,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         string? ProductionVersionId,
         string? MaterialRequirementSnapshotStatus,
         string? MaterialRequirementSnapshotProductionVersionId);
-
-    private sealed record AutomaticRebindFact(
-        string WorkOrderId,
-        string ArchivedProductionVersionId,
-        string? SupersededByProductionVersionId);
 
     private sealed record QualityHoldFact(
         string WorkOrderId,
