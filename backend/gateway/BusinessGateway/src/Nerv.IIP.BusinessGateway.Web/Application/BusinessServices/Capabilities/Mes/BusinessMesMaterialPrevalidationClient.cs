@@ -43,6 +43,15 @@ public sealed class HttpBusinessMesMaterialPrevalidationClient(HttpClient httpCl
                 ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                     HttpStatusCode.BadGateway,
                     "mes-material-scan-prevalidation-empty-response");
+            var accepted = result.Decision == MesMaterialScanDecision.Accepted;
+            var acceptedFactsAreInvalid = accepted &&
+                (!string.Equals(result.ReasonCode, "material-scan-accepted", StringComparison.Ordinal) ||
+                 string.IsNullOrWhiteSpace(result.MaterialId) ||
+                 string.IsNullOrWhiteSpace(result.MaterialLotId) ||
+                 (result.MaterialQualification is not "primary" and not "substitute"));
+            var rejectedFactsAreInvalid = !accepted &&
+                (string.Equals(result.ReasonCode, "material-scan-accepted", StringComparison.Ordinal) ||
+                 result.MaterialQualification is not null);
             if (string.IsNullOrWhiteSpace(result.ReasonCode) ||
                 string.IsNullOrWhiteSpace(result.MaterialIssueRequestId) ||
                 string.IsNullOrWhiteSpace(result.WorkOrderId) ||
@@ -50,6 +59,8 @@ public sealed class HttpBusinessMesMaterialPrevalidationClient(HttpClient httpCl
                 !string.Equals(result.MaterialIssueRequestId, request.MaterialIssueRequestId, StringComparison.Ordinal) ||
                 !string.Equals(result.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal) ||
                 !string.Equals(result.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal) ||
+                acceptedFactsAreInvalid ||
+                rejectedFactsAreInvalid ||
                 result.EvaluatedAtUtc == default)
             {
                 throw BusinessServiceProxyException.FromSafeDownstreamMessage(

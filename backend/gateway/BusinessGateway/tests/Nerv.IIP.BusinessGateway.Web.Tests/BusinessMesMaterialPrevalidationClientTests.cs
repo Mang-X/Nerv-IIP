@@ -117,6 +117,33 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("{\"decision\":\"accepted\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialLotId\":\"LOT-001\",\"materialQualification\":\"primary\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"accepted\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialId\":\"MAT-001\",\"materialQualification\":\"primary\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"accepted\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialId\":\"MAT-001\",\"materialLotId\":\"LOT-001\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"accepted\",\"reasonCode\":\"material-not-required\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialId\":\"MAT-001\",\"materialLotId\":\"LOT-001\",\"materialQualification\":\"primary\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"rejected\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"rejected\",\"reasonCode\":\"material-not-required\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialQualification\":\"primary\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    [InlineData("{\"decision\":\"accepted\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialId\":\"MAT-001\",\"materialLotId\":\"LOT-001\",\"materialQualification\":\"unexpected\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}")]
+    public async Task Client_rejects_success_response_that_violates_decision_invariants(string json)
+    {
+        var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        });
+        var client = new HttpBusinessMesMaterialPrevalidationClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
+            "internal-token",
+            "corr-001",
+            new BusinessConsoleMesMaterialScanPrevalidationRequest(
+                "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+            CancellationToken.None));
+    }
+
     private sealed class RecordingHandler(Func<HttpResponseMessage>? responseFactory = null) : HttpMessageHandler
     {
         public HttpMethod? Method { get; private set; }

@@ -221,7 +221,17 @@ public sealed class HttpMesMaterialPrevalidationProvider(
                 ("take", 500)),
             correlationId,
             cancellationToken);
-        if (versions.Items is null || versions.Total != versions.Items.Count)
+        if (versions.Items is null ||
+            versions.Total != versions.Items.Count ||
+            versions.Items.Any(x => x is null ||
+                string.IsNullOrWhiteSpace(x.ProductionVersionId) ||
+                string.IsNullOrWhiteSpace(x.OrganizationId) ||
+                string.IsNullOrWhiteSpace(x.EnvironmentId) ||
+                string.IsNullOrWhiteSpace(x.SkuCode) ||
+                string.IsNullOrWhiteSpace(x.MbomVersionId) ||
+                string.IsNullOrWhiteSpace(x.RoutingVersionId) ||
+                x.ValidFrom == default ||
+                string.IsNullOrWhiteSpace(x.Status)))
         {
             throw SourceUnavailable("ProductEngineering 冻结生产版本列表不完整。");
         }
@@ -298,9 +308,11 @@ public sealed class HttpMesMaterialPrevalidationProvider(
             throw SourceUnavailable("Inventory 返回了与请求范围不一致的物料批次。");
         }
 
-        if (response.Items is null)
+        if (response.Items is null || response.Items.Any(x => x is null ||
+            !string.Equals(x.LocationCode, request.LocationCode, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(x.LotNo, request.MaterialLotId, StringComparison.OrdinalIgnoreCase)))
         {
-            throw SourceUnavailable("Inventory 返回的库存明细集合为空。");
+            throw SourceUnavailable("Inventory 返回的库存明细集合不完整或超出请求范围。");
         }
 
         if (response.OnHandQuantity != response.Items.Sum(x => x.OnHandQuantity))

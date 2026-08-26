@@ -29,19 +29,19 @@ public sealed record ResolveProductionVersionResponse(
     string Status);
 
 public sealed record ProductionVersionListItem(
-    string ProductionVersionId,
-    string OrganizationId,
-    string EnvironmentId,
-    string SkuCode,
-    string MbomVersionId,
-    string RoutingVersionId,
-    DateOnly ValidFrom,
+    [property: JsonRequired, Required] string ProductionVersionId,
+    [property: JsonRequired, Required] string OrganizationId,
+    [property: JsonRequired, Required] string EnvironmentId,
+    [property: JsonRequired, Required] string SkuCode,
+    [property: JsonRequired, Required] string MbomVersionId,
+    [property: JsonRequired, Required] string RoutingVersionId,
+    [property: JsonRequired] DateOnly ValidFrom,
     DateOnly? ValidTo,
     decimal? LotSizeMin,
     decimal? LotSizeMax,
-    int Priority,
-    bool IsDefault,
-    string Status);
+    [property: JsonRequired] int Priority,
+    [property: JsonRequired] bool IsDefault,
+    [property: JsonRequired, Required] string Status);
 
 public sealed record ListProductionVersionsResponse(
     [property: JsonRequired, Required] IReadOnlyCollection<ProductionVersionListItem> Items,

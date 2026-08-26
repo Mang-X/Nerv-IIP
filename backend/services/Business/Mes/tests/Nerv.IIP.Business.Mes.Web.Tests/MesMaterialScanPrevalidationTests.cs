@@ -129,6 +129,85 @@ public sealed class MesMaterialScanPrevalidationTests
     }
 
     [Fact]
+    public async Task Missing_material_issue_is_a_distinct_business_rejection()
+    {
+        await using var db = CreateDbContext();
+
+        var response = await CreateHandler(
+            db,
+            new StubQualificationProvider(false),
+            new StubAvailabilityProvider(new(true, false, true))).Handle(Request(), CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal("material-issue-request-not-found", response.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("WO-OTHER", "OP-10", "work-order-mismatch")]
+    [InlineData("WO-001", "OP-OTHER", "operation-task-mismatch")]
+    public async Task Issue_linkage_mismatch_is_a_distinct_business_rejection(
+        string workOrderId,
+        string operationTaskId,
+        string expectedReason)
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: true, completeReceipt: true);
+        await db.SaveChangesAsync();
+
+        var response = await CreateHandler(
+            db,
+            new StubQualificationProvider(false),
+            new StubAvailabilityProvider(new(true, false, true))).Handle(
+                new PrevalidateMaterialScanQuery("org-001", "env-dev", "MIR-001", workOrderId, operationTaskId),
+                CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal(expectedReason, response.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("workOrder")]
+    [InlineData("operationTask")]
+    public async Task Missing_mes_context_is_a_distinct_business_rejection(string missingFact)
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: true, completeReceipt: true);
+        if (missingFact == "workOrder")
+        {
+            db.WorkOrders.Remove(Assert.Single(db.WorkOrders.Local));
+        }
+        else
+        {
+            db.OperationTasks.Remove(Assert.Single(db.OperationTasks.Local));
+        }
+        await db.SaveChangesAsync();
+
+        var response = await CreateHandler(
+            db,
+            new StubQualificationProvider(false),
+            new StubAvailabilityProvider(new(true, false, true))).Handle(Request(), CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal("mes-context-not-found", response.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Missing_inventory_lot_is_a_distinct_business_rejection()
+    {
+        await using var db = CreateDbContext();
+        SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: true, completeReceipt: true);
+        await db.SaveChangesAsync();
+
+        var response = await CreateHandler(
+            db,
+            new StubQualificationProvider(false),
+            new StubAvailabilityProvider(new(false, false, false))).Handle(Request(), CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Rejected, response.Decision);
+        Assert.Equal("material-lot-not-found", response.ReasonCode);
+    }
+
+    [Fact]
     public async Task Requirement_from_another_operation_does_not_qualify_as_current_operation_primary()
     {
         await using var db = CreateDbContext();
@@ -318,6 +397,25 @@ public sealed class MesMaterialScanPrevalidationTests
     }
 
     [Theory]
+    [InlineData("null")]
+    [InlineData("{\"locationCode\":null,\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":\"LINE-OTHER\",\"lotNo\":\"LOT-001\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":\"LINE-01\",\"lotNo\":null,\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    [InlineData("{\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-OTHER\",\"isExpired\":false,\"movementAllowed\":true,\"onHandQuantity\":5}")]
+    public async Task Inventory_provider_fails_closed_when_line_fact_is_null_or_outside_requested_scope(string lineJson)
+    {
+        var inventoryHandler = new RecordingHttpHandler(_ => JsonEnvelopeResponse(
+            $"{{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"MAT-001\",\"uomCode\":\"PCS\",\"siteCode\":\"SITE-01\",\"locationCode\":\"LINE-01\",\"lotNo\":\"LOT-001\",\"onHandQuantity\":5,\"items\":[{lineJson}]}}"));
+        var provider = CreateHttpProvider(new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)), inventoryHandler);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetAsync(
+            AvailabilityRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("{\"total\":1}")]
     [InlineData("{\"total\":1,\"items\":null}")]
     public async Task Qualification_provider_fails_closed_when_version_collection_is_missing_or_null(string dataJson)
@@ -336,6 +434,32 @@ public sealed class MesMaterialScanPrevalidationTests
             CancellationToken.None));
 
         Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, engineeringHandler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{\"productionVersionId\":null,\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":null,\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":null,\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":null,\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":null,\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}")]
+    [InlineData("{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":null}")]
+    public async Task Qualification_provider_fails_closed_when_version_item_has_missing_or_null_scalar(string itemJson)
+    {
+        var engineeringHandler = new RecordingHttpHandler(_ => JsonEnvelopeResponse(
+            $"{{\"total\":1,\"items\":[{itemJson}]}}"));
+        var provider = CreateHttpProvider(engineeringHandler, new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.IsFrozenSubstituteAsync(
+            QualificationRequest(),
+            CancellationToken.None));
+
+        Assert.StartsWith("MATERIAL_SCAN_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, engineeringHandler.CallCount);
     }
 
     [Theory]
@@ -348,7 +472,7 @@ public sealed class MesMaterialScanPrevalidationTests
             : "{\"bomCode\":\"MBOM-001\",\"revision\":\"B\",\"skuCode\":\"FG-001\",\"engineeringBomVersionId\":\"EBOM-001:A\",\"status\":\"published\",\"recipeLines\":[]}";
         var responses = new Queue<HttpResponseMessage>(
         [
-            JsonEnvelopeResponse("{\"total\":1,\"items\":[{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\"}]}"),
+            JsonEnvelopeResponse("{\"total\":1,\"items\":[{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}]}"),
             JsonEnvelopeResponse(bomData),
         ]);
         var provider = CreateHttpProvider(
@@ -366,7 +490,7 @@ public sealed class MesMaterialScanPrevalidationTests
     public async Task Qualification_provider_fails_closed_when_matching_version_is_inside_a_truncated_page()
     {
         var engineeringHandler = new RecordingHttpHandler(_ => JsonEnvelopeResponse(
-            "{\"total\":501,\"items\":[{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\"}]}"));
+            "{\"total\":501,\"items\":[{\"productionVersionId\":\"PV-001\",\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"skuCode\":\"FG-001\",\"mbomVersionId\":\"MBOM-001:B\",\"routingVersionId\":\"ROUTING-001:A\",\"validFrom\":\"2026-08-01\",\"priority\":1,\"isDefault\":true,\"status\":\"active\"}]}"));
         var provider = CreateHttpProvider(engineeringHandler, new RecordingHttpHandler(_ => new(HttpStatusCode.NotFound)));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => provider.IsFrozenSubstituteAsync(
@@ -394,8 +518,8 @@ public sealed class MesMaterialScanPrevalidationTests
                         total = 2,
                         items = new[]
                         {
-                            new { productionVersionId = "PV-OLD", organizationId = "org-001", environmentId = "env-dev", skuCode = "FG-001", mbomVersionId = "MBOM-OLD:A" },
-                            new { productionVersionId = "PV-001", organizationId = "org-001", environmentId = "env-dev", skuCode = "FG-001", mbomVersionId = "MBOM-001:B" },
+                            new { productionVersionId = "PV-OLD", organizationId = "org-001", environmentId = "env-dev", skuCode = "FG-001", mbomVersionId = "MBOM-OLD:A", routingVersionId = "ROUTING-001:A", validFrom = new DateOnly(2026, 8, 1), priority = 1, isDefault = false, status = "active" },
+                            new { productionVersionId = "PV-001", organizationId = "org-001", environmentId = "env-dev", skuCode = "FG-001", mbomVersionId = "MBOM-001:B", routingVersionId = "ROUTING-001:A", validFrom = new DateOnly(2026, 8, 1), priority = 1, isDefault = true, status = "active" },
                         },
                     },
                 }),
@@ -519,7 +643,7 @@ public sealed class MesMaterialScanPrevalidationTests
                     total = 1,
                     items = new[]
                     {
-                        new { productionVersionId = "PV-001", organizationId = "org-001", environmentId = "env-dev", skuCode = "FG-001", mbomVersionId = "MBOM-001:B" },
+                        new { productionVersionId = "PV-001", organizationId = "org-001", environmentId = "env-dev", skuCode = "FG-001", mbomVersionId = "MBOM-001:B", routingVersionId = "ROUTING-001:A", validFrom = new DateOnly(2026, 8, 1), priority = 1, isDefault = true, status = "active" },
                     },
                 },
             }),
