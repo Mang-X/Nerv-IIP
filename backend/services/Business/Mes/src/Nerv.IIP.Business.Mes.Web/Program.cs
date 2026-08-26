@@ -92,6 +92,9 @@ builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configurati
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<HttpMesMaterialPrevalidationProvider>();
+builder.Services.AddScoped<IMesMaterialQualificationProvider>(sp => sp.GetRequiredService<HttpMesMaterialPrevalidationProvider>());
+builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider>(sp => sp.GetRequiredService<HttpMesMaterialPrevalidationProvider>());
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
 builder.Services.AddScoped<IProductionReportOeeDimensionSnapshotProvider, HttpProductionReportOeeDimensionSnapshotProvider>();

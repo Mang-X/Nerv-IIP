@@ -944,6 +944,28 @@ public sealed class GetBusinessConsoleMesMaterialIssueRequestEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/material-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesMaterialScan")]
+public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesMaterialPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesMaterialScanPrevalidationRequest, BusinessConsoleMesMaterialScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesMaterialScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesMaterialScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesMaterialScanPrevalidationResponse> ForwardAsync(
+        BusinessConsoleMesMaterialScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.PrevalidateAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts")]
 [BusinessGatewayOperationId("confirmBusinessConsoleMesLineSideMaterialReceipt")]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]

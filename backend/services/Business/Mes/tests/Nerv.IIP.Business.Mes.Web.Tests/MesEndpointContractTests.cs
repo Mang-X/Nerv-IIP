@@ -61,6 +61,30 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Material_scan_prevalidation_endpoint_is_exposed_for_strong_mes_identifiers()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/material-scan-prevalidation",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                materialIssueRequestId = "MIR-001",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+            });
+
+        Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Record_downtime_rejects_missing_real_context_before_sending_command()
     {
         var sender = new CapturingRecordDowntimeSender();

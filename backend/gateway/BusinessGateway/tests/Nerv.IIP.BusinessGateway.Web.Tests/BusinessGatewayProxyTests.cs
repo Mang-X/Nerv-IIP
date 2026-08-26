@@ -638,6 +638,40 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(24, item.GetProperty("ageDays").GetInt32());
     }
 
+    [Fact]
+    public async Task Mes_material_scan_prevalidation_forwards_only_strong_identifiers_and_internal_token()
+    {
+        var mes = new RecordingMesMaterialPrevalidationClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesMaterialPrevalidationClient>();
+            services.AddSingleton<IBusinessMesMaterialPrevalidationClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/material-scan-prevalidation",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                materialIssueRequestId = "MIR-001",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MesMaterialsRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal("MIR-001", mes.LastRequest?.MaterialIssueRequestId);
+        Assert.Equal("WO-001", mes.LastRequest?.WorkOrderId);
+        Assert.Equal("OP-10", mes.LastRequest?.OperationTaskId);
+    }
+
     /// <summary>库存移动读面 facade：此前只有 POST 过账，页面表格没有服务端数据来源。</summary>
     [Fact]
     public async Task Inventory_movement_list_forwards_query_context_with_internal_service_token()
@@ -12502,6 +12536,32 @@ public sealed class BusinessGatewayProxyTests
                     builder.PrimaryHandler = handler;
                 }
             };
+    }
+}
+
+internal sealed class RecordingMesMaterialPrevalidationClient : IBusinessMesMaterialPrevalidationClient
+{
+    public string? LastInternalToken { get; private set; }
+    public BusinessConsoleMesMaterialScanPrevalidationRequest? LastRequest { get; private set; }
+
+    public Task<BusinessConsoleMesMaterialScanPrevalidationResponse> PrevalidateAsync(
+        string internalBearerToken,
+        BusinessConsoleMesMaterialScanPrevalidationRequest request,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        LastInternalToken = internalBearerToken;
+        LastRequest = request;
+        return Task.FromResult(new BusinessConsoleMesMaterialScanPrevalidationResponse(
+            "accepted",
+            "material-scan-accepted",
+            request.MaterialIssueRequestId,
+            request.WorkOrderId,
+            request.OperationTaskId,
+            "MAT-001",
+            "LOT-001",
+            "primary",
+            DateTimeOffset.Parse("2026-08-26T08:00:00Z")));
     }
 }
 

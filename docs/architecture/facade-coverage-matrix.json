@@ -2887,6 +2887,19 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/material-scan-prevalidation",
+      "operationId": "prevalidateBusinessMesMaterialScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "prevalidateBusinessConsoleMesMaterialScan"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts",
       "operationId": "confirmBusinessMesLineSideMaterialReceipt",
       "classification": "exposed",
