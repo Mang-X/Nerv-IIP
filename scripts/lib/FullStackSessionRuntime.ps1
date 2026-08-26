@@ -772,7 +772,8 @@ function Invoke-NervIssue1912WalkthroughBrowserCheck {
             ) `
             -WorkingDirectory "$($Manifest.worktreeRoot)" `
             -TimeoutSeconds 1800 `
-            -Name "fullstack-$($Manifest.sessionId)-issue1912-real-machine-walkthrough" | Out-Null
+            -Name "fullstack-$($Manifest.sessionId)-issue1912-real-machine-walkthrough" `
+            -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     }
     Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
     return Assert-NervIssue1912WalkthroughEvidence -EvidencePath $evidencePath
@@ -782,10 +783,15 @@ function Invoke-NervIssue1912WalkthroughScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [Parameter(Mandatory)] [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
     )
+
+    if ([string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        throw 'Issue #1912 walkthrough requires the managed WMS worker password; rerun with -EnableWmsDemoWorker.'
+    }
 
     if ($null -eq $WaitAction) {
         $WaitAction = {
@@ -832,6 +838,7 @@ function Invoke-NervIssue1912WalkthroughScenario {
     $childEnvironment = @{
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+        NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
         NERV_IIP_ISSUE_1912_RUNTIME_PROFILE_SOURCE = 'session-manifest'
         NERV_IIP_ISSUE_1912_TRANSPORT = 'redis-cross-process'
         NERV_IIP_ISSUE_1912_PERSISTENCE = 'postgresql'

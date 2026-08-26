@@ -101,6 +101,16 @@ Assert-True ($runtimeSource.Contains('playwright-issue1912-real-machine-walkthro
 Assert-True ($runtimeSource.Contains('issue1912-real-machine-walkthrough.json', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must persist the walkthrough evidence artifact.'
 Assert-True ($runtimeSource.Contains('$uiProofNodeSet', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must validate UI evidence by required node mapping, not proof count.'
 Assert-True ($runtimeSource.Contains('requestFailurePolicy', [StringComparison]::Ordinal)) 'The GitHub #1912 runner must validate and preserve the browser request failure policy.'
+$issue1912BrowserCheckStart = $runtimeSource.IndexOf('function Invoke-NervIssue1912WalkthroughBrowserCheck', [StringComparison]::Ordinal)
+$issue1912ScenarioStart = $runtimeSource.IndexOf('function Invoke-NervIssue1912WalkthroughScenario', $issue1912BrowserCheckStart, [StringComparison]::Ordinal)
+Assert-True ($issue1912BrowserCheckStart -ge 0 -and $issue1912ScenarioStart -gt $issue1912BrowserCheckStart) 'Issue #1912 browser-check source boundaries must remain discoverable for contract assertions.'
+$issue1912BrowserCheckText = $runtimeSource.Substring($issue1912BrowserCheckStart, $issue1912ScenarioStart - $issue1912BrowserCheckStart)
+Assert-True ($issue1912BrowserCheckText.Contains('-SensitiveValues @($Environment[''NERV_IIP_FULLSTACK_ADMIN_PASSWORD''], $Environment[''NERV_IIP_LEADER_DEMO_WORKER_PASSWORD''])', [StringComparison]::Ordinal)) 'Issue #1912 browser output must redact the governed admin and WMS worker secrets.'
+$issue1912InvocationStart = $fullStackSessionText.IndexOf('Invoke-NervIssue1912WalkthroughScenario', [StringComparison]::Ordinal)
+$issue1912InvocationEnd = $fullStackSessionText.IndexOf('elseif ', $issue1912InvocationStart + 1, [StringComparison]::Ordinal)
+Assert-True ($issue1912InvocationStart -ge 0 -and $issue1912InvocationEnd -gt $issue1912InvocationStart) 'Full-stack entrypoint Issue #1912 invocation boundaries must remain discoverable for contract assertions.'
+$issue1912InvocationText = $fullStackSessionText.Substring($issue1912InvocationStart, $issue1912InvocationEnd - $issue1912InvocationStart)
+Assert-True ($issue1912InvocationText.Contains('-SessionWorkerPassword $sessionWorkerPassword', [StringComparison]::Ordinal)) 'Full-stack Issue #1912 must pass the generated WMS worker password into the governed scenario.'
 foreach ($requiredIssue1912Node in @(
     'rfq-supplier-quotation',
     'supplier-quotation-purchase-order',
@@ -582,6 +592,45 @@ Assert-True (
 ) 'The WMS worker password must be passed to the Playwright child process only through its transient environment.'
 $script:browserEnvironment.Remove('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')
 $script:browserEnvironment = $null
+
+$script:issue1912BrowserEnvironment = $null
+$issue1912ScenarioResult = Invoke-NervIssue1912WalkthroughScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'issue1912-admin-secret-sentinel' `
+    -SessionWorkerPassword 'issue1912-worker-secret-sentinel' `
+    -WaitAction { param($Name, $Manifest) } `
+    -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+    -BrowserAction { param($Environment, $Manifest) $script:issue1912BrowserEnvironment = $Environment }
+Assert-True ($issue1912ScenarioResult.ExitCode -eq 0) 'Issue #1912 walkthrough must complete its injected scenario boundary.'
+Assert-True (
+    [string]::Equals(
+        [string]$script:issue1912BrowserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD,
+        'issue1912-worker-secret-sentinel',
+        [StringComparison]::Ordinal
+    )
+) 'Issue #1912 must pass the generated WMS worker password to the Playwright child environment.'
+$script:issue1912BrowserEnvironment = $null
+
+$script:issue1912MissingWorkerBrowserInvoked = $false
+$issue1912MissingWorkerFailure = $null
+try {
+    Invoke-NervIssue1912WalkthroughScenario `
+        -Manifest $scenarioManifest `
+        -SessionAdminPassword 'issue1912-admin-secret-sentinel' `
+        -SessionWorkerPassword '   ' `
+        -WaitAction { param($Name, $Manifest) } `
+        -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+        -BrowserAction { param($Environment, $Manifest) $script:issue1912MissingWorkerBrowserInvoked = $true } | Out-Null
+}
+catch {
+    $issue1912MissingWorkerFailure = $_
+}
+Assert-True (
+    $null -ne $issue1912MissingWorkerFailure -and
+    $issue1912MissingWorkerFailure.Exception.Message.Contains('managed WMS worker password', [StringComparison]::Ordinal)
+) 'Issue #1912 must fail closed when the managed WMS worker password is missing.'
+Assert-True (-not $script:issue1912MissingWorkerBrowserInvoked) 'Issue #1912 must not invoke Playwright after a missing managed WMS worker password.'
+$script:issue1912MissingWorkerBrowserInvoked = $null
 
 $workerIsolationRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-worker-isolation-$([guid]::NewGuid().ToString('N'))"
 $workerIsolationStdout = Join-Path $workerIsolationRoot 'guardian.stdout.log'
