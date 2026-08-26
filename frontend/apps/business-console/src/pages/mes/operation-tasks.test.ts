@@ -53,7 +53,10 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
   }
 })
 
-const state = vi.hoisted(() => ({ filters: undefined as unknown as Record<string, unknown> }))
+const state = vi.hoisted(() => ({
+  filters: undefined as unknown as Record<string, unknown>,
+  operationRows: [] as Array<Record<string, unknown>>,
+}))
 
 // 派工弹窗的技能筛选改取技能目录主数据（中文 skillName）；目录不是本用例被测对象。
 vi.mock('@/composables/usePromotedCatalogs', async () => {
@@ -134,10 +137,10 @@ vi.mock('@/composables/useBusinessMes', async () => {
     describeMesReadinessReason: (v: string) => ({ code: v, label: v, nextStep: '' }),
     useMesOperationTasks: () => ({
       filters: state.filters,
-      operationTasks: computed(() => []),
+      operationTasks: computed(() => state.operationRows),
       operationTasksError: shallowRef(undefined),
       operationTasksPending: shallowRef(false),
-      operationTasksTotal: computed(() => 0),
+      operationTasksTotal: computed(() => state.operationRows.length),
       operationListScope: computed(() => ({
         kind: 'work-center',
         id: 'WC-A',
@@ -184,7 +187,14 @@ function mountPage() {
         NvToolbar: { template: '<div><slot name="filters" /><slot name="actions" /></div>' },
         NvDataTable: {
           props: ['rows', 'columns', 'rowKey', 'page', 'pageSize', 'totalItems', 'loading', 'sort'],
-          template: '<div data-testid="table" />',
+          template: `
+            <div data-testid="table">
+              <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
+              <div v-for="row in rows" :key="row.operationTaskId" data-testid="operation-row">
+                <slot name="cell-actualHours" :row="row" />
+              </div>
+            </div>
+          `,
         },
         // inheritAttrs (default) lets :aria-pressed / @click fall through to the real <button>.
         NvButton: { template: '<button><slot /></button>' },
@@ -199,6 +209,7 @@ function mountPage() {
 describe('operation-tasks 排程已失效 quick filter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    state.operationRows = []
   })
 
   it('binds aria-pressed to the active state and toggles it on click', async () => {
@@ -218,5 +229,44 @@ describe('operation-tasks 排程已失效 quick filter', () => {
     await button.trigger('click')
     expect(button.attributes('aria-pressed')).toBe('false')
     expect(state.filters.status).toBeUndefined()
+  })
+
+  it('shows completed cumulative labor and machine hours while keeping zero distinct from no actuals', async () => {
+    state.operationRows = [
+      {
+        operationTaskId: 'OP-ACTUAL',
+        workOrderId: 'WO-ACTUAL',
+        operationSequence: 10,
+        actualLaborHours: 1.25,
+        actualMachineHours: 0.5,
+      },
+      {
+        operationTaskId: 'OP-ZERO',
+        workOrderId: 'WO-ZERO',
+        operationSequence: 20,
+        actualLaborHours: 0,
+        actualMachineHours: 0,
+      },
+      {
+        operationTaskId: 'OP-PENDING',
+        workOrderId: 'WO-PENDING',
+        operationSequence: 30,
+        actualLaborHours: null,
+        actualMachineHours: null,
+      },
+    ]
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('实际工时')
+    const actualHourCells = wrapper.findAll('[data-testid="actual-hours"]')
+    expect(actualHourCells).toHaveLength(3)
+    expect(actualHourCells[0].text()).toMatch(/人工\s*1\.25 小时/)
+    expect(actualHourCells[0].text()).toMatch(/机器\s*0\.5 小时/)
+    expect(actualHourCells[1].text()).toMatch(/人工\s*0 小时/)
+    expect(actualHourCells[1].text()).toMatch(/机器\s*0 小时/)
+    expect(actualHourCells[2].text()).toMatch(/人工\s*暂无实绩/)
+    expect(actualHourCells[2].text()).toMatch(/机器\s*暂无实绩/)
   })
 })
