@@ -241,7 +241,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
             Assert.Equal("Failed", pendingReceivedFact.StatusName);
             Assert.True(pendingReceivedFact.RetryCount >= 1);
             Assert.Equal("Pending", transport.PendingAuthorityStatus);
-            Assert.Equal("capitalized-unit-cost-not-ready", transport.PendingAuthorityReason);
+            Assert.Equal("erp-capitalization-provenance-not-observed", transport.PendingAuthorityReason);
             Assert.Equal(0L, transport.InventoryDeadLetterCount);
         }
         catch (EventuallyTimeoutException timeout)
