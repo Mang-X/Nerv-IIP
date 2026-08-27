@@ -1083,9 +1083,10 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Scoped_idempotency_key_is_enforced_by_postgresql",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Historical_dimension_snapshot_migration_preserves_complete_prior_report_row_contract",
         "Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Production_report_handler_persists_dimension_snapshot_after_postgres_migration"
       ],
-      "expectedRuntimeTestCount": 26
+      "expectedRuntimeTestCount": 27
     },
     {
       "id": "mes-cap-postgres",

@@ -395,8 +395,8 @@ try {
         -GovernancePath (Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md') `
         -ActiveMembers $activeMembers `
         -HostedMemberIds $script:HostedPostgresMemberIds
-    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 119) 'The active PostgreSQL manifest inventory must remain 15 members and 119 frozen identities.'
-    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 111) 'The hosted PostgreSQL workflow subset must remain 14 members and 111 frozen identities.'
+    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 120) 'The active PostgreSQL manifest inventory must remain 15 members and 120 frozen identities.'
+    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 112) 'The hosted PostgreSQL workflow subset must remain 14 members and 112 frozen identities.'
     Assert-Contract ($laneInventory.activeNotHostedIds.Count -eq 1 -and [string]::Equals([string]$laneInventory.activeNotHostedIds[0], 'masterdata-device-reference-concurrency', [StringComparison]::Ordinal) -and $laneInventory.activeNotHostedIdentities -eq 8) 'The active-but-not-hosted inventory must explicitly identify the eight-test MasterData device-reference concurrency member.'
     Assert-PostgresLaneAutomationNarrative `
         -GovernancePath (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') `
@@ -404,7 +404,7 @@ try {
     $canonicalAutomationNarrative = Get-PostgresLaneAutomationNarrative -Inventory $laneInventory
     $automationNarrativeMutationCases = @(
         @{ name = 'old-all-active-claim'; text = '当前 hosted job 接入拆解③登记的全部非规模种子成员。' },
-        @{ name = 'wrong-hosted-counts'; text = $canonicalAutomationNarrative.Replace('hosted job 仅选择其中 14 个成员、111 个身份', 'hosted job 仅选择其中 15 个成员、119 个身份') },
+        @{ name = 'wrong-hosted-counts'; text = $canonicalAutomationNarrative.Replace('hosted job 仅选择其中 14 个成员、112 个身份', 'hosted job 仅选择其中 15 个成员、120 个身份') },
         @{ name = 'missing-not-hosted-reason'; text = $canonicalAutomationNarrative.Replace('原因是共享 workflow 接入仍待独立 Scope-Gate；', '') }
     )
     foreach ($mutationCase in $automationNarrativeMutationCases) {
@@ -466,10 +466,10 @@ try {
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
-    # MES：既有类、WorkOrderTransformation、替代料、OEE 快照与 OperationActualTimeSettlement 共有 37 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
+    # MES：既有类、WorkOrderTransformation、替代料、OEE 快照与 OperationActualTimeSettlement 共有 38 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
     # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 37) 'The MES member must freeze exactly its thirty-seven governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 38) 'The MES member must freeze exactly its thirty-eight governed PostgreSQL identities.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
@@ -483,6 +483,7 @@ try {
     )
     $mesIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesMember.expectedTestIdentities), [StringComparer]::Ordinal)
     Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
+    Assert-Contract ($mesIdentitySet.Contains('Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Historical_dimension_snapshot_migration_preserves_complete_prior_report_row_contract')) 'The MES member must freeze the prior-row historical-dimension migration contract identity.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
     foreach ($mesSource in @(

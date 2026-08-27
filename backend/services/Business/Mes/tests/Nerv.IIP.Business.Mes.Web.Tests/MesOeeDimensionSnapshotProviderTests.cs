@@ -15,7 +15,7 @@ using Nerv.IIP.Testing;
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 [Collection(MesPostgresLaneDatabase.CollectionName)]
-public sealed class MesOeeDimensionSnapshotProviderTests
+public sealed partial class MesOeeDimensionSnapshotProviderTests
 {
     [Fact]
     public void Production_report_handler_requires_an_explicit_dimension_snapshot_provider()
@@ -117,6 +117,13 @@ public sealed class MesOeeDimensionSnapshotProviderTests
         Assert.Equal(new TimeOnly(20, 0), report.OeeShiftStartsAt);
         Assert.Equal(new TimeOnly(4, 0), report.OeeShiftEndsAt);
         Assert.True(report.OeeShiftCrossesMidnight);
+    }
+
+    [MesRealPostgresFact]
+    public async Task Historical_dimension_snapshot_migration_preserves_complete_prior_report_row_contract()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await ExecuteHistoricalDimensionSnapshotMigrationContractAsync();
     }
 
     [Fact]
