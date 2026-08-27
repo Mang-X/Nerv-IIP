@@ -23,6 +23,7 @@ public sealed class MesDowntimeReadFacePostgresTests
     [MesRealPostgresFact]
     public async Task Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres()
     {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = await CreateMigratedDbContextAsync();
         dbContext.WorkCenterUnavailabilities.Add(WorkCenterUnavailability.Open(
             Org, Env, "DT-0004", "WC-04",
@@ -48,6 +49,7 @@ public sealed class MesDowntimeReadFacePostgresTests
     [MesRealPostgresFact]
     public async Task Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code()
     {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = await CreateMigratedDbContextAsync();
         await SeedReasonMixAsync(dbContext);
 
@@ -71,6 +73,7 @@ public sealed class MesDowntimeReadFacePostgresTests
     [MesRealPostgresFact]
     public async Task Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter()
     {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = await CreateMigratedDbContextAsync();
         await SeedReasonMixAsync(dbContext);
         var handler = CreateHandler(dbContext);
@@ -126,7 +129,6 @@ public sealed class MesDowntimeReadFacePostgresTests
 
     private static async Task<ApplicationDbContext> CreateMigratedDbContextAsync()
     {
-        await MesPostgresLaneDatabase.ResetSchemaAsync();
         var dbContext = new ApplicationDbContext(MesPostgresLaneDatabase.CreateOptions(), NoopMediator.Instance);
         MesPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
