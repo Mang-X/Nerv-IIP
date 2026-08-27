@@ -2181,8 +2181,9 @@ public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
 /// 两条内容级分层先例）。只持 <c>business.mes.traceability.read</c> 的主体仍拿到整张执行追溯图，
 /// 但不含检验结论节点及其边。
 /// <para>
-/// <see cref="ForwardAsync"/> 是 sealed 的：追溯端点只能实现 <see cref="LoadTraceabilityAsync"/>，
-/// 无法各自决定裁不裁剪，故新增追溯读面不可能漏掉这层分层。
+/// <see cref="ForwardAsync"/> 是 sealed 的：继承本基类的读面只能实现 <see cref="LoadTraceabilityAsync"/>，
+/// 不能各自决定裁不裁剪。这不构成类型层面的封闭——新端点仍可直接继承 AuthorizedBusinessProxyEndpoint
+/// 绕开本基类；兜住这一整类的是三个读面 × 两种权限态的门面用例矩阵。
 /// </para>
 /// </summary>
 public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusinessGatewayAuthorizationClient auth)
