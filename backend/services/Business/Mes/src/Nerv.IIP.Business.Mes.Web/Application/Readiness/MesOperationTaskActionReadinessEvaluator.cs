@@ -101,7 +101,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 (x.ToUtc == null || x.ToUtc > evaluatedAtUtc))
             .Select(x => new UnavailabilityFact(x.WorkCenterId, x.Reason))
             .ToArrayAsync(cancellationToken);
-        var requirements = await MaterialReadinessGuards.LoadLatestRequirementSnapshotsByWorkOrderAsync(
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
             dbContext,
             organizationId,
             environmentId,
@@ -148,7 +148,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         IReadOnlyCollection<MaterialReadinessGuards.AutomaticRebindEdge> automaticRebinds,
         IReadOnlyCollection<QualityHoldFact> activeQualityHolds,
         IReadOnlyCollection<UnavailabilityFact> activeUnavailabilities,
-        IReadOnlyCollection<MaterialReadinessGuards.MaterialRequirementSnapshot> requirements,
+        IReadOnlyCollection<MaterialRequirementSnapshot> requirements,
         IReadOnlyCollection<ReceiptFact> receipts)
     {
         if (task.Status == OperationTaskLifecycleStatus.InProgress)

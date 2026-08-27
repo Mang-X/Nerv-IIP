@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
@@ -154,14 +155,20 @@ public sealed class PrevalidateMaterialScanQueryHandler(
                 request, "line-side-receipt-incomplete", evaluatedAtUtc, issue.MaterialId, issue.MaterialLotId);
         }
 
-        var persistedRequirements = await dbContext.MaterialRequirements.AsNoTracking().Where(x =>
-            x.OrganizationId == request.OrganizationId &&
-            x.EnvironmentId == request.EnvironmentId &&
-            x.WorkOrderId == request.WorkOrderId)
-            .ToArrayAsync(cancellationToken);
-        var latestSnapshot = MaterialReadinessGuards.SelectLatestRequirementSnapshot(
-            persistedRequirements,
-            x => x.CapturedAtUtc);
+        MaterialRequirementSnapshotCapture latestSnapshot;
+        try
+        {
+            latestSnapshot = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrderAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                cancellationToken);
+        }
+        catch (JsonException)
+        {
+            throw MaterialScanPrevalidationErrors.SourceUnavailable();
+        }
         var latestRequirements = latestSnapshot.Requirements;
         if (latestSnapshot.CaptureIdentity is not null &&
             latestSnapshot.CaptureIdentity != workOrder.MaterialRequirementSnapshotEvaluatedAtUtc)
@@ -194,16 +201,8 @@ public sealed class PrevalidateMaterialScanQueryHandler(
         var qualification = "primary";
         if (!isPrimary)
         {
-            bool isFrozenSubstitute;
-            try
-            {
-                isFrozenSubstitute = requirements.Any(x =>
-                    x.GetSubstituteMaterialIds().Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase));
-            }
-            catch (JsonException)
-            {
-                throw MaterialScanPrevalidationErrors.SourceUnavailable();
-            }
+            var isFrozenSubstitute = requirements.Any(x =>
+                x.SubstituteMaterialIds.Contains(issue.MaterialId, StringComparer.OrdinalIgnoreCase));
             if (!isFrozenSubstitute)
             {
                 return Reject(

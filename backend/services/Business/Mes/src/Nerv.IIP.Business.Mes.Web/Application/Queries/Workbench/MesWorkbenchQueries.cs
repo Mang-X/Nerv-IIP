@@ -526,7 +526,7 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             return 0;
         }
 
-        var requirements = await MaterialReadinessGuards.LoadLatestRequirementSnapshotsByWorkOrderAsync(
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -1458,40 +1458,12 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        var persistedRequirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new
-            {
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-                x.SubstituteMaterialIdsJson,
-            })
-            .ToArrayAsync(cancellationToken);
-        var requirements = persistedRequirements
-            .Select(x => new MaterialReadinessGuards.MaterialRequirementSnapshot(
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-                System.Text.Json.JsonSerializer.Deserialize<string[]>(x.SubstituteMaterialIdsJson) ?? []))
-            .ToArray();
-        requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshot(requirements, x => x.CapturedAtUtc).Requirements;
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            [request.WorkOrderId],
+            cancellationToken);
 
         if (requirements.Length == 0)
         {

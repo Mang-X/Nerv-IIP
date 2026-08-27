@@ -82,7 +82,7 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
                     Latest.AddMinutes(1)),
                 CancellationToken.None));
 
-        Assert.Contains("数量必须大于 0", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不属于该工单冻结", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.MaterialIssueRequests.Local);
     }
 
@@ -110,6 +110,33 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
 
         var issue = Assert.Single(dbContext.MaterialIssueRequests.Local, x => x.RequestNo == accepted.ReferenceId);
         Assert.Equal(5m, issue.RequestedQuantity);
+    }
+
+    [Fact]
+    public async Task Frozen_substitute_issue_does_not_revive_primary_deleted_from_latest_complete_capture()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(CreateReleasedWorkOrder());
+        dbContext.MaterialRequirements.AddRange(
+            Requirement("OP-10", "MAT-A", null, 5m, Earlier, substituteMaterialIds: ["MAT-SUB"]),
+            Requirement("OP-20", "MAT-B", null, 7m, Latest));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateMaterialIssueRequestCommandHandler(dbContext).Handle(
+                new CreateMaterialIssueRequestCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    WorkOrderId,
+                    "OP-10",
+                    "MAT-SUB",
+                    "PCS",
+                    null,
+                    Latest.AddMinutes(1)),
+                CancellationToken.None));
+
+        Assert.Contains("不属于该工单冻结", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dbContext.MaterialIssueRequests.Local);
     }
 
     [Fact]
@@ -144,6 +171,27 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
             CancellationToken.None);
 
         Assert.DoesNotContain(response.Blockers, x => x.Code == "MATERIAL_SHORTAGE");
+    }
+
+    [Fact]
+    public async Task Material_readiness_uses_tracked_override_from_latest_capture()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(CreateReleasedWorkOrder());
+        var requirement = Requirement("OP-10", "MAT-A", null, 10m, Latest);
+        dbContext.MaterialRequirements.Add(requirement);
+        dbContext.MaterialIssueRequests.Add(ReceivedIssue("OP-10", "MAT-A", 5m));
+        await dbContext.SaveChangesAsync();
+        dbContext.Entry(requirement).Property(x => x.RequiredQuantity).CurrentValue = 5m;
+
+        var response = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+            new GetMaterialReadinessQuery(OrganizationId, EnvironmentId, WorkOrderId),
+            CancellationToken.None);
+
+        var row = Assert.Single(response.Items);
+        Assert.Equal(5m, row.RequiredQuantity);
+        Assert.Equal(0m, row.ShortageQuantity);
+        Assert.Equal("Ready", row.Status);
     }
 
     [Fact]
@@ -293,7 +341,8 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
         string? lotId,
         decimal requiredQuantity,
         DateTimeOffset capturedAtUtc,
-        decimal availableQuantity = 0m) =>
+        decimal availableQuantity = 0m,
+        IReadOnlyCollection<string>? substituteMaterialIds = null) =>
         MaterialRequirement.Capture(
             OrganizationId,
             EnvironmentId,
@@ -307,7 +356,7 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
             "test",
             $"snapshot-{capturedAtUtc:yyyyMMddHHmm}-{operationTaskId ?? "work-order"}-{materialId}-{lotId}",
             capturedAtUtc,
-            []);
+            substituteMaterialIds ?? []);
 
     private static MaterialIssueRequest ReceivedIssue(
         string? operationTaskId,

@@ -80,10 +80,26 @@ builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
 });
-builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
-{
-    client.BaseAddress = inventoryBaseAddress;
-});
+builder.Services
+    .AddOptions<MesInventoryHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesInventoryHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesInventoryHttpClient>((services, client) =>
+    {
+        client.BaseAddress = inventoryBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.ConnectTimeout,
+    });
 builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
