@@ -459,6 +459,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         }
     }
 
+    [Fact]
+    public void BarcodeLabel_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/BarcodeLabel/BusinessBarcodeLabelClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessBarcodeLabelClient"),
+            Identity("Class", "HttpBusinessBarcodeLabelClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
     private static IReadOnlyList<string> AnalyzeSharedBoundary(
         string businessServicesDirectory,
         IReadOnlyDictionary<string, string> expectedFiles) =>
@@ -808,7 +830,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Inventory" &&
                     capability != "Quality" &&
                     capability != "Approval" &&
-                    capability != "Notification");
+                    capability != "Notification" &&
+                    capability != "BarcodeLabel");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -825,7 +848,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Inventory" &&
                     capability != "Quality" &&
                     capability != "Approval" &&
-                    capability != "Notification");
+                    capability != "Notification" &&
+                    capability != "BarcodeLabel");
         }
 
         seedCapabilities.Add(
