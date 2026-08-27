@@ -3295,6 +3295,148 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>三个 MES 追溯读面的 console 路由；检验结论分层对它们必须一视同仁。</summary>
+    public static TheoryData<string, bool> TraceabilityRoutesByQualityRead()
+    {
+        var data = new TheoryData<string, bool>();
+        foreach (var route in new[]
+        {
+            "/api/business-console/v1/mes/traceability/work-orders/WO-001",
+            "/api/business-console/v1/mes/traceability/batches/SN-001",
+            "/api/business-console/v1/mes/traceability/material-lots/LOT-001",
+        })
+        {
+            data.Add(route, true);
+            data.Add(route, false);
+        }
+
+        return data;
+    }
+
+    // 追溯图上的检验结论带出缺陷码与处置结论，属 authorization-matrix 里 business.mes.quality.read 的质量下钻内容；
+    // 只持 traceability.read 的主体仍拿到整张执行图，但不含检验结论节点及其边。三个读面同一口径。
+    [Theory]
+    [MemberData(nameof(TraceabilityRoutesByQualityRead))]
+    public async Task Mes_traceability_facades_scope_inspection_verdicts_to_quality_read(string route, bool holdsQualityRead)
+    {
+        var permissions = holdsQualityRead
+            ? new[] { BusinessGatewayPermissions.MesTraceabilityRead, BusinessGatewayPermissions.MesQualityRead }
+            : [BusinessGatewayPermissions.MesTraceabilityRead];
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(permissions);
+        var mes = new RecordingMesClient
+        {
+            Traceability = new BusinessConsoleMesTraceabilityResponse(
+                [
+                    new BusinessConsoleMesTraceabilityNode("SN-001", "ProducedLotOrSerial", "SN-001", "Produced"),
+                    new BusinessConsoleMesTraceabilityNode("OP-10", "OperationTask", "OP-10", "Reported"),
+                    new BusinessConsoleMesTraceabilityNode("user-emp-010", "Operator", "user-emp-010", "Reported"),
+                    new BusinessConsoleMesTraceabilityNode("DEF-001", "InspectionResult", "SCRAP-SURFACE", "ScrapAccepted"),
+                ],
+                [
+                    new BusinessConsoleMesTraceabilityEdge("PRPT-001", "user-emp-010", "reported-by"),
+                    new BusinessConsoleMesTraceabilityEdge("OP-10", "DEF-001", "inspected-as"),
+                ]),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync($"{route}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        var nodeTypes = data.GetProperty("nodes").EnumerateArray().Select(x => x.GetProperty("nodeType").GetString()).ToArray();
+        var relations = data.GetProperty("edges").EnumerateArray().Select(x => x.GetProperty("relationType").GetString()).ToArray();
+
+        // 执行追溯本体（人员、工序）两种主体都拿得到。
+        Assert.Contains("Operator", nodeTypes);
+        Assert.Contains("reported-by", relations);
+        Assert.Equal(holdsQualityRead, nodeTypes.Contains("InspectionResult"));
+        Assert.Equal(holdsQualityRead, relations.Contains("inspected-as"));
+    }
+
+    [Fact]
+    public async Task Mes_production_report_facade_reports_the_authenticated_principal_as_operator()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-team-operator",
+                    "team",
+                    "TEAM-MC-A",
+                    [BusinessGatewayPermissions.MesReportingWrite]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-SELF",
+                    "WO-SELF",
+                    "InProgress",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    "user-other",
+                    "同班组的另一人",
+                    null,
+                    null,
+                    "Ready"),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "team",
+                    "TEAM-MC-A",
+                    "机加早班组",
+                    "active-membership",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-SELF",
+                operationTaskId = "OP-SELF",
+                goodQuantity = 1,
+                scrapQuantity = 0,
+                completesOperation = false,
+                reportedAtUtc = DateTimeOffset.Parse("2026-07-29T08:00:00Z"),
+                idempotencyKey = "report-operator-001",
+                // 作用域取班组：scopeId 与 principal 不同值，故「拿调用方自带的作用域当身份」这类改法会被这条用例抓到。
+                scopeKind = "team",
+                scopeId = "TEAM-MC-A",
+                // 调用方即使自报身份也不作数：报工人只能来自已认证 principal。
+                reportedBy = "user-impostor",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, mes.RecordProductionReportCallCount);
+        Assert.Equal("user-admin", mes.LastRecordProductionReportActor);
+    }
+
     [Fact]
     public async Task Mes_production_report_rejects_a_known_task_id_outside_the_selected_self_scope()
     {
@@ -10239,6 +10381,7 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.RecordProductionReportAsync(
             "internal-token-001",
             ProductionReportRequest(),
+            "user-operator",
             CancellationToken.None);
 
         Assert.Equal(productionReportId, response.ProductionReportId);
@@ -10251,6 +10394,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", requestBody.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", requestBody.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("wire-shape-001", requestBody.RootElement.GetProperty("idempotencyKey").GetString());
+        // 报工人由 Gateway 从已认证 principal 注入，公开请求 DTO 不带身份字段，也不透传前端作用域选择。
+        Assert.Equal("user-operator", requestBody.RootElement.GetProperty("reportedBy").GetString());
+        Assert.False(requestBody.RootElement.TryGetProperty("scopeKind", out _));
     }
 
     [Theory]
@@ -10272,6 +10418,7 @@ public sealed class BusinessGatewayProxyTests
             client.RecordProductionReportAsync(
                 "internal-token-001",
                 ProductionReportRequest(),
+                "user-operator",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
@@ -10300,6 +10447,7 @@ public sealed class BusinessGatewayProxyTests
             client.RecordProductionReportAsync(
                 "internal-token-001",
                 ProductionReportRequest(),
+                "user-operator",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
@@ -16745,6 +16893,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public int ReleaseWorkOrderCallCount { get; private set; }
     public int StartOperationCallCount { get; private set; }
     public int RecordProductionReportCallCount { get; private set; }
+
+    public string? LastRecordProductionReportActor { get; private set; }
     public int RecordDefectCallCount { get; private set; }
     public int RecordDowntimeCallCount { get; private set; }
 
@@ -17407,10 +17557,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         RecordProductionReportCallCount++;
         LastInternalToken = internalBearerToken;
+        LastRecordProductionReportActor = actor;
         return Task.FromResult(new BusinessConsoleRecordProductionReportResponse("report-001", "PR-001"));
     }
 
@@ -17521,26 +17673,35 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    // 三个追溯读面接同一份下游响应，故追溯类用例可以把「哪个读面」当成可枚举维度，
+    // 而不是给每个读面手写一条用例。
+    public BusinessConsoleMesTraceabilityResponse? Traceability { get; init; }
+
     public Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        TraceabilityResponse();
 
     public Task<BusinessConsoleMesTraceabilityResponse> GetBatchTraceabilityAsync(
         string internalBearerToken,
         string batchOrSerial,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        TraceabilityResponse();
 
     public Task<BusinessConsoleMesTraceabilityResponse> GetMaterialLotTraceabilityAsync(
         string internalBearerToken,
         string materialLotId,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        TraceabilityResponse();
+
+    private Task<BusinessConsoleMesTraceabilityResponse> TraceabilityResponse() =>
+        Traceability is null
+            ? throw new NotSupportedException()
+            : Task.FromResult(Traceability);
 
     public Task<BusinessConsoleMesCapacityImpactListResponse> ListCapacityImpactsAsync(
         string internalBearerToken,

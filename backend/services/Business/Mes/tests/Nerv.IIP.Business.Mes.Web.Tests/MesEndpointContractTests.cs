@@ -537,6 +537,79 @@ public sealed class MesEndpointContractTests
         Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
     }
 
+    // 验收 1（#1948）：网关注入的报工人必须由 MES 写面端点转交给命令；这一段丢了，报工就没有操作人。
+    [Fact]
+    public async Task Record_production_report_endpoint_forwards_the_injected_operator_to_the_command()
+    {
+        var sender = new ProductionReportWireShapeSender(Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689"));
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-reports", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-WIRE-001",
+            operationTaskId = "OP-WIRE-10",
+            goodQuantity = 1m,
+            scrapQuantity = 0m,
+            completesOperation = false,
+            reportedAtUtc = "2026-07-21T15:46:24Z",
+            idempotencyKey = "wire-operator-001",
+            reportedBy = "user-emp-010",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user-emp-010", sender.Command?.ReportedBy);
+    }
+
+    // 幂等键为空的那条命令构造分支在 HTTP 上不可达：RecordProductionReportRequestValidator 先把它拒成 400。
+    [Fact]
+    public async Task Record_production_report_endpoint_rejects_a_missing_idempotency_key()
+    {
+        var sender = new ProductionReportWireShapeSender(Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689"));
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-reports", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-WIRE-001",
+            operationTaskId = "OP-WIRE-10",
+            goodQuantity = 1m,
+            scrapQuantity = 0m,
+            completesOperation = false,
+            reportedAtUtc = "2026-07-21T15:46:24Z",
+            reportedBy = "user-emp-010",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(sender.Command);
+    }
+
     [Fact]
     public async Task Create_finished_goods_receipt_endpoint_returns_strong_id_wire_shape()
     {
@@ -2708,7 +2781,7 @@ public sealed class MesEndpointContractTests
         var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
         dbContext.ProductionReports.AddRange(
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-001", "WO-001", "OP-10", 1m, 0m, false, now.AddMinutes(1)),
-            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-002", "WO-001", "OP-20", 1m, 0m, false, now.AddMinutes(2)),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-002", "WO-001", "OP-20", 1m, 0m, false, now.AddMinutes(2), reportedBy: "user-emp-020"),
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-003", "WO-001", "OP-30", 1m, 0m, false, now.AddMinutes(3)));
         dbContext.FinishedGoodsReceiptRequests.AddRange(
             Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-001", "WO-001", "SKU-001", 1m, "PCS", now.AddMinutes(1)),
@@ -2724,7 +2797,9 @@ public sealed class MesEndpointContractTests
             CancellationToken.None);
 
         Assert.Equal(3, reports.Total);
-        Assert.Equal("PRPT-002", Assert.Single(reports.Items).ReportNo);
+        var pagedReport = Assert.Single(reports.Items);
+        Assert.Equal("PRPT-002", pagedReport.ReportNo);
+        Assert.Equal("user-emp-020", pagedReport.ReportedBy);
         Assert.Equal(3, receipts.Total);
         Assert.Equal("FGR-002", Assert.Single(receipts.Items).RequestNo);
     }
@@ -2737,7 +2812,7 @@ public sealed class MesEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var now = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
         dbContext.ProductionReports.AddRange(
-            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", 8m, 1m, false, now),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", 8m, 1m, false, now, reportedBy: "user-emp-010"),
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", 2m, 0m, false, now));
         dbContext.ProductionReportMaterialConsumptions.AddRange(
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-B", "KG", 3.5m, "MIR-002"),
@@ -2750,6 +2825,8 @@ public sealed class MesEndpointContractTests
             CancellationToken.None);
 
         Assert.Equal("PRPT-DETAIL", detail.Report.ReportNo);
+        // 验收 1（#1948）：报工人必须能从读面查到，否则「每条报工可查到操作人」只落在库里。
+        Assert.Equal("user-emp-010", detail.Report.ReportedBy);
         Assert.Equal("WO-001", detail.Report.WorkOrderId);
         Assert.Collection(detail.ConsumedMaterialLots,
             first => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-A", 2.5m, "KG", "MIR-001"), first),
@@ -3126,10 +3203,12 @@ public sealed class MesEndpointContractTests
 
     private sealed class ProductionReportWireShapeSender(Guid productionReportId) : ISender
     {
+        public RecordProductionReportCommand? Command { get; private set; }
+
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             _ = cancellationToken;
-            Assert.IsType<RecordProductionReportCommand>(request);
+            Command = Assert.IsType<RecordProductionReportCommand>(request);
             return Task.FromResult((TResponse)(object)new ProductionReportCommandResult(
                 new Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId(productionReportId),
                 "PRPT-WIRE-001"));

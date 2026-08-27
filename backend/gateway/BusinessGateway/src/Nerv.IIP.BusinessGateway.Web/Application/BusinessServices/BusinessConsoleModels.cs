@@ -5000,7 +5000,9 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualLaborHours = null,
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
-    decimal? OperationActualMachineHours = null);
+    decimal? OperationActualMachineHours = null,
+    [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
+    string? ReportedBy = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5053,7 +5055,9 @@ public sealed record BusinessConsoleMesProductionReportRow(
     [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualLaborHours = null,
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
-    decimal? OperationActualMachineHours = null);
+    decimal? OperationActualMachineHours = null,
+    [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
+    string? ReportedBy = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -5363,7 +5367,13 @@ public sealed record BusinessConsoleMesTraceabilityResponse(
     IReadOnlyCollection<BusinessConsoleMesTraceabilityNode> Nodes,
     IReadOnlyCollection<BusinessConsoleMesTraceabilityEdge> Edges);
 
-public sealed record BusinessConsoleMesTraceabilityNode(string NodeId, string NodeType, string DisplayName, string Status);
+public sealed record BusinessConsoleMesTraceabilityNode(
+    string NodeId,
+    string NodeType,
+    string DisplayName,
+    string Status,
+    [property: Description("该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。")]
+    DateTimeOffset? OccurredAtUtc = null);
 
 public sealed record BusinessConsoleMesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 

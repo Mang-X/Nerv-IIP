@@ -587,7 +587,7 @@ function formatError(error: unknown) {
       :loading="downtimeEventsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无停机事件。先在工序执行登记设备异常，再回到这里跟进恢复与影响范围。"
+      empty-message="暂无停机事件。点击上方「登记停机」记录设备异常，登记后可在这里跟进恢复与影响范围。"
     >
       <template #cell-deviceAssetId="{ row }">
         <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />

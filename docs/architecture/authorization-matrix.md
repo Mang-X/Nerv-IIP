@@ -239,7 +239,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.mes.operations.manage` | `user` / `external-client` / `internal-service` | environment + resource | 开始、暂停、恢复和完成工序任务。 |
 | `business.mes.reporting.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看报工记录、生产日报和当前主体授权范围内的可报工工序任务；可报工任务只返回 MES 权威状态允许 `report` 的行。 |
 | `business.mes.reporting.write` | `user` / `external-client` | environment + resource | 提交工序报工、合格数、不良数和工时。 |
-| `business.mes.quality.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单/工序关联的质量、缺陷和 NCR 上下文。**保护质量保留的逐事件时间线端点（`GET /mes/quality-holds/{sourceDocumentId}/timeline`）**——高于工单详情里的保留生命周期摘要（后者随 `business.mes.work-orders.read`）。时间线里的**来源检验记录下钻另需 `business.quality.inspection-records.read`**（Quality 域，前端据此门控互链，避免死链）。 |
+| `business.mes.quality.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单/工序关联的质量、缺陷和 NCR 上下文，**含追溯图里按工序归属点亮的检验结论节点**。**保护质量保留的逐事件时间线端点（`GET /mes/quality-holds/{sourceDocumentId}/timeline`）**——高于工单详情里的保留生命周期摘要（后者随 `business.mes.work-orders.read`）。时间线里的**来源检验记录下钻另需 `business.quality.inspection-records.read`**（Quality 域，前端据此门控互链，避免死链）。 |
 | `business.mes.quality.write` | `user` / `external-client` | environment + resource | 记录生产过程不良、返工/报废上下文，以及带理由的 MES 质量 hold 人工强制释放。 |
 | `business.mes.receipts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看完工入库请求。 |
 | `business.mes.receipts.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建完工入库请求，以及失败库存过账的重投（retry）。 |
@@ -247,7 +247,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.mes.downtime.manage` | `user` / `external-client` / `internal-service` | environment + resource | 记录停机、确认恢复并影响短期执行能力。 |
 | `business.mes.handovers.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看班次交接和未结事项。 |
 | `business.mes.handovers.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建和接收班次交接。 |
-| `business.mes.traceability.read` | `user` / `external-client` / `internal-service` | environment + resource | 按工单、批次/序列号、物料批追溯执行证据。 |
+| `business.mes.traceability.read` | `user` / `external-client` / `internal-service` | environment + resource | 按工单、批次/序列号、物料批追溯执行证据。执行证据包含报工节点及其报工人、报工时固化的设备快照与发生时刻；**经 BusinessGateway 门面访问时，检验结论节点（缺陷码与处置结论）另需 `business.mes.quality.read`**：只持追溯权限的主体拿到同一张图但不含检验结论节点及其边。分层发生在门面，MES 服务端 route 仍只挂本权限并返回完整图，直连服务端的 `internal-service` / `external-client` 不受该裁剪约束（与「工单详情给保留摘要、逐事件时间线另要 quality.read」同一分层口径）。 |
 | `business.mes.schedules.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看规则排程版本和执行结果。 |
 | `business.mes.schedules.manage` | `user` / `external-client` / `internal-service` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
 | `business.mes.capacity.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看产能影响、设备不可用和执行阻塞摘要。 |
