@@ -147,7 +147,8 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void RecordActualLabor(OperationLaborSettlement settlement)
     {
-        EnsureLaborCurrency(settlement.CurrencyCode);
+        if (settlement.Amount != 0m)
+            EnsureLaborCurrency(settlement.CurrencyCode);
         details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, "settled"),
             settlement.WorkCenterId,
@@ -162,7 +163,8 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void RecordActualLaborVoid(OperationLaborSettlementVoid settlementVoid)
     {
-        EnsureLaborCurrency(settlementVoid.CurrencyCode);
+        if (settlementVoid.Amount != 0m)
+            EnsureLaborCurrency(settlementVoid.CurrencyCode);
         details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision, "voided"),
             settlementVoid.WorkCenterId,
@@ -176,7 +178,8 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void RecordActualLaborSuperseded(OperationLaborSettlement settlement, long supersedingRevision, DateTimeOffset occurredAtUtc)
     {
-        EnsureLaborCurrency(settlement.CurrencyCode);
+        if (settlement.Amount != 0m)
+            EnsureLaborCurrency(settlement.CurrencyCode);
         details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, $"superseded-by-{supersedingRevision}"),
             settlement.WorkCenterId,

@@ -138,7 +138,8 @@ public sealed partial class OperationLaborSettlementOrchestrator
             integrationEvent.EnvironmentId,
             payload.WorkOrderId,
             cancellationToken);
-        if (!cost.TryFreezeLaborCurrency(rate.CurrencyCode))
+        var settlementAmount = payload.ActualLaborTicks / (decimal)TimeSpan.TicksPerHour * rate.HourlyRate;
+        if (settlementAmount != 0m && !cost.TryFreezeLaborCurrency(rate.CurrencyCode))
         {
             await AddCurrencyDeadLetterAsync(
                 MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
@@ -536,7 +537,7 @@ public sealed partial class OperationLaborSettlementOrchestrator
             integrationEvent.EnvironmentId,
             payload.WorkOrderId,
             cancellationToken);
-        if (cost is not null && !cost.TryFreezeLaborCurrency(settlement.CurrencyCode))
+        if (cost is not null && settlement.Amount != 0m && !cost.TryFreezeLaborCurrency(settlement.CurrencyCode))
         {
             await AddCurrencyDeadLetterAsync(
                 MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,

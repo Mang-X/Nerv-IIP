@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
@@ -488,6 +489,84 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             ORDER BY indexname
             """).ToListAsync();
         Assert.Equal(3, indexes.Count);
+    }
+
+    [ErpCostPostgresFact]
+    public async Task PostgreSQL_partial_capitalization_settle_void_and_final_receipt_persist_balanced_vouchers()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.MigrateAsync();
+        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+            "org-partial", "env-partial", "WC-PARTIAL", 80m, "CNY",
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
+            "system:test", "partial capitalization rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        var cost = WorkOrderCost.Open("org-partial", "env-partial", "WO-PARTIAL", "FG-PARTIAL");
+        cost.RecordLabor("RPT-PARTIAL", "WC-PARTIAL", 2m, 80m, "CNY", false,
+            DateTimeOffset.Parse("2026-08-31T15:40:00Z"));
+        cost.Complete(10m, 1, 0, DateTimeOffset.Parse("2026-08-31T15:50:00Z"));
+        db.WorkOrderCosts.Add(cost);
+        await db.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
+        await receiptConsumer.HandleAsync(PartialReceipt("evt-pg-partial", "MOVE-PG-PARTIAL", "FGR-PG-PARTIAL"), CancellationToken.None);
+
+        var settled = new MesOperationActualTimeSettledIntegrationEvent(
+            "evt-pg-partial-settle", MesIntegrationEventTypes.OperationActualTimeSettled, 1,
+            DateTimeOffset.Parse("2026-08-31T16:00:00Z"), MesIntegrationEventSources.BusinessMes,
+            "correlation-pg-partial", "causation-pg-partial", "org-partial", "env-partial",
+            "operator:test", "actual-time:OP-PARTIAL:1:settled",
+            new OperationActualTimeSettledPayload(
+                "WO-PARTIAL", "OP-PARTIAL", "WC-PARTIAL", 1,
+                DateTimeOffset.Parse("2026-08-31T15:50:00Z"),
+                90 * TimeSpan.TicksPerMinute, 90 * TimeSpan.TicksPerMinute, ["RPT-PARTIAL"]));
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, new PostgreSqlWorkOrderCostMutationLock(db),
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(settled, CancellationToken.None);
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+                db, db, new PostgreSqlWorkOrderCostMutationLock(db),
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(new MesOperationActualTimeSettlementVoidedIntegrationEvent(
+                "evt-pg-partial-void", MesIntegrationEventTypes.OperationActualTimeSettlementVoided, 1,
+                DateTimeOffset.Parse("2026-08-31T16:05:00Z"), MesIntegrationEventSources.BusinessMes,
+                "correlation-pg-partial", settled.EventId, "org-partial", "env-partial",
+                "operator:test", "actual-time:OP-PARTIAL:1:voided",
+                new OperationActualTimeSettlementVoidedPayload(
+                    "WO-PARTIAL", "OP-PARTIAL", "WC-PARTIAL", 1,
+                    DateTimeOffset.Parse("2026-08-31T15:50:00Z"),
+                    DateTimeOffset.Parse("2026-08-31T16:05:00Z"),
+                    90 * TimeSpan.TicksPerMinute, 90 * TimeSpan.TicksPerMinute, ["RPT-PARTIAL"])),
+                CancellationToken.None);
+        await receiptConsumer.HandleAsync(PartialReceipt("evt-pg-final", "MOVE-PG-FINAL", "FGR-PG-FINAL"), CancellationToken.None);
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        var persisted = await assertDb.WorkOrderCosts.Include(x => x.Details)
+            .SingleAsync(x => x.WorkOrderId == "WO-PARTIAL");
+        Assert.Equal(0m, persisted.LaborCost);
+        Assert.Equal(10m, persisted.CapitalizedQuantity);
+        Assert.Equal(0m, persisted.WipClearedCost);
+        var vouchers = await assertDb.JournalVouchers.Include(x => x.Lines).ToListAsync();
+        Assert.Equal(4, vouchers.Count);
+        Assert.All(vouchers, voucher =>
+            Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount)));
+        Assert.Empty(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+
+        static StockMovementPostedIntegrationEvent PartialReceipt(string eventId, string movementId, string receiptId)
+            => new(
+                eventId, InventoryIntegrationEventTypes.StockMovementPosted, 1,
+                DateTimeOffset.Parse("2026-08-31T15:55:00Z"), InventoryIntegrationEventSources.BusinessInventory,
+                receiptId, receiptId, "org-partial", "env-partial", "inventory", movementId,
+                new StockMovementPostedPayload(
+                    movementId, "inbound", InventoryIntegrationEventSources.BusinessMes,
+                    receiptId, "WO-PARTIAL", $"mes:finished-goods-receipt:{receiptId}",
+                    "FG-PARTIAL", "ea", "finished-goods", "receiving", null, null,
+                    "unrestricted", "organization", "org-partial", 5m,
+                    DateTimeOffset.Parse("2026-08-31T15:55:00Z"), 16m, 80m));
     }
 
     [ErpCostPostgresFact]

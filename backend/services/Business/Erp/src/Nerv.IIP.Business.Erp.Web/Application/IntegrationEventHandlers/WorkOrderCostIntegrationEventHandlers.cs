@@ -171,7 +171,9 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             var lines = new List<JournalVoucherLineDraft>
             {
                 new("1406-FINISHED-GOODS", movementAmount, 0m, $"Finished goods {completedCost.WorkOrderId}"),
-                new("1405-WIP", 0m, wipClearance, $"Clear WIP {completedCost.WorkOrderId}"),
+                wipClearance >= 0m
+                    ? new("1405-WIP", 0m, wipClearance, $"Clear WIP {completedCost.WorkOrderId}")
+                    : new("1405-WIP", -wipClearance, 0m, $"Restore WIP {completedCost.WorkOrderId}"),
             };
             if (variance > 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", variance, 0m, $"Uncapitalized variance {completedCost.WorkOrderId}"));
             else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
@@ -222,7 +224,8 @@ internal static class CostVariancePosting
         var lines = costDelta < 0m
             ? new[] { new JournalVoucherLineDraft("1405-WIP", amount, 0m, $"Late cost reversal {sourceId}"), new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", 0m, amount, $"Favorable variance {sourceId}") }
             : new[] { new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", amount, 0m, $"Unfavorable variance {sourceId}"), new JournalVoucherLineDraft("1405-WIP", 0m, amount, $"Late cost input {sourceId}") };
-        cost.RecordWipClearance(costDelta);
+        if (cost.CapitalizedQuantity >= cost.CompletedQuantity - 0.000001m)
+            cost.RecordWipClearance(costDelta);
         dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, $"JV-WOC-ADJ-{cost.WorkOrderId}-{sourceId}", DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines));
     }
 }

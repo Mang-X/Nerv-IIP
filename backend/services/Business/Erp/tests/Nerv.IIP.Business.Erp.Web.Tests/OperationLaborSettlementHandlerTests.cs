@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 
@@ -642,6 +643,118 @@ public sealed class OperationLaborSettlementHandlerTests
     }
 
     [Fact]
+    public async Task Zero_labor_settlement_preserves_snapshot_without_freezing_currency_before_first_priced_labor()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), SeptemberStartsAtUtc, "CNY"),
+            Rate(8, 88m, SeptemberStartsAtUtc, null, "USD"));
+        await db.SaveChangesAsync();
+        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+            db, db, TestWorkOrderCostMutationLock.Instance,
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+
+        await consumer.HandleAsync(
+            Settled("evt-zero-cny", 1, AugustCompletedAtUtc, 0, []),
+            CancellationToken.None);
+        Assert.Null((await db.WorkOrderCosts.SingleAsync()).LaborCurrencyCode);
+        await consumer.HandleAsync(
+            Settled("evt-priced-usd", 2, SeptemberStartsAtUtc, TimeSpan.TicksPerHour, []),
+            CancellationToken.None);
+
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal("USD", cost.LaborCurrencyCode);
+        Assert.Equal(88m, cost.LaborCost);
+        Assert.Equal(2, await db.OperationLaborSettlements.CountAsync());
+        Assert.Equal(0m, (await db.OperationLaborSettlements.SingleAsync(x => x.SettlementRevision == 1)).Amount);
+        Assert.Empty(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Zero_amount_void_first_preserves_snapshot_without_freezing_currency_before_first_priced_labor()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), SeptemberStartsAtUtc, "CNY"),
+            Rate(8, 88m, SeptemberStartsAtUtc, null, "USD"));
+        db.WorkOrderCosts.Add(WorkOrderCost.Open("org-001", "env-prod", "WO-001", "FG-001"));
+        await db.SaveChangesAsync();
+        var zero = Settled("evt-zero-source", 1, AugustCompletedAtUtc, 0, []);
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(Voided("evt-zero-void-first", zero, AugustCompletedAtUtc.AddMinutes(2)), CancellationToken.None);
+        Assert.Null((await db.WorkOrderCosts.SingleAsync()).LaborCurrencyCode);
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(
+                Settled("evt-priced-usd-after-void", 2, SeptemberStartsAtUtc, TimeSpan.TicksPerHour, []),
+                CancellationToken.None);
+
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal("USD", cost.LaborCurrencyCode);
+        Assert.Equal(88m, cost.LaborCost);
+        Assert.Single(await db.OperationLaborSettlementVoids.ToListAsync());
+        Assert.Equal(2, await db.OperationLaborSettlements.CountAsync());
+        Assert.Empty(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Empty(await deadLetters.ListAsync(
+            MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(false, 120)]
+    [InlineData(true, 0)]
+    public async Task Partial_finished_goods_then_labor_delta_then_final_receipt_stays_balanced(
+        bool voidAfterSettlement,
+        decimal expectedLaborCost)
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        await db.SaveChangesAsync();
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+                db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
+            .HandleAsync(Report("evt-report-partial", "RPT-PARTIAL", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
+        await db.SaveChangesAsync();
+        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
+        await receiptConsumer.HandleAsync(FinishedGoodsReceipt("evt-fg-partial", "MOVE-FG-PARTIAL", "FGR-PARTIAL", 5m), CancellationToken.None);
+
+        var settled = Settled("evt-settle-partial", 1, AugustCompletedAtUtc, 90 * TimeSpan.TicksPerMinute, ["RPT-PARTIAL"]);
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(settled, CancellationToken.None);
+        if (voidAfterSettlement)
+            await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+                    db, db, TestWorkOrderCostMutationLock.Instance,
+                    new OperationLaborSettlementOrchestrator(db, deadLetters))
+                .HandleAsync(Voided("evt-void-partial", settled, AugustCompletedAtUtc.AddMinutes(4)), CancellationToken.None);
+
+        await receiptConsumer.HandleAsync(FinishedGoodsReceipt("evt-fg-final", "MOVE-FG-FINAL", "FGR-FINAL", 5m), CancellationToken.None);
+
+        cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(expectedLaborCost, cost.LaborCost);
+        Assert.Equal(10m, cost.CapitalizedQuantity);
+        Assert.Equal(expectedLaborCost, cost.WipClearedCost);
+        var vouchers = await db.JournalVouchers.Include(x => x.Lines).ToListAsync();
+        Assert.All(vouchers, voucher =>
+            Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount)));
+    }
+
+    [Fact]
     public async Task Completion_event_without_finished_goods_posting_does_not_post_settle_or_void_variance()
     {
         await using var db = CreateDb();
@@ -885,6 +998,44 @@ public sealed class OperationLaborSettlementHandlerTests
                 settled.Payload.ActualLaborTicks,
                 settled.Payload.ActualMachineTicks,
                 settled.Payload.CoveredProductionReportNos));
+
+    private static StockMovementPostedIntegrationEvent FinishedGoodsReceipt(
+        string eventId,
+        string movementId,
+        string receiptId,
+        decimal quantity)
+        => new(
+            eventId,
+            InventoryIntegrationEventTypes.StockMovementPosted,
+            1,
+            AugustCompletedAtUtc.AddMinutes(3),
+            InventoryIntegrationEventSources.BusinessInventory,
+            receiptId,
+            receiptId,
+            "org-001",
+            "env-prod",
+            "inventory",
+            movementId,
+            new StockMovementPostedPayload(
+                movementId,
+                "inbound",
+                InventoryIntegrationEventSources.BusinessMes,
+                receiptId,
+                "WO-001",
+                $"mes:finished-goods-receipt:{receiptId}",
+                "FG-001",
+                "ea",
+                "finished-goods",
+                "receiving",
+                null,
+                null,
+                "unrestricted",
+                "organization",
+                "org-001",
+                quantity,
+                AugustCompletedAtUtc.AddMinutes(3),
+                16m,
+                quantity * 16m));
 
     private sealed class NoopMediator : IMediator
     {
