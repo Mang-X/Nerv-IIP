@@ -985,7 +985,11 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
                 request.IsSupplementary,
                 request.OriginalMaterialIssueRequestNo),
             cancellationToken);
-        if (allocation.IsIdempotentReplay)
+        if (allocation.IsIdempotentReplay && await dbContext.MaterialIssueRequests.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.RequestNo == allocation.Code,
+                cancellationToken))
         {
             return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
         }
@@ -1006,16 +1010,20 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             throw new KnownException("领料申请的单位不能是占位值，请按物料主档的基本计量单位提交。");
         }
 
-        var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.MaterialId == materialId)
-            .OrderByDescending(x => x.CapturedAtUtc)
-            .Select(x => x.RequiredQuantity)
-            .FirstOrDefaultAsync(cancellationToken);
+        var frozenSelection = request.IsSupplementary
+            ? null
+            : await ResolveFrozenMaterialSelectionAsync(request, materialId, cancellationToken);
+        var requestedQuantity = request.Quantity ?? frozenSelection?.RequiredQuantity ??
+            await dbContext.MaterialRequirements
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == request.WorkOrderId &&
+                    x.MaterialId == materialId)
+                .OrderByDescending(x => x.CapturedAtUtc)
+                .Select(x => x.RequiredQuantity)
+                .FirstOrDefaultAsync(cancellationToken);
         if (requestedQuantity <= 0)
         {
             throw new KnownException($"领料申请数量必须大于 0，WorkOrderId = {request.WorkOrderId}");
@@ -1067,9 +1075,65 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             requestedQuantity,
             request.RequestedAtUtc,
             request.IsSupplementary,
-            originalRequestNo));
+            originalRequestNo,
+            frozenSelection?.SubstitutedMaterialId));
         return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
     }
+
+    private async Task<FrozenMaterialSelection> ResolveFrozenMaterialSelectionAsync(
+        CreateMaterialIssueRequestCommand request,
+        string actualMaterialId,
+        CancellationToken cancellationToken)
+    {
+        var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
+            ? null
+            : request.OperationTaskId.Trim();
+        var snapshots = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
+            .ToArrayAsync(cancellationToken);
+        var latestRows = snapshots
+            .GroupBy(x => (
+                OperationTaskId: x.OperationTaskId?.Trim().ToUpperInvariant() ?? string.Empty,
+                MaterialId: x.MaterialId.Trim().ToUpperInvariant(),
+                MaterialLotId: x.MaterialLotId?.Trim().ToUpperInvariant() ?? string.Empty))
+            .Select(x => x
+                .OrderByDescending(y => y.CapturedAtUtc)
+                .ThenByDescending(y => y.SourceSnapshotId, StringComparer.Ordinal)
+                .First())
+            .ToArray();
+        var eligibleRows = latestRows
+            .Where(x =>
+                string.Equals(x.MaterialId, actualMaterialId, StringComparison.OrdinalIgnoreCase) ||
+                x.GetSubstituteMaterialIds().Contains(actualMaterialId, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        var primaryMaterialIds = eligibleRows
+            .Select(x => x.MaterialId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (primaryMaterialIds.Length == 0)
+        {
+            throw new KnownException("领料物料不属于该工单冻结的主料或替代候选。");
+        }
+
+        if (primaryMaterialIds.Length > 1)
+        {
+            throw new KnownException("替代料在该工单冻结快照中对应多个主料，无法确定审计归属。");
+        }
+
+        var primaryMaterialId = primaryMaterialIds[0];
+        return new FrozenMaterialSelection(
+            eligibleRows.Sum(x => x.RequiredQuantity),
+            string.Equals(primaryMaterialId, actualMaterialId, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : primaryMaterialId);
+    }
+
+    private sealed record FrozenMaterialSelection(decimal RequiredQuantity, string? SubstitutedMaterialId);
 }
 
 public sealed record ConfirmLineSideMaterialReceiptCommand(

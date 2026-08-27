@@ -686,7 +686,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(59, MesEndpointContracts.All.Count);
+        Assert.Equal(60, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -788,6 +788,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/material-issue-requests"
             && x.PermissionCode == MesPermissionCodes.MaterialsRead
             && x.OperationId == "listBusinessMesMaterialIssueRequests");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/material-issue-requests/{requestId}"
+            && x.PermissionCode == MesPermissionCodes.MaterialsRead
+            && x.OperationId == "getBusinessMesMaterialIssueRequest");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts"
@@ -1832,6 +1837,9 @@ public sealed class MesEndpointContractTests
             MaterialIssueRequest.Create("org-001", "env-dev", "MIR-ORIGINAL-001", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 2m, now),
             MaterialIssueRequest.Create("org-001", "env-dev", "MIR-SUPPLEMENTARY-001", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 1m, now.AddMinutes(1), true, "MIR-ORIGINAL-001"),
             MaterialIssueRequest.Create("org-002", "env-dev", "MIR-OTHER-SCOPE", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 2m, now));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", null,
+            2m, 0m, 0m, "MBOM", "SNAP-SUP-001", now, []));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new CreateMaterialIssueRequestCommandHandler(dbContext);
@@ -1867,6 +1875,81 @@ public sealed class MesEndpointContractTests
         }
     }
 
+    // Contract: DomainInvariant + Regression. Authority: Issue #2224 acceptance 1-2.
+    [Fact]
+    public async Task Material_issue_creation_resolves_actual_sku_only_from_latest_scoped_frozen_requirements()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-27T08:00:00Z");
+        dbContext.WorkOrders.AddRange(
+            WorkOrder.Create("org-001", "env-dev", "WO-SUB", "SKU-FG", "PV-001", 10m, 10, now),
+            WorkOrder.Create("org-001", "env-dev", "WO-AMB", "SKU-FG", "PV-001", 10m, 10, now),
+            WorkOrder.Create("org-001", "env-dev", "WO-SCOPE", "SKU-FG", "PV-001", 10m, 10, now));
+        dbContext.MaterialRequirements.AddRange(
+            // Same identity: the older row must neither authorize MAT-STALE nor contribute quantity.
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", null, 100m, 0m, 0m, "MBOM", "SNAP-OLD", now.AddMinutes(-3), ["MAT-STALE"]),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", null, 4m, 0m, 0m, "MBOM", "SNAP-LATEST", now.AddMinutes(-2), ["MAT-ALT"]),
+            // A distinct lot identity of the same primary is additive, not ambiguous.
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", "LOT-B", 6m, 0m, 0m, "MBOM", "SNAP-LOT-B", now.AddMinutes(-1), ["MAT-ALT"]),
+            // Work-order-level requirements are eligible for an operation-scoped request.
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", null, "MAT-PRIMARY", "LOT-C", 2m, 0m, 0m, "MBOM", "SNAP-WO", now, ["MAT-ALT"]),
+            // A different task must not make OP-10 ambiguous.
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-20", "MAT-OTHER", null, 8m, 0m, 0m, "MBOM", "SNAP-OP-20", now, ["MAT-ALT"]),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-A", null, 3m, 0m, 0m, "MBOM", "SNAP-A", now, ["MAT-AMB"]),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-B", null, 5m, 0m, 0m, "MBOM", "SNAP-B", now, ["MAT-AMB"]),
+            MaterialRequirement.Capture("org-002", "env-dev", "WO-SCOPE", "OP-10", "MAT-SCOPED", null, 7m, 0m, 0m, "MBOM", "SNAP-SCOPE", now, ["MAT-CROSS-SCOPE"]));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateMaterialIssueRequestCommandHandler(dbContext);
+        var validRequest = new CreateMaterialIssueRequestCommand(
+            "org-001", "env-dev", "WO-SUB", "OP-10", "MAT-ALT", "PCS", null, now.AddMinutes(1),
+            "valid-material-replay");
+        var accepted = await handler.Handle(validRequest, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var substitute = await dbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == accepted.ReferenceId);
+        Assert.Equal("MAT-ALT", substitute.MaterialId);
+        Assert.Equal("MAT-PRIMARY", substitute.SubstitutedMaterialId);
+        Assert.Equal(12m, substitute.RequestedQuantity);
+        Assert.Equal(
+            accepted.ReferenceId,
+            (await handler.Handle(validRequest, CancellationToken.None)).ReferenceId);
+        Assert.Single(dbContext.MaterialIssueRequests.Where(x => x.RequestNo == accepted.ReferenceId));
+
+        var direct = await handler.Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", "PCS", 1m, now.AddMinutes(2)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Null((await dbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == direct.ReferenceId)).SubstitutedMaterialId);
+
+        var rejectedCases = new (string Name, CreateMaterialIssueRequestCommand Command, string Message)[]
+        {
+            ("stale candidate", new("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-STALE", "PCS", 1m, now), "不属于该工单冻结"),
+            ("non-candidate", new("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-UNKNOWN", "PCS", 1m, now), "不属于该工单冻结"),
+            ("cross scope", new("org-001", "env-dev", "WO-SCOPE", "OP-10", "MAT-CROSS-SCOPE", "PCS", 1m, now), "不属于该工单冻结"),
+            ("ambiguous", new("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-AMB", "PCS", 1m, now), "对应多个主料")
+        };
+        foreach (var rejected in rejectedCases)
+        {
+            var exception = await Assert.ThrowsAsync<KnownException>(
+                () => handler.Handle(rejected.Command, CancellationToken.None));
+            Assert.Contains(rejected.Message, exception.Message, StringComparison.Ordinal);
+        }
+
+        var rejectedReplay = new CreateMaterialIssueRequestCommand(
+            "org-001", "env-dev", "WO-SUB", "OP-10", "MAT-UNKNOWN", "PCS", 1m, now,
+            "rejected-material-replay");
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var exception = await Assert.ThrowsAsync<KnownException>(
+                () => handler.Handle(rejectedReplay, CancellationToken.None));
+            Assert.Contains("不属于该工单冻结", exception.Message, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task Material_issue_list_exposes_supplementary_fields_and_unpaged_filtered_count()
     {
@@ -1890,6 +1973,76 @@ public sealed class MesEndpointContractTests
         var row = Assert.Single(response.Items);
         Assert.True(row.IsSupplementary);
         Assert.Equal("MIR-LIST-ORIGINAL", row.OriginalMaterialIssueRequestNo);
+    }
+
+    // Contract: HttpApi + Isolation + Regression. Authority: Issue #2224 acceptance 1-2.
+    [Fact]
+    public async Task Material_issue_http_create_list_and_detail_preserve_substitute_audit_and_scope()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-27T09:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-SUB-HTTP", "SKU-FG", "PV-001", 10m, 10, now));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-SUB-HTTP", "OP-10", "MAT-PRIMARY", null,
+            4m, 0m, 0m, "MBOM", "SNAP-HTTP", now, ["MAT-ALT"]));
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            "org-002", "env-dev", "MIR-SUB-OTHER", "WO-SUB-HTTP", "OP-10", "MAT-ALT", "PCS", 4m, now,
+            substitutedMaterialId: "MAT-OTHER-PRIMARY"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new MaterialIssueHttpSender(dbContext));
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var createdResponse = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/work-orders/WO-SUB-HTTP/material-issue-requests",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                operationTaskId = "OP-10",
+                materialId = "MAT-ALT",
+                uomCode = "PCS",
+                quantity = (decimal?)null,
+                requestedAtUtc = now,
+            });
+        Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
+        using var createdBody = JsonDocument.Parse(await createdResponse.Content.ReadAsStringAsync());
+        var requestNo = createdBody.RootElement.GetProperty("referenceId").GetString()!;
+
+        var listResponse = await client.GetAsync(
+            "/api/business/v1/mes/material-issue-requests?organizationId=org-001&environmentId=env-dev&workOrderId=WO-SUB-HTTP");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listBody = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var listRow = Assert.Single(listBody.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("MAT-ALT", listRow.GetProperty("materialId").GetString());
+        Assert.Equal("MAT-PRIMARY", listRow.GetProperty("substitutedMaterialId").GetString());
+
+        var detailResponse = await client.GetAsync(
+            $"/api/business/v1/mes/material-issue-requests/{requestNo}?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailBody = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+        Assert.Equal("MAT-ALT", detailBody.RootElement.GetProperty("materialId").GetString());
+        Assert.Equal("MAT-PRIMARY", detailBody.RootElement.GetProperty("substitutedMaterialId").GetString());
+
+        var crossScopeResponse = await client.GetAsync(
+            "/api/business/v1/mes/material-issue-requests/MIR-SUB-OTHER?organizationId=org-001&environmentId=env-dev");
+        var crossScopeBody = await crossScopeResponse.Content.ReadAsStringAsync();
+        Assert.Contains("未找到领料申请", crossScopeBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAT-OTHER-PRIMARY", crossScopeBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -3087,6 +3240,41 @@ internal sealed class CapturingRecordDefectSender : ISender
         object request,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+}
+
+internal sealed class MaterialIssueHttpSender(Infrastructure.ApplicationDbContext dbContext) : ISender
+{
+    public async Task<TResponse> Send<TResponse>(
+        IRequest<TResponse> request,
+        CancellationToken cancellationToken = default)
+    {
+        object response = request switch
+        {
+            CreateMaterialIssueRequestCommand command =>
+                await new CreateMaterialIssueRequestCommandHandler(dbContext).Handle(command, cancellationToken),
+            ListMaterialIssueRequestsQuery query =>
+                await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(query, cancellationToken),
+            GetMaterialIssueRequestQuery query =>
+                await new GetMaterialIssueRequestQueryHandler(dbContext).Handle(query, cancellationToken),
+            _ => throw new NotSupportedException(request.GetType().Name),
+        };
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (TResponse)response;
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest => throw new NotSupportedException(request.GetType().Name);
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException(request.GetType().Name);
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 internal sealed class CapturingRecordDowntimeSender : ISender

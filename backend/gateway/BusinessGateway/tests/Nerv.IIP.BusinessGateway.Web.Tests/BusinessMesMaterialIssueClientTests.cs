@@ -64,7 +64,7 @@ public sealed class BusinessMesMaterialIssueClientTests
     public async Task List_material_issue_requests_maps_supplementary_count_and_row_fields()
     {
         var client = ClientReturning(
-            """{"data":{"items":[{"requestId":"MIR-SUP-001","workOrderId":"WO-001","operationTaskId":"OP-10","materialId":"MAT-OIL","uomCode":"L","materialLotId":null,"requestedQuantity":7,"receivedQuantity":0,"consumedQuantity":0,"status":"Requested","requestedAtUtc":"2026-08-25T08:00:00Z","isSupplementary":true,"originalMaterialIssueRequestNo":"MIR-000123"}],"total":2,"supplementaryCount":1}}""");
+            """{"data":{"items":[{"requestId":"MIR-SUP-001","workOrderId":"WO-001","operationTaskId":"OP-10","materialId":"MAT-ALT","substitutedMaterialId":"MAT-PRIMARY","uomCode":"L","materialLotId":null,"requestedQuantity":7,"receivedQuantity":0,"consumedQuantity":0,"status":"Requested","requestedAtUtc":"2026-08-25T08:00:00Z","isSupplementary":true,"originalMaterialIssueRequestNo":"MIR-000123"}],"total":2,"supplementaryCount":1}}""");
 
         var response = await client.ListMaterialIssueRequestsAsync(
             "token",
@@ -75,6 +75,28 @@ public sealed class BusinessMesMaterialIssueClientTests
         var row = Assert.Single(response.Items);
         Assert.True(row.IsSupplementary);
         Assert.Equal("MIR-000123", row.OriginalMaterialIssueRequestNo);
+        Assert.Equal("MAT-ALT", row.MaterialId);
+        Assert.Equal("MAT-PRIMARY", row.SubstitutedMaterialId);
+    }
+
+    [Fact]
+    public async Task Get_material_issue_request_forwards_scoped_detail_and_maps_substitute_audit()
+    {
+        var handler = new StubHandler(
+            """{"data":{"requestId":"MIR-000123","workOrderId":"WO-001","operationTaskId":"OP-10","materialId":"MAT-ALT","substitutedMaterialId":"MAT-PRIMARY","uomCode":"EA","materialLotId":null,"requestedQuantity":7,"receivedQuantity":0,"consumedQuantity":0,"status":"Requested","wmsRequestId":null,"requestedAtUtc":"2026-08-27T08:00:00Z"}}""");
+        var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
+
+        var response = await client.GetMaterialIssueRequestAsync(
+            "token",
+            "MIR-000123",
+            new BusinessConsoleMesMaterialIssueRequestDetailRequest("MIR-000123", "org-a", "env-a"),
+            CancellationToken.None);
+
+        Assert.Equal("MAT-ALT", response.MaterialId);
+        Assert.Equal("MAT-PRIMARY", response.SubstitutedMaterialId);
+        Assert.Equal(
+            "/api/business/v1/mes/material-issue-requests/MIR-000123?organizationId=org-a&environmentId=env-a",
+            handler.LastRequest!.RequestUri!.PathAndQuery);
     }
 
     [Fact]

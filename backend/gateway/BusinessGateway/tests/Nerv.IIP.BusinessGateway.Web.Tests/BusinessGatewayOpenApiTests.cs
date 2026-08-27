@@ -882,6 +882,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertSchemaProperties(document, "BusinessConsoleMesMaterialReadinessRow", "substituteMaterialIds");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests", "post", "createBusinessConsoleMesMaterialIssueRequest");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests", "get", "listBusinessConsoleMesMaterialIssueRequests");
+        AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}", "get", "getBusinessConsoleMesMaterialIssueRequest");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts", "post", "confirmBusinessConsoleMesLineSideMaterialReceipt");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns", "post", "returnBusinessConsoleMesLineSideMaterial");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");
@@ -1644,7 +1645,8 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "materialCode",
             "isSupplementary",
-            "originalMaterialIssueRequestNo");
+            "originalMaterialIssueRequestNo",
+            "substitutedMaterialId");
         AssertMesStatusEnum(document, "BusinessConsoleMesMaterialIssueRequestRow", "status");
 
         AssertMesDisplayProperties(
@@ -1832,7 +1834,9 @@ public sealed class BusinessGatewayOpenApiTests
 
         var schemas = schemaObject
             .EnumerateObject()
-            .Where(schema => schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal))
+            .Where(schema =>
+                schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal) &&
+                !schema.Name.StartsWith("NetCorePalExtensionsDtoResponseDataOf", StringComparison.Ordinal))
             .ToArray();
 
         Assert.Single(schemas);

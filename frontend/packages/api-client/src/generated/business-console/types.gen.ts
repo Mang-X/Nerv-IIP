@@ -4181,9 +4181,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     materialCode?: string | null;
     isSupplementary?: boolean;
     originalMaterialIssueRequestNo?: string | null;
+    substitutedMaterialId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestRow = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestDetailRequest = {
     [key: string]: never;
 };
 
@@ -15089,6 +15098,38 @@ export type ListBusinessConsoleMesMaterialIssueRequestsResponses = {
 };
 
 export type ListBusinessConsoleMesMaterialIssueRequestsResponse = ListBusinessConsoleMesMaterialIssueRequestsResponses[keyof ListBusinessConsoleMesMaterialIssueRequestsResponses];
+
+export type GetBusinessConsoleMesMaterialIssueRequestData = {
+    body?: never;
+    path: {
+        requestId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}';
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestRow;
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestResponse = GetBusinessConsoleMesMaterialIssueRequestResponses[keyof GetBusinessConsoleMesMaterialIssueRequestResponses];
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest;
