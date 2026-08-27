@@ -91,6 +91,15 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
                 Prefix("site", siteResult.FailureReason!));
         }
 
+        var siteTimezone = Normalize(siteResult.Resource!.Timezone);
+        if (siteTimezone is null)
+        {
+            return ProductionReportOeeDimensionSnapshot.Degraded(
+                rawDeviceReference,
+                request.WorkCenterId,
+                "site-timezone-missing");
+        }
+
         MasterDataOeeResource? shift = null;
         var shiftCode = Normalize(request.ShiftCode);
         if (shiftCode is not null)
@@ -109,6 +118,17 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             }
 
             shift = shiftResult.Resource;
+            if (shift!.StartsAt is null ||
+                shift.EndsAt is null ||
+                shift.CrossesMidnight is null ||
+                shift.PaidMinutes is null ||
+                shift.BreakMinutes is null)
+            {
+                return ProductionReportOeeDimensionSnapshot.Degraded(
+                    rawDeviceReference,
+                    request.WorkCenterId,
+                    "shift-definition-invalid");
+            }
         }
 
         return ProductionReportOeeDimensionSnapshot.Resolved(
@@ -117,7 +137,7 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             siteCode,
             Normalize(device.WorkshopCode),
             Normalize(device.LineCode),
-            Normalize(siteResult.Resource!.Timezone),
+            siteTimezone,
             shiftCode,
             shift?.StartsAt,
             shift?.EndsAt,
@@ -165,8 +185,7 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 return ResourceResult.Failed(
-                    body.Contains("多条", StringComparison.Ordinal) ||
-                    body.Contains("multiple", StringComparison.OrdinalIgnoreCase)
+                    IsAmbiguous(body)
                         ? "ambiguous"
                         : $"master-data-http-{(int)response.StatusCode}");
             }
@@ -179,6 +198,14 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             catch (System.Text.Json.JsonException)
             {
                 return ResourceResult.Failed("master-data-invalid-response");
+            }
+
+            if (envelope?.Success is false)
+            {
+                return ResourceResult.Failed(
+                    IsAmbiguous(envelope.Message)
+                        ? "ambiguous"
+                        : "master-data-invalid-response");
             }
 
             var data = envelope?.Data;
@@ -224,6 +251,12 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             ? failureReason
             : $"{resource}-{failureReason}";
 
+    private static bool IsAmbiguous(string? message) =>
+        message?.Contains("唯一", StringComparison.Ordinal) == true ||
+        message?.Contains("多条", StringComparison.Ordinal) == true ||
+        message?.Contains("ambiguous", StringComparison.OrdinalIgnoreCase) == true ||
+        message?.Contains("multiple", StringComparison.OrdinalIgnoreCase) == true;
+
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -236,7 +269,10 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
         public static ResourceResult Failed(string reason) => new(null, reason);
     }
 
-    private sealed record MasterDataOeeEnvelope(MasterDataOeeResourceList? Data);
+    private sealed record MasterDataOeeEnvelope(
+        MasterDataOeeResourceList? Data,
+        bool? Success = null,
+        string? Message = null);
 
     private sealed record MasterDataOeeResourceList(
         IReadOnlyCollection<MasterDataOeeResource> Resources,

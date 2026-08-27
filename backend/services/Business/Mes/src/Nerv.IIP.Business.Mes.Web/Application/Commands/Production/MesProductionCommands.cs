@@ -139,8 +139,8 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
 
 public sealed class RecordProductionReportCommandHandler(
     ApplicationDbContext dbContext,
-    MesCodingService? codingService = null,
-    IProductionReportOeeDimensionSnapshotProvider? oeeDimensionSnapshotProvider = null)
+    IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
@@ -238,19 +238,14 @@ public sealed class RecordProductionReportCommandHandler(
         }
 
         var oeeProjection = ProductionReportOeeProjectionFactory.Create(operationTask);
-        var oeeDimensionSnapshot = oeeDimensionSnapshotProvider is null
-            ? ProductionReportOeeDimensionSnapshot.Degraded(
+        var oeeDimensionSnapshot = await oeeDimensionSnapshotProvider.CaptureAsync(
+            new ProductionReportOeeDimensionSnapshotRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
                 operationTask.DeviceAssetId,
                 operationTask.WorkCenterId,
-                "master-data:not-configured")
-            : await oeeDimensionSnapshotProvider.CaptureAsync(
-                new ProductionReportOeeDimensionSnapshotRequest(
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    operationTask.DeviceAssetId,
-                    operationTask.WorkCenterId,
-                    operationTask.ShiftId),
-                cancellationToken);
+                operationTask.ShiftId),
+            cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,

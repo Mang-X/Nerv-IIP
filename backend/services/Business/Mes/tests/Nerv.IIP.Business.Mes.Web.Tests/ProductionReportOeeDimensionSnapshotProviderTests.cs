@@ -104,10 +104,7 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
             "not-found"
         },
         {
-            new HttpResponseMessage(HttpStatusCode.BadRequest)
-            {
-                Content = new StringContent("主数据设备引用对应多条记录", Encoding.UTF8, "application/json"),
-            },
+            Json("""{"success":false,"message":"设备引用无法唯一确定。"}"""),
             "ambiguous"
         },
         {
@@ -125,6 +122,46 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
         {
             Device("019c9c62-9987-7af2-8fa2-3fd936098265", null),
             "device-work-center-missing"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(IncompleteResolvedDimensions))]
+    public async Task Incomplete_site_or_shift_response_is_degraded_without_partial_current_dimensions(
+        HttpResponseMessage site,
+        HttpResponseMessage? shift,
+        string expectedReason)
+    {
+        var responses = shift is null
+            ? new[] { Device("019c9c62-9987-7af2-8fa2-3fd936098265", "WC-MACH"), site }
+            : new[] { Device("019c9c62-9987-7af2-8fa2-3fd936098265", "WC-MACH"), site, shift };
+        var provider = CreateProvider(new QueueHttpMessageHandler(responses));
+
+        var snapshot = await provider.CaptureAsync(
+            new ProductionReportOeeDimensionSnapshotRequest(
+                "org-001", "env-dev", "DEV-RAW", "WC-LEGACY", shift is null ? null : "EARLY"),
+            CancellationToken.None);
+
+        Assert.Equal("degraded", snapshot.ResolutionStatus);
+        Assert.Equal(expectedReason, snapshot.DegradedReason);
+        Assert.Equal("DEV-RAW", snapshot.DeviceAssetId);
+        Assert.Equal("WC-LEGACY", snapshot.WorkCenterId);
+        Assert.Null(snapshot.SiteCode);
+        Assert.Null(snapshot.SiteTimezone);
+        Assert.Null(snapshot.ShiftCode);
+    }
+
+    public static TheoryData<HttpResponseMessage, HttpResponseMessage?, string> IncompleteResolvedDimensions => new()
+    {
+        {
+            Json("""{"data":{"resources":[{"resourceType":"site","code":"SITE-SH","displayName":"Shanghai","active":true,"snapshotVersion":"v1"}],"total":1,"truncated":false}}"""),
+            null,
+            "site-timezone-missing"
+        },
+        {
+            Site(),
+            Json("""{"data":{"resources":[{"resourceType":"shift","code":"EARLY","displayName":"Early","active":true,"snapshotVersion":"v1","startsAt":"08:00:00","crossesMidnight":false,"paidMinutes":450,"breakMinutes":30}],"total":1,"truncated":false}}"""),
+            "shift-definition-invalid"
         },
     };
 

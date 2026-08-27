@@ -48,7 +48,6 @@ public sealed class ProductionReportOeeDimensionSnapshotCommandTests
                 30);
             var handler = new RecordProductionReportCommandHandler(
                 dbContext,
-                null,
                 new StubSnapshotProvider(snapshot));
 
             await handler.Handle(
