@@ -184,9 +184,9 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
         listPath: inboundPath,
         selectionQuery: selectionExpected,
         keywordQuery: expected,
-        forbiddenQueryKeys: [],
+        forbiddenQueryKeys: ['siteCode'],
       } as never),
-    ).toThrow(/unexpected list path|invalid forbidden query key contract/)
+    ).toThrow('unexpected list path')
   })
 
   it('keeps the first WMS list response public but rejects a wrong path or status immediately', () => {
