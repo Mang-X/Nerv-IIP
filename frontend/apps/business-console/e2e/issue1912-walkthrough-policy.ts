@@ -1,4 +1,4 @@
-import { expect, type Page, type Request, type Response } from '@playwright/test'
+import { expect, type Locator, type Page, type Request, type Response } from '@playwright/test'
 
 const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
   'document',
@@ -15,7 +15,12 @@ const API_ABORT_RESOURCE_TYPES = new Set(['fetch', 'xhr'])
 
 const navigationEpochs = new WeakMap<Page, number>()
 const listResponseOwnership = new WeakMap<Response, { page: Page; navigationEpoch: number }>()
+const currentListResponses = new WeakMap<
+  Page,
+  Map<string, { response: Response; navigationEpoch: number }>
+>()
 let actionMarkerSequence = 0
+const ACTION_MARKER_HEADER = 'x-nerv-walkthrough-action'
 
 export type RequestCancellationKind = 'navigation' | 'component-unmount'
 
@@ -232,16 +237,228 @@ function isListRequest(request: Request, listPath: string): boolean {
   return request.method() === 'GET' && new URL(request.url()).pathname === listPath
 }
 
+function listQueryFingerprint(url: string): string {
+  const entries = [...new URL(url).searchParams.entries()]
+    .filter(([key]) => key !== 'keyword')
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      `${leftKey}\u0000${leftValue}`.localeCompare(`${rightKey}\u0000${rightValue}`),
+    )
+  return JSON.stringify(entries)
+}
+
+type ActionRequestMarkerOptions = {
+  eventName: 'click' | 'input'
+  eventWindow: 'microtasks' | 'sync'
+  expectedKeyword?: string
+  expectedQueryFingerprint?: string
+  listPath: string
+  marker: string
+}
+
+async function installActionRequestMarker(
+  page: Page,
+  target: Locator,
+  options: ActionRequestMarkerOptions,
+): Promise<void> {
+  // The marker is attached by the browser-side event boundary, not inferred from request order.
+  // It covers the synchronous handler and the microtasks it schedules; requests outside that
+  // bounded action window remain unmarked and therefore cannot satisfy the waiter.
+  await target.evaluate((element, markerOptions) => {
+    type ActionState = {
+      active: boolean
+      clearTimer?: number
+      cleanup: () => void
+      marker: string
+      retryArmed: boolean
+    }
+    type WindowWithActionMarkers = Window & {
+      __nervWalkthroughActionMarkers?: Record<string, ActionState>
+    }
+
+    const markerWindow = window as WindowWithActionMarkers
+    const actionMarkers = (markerWindow.__nervWalkthroughActionMarkers ??= {})
+    if (actionMarkers[markerOptions.marker]) {
+      throw new Error(`duplicate walkthrough action marker ${markerOptions.marker}`)
+    }
+
+    const state: ActionState = {
+      active: false,
+      marker: markerOptions.marker,
+      retryArmed: false,
+      cleanup: () => undefined,
+    }
+    const originalFetch = window.fetch
+    const originalXhrOpen = XMLHttpRequest.prototype.open
+    const originalXhrSend = XMLHttpRequest.prototype.send
+    const xhrMetadata = new WeakMap<XMLHttpRequest, { method: string; url: string }>()
+
+    const queryFingerprint = (url: string) => {
+      const entries = [...new URL(url, location.href).searchParams.entries()]
+        .filter(([key]) => key !== 'keyword')
+        .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+          `${leftKey}\u0000${leftValue}`.localeCompare(`${rightKey}\u0000${rightValue}`),
+        )
+      return JSON.stringify(entries)
+    }
+    const matchesActionRequest = (method: string, url: string) => {
+      if (method.toUpperCase() !== 'GET') return false
+      const parsed = new URL(url, location.href)
+      if (parsed.pathname !== markerOptions.listPath) return false
+      if (
+        markerOptions.expectedKeyword !== undefined &&
+        parsed.searchParams.get('keyword')?.trim() !== markerOptions.expectedKeyword.trim()
+      ) {
+        return false
+      }
+      return (
+        markerOptions.expectedQueryFingerprint === undefined ||
+        queryFingerprint(parsed.toString()) === markerOptions.expectedQueryFingerprint
+      )
+    }
+    const actionIsArmed = () => state.active || state.retryArmed
+    const markRequest = (headers: Headers) => {
+      headers.set('x-nerv-walkthrough-action', markerOptions.marker)
+      state.retryArmed = false
+    }
+
+    window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+      let marked = false
+      let markedInput: RequestInfo | URL = input
+      let markedInit = init
+      if (actionIsArmed()) {
+        const request = new Request(input, init)
+        if (matchesActionRequest(request.method, request.url)) {
+          const headers = new Headers(request.headers)
+          markRequest(headers)
+          markedInput = new Request(request, { headers })
+          markedInit = undefined
+          marked = true
+        }
+      }
+
+      const response = originalFetch.call(this, markedInput, markedInit)
+      if (!marked) return response
+      return Promise.resolve(response).then((resolved) => {
+        if (resolved.status >= 400) state.retryArmed = true
+        return resolved
+      })
+    }
+
+    XMLHttpRequest.prototype.open = function (
+      method: string,
+      url: string | URL,
+      ...rest: unknown[]
+    ) {
+      xhrMetadata.set(this, { method, url: String(url) })
+      return originalXhrOpen.apply(this, [method, url, ...rest] as never)
+    }
+    XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
+      const metadata = xhrMetadata.get(this)
+      const marked =
+        metadata !== undefined &&
+        actionIsArmed() &&
+        matchesActionRequest(metadata.method, metadata.url)
+      if (marked) {
+        this.setRequestHeader('x-nerv-walkthrough-action', markerOptions.marker)
+        state.retryArmed = false
+        this.addEventListener(
+          'loadend',
+          () => {
+            if (this.status >= 400) state.retryArmed = true
+          },
+          { once: true },
+        )
+      }
+      return originalXhrSend.call(this, body)
+    }
+
+    const activate = (event: Event) => {
+      if (!event.composedPath().includes(element)) return
+      state.active = true
+      state.retryArmed = false
+      if (state.clearTimer !== undefined) window.clearTimeout(state.clearTimer)
+      if (markerOptions.eventWindow === 'sync') {
+        queueMicrotask(() => {
+          state.active = false
+        })
+      } else {
+        Promise.resolve().then(() => {
+          Promise.resolve().then(() => {
+            state.clearTimer = window.setTimeout(() => {
+              state.active = false
+            }, 0)
+          })
+        })
+      }
+    }
+    document.addEventListener(markerOptions.eventName, activate, { capture: true })
+
+    state.cleanup = () => {
+      document.removeEventListener(markerOptions.eventName, activate, { capture: true })
+      if (state.clearTimer !== undefined) window.clearTimeout(state.clearTimer)
+      if (window.fetch === wrappedFetch) window.fetch = originalFetch
+      if (XMLHttpRequest.prototype.open === wrappedXhrOpen) {
+        XMLHttpRequest.prototype.open = originalXhrOpen
+      }
+      if (XMLHttpRequest.prototype.send === wrappedXhrSend) {
+        XMLHttpRequest.prototype.send = originalXhrSend
+      }
+      delete actionMarkers[markerOptions.marker]
+    }
+
+    const wrappedFetch = window.fetch
+    const wrappedXhrOpen = XMLHttpRequest.prototype.open
+    const wrappedXhrSend = XMLHttpRequest.prototype.send
+    actionMarkers[markerOptions.marker] = state
+  }, options)
+}
+
+async function removeActionRequestMarker(page: Page, marker: string): Promise<void> {
+  await page.evaluate((actionMarker) => {
+    const markerWindow = window as Window & {
+      __nervWalkthroughActionMarkers?: Record<string, { cleanup: () => void }>
+    }
+    markerWindow.__nervWalkthroughActionMarkers?.[actionMarker]?.cleanup()
+  }, marker)
+}
+
+function routePathAndSearch(route: string): { pathname: string; search: string } {
+  const url = new URL(route, 'http://walkthrough.fixture')
+  return { pathname: url.pathname, search: url.search }
+}
+
+function isNavigationRequestForRoute(page: Page, request: Request, route: string): boolean {
+  if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return false
+  const expected = routePathAndSearch(route)
+  const url = new URL(request.url())
+  return url.pathname === expected.pathname && url.search === expected.search
+}
+
+function isFrameAtRoute(frame: { url: () => string }, route: string): boolean {
+  const expected = routePathAndSearch(route)
+  const url = new URL(frame.url())
+  return url.pathname === expected.pathname && url.search === expected.search
+}
+
 function nextActionMarker(kind: string): string {
   actionMarkerSequence += 1
   return `__nerv_walkthrough_${kind}_${actionMarkerSequence}`
 }
 
-function isMatchingFilterRequest(request: Request, listPath: string, stableText: string): boolean {
+function isMatchingFilterRequest(
+  request: Request,
+  listPath: string,
+  stableText: string,
+  expectedQueryFingerprint?: string,
+): boolean {
   if (!isListRequest(request, listPath)) return false
-  return (
+  const matchesKeyword =
     normalizedFilterValue(new URL(request.url()).searchParams.get('keyword') ?? '') ===
     normalizedFilterValue(stableText)
+  return (
+    matchesKeyword &&
+    (expectedQueryFingerprint === undefined ||
+      listQueryFingerprint(request.url()) === expectedQueryFingerprint)
   )
 }
 
@@ -258,6 +475,10 @@ function rememberListResponseOwnership(
 ): void {
   if (navigationEpoch === undefined) return
   listResponseOwnership.set(response, { page, navigationEpoch })
+  const listPath = new URL(response.url()).pathname
+  const responses = currentListResponses.get(page) ?? new Map()
+  responses.set(listPath, { response, navigationEpoch })
+  currentListResponses.set(page, responses)
 }
 
 export async function navigateAndWaitForInitialList(
@@ -266,29 +487,59 @@ export async function navigateAndWaitForInitialList(
 ): Promise<{ firstList: Response; navigation: Response | null; navigationEpoch: number }> {
   const timeoutMs = options.timeoutMs ?? 120_000
   const navigationEpoch = startNavigationEpoch(page)
-  let navigationStarted = false
+  let navigationRequest: Request | undefined
+  let documentCommitted = false
   const navigationListRequests = new WeakSet<Request>()
   const requestObserver = (request: Request) => {
-    if (navigationStarted && isListRequest(request, options.listPath)) {
+    if (isNavigationRequestForRoute(page, request, options.route)) {
+      navigationRequest = request
+    }
+    // A request from the previous document can share the path and keyword while the next
+    // navigation is still pending. Only the committed target frame can own this epoch's list.
+    if (
+      documentCommitted &&
+      isListRequest(request, options.listPath) &&
+      request.frame() === page.mainFrame() &&
+      isFrameAtRoute(request.frame(), options.route)
+    ) {
       navigationListRequests.add(request)
     }
   }
+  const frameNavigationObserver = (frame: { url: () => string }) => {
+    if (frame === page.mainFrame() && isFrameAtRoute(frame, options.route)) {
+      documentCommitted = true
+    }
+  }
   page.on('request', requestObserver)
+  page.on('framenavigated', frameNavigationObserver)
   const initialListResponse = page.waitForResponse(
     (response) => navigationListRequests.has(response.request()) && response.status() === 200,
     { timeout: timeoutMs },
   )
   try {
-    navigationStarted = true
     const navigation = await page.goto(options.route, {
       waitUntil: 'domcontentloaded',
       timeout: timeoutMs,
     })
+    if (
+      !navigationRequest &&
+      navigation &&
+      isNavigationRequestForRoute(page, navigation.request(), options.route)
+    ) {
+      navigationRequest = navigation.request()
+    }
+    if (!navigationRequest) {
+      throw new Error('navigation did not emit the requested main-frame document request')
+    }
+    if (!documentCommitted) {
+      throw new Error('navigation did not commit the requested main-frame document')
+    }
     const firstList = await initialListResponse
     rememberListResponseOwnership(page, firstList, navigationEpoch)
     return { firstList, navigation, navigationEpoch }
   } finally {
     page.off('request', requestObserver)
+    page.off('framenavigated', frameNavigationObserver)
   }
 }
 
@@ -299,22 +550,41 @@ export async function clickRefreshAndWaitForListResponse(
 ): Promise<Response> {
   const refreshButton = page.getByRole('button', { name: '刷新', exact: true })
   const actionMarker = nextActionMarker('refresh')
-  await refreshButton.evaluate((element, marker) => {
-    const listener = () => queueMicrotask(() => console.debug(marker))
-    element.addEventListener('click', listener, { capture: true, once: true })
-    ;(element as HTMLElement & Record<string, EventListener>)[marker] = listener
-  }, actionMarker)
-  const observedListRequests: Request[] = []
+  await installActionRequestMarker(page, refreshButton, {
+    eventName: 'click',
+    eventWindow: 'microtasks',
+    listPath,
+    marker: actionMarker,
+  })
+  let refreshRequest: Request | undefined
+  let ambiguousActionRequest = false
   const responsesByRequest = new Map<Request, Response>()
   const requestObserver = (request: Request) => {
-    if (isListRequest(request, listPath)) observedListRequests.push(request)
+    if (
+      !isListRequest(request, listPath) ||
+      request.headers()[ACTION_MARKER_HEADER] !== actionMarker
+    ) {
+      return
+    }
+    if (refreshRequest) {
+      ambiguousActionRequest = true
+      return
+    }
+    refreshRequest = request
   }
   const responseObserver = (response: Response) => {
-    if (isListRequest(response.request(), listPath)) {
-      responsesByRequest.set(response.request(), response)
+    const request = response.request()
+    if (!isListRequest(request, listPath)) return
+    responsesByRequest.set(request, response)
+    if (request !== refreshRequest) return
+    if (response.status() >= 400) {
+      rejectRefreshedListResponse(
+        new Error(`refresh action list request returned HTTP ${response.status()}`),
+      )
+      return
     }
+    if (response.status() === 200) resolveRefreshedListResponse(response)
   }
-  let refreshRequest: Request | undefined
   let resolveRefreshedListResponse: (response: Response) => void = () => undefined
   let rejectRefreshedListResponse: (error: Error) => void = () => undefined
   let responseTimer: ReturnType<typeof setTimeout> | undefined
@@ -323,39 +593,24 @@ export async function clickRefreshAndWaitForListResponse(
     rejectRefreshedListResponse = reject
   })
   page.on('request', requestObserver)
-  const responseObserverWithOwnership = (response: Response) => {
-    responseObserver(response)
-    if (
-      refreshRequest !== undefined &&
-      response.request() === refreshRequest &&
-      response.status() === 200
-    ) {
-      resolveRefreshedListResponse(response)
-    }
-  }
-  page.on('response', responseObserverWithOwnership)
-  const requestsBeforeAction = new Set(observedListRequests)
-  const actionMarkerEvent = page.waitForEvent('console', {
-    predicate: (message) => message.text() === actionMarker,
-    timeout: timeoutMs,
-  })
+  page.on('response', responseObserver)
   const refreshedListRequest = page.waitForRequest(
-    (request) => isListRequest(request, listPath) && !requestsBeforeAction.has(request),
+    (request) =>
+      isListRequest(request, listPath) && request.headers()[ACTION_MARKER_HEADER] === actionMarker,
     { timeout: timeoutMs },
   )
   try {
     await refreshButton.click({ timeout: timeoutMs })
-    await actionMarkerEvent
-    await refreshedListRequest
-    await page.waitForTimeout(0)
-    const actionRequests = observedListRequests.filter(
-      (request) => !requestsBeforeAction.has(request),
-    )
-    refreshRequest = actionRequests.at(-1)
-    if (!refreshRequest) {
-      throw new Error('refresh action did not emit a list request')
+    const request = await refreshedListRequest
+    if (ambiguousActionRequest || refreshRequest !== request) {
+      throw new Error(
+        'refresh action emitted more than one marked list request; response ownership is ambiguous',
+      )
     }
     const observedResponse = responsesByRequest.get(refreshRequest)
+    if (observedResponse && observedResponse.status() !== 200) {
+      throw new Error(`refresh action list request returned HTTP ${observedResponse.status()}`)
+    }
     if (observedResponse?.status() === 200) {
       resolveRefreshedListResponse(observedResponse)
     } else {
@@ -375,15 +630,8 @@ export async function clickRefreshAndWaitForListResponse(
   } finally {
     if (responseTimer) clearTimeout(responseTimer)
     page.off('request', requestObserver)
-    page.off('response', responseObserverWithOwnership)
-    await refreshButton.evaluate((element, marker) => {
-      const typedElement = element as HTMLElement & Record<string, EventListener>
-      const listener = typedElement[marker]
-      if (listener) {
-        element.removeEventListener('click', listener, { capture: true })
-        delete typedElement[marker]
-      }
-    }, actionMarker)
+    page.off('response', responseObserver)
+    await removeActionRequestMarker(page, actionMarker)
   }
 }
 
@@ -473,6 +721,20 @@ function isMatchingListResponse(
   stableText: string,
   navigationEpoch: number | undefined,
 ): boolean {
+  if (!isCurrentOwnedListResponse(page, response, listPath, navigationEpoch)) return false
+  const url = new URL(response.url())
+  return (
+    normalizedFilterValue(url.searchParams.get('keyword') ?? '') ===
+    normalizedFilterValue(stableText)
+  )
+}
+
+function isOwnedListResponse(
+  page: Page,
+  response: Response | undefined,
+  listPath: string,
+  navigationEpoch: number | undefined,
+): response is Response {
   if (!response) return false
   const ownership = listResponseOwnership.get(response)
   if (
@@ -487,10 +749,19 @@ function isMatchingListResponse(
   return (
     isListRequest(response.request(), listPath) &&
     url.pathname === listPath &&
-    response.status() === 200 &&
-    normalizedFilterValue(url.searchParams.get('keyword') ?? '') ===
-      normalizedFilterValue(stableText)
+    response.status() === 200
   )
+}
+
+function isCurrentOwnedListResponse(
+  page: Page,
+  response: Response | undefined,
+  listPath: string,
+  navigationEpoch: number | undefined,
+): response is Response {
+  if (!isOwnedListResponse(page, response, listPath, navigationEpoch)) return false
+  const current = currentListResponses.get(page)?.get(listPath)
+  return current?.response === response && current.navigationEpoch === navigationEpoch
 }
 
 export async function fillFilterAndWaitForListResponse(
@@ -525,12 +796,55 @@ export async function fillFilterAndWaitForListResponse(
   }
 
   const timeoutMs = options.timeoutMs ?? 120_000
-  let fillStarted = false
+  const currentListResponse = currentListResponses.get(page)?.get(options.listPath)
+  const baselineResponse = isCurrentOwnedListResponse(
+    page,
+    options.initialListResponse,
+    options.listPath,
+    options.initialListNavigationEpoch,
+  )
+    ? options.initialListResponse
+    : currentListResponse !== undefined &&
+        currentListResponse.navigationEpoch === navigationEpochs.get(page)
+      ? currentListResponse.response
+      : undefined
+  if (
+    !baselineResponse ||
+    !isCurrentOwnedListResponse(
+      page,
+      baselineResponse,
+      options.listPath,
+      navigationEpochs.get(page),
+    )
+  ) {
+    throw new Error(
+      'server filter requires an owned HTTP 200 initial list response from the current navigation',
+    )
+  }
+  const expectedQueryFingerprint = listQueryFingerprint(baselineResponse.url())
+  const actionMarker = nextActionMarker('filter')
+  await installActionRequestMarker(page, filter, {
+    eventName: 'input',
+    eventWindow: 'microtasks',
+    expectedKeyword: options.stableText,
+    expectedQueryFingerprint,
+    listPath: options.listPath,
+    marker: actionMarker,
+  })
   let fillRequest: Request | undefined
   let retryRequestAllowed = false
-  const fillRequests = new WeakSet<Request>()
+  let ambiguousActionRequest = false
+  const fillRequests = new Set<Request>()
   const requestObserver = (request: Request) => {
-    if (!fillStarted || !isMatchingFilterRequest(request, options.listPath, options.stableText)) {
+    if (
+      !isMatchingFilterRequest(
+        request,
+        options.listPath,
+        options.stableText,
+        expectedQueryFingerprint,
+      ) ||
+      request.headers()[ACTION_MARKER_HEADER] !== actionMarker
+    ) {
       return
     }
     if (!fillRequest) {
@@ -541,7 +855,9 @@ export async function fillFilterAndWaitForListResponse(
     if (retryRequestAllowed) {
       fillRequests.add(request)
       retryRequestAllowed = false
+      return
     }
+    ambiguousActionRequest = true
   }
   page.on('request', requestObserver)
   const filteredListRequest = page.waitForRequest((request) => fillRequests.has(request), {
@@ -560,15 +876,25 @@ export async function fillFilterAndWaitForListResponse(
     { timeout: timeoutMs },
   )
   try {
-    fillStarted = true
     await filter.fill(options.stableText)
     const request = await filteredListRequest
-    if (request !== fillRequest) {
+    if (ambiguousActionRequest || request !== fillRequest) {
       throw new Error('filter response was not bound to the request emitted by the fill action')
     }
-    await filteredListResponse
+    const response = await filteredListResponse
+    if (
+      ambiguousActionRequest ||
+      !fillRequests.has(response.request()) ||
+      response.status() !== 200
+    ) {
+      throw new Error(
+        'filter response was not bound to the completed request emitted by the fill action',
+      )
+    }
+    rememberListResponseOwnership(page, response)
     return { waitedForResponse: true, reason: 'server-response' }
   } finally {
     page.off('request', requestObserver)
+    await removeActionRequestMarker(page, actionMarker)
   }
 }

@@ -225,6 +225,88 @@ test.describe('walkthrough filter response boundary', () => {
     expect(queries).toEqual(['OTHER-001', 'SO-WALK-001'])
   })
 
+  test('服务端筛选缺少当前导航的初始列表证据时失败关闭', async ({ page }) => {
+    await page.setContent('<label>关键字搜索 <input aria-label="关键字搜索" /></label>')
+
+    await expect(
+      fillFilterAndWaitForListResponse(page, {
+        route: '/issue1912-filter-policy-fixture?keyword=SO-WALK-001',
+        listPath,
+        filterLabel: '关键字搜索',
+        stableText: 'SO-WALK-001',
+        responseMode: 'server',
+        timeoutMs: 500,
+      }),
+    ).rejects.toThrow('owned HTTP 200 initial list response')
+  })
+
+  test('导航 epoch 只接受当前 document commit 后发出的列表响应', async ({ page }) => {
+    const navigationFixturePath = '/issue1912-navigation-ownership-fixture'
+    const navigationListPath = '/api/issue1912-navigation-ownership-list'
+    const queries: string[] = []
+    let documentLoads = 0
+    let releaseSecondDocument: () => void = () => undefined
+    const secondDocumentReleased = new Promise<void>((resolve) => {
+      releaseSecondDocument = resolve
+    })
+
+    await page.route(`**${navigationFixturePath}*`, async (route) => {
+      documentLoads += 1
+      if (documentLoads === 2) await secondDocumentReleased
+      const oldPollScript =
+        documentLoads === 1
+          ? `setTimeout(() => {
+              void fetch('${navigationListPath}?keyword=SO-WALK-001&source=old-poll-during-navigation')
+            }, 500)`
+          : ''
+      await route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <button>导航 fixture</button>
+          <script>
+            ${oldPollScript}
+            void fetch('${navigationListPath}?keyword=SO-WALK-001&source=document-${documentLoads}')
+          </script>`,
+      })
+    })
+    await page.route(`**${navigationListPath}*`, async (route) => {
+      const url = new URL(route.request().url())
+      const source = url.searchParams.get('source') ?? ''
+      queries.push(source)
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: 'SO-WALK-001', source }] }),
+      })
+    })
+
+    await navigateAndWaitForInitialList(page, {
+      route: `${navigationFixturePath}?epoch=1`,
+      listPath: navigationListPath,
+      timeoutMs: 2_000,
+    })
+    const secondNavigationRequest = page.waitForRequest(
+      (request) =>
+        request.isNavigationRequest() &&
+        new URL(request.url()).pathname === navigationFixturePath &&
+        new URL(request.url()).searchParams.get('epoch') === '2',
+    )
+    const secondNavigation = navigateAndWaitForInitialList(page, {
+      route: `${navigationFixturePath}?epoch=2`,
+      listPath: navigationListPath,
+      timeoutMs: 2_000,
+    })
+    await secondNavigationRequest
+    await page.waitForRequest(
+      (request) =>
+        new URL(request.url()).searchParams.get('source') === 'old-poll-during-navigation',
+    )
+    releaseSecondDocument()
+
+    const current = await secondNavigation
+    expect(new URL(current.firstList.url()).searchParams.get('source')).toBe('document-2')
+    expect(queries).toEqual(['document-1', 'old-poll-during-navigation', 'document-2'])
+  })
+
   test('真正变更筛选值时仍等待 200 列表响应', async ({ page }) => {
     const queries: string[] = []
     const statuses: number[] = []
@@ -251,7 +333,7 @@ test.describe('walkthrough filter response boundary', () => {
       })
     })
 
-    const { navigation, firstList } = await navigateAndWaitForInitialList(page, {
+    const { navigation, firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
       route: `${fixturePath}?keyword=SO-OLD-001`,
       listPath,
       timeoutMs: 2_000,
@@ -265,6 +347,8 @@ test.describe('walkthrough filter response boundary', () => {
       filterLabel: '关键字搜索',
       stableText: 'SO-WALK-001',
       responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
       timeoutMs: 2_000,
     })
 
@@ -296,7 +380,7 @@ test.describe('walkthrough filter response boundary', () => {
       })
     })
 
-    const { navigation, firstList } = await navigateAndWaitForInitialList(page, {
+    const { navigation, firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
       route: `${fixturePath}?keyword=SO-OLD-001&decoy=true`,
       listPath,
       timeoutMs: 2_000,
@@ -323,6 +407,7 @@ test.describe('walkthrough filter response boundary', () => {
       stableText: 'SO-WALK-001',
       responseMode: 'server',
       initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
       timeoutMs: 2_000,
     })
 
@@ -361,7 +446,7 @@ test.describe('walkthrough filter response boundary', () => {
       })
     })
 
-    await navigateAndWaitForInitialList(page, {
+    const { firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
       route: `${fixturePath}?keyword=SO-OLD-001`,
       listPath,
       timeoutMs: 2_000,
@@ -382,12 +467,77 @@ test.describe('walkthrough filter response boundary', () => {
       filterLabel: '关键字搜索',
       stableText: 'SO-WALK-001',
       responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
       timeoutMs: 2_000,
     })
 
     expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
     expect(actionResponseCompleted).toBe(true)
     expect(queries).toEqual(['SO-OLD-001', 'SO-WALK-001', 'SO-WALK-001'])
+  })
+
+  test('服务端筛选拒绝同 keyword 的错误分页轮询并等待 exact query 的 fill 请求', async ({
+    page,
+  }) => {
+    const queries: string[] = []
+    let fillResponseCompleted = false
+    const staticQuery = '&organizationId=org-001&environmentId=env-dev&status=open&skip=0&take=10'
+    const raceFixtureHtml = `<!doctype html>
+      <meta charset="utf-8">
+      <label>关键字搜索 <input aria-label="关键字搜索" /></label>
+      <script>
+        const input = document.querySelector('input')
+        input.value = 'SO-OLD-001'
+        void fetch('${listPath}?keyword=SO-OLD-001${staticQuery}')
+        input.addEventListener('input', event => {
+          const value = event.target.value
+          void fetch('${listPath}?keyword=' + encodeURIComponent(value) +
+            '&organizationId=org-001&environmentId=env-dev&status=open&skip=0&take=999')
+        })
+        input.addEventListener('input', event => {
+          const value = event.target.value
+          queueMicrotask(() => void fetch('${listPath}?keyword=' + encodeURIComponent(value) + '${staticQuery}'))
+        })
+      </script>`
+
+    await page.route(`**${fixturePath}*`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: raceFixtureHtml }),
+    )
+    await page.route(`**${listPath}*`, async (route) => {
+      const url = new URL(route.request().url())
+      const keyword = url.searchParams.get('keyword') ?? ''
+      const take = url.searchParams.get('take') ?? ''
+      queries.push(`${keyword}:${take}`)
+      if (keyword === 'SO-WALK-001' && take === '10') {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        fillResponseCompleted = true
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: keyword }] }),
+      })
+    })
+
+    const { firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
+      route: `${fixturePath}?keyword=SO-OLD-001`,
+      listPath,
+      timeoutMs: 2_000,
+    })
+    const result = await fillFilterAndWaitForListResponse(page, {
+      route: page.url(),
+      listPath,
+      filterLabel: '关键字搜索',
+      stableText: 'SO-WALK-001',
+      responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
+      timeoutMs: 2_000,
+    })
+
+    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(fillResponseCompleted).toBe(true)
+    expect(queries).toEqual(['SO-OLD-001:10', 'SO-WALK-001:999', 'SO-WALK-001:10'])
   })
 
   test('URL keyword 未回填到输入框时仍等待筛选请求', async ({ page }) => {
@@ -407,7 +557,7 @@ test.describe('walkthrough filter response boundary', () => {
       })
     })
 
-    const { navigation, firstList } = await navigateAndWaitForInitialList(page, {
+    const { navigation, firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
       route: `${fixturePath}?keyword=SO-WALK-001&hydrate=false`,
       listPath,
       timeoutMs: 2_000,
@@ -421,6 +571,8 @@ test.describe('walkthrough filter response boundary', () => {
       filterLabel: '关键字搜索',
       stableText: 'SO-WALK-001',
       responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
       timeoutMs: 2_000,
     })
 
@@ -517,6 +669,92 @@ test.describe('walkthrough filter response boundary', () => {
     expect(refreshed.status()).toBe(200)
     expect(revisions).toEqual(['stale', 'between', 'fresh'])
     await expect(page.locator('#revision')).toHaveText('fresh')
+  })
+
+  test('刷新 action marker 拒绝点击后轮询、支持重复 refresh 且不选取最后到达的响应', async ({
+    page,
+  }) => {
+    const refreshFixturePath = '/issue1912-refresh-ownership-fixture'
+    const refreshPath = '/api/issue1912-refresh-ownership-list'
+    const revisions: string[] = []
+    const markersByRevision = new Map<string, string | undefined>()
+
+    await page.route(`**${refreshFixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <meta charset="utf-8">
+          <button type="button">刷新</button>
+          <script>
+            let refreshCount = 0
+            document.querySelector('button').addEventListener('click', () => {
+              const revision = 'fresh-' + (++refreshCount)
+              void fetch('${refreshPath}?revision=' + revision)
+              setTimeout(() => void fetch('${refreshPath}?revision=after-' + refreshCount), 0)
+            })
+          </script>`,
+      }),
+    )
+    await page.route(`**${refreshPath}*`, async (route) => {
+      const request = route.request()
+      const revision = new URL(request.url()).searchParams.get('revision') ?? ''
+      revisions.push(revision)
+      markersByRevision.set(revision, request.headers()['x-nerv-walkthrough-action'])
+      if (revision.startsWith('after-')) await new Promise((resolve) => setTimeout(resolve, 100))
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ revision }),
+      })
+    })
+
+    await page.goto(refreshFixturePath)
+    const first = await clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)
+    const second = await clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)
+
+    expect(new URL(first.url()).searchParams.get('revision')).toBe('fresh-1')
+    expect(new URL(second.url()).searchParams.get('revision')).toBe('fresh-2')
+    expect(revisions).toEqual(['fresh-1', 'after-1', 'fresh-2', 'after-2'])
+    expect(markersByRevision.get('fresh-1')).toBeTruthy()
+    expect(markersByRevision.get('fresh-2')).toBeTruthy()
+    expect(markersByRevision.get('fresh-1')).not.toBe(markersByRevision.get('fresh-2'))
+    expect(markersByRevision.get('after-1')).toBeUndefined()
+    expect(markersByRevision.get('after-2')).toBeUndefined()
+  })
+
+  test('刷新 action 同一次 click 发出多个同路径请求时失败关闭', async ({ page }) => {
+    const refreshFixturePath = '/issue1912-refresh-duplicate-fixture'
+    const refreshPath = '/api/issue1912-refresh-duplicate-list'
+    const markedRevisions: string[] = []
+
+    await page.route(`**${refreshFixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <meta charset="utf-8">
+          <button type="button">刷新</button>
+          <script>
+            document.querySelector('button').addEventListener('click', () => {
+              void fetch('${refreshPath}?revision=duplicate-1')
+              void fetch('${refreshPath}?revision=duplicate-2')
+            })
+          </script>`,
+      }),
+    )
+    await page.route(`**${refreshPath}*`, async (route) => {
+      const request = route.request()
+      const revision = new URL(request.url()).searchParams.get('revision') ?? ''
+      if (request.headers()['x-nerv-walkthrough-action']) markedRevisions.push(revision)
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ revision }),
+      })
+    })
+
+    await page.goto(refreshFixturePath)
+    await expect(clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)).rejects.toThrow(
+      'more than one marked list request',
+    )
+    expect(markedRevisions).toEqual(['duplicate-1', 'duplicate-2'])
   })
 
   test('tab 容器保留但旧 slot 内容切换后才建立 component-unmount 证据', async ({ page }) => {
