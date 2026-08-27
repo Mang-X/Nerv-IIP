@@ -3438,7 +3438,8 @@
       ],
       "gatewayOperationIds": [
         "getBusinessConsoleMesMaterialReadiness"
-      ]
+      ],
+      "note": "#2223 在 material-readiness 响应中新增尾部可选兼容字段 SubstituteMaterialIds，表示创建齐套快照时冻结并去重的替代物料候选；BusinessGateway 保真转发该可选字段，旧消费者可继续忽略它，不改变既有必填字段或齐套口径。"
     },
     {
       "service": "Mes",

@@ -186,6 +186,23 @@ public sealed class FacadeCoverageMatrixTests
             "(the #784 failure mode: endpoint claims exposed but no facade shipped):\n" + string.Join('\n', problems));
     }
 
+    // Contract: PublicContract + Regression. Authority: Issue #2223 and facade-coverage-matrix.md DoD.
+    // Removing the frozen-candidate, Gateway-fidelity, or optional-compatibility declaration makes this gate fail.
+    [Fact]
+    public void Mes_material_readiness_declares_the_substitute_candidate_response_contract()
+    {
+        var entry = Assert.Single(Matrix.Value, x =>
+            x.Service == "Mes" &&
+            x.Method == "GET" &&
+            x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness");
+
+        Assert.Contains("#2223", entry.Note, StringComparison.Ordinal);
+        Assert.Contains("SubstituteMaterialIds", entry.Note, StringComparison.Ordinal);
+        Assert.Contains("冻结", entry.Note, StringComparison.Ordinal);
+        Assert.Contains("BusinessGateway 保真", entry.Note, StringComparison.Ordinal);
+        Assert.Contains("可选兼容", entry.Note, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Deferred_or_internal_endpoints_are_not_silently_exposed()
     {

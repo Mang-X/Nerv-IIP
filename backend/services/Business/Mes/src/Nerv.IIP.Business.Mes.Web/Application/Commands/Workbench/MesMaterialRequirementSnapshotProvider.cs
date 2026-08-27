@@ -106,6 +106,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
 {
     private const string ActiveProductionVersionStatus = ProductionEngineeringContractStatuses.Active;
     private const string PublishedEngineeringStatus = "published";
+    private const int MaxConcurrentInventoryAvailabilityRequests = 8;
     private readonly MesMaterialRequirementInventoryOptions inventoryOptions = inventoryOptions ?? new MesMaterialRequirementInventoryOptions();
 
     public HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
@@ -192,23 +193,22 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         }
 
         var conversions = await GetUomConversionsAsync(request, requiredLines, cancellationToken);
-        var lines = new List<MesMaterialRequirementSnapshotLine>(requiredLines.Length);
-        foreach (var line in requiredLines)
+        using var inventoryThrottle = new SemaphoreSlim(MaxConcurrentInventoryAvailabilityRequests);
+        var lines = await Task.WhenAll(requiredLines.Select(async line =>
         {
-            var availableQuantity = 0m;
-            foreach (var candidateMaterialId in new[] { line.MaterialId }
+            var candidateMaterialIds = new[] { line.MaterialId }
                 .Concat(line.SubstituteMaterialIds)
-                .Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                availableQuantity += await GetAvailableQuantityAsync(
-                    request,
-                    candidateMaterialId,
-                    line.UomCode,
-                    conversions,
-                    cancellationToken);
-            }
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var availableQuantity = await GetAvailableQuantityAsync(
+                request,
+                candidateMaterialIds,
+                line.UomCode,
+                conversions,
+                inventoryThrottle,
+                cancellationToken);
 
-            lines.Add(new MesMaterialRequirementSnapshotLine(
+            return new MesMaterialRequirementSnapshotLine(
                 null,
                 line.MaterialId,
                 null,
@@ -217,46 +217,52 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 availableQuantity,
                 0m,
                 $"{selectedVersion.MbomVersionId}:{line.MaterialId}",
-                line.SubstituteMaterialIds));
-        }
+                line.SubstituteMaterialIds);
+        }));
 
         return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}", lines);
     }
 
     private async Task<decimal> GetAvailableQuantityAsync(
         MesMaterialRequirementSnapshotRequest request,
-        string materialId,
+        IReadOnlyCollection<string> materialIds,
         string uomCode,
         IReadOnlyCollection<MesUomConversionSnapshot> conversions,
+        SemaphoreSlim inventoryThrottle,
         CancellationToken cancellationToken)
     {
-        var availableQuantity = 0m;
         var candidates = GetInventoryUomCandidates(uomCode, conversions);
         var siteCodes = GetSiteCodes();
-        // Availability currently uses Inventory's exact GET contract; batch API work is intentionally left out of this #460 fix.
-        foreach (var candidate in candidates)
-        {
-            foreach (var siteCode in siteCodes)
+        var quantities = await Task.WhenAll(materialIds.SelectMany(materialId =>
+            candidates.SelectMany(candidate => siteCodes.Select(async siteCode =>
             {
-                var availability = await SendAsync<StockAvailabilityResponse>(
-                    inventoryClient.HttpClient,
-                    "Inventory",
-                    "/api/inventory/v1/availability?" + Query(
-                        ("organizationId", request.OrganizationId),
-                        ("environmentId", request.EnvironmentId),
-                        ("skuCode", materialId),
-                        ("uomCode", candidate.InventoryUomCode),
-                        ("siteCode", siteCode)),
-                    cancellationToken);
-                availableQuantity += candidate.ToRequiredUom(Math.Max(0m, availability.AvailableQuantity));
-            }
-        }
+                await inventoryThrottle.WaitAsync(cancellationToken);
+                try
+                {
+                    var availability = await SendAsync<StockAvailabilityResponse>(
+                        inventoryClient.HttpClient,
+                        "Inventory",
+                        "/api/inventory/v1/availability?" + Query(
+                            ("organizationId", request.OrganizationId),
+                            ("environmentId", request.EnvironmentId),
+                            ("skuCode", materialId),
+                            ("uomCode", candidate.InventoryUomCode),
+                            ("siteCode", siteCode)),
+                        cancellationToken);
+                    return candidate.ToRequiredUom(Math.Max(0m, availability.AvailableQuantity));
+                }
+                finally
+                {
+                    inventoryThrottle.Release();
+                }
+            }))));
+        var availableQuantity = quantities.Sum();
 
         if (availableQuantity <= 0m)
         {
             logger?.LogWarning(
-                "MES material availability returned zero availability for material {MaterialId} required UOM {UomCode}; queried sites {SiteCodes} and inventory UOM candidates {InventoryUomCodes}.",
-                materialId,
+                "MES material availability returned zero availability for materials {MaterialIds} required UOM {UomCode}; queried sites {SiteCodes} and inventory UOM candidates {InventoryUomCodes}.",
+                string.Join(',', materialIds),
                 uomCode,
                 string.Join(',', siteCodes),
                 string.Join(',', candidates.Select(x => x.InventoryUomCode)));

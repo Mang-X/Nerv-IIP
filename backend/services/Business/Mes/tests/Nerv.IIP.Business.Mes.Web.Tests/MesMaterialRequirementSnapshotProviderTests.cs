@@ -9,6 +9,103 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
+    // Contract: ProviderBehavior + Regression. Authority: Issue #2223 review 5036479152.
+    // Serial candidate/UOM/site awaits keep peak concurrency at one; removing the shared bound lets it exceed eight.
+    [Fact]
+    public async Task Http_provider_bounds_parallel_inventory_queries_across_candidates_uoms_and_sites()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
+            "MAT-PRIMARY",
+            "ea",
+            "MAT-ALT-A;MAT-ALT-B;MAT-ALT-C;MAT-ALT-D");
+        var masterDataHandler = new StubHttpMessageHandler(_ => JsonEnvelope(new
+        {
+            resources = new[]
+            {
+                new
+                {
+                    resourceType = "uom-conversion",
+                    code = "box->ea",
+                    displayName = "box to ea",
+                    active = true,
+                    snapshotVersion = "2026-06-01T00:00:00Z",
+                    effectiveFrom = "2026-01-01",
+                    effectiveTo = (string?)null,
+                    fromUomCode = "box",
+                    toUomCode = "ea",
+                    factor = 2m,
+                    offset = 0m,
+                    precision = 0,
+                    roundingMode = "half-up",
+                },
+            },
+            total = 1,
+            truncated = false,
+            limit = (int?)null,
+        }));
+        var releaseInventory = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var twoRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inventoryRequests = new List<string>();
+        var concurrencyLock = new object();
+        var activeRequests = 0;
+        var peakConcurrency = 0;
+        var inventoryHandler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            lock (concurrencyLock)
+            {
+                inventoryRequests.Add(pathAndQuery);
+                activeRequests++;
+                peakConcurrency = Math.Max(peakConcurrency, activeRequests);
+                if (activeRequests >= 2)
+                {
+                    twoRequestsStarted.TrySetResult();
+                }
+            }
+
+            try
+            {
+                await releaseInventory.Task.WaitAsync(cancellationToken);
+                return JsonEnvelope(Availability("candidate", "ea", "production", 1m));
+            }
+            finally
+            {
+                lock (concurrencyLock)
+                {
+                    activeRequests--;
+                }
+            }
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMasterDataHttpClient(new HttpClient(masterDataHandler) { BaseAddress = new Uri("http://master-data") }),
+            new MesMaterialRequirementInventoryOptions { SiteCodes = ["SITE-A", "SITE-B"] });
+
+        var snapshotTask = provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
+        var observedParallelRequests = await Task.WhenAny(
+            twoRequestsStarted.Task,
+            Task.Delay(TimeSpan.FromSeconds(1))) == twoRequestsStarted.Task;
+        releaseInventory.TrySetResult();
+        var result = await snapshotTask;
+
+        Assert.True(observedParallelRequests, "Expected independent Inventory requests to overlap before the release gate opened.");
+        Assert.InRange(peakConcurrency, 2, 8);
+        Assert.Equal(20, inventoryRequests.Count);
+        Assert.All(inventoryRequests, pathAndQuery =>
+        {
+            Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+            Assert.True(
+                pathAndQuery.Contains("siteCode=SITE-A", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("siteCode=SITE-B", StringComparison.Ordinal));
+            Assert.True(
+                pathAndQuery.Contains("uomCode=ea", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal));
+        });
+        Assert.Equal(30m, Assert.Single(result.Lines).AvailableQuantity);
+    }
+
     // Contract: DomainInvariant + Regression. Authority: Issue #2223 acceptance 1-2.
     // Removing substitute queries, counting the primary requirement once per candidate, or skipping candidate normalization makes this test fail.
     [Fact]
@@ -632,11 +729,23 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         });
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handle) : HttpMessageHandler
+    private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle;
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handle)
+            : this((request, _) => Task.FromResult(handle(request)))
+        {
+        }
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle)
+        {
+            this.handle = handle;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            return Task.FromResult(handle(request));
+            return handle(request, cancellationToken);
         }
     }
 
