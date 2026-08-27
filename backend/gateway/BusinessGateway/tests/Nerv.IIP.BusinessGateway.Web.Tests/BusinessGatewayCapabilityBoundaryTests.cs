@@ -600,6 +600,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             " declaration locations changed",
             legacyRollbackReport,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Legacy symbol " + Identity("Class", "HttpBusinessIndustrialTelemetryClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
 
         var falsePositiveViolations = AnalyzeCapabilityBoundary(
             baseDocuments.Append(
