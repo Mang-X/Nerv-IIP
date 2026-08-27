@@ -1860,6 +1860,35 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1m, workOrder.CompletedQuantity);
     }
 
+    /// <summary>
+    /// #1947：停机原因汇总的名次是「时长降序、同时长按原因码升序」。用 InMemory 是为了让分组
+    /// 到达顺序确定（等于写入顺序）——真实 PostgreSQL 的 GROUP BY 行序未定义，删掉平局键之后
+    /// 得到的顺序是碰运气的，写不出可靠转红的用例。聚合本身在
+    /// <see cref="MesDowntimeReadFacePostgresTests"/> 用真库证明。
+    /// </summary>
+    [Fact]
+    public async Task Downtime_reason_summary_breaks_equal_duration_ties_by_reason_code()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var from = DateTimeOffset.Parse("2026-07-30T08:00:00Z");
+        // 写入顺序刻意是 DT-PM 在 DT-MECH 之前，与期望名次相反：平局键被删掉时稳定排序会保留写入顺序。
+        dbContext.WorkCenterUnavailabilities.AddRange(
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+                "org-001", "env-dev", "DT-PM-1", "WC-12", from, from.AddMinutes(60), "DT-PM", "EQ-012"),
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+                "org-001", "env-dev", "DT-MECH-1", "WC-10", from, from.AddMinutes(60), "DT-MECH", "EQ-010"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
+            new ListDowntimeEventsQuery("org-001", "env-dev", null, null),
+            CancellationToken.None);
+
+        Assert.Equal(new[] { 60m, 60m }, response.ReasonSummary.Select(x => x.DurationMinutes));
+        Assert.Equal(new[] { "DT-MECH", "DT-PM" }, response.ReasonSummary.Select(x => x.ReasonCode));
+    }
+
     [Fact]
     public async Task Secondary_mes_list_queries_return_offset_page_and_total_count()
     {
@@ -1880,7 +1909,7 @@ public sealed class MesEndpointContractTests
         var materialIssues = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
             new ListMaterialIssueRequestsQuery("org-001", "env-dev", "WO-MAT", Skip: 1, Take: 1),
             CancellationToken.None);
-        var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+        var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
             new ListDowntimeEventsQuery("org-001", "env-dev", "WC-MIX", "ASSET-001", Skip: 1, Take: 1),
             CancellationToken.None);
         var capacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
@@ -2316,7 +2345,7 @@ public sealed class MesEndpointContractTests
         var qualityItems = await new ListRelatedQualityItemsQueryHandler(dbContext).Handle(
             new ListRelatedQualityItemsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Keyword: "DEF-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
             CancellationToken.None);
-        var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+        var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
             new ListDowntimeEventsQuery("org-001", "env-dev", "WC-FILTER", "DEV-FILTER", Skip: 0, Take: 10, Keyword: "DOWNTIME-FILTER", ShiftId: "SHIFT-FILTER"),
             CancellationToken.None);
         var capacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
@@ -2334,7 +2363,7 @@ public sealed class MesEndpointContractTests
         var nonMatchingQualityItems = await new ListRelatedQualityItemsQueryHandler(dbContext).Handle(
             new ListRelatedQualityItemsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "reworkPending"),
             CancellationToken.None);
-        var nonMatchingDowntimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+        var nonMatchingDowntimeEvents = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
             new ListDowntimeEventsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "recovered"),
             CancellationToken.None);
         var nonMatchingCapacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
