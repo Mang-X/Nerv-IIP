@@ -10,6 +10,9 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 
@@ -18,6 +21,82 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection("ERP PostgreSQL acceptance")]
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var applicationName = $"erp-actual-labor-{Guid.CreateVersion7():N}";
+        var connectionString = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
+        {
+            ApplicationName = applicationName,
+        }.ConnectionString;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connectionString);
+
+        await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(setupDb);
+            await setupDb.Database.MigrateAsync();
+            setupDb.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+                "org-concurrent", "env-concurrent", "WC-CONCURRENT", 80m, "CNY",
+                new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), null, 1,
+                "system:test", "approved standard labor rate", DateTimeOffset.UtcNow));
+            await setupDb.SaveChangesAsync();
+        }
+
+        await using var gateDb = new ApplicationDbContext(options, new NoopMediator());
+        await using var gateTransaction = await gateDb.Database.BeginTransactionAsync();
+        await new PostgreSqlWorkOrderCostMutationLock(gateDb)
+            .AcquireAsync("org-concurrent", "env-concurrent", "WO-CONCURRENT", CancellationToken.None);
+
+        await using var reportDb = new ApplicationDbContext(options, new NoopMediator());
+        await using var settlementDb = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var reportedAtUtc = new DateTimeOffset(2026, 8, 31, 15, 40, 0, TimeSpan.Zero);
+        var completedAtUtc = reportedAtUtc.AddMinutes(10);
+        var report = new ProductionReportRecordedIntegrationEvent(
+            "evt-report-concurrent", MesIntegrationEventTypes.ProductionReportRecorded, 1, reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes, "RPT-CONCURRENT", "WO-CONCURRENT",
+            "org-concurrent", "env-concurrent", "operator:test", "report:RPT-CONCURRENT",
+            new ProductionReportRecordedPayload(
+                "RPT-CONCURRENT", "WO-CONCURRENT", "OP-CONCURRENT", "WC-CONCURRENT", null,
+                10m, 0m, 0m, "ea", 5m, reportedAtUtc, false, MaterialMovementCount: 0));
+        var settled = new MesOperationActualTimeSettledIntegrationEvent(
+            "evt-settled-concurrent", MesIntegrationEventTypes.OperationActualTimeSettled, 1,
+            completedAtUtc.AddMinutes(1), MesIntegrationEventSources.BusinessMes,
+            "correlation-concurrent", "causation-concurrent", "org-concurrent", "env-concurrent",
+            "operator:test", "actual-time:OP-CONCURRENT:1:settled",
+            new OperationActualTimeSettledPayload(
+                "WO-CONCURRENT", "OP-CONCURRENT", "WC-CONCURRENT", 1, completedAtUtc,
+                2 * TimeSpan.TicksPerHour, 2 * TimeSpan.TicksPerHour, ["RPT-CONCURRENT"]));
+
+        var reportTask = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+                reportDb, deadLetters, reportDb)
+            .HandleAsync(report, CancellationToken.None);
+        var settlementTask = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                settlementDb, deadLetters, settlementDb)
+            .HandleAsync(settled, CancellationToken.None);
+        await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 2);
+        Assert.False(reportTask.IsCompleted);
+        Assert.False(settlementTask.IsCompleted);
+
+        await gateTransaction.CommitAsync();
+        await Task.WhenAll(reportTask, settlementTask).WaitAsync(TimeSpan.FromSeconds(10));
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        var cost = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(160m, cost.LaborCost);
+        Assert.Equal(0m, cost.Details
+            .Where(x => x.LaborBasis is LaborCostBasis.TheoreticalReport or LaborCostBasis.TheoreticalReportReplacement)
+            .Sum(x => x.Amount));
+        Assert.InRange(
+            cost.Details.Count(x => x.LaborBasis == LaborCostBasis.TheoreticalReportReplacement),
+            0,
+            1);
+        Assert.Single(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperation);
+        Assert.Single(await assertDb.OperationLaborSettlements.ToListAsync());
+        Assert.Single(await assertDb.OperationLaborCoveredReports.ToListAsync());
+    }
+
     [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision()
     {

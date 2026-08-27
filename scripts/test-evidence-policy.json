@@ -1161,13 +1161,14 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Concurrent_commands_serialize_revision_allocation_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres"
       ],
-      "expectedRuntimeTestCount": 5
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "erp-scale-seed",

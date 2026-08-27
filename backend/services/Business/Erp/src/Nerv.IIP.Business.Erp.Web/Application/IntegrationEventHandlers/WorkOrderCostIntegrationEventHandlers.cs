@@ -19,19 +19,44 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork unitOfWork)
+    ITransactionUnitOfWork unitOfWork,
+    IWorkOrderCostMutationLock? mutationLock = null)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
-    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
+    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(integrationEvent.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase))
+            return Task.CompletedTask;
+        return CostingIntegrationEventUnitOfWork.ExecuteAsync(
+            dbContext,
+            unitOfWork,
+            async () =>
+            {
+                await (mutationLock ?? new PostgreSqlWorkOrderCostMutationLock(dbContext)).AcquireAsync(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    integrationEvent.Payload.WorkOrderId,
+                    cancellationToken);
+                await HandleValidAsync(integrationEvent, cancellationToken);
+            },
+            cancellationToken);
+    }
     [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
 
     private async Task HandleValidAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!string.Equals(integrationEvent.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase)) return;
         var outputQuantity = Math.Abs(integrationEvent.Payload.GoodQuantity + integrationEvent.Payload.ScrapQuantity + integrationEvent.Payload.ReworkQuantity);
-        var hasLaborBasis = !string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId) && integrationEvent.Payload.TheoreticalRatePerHour is > 0m && outputQuantity > 0m;
+        var isCoveredByActualSettlement = await dbContext.OperationLaborCoveredReports.AnyAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.ReportNo == integrationEvent.Payload.ReportNo,
+            cancellationToken);
+        var hasLaborBasis = !isCoveredByActualSettlement
+            && !string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId)
+            && integrationEvent.Payload.TheoreticalRatePerHour is > 0m
+            && outputQuantity > 0m;
         WorkCenterCostRate? rate = null;
         if (hasLaborBasis)
         {
@@ -72,7 +97,6 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
                 await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorPendingTotal, item.MovementId, item.PostedAtUtc, cancellationToken);
             dbContext.PendingMaterialCosts.Remove(item);
         }
-        await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 }
 
@@ -216,6 +240,38 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
 
 internal static class CostingIntegrationEventUnitOfWork
 {
+    public static async Task ExecuteAsync(
+        ApplicationDbContext dbContext,
+        ITransactionUnitOfWork unitOfWork,
+        Func<Task> action,
+        CancellationToken cancellationToken)
+    {
+        if (unitOfWork.CurrentTransaction is not null)
+        {
+            await action();
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        unitOfWork.CurrentTransaction = transaction;
+        try
+        {
+            await action();
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            await unitOfWork.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
+        }
+    }
+
     public static async Task SaveEntitiesAsync(
         ApplicationDbContext dbContext,
         ITransactionUnitOfWork unitOfWork,

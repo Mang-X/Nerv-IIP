@@ -7,6 +7,15 @@ public partial record WorkOrderCostId : IGuidStronglyTypedId;
 public partial record WorkOrderCostDetailId : IGuidStronglyTypedId;
 
 public enum WorkOrderCostDetailType { Labor, Material }
+public enum LaborCostBasis
+{
+    TheoreticalReport,
+    TheoreticalReportReplacement,
+    ActualOperation,
+    ActualOperationVoid,
+    ActualOperationSuperseded,
+    UncostedReport,
+}
 
 public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 {
@@ -49,17 +58,114 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     {
         ErpText.Positive(hours, nameof(hours));
         ErpText.Positive(hourlyRate, nameof(hourlyRate));
-        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Labor, sourceDocumentId, workCenterId, hours, hourlyRate, isReversal ? -(hours * hourlyRate) : hours * hourlyRate, occurredAtUtc));
+        details.Add(WorkOrderCostDetail.Create(
+            WorkOrderCostDetailType.Labor,
+            sourceDocumentId,
+            workCenterId,
+            hours,
+            hourlyRate,
+            isReversal ? -(hours * hourlyRate) : hours * hourlyRate,
+            occurredAtUtc,
+            laborBasis: LaborCostBasis.TheoreticalReport,
+            laborLineageId: sourceDocumentId));
         if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
     }
 
     public void RecordUncostedReport(string sourceDocumentId, bool isReversal, DateTimeOffset occurredAtUtc)
     {
-        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Labor, sourceDocumentId, "UNSPECIFIED", 0m, 0m, 0m, occurredAtUtc));
+        details.Add(WorkOrderCostDetail.Create(
+            WorkOrderCostDetailType.Labor,
+            sourceDocumentId,
+            "UNSPECIFIED",
+            0m,
+            0m,
+            0m,
+            occurredAtUtc,
+            laborBasis: LaborCostBasis.UncostedReport,
+            laborLineageId: sourceDocumentId));
         if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
     }
+
+    public void ReplaceTheoreticalLabor(
+        string reportNo,
+        string replacementSourceDocumentId,
+        DateTimeOffset occurredAtUtc)
+    {
+        if (details.Any(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis == LaborCostBasis.TheoreticalReportReplacement
+                && x.LaborLineageId == reportNo))
+            return;
+
+        var theoreticalDetails = details
+            .Where(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis == LaborCostBasis.TheoreticalReport
+                && x.SourceDocumentId == reportNo)
+            .ToArray();
+        foreach (var detail in theoreticalDetails)
+        {
+            details.Add(WorkOrderCostDetail.Create(
+                WorkOrderCostDetailType.Labor,
+                replacementSourceDocumentId,
+                detail.DimensionCode,
+                -detail.Quantity,
+                detail.Rate,
+                -detail.Amount,
+                occurredAtUtc,
+                laborBasis: LaborCostBasis.TheoreticalReportReplacement,
+                laborLineageId: reportNo));
+        }
+    }
+
+    public void RecordActualLabor(OperationLaborSettlement settlement)
+    {
+        details.Add(WorkOrderCostDetail.Create(
+            WorkOrderCostDetailType.Labor,
+            ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, "settled"),
+            settlement.WorkCenterId,
+            settlement.ActualLaborHours,
+            settlement.HourlyRate,
+            settlement.Amount,
+            settlement.CompletedAtUtc,
+            laborBasis: LaborCostBasis.ActualOperation,
+            laborLineageId: ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+        TryPublishCapitalization();
+    }
+
+    public void RecordActualLaborVoid(OperationLaborSettlementVoid settlementVoid)
+    {
+        details.Add(WorkOrderCostDetail.Create(
+            WorkOrderCostDetailType.Labor,
+            ActualLaborSourceId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision, "voided"),
+            settlementVoid.WorkCenterId,
+            -settlementVoid.ActualLaborHours,
+            settlementVoid.HourlyRate,
+            settlementVoid.Amount,
+            settlementVoid.VoidedAtUtc,
+            laborBasis: LaborCostBasis.ActualOperationVoid,
+            laborLineageId: ActualLaborLineageId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision)));
+    }
+
+    public void RecordActualLaborSuperseded(OperationLaborSettlement settlement, long supersedingRevision, DateTimeOffset occurredAtUtc)
+    {
+        details.Add(WorkOrderCostDetail.Create(
+            WorkOrderCostDetailType.Labor,
+            ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, $"superseded-by-{supersedingRevision}"),
+            settlement.WorkCenterId,
+            -settlement.ActualLaborHours,
+            settlement.HourlyRate,
+            -settlement.Amount,
+            occurredAtUtc,
+            laborBasis: LaborCostBasis.ActualOperationSuperseded,
+            laborLineageId: ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+    }
+
+    private static string ActualLaborLineageId(string operationTaskId, long revision)
+        => $"{operationTaskId}:r{revision}";
+
+    private static string ActualLaborSourceId(string operationTaskId, long revision, string suffix)
+        => $"actual-labor:{ActualLaborLineageId(operationTaskId, revision)}:{suffix}";
 
     public void RecordMaterial(string sourceDocumentId, string reportNo, string skuCode, decimal signedQuantity, decimal unitCost, DateTimeOffset occurredAtUtc)
     {
@@ -206,20 +312,42 @@ public sealed class PendingMaterialCost : Entity<PendingMaterialCostId>, IAggreg
 public sealed class WorkOrderCostDetail : Entity<WorkOrderCostDetailId>
 {
     private WorkOrderCostDetail() { }
-    private WorkOrderCostDetail(WorkOrderCostDetailType type, string sourceDocumentId, string dimensionCode, decimal quantity, decimal rate, decimal amount, DateTimeOffset occurredAtUtc, string? reportNo)
+    private WorkOrderCostDetail(
+        WorkOrderCostDetailType type,
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        string? reportNo,
+        LaborCostBasis? laborBasis,
+        string? laborLineageId)
     {
         Type = type; SourceDocumentId = ErpText.Required(sourceDocumentId, nameof(sourceDocumentId));
         DimensionCode = ErpText.Required(dimensionCode, nameof(dimensionCode)); Quantity = quantity; Rate = rate; Amount = amount;
-        OccurredAtUtc = occurredAtUtc; ReportNo = reportNo;
+        OccurredAtUtc = occurredAtUtc; ReportNo = reportNo; LaborBasis = laborBasis; LaborLineageId = laborLineageId;
     }
     public WorkOrderCostDetailType Type { get; private set; }
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string DimensionCode { get; private set; } = string.Empty;
     public string? ReportNo { get; private set; }
+    public LaborCostBasis? LaborBasis { get; private set; }
+    public string? LaborLineageId { get; private set; }
     public decimal Quantity { get; private set; }
     public decimal Rate { get; private set; }
     public decimal Amount { get; private set; }
     public DateTimeOffset OccurredAtUtc { get; private set; }
-    internal static WorkOrderCostDetail Create(WorkOrderCostDetailType type, string sourceDocumentId, string dimensionCode, decimal quantity, decimal rate, decimal amount, DateTimeOffset occurredAtUtc, string? reportNo = null)
-        => new(type, sourceDocumentId, dimensionCode, quantity, rate, amount, occurredAtUtc, reportNo);
+    internal static WorkOrderCostDetail Create(
+        WorkOrderCostDetailType type,
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        string? reportNo = null,
+        LaborCostBasis? laborBasis = null,
+        string? laborLineageId = null)
+        => new(type, sourceDocumentId, dimensionCode, quantity, rate, amount, occurredAtUtc, reportNo, laborBasis, laborLineageId);
 }
