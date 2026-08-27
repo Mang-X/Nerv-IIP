@@ -1162,18 +1162,34 @@ function Invoke-DotNetSdkAuthorityCase {
         [string[]] $ExpectedOutput = @()
     )
 
-    $output = & pwsh -NoProfile -ExecutionPolicy Bypass -File $dotNetSdkAuthorityCheckerPath `
-        -WorkflowPath $CaseWorkflowPath `
-        -ManifestPath $CaseManifestPath 2>&1
-    $actualExitCode = $LASTEXITCODE
-    $outputText = $output | Out-String
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = 'pwsh'
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $dotNetSdkAuthorityCheckerPath, '-WorkflowPath', $CaseWorkflowPath, '-ManifestPath', $CaseManifestPath)) {
+        [void] $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        Assert-Contract $process.Start() "CI SDK authority case '$Name' could not start its checker process."
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $actualExitCode = $process.ExitCode
+        $outputText = ($stdoutTask.GetAwaiter().GetResult(), $stderrTask.GetAwaiter().GetResult()) -join [Environment]::NewLine
+    }
+    finally {
+        $process.Dispose()
+    }
 
     Assert-Contract ($actualExitCode -eq $ExpectedExitCode) "CI SDK authority case '$Name' expected exit $ExpectedExitCode but got $actualExitCode. Output: $outputText"
     foreach ($expected in $ExpectedOutput) {
         Assert-Contract ($outputText.Contains($expected, [StringComparison]::Ordinal)) "CI SDK authority case '$Name' did not report '$expected'. Output: $outputText"
     }
     Write-Output "CI SDK authority case: NAME=$Name EXIT=$actualExitCode"
-    $script:LASTEXITCODE = 0
 }
 
 Assert-Contract (Test-Path -LiteralPath $dotNetSdkAuthorityCheckerPath -PathType Leaf) 'The CI SDK authority checker is missing.'
