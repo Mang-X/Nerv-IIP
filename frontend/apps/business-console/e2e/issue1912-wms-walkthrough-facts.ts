@@ -15,29 +15,41 @@ import type {
 const WMS_INBOUND_LIST_PATH = '/api/business-console/v1/wms/inbound-orders' as const
 const WMS_OUTBOUND_LIST_PATH = '/api/business-console/v1/wms/outbound-orders' as const
 
-type WmsInitialEndpointKind = 'list' | 'auxiliary' | 'unknown' | 'outside'
-
-/**
- * The initial page can issue auxiliary WMS reads while its list query is being enabled. Every
- * path in that phase is nevertheless classified by this registry: the two `list` entries are the
- * only acceptable list candidates, and an unregistered WMS path is never silently ignored.
- */
-const wmsInitialEndpointRegistry: Readonly<
-  Record<string, Exclude<WmsInitialEndpointKind, 'outside'>>
-> = {
-  [WMS_INBOUND_LIST_PATH]: 'list',
-  [WMS_OUTBOUND_LIST_PATH]: 'list',
-  '/api/business-console/v1/wms/work-scopes/receipts': 'auxiliary',
-  '/api/business-console/v1/wms/work-scopes/shipments': 'auxiliary',
-  '/api/business-console/v1/wms/operational-candidates/receipts': 'auxiliary',
-  '/api/business-console/v1/wms/operational-candidates/shipments': 'auxiliary',
-  '/api/business-console/v1/wms/receiving-quality-gates': 'auxiliary',
-  '/api/business-console/v1/wms/supplier-return-requests': 'auxiliary',
-}
-
 export type WmsInboundListPath = typeof WMS_INBOUND_LIST_PATH
 export type WmsOutboundListPath = typeof WMS_OUTBOUND_LIST_PATH
 export type WmsListPath = WmsInboundListPath | WmsOutboundListPath
+
+type WmsInitialEndpointKind = 'target' | 'auxiliary' | 'unknown' | 'outside'
+
+/**
+ * A mounted page has a page-specific WMS startup surface. The registry is keyed by the expected
+ * target path so an outbound catalog request can be auxiliary on inbound, while the inverse path
+ * remains an unexpected request on outbound. Exact paths only are accepted; nested, trailing-slash
+ * and otherwise unregistered WMS paths stay fail-closed.
+ */
+const wmsInitialEndpointRegistry: Readonly<
+  Record<WmsListPath, Readonly<Record<string, Exclude<WmsInitialEndpointKind, 'outside'>>>>
+> = {
+  [WMS_INBOUND_LIST_PATH]: {
+    [WMS_INBOUND_LIST_PATH]: 'target',
+    [WMS_OUTBOUND_LIST_PATH]: 'auxiliary',
+    '/api/business-console/v1/wms/work-scopes/receipts': 'auxiliary',
+    '/api/business-console/v1/wms/operational-candidates/receipts': 'auxiliary',
+    '/api/business-console/v1/wms/putaway-tasks': 'auxiliary',
+    '/api/business-console/v1/wms/picking-tasks': 'auxiliary',
+    '/api/business-console/v1/wms/count-executions': 'auxiliary',
+    '/api/business-console/v1/wms/receiving-quality-gates': 'auxiliary',
+    '/api/business-console/v1/wms/supplier-return-requests': 'auxiliary',
+  },
+  [WMS_OUTBOUND_LIST_PATH]: {
+    [WMS_OUTBOUND_LIST_PATH]: 'target',
+    '/api/business-console/v1/wms/work-scopes/shipments': 'auxiliary',
+    '/api/business-console/v1/wms/operational-candidates/shipments': 'auxiliary',
+    '/api/business-console/v1/wms/putaway-tasks': 'auxiliary',
+    '/api/business-console/v1/wms/picking-tasks': 'auxiliary',
+    '/api/business-console/v1/wms/count-executions': 'auxiliary',
+  },
+}
 
 export type WmsWorkPoolScopeFacts = Readonly<{
   scopeKind: 'work-pool'
@@ -445,24 +457,27 @@ export function assertWmsInitialListResponse(
   }
 }
 
-function classifyWmsInitialEndpoint(path: string): WmsInitialEndpointKind {
+function classifyWmsInitialEndpoint(
+  expectedPath: WmsListPath,
+  path: string,
+): WmsInitialEndpointKind {
   if (!path.startsWith('/api/business-console/v1/wms/')) return 'outside'
-  return wmsInitialEndpointRegistry[path] ?? 'unknown'
+  return wmsInitialEndpointRegistry[expectedPath][path] ?? 'unknown'
 }
 
-/**
- * Adds the NERV-1571 lifecycle boundary around an existing navigation action. The generic
- * walkthrough policy intentionally waits for a successful target response; this guard observes
- * the first WMS list response itself so an initial 503 or wrong WMS path cannot be hidden by a
- * later 200. It is deliberately an action wrapper, keeping the NERV-1456 policy unchanged.
- */
-export async function withWmsInitialListResponseGuard<T>(
+type WmsInitialGuardContext = Readonly<{
+  navigationRoute: string
+  documentAlreadyCommitted: boolean
+}>
+
+async function observeWmsInitialListResponse<T>(
   page: Page,
   expectedPath: WmsListPath,
   action: () => Promise<T>,
-  timeoutMs = 120_000,
-  navigationRoute?: string,
+  timeoutMs: number,
+  context: WmsInitialGuardContext,
 ): Promise<Readonly<{ result: T; firstList: Response }>> {
+  const { navigationRoute } = context
   let resolveFirst!: (response: Response) => void
   let rejectFirst!: (error: unknown) => void
   const firstResponse = new Promise<Response>((resolve, reject) => {
@@ -470,47 +485,70 @@ export async function withWmsInitialListResponseGuard<T>(
     rejectFirst = reject
   })
   let firstCandidateSeen = false
-  let documentCommitted = navigationRoute === undefined
+  let documentCommitted = context.documentAlreadyCommitted
   let firstListRequest: Request | undefined
   const failFirst = (message: string) => {
+    if (firstCandidateSeen) return
     firstCandidateSeen = true
     rejectFirst(new Error(message))
   }
   const frameNavigationObserver = (frame: { url: () => string }) => {
-    if (frame !== page.mainFrame() || !navigationRoute) return
-    const current = new URL(frame.url(), page.url())
-    const expected = new URL(navigationRoute, page.url())
+    if (frame !== page.mainFrame()) return
+    const frameUrl = frame.url()
+    if (!frameUrl || frameUrl === 'about:blank') return
+    const current = new URL(frameUrl)
+    const expected = new URL(navigationRoute, current.toString())
     documentCommitted = current.pathname === expected.pathname && current.search === expected.search
+  }
+  const refreshDocumentCommitState = () => {
+    const currentUrl = page.url()
+    if (documentCommitted || !currentUrl || currentUrl === 'about:blank') return
+    const current = new URL(currentUrl)
+    const expected = new URL(navigationRoute, current.toString())
+    documentCommitted = current.pathname === expected.pathname && current.search === expected.search
+  }
+  const classifyRequest = (request: Request): WmsInitialEndpointKind =>
+    classifyWmsInitialEndpoint(expectedPath, new URL(request.url()).pathname)
+  const failForUnexpectedRequest = (
+    request: Request,
+    endpointKind: WmsInitialEndpointKind,
+  ): boolean => {
+    const path = new URL(request.url()).pathname
+    if (endpointKind === 'unknown') {
+      failFirst(`unexpected WMS list-like request path ${path}`)
+      return true
+    }
+    if (request.method() !== 'GET') {
+      failFirst(`unexpected WMS initial list request method ${request.method()}`)
+      return true
+    }
+    return false
   }
   const requestObserver = (request: Request) => {
     if (firstCandidateSeen) return
+    refreshDocumentCommitState()
     if (!documentCommitted || request.frame() !== page.mainFrame()) return
-    const path = new URL(request.url()).pathname
-    const endpointKind = classifyWmsInitialEndpoint(path)
-    if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
-    if (endpointKind === 'unknown') {
-      failFirst(`unexpected WMS list-like request path ${path}`)
-      return
-    }
-    if (request.method() !== 'GET') {
-      failFirst(`unexpected WMS initial list request method ${request.method()}`)
-      return
-    }
+    const endpointKind = classifyRequest(request)
+    if (endpointKind === 'outside') return
+    if (failForUnexpectedRequest(request, endpointKind)) return
+    if (endpointKind === 'auxiliary') return
     firstListRequest ??= request
   }
   const responseObserver = (response: Response) => {
-    if (firstCandidateSeen || !documentCommitted) return
+    if (firstCandidateSeen) return
+    refreshDocumentCommitState()
+    if (!documentCommitted) return
     const request = response.request()
     if (request.frame() !== page.mainFrame()) return
     const path = new URL(response.url()).pathname
-    const endpointKind = classifyWmsInitialEndpoint(path)
-    if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
-    if (endpointKind === 'unknown') {
-      failFirst(`unexpected WMS list-like request path ${path}`)
-      return
-    }
-    if (request.method() !== 'GET') {
-      failFirst(`unexpected WMS initial list request method ${request.method()}`)
+    const endpointKind = classifyWmsInitialEndpoint(expectedPath, path)
+    if (endpointKind === 'outside') return
+    if (failForUnexpectedRequest(request, endpointKind)) return
+    if (endpointKind === 'unknown') return
+    if (endpointKind === 'auxiliary') {
+      if (response.status() !== 200) {
+        failFirst(`WMS initial auxiliary ${path} returned HTTP ${response.status()}`)
+      }
       return
     }
     try {
@@ -526,21 +564,16 @@ export async function withWmsInitialListResponseGuard<T>(
     resolveFirst(response)
   }
   const requestFailedObserver = (request: Request) => {
-    if (firstCandidateSeen || !documentCommitted || request.frame() !== page.mainFrame()) return
+    if (firstCandidateSeen) return
+    refreshDocumentCommitState()
+    if (!documentCommitted || request.frame() !== page.mainFrame()) return
+    const endpointKind = classifyRequest(request)
+    if (endpointKind === 'outside') return
+    if (failForUnexpectedRequest(request, endpointKind)) return
+    if (endpointKind === 'target') firstListRequest ??= request
     const path = new URL(request.url()).pathname
-    const endpointKind = classifyWmsInitialEndpoint(path)
-    if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
-    if (endpointKind === 'unknown') {
-      failFirst(`unexpected WMS list-like request path ${path}`)
-      return
-    }
-    if (request.method() !== 'GET') {
-      failFirst(`unexpected WMS initial list request method ${request.method()}`)
-      return
-    }
-    firstListRequest ??= request
     const failure = request.failure()?.errorText ?? 'unknown network failure'
-    failFirst(`WMS initial list ${expectedPath} request failed: ${failure}`)
+    failFirst(`WMS initial ${endpointKind} ${path} request failed: ${failure}`)
   }
   const timeout = setTimeout(
     () => rejectFirst(new Error(`WMS initial list ${expectedPath} response was not observed`)),
@@ -561,6 +594,42 @@ export async function withWmsInitialListResponseGuard<T>(
     page.off('requestfailed', requestFailedObserver)
     page.off('framenavigated', frameNavigationObserver)
   }
+}
+
+/**
+ * Adds the NERV-1571 lifecycle boundary around an existing navigation action. The generic
+ * walkthrough policy intentionally waits for a successful target response; this guard observes
+ * the first WMS list response itself so an initial 503 or wrong WMS path cannot be hidden by a
+ * later 200. It is deliberately an action wrapper, keeping the NERV-1456 policy unchanged.
+ */
+export async function withWmsInitialListResponseGuard<T>(
+  page: Page,
+  expectedPath: WmsListPath,
+  action: () => Promise<T>,
+  timeoutMs: number,
+  navigationRoute: string,
+): Promise<Readonly<{ result: T; firstList: Response }>> {
+  return observeWmsInitialListResponse(page, expectedPath, action, timeoutMs, {
+    navigationRoute,
+    documentAlreadyCommitted: false,
+  })
+}
+
+/**
+ * Fixture-only lifecycle wrapper. It is intentionally separate from the production navigation
+ * wrapper: synthetic tests start from an already committed document, while real walkthroughs must
+ * always provide their exact navigation route to the guard above.
+ */
+export async function withWmsInitialListResponseGuardForTest<T>(
+  page: Page,
+  expectedPath: WmsListPath,
+  action: () => Promise<T>,
+  timeoutMs = 120_000,
+): Promise<Readonly<{ result: T; firstList: Response }>> {
+  return observeWmsInitialListResponse(page, expectedPath, action, timeoutMs, {
+    navigationRoute: page.url(),
+    documentAlreadyCommitted: true,
+  })
 }
 
 async function waitForUniqueVisibleOption(
