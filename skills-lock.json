@@ -87,7 +87,7 @@
     "nerv-task-delivery": {
       "source": "./skills/nerv-task-delivery",
       "sourceType": "local",
-      "computedHash": "3ec96ed3939b23c894b3fe16077ff2a29a484a6a53033067cc07633a82ee415d"
+      "computedHash": "6f52432c500b63b0c44d02b6d517ec9edd6f647ff9cf4431e8553369d2838340"
     },
     "obscura-browser": {
       "source": "MangMax/obscura-browser-skill",
