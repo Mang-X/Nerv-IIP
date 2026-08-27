@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -2455,6 +2456,84 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Nodes, x => x.NodeId == "LOT-BATCH-A" && x.NodeType == "MaterialLot");
         Assert.Contains(traceability.Nodes, x => x.NodeId == "WO-BATCH-001" && x.NodeType == "WorkOrder");
         Assert.Contains(traceability.Edges, x => x.RelationType == "consumed-by-report");
+    }
+
+    // 验收 2（#1948）：从成品序列号反查，追溯图必须同时给出人员、设备、时间与检验结论。
+    [Fact]
+    public async Task Serial_traceability_returns_operator_device_time_and_inspection_verdict()
+    {
+        var services = CreateServices(nameof(Serial_traceability_returns_operator_device_time_and_inspection_verdict));
+        var reportedAtUtc = DateTimeOffset.Parse("2026-05-30T09:15:00Z");
+        var inspectedAtUtc = DateTimeOffset.Parse("2026-05-30T09:40:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-TRACE-001", "FG-FSA", "PV-FSA-1", 10m, 20, reportedAtUtc.AddHours(8)));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                OperationTaskLifecycleStatus.InProgress,
+                10,
+                "WC-FILL",
+                [],
+                reportedAtUtc,
+                TimeSpan.FromMinutes(45),
+                reportedAtUtc,
+                null));
+            dbContext.DefectRecords.Add(DefectRecord.Create(
+                "org-001",
+                "env-dev",
+                "DEF-TRACE-001",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "SCRAP-SURFACE",
+                1m,
+                inspectedAtUtc));
+            dbContext.ProductionReports.Add(ProductionReport.Record(
+                "org-001",
+                "env-dev",
+                "PRPT-TRACE-001",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                9m,
+                1m,
+                true,
+                reportedAtUtc,
+                defectRecordNo: "DEF-TRACE-001",
+                producedLotNo: "LOT-TRACE-001",
+                serialNo: "SN-TRACE-001",
+                oeeProjection: new ProductionReportOeeProjection("WC-FILL", "DEV-CNC-01", "PCS", null),
+                reportedBy: "user-emp-010"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var traceability = await new GetBatchTraceabilityQueryHandler(
+            recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
+            .Handle(new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-TRACE-001"), CancellationToken.None);
+
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.OperatorNodeType);
+        Assert.Equal("user-emp-010", operatorNode.NodeId);
+        Assert.Equal(reportedAtUtc, operatorNode.OccurredAtUtc);
+
+        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
+        Assert.Equal("DEV-CNC-01", deviceNode.NodeId);
+
+        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        Assert.Equal("DEF-TRACE-001", inspectionNode.NodeId);
+        Assert.Equal("SCRAP-SURFACE", inspectionNode.DisplayName);
+        Assert.Equal(DefectRecord.OpenStatus, inspectionNode.Status);
+        Assert.Equal(inspectedAtUtc, inspectionNode.OccurredAtUtc);
+
+        var reportNode = Assert.Single(traceability.Nodes, x => x.NodeType == "ProductionReport");
+        Assert.Equal(reportedAtUtc, reportNode.OccurredAtUtc);
+
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-001" && x.ToNodeId == "user-emp-010" && x.RelationType == "reported-by");
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-001" && x.ToNodeId == "DEV-CNC-01" && x.RelationType == "reported-on-device");
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-001" && x.ToNodeId == "DEF-TRACE-001" && x.RelationType == "inspected-as");
     }
 
     [Fact]

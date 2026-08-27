@@ -183,6 +183,35 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void ProductionReport_keeps_the_submitting_operator_and_carries_it_onto_the_reversal_row()
+    {
+        var report = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OP-001",
+            "WO-001",
+            "OP-10",
+            9m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-05-23T09:00:00Z"),
+            reportedBy: "  user-emp-010  ");
+
+        Assert.Equal("user-emp-010", report.ReportedBy);
+
+        var reversal = ProductionReport.Reverse(
+            report,
+            "PRPT-OP-001-R",
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            "reported on the wrong operation",
+            "user-supervisor");
+
+        // 冲销行是另一条报工事实，提交它的是执行冲销的人，不是原报工人。
+        Assert.Equal("user-supervisor", reversal.ReportedBy);
+        Assert.Equal("user-supervisor", reversal.ReversedBy);
+    }
+
+    [Fact]
     public void FinishedGoodsReceiptRequest_references_work_order_sku_quantity_uom_and_genealogy()
     {
         var request = FinishedGoodsReceiptRequest.Create(

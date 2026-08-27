@@ -114,7 +114,9 @@ public sealed record RecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
+    string? ReportedBy = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -1286,7 +1288,8 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
                 req.ScrapReasonCode,
                 req.DefectRecordNo,
                 req.ProducedLotNo,
-                req.SerialNo)
+                req.SerialNo,
+                ReportedBy: req.ReportedBy)
             : new RecordProductionReportCommand(
                 req.OrganizationId,
                 req.EnvironmentId,
@@ -1302,7 +1305,8 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
                 req.ScrapReasonCode,
                 req.DefectRecordNo,
                 req.ProducedLotNo,
-                req.SerialNo);
+                req.SerialNo,
+                ReportedBy: req.ReportedBy);
         var result = await sender.Send(command, ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }

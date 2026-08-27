@@ -3182,6 +3182,82 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_production_report_facade_reports_the_authenticated_principal_as_operator()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesReportingWrite]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-SELF",
+                    "WO-SELF",
+                    "InProgress",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    "user-admin",
+                    "当前人员",
+                    null,
+                    null,
+                    "Ready"),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-SELF",
+                operationTaskId = "OP-SELF",
+                goodQuantity = 1,
+                scrapQuantity = 0,
+                completesOperation = false,
+                reportedAtUtc = DateTimeOffset.Parse("2026-07-29T08:00:00Z"),
+                idempotencyKey = "report-operator-001",
+                scopeKind = "self",
+                scopeId = "user-admin",
+                // 调用方即使自报身份也不作数：报工人只能来自已认证 principal。
+                reportedBy = "user-impostor",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, mes.RecordProductionReportCallCount);
+        Assert.Equal("user-admin", mes.LastRecordProductionReportActor);
+    }
+
+    [Fact]
     public async Task Mes_production_report_rejects_a_known_task_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -10125,6 +10201,7 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.RecordProductionReportAsync(
             "internal-token-001",
             ProductionReportRequest(),
+            "user-operator",
             CancellationToken.None);
 
         Assert.Equal(productionReportId, response.ProductionReportId);
@@ -10137,6 +10214,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", requestBody.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", requestBody.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("wire-shape-001", requestBody.RootElement.GetProperty("idempotencyKey").GetString());
+        // 报工人由 Gateway 从已认证 principal 注入，公开请求 DTO 不带身份字段，也不透传前端作用域选择。
+        Assert.Equal("user-operator", requestBody.RootElement.GetProperty("reportedBy").GetString());
+        Assert.False(requestBody.RootElement.TryGetProperty("scopeKind", out _));
     }
 
     [Theory]
@@ -10158,6 +10238,7 @@ public sealed class BusinessGatewayProxyTests
             client.RecordProductionReportAsync(
                 "internal-token-001",
                 ProductionReportRequest(),
+                "user-operator",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
@@ -10186,6 +10267,7 @@ public sealed class BusinessGatewayProxyTests
             client.RecordProductionReportAsync(
                 "internal-token-001",
                 ProductionReportRequest(),
+                "user-operator",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
@@ -16629,6 +16711,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public int ReleaseWorkOrderCallCount { get; private set; }
     public int StartOperationCallCount { get; private set; }
     public int RecordProductionReportCallCount { get; private set; }
+
+    public string? LastRecordProductionReportActor { get; private set; }
     public int RecordDefectCallCount { get; private set; }
     public int RecordDowntimeCallCount { get; private set; }
 
@@ -17291,10 +17375,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         RecordProductionReportCallCount++;
         LastInternalToken = internalBearerToken;
+        LastRecordProductionReportActor = actor;
         return Task.FromResult(new BusinessConsoleRecordProductionReportResponse("report-001", "PR-001"));
     }
 

@@ -1568,6 +1568,7 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
         return await mes.RecordProductionReportAsync(
             tokenProvider.BearerToken,
             request,
+            RequireAuthorizedPrincipalActor().ActorRef,
             cancellationToken);
     }
 }
