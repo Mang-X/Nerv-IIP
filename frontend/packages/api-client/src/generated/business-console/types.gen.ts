@@ -4354,6 +4354,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
      */
     operationActualMachineHours?: number | null;
+    /**
+     * 提交本条报工的操作人引用；升级前的历史报工为 null。
+     */
+    reportedBy?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {
@@ -4400,6 +4404,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
      */
     operationActualMachineHours?: number | null;
+    /**
+     * 提交本条报工的操作人引用；升级前的历史报工为 null。
+     */
+    reportedBy?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {
@@ -4807,6 +4815,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     nodeType?: string;
     displayName?: string;
     status?: string;
+    /**
+     * 该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。
+     */
+    occurredAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTraceabilityEdge = {

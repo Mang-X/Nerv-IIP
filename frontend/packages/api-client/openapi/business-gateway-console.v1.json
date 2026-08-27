@@ -46477,6 +46477,11 @@
             "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
             "format": "decimal",
             "nullable": true
+          },
+          "reportedBy": {
+            "type": "string",
+            "description": "提交本条报工的操作人引用；升级前的历史报工为 null。",
+            "nullable": true
           }
         }
       },
@@ -46621,6 +46626,11 @@
             "type": "number",
             "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
             "format": "decimal",
+            "nullable": true
+          },
+          "reportedBy": {
+            "type": "string",
+            "description": "提交本条报工的操作人引用；升级前的历史报工为 null。",
             "nullable": true
           }
         }
@@ -48157,6 +48167,12 @@
           },
           "status": {
             "type": "string"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "description": "该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },

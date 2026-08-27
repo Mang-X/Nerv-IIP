@@ -237,6 +237,7 @@ public interface IBusinessMesClient
     Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
@@ -878,13 +879,30 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public async Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamRecordProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/mes/production-reports",
-            request,
+            new DownstreamRecordProductionReportRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.GoodQuantity,
+                request.ScrapQuantity,
+                request.CompletesOperation,
+                request.ReportedAtUtc,
+                request.IdempotencyKey,
+                request.ConsumedMaterialLots,
+                request.ReworkQuantity,
+                request.ScrapReasonCode,
+                request.DefectRecordNo,
+                request.ProducedLotNo,
+                request.SerialNo,
+                actor),
             cancellationToken);
 
         if (response.ProductionReportId is null ||
@@ -1366,6 +1384,25 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string Reason,
         string? SourceService,
         DateTimeOffset? ReleasedAtUtc);
+
+    // 报工下游载荷携带 Gateway 从已认证 principal 注入的操作人；公开请求 DTO 不暴露调用方自带的身份字段。
+    private sealed record DownstreamRecordProductionReportRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string WorkOrderId,
+        string OperationTaskId,
+        decimal GoodQuantity,
+        decimal ScrapQuantity,
+        bool CompletesOperation,
+        DateTimeOffset ReportedAtUtc,
+        string IdempotencyKey,
+        IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots,
+        decimal ReworkQuantity,
+        string? ScrapReasonCode,
+        string? DefectRecordNo,
+        string? ProducedLotNo,
+        string? SerialNo,
+        string ReportedBy);
 
     private sealed record DownstreamReverseProductionReportRequest(
         string OrganizationId,
