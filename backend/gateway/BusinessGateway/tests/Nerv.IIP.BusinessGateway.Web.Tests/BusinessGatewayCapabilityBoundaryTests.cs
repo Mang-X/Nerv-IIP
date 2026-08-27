@@ -908,6 +908,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void Wms_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Wms/BusinessWmsClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessWmsClient"),
+            Identity("Class", "HttpBusinessWmsClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
     public void Mes_capability_boundary_mutation_matrix_rejects_each_escape()
     {
         var baseDocuments = new[]
@@ -1440,7 +1462,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "BarcodeLabel" &&
                     capability != "IndustrialTelemetry" &&
                     capability != "Maintenance" &&
-                    capability != "Mes");
+                    capability != "Mes" &&
+                    capability != "Wms");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -1461,7 +1484,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "BarcodeLabel" &&
                     capability != "IndustrialTelemetry" &&
                     capability != "Maintenance" &&
-                    capability != "Mes");
+                    capability != "Mes" &&
+                    capability != "Wms");
         }
 
         seedCapabilities.Add(
