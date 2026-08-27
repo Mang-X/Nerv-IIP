@@ -481,6 +481,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         }
     }
 
+    [Fact]
+    public void IndustrialTelemetry_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/IndustrialTelemetry/BusinessIndustrialTelemetryClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessIndustrialTelemetryClient"),
+            Identity("Class", "HttpBusinessIndustrialTelemetryClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
     private static IReadOnlyList<string> AnalyzeSharedBoundary(
         string businessServicesDirectory,
         IReadOnlyDictionary<string, string> expectedFiles) =>
@@ -831,7 +853,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Quality" &&
                     capability != "Approval" &&
                     capability != "Notification" &&
-                    capability != "BarcodeLabel");
+                    capability != "BarcodeLabel" &&
+                    capability != "IndustrialTelemetry");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -849,7 +872,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Quality" &&
                     capability != "Approval" &&
                     capability != "Notification" &&
-                    capability != "BarcodeLabel");
+                    capability != "BarcodeLabel" &&
+                    capability != "IndustrialTelemetry");
         }
 
         seedCapabilities.Add(
