@@ -381,7 +381,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
                 10m,
                 "PCS",
                 100m,
-                new DateTimeOffset(2026, 6, 1, 8, 45, 0, TimeSpan.Zero)));
+                new DateTimeOffset(2026, 6, 1, 8, 45, 0, TimeSpan.Zero),
+                OeeHistoricalDimensionSnapshot.MissingTimezone));
             await dbContext.SaveChangesAsync();
         }
 
@@ -412,8 +413,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var reportedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero);
             dbContext.OeeProductionFacts.AddRange(
-                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-001", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 80m, 10m, 10m, "PCS", 100m, reportedAtUtc),
-                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-002", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 1m, 0m, 0m, "KG", 100m, reportedAtUtc));
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-001", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 80m, 10m, 10m, "PCS", 100m, reportedAtUtc, OeeHistoricalDimensionSnapshot.MissingTimezone),
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-002", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 1m, 0m, 0m, "KG", 100m, reportedAtUtc, OeeHistoricalDimensionSnapshot.MissingTimezone));
             await dbContext.SaveChangesAsync();
         }
 
@@ -701,7 +702,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             new TimeOnly(6, 0),
             true) with
         {
-            OrganizationId = "org-other"
+            EnvironmentId = "env-other",
+            IdempotencyKey = "production-report-recorded:org-001:env-other:PRPT-OEE-SCOPED-ORIGINAL"
         };
         var reversalAtUtc = new DateTimeOffset(2026, 8, 16, 1, 0, 0, TimeSpan.Zero);
         var reversal = new ProductionReportRecordedIntegrationEvent(

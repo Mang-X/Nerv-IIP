@@ -47,6 +47,9 @@ public sealed record OeeHistoricalDimensionSnapshot(
         null,
         null,
         OeeHistoricalDimensionStatus.LegacyUnresolved);
+
+    public static OeeHistoricalDimensionSnapshot MissingTimezone { get; } =
+        LegacyUnresolved with { Status = OeeHistoricalDimensionStatus.MissingTimezone };
 }
 
 public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateRoot
@@ -141,7 +144,7 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
         string uomCode,
         decimal? theoreticalRatePerHour,
         DateTimeOffset reportedAtUtc,
-        OeeHistoricalDimensionSnapshot? historicalDimension = null)
+        OeeHistoricalDimensionSnapshot historicalDimension)
     {
         return new OeeProductionFact(
             organizationId,
@@ -157,7 +160,7 @@ public sealed class OeeProductionFact : Entity<OeeProductionFactId>, IAggregateR
             reportedAtUtc,
             null,
             reportedAtUtc,
-            historicalDimension ?? OeeHistoricalDimensionSnapshot.LegacyUnresolved);
+            historicalDimension);
     }
 
     public OeeProductionFact ProjectReversal(
