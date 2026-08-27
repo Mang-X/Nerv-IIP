@@ -5,7 +5,8 @@ FullStack/FullChain 运行报告，也不把自建事实升级为 `PublicContrac
 
 ## 基线与方法
 
-- 被测代码基线：`22889ea1902dc20b457c563543de5621ab623b49`；该提交包含本票代码和 mock
+- 被测代码基线：`headSha=testedSha=22889ea1902dc20b457c563543de5621ab623b49`（本地
+  checkout）；该提交包含本票代码和 mock
   的 scope option/readback 保护。每项 mutation 前后均用 `git status --short` 确认恢复为干净树。
 - 绿基线命令：
   `CI=1 PLAYWRIGHT_BUSINESS_CONSOLE_PORT=5160 pnpm -C frontend/apps/business-console exec playwright test e2e/issue1912-wms-walkthrough-facts.spec.ts --project=desktop --workers=1 --reporter=line`
@@ -29,6 +30,12 @@ FullStack/FullChain 运行报告，也不把自建事实升级为 `PublicContrac
 列表 response 的 status/path，以及 kind/path/query/forbidden-key 互斥组合。合同矩阵另对同一
 keyword 的 `organizationId`、`environmentId`、`scopeKind`、`scopeId`、`skip`、`take`、
 `siteCode`、缺失/重复 `keyword`、错误 path/status 做了独立 RED 断言。
+
+报告提交后的最终代码校验在 `headSha=testedSha=5cdfdfce86eed46f92bad36f776c6db78ef714c4`
+（本地 checkout）完成：WMS 合同 `6/6`、WMS mock Playwright `6/6`、相关 action/policy 与
+WMS mock Playwright `30/30`、业务控制台 Vitest `191 files / 2207 tests`、typecheck、目标
+format 和 lint 均成功；real-machine 文件为 `1 passed / 1 skipped`，skip 是缺少 managed
+FullStack 环境。
 
 本报告的 mutation 运行是本地 Playwright mock fixture/Vitest 合同测试；它不提供真实身份、
 WMS provider、HTTP 拓扑、数据库或 cleanup 证据。真实 managed FullStack/FullChain 和 GitHub
