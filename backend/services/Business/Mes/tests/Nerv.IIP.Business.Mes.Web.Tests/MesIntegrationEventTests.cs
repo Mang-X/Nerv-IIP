@@ -449,6 +449,19 @@ public sealed class MesIntegrationEventTests
     public void Production_report_converter_emits_oee_projection_fact_with_standard_rate_snapshot()
     {
         var reportedAtUtc = DateTimeOffset.Parse("2026-07-10T08:45:00Z");
+        var dimensionSnapshot = ProductionReportOeeDimensionSnapshot.Resolved(
+            "DEV-CNC-01",
+            "WC-CNC-01",
+            "SITE-SH",
+            "WS-MACH",
+            "LINE-CNC",
+            "Asia/Shanghai",
+            "NIGHT",
+            new TimeOnly(22, 30),
+            new TimeOnly(6, 15),
+            true,
+            435,
+            30);
         var report = ProductionReport.Record(
             "org-001",
             "env-dev",
@@ -460,23 +473,48 @@ public sealed class MesIntegrationEventTests
             false,
             reportedAtUtc,
             10m,
-            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m));
+            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m),
+            oeeDimensionSnapshot: dimensionSnapshot);
 
         var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
         var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);
 
         Assert.Equal(MesIntegrationEventTypes.ProductionReportRecorded, integrationEvent.EventType);
-        Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
-        Assert.Equal("WC-PACK-01", integrationEvent.Payload.WorkCenterId);
+        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("DEV-CNC-01", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal("WC-CNC-01", integrationEvent.Payload.WorkCenterId);
         Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
         Assert.Equal(80m, integrationEvent.Payload.GoodQuantity);
         Assert.Equal(10m, integrationEvent.Payload.ScrapQuantity);
         Assert.Equal(10m, integrationEvent.Payload.ReworkQuantity);
+        Assert.Equal("SITE-SH", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WS-MACH", integrationEvent.Payload.WorkshopCode);
+        Assert.Equal("LINE-CNC", integrationEvent.Payload.LineCode);
+        Assert.Equal("NIGHT", integrationEvent.Payload.ShiftCode);
+        Assert.Equal("Asia/Shanghai", integrationEvent.Payload.SiteTimezone);
+        Assert.Equal(new TimeOnly(22, 30), integrationEvent.Payload.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(6, 15), integrationEvent.Payload.ShiftEndsAt);
+        Assert.True(integrationEvent.Payload.ShiftCrossesMidnight);
+        Assert.Equal(435, integrationEvent.Payload.ShiftPaidMinutes);
+        Assert.Equal(30, integrationEvent.Payload.ShiftBreakMinutes);
     }
 
     [Fact]
     public void Production_report_reversal_converter_reuses_the_original_oee_snapshot()
     {
+        var dimensionSnapshot = ProductionReportOeeDimensionSnapshot.Resolved(
+            "DEV-CNC-01",
+            "WC-CNC-01",
+            "SITE-SH",
+            "WS-MACH",
+            "LINE-CNC",
+            "Asia/Shanghai",
+            "NIGHT",
+            new TimeOnly(22, 30),
+            new TimeOnly(6, 15),
+            true,
+            435,
+            30);
         var original = ProductionReport.Record(
             "org-001",
             "env-dev",
@@ -488,7 +526,8 @@ public sealed class MesIntegrationEventTests
             false,
             DateTimeOffset.Parse("2026-07-10T08:45:00Z"),
             10m,
-            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m));
+            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m),
+            oeeDimensionSnapshot: dimensionSnapshot);
         var reversal = ProductionReport.Reverse(
             original,
             "PRPT-OEE-REVERSAL-001",
@@ -501,10 +540,20 @@ public sealed class MesIntegrationEventTests
 
         Assert.True(integrationEvent.Payload.IsReversal);
         Assert.Equal(original.ReportNo, integrationEvent.Payload.ReversedReportNo);
-        Assert.Equal("WC-PACK-01", integrationEvent.Payload.WorkCenterId);
-        Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal("WC-CNC-01", integrationEvent.Payload.WorkCenterId);
+        Assert.Equal("DEV-CNC-01", integrationEvent.Payload.DeviceAssetId);
         Assert.Equal("PCS", integrationEvent.Payload.UomCode);
         Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
+        Assert.Equal("SITE-SH", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WS-MACH", integrationEvent.Payload.WorkshopCode);
+        Assert.Equal("LINE-CNC", integrationEvent.Payload.LineCode);
+        Assert.Equal("NIGHT", integrationEvent.Payload.ShiftCode);
+        Assert.Equal("Asia/Shanghai", integrationEvent.Payload.SiteTimezone);
+        Assert.Equal(new TimeOnly(22, 30), integrationEvent.Payload.ShiftStartsAt);
+        Assert.Equal(new TimeOnly(6, 15), integrationEvent.Payload.ShiftEndsAt);
+        Assert.True(integrationEvent.Payload.ShiftCrossesMidnight);
+        Assert.Equal(435, integrationEvent.Payload.ShiftPaidMinutes);
+        Assert.Equal(30, integrationEvent.Payload.ShiftBreakMinutes);
     }
 
     [Fact]
