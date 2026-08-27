@@ -1164,27 +1164,51 @@ function Invoke-DotNetSdkAuthorityCase {
         [Parameter(Mandatory)] [int] $ExpectedExitCode,
         [string[]] $ExpectedOutput = @(),
         [int] $TimeoutSeconds = 60,
-        [string] $CheckerCommand = 'pwsh'
+        [string] $CheckerCommand = 'pwsh',
+        [switch] $InProcess
     )
 
     $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $dotNetSdkAuthorityCheckerPath, '-WorkflowPath', $CaseWorkflowPath, '-ManifestPath', $CaseManifestPath)
     $actualExitCode = 0
     $outputText = ''
-    try {
-        $result = Invoke-NativeCommandOutput `
-            -Command $CheckerCommand `
-            -Arguments $arguments `
-            -WorkingDirectory $repoRoot `
-            -TimeoutSeconds $TimeoutSeconds `
-            -Name "ci-dotnet-sdk-authority-$Name"
-        $actualExitCode = [int] $result.ExitCode
-        $outputText = ($result.Stdout, $result.Stderr) -join [Environment]::NewLine
+    if ($InProcess) {
+        $useResolvedWorkflowEvidence = [string]::Equals($CaseWorkflowPath, $workflowPath, [StringComparison]::Ordinal)
+        $result = & $dotNetSdkAuthorityCheckerModule {
+            param($WorkflowPath, $ManifestPath, $ExpectedJobNames, $ActualSdk, $UseResolvedWorkflowEvidence, $WorkflowEvidence)
+            $arguments = @{
+                CiWorkflowPath = $WorkflowPath
+                RestoreManifestPath = $ManifestPath
+                ExpectedJobNames = $ExpectedJobNames
+                ResolvedActualSdk = $ActualSdk
+            }
+            if ($UseResolvedWorkflowEvidence) {
+                $arguments.UseResolvedWorkflowEvidence = $true
+                $arguments.ResolvedYamlKeyFindings = @($WorkflowEvidence.YamlKeyFindings)
+                $arguments.ResolvedWorkflow = $WorkflowEvidence.Workflow
+            }
+            Get-CiDotNetSdkAuthorityFindings @arguments
+        } $CaseWorkflowPath $CaseManifestPath $expectedDotNetJobNames $expectedDotNetSdkVersion $useResolvedWorkflowEvidence $dotNetSdkAuthorityWorkflowEvidence
+        $findings = @($result.Findings)
+        $actualExitCode = if ($findings.Count -eq 0) { 0 } else { 1 }
+        $outputText = ($findings | ForEach-Object { "CI .NET SDK authority violation: $_" }) -join [Environment]::NewLine
     }
-    catch {
-        $exitCodeData = $_.Exception.Data['ExitCode']
-        if ($null -eq $exitCodeData) { throw }
-        $actualExitCode = [int] $exitCodeData
-        $outputText = [string] $_.Exception.Message
+    else {
+        try {
+            $result = Invoke-NativeCommandOutput `
+                -Command $CheckerCommand `
+                -Arguments $arguments `
+                -WorkingDirectory $repoRoot `
+                -TimeoutSeconds $TimeoutSeconds `
+                -Name "ci-dotnet-sdk-authority-$Name"
+            $actualExitCode = [int] $result.ExitCode
+            $outputText = ($result.Stdout, $result.Stderr) -join [Environment]::NewLine
+        }
+        catch {
+            $exitCodeData = $_.Exception.Data['ExitCode']
+            if ($null -eq $exitCodeData) { throw }
+            $actualExitCode = [int] $exitCodeData
+            $outputText = [string] $_.Exception.Message
+        }
     }
 
     Assert-Contract ($actualExitCode -eq $ExpectedExitCode) "CI SDK authority case '$Name' expected exit $ExpectedExitCode but got $actualExitCode. Output: $outputText"
@@ -1196,6 +1220,21 @@ function Invoke-DotNetSdkAuthorityCase {
 
 Assert-Contract (Test-Path -LiteralPath $dotNetSdkAuthorityCheckerPath -PathType Leaf) 'The CI SDK authority checker is missing.'
 Assert-Contract (Test-Path -LiteralPath $dotNetSdkAuthorityManifestPath -PathType Leaf) 'The BusinessGateway restore authority manifest is missing.'
+$dotNetSdkAuthorityCheckerModule = New-Module `
+    -Name "CiDotNetSdkAuthorityTests_$([Guid]::NewGuid().ToString('N'))" `
+    -ArgumentList $dotNetSdkAuthorityCheckerPath `
+    -ScriptBlock {
+        param($CheckerPath)
+        . $CheckerPath
+    }
+$dotNetSdkAuthorityStopwatch = [Diagnostics.Stopwatch]::StartNew()
+$dotNetSdkAuthorityWorkflowEvidence = & $dotNetSdkAuthorityCheckerModule {
+    param($WorkflowPath, $ExpectedJobNames)
+    [pscustomobject]@{
+        YamlKeyFindings = @(Get-CiDotNetSdkYamlKeyFindings -Path $WorkflowPath -ExpectedJobNames $ExpectedJobNames)
+        Workflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $WorkflowPath -WorkingDirectory $repoRoot
+    }
+} $workflowPath $expectedDotNetJobNames
 
 Invoke-DotNetSdkAuthorityCase `
     -Name 'repository authority' `
@@ -1260,7 +1299,7 @@ wait "`$child_pid"
                 -CaseWorkflowPath $workflowPath `
                 -CaseManifestPath $dotNetSdkAuthorityManifestPath `
                 -ExpectedExitCode 0 `
-                -TimeoutSeconds 10 `
+                -TimeoutSeconds 2 `
                 -CheckerCommand $hangingCheckerPath
         }
         catch {
@@ -1271,10 +1310,10 @@ wait "`$child_pid"
         }
 
         Assert-Contract ($null -ne $timeoutFailure -and $timeoutFailure.Exception -is [TimeoutException]) "A hanging checker must fail with the canonical timeout instead of waiting without a bound. Elapsed=$($timeoutStopwatch.Elapsed)."
-        Assert-Contract ($timeoutFailure.Exception.Message.Contains('timed out after 10 seconds', [StringComparison]::Ordinal)) "The hanging checker timeout must report its managed ten-second budget. Failure=$($timeoutFailure.Exception.Message)"
+        Assert-Contract ($timeoutFailure.Exception.Message.Contains('timed out after 2 seconds', [StringComparison]::Ordinal)) "The hanging checker timeout must report its managed two-second budget. Failure=$($timeoutFailure.Exception.Message)"
         Assert-Contract (([string]$timeoutFailure.Exception.Data['Stdout']).Contains('checker-timeout-stdout', [StringComparison]::Ordinal)) 'The canonical timeout must preserve checker stdout emitted before termination.'
         Assert-Contract (([string]$timeoutFailure.Exception.Data['Stderr']).Contains('checker-timeout-stderr', [StringComparison]::Ordinal)) 'The canonical timeout must preserve checker stderr emitted before termination.'
-        Assert-Contract ($timeoutStopwatch.Elapsed -lt [TimeSpan]::FromSeconds(20)) "The hanging checker must fail within its managed timeout and stream-drain budgets instead of waiting for the thirty-second child. Elapsed=$($timeoutStopwatch.Elapsed)."
+        Assert-Contract ($timeoutStopwatch.Elapsed -lt [TimeSpan]::FromSeconds(8)) "The hanging checker must fail within its managed timeout and stream-drain budgets instead of waiting for the thirty-second child. Elapsed=$($timeoutStopwatch.Elapsed)."
         Assert-Contract (Test-Path -LiteralPath $hangingChildPidPath -PathType Leaf) 'The hanging checker fixture must publish its child PID before the timeout.'
         $hangingChildPid = [int]([IO.File]::ReadAllText($hangingChildPidPath).Trim())
         $hangingChildProcess = Get-Process -Id $hangingChildPid -ErrorAction SilentlyContinue
@@ -1319,6 +1358,7 @@ wait "`$child_pid"
         -Name 'missing CI SDK selector' `
         -CaseWorkflowPath $missingAuthoritySetupWorkflowPath `
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('ci-setup-dotnet-count:backend-tests-business-gateway:0')
 
@@ -1329,6 +1369,7 @@ wait "`$child_pid"
         -Name 'duplicate CI SDK selector' `
         -CaseWorkflowPath $duplicateAuthoritySetupWorkflowPath `
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('ci-setup-dotnet-count:backend-tests-business-gateway:2')
 
@@ -1342,6 +1383,7 @@ wait "`$child_pid"
         -Name 'duplicate CI SDK key in one setup step' `
         -CaseWorkflowPath $duplicateAuthoritySdkKeyWorkflowPath `
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('ci-dotnet-sdk-key-count:backend-tests-business-gateway:2')
 
@@ -1352,6 +1394,7 @@ wait "`$child_pid"
         -Name 'floating CI SDK' `
         -CaseWorkflowPath $floatingAuthorityWorkflowPath `
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.x:expected=$expectedDotNetSdkVersion")
 
@@ -1362,6 +1405,7 @@ wait "`$child_pid"
         -Name 'drifted CI SDK' `
         -CaseWorkflowPath $driftedAuthorityWorkflowPath `
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.400:expected=$expectedDotNetSdkVersion")
 
@@ -1375,6 +1419,7 @@ wait "`$child_pid"
         -Name 'fake SDK evidence cannot mask selector drift' `
         -CaseWorkflowPath $fakeEvidenceWorkflowPath `
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.400:expected=$expectedDotNetSdkVersion")
 
@@ -1387,6 +1432,7 @@ wait "`$child_pid"
         -Name 'missing manifest project owner root' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $missingManifestProjectPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('manifest-project-owner-invalid')
 
@@ -1396,6 +1442,7 @@ wait "`$child_pid"
         -Name 'wrong manifest project owner root' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $wrongManifestProjectPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('manifest-project-owner-invalid')
 
@@ -1405,6 +1452,7 @@ wait "`$child_pid"
         -Name 'duplicate manifest project owner root' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $duplicateManifestProjectPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('manifest-project-owner-invalid')
 
@@ -1414,6 +1462,7 @@ wait "`$child_pid"
         -Name 'non-string manifest project owner root' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $typedManifestProjectPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('manifest-project-owner-invalid')
 
@@ -1424,6 +1473,7 @@ wait "`$child_pid"
         -Name 'drifted manifest SDK' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $driftedManifestPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("actual-dotnet-sdk-version:${expectedDotNetSdkVersion}:expected=10.0.400", "ci-dotnet-sdk-version:backend-tests-business-gateway:${expectedDotNetSdkVersion}:expected=10.0.400")
 
@@ -1434,6 +1484,7 @@ wait "`$child_pid"
         -Name 'missing manifest SDK' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $missingManifestSdkPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('manifest-toolchain-sdk-count:0')
 
@@ -1443,12 +1494,17 @@ wait "`$child_pid"
         -Name 'duplicate manifest SDK' `
         -CaseWorkflowPath $workflowPath `
         -CaseManifestPath $duplicateManifestSdkPath `
+        -InProcess `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('manifest-toolchain-sdk-count:2')
 }
 finally {
     if (Test-Path -LiteralPath $dotNetAuthorityMutationRoot) { Remove-Item -LiteralPath $dotNetAuthorityMutationRoot -Recurse -Force }
 }
+$dotNetSdkAuthorityStopwatch.Stop()
+$dotNetSdkAuthorityBudget = if ($IsMacOS) { [TimeSpan]::FromSeconds(15) } else { [TimeSpan]::FromSeconds(10) }
+Assert-Contract ($dotNetSdkAuthorityStopwatch.Elapsed -lt $dotNetSdkAuthorityBudget) "The complete CI SDK authority entry smoke and mutation matrix must stay within its platform-aware governance budget. Elapsed=$($dotNetSdkAuthorityStopwatch.Elapsed) Budget=$dotNetSdkAuthorityBudget."
+Write-Output "CI SDK authority timing: ELAPSED=$($dotNetSdkAuthorityStopwatch.Elapsed) BUDGET=$dotNetSdkAuthorityBudget"
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
 Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion

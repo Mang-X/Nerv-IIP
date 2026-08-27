@@ -184,7 +184,11 @@ function Get-CiDotNetSdkAuthorityFindings {
     param(
         [Parameter(Mandatory)] [string] $CiWorkflowPath,
         [Parameter(Mandatory)] [string] $RestoreManifestPath,
-        [Parameter(Mandatory)] [string[]] $ExpectedJobNames
+        [Parameter(Mandatory)] [string[]] $ExpectedJobNames,
+        [string] $ResolvedActualSdk,
+        [switch] $UseResolvedWorkflowEvidence,
+        [AllowEmptyCollection()] [string[]] $ResolvedYamlKeyFindings = @(),
+        [AllowNull()] [object] $ResolvedWorkflow
     )
 
     $findings = [Collections.Generic.List[string]]::new()
@@ -193,12 +197,15 @@ function Get-CiDotNetSdkAuthorityFindings {
         return [pscustomobject]@{ Findings = @($findings); ManifestSdk = ''; ActualSdk = '' }
     }
 
-    $dotnetVersionResult = Invoke-NativeCommandOutput `
-        -Command 'dotnet' `
-        -Arguments @('--version') `
-        -WorkingDirectory $repoRoot `
-        -Name 'verify-ci-dotnet-sdk-authority-version'
-    $actualSdk = ([string] $dotnetVersionResult.Stdout).Trim()
+    $actualSdk = $ResolvedActualSdk
+    if ([string]::IsNullOrWhiteSpace($actualSdk)) {
+        $dotnetVersionResult = Invoke-NativeCommandOutput `
+            -Command 'dotnet' `
+            -Arguments @('--version') `
+            -WorkingDirectory $repoRoot `
+            -Name 'verify-ci-dotnet-sdk-authority-version'
+        $actualSdk = ([string] $dotnetVersionResult.Stdout).Trim()
+    }
     if ($actualSdk -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
         $findings.Add("actual-dotnet-sdk-version-invalid:$actualSdk")
     }
@@ -211,11 +218,22 @@ function Get-CiDotNetSdkAuthorityFindings {
         return [pscustomobject]@{ Findings = @($findings); ManifestSdk = $manifestSdk; ActualSdk = $actualSdk }
     }
 
-    foreach ($yamlKeyFinding in @(Get-CiDotNetSdkYamlKeyFindings -Path $CiWorkflowPath -ExpectedJobNames $ExpectedJobNames)) {
+    $yamlKeyFindings = if ($UseResolvedWorkflowEvidence) {
+        @($ResolvedYamlKeyFindings)
+    }
+    else {
+        @(Get-CiDotNetSdkYamlKeyFindings -Path $CiWorkflowPath -ExpectedJobNames $ExpectedJobNames)
+    }
+    foreach ($yamlKeyFinding in $yamlKeyFindings) {
         $findings.Add([string] $yamlKeyFinding)
     }
 
-    $workflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $CiWorkflowPath -WorkingDirectory $repoRoot
+    $workflow = if ($UseResolvedWorkflowEvidence) {
+        $ResolvedWorkflow
+    }
+    else {
+        ConvertFrom-NervCiRequiredSummaryWorkflow -Path $CiWorkflowPath -WorkingDirectory $repoRoot
+    }
     $jobsProperty = $workflow.PSObject.Properties['jobs']
     if ($null -eq $jobsProperty) {
         $findings.Add('ci-jobs-missing')
@@ -259,6 +277,10 @@ function Get-CiDotNetSdkAuthorityFindings {
     }
 
     return [pscustomobject]@{ Findings = @($findings); ManifestSdk = $manifestSdk; ActualSdk = $actualSdk }
+}
+
+if ([string]::Equals($MyInvocation.InvocationName, '.', [StringComparison]::Ordinal)) {
+    return
 }
 
 try {
