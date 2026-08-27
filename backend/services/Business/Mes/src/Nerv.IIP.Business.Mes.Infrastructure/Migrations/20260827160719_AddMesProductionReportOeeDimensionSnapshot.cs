@@ -97,7 +97,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 comment: "Authoritative MasterData site code captured with the production report.");
 
             migrationBuilder.AddColumn<string>(
-                name: "oee_site_timezone",
+                name: "oee_site_time_zone",
                 schema: "mes",
                 table: "production_reports",
                 type: "character varying(100)",
