@@ -21,12 +21,13 @@ const fixtureHtml = `<!doctype html>
     <script>
       const input = document.querySelector('input')
       const url = new URL(location.href)
-      const keyword = url.searchParams.get('keyword') || url.searchParams.get('initial') || ''
-      if (url.searchParams.get('hydrate') !== 'false') input.value = keyword
+      const inputKeyword = url.searchParams.get('keyword') || url.searchParams.get('initial') || ''
+      const responseKeyword = url.searchParams.get('responseKeyword') || inputKeyword
+      if (url.searchParams.get('hydrate') !== 'false') input.value = inputKeyword
       const load = value => fetch('${listPath}?keyword=' + encodeURIComponent(value)).then(response => {
         if (!response.ok) setTimeout(() => load(value), 10)
       })
-      load(keyword)
+      load(responseKeyword)
       input.addEventListener('input', event => load(event.target.value))
     </script>
   </body>
@@ -78,7 +79,7 @@ test.describe('walkthrough filter response boundary', () => {
       })
     })
 
-    const { navigation, firstList } = await navigateAndWaitForInitialList(page, {
+    const { navigation, firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
       route: `${fixturePath}?keyword=SO-WALK-001`,
       listPath,
       timeoutMs: 2_000,
@@ -92,6 +93,8 @@ test.describe('walkthrough filter response boundary', () => {
       filterLabel: '关键字搜索',
       stableText: 'SO-WALK-001',
       responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
       timeoutMs: 500,
     })
 
@@ -158,12 +161,12 @@ test.describe('walkthrough filter response boundary', () => {
     })
 
     const firstNavigation = await navigateAndWaitForInitialList(page, {
-      route: `${fixturePath}?initial=SO-WALK-001&navigation=first`,
+      route: `${fixturePath}?keyword=SO-WALK-001&navigation=first`,
       listPath,
       timeoutMs: 2_000,
     })
     await navigateAndWaitForInitialList(page, {
-      route: `${fixturePath}?initial=SO-WALK-001&navigation=second`,
+      route: `${fixturePath}?keyword=SO-WALK-001&navigation=second`,
       listPath,
       timeoutMs: 2_000,
     })
@@ -181,6 +184,45 @@ test.describe('walkthrough filter response boundary', () => {
 
     expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
     expect(queries).toEqual(['SO-WALK-001', 'SO-WALK-001', 'SO-WALK-001'])
+  })
+
+  test('URL keyword 同值但初始 200 响应查询错误时仍等待目标筛选响应', async ({ page }) => {
+    const queries: string[] = []
+
+    await page.route(`**${fixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: fixtureHtml,
+      }),
+    )
+    await page.route(`**${listPath}*`, async (route) => {
+      const keyword = new URL(route.request().url()).searchParams.get('keyword') ?? ''
+      queries.push(keyword)
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: keyword }] }),
+      })
+    })
+
+    const { firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
+      route: `${fixturePath}?keyword=SO-WALK-001&responseKeyword=OTHER-001`,
+      listPath,
+      timeoutMs: 2_000,
+    })
+
+    const result = await fillFilterAndWaitForListResponse(page, {
+      route: page.url(),
+      listPath,
+      filterLabel: '关键字搜索',
+      stableText: 'SO-WALK-001',
+      responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
+      timeoutMs: 2_000,
+    })
+
+    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(queries).toEqual(['OTHER-001', 'SO-WALK-001'])
   })
 
   test('真正变更筛选值时仍等待 200 列表响应', async ({ page }) => {
@@ -290,6 +332,64 @@ test.describe('walkthrough filter response boundary', () => {
     expect(queries.slice(1).sort()).toEqual(['OTHER-001', 'SO-WALK-001'].sort())
   })
 
+  test('服务端筛选不接受 fill 操作前已发出的同 keyword 响应', async ({ page }) => {
+    const queries: string[] = []
+    let targetRequests = 0
+    let actionResponseCompleted = false
+
+    await page.route(`**${fixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: fixtureHtml,
+      }),
+    )
+    await page.route(`**${listPath}*`, async (route) => {
+      const keyword = new URL(route.request().url()).searchParams.get('keyword') ?? ''
+      queries.push(keyword)
+      if (keyword === 'SO-WALK-001') {
+        targetRequests += 1
+        if (targetRequests === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 300))
+          actionResponseCompleted = true
+        }
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: keyword }] }),
+      })
+    })
+
+    await navigateAndWaitForInitialList(page, {
+      route: `${fixturePath}?keyword=SO-OLD-001`,
+      listPath,
+      timeoutMs: 2_000,
+    })
+    const staleRequest = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === listPath &&
+        new URL(request.url()).searchParams.get('keyword') === 'SO-WALK-001',
+    )
+    await page.evaluate(() => {
+      void fetch('/api/issue1912-filter-policy-list?keyword=SO-WALK-001')
+    })
+    await staleRequest
+
+    const result = await fillFilterAndWaitForListResponse(page, {
+      route: page.url(),
+      listPath,
+      filterLabel: '关键字搜索',
+      stableText: 'SO-WALK-001',
+      responseMode: 'server',
+      timeoutMs: 2_000,
+    })
+
+    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(actionResponseCompleted).toBe(true)
+    expect(queries).toEqual(['SO-OLD-001', 'SO-WALK-001', 'SO-WALK-001'])
+  })
+
   test('URL keyword 未回填到输入框时仍等待筛选请求', async ({ page }) => {
     const queries: string[] = []
 
@@ -381,6 +481,9 @@ test.describe('walkthrough filter response boundary', () => {
           <p id="revision"></p>
           <script>
             void fetch('${refreshPath}?revision=stale')
+            document.querySelector('button').addEventListener('mousedown', () => {
+              void fetch('${refreshPath}?revision=between')
+            })
             document.querySelector('button').addEventListener('click', async () => {
               const response = await fetch('${refreshPath}?revision=fresh')
               document.querySelector('#revision').textContent = (await response.json()).revision
@@ -404,11 +507,15 @@ test.describe('walkthrough filter response boundary', () => {
     await page.goto(refreshFixturePath)
     await staleRequest
 
+    const freshResponse = page.waitForResponse(
+      (response) => new URL(response.url()).searchParams.get('revision') === 'fresh',
+    )
     const refreshed = await clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)
+    await freshResponse
 
     expect(new URL(refreshed.url()).searchParams.get('revision')).toBe('fresh')
     expect(refreshed.status()).toBe(200)
-    expect(revisions).toEqual(['stale', 'fresh'])
+    expect(revisions).toEqual(['stale', 'between', 'fresh'])
     await expect(page.locator('#revision')).toHaveText('fresh')
   })
 
