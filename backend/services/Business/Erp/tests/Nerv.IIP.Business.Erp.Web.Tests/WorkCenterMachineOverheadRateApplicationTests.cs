@@ -46,7 +46,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
     }
 
     [Fact]
-    public async Task Configure_assigns_append_only_revisions_inside_period_scope()
+    public async Task Configure_assigns_append_only_revisions_from_persisted_database_inside_period_scope()
     {
         await using var db = CreateDb();
         db.AccountingPeriods.AddRange(
@@ -56,6 +56,10 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         var handler = Handler(db);
 
         await handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        handler = Handler(db);
+
         await handler.Handle(ApplicableCommand("2026-06", 31_000m), CancellationToken.None);
         await handler.Handle(ApplicableCommand("2026-07", 32_000m), CancellationToken.None);
         await db.SaveChangesAsync();
@@ -72,6 +76,23 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
                 .Where(x => x.AccountingPeriodCode == "2026-07")
                 .Select(x => x.Revision)
                 .SingleAsync());
+    }
+
+    [Fact]
+    public async Task Configure_assigns_next_revision_against_an_unsaved_local_machine_revision()
+    {
+        await using var db = CreateDb();
+        db.AccountingPeriods.Add(Period("org-a", "env-a", "2026-06", 6));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var handler = Handler(db);
+
+        await handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None);
+        await handler.Handle(ApplicableCommand("2026-06", 31_000m), CancellationToken.None);
+
+        Assert.Equal(
+            [1, 2],
+            db.WorkCenterMachineOverheadRates.Local.OrderBy(x => x.Revision).Select(x => x.Revision).ToArray());
     }
 
     [Fact]
@@ -127,7 +148,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
     }
 
     [Fact]
-    public async Task Configure_rejects_currency_drift_across_periods_in_work_center_scope()
+    public async Task Configure_rejects_currency_drift_from_a_persisted_work_center_scope()
     {
         await using var db = CreateDb();
         db.AccountingPeriods.AddRange(
@@ -137,6 +158,8 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         var handler = Handler(db);
         await handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None);
         await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        handler = Handler(db);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ApplicableCommand("2026-07", 30_000m) with { CurrencyCode = "USD" },

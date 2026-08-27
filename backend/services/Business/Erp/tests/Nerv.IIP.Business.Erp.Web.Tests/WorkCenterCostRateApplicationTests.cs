@@ -111,12 +111,16 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
-    public async Task Configure_assigns_monotonic_revision_inside_each_scope()
+    public async Task Configure_assigns_monotonic_revision_from_persisted_database_inside_each_scope()
     {
         await using var db = CreateDb();
         var handler = Handler(db);
 
         await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        handler = Handler(db);
+
         await handler.Handle(Command(" org-a ", " env-a ", 45m), CancellationToken.None);
         await handler.Handle(Command("org-b", "env-a", 50m), CancellationToken.None);
         await handler.Handle(Command("org-a", "env-b", 55m), CancellationToken.None);
@@ -131,12 +135,26 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
-    public async Task Configure_rejects_currency_changes_inside_an_existing_cost_rate_scope()
+    public async Task Configure_assigns_next_revision_against_an_unsaved_local_labor_revision()
+    {
+        await using var db = CreateDb();
+        var handler = Handler(db);
+
+        await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+        await handler.Handle(Command("org-a", "env-a", 45m), CancellationToken.None);
+
+        Assert.Equal([1, 2], db.WorkCenterCostRates.Local.OrderBy(x => x.Revision).Select(x => x.Revision).ToArray());
+    }
+
+    [Fact]
+    public async Task Configure_rejects_currency_changes_from_a_persisted_cost_rate_scope()
     {
         await using var db = CreateDb();
         var handler = Handler(db);
         await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
         await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        handler = Handler(db);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             Command("org-a", "env-a", 45m) with { CurrencyCode = "USD" },
