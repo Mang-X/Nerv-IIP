@@ -1144,7 +1144,7 @@ function formatError(error: unknown) {
         :rows="operationTasks"
         row-key="operationTaskId"
         :loading="detailPending"
-        empty-message="暂无工序任务。点击上方「对该单排产」生成工序任务，完成后可在这里派工与报工。"
+        empty-message="暂无工序任务。点击上方「对该单排产」生成方案，在「排产工作台」发布后可在这里派工与报工。"
         :searchable="false"
         :column-settings="false"
       >
