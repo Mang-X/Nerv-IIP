@@ -109,25 +109,21 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         if (type == "device-asset" && !string.IsNullOrWhiteSpace(request.DeviceAssetId))
         {
             var reference = request.DeviceAssetId.Trim();
-            var parsedDeviceAssetId = Guid.TryParse(reference, out var parsed) && parsed != Guid.Empty
-                ? new DeviceAssetId(parsed)
-                : null;
-            var matches = await dbContext.DeviceAssets
-                .AsNoTracking()
-                .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
-                .Where(x => x.Code == reference || (parsedDeviceAssetId != null && x.Id == parsedDeviceAssetId))
-                .Select(x => x.Id)
-                .Take(2)
-                .ToArrayAsync(cancellationToken);
-            if (matches.Length == 0)
+            var resolution = await DeviceAssetReferenceResolver.ResolveAsync(
+                dbContext,
+                tenant.OrganizationId,
+                tenant.EnvironmentId,
+                [reference],
+                cancellationToken);
+            if (resolution.InvalidReason == "not-found")
             {
                 return new ListMasterDataResourcesResponse([], 0);
             }
-            if (matches.Length > 1)
+            if (resolution.InvalidReason.Length > 0)
             {
                 throw new KnownException($"主数据设备引用 '{reference}' 对应多条记录，无法唯一确定。");
             }
-            resolvedDeviceAssetId = matches[0];
+            resolvedDeviceAssetId = resolution.Devices[reference].DeviceAssetId;
         }
         var query = type switch
         {

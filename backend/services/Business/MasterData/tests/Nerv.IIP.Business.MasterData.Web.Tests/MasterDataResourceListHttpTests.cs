@@ -111,6 +111,39 @@ public sealed class MasterDataResourceListHttpTests
     }
 
     [Fact]
+    public async Task Get_device_resources_rejects_alias_closure_collision_as_ambiguous()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var requestedDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-A", "Device A", "LINE-A", "WC-A");
+            dbContext.DeviceAssets.Add(requestedDevice);
+            await dbContext.SaveChangesAsync();
+            dbContext.DeviceAssets.Add(DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                requestedDevice.Id.ToString(),
+                "Device B",
+                "LINE-B",
+                "WC-B"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/resources" +
+            "?organizationId=org-001&environmentId=env-dev&resourceType=device-asset&deviceAssetId=DEV-A");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Contains("无法唯一确定", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.False(document.RootElement.TryGetProperty("data", out _), body);
+    }
+
+    [Fact]
     public async Task Get_shift_resources_applies_exact_shift_code_before_paging()
     {
         await using var factory = new MasterDataResourceListHttpTestFactory();

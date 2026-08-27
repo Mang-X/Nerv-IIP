@@ -405,7 +405,9 @@ public sealed class MasterDataApiContractTests
             .Options;
         using var dbContext = new ApplicationDbContext(options, new NoopMediator());
         var deviceId = new DeviceAssetId(Guid.CreateVersion7());
-        var queryMethod = typeof(ResolveMasterDataReferencesQueryHandler).GetMethod(
+        var resolverType = typeof(ResolveMasterDataReferencesQueryHandler).Assembly.GetType(
+            "Nerv.IIP.Business.MasterData.Web.Application.Queries.DeviceAssetReferenceResolver");
+        var queryMethod = resolverType?.GetMethod(
             "DeviceAuthorityCandidatesQuery",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
         var query = Assert.IsAssignableFrom<IQueryable>(queryMethod?.Invoke(

@@ -8454,6 +8454,46 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_resources_facade_binds_shift_and_device_filters_into_downstream_query()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                resources = Array.Empty<object>(),
+                total = 0,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                new NamedPrimaryHandlerFilter("IBusinessMasterDataClient", handler));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/master-data/resources" +
+            "?organizationId=org-001&environmentId=env-dev&resourceType=device-asset" +
+            "&shiftCode=SHIFT-DAY&deviceAssetId=018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MasterDataResourcesRead, auth.LastRequirement!.PermissionCode);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(
+            "/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=device-asset&skip=0&take=100&shiftCode=SHIFT-DAY&deviceAssetId=018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+            request.RequestUri!.PathAndQuery);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("internal-test-token", request.Headers.Authorization.Parameter);
+    }
+
+    [Fact]
     public async Task Master_data_http_client_preserves_reporting_dimension_fields()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
