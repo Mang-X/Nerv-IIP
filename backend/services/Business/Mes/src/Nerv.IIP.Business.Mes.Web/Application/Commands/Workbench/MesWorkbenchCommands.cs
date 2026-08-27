@@ -2138,7 +2138,8 @@ internal static class MaterialReadinessGuards
         decimal RequiredQuantity,
         decimal AvailableQuantity,
         decimal StagedQuantity,
-        DateTimeOffset CapturedAtUtc) : IMaterialRequirementSnapshot;
+        DateTimeOffset CapturedAtUtc,
+        IReadOnlyCollection<string>? SubstituteMaterialIds = null) : IMaterialRequirementSnapshot;
 }
 
 internal sealed record ReadinessBlockingIssue(

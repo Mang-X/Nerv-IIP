@@ -4113,6 +4113,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     shortageQuantity?: number;
     status?: string;
     shortageStage?: string | null;
+    substituteMaterialIds?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRequest = {
