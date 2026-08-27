@@ -137,7 +137,10 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class RecordProductionReportCommandHandler(
+    ApplicationDbContext dbContext,
+    MesCodingService? codingService = null,
+    IProductionReportOeeDimensionSnapshotProvider? oeeDimensionSnapshotProvider = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
@@ -234,6 +237,20 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             producedLotNo = $"{request.WorkOrderId}-{request.OperationTaskId}-{allocation.Code}";
         }
 
+        var oeeProjection = ProductionReportOeeProjectionFactory.Create(operationTask);
+        var oeeDimensionSnapshot = oeeDimensionSnapshotProvider is null
+            ? ProductionReportOeeDimensionSnapshot.Degraded(
+                operationTask.DeviceAssetId,
+                operationTask.WorkCenterId,
+                "master-data:not-configured")
+            : await oeeDimensionSnapshotProvider.CaptureAsync(
+                new ProductionReportOeeDimensionSnapshotRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    operationTask.DeviceAssetId,
+                    operationTask.WorkCenterId,
+                    operationTask.ShiftId),
+                cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
@@ -249,10 +266,11 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.DefectRecordNo,
             producedLotNo,
             request.SerialNo,
-            ProductionReportOeeProjectionFactory.Create(operationTask),
+            oeeProjection,
             request.Source,
             consumedMaterialLots.Count,
-            request.ReportedBy);
+            request.ReportedBy,
+            oeeDimensionSnapshot);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
