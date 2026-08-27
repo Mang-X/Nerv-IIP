@@ -744,9 +744,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     await page.setContent(`
       <base href="http://walkthrough.fixture/">
       <button type="button" aria-label="工厂" aria-expanded="false">工厂</button>
-      <div role="listbox" hidden>
-        <button type="button" role="option"><span>一号工厂</span><span>SITE-001</span></button>
-      </div>
+      <div role="listbox" hidden></div>
       <script>
         (() => {
           const trigger = document.querySelector('[aria-label="工厂"]')
@@ -755,11 +753,23 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             menu.hidden = false
             trigger.setAttribute('aria-expanded', 'true')
             setTimeout(() => {
-              const duplicate = document.createElement('button')
-              duplicate.type = 'button'
-              duplicate.setAttribute('role', 'option')
-              duplicate.innerHTML = '<span>备用工厂</span><span>SITE-001</span>'
-              menu.append(duplicate)
+              const option = document.createElement('button')
+              option.type = 'button'
+              option.setAttribute('role', 'option')
+              option.innerHTML = '<span>一号工厂</span><span>SITE-001</span>'
+              option.addEventListener('click', () => {
+                menu.hidden = true
+                trigger.textContent = '一号工厂（SITE-001）'
+                trigger.setAttribute('aria-expanded', 'false')
+              })
+              menu.append(option)
+              setTimeout(() => {
+                const duplicate = document.createElement('button')
+                duplicate.type = 'button'
+                duplicate.setAttribute('role', 'option')
+                duplicate.innerHTML = '<span>备用工厂</span><span>SITE-001</span>'
+                menu.append(duplicate)
+              }, 90)
             }, 40)
           })
         })()
