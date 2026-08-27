@@ -1162,30 +1162,29 @@ function Invoke-DotNetSdkAuthorityCase {
         [Parameter(Mandatory)] [string] $CaseWorkflowPath,
         [Parameter(Mandatory)] [string] $CaseManifestPath,
         [Parameter(Mandatory)] [int] $ExpectedExitCode,
-        [string[]] $ExpectedOutput = @()
+        [string[]] $ExpectedOutput = @(),
+        [int] $TimeoutSeconds = 60,
+        [string] $CheckerCommand = 'pwsh'
     )
 
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = 'pwsh'
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    foreach ($argument in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $dotNetSdkAuthorityCheckerPath, '-WorkflowPath', $CaseWorkflowPath, '-ManifestPath', $CaseManifestPath)) {
-        [void] $startInfo.ArgumentList.Add($argument)
-    }
-
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $dotNetSdkAuthorityCheckerPath, '-WorkflowPath', $CaseWorkflowPath, '-ManifestPath', $CaseManifestPath)
+    $actualExitCode = 0
+    $outputText = ''
     try {
-        Assert-Contract $process.Start() "CI SDK authority case '$Name' could not start its checker process."
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
-        $actualExitCode = $process.ExitCode
-        $outputText = ($stdoutTask.GetAwaiter().GetResult(), $stderrTask.GetAwaiter().GetResult()) -join [Environment]::NewLine
+        $result = Invoke-NativeCommandOutput `
+            -Command $CheckerCommand `
+            -Arguments $arguments `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds $TimeoutSeconds `
+            -Name "ci-dotnet-sdk-authority-$Name"
+        $actualExitCode = [int] $result.ExitCode
+        $outputText = ($result.Stdout, $result.Stderr) -join [Environment]::NewLine
     }
-    finally {
-        $process.Dispose()
+    catch {
+        $exitCodeData = $_.Exception.Data['ExitCode']
+        if ($null -eq $exitCodeData) { throw }
+        $actualExitCode = [int] $exitCodeData
+        $outputText = [string] $_.Exception.Message
     }
 
     Assert-Contract ($actualExitCode -eq $ExpectedExitCode) "CI SDK authority case '$Name' expected exit $ExpectedExitCode but got $actualExitCode. Output: $outputText"
@@ -1236,6 +1235,62 @@ try {
     Write-Output "CI SDK synchronized authority mutation: MANIFEST=$synchronizedExpectedSdkVersion STALE=$expectedDotNetSdkVersion"
 
     if (-not $IsWindows) {
+        $hangingCheckerRoot = Join-Path $dotNetAuthorityMutationRoot 'hanging-checker-bin'
+        [IO.Directory]::CreateDirectory($hangingCheckerRoot) | Out-Null
+        $hangingCheckerPath = Join-Path $hangingCheckerRoot 'pwsh'
+        $hangingChildPidPath = Join-Path $dotNetAuthorityMutationRoot 'hanging-checker-child.pid'
+        $hangingCheckerScript = @"
+#!/bin/sh
+sleep 30 &
+child_pid=`$!
+printf '%s\n' "`$child_pid" > '$hangingChildPidPath'
+printf 'checker-timeout-stdout\n'
+printf 'checker-timeout-stderr\n' >&2
+wait "`$child_pid"
+"@
+        [IO.File]::WriteAllText($hangingCheckerPath, $hangingCheckerScript, [Text.UTF8Encoding]::new($false))
+        & chmod +x $hangingCheckerPath
+        Assert-Contract ($LASTEXITCODE -eq 0) 'The hanging fake checker executable must be made executable.'
+
+        $timeoutFailure = $null
+        $timeoutStopwatch = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            Invoke-DotNetSdkAuthorityCase `
+                -Name 'hanging checker is bounded and cleaned' `
+                -CaseWorkflowPath $workflowPath `
+                -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+                -ExpectedExitCode 0 `
+                -TimeoutSeconds 10 `
+                -CheckerCommand $hangingCheckerPath
+        }
+        catch {
+            $timeoutFailure = $_
+        }
+        finally {
+            $timeoutStopwatch.Stop()
+        }
+
+        Assert-Contract ($null -ne $timeoutFailure -and $timeoutFailure.Exception -is [TimeoutException]) "A hanging checker must fail with the canonical timeout instead of waiting without a bound. Elapsed=$($timeoutStopwatch.Elapsed)."
+        Assert-Contract ($timeoutFailure.Exception.Message.Contains('timed out after 10 seconds', [StringComparison]::Ordinal)) "The hanging checker timeout must report its managed ten-second budget. Failure=$($timeoutFailure.Exception.Message)"
+        Assert-Contract (([string]$timeoutFailure.Exception.Data['Stdout']).Contains('checker-timeout-stdout', [StringComparison]::Ordinal)) 'The canonical timeout must preserve checker stdout emitted before termination.'
+        Assert-Contract (([string]$timeoutFailure.Exception.Data['Stderr']).Contains('checker-timeout-stderr', [StringComparison]::Ordinal)) 'The canonical timeout must preserve checker stderr emitted before termination.'
+        Assert-Contract ($timeoutStopwatch.Elapsed -lt [TimeSpan]::FromSeconds(20)) "The hanging checker must fail within its managed timeout and stream-drain budgets instead of waiting for the thirty-second child. Elapsed=$($timeoutStopwatch.Elapsed)."
+        Assert-Contract (Test-Path -LiteralPath $hangingChildPidPath -PathType Leaf) 'The hanging checker fixture must publish its child PID before the timeout.'
+        $hangingChildPid = [int]([IO.File]::ReadAllText($hangingChildPidPath).Trim())
+        $hangingChildProcess = Get-Process -Id $hangingChildPid -ErrorAction SilentlyContinue
+        if ($IsLinux) {
+            $cleanupDeadline = [DateTimeOffset]::UtcNow.AddSeconds(5)
+            while ($null -ne $hangingChildProcess -and [DateTimeOffset]::UtcNow -lt $cleanupDeadline) {
+                Start-Sleep -Milliseconds 100
+                $hangingChildProcess = Get-Process -Id $hangingChildPid -ErrorAction SilentlyContinue
+            }
+            Assert-Contract ($null -eq $hangingChildProcess) "The canonical timeout must clean the hanging checker process tree. ChildPid=$hangingChildPid"
+        }
+        elseif ($null -ne $hangingChildProcess) {
+            Stop-Process -Id $hangingChildPid -Force -ErrorAction SilentlyContinue
+        }
+        Write-Output "CI SDK authority timeout case: ELAPSED=$($timeoutStopwatch.Elapsed) TREE_CLEANUP=$(if ($IsLinux) { 'verified' } else { 'platform-limited' })"
+
         $fakeDotNetRoot = Join-Path $dotNetAuthorityMutationRoot 'fake-dotnet-bin'
         [IO.Directory]::CreateDirectory($fakeDotNetRoot) | Out-Null
         $fakeDotNetPath = Join-Path $fakeDotNetRoot 'dotnet'
