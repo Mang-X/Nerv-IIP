@@ -33,10 +33,11 @@ import {
   RequestFailureEvidenceTracker,
 } from './issue1912-walkthrough-policy'
 import {
-  refreshWmsListAndConfirm,
-  selectWmsPageOption,
-  type WmsPageSelection,
+  buildWmsInboundListQueryFacts,
+  buildWmsOutboundListQueryFacts,
+  proveWmsListPage,
 } from './issue1912-wms-walkthrough-facts'
+import { queryPath as canonicalQueryPath } from './issue1912-walkthrough-query'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -300,12 +301,9 @@ function dateOnly(date: Date): string {
 }
 
 function queryPath(path: string, query: JsonRecord): string {
-  const url = new URL(path, baseURL!)
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== null && value !== undefined && value !== '')
-      url.searchParams.set(key, String(value))
-  }
-  return `${url.pathname}${url.search}`
+  if (!baseURL)
+    throw new Error('managed walkthrough query path requires NERV_IIP_PLAYWRIGHT_BASE_URL')
+  return canonicalQueryPath(path, query, baseURL)
 }
 
 function errorText(error: unknown): string {
@@ -757,12 +755,25 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     // Reuse a settled route when a tab proof only needs refreshed data; a full reload can supersede API work.
     reuseCurrentRoute?: boolean
     refreshListBeforeProof?: boolean
-    expectedRefreshListQuery?: JsonRecord
-    forbiddenRefreshQueryKeys?: readonly string[]
-    beforeFilterSelections?: readonly WmsPageSelection[]
     selectOptions?: Array<{ label: string; option: string }>
     emptyText: string
     screenshotName: string
+  }
+
+  type EstablishedPage = {
+    runtime: ActorRuntime
+    targetPage: Page
+    navigation: Response
+    firstList: Response
+    firstListNavigationEpoch: number | undefined
+  }
+
+  type WmsPageProofOptions = Omit<
+    PageProofOptions,
+    'actor' | 'refreshListBeforeProof' | 'expectedListQuery'
+  > & {
+    actor: 'wms-worker'
+    wms: Parameters<typeof proveWmsListPage>[0]
   }
 
   const erpListQuery = (query: JsonRecord = {}): JsonRecord => ({
@@ -771,21 +782,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     skip: 0,
     take: 10,
     ...query,
-  })
-
-  const wmsListQuery = (
-    scopeKind: string,
-    scopeId: string,
-    query: JsonRecord = {},
-  ): JsonRecord => ({
-    organizationId,
-    environmentId,
-    ...query,
-    // inbound.vue/outbound.vue do not pass initialPageSize; usePagedList defaults to 10.
-    scopeKind,
-    scopeId,
-    skip: 0,
-    take: 10,
   })
 
   const samePageRoute = (currentUrl: string, route: string): boolean => {
@@ -799,7 +795,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     )
   }
 
-  const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
+  const establishPage = async (options: PageProofOptions): Promise<EstablishedPage> => {
     const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
     const targetPage = runtime.page
     const reuseCurrentRoute = options.reuseCurrentRoute === true
@@ -851,42 +847,38 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       }
     }
 
-    if (options.expectedRefreshListQuery !== undefined && !options.refreshListBeforeProof) {
-      throw new Error(
-        `page ${options.route} supplied expected refresh query facts without requesting a refresh`,
-      )
+    if (!navigation || !firstList) {
+      throw new Error(`list ${options.listPath} has no completed HTTP 200 response to prove`)
     }
-    if (
-      options.forbiddenRefreshQueryKeys?.length &&
-      options.expectedRefreshListQuery === undefined
-    ) {
-      throw new Error(
-        `page ${options.route} supplied forbidden refresh query fields without expected query facts`,
-      )
+    return {
+      runtime,
+      targetPage,
+      navigation,
+      firstList,
+      firstListNavigationEpoch,
     }
-    for (const selection of options.beforeFilterSelections ?? []) {
-      await selectWmsPageOption(targetPage, selection)
-    }
+  }
 
-    if (options.refreshListBeforeProof) {
+  const completePageProof = async (
+    node: NodeName,
+    options: PageProofOptions,
+    established: EstablishedPage,
+    refreshedList?: Response,
+  ): Promise<UiProof> => {
+    const { runtime, targetPage, navigation } = established
+    let firstList = refreshedList ?? established.firstList
+    let firstListNavigationEpoch = established.firstListNavigationEpoch
+
+    if (refreshedList) {
+      firstListNavigationEpoch = runtime.lastNavigationEpoch ?? undefined
+    } else if (options.refreshListBeforeProof) {
       // A data refresh is not a lifecycle transition: any API abort remains an unexpected failure.
-      firstList =
-        options.expectedRefreshListQuery === undefined
-          ? await clickRefreshAndWaitForListResponse(targetPage, options.listPath)
-          : await refreshWmsListAndConfirm(
-              targetPage,
-              options.listPath,
-              options.expectedRefreshListQuery,
-              options.forbiddenRefreshQueryKeys,
-            )
+      firstList = await clickRefreshAndWaitForListResponse(targetPage, options.listPath)
       firstListNavigationEpoch = runtime.lastNavigationEpoch ?? undefined
       runtime.successfulListResponses.set(options.listPath, firstList)
     }
 
-    if (!firstList) {
-      throw new Error(`list ${options.listPath} has no completed HTTP 200 response to prove`)
-    }
-    expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
+    expect(navigation.status(), `page ${options.route} must return HTTP 200`).toBe(200)
     expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
 
     if (options.filterLabel) {
@@ -948,7 +940,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       actor: runtime.actor,
       principalId: runtime.principalId,
       page: options.route,
-      pageHttpStatus: navigation?.status() ?? 0,
+      pageHttpStatus: navigation.status(),
       listPath: options.listPath,
       listHttpStatus: firstList.status(),
       listQuery: Object.fromEntries(new URL(firstList.url()).searchParams.entries()),
@@ -961,9 +953,35 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     return proof
   }
 
+  const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
+    const established = await establishPage(options)
+    return completePageProof(node, options, established)
+  }
+
+  const proveWmsPage = async (node: NodeName, options: WmsPageProofOptions): Promise<UiProof> => {
+    const established = await establishPage(options)
+    const refreshedList = await proveWmsListPage(options.wms)
+    established.runtime.successfulListResponses.set(options.listPath, refreshedList)
+    return completePageProof(
+      node,
+      { ...options, expectedListQuery: options.wms.expectedQuery },
+      established,
+      refreshedList,
+    )
+  }
+
   const provePageSafely = async (node: NodeName, options: PageProofOptions) => {
     try {
       return await provePage(node, options)
+    } catch (error) {
+      markFailure(node, error, 'mixed')
+      throw error
+    }
+  }
+
+  const proveWmsPageSafely = async (node: NodeName, options: WmsPageProofOptions) => {
+    try {
+      return await proveWmsPage(node, options)
     } catch (error) {
       markFailure(node, error, 'mixed')
       throw error
@@ -1727,24 +1745,31 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity,
     )
-    const inboundListQuery = wmsListQuery(receiptScopeKind, receiptScopeId, {
+    const inboundListQuery = buildWmsInboundListQueryFacts({
+      organizationId,
+      environmentId,
+      scopeKind: receiptScopeKind,
+      scopeId: receiptScopeId,
       siteCode: receiptReadSiteCode,
     })
-    const inboundUi = await provePageSafely('receipt-inbound-inventory', {
+    const inboundUi = await proveWmsPageSafely('receipt-inbound-inventory', {
       actor: 'wms-worker',
       route: '/wms/inbound',
       listPath: '/api/business-console/v1/wms/inbound-orders',
       filterLabel: '关键字搜索',
-      beforeFilterSelections: [
-        { label: '作业范围', option: receiptScope.displayName },
-        { label: '工厂', optionCode: receiptReadSiteCode },
-      ],
-      refreshListBeforeProof: true,
-      expectedRefreshListQuery: inboundListQuery,
-      expectedListQuery: inboundListQuery,
       stableText: INBOUND_ORDER_NO,
       emptyText: '暂无入库单。收货作业产生入库单后会出现在这里。',
       screenshotName: '07-wms-inbound.png',
+      wms: {
+        kind: 'inbound',
+        page: workerPage,
+        listPath: '/api/business-console/v1/wms/inbound-orders',
+        selection: {
+          scope: { label: '作业范围', option: receiptScope.displayName },
+          site: { label: '工厂', optionCode: inboundListQuery.siteCode },
+        },
+        expectedQuery: inboundListQuery,
+      },
     })
     record({
       node: 'receipt-inbound-inventory',
@@ -2406,20 +2431,27 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         version: assignedOutboundVersion,
       },
     })
-    const outboundListQuery = wmsListQuery(shipmentScopeKind, shipmentScopeId)
-    const outboundUi = await provePageSafely('delivery-wms-outbound', {
+    const outboundListQuery = buildWmsOutboundListQueryFacts({
+      organizationId,
+      environmentId,
+      scopeKind: shipmentScopeKind,
+      scopeId: shipmentScopeId,
+    })
+    const outboundUi = await proveWmsPageSafely('delivery-wms-outbound', {
       actor: 'wms-worker',
       route: '/wms/outbound',
       listPath: '/api/business-console/v1/wms/outbound-orders',
       filterLabel: '关键字搜索',
-      beforeFilterSelections: [{ label: '作业范围', option: shipmentScope.displayName }],
-      refreshListBeforeProof: true,
-      expectedRefreshListQuery: outboundListQuery,
-      forbiddenRefreshQueryKeys: ['siteCode'],
-      expectedListQuery: outboundListQuery,
       stableText: DELIVERY_ORDER_NO,
       emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
       screenshotName: '17-wms-outbound.png',
+      wms: {
+        kind: 'outbound',
+        page: workerPage,
+        listPath: '/api/business-console/v1/wms/outbound-orders',
+        selection: { scope: { label: '作业范围', option: shipmentScope.displayName } },
+        expectedQuery: outboundListQuery,
+      },
     })
     record({
       node: 'delivery-wms-outbound',

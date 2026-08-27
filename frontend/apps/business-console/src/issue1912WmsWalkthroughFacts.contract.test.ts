@@ -1,84 +1,46 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { assertWmsListQueryFacts } from '../e2e/issue1912-wms-walkthrough-facts'
 
-const sourceDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../e2e')
-const walkthroughSource = readFileSync(
-  resolve(sourceDirectory, 'issue1912-real-machine-walkthrough.spec.ts'),
-  'utf8',
-)
-const inboundPageSource = readFileSync(
-  resolve(sourceDirectory, '../src/pages/wms/inbound.vue'),
-  'utf8',
-)
-const outboundPageSource = readFileSync(
-  resolve(sourceDirectory, '../src/pages/wms/outbound.vue'),
-  'utf8',
-)
-const pagedListSource = readFileSync(
-  resolve(sourceDirectory, '../src/composables/usePagedList.ts'),
-  'utf8',
-)
+import {
+  assertWmsListQueryFacts,
+  assertWmsInboundPageSelection,
+  assertWmsOutboundPageSelection,
+  assertWmsPageSelection,
+  buildWmsInboundListQueryFacts,
+  buildWmsOutboundListQueryFacts,
+  type WmsInboundListQueryFacts,
+  type WmsOutboundListQueryFacts,
+} from '../e2e/issue1912-wms-walkthrough-facts'
+import {
+  NERV_1571_WMS_INBOUND_FACTS,
+  NERV_1571_WMS_OUTBOUND_FACTS,
+} from '../e2e/issue1912-wms-walkthrough-authority'
 
-function sourceBetween(source: string, start: string, end: string): string {
-  const startIndex = source.indexOf(start)
-  const endIndex = source.indexOf(end, startIndex + start.length)
-  if (startIndex < 0 || endIndex < 0) throw new Error(`source boundaries not found: ${start}`)
-  return source.slice(startIndex, endIndex)
-}
+const inboundPath = '/api/business-console/v1/wms/inbound-orders'
+const outboundPath = '/api/business-console/v1/wms/outbound-orders'
 
-function queryString(query: Record<string, unknown>): string {
+// The expected values below come from docs/architecture/nerv-1571-wms-walkthrough-facts.md §场景事实
+// (Linear NERV-1571 / GitHub #1912), not from a page response or the implementation under test.
+
+function queryString(query: Record<string, string | number>): string {
   return new URLSearchParams(
     Object.entries(query).map(([key, value]) => [key, String(value)] as [string, string]),
   ).toString()
 }
 
+function response(path: string, query: Record<string, string | number>, status = 200) {
+  return { status, url: `https://console.fixture${path}?${queryString(query)}` }
+}
+
 describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
-  it('uses the real WMS page default page size and selects scope/site before proving the list', () => {
-    const wmsQueryBuilder = sourceBetween(
-      walkthroughSource,
-      'const wmsListQuery =',
-      'const samePageRoute =',
+  it('derives explicit inbound and outbound facts from the documented scenario vector', () => {
+    const inbound: WmsInboundListQueryFacts = buildWmsInboundListQueryFacts(
+      NERV_1571_WMS_INBOUND_FACTS,
     )
-    const inboundProof = sourceBetween(
-      walkthroughSource,
-      "const inboundUi = await provePageSafely('receipt-inbound-inventory'",
-      "record({\n      node: 'receipt-inbound-inventory'",
-    )
-    const inboundQuery = sourceBetween(
-      walkthroughSource,
-      'const inboundListQuery =',
-      "const inboundUi = await provePageSafely('receipt-inbound-inventory'",
-    )
-    const outboundProof = sourceBetween(
-      walkthroughSource,
-      "const outboundUi = await provePageSafely('delivery-wms-outbound'",
-      "record({\n      node: 'delivery-wms-outbound'",
+    const outbound: WmsOutboundListQueryFacts = buildWmsOutboundListQueryFacts(
+      NERV_1571_WMS_OUTBOUND_FACTS,
     )
 
-    expect(pagedListSource).toContain("options.initialPageSize ?? '10'")
-    expect(inboundPageSource).toContain('usePagedList(filters, {')
-    expect(outboundPageSource).toContain('usePagedList(filters, {')
-    expect(wmsQueryBuilder).toContain('take: 10')
-    expect(wmsQueryBuilder).not.toContain('take: 100')
-    expect(inboundProof).toContain('beforeFilterSelections')
-    expect(inboundProof).toContain('optionCode: receiptReadSiteCode')
-    expect(inboundProof).toContain('expectedRefreshListQuery')
-    expect(inboundQuery).toContain('siteCode: receiptReadSiteCode')
-    expect(outboundProof).toContain('beforeFilterSelections')
-    expect(outboundProof).toContain('expectedRefreshListQuery')
-    expect(outboundProof).toContain("forbiddenRefreshQueryKeys: ['siteCode']")
-  })
-
-  it('does not derive an expected WMS fingerprint from the first response URL', () => {
-    expect(walkthroughSource).not.toContain('listQueryFingerprint(firstList.url())')
-    expect(walkthroughSource).not.toContain('expectedListQueryFingerprint(firstList.url())')
-  })
-
-  it('fails closed for wrong WMS tenant, pagination, scope, or forbidden siteCode', () => {
-    const expectedQuery = {
+    expect(inbound).toEqual({
       organizationId: 'org-live',
       environmentId: 'env-live',
       scopeKind: 'work-pool',
@@ -86,44 +48,97 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
       skip: 0,
       take: 10,
       siteCode: 'SITE-001',
-    }
-    const listPath = '/api/business-console/v1/wms/inbound-orders'
-    const response = (query: string) => ({
-      status: 200,
-      url: `https://console.fixture${listPath}?${query}`,
     })
-
-    expect(() =>
-      assertWmsListQueryFacts(response(queryString(expectedQuery)), listPath, expectedQuery),
-    ).not.toThrow()
-    for (const query of [
-      queryString({ ...expectedQuery, environmentId: 'env-stale' }),
-      queryString({ ...expectedQuery, take: '100' }),
-      queryString({ ...expectedQuery, scopeId: 'self-user-049' }),
-      queryString({ ...expectedQuery, siteCode: 'SITE-002' }),
-    ]) {
-      expect(() => assertWmsListQueryFacts(response(query), listPath, expectedQuery)).toThrow()
-    }
-
-    const outboundPath = '/api/business-console/v1/wms/outbound-orders'
-    const outboundQuery = {
+    expect(outbound).toEqual({
       organizationId: 'org-live',
       environmentId: 'env-live',
       scopeKind: 'work-pool',
       scopeId: 'pool-shipping-001',
       skip: 0,
       take: 10,
+    })
+  })
+
+  it('fails closed for every tenant, scope, pagination, path, status, and site mutation', () => {
+    const expected = buildWmsInboundListQueryFacts(NERV_1571_WMS_INBOUND_FACTS)
+    type QueryMutation = Partial<Record<keyof typeof expected, string | number>>
+    const actual = (overrides: QueryMutation = {}, status = 200) =>
+      response(inboundPath, { ...expected, ...overrides }, status)
+
+    expect(() => assertWmsListQueryFacts(actual(), inboundPath, expected)).not.toThrow()
+
+    const mutations: Array<[string, Parameters<typeof assertWmsListQueryFacts>[0], string]> = [
+      ['organizationId', actual({ organizationId: 'org-other' }), 'query facts'],
+      ['environmentId', actual({ environmentId: 'env-stale' }), 'query facts'],
+      ['scopeKind', actual({ scopeKind: 'self' }), 'query facts'],
+      ['scopeId', actual({ scopeId: 'self-user-049' }), 'query facts'],
+      ['skip', actual({ skip: 10 }), 'query facts'],
+      ['take', actual({ take: 100 }), 'query facts'],
+      ['siteCode', actual({ siteCode: 'SITE-002' }), 'query facts'],
+      ['path', actual(), 'response path'],
+      ['status', actual(), 'HTTP 503'],
+    ]
+    mutations[7][1] = response('/api/business-console/v1/wms/outbound-orders', expected)
+    mutations[8][1] = actual({}, 503)
+
+    for (const [mutation, mutatedResponse, expectedMessage] of mutations) {
+      expect(
+        () => assertWmsListQueryFacts(mutatedResponse, inboundPath, expected),
+        `${mutation} mutation must fail closed`,
+      ).toThrow(expectedMessage)
     }
+
+    const missingSite: Record<string, string | number> = { ...expected }
+    delete missingSite.siteCode
+    expect(() =>
+      assertWmsListQueryFacts(response(inboundPath, missingSite), inboundPath, expected),
+    ).toThrow('query facts')
+
     expect(() =>
       assertWmsListQueryFacts(
-        {
-          status: 200,
-          url: `https://console.fixture${outboundPath}?${queryString({ ...outboundQuery, siteCode: 'SITE-001' })}`,
-        },
+        response(outboundPath, { ...NERV_1571_WMS_OUTBOUND_FACTS, siteCode: 'SITE-001' }),
         outboundPath,
-        outboundQuery,
+        buildWmsOutboundListQueryFacts(NERV_1571_WMS_OUTBOUND_FACTS),
         ['siteCode'],
       ),
     ).toThrow('must not send query field siteCode')
+  })
+
+  it('requires a non-empty discriminated selection and rejects neither or both facts', () => {
+    expect(() => assertWmsPageSelection({ label: '作业范围', option: '收货作业池' })).not.toThrow()
+    expect(() => assertWmsPageSelection({ label: '工厂', optionCode: 'SITE-001' })).not.toThrow()
+    expect(() =>
+      assertWmsPageSelection({ label: '工厂', option: '', optionCode: 'SITE-001' } as never),
+    ).toThrow('exactly one')
+    expect(() => assertWmsPageSelection({ label: '工厂' } as never)).toThrow('exactly one')
+    expect(() => assertWmsPageSelection({ label: '', option: '工厂' })).toThrow('label')
+
+    expect(() =>
+      assertWmsInboundPageSelection({
+        scope: { label: '作业范围', option: '收货作业池' },
+      } as never),
+    ).toThrow('exactly one scope and one site')
+    expect(() =>
+      assertWmsInboundPageSelection({
+        scope: { label: '作业范围', option: '收货作业池', optionCode: 'POOL-001' },
+        site: { label: '工厂', optionCode: 'SITE-001' },
+      } as never),
+    ).toThrow('exactly one')
+    expect(() => assertWmsOutboundPageSelection({} as never)).toThrow('scope selection')
+  })
+
+  it('rejects empty scenario facts before a request can be proved', () => {
+    expect(() =>
+      buildWmsInboundListQueryFacts({ ...NERV_1571_WMS_INBOUND_FACTS, organizationId: '' }),
+    ).toThrow('organizationId')
+    expect(() =>
+      buildWmsInboundListQueryFacts({ ...NERV_1571_WMS_INBOUND_FACTS, scopeId: '' }),
+    ).toThrow('scopeId')
+    expect(() =>
+      buildWmsInboundListQueryFacts({ ...NERV_1571_WMS_INBOUND_FACTS, siteCode: '' }),
+    ).toThrow('siteCode')
+    expect(() =>
+      buildWmsOutboundListQueryFacts({ ...NERV_1571_WMS_OUTBOUND_FACTS, scopeKind: 'self' }),
+    ).toThrow('scopeKind')
   })
 })
