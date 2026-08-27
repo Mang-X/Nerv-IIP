@@ -28,6 +28,7 @@ import {
   clickRefreshAndWaitForListResponse,
   clickTabAndConfirmUnmount,
   fillFilterAndWaitForListResponse,
+  listQueryFingerprint,
   navigateAndWaitForInitialList,
   RequestFailureEvidenceTracker,
 } from './issue1912-walkthrough-policy'
@@ -837,6 +838,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         responseMode: options.filterResponseMode ?? 'server',
         initialListResponse: firstList,
         initialListNavigationEpoch: firstListNavigationEpoch,
+        expectedListQueryFingerprint: listQueryFingerprint(firstList.url()),
         timeoutMs: 120_000,
       })
     }

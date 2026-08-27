@@ -1,5 +1,4 @@
 import { expect, type Locator, type Page, type Request, type Response } from '@playwright/test'
-
 const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
   'document',
   'stylesheet',
@@ -10,9 +9,7 @@ const EXPECTED_ABORT_RESOURCE_TYPES = new Set([
   'manifest',
   'texttrack',
 ])
-
 const API_ABORT_RESOURCE_TYPES = new Set(['fetch', 'xhr'])
-
 const navigationEpochs = new WeakMap<Page, number>()
 const listResponseOwnership = new WeakMap<Response, { page: Page; navigationEpoch: number }>()
 const currentListResponses = new WeakMap<
@@ -21,15 +18,13 @@ const currentListResponses = new WeakMap<
 >()
 let actionMarkerSequence = 0
 const ACTION_MARKER_HEADER = 'x-nerv-walkthrough-action'
-
+const NAVIGATION_MARKER_HEADER = 'x-nerv-walkthrough-navigation'
 export type RequestCancellationKind = 'navigation' | 'component-unmount'
-
 export type RequestCancellationEvidence = {
   kind: RequestCancellationKind
   requestStartedBeforeTransition: boolean
   transitionId: number
 }
-
 export type RequestFailureObservation = {
   method: string
   url: string
@@ -38,12 +33,10 @@ export type RequestFailureObservation = {
   isNavigationRequest: boolean
   cancellationEvidence?: RequestCancellationEvidence
 }
-
 export type RequestFailureClassification = {
   expected: boolean
   record: Record<string, unknown>
 }
-
 export function classifyRequestFailure(
   observation: RequestFailureObservation,
 ): RequestFailureClassification {
@@ -86,18 +79,9 @@ export function classifyRequestFailure(
     },
   }
 }
-
-type ObservedRequest = {
-  event: number
-  pageUrl: string
-}
-
+type ObservedRequest = { event: number; pageUrl: string }
 type LifecycleAttemptState = 'pending' | 'active' | 'cancelled' | 'closed'
-
-type PendingFailure = {
-  onResolved: (evidence: RequestCancellationEvidence | undefined) => void
-}
-
+type PendingFailure = { onResolved: (evidence: RequestCancellationEvidence | undefined) => void }
 type LifecycleAttempt = {
   event: number
   id: number
@@ -106,30 +90,23 @@ type LifecycleAttempt = {
   pendingFailures: PendingFailure[]
   state: LifecycleAttemptState
 }
-
 export type LifecycleAttemptHandle = {
   cancel: () => void
   complete: () => void
   confirm: (kind: RequestCancellationKind) => void
   id: number
 }
-
 export class RequestFailureEvidenceTracker {
   private event = 0
-
   private transitionId = 0
-
   private readonly requests = new WeakMap<object, ObservedRequest>()
-
   private readonly attempts = new Map<number, LifecycleAttempt>()
-
   observeRequest(request: object, pageUrl: string): void {
     this.requests.set(request, {
       event: ++this.event,
       pageUrl,
     })
   }
-
   beginLifecycleAttempt(pageUrl: string): LifecycleAttemptHandle {
     const attempt: LifecycleAttempt = {
       event: ++this.event,
@@ -146,7 +123,6 @@ export class RequestFailureEvidenceTracker {
       complete: () => this.completeAttempt(attempt),
     }
   }
-
   resolveFailureEvidence(
     request: object,
     onResolved: (evidence: RequestCancellationEvidence | undefined) => void,
@@ -186,7 +162,6 @@ export class RequestFailureEvidenceTracker {
 
     onResolved(undefined)
   }
-
   private confirmAttempt(attempt: LifecycleAttempt, kind: RequestCancellationKind): void {
     if (attempt.state !== 'pending') return
     attempt.kind = kind
@@ -196,7 +171,6 @@ export class RequestFailureEvidenceTracker {
     const evidence = this.evidenceFor(attempt)
     for (const failure of pendingFailures) failure.onResolved(evidence)
   }
-
   private cancelAttempt(attempt: LifecycleAttempt): void {
     if (attempt.state === 'cancelled' || attempt.state === 'closed') return
     attempt.state = 'cancelled'
@@ -205,7 +179,6 @@ export class RequestFailureEvidenceTracker {
     for (const failure of pendingFailures) failure.onResolved(undefined)
     this.attempts.delete(attempt.id)
   }
-
   private completeAttempt(attempt: LifecycleAttempt): void {
     if (attempt.state === 'pending') {
       this.cancelAttempt(attempt)
@@ -216,7 +189,6 @@ export class RequestFailureEvidenceTracker {
     ++this.event
     this.attempts.delete(attempt.id)
   }
-
   private evidenceFor(attempt: LifecycleAttempt): RequestCancellationEvidence {
     if (!attempt.kind) throw new Error('lifecycle attempt has no confirmed kind')
     return {
@@ -227,17 +199,11 @@ export class RequestFailureEvidenceTracker {
   }
 }
 
-export type InitialPageNavigationOptions = {
-  route: string
-  listPath: string
-  timeoutMs?: number
-}
-
+export type InitialPageNavigationOptions = { route: string; listPath: string; timeoutMs?: number }
 function isListRequest(request: Request, listPath: string): boolean {
   return request.method() === 'GET' && new URL(request.url()).pathname === listPath
 }
-
-function listQueryFingerprint(url: string): string {
+export function listQueryFingerprint(url: string): string {
   const entries = [...new URL(url).searchParams.entries()]
     .filter(([key]) => key !== 'keyword')
     .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
@@ -245,7 +211,6 @@ function listQueryFingerprint(url: string): string {
     )
   return JSON.stringify(entries)
 }
-
 type ActionRequestMarkerOptions = {
   eventName: 'click' | 'input'
   expectedKeyword?: string
@@ -253,15 +218,14 @@ type ActionRequestMarkerOptions = {
   listPath: string
   marker: string
 }
-
 async function installActionRequestMarker(
   page: Page,
   target: Locator,
   options: ActionRequestMarkerOptions,
 ): Promise<void> {
-  // The marker is attached by the browser-side event boundary, not inferred from request order.
-  // It covers event propagation plus two explicit microtask turns; requests outside that bounded
-  // action window remain unmarked and therefore cannot satisfy the waiter.
+  // Capture the fetch function during event propagation. Generated clients select globalThis.fetch
+  // before async auth/interceptor continuations, so this function carries the action identity past
+  // the event boundary without keeping a mutable global marker active for later timers.
   await target.evaluate((element, markerOptions) => {
     type ActionState = {
       actionCount: number
@@ -269,6 +233,9 @@ async function installActionRequestMarker(
       closedActionCount: number
       cleanup: () => void
       markedRequestCount: number
+      actionFetch?: typeof window.fetch
+      fetchBeforeAction?: typeof window.fetch
+      disposed: boolean
     }
     type WindowWithActionMarkers = Window & {
       __nervWalkthroughActionMarkers?: Record<string, ActionState>
@@ -286,6 +253,7 @@ async function installActionRequestMarker(
       closedActionCount: 0,
       cleanup: () => undefined,
       markedRequestCount: 0,
+      disposed: false,
     }
     const originalFetch = window.fetch
     const originalXhrOpen = XMLHttpRequest.prototype.open
@@ -315,30 +283,30 @@ async function installActionRequestMarker(
         queryFingerprint(parsed.toString()) === markerOptions.expectedQueryFingerprint
       )
     }
-    const actionIsArmed = () => state.active
     const markRequest = (headers: Headers) => {
       headers.set('x-nerv-walkthrough-action', markerOptions.marker)
       state.markedRequestCount += 1
     }
 
-    window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-      let marked = false
-      let markedInput: RequestInfo | URL = input
-      let markedInit = init
-      if (actionIsArmed()) {
+    const createActionFetch = () => {
+      const actionFetch = function (
+        this: typeof window,
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) {
+        let markedInput: RequestInfo | URL = input
+        let markedInit = init
         const request = new Request(input, init)
-        if (matchesActionRequest(request.method, request.url)) {
+        if (!state.disposed && matchesActionRequest(request.method, request.url)) {
           const headers = new Headers(request.headers)
           markRequest(headers)
           markedInput = new Request(request, { headers })
           markedInit = undefined
-          marked = true
         }
-      }
 
-      const response = originalFetch.call(this, markedInput, markedInit)
-      if (!marked) return response
-      return response
+        return originalFetch.call(this, markedInput, markedInit)
+      }
+      return actionFetch
     }
 
     XMLHttpRequest.prototype.open = function (
@@ -353,7 +321,7 @@ async function installActionRequestMarker(
       const metadata = xhrMetadata.get(this)
       const marked =
         metadata !== undefined &&
-        actionIsArmed() &&
+        state.active &&
         matchesActionRequest(metadata.method, metadata.url)
       if (marked) {
         this.setRequestHeader('x-nerv-walkthrough-action', markerOptions.marker)
@@ -364,8 +332,12 @@ async function installActionRequestMarker(
 
     const activate = (event: Event) => {
       if (!event.composedPath().includes(element)) return
+      if (!state.active) state.fetchBeforeAction = window.fetch
       state.active = true
       state.actionCount += 1
+      const actionFetch = createActionFetch()
+      state.actionFetch = actionFetch
+      window.fetch = actionFetch
     }
     const closeAfterEventPropagation = (event: Event) => {
       if (!state.active || !event.composedPath().includes(element)) return
@@ -377,6 +349,11 @@ async function installActionRequestMarker(
           if (state.active && state.actionCount === actionCountAtBoundary) {
             state.active = false
             state.closedActionCount = actionCountAtBoundary
+            if (state.fetchBeforeAction && window.fetch === state.actionFetch) {
+              window.fetch = state.fetchBeforeAction
+            }
+            state.actionFetch = undefined
+            state.fetchBeforeAction = undefined
           }
         })
       })
@@ -385,9 +362,14 @@ async function installActionRequestMarker(
     document.addEventListener(markerOptions.eventName, closeAfterEventPropagation)
 
     state.cleanup = () => {
+      state.disposed = true
       document.removeEventListener(markerOptions.eventName, activate, { capture: true })
       document.removeEventListener(markerOptions.eventName, closeAfterEventPropagation)
-      if (window.fetch === wrappedFetch) window.fetch = originalFetch
+      if (state.fetchBeforeAction && window.fetch === state.actionFetch) {
+        window.fetch = state.fetchBeforeAction
+      } else if (window.fetch === originalFetch) {
+        window.fetch = originalFetch
+      }
       if (XMLHttpRequest.prototype.open === wrappedXhrOpen) {
         XMLHttpRequest.prototype.open = originalXhrOpen
       }
@@ -397,18 +379,115 @@ async function installActionRequestMarker(
       delete actionMarkers[markerOptions.marker]
     }
 
-    const wrappedFetch = window.fetch
     const wrappedXhrOpen = XMLHttpRequest.prototype.open
     const wrappedXhrSend = XMLHttpRequest.prototype.send
     actionMarkers[markerOptions.marker] = state
   }, options)
 }
+type ActionMarkerSnapshot = { actionCount: number; markedRequestCount: number }
 
-type ActionMarkerSnapshot = {
-  actionCount: number
-  markedRequestCount: number
+type ActionResponseTrackerOptions = {
+  requestMatches: (request: Request) => boolean
+  responseMatches: (response: Response) => boolean
+  timeoutMs: number
+  requestTimeoutMessage: string
+  ambiguousMessage: string
+  bindingMessage: string
+  statusMessage: (status: number) => string
 }
-
+function createActionResponseTracker(options: ActionResponseTrackerOptions) {
+  const actionRequests = new Set<Request>()
+  const responsesByRequest = new Map<Request, Response>()
+  let actionRequest: Request | undefined
+  let ambiguous = false
+  let actionClosed = false
+  let actionSnapshot: ActionMarkerSnapshot | undefined
+  let resolveFirstRequest: (request: Request) => void = () => undefined
+  let rejectFirstRequest: (error: Error) => void = () => undefined
+  let resolveResponse: (response: Response) => void = () => undefined
+  let rejectResponse: (error: Error) => void = () => undefined
+  let firstRequestTimer: ReturnType<typeof setTimeout> | undefined
+  let responseTimer: ReturnType<typeof setTimeout> | undefined
+  const firstRequest = new Promise<Request>((resolve, reject) => {
+    resolveFirstRequest = resolve
+    rejectFirstRequest = reject
+    firstRequestTimer = setTimeout(
+      () => rejectFirstRequest(new Error(options.requestTimeoutMessage)),
+      options.timeoutMs,
+    )
+  })
+  const response = new Promise<Response>((resolve, reject) => {
+    resolveResponse = resolve
+    rejectResponse = reject
+  })
+  const settle = () => {
+    if (!actionClosed || !actionRequest || !actionSnapshot) return
+    if (
+      ambiguous ||
+      actionRequests.size !== 1 ||
+      actionSnapshot.actionCount !== 1 ||
+      actionSnapshot.markedRequestCount !== 1
+    ) {
+      rejectResponse(new Error(options.ambiguousMessage))
+      return
+    }
+    const completedResponse = responsesByRequest.get(actionRequest)
+    if (!completedResponse) return
+    if (completedResponse.status() !== 200) {
+      rejectResponse(new Error(options.statusMessage(completedResponse.status())))
+      return
+    }
+    resolveResponse(completedResponse)
+  }
+  return {
+    firstRequest,
+    response,
+    observeRequest: (request: Request) => {
+      if (!options.requestMatches(request)) return
+      actionRequests.add(request)
+      if (!actionRequest) {
+        actionRequest = request
+        if (firstRequestTimer) clearTimeout(firstRequestTimer)
+        resolveFirstRequest(request)
+      } else {
+        ambiguous = true
+      }
+      settle()
+    },
+    observeResponse: (completedResponse: Response) => {
+      if (!options.responseMatches(completedResponse)) return
+      responsesByRequest.set(completedResponse.request(), completedResponse)
+      settle()
+    },
+    close: (snapshot: ActionMarkerSnapshot) => {
+      actionSnapshot = snapshot
+      actionClosed = true
+      settle()
+    },
+    armResponseTimeout: () => {
+      responseTimer = setTimeout(
+        () => rejectResponse(new Error('action response timed out')),
+        options.timeoutMs,
+      )
+    },
+    clearTimers: () => {
+      if (firstRequestTimer) clearTimeout(firstRequestTimer)
+      if (responseTimer) clearTimeout(responseTimer)
+    },
+    assert: (completedResponse: Response, finalSnapshot: ActionMarkerSnapshot) => {
+      if (
+        ambiguous ||
+        completedResponse.request() !== actionRequest ||
+        completedResponse.status() !== 200 ||
+        actionRequests.size !== 1 ||
+        finalSnapshot.actionCount !== 1 ||
+        finalSnapshot.markedRequestCount !== 1
+      ) {
+        throw new Error(options.bindingMessage)
+      }
+    },
+  }
+}
 async function waitForActionMarkerClosed(
   page: Page,
   marker: string,
@@ -501,6 +580,51 @@ function startNavigationEpoch(page: Page): number {
   return navigationEpoch
 }
 
+async function installNavigationRequestIdentity(
+  page: Page,
+  navigationToken: string,
+): Promise<void> {
+  await page.addInitScript(() => {
+    const token = window.name
+    if (!token.startsWith('__nerv_walkthrough_navigation_')) return
+    type WindowWithNavigationMarker = Window & {
+      __nervWalkthroughNavigationMarker?: true
+    }
+    const markerWindow = window as WindowWithNavigationMarker
+    if (markerWindow.__nervWalkthroughNavigationMarker) return
+    markerWindow.__nervWalkthroughNavigationMarker = true
+
+    const originalFetch = window.fetch
+    window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+      const request = new Request(input, init)
+      const headers = new Headers(request.headers)
+      headers.set('x-nerv-walkthrough-navigation', token)
+      return originalFetch.call(this, new Request(request, { headers }))
+    }
+
+    const originalXhrOpen = XMLHttpRequest.prototype.open
+    const originalXhrSend = XMLHttpRequest.prototype.send
+    const xhrMetadata = new WeakMap<XMLHttpRequest, { method: string; url: string }>()
+    XMLHttpRequest.prototype.open = function (
+      method: string,
+      url: string | URL,
+      ...rest: unknown[]
+    ) {
+      xhrMetadata.set(this, { method, url: String(url) })
+      return originalXhrOpen.apply(this, [method, url, ...rest] as never)
+    }
+    XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
+      if (xhrMetadata.has(this)) {
+        this.setRequestHeader('x-nerv-walkthrough-navigation', token)
+      }
+      return originalXhrSend.call(this, body)
+    }
+  })
+  await page.evaluate((token) => {
+    window.name = token
+  }, navigationToken)
+}
+
 function rememberListResponseOwnership(
   page: Page,
   response: Response,
@@ -520,6 +644,8 @@ export async function navigateAndWaitForInitialList(
 ): Promise<{ firstList: Response; navigation: Response | null; navigationEpoch: number }> {
   const timeoutMs = options.timeoutMs ?? 120_000
   const navigationEpoch = startNavigationEpoch(page)
+  const navigationToken = nextActionMarker('navigation')
+  await installNavigationRequestIdentity(page, navigationToken)
   let navigationRequest: Request | undefined
   let documentCommitted = false
   const navigationListRequests = new WeakSet<Request>()
@@ -532,6 +658,7 @@ export async function navigateAndWaitForInitialList(
     if (
       documentCommitted &&
       isListRequest(request, options.listPath) &&
+      request.headers()[NAVIGATION_MARKER_HEADER] === navigationToken &&
       request.frame() === page.mainFrame() &&
       isFrameAtRoute(request.frame(), options.route)
     ) {
@@ -588,105 +715,34 @@ export async function clickRefreshAndWaitForListResponse(
     listPath,
     marker: actionMarker,
   })
-  let refreshRequest: Request | undefined
-  let ambiguousActionRequest = false
-  let actionClosed = false
-  let actionSnapshot: ActionMarkerSnapshot | undefined
-  const actionRequests = new Set<Request>()
-  const responsesByRequest = new Map<Request, Response>()
-  let resolveRefreshedListResponse: (response: Response) => void = () => undefined
-  let rejectRefreshedListResponse: (error: Error) => void = () => undefined
-  let responseTimer: ReturnType<typeof setTimeout> | undefined
-  const refreshedListResponse = new Promise<Response>((resolve, reject) => {
-    resolveRefreshedListResponse = resolve
-    rejectRefreshedListResponse = reject
+  const tracker = createActionResponseTracker({
+    requestMatches: (request) =>
+      isListRequest(request, listPath) && request.headers()[ACTION_MARKER_HEADER] === actionMarker,
+    responseMatches: (response) => isListRequest(response.request(), listPath),
+    timeoutMs,
+    requestTimeoutMessage: 'refresh action did not emit a marked list request',
+    ambiguousMessage:
+      'refresh action emitted more than one marked list request; response ownership is ambiguous',
+    bindingMessage:
+      'refresh response was not bound to the completed request emitted by the refresh action',
+    statusMessage: (status) => `refresh action list request returned HTTP ${status}`,
   })
-  const settleRefreshedListResponse = () => {
-    if (!actionClosed || !refreshRequest || !actionSnapshot) return
-    if (
-      ambiguousActionRequest ||
-      actionRequests.size !== 1 ||
-      actionSnapshot.actionCount !== 1 ||
-      actionSnapshot.markedRequestCount !== 1
-    ) {
-      rejectRefreshedListResponse(
-        new Error(
-          'refresh action emitted more than one marked list request; response ownership is ambiguous',
-        ),
-      )
-      return
-    }
-    const response = responsesByRequest.get(refreshRequest)
-    if (!response) return
-    if (response.status() !== 200) {
-      rejectRefreshedListResponse(
-        new Error(`refresh action list request returned HTTP ${response.status()}`),
-      )
-      return
-    }
-    resolveRefreshedListResponse(response)
-  }
-  const requestObserver = (request: Request) => {
-    if (
-      !isListRequest(request, listPath) ||
-      request.headers()[ACTION_MARKER_HEADER] !== actionMarker
-    ) {
-      return
-    }
-    actionRequests.add(request)
-    if (refreshRequest) {
-      ambiguousActionRequest = true
-    } else {
-      refreshRequest = request
-    }
-    settleRefreshedListResponse()
-  }
-  const responseObserver = (response: Response) => {
-    const request = response.request()
-    if (!isListRequest(request, listPath)) return
-    responsesByRequest.set(request, response)
-    settleRefreshedListResponse()
-  }
+  const requestObserver = tracker.observeRequest
+  const responseObserver = tracker.observeResponse
   page.on('request', requestObserver)
   page.on('response', responseObserver)
-  const refreshedListRequest = page.waitForRequest(
-    (request) =>
-      isListRequest(request, listPath) && request.headers()[ACTION_MARKER_HEADER] === actionMarker,
-    { timeout: timeoutMs },
-  )
   try {
     await refreshButton.click({ timeout: timeoutMs })
-    const request = await refreshedListRequest
-    if (request !== refreshRequest) {
-      throw new Error(
-        'refresh response was not bound to the completed request emitted by the refresh action',
-      )
-    }
-    actionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
-    actionClosed = true
-    settleRefreshedListResponse()
-    responseTimer = setTimeout(
-      () => rejectRefreshedListResponse(new Error('refresh response timed out')),
-      timeoutMs,
-    )
-    const response = await refreshedListResponse
+    await tracker.firstRequest
+    tracker.close(await waitForActionMarkerClosed(page, actionMarker, timeoutMs))
+    tracker.armResponseTimeout()
+    const response = await tracker.response
     const finalActionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
-    if (
-      ambiguousActionRequest ||
-      response.request() !== refreshRequest ||
-      response.status() !== 200 ||
-      actionRequests.size !== 1 ||
-      finalActionSnapshot.actionCount !== 1 ||
-      finalActionSnapshot.markedRequestCount !== 1
-    ) {
-      throw new Error(
-        'refresh response was not bound to the completed request emitted by the refresh action',
-      )
-    }
+    tracker.assert(response, finalActionSnapshot)
     rememberListResponseOwnership(page, response)
     return response
   } finally {
-    if (responseTimer) clearTimeout(responseTimer)
+    tracker.clearTimers()
     page.off('request', requestObserver)
     page.off('response', responseObserver)
     await removeActionRequestMarker(page, actionMarker)
@@ -748,6 +804,7 @@ export type FilterResponseWaitOptions = {
   responseMode: 'server' | 'client'
   initialListResponse?: Response
   initialListNavigationEpoch?: number
+  expectedListQueryFingerprint?: string
   timeoutMs?: number
 }
 
@@ -778,12 +835,15 @@ function isMatchingListResponse(
   listPath: string,
   stableText: string,
   navigationEpoch: number | undefined,
+  expectedQueryFingerprint?: string,
 ): boolean {
   if (!isCurrentOwnedListResponse(page, response, listPath, navigationEpoch)) return false
+  if (expectedQueryFingerprint === undefined) return false
   const url = new URL(response.url())
   return (
     normalizedFilterValue(url.searchParams.get('keyword') ?? '') ===
-    normalizedFilterValue(stableText)
+      normalizedFilterValue(stableText) &&
+    listQueryFingerprint(response.url()) === expectedQueryFingerprint
   )
 }
 
@@ -828,6 +888,7 @@ export async function fillFilterAndWaitForListResponse(
 ): Promise<FilterResponseWaitResult> {
   const filter = page.getByLabel(options.filterLabel)
   const currentFilterValue = await filter.inputValue()
+  const expectedQueryFingerprint = options.expectedListQueryFingerprint
   const initialResponseMatchesCurrentFilter =
     normalizedFilterValue(currentFilterValue) === normalizedFilterValue(options.stableText) &&
     isMatchingListResponse(
@@ -836,6 +897,7 @@ export async function fillFilterAndWaitForListResponse(
       options.listPath,
       options.stableText,
       options.initialListNavigationEpoch,
+      expectedQueryFingerprint,
     )
   if (
     isFilterAlreadyApplied(options.route, currentFilterValue, options.stableText) &&
@@ -879,134 +941,57 @@ export async function fillFilterAndWaitForListResponse(
       'server filter requires an owned HTTP 200 initial list response from the current navigation',
     )
   }
-  const expectedQueryFingerprint = listQueryFingerprint(baselineResponse.url())
+  const actionQueryFingerprint =
+    expectedQueryFingerprint ?? listQueryFingerprint(baselineResponse.url())
   const actionMarker = nextActionMarker('filter')
   // A non-200 response is terminal for this explicit fill. A later background request has no
   // fill-event ownership and is never inferred to be a retry.
   await installActionRequestMarker(page, filter, {
     eventName: 'input',
     expectedKeyword: options.stableText,
-    expectedQueryFingerprint,
+    expectedQueryFingerprint: actionQueryFingerprint,
     listPath: options.listPath,
     marker: actionMarker,
   })
-  let fillRequest: Request | undefined
-  let ambiguousActionRequest = false
-  const fillRequests = new Set<Request>()
-  const responsesByRequest = new Map<Request, Response>()
-  let actionClosed = false
-  let actionSnapshot: ActionMarkerSnapshot | undefined
-  let resolveFilteredListResponse: (response: Response) => void = () => undefined
-  let rejectFilteredListResponse: (error: Error) => void = () => undefined
-  let responseTimer: ReturnType<typeof setTimeout> | undefined
-  const filteredListResponse = new Promise<Response>((resolve, reject) => {
-    resolveFilteredListResponse = resolve
-    rejectFilteredListResponse = reject
-  })
-  const settleFilteredListResponse = () => {
-    if (!actionClosed || !fillRequest || !actionSnapshot) return
-    if (
-      ambiguousActionRequest ||
-      fillRequests.size !== 1 ||
-      actionSnapshot.actionCount !== 1 ||
-      actionSnapshot.markedRequestCount !== 1
-    ) {
-      rejectFilteredListResponse(
-        new Error(
-          'filter response was not bound to the completed request emitted by the fill action',
-        ),
-      )
-      return
-    }
-    const response = responsesByRequest.get(fillRequest)
-    if (!response) return
-    if (response.status() !== 200) {
-      rejectFilteredListResponse(
-        new Error(`filter action list request returned HTTP ${response.status()}`),
-      )
-      return
-    }
-    resolveFilteredListResponse(response)
-  }
-  const requestObserver = (request: Request) => {
-    if (
-      !isMatchingFilterRequest(
-        request,
-        options.listPath,
-        options.stableText,
-        expectedQueryFingerprint,
-      ) ||
-      request.headers()[ACTION_MARKER_HEADER] !== actionMarker
-    ) {
-      return
-    }
-    if (!fillRequest) {
-      fillRequest = request
-      fillRequests.add(request)
-      return
-    }
-    fillRequests.add(request)
-    ambiguousActionRequest = true
-    settleFilteredListResponse()
-  }
-  const responseObserver = (response: Response) => {
-    const request = response.request()
-    if (
-      !isMatchingFilterRequest(
-        request,
-        options.listPath,
-        options.stableText,
-        expectedQueryFingerprint,
-      )
-    ) {
-      return
-    }
-    responsesByRequest.set(request, response)
-    settleFilteredListResponse()
-  }
-  page.on('request', requestObserver)
-  page.on('response', responseObserver)
-  const filteredListRequest = page.waitForRequest(
-    (request) =>
+  const tracker = createActionResponseTracker({
+    requestMatches: (request) =>
       isMatchingFilterRequest(
         request,
         options.listPath,
         options.stableText,
-        expectedQueryFingerprint,
+        actionQueryFingerprint,
       ) && request.headers()[ACTION_MARKER_HEADER] === actionMarker,
-    { timeout: timeoutMs },
-  )
+    responseMatches: (response) =>
+      isMatchingFilterRequest(
+        response.request(),
+        options.listPath,
+        options.stableText,
+        actionQueryFingerprint,
+      ),
+    timeoutMs,
+    requestTimeoutMessage: 'filter action did not emit a marked list request',
+    ambiguousMessage:
+      'filter response was not bound to the completed request emitted by the fill action',
+    bindingMessage:
+      'filter response was not bound to the completed request emitted by the fill action',
+    statusMessage: (status) => `filter action list request returned HTTP ${status}`,
+  })
+  const requestObserver = tracker.observeRequest
+  const responseObserver = tracker.observeResponse
+  page.on('request', requestObserver)
+  page.on('response', responseObserver)
   try {
     await filter.fill(options.stableText)
-    const request = await filteredListRequest
-    if (request !== fillRequest) {
-      throw new Error('filter response was not bound to the request emitted by the fill action')
-    }
-    actionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
-    actionClosed = true
-    settleFilteredListResponse()
-    responseTimer = setTimeout(
-      () => rejectFilteredListResponse(new Error('filter response timed out')),
-      timeoutMs,
-    )
-    const response = await filteredListResponse
+    await tracker.firstRequest
+    tracker.close(await waitForActionMarkerClosed(page, actionMarker, timeoutMs))
+    tracker.armResponseTimeout()
+    const response = await tracker.response
     const finalActionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
-    if (
-      ambiguousActionRequest ||
-      response.request() !== fillRequest ||
-      response.status() !== 200 ||
-      fillRequests.size !== 1 ||
-      finalActionSnapshot.actionCount !== 1 ||
-      finalActionSnapshot.markedRequestCount !== 1
-    ) {
-      throw new Error(
-        'filter response was not bound to the completed request emitted by the fill action',
-      )
-    }
+    tracker.assert(response, finalActionSnapshot)
     rememberListResponseOwnership(page, response)
     return { waitedForResponse: true, reason: 'server-response' }
   } finally {
-    if (responseTimer) clearTimeout(responseTimer)
+    tracker.clearTimers()
     page.off('request', requestObserver)
     page.off('response', responseObserver)
     await removeActionRequestMarker(page, actionMarker)

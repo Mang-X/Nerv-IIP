@@ -4,6 +4,7 @@ import {
   clickRefreshAndWaitForListResponse,
   clickTabAndConfirmUnmount,
   fillFilterAndWaitForListResponse,
+  listQueryFingerprint,
   navigateAndWaitForInitialList,
   RequestFailureEvidenceTracker,
 } from './issue1912-walkthrough-policy'
@@ -95,11 +96,73 @@ test.describe('walkthrough filter response boundary', () => {
       responseMode: 'server',
       initialListResponse: firstList,
       initialListNavigationEpoch: navigationEpoch,
+      expectedListQueryFingerprint: listQueryFingerprint(firstList.url()),
       timeoutMs: 500,
     })
 
     expect(result).toEqual({ waitedForResponse: false, reason: 'already-applied' })
     expect(queries).toEqual(['SO-WALK-001'])
+  })
+
+  test('URL 同值但初始 200 的环境与分页 fingerprint 错误时仍等待目标响应', async ({ page }) => {
+    const fingerprintFixturePath = '/issue1912-filter-fingerprint-fixture'
+    const fingerprintListPath = '/api/issue1912-filter-fingerprint-list'
+    const queries: string[] = []
+    const expectedQuery = {
+      organizationId: 'org-live',
+      environmentId: 'env-live',
+      status: 'open',
+      skip: '0',
+      take: '10',
+    }
+
+    await page.route(`**${fingerprintFixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <meta charset="utf-8">
+          <label for="fingerprint-filter">关键字搜索</label>
+          <input id="fingerprint-filter" value="SO-WALK-001">
+          <script>
+            const input = document.querySelector('input')
+            input.value = 'SO-WALK-001'
+            const initial = '${fingerprintListPath}?keyword=SO-WALK-001&organizationId=org-stale&environmentId=env-stale&status=open&skip=0&take=999'
+            const target = value => '${fingerprintListPath}?keyword=' + encodeURIComponent(value) + '&organizationId=org-live&environmentId=env-live&status=open&skip=0&take=10'
+            void fetch(initial)
+            input.addEventListener('input', event => void fetch(target(event.target.value)))
+          </script>`,
+      }),
+    )
+    await page.route(`**${fingerprintListPath}*`, async (route) => {
+      queries.push(route.request().url())
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: 'SO-WALK-001' }] }),
+      })
+    })
+
+    const { firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
+      route: `${fingerprintFixturePath}?keyword=SO-WALK-001`,
+      listPath: fingerprintListPath,
+      timeoutMs: 2_000,
+    })
+    const result = await fillFilterAndWaitForListResponse(page, {
+      route: page.url(),
+      listPath: fingerprintListPath,
+      filterLabel: '关键字搜索',
+      stableText: 'SO-WALK-001',
+      responseMode: 'server',
+      initialListResponse: firstList,
+      initialListNavigationEpoch: navigationEpoch,
+      expectedListQueryFingerprint: listQueryFingerprint(
+        `http://walkthrough.fixture${fingerprintListPath}?keyword=SO-WALK-001&${new URLSearchParams(expectedQuery)}`,
+      ),
+      timeoutMs: 500,
+    })
+    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(queries).toHaveLength(2)
+    expect(new URL(queries[1]).searchParams.get('environmentId')).toBe('env-live')
+    expect(new URL(queries[1]).searchParams.get('take')).toBe('10')
   })
 
   test('初始列表响应已完成但 URL 未携带 keyword 时不重复等待', async ({ page }) => {
@@ -133,6 +196,7 @@ test.describe('walkthrough filter response boundary', () => {
       responseMode: 'server',
       initialListResponse: firstList,
       initialListNavigationEpoch: navigationEpoch,
+      expectedListQueryFingerprint: listQueryFingerprint(firstList.url()),
       timeoutMs: 500,
     })
 
@@ -244,6 +308,7 @@ test.describe('walkthrough filter response boundary', () => {
     const navigationFixturePath = '/issue1912-navigation-ownership-fixture'
     const navigationListPath = '/api/issue1912-navigation-ownership-list'
     const queries: string[] = []
+    const navigationTokens: Array<string | undefined> = []
     let documentLoads = 0
     let releaseSecondDocument: () => void = () => undefined
     const secondDocumentReleased = new Promise<void>((resolve) => {
@@ -273,6 +338,7 @@ test.describe('walkthrough filter response boundary', () => {
       const url = new URL(route.request().url())
       const source = url.searchParams.get('source') ?? ''
       queries.push(source)
+      navigationTokens.push(route.request().headers()['x-nerv-walkthrough-navigation'])
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({ items: [{ code: 'SO-WALK-001', source }] }),
@@ -305,6 +371,10 @@ test.describe('walkthrough filter response boundary', () => {
     const current = await secondNavigation
     expect(new URL(current.firstList.url()).searchParams.get('source')).toBe('document-2')
     expect(queries).toEqual(['document-1', 'old-poll-during-navigation', 'document-2'])
+    expect(navigationTokens[0]).toBeTruthy()
+    expect(navigationTokens[1]).toBe(navigationTokens[0])
+    expect(navigationTokens[2]).toBeTruthy()
+    expect(navigationTokens[2]).not.toBe(navigationTokens[0])
   })
 
   test('真正变更筛选值时仍等待 200 列表响应', async ({ page }) => {
@@ -836,6 +906,68 @@ test.describe('walkthrough filter response boundary', () => {
     expect(revisions).toEqual(expect.arrayContaining(['after-window', 'fresh']))
     expect(markersByRevision.get('after-window')).toBeUndefined()
     expect(markersByRevision.get('fresh')).toBeTruthy()
+  })
+
+  test('生成 client 的异步 auth 与 request interceptor 仍携带本次 click action context', async ({
+    page,
+  }) => {
+    const refreshFixturePath = '/issue1912-refresh-async-client-fixture'
+    const refreshPath = '/api/issue1912-refresh-async-client-list'
+    let observedMarker: string | undefined
+
+    await page.route(`**${refreshFixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <meta charset="utf-8">
+          <button type="button">刷新</button>
+          <script>
+            const microtaskHops = async count => {
+              for (let index = 0; index < count; index++) await Promise.resolve()
+            }
+            const getToken = async () => {
+              await microtaskHops(4)
+              return 'token'
+            }
+            const setAuthParams = async options => {
+              const token = await getToken()
+              options.headers.set('Authorization', 'Bearer ' + token)
+            }
+            const requestInterceptor = async request => {
+              await microtaskHops(4)
+              return new Request(request, { headers: request.headers })
+            }
+            const generatedClientGet = async () => {
+              const fetchImpl = globalThis.fetch
+              const options = { headers: new Headers() }
+              await setAuthParams(options)
+              let request = new Request('${refreshPath}?revision=async-client', {
+                headers: options.headers,
+              })
+              request = await requestInterceptor(request)
+              await microtaskHops(4)
+              await new Promise(resolve => setTimeout(resolve, 0))
+              return fetchImpl(request)
+            }
+            document.querySelector('button').addEventListener('click', () => {
+              void generatedClientGet()
+            })
+          </script>`,
+      }),
+    )
+    await page.route(`**${refreshPath}*`, async (route) => {
+      observedMarker = route.request().headers()['x-nerv-walkthrough-action']
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ revision: 'async-client' }),
+      })
+    })
+
+    await page.goto(refreshFixturePath)
+    const refreshed = await clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)
+
+    expect(new URL(refreshed.url()).searchParams.get('revision')).toBe('async-client')
+    expect(observedMarker).toBeTruthy()
   })
 
   test('刷新首个 marked 请求响应等待期间晚到 duplicate 时失败关闭', async ({ page }) => {
