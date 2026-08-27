@@ -84,6 +84,11 @@
       "sourceType": "local",
       "computedHash": "5cba8bf15f80dc19a0b43f897d79e6e6f4b39b2ed0067a65c97aa7e8d8ad3d02"
     },
+    "nerv-task-delivery": {
+      "source": "./skills/nerv-task-delivery",
+      "sourceType": "local",
+      "computedHash": "3ec96ed3939b23c894b3fe16077ff2a29a484a6a53033067cc07633a82ee415d"
+    },
     "obscura-browser": {
       "source": "MangMax/obscura-browser-skill",
       "sourceType": "github",
