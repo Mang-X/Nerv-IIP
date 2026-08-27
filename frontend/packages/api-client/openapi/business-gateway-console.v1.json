@@ -8941,6 +8941,94 @@
         ]
       }
     },
+    "/api/business-console/v1/quality/scrap-reason-codes": {
+      "get": {
+        "tags": [
+          "Business Console Quality",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleQualityScrapReasonCodes",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/quality/reason-codes/{reasonCode}": {
       "get": {
         "tags": [
@@ -15857,6 +15945,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "operationTaskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -15924,6 +16020,87 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "returnBusinessConsoleMesLineSideMaterial",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesReturnLineSideMaterialRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest"
               }
             }
           },
@@ -16167,6 +16344,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -17787,6 +17974,61 @@
         ]
       }
     },
+    "/api/business-console/v2/mes/defects": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "recordBusinessConsoleMesDefectV2",
+        "requestBody": {
+          "x-name": "BusinessConsoleMesRecordDefectV2Request",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/related-quality-items": {
       "get": {
         "tags": [
@@ -18362,12 +18604,77 @@
           "x-position": 1
         },
         "responses": {
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v2/mes/downtime-events": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "recordBusinessConsoleMesDowntimeEventV2",
+        "requestBody": {
+          "x-name": "BusinessConsoleMesRecordDowntimeEventV2Request",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -19157,6 +19464,499 @@
           },
           "403": {
             "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/line-side-inventory-balances": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleMesLineSideInventoryBalances",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "siteCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "locationCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skuCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "asOfDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "nullable": false
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/work-orders/{workOrderId}/split": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "splitBusinessConsoleMesWorkOrder",
+        "parameters": [
+          {
+            "name": "workOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesSplitWorkOrderRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSplitWorkOrderRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/work-orders/merge": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "mergeBusinessConsoleMesWorkOrders",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesMergeWorkOrdersRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMergeWorkOrdersRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/work-order-transformations/{transformationId}": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleMesWorkOrderTransformation",
+        "parameters": [
+          {
+            "name": "transformationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationReadbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -29002,6 +29802,61 @@
         ]
       }
     },
+    "/api/business-console/v1/barcode/resolve": {
+      "post": {
+        "tags": [
+          "Business Console Barcode",
+          "Api"
+        ],
+        "operationId": "resolveBusinessConsoleBarcode",
+        "requestBody": {
+          "x-name": "BusinessConsoleBarcodeResolveRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/approval/templates": {
       "get": {
         "tags": [
@@ -30147,8 +31002,15 @@
             "type": "string"
           },
           "code": {
-            "type": "integer",
-            "format": "int32"
+            "oneOf": [
+              {
+                "type": "integer",
+                "format": "int32"
+              },
+              {
+                "type": "string"
+              }
+            ]
           },
           "errorData": {
             "type": "array",
@@ -38689,6 +39551,10 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonItem": {
         "allOf": [
           {
@@ -44073,6 +44939,18 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "actualLaborHours": {
+            "type": "number",
+            "description": "工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
+          },
+          "actualMachineHours": {
+            "type": "number",
+            "description": "工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -44756,6 +45634,13 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "isSupplementary": {
+            "type": "boolean"
+          },
+          "originalMaterialIssueRequestNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -44791,6 +45676,10 @@
             }
           },
           "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supplementaryCount": {
             "type": "integer",
             "format": "int32"
           }
@@ -44885,10 +45774,17 @@
           "materialCode": {
             "type": "string",
             "nullable": true
+          },
+          "isSupplementary": {
+            "type": "boolean"
+          },
+          "originalMaterialIssueRequestNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -44914,6 +45810,28 @@
           },
           "idempotencyKey": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
+        "properties": {
+          "returnedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "returnedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },
@@ -45097,6 +46015,26 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workerId": {
+            "type": "string"
+          },
+          "sharePercent": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -45329,6 +46267,10 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportListResponse": {
         "allOf": [
           {
@@ -45429,6 +46371,18 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "operationActualLaborHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
+          },
+          "operationActualMachineHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -45468,6 +46422,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot"
+            }
+          },
+          "laborAllocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation"
             }
           }
         }
@@ -45556,6 +46516,18 @@
           "reversalReportNo": {
             "type": "string",
             "nullable": true
+          },
+          "operationActualLaborHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
+          },
+          "operationActualMachineHours": {
+            "type": "number",
+            "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -45578,6 +46550,27 @@
           },
           "materialIssueRequestNo": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workerId": {
+            "type": "string"
+          },
+          "workerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "sharePercent": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "allocatedLaborTicks": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -45952,6 +46945,77 @@
           },
           "idempotencyKey": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workOrderId",
+          "defectCode",
+          "quantity",
+          "recordedAtUtc",
+          "idempotencyKey",
+          "scopeKind",
+          "scopeId"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "operationTaskId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": true
+          },
+          "defectCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "minLength": 1,
+            "nullable": false,
+            "exclusiveMinimum": true
+          },
+          "recordedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeKind": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -46487,11 +47551,6 @@
             "type": "string",
             "format": "date-time"
           },
-          "unitCost": {
-            "type": "number",
-            "format": "decimal",
-            "nullable": true
-          },
           "idempotencyKey": {
             "type": "string"
           },
@@ -46660,6 +47719,94 @@
           },
           "idempotencyKey": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "workOrderId",
+          "workCenterId",
+          "reasonCode",
+          "startedAtUtc",
+          "idempotencyKey",
+          "scopeKind",
+          "scopeId"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "workOrderId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "operationTaskId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": true
+          },
+          "reasonCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeKind": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "toUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -47097,6 +48244,391 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsInventoryLineSideInventoryBalancesResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsInventoryLineSideInventoryBalancesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsInventoryLineSideInventoryBalanceItem"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "asOfDate": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "NervIIPContractsInventoryLineSideInventoryBalanceItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "siteCode": {
+            "type": "string"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "onHandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reservedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "availableQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "lotCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "oldestProductionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "ageDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ageCompleteness": {
+            "$ref": "#/components/schemas/NervIIPContractsInventoryLineSideInventoryAgeCompleteness"
+          }
+        }
+      },
+      "NervIIPContractsInventoryLineSideInventoryAgeCompleteness": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Complete",
+          "Partial",
+          "Unavailable"
+        ],
+        "enum": [
+          "complete",
+          "partial",
+          "unavailable"
+        ]
+      },
+      "NervIIPContractsInventoryLineSideInventoryBalancesRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationMutationResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationMutationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accepted",
+          "transformationId",
+          "type",
+          "sourceWorkOrderIds",
+          "targetWorkOrderIds",
+          "isIdempotentReplay",
+          "operationReceipt"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "transformationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceWorkOrderIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetWorkOrderIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isIdempotentReplay": {
+            "type": "boolean"
+          },
+          "operationReceipt": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSplitWorkOrderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "targets",
+          "reason",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "targets": {
+            "type": "array",
+            "nullable": false,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationTargetRequest"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 0,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationTargetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workOrderId",
+          "quantity"
+        ],
+        "properties": {
+          "workOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMergeWorkOrdersRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceWorkOrderIds",
+          "targetWorkOrderId",
+          "reason",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "sourceWorkOrderIds": {
+            "type": "array",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false,
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetWorkOrderId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 0,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationReadbackResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "transformationId",
+          "type",
+          "idempotencyKey",
+          "actor",
+          "reason",
+          "occurredAtUtc",
+          "lines"
+        ],
+        "properties": {
+          "transformationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationLineResponse"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationLineResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceWorkOrderId",
+          "targetWorkOrderId",
+          "quantity",
+          "uomCode",
+          "sourceStatus",
+          "targetStatus",
+          "sourceVersion",
+          "targetVersion"
+        ],
+        "properties": {
+          "sourceWorkOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetWorkOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceStatus": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetStatus": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "targetVersion": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceListResponse": {
         "allOf": [
           {
@@ -47341,6 +48873,34 @@
           },
           "phone": {
             "type": "string",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "crossesMidnight": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "paidMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "breakMinutes": {
+            "type": "integer",
+            "format": "int32",
             "nullable": true
           }
         }
@@ -57730,6 +59290,115 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeScanListRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "objectType": {
+            "type": "string"
+          },
+          "strongIds": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "authority": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "scannedValue"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scannedValue": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "pageIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1.0
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 100.0,
+            "minimum": 1.0
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalTemplateListResponse": {
         "allOf": [

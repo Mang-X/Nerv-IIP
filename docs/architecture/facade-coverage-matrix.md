@@ -72,23 +72,23 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | 服务                |   总数 | exposed | deferred | internal |
 | ------------------- | ------: | ------: | -------: | -------: |
 | Approval            |      16 |      11 |        4 |        1 |
-| BarcodeLabel        |      12 |       9 |        0 |        3 |
+| BarcodeLabel        |      13 |      10 |        0 |        3 |
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
-| Inventory           |      18 |      12 |        1 |        5 |
+| Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      50 |      41 |        5 |        4 |
-| Mes                 |      55 |      54 |        1 |        0 |
+| Mes                 |      59 |      58 |        0 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
-| Quality             |      41 |      29 |       12 |        0 |
+| Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **419** | **347** |   **47** |   **25** |
+| **Total**           | **426** | **354** |   **46** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（347）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（354）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和
@@ -121,6 +121,19 @@ principal、scope 和已授权 site 事实前检查各自 receipts、shipments �
 MasterData/Inventory 库位目录或完整批次目录。本行是这三个公开 operation 的两跳证据；服务 endpoint 不是三份
 独立的公开契约。
 
+对于 #1179 条码解析，BarcodeLabel `resolveBusinessBarcode` 只从自身生成且未作废的标签事实解析来源单据；
+BusinessGateway `resolveBusinessConsoleBarcode` 将来源映射为稳定 `objectType`、`strongIds`、`authority`、
+`source` 与 `observedAtUtc`，不返回前端 route。MES 工序候选必须通过 MES 权威读面补齐成对的
+`workOrderId` 与 `operationTaskId`；无法唯一配对时失效关闭。
+
+对于 #2219 实际工时读取契约，MES `GET /api/business/v1/mes/operation-tasks`、
+`GET /api/business/v1/mes/production-reports` 与
+`GET /api/business/v1/mes/production-reports/{reportNo}` 继续分类为 `exposed`，分别由
+BusinessGateway `listBusinessConsoleMesOperationTasks`、`listBusinessConsoleMesProductionReports` 与
+`getBusinessConsoleMesProductionReport` 暴露。facade 保留工序的 `actualLaborHours` / `actualMachineHours`
+以及报工列表和详情的 `operationActualLaborHours` / `operationActualMachineHours`；尚无冻结
+实绩时字段必须存在且值为 `null`，不得以序列化省略替代。
+
 ### 延后 endpoint（facade 已跟踪，尚未暴露）
 
 | 服务                | 方法   | 服务 route                                                                                      | 后续事项                                                                                                                                                                          |
@@ -147,7 +160,9 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | Maintenance         | PUT    | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |
 | Maintenance         | POST   | `/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started`                         | BusinessGateway facade 待交付；维修开始操作跟随 CMMS 执行的 Business Console 菜单阶段。                                                                                               |
 | MasterData          | GET    | `/api/business/v1/master-data/tooling-assets`                                                   | BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。                                                                                                                           |
-| Mes                 | POST   | `/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns`                    | BusinessGateway facade 待交付；线边退料跟随 MES 物料工作台菜单阶段。                                                                                                                  |
+| Mes                 | POST   | `/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns`                    | 已通过 BusinessGateway `returnBusinessConsoleMesLineSideMaterial` 暴露，供 Console/PDA 线边退料入口使用。                                                                                   |
+| Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/close`                                          | BusinessGateway facade 待交付；MES 工单关闭跟随工作台关闭操作菜单阶段（暂挂/取消已通过 #833 暴露）。                                                                                   |
+| Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions`                   | BusinessGateway facade 待交付；工单工程变更决策跟随工单 ECO 菜单阶段。                                                                                                                |
 | Quality             | POST   | `/api/business/v1/quality/capas`                                                                | BusinessGateway CAPA 管理 facade 由 #677 跟踪，并解锁前端 #804。                                                                                                                       |
 | Quality             | POST   | `/api/business/v1/quality/capas/{correctiveActionId}/actions`                                   | BusinessGateway CAPA 管理 facade 由 #677 跟踪，并解锁前端 #804。                                                                                                                       |
 | Quality             | POST   | `/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete` | BusinessGateway CAPA 管理 facade 由 #677 跟踪，并解锁前端 #804。                                                                                                                       |

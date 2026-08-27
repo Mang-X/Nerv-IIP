@@ -1,0 +1,118 @@
+{
+  "schema": 1,
+  "project": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
+  "toolchain": {
+    "sdk": "10.0.302",
+    "tfm": "net10.0",
+    "referencePack": {
+      "id": "Microsoft.NETCore.App.Ref",
+      "version": "10.0.10",
+      "tfm": "net10.0"
+    },
+    "roslynPackages": {
+      "Microsoft.CodeAnalysis": "5.0.0",
+      "Microsoft.CodeAnalysis.CSharp": "5.0.0"
+    }
+  },
+  "inputs": [
+    {
+      "path": "NuGet.config",
+      "sha256": "52c7f96825b0a216601d0e9a2744ddc7bc2cee304261e3daf8c06bf34b8134ec"
+    },
+    {
+      "path": "backend/Directory.Packages.props",
+      "sha256": "429d195f85b2fb3eeae83ba2af7773b4f3635584666f23060db51670933f4146"
+    },
+    {
+      "path": "backend/Directory.Build.props",
+      "sha256": "d1dcde1e1709c5118aa07a4fef2763210819096b1274c0ae492dc296fbce80f5"
+    },
+    {
+      "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
+      "sha256": "d2b428b10ef2de00bdad44d310a52472c3af6aa3f42010c139d530f246ce2ae4"
+    },
+    {
+      "path": "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
+      "sha256": "bdef794617438a7d575db5dc5fd080a69e932a072f2f7c8a4ee4af600057e49f"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Coding/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.EquipmentRuntime/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Erp/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Localization/Nerv.IIP.Localization/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
+      "sha256": "9a11739321ad0063966818aa49fea856f2d0b59664463aeaaa7d7cbf7276b7b2"
+    },
+    {
+      "path": "backend/common/Sdk/Nerv.IIP.Sdk.Core/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
+      "sha256": "fe2e9ff7b5d882097e044deae9e8d807d72cf0084e8cff3797ab23a1105f968a"
+    }
+  ],
+  "lock": {
+    "paths": [
+      "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Coding/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.EquipmentRuntime/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Erp/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/packages.lock.json",
+      "backend/common/Localization/Nerv.IIP.Localization/packages.lock.json",
+      "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
+      "backend/common/Sdk/Nerv.IIP.Sdk.Core/packages.lock.json",
+      "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/packages.lock.json",
+      "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json"
+    ],
+    "nugetSchemaVersion": 2,
+    "targets": [
+      "net10.0"
+    ]
+  }
+}

@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.ServiceAuth;
 using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
@@ -27,7 +28,8 @@ public sealed record MesMaterialRequirementSnapshotLine(
     string UomCode,
     decimal AvailableQuantity,
     decimal StagedQuantity,
-    string SourceSnapshotId);
+    string SourceSnapshotId,
+    IReadOnlyCollection<string> SubstituteMaterialIds);
 
 public enum MesMaterialRequirementSnapshotStatus
 {
@@ -169,13 +171,20 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             {
                 var yieldRate = x.YieldRate <= 0m ? 1m : x.YieldRate;
                 var requiredQuantity = request.WorkOrderQuantity * x.Quantity * (1m + x.ScrapRate) / yieldRate;
-                return new MaterialRequirementLineDraft(x.SkuCode, x.UnitOfMeasureCode, requiredQuantity);
+                return new MaterialRequirementLineDraft(
+                    x.SkuCode,
+                    x.UnitOfMeasureCode,
+                    requiredQuantity,
+                    ParseSubstituteMaterialIds(x.SkuCode, x.SubstituteSkuCodes));
             })
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.UomCode.ToUpperInvariant()}", StringComparer.Ordinal)
             .Select(x => new MaterialRequirementLineDraft(
                 x.First().MaterialId,
                 x.First().UomCode,
-                x.Sum(y => y.RequiredQuantity)))
+                x.Sum(y => y.RequiredQuantity),
+                MaterialSubstituteCandidateNormalizer.Normalize(
+                    x.First().MaterialId,
+                    x.SelectMany(y => y.SubstituteMaterialIds))))
             .ToArray();
         if (requiredLines.Length == 0)
         {
@@ -200,7 +209,8 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 line.UomCode,
                 availableQuantity,
                 0m,
-                $"{selectedVersion.MbomVersionId}:{line.MaterialId}"));
+                $"{selectedVersion.MbomVersionId}:{line.MaterialId}",
+                line.SubstituteMaterialIds));
         }
 
         return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}", lines);
@@ -464,6 +474,14 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         return standalone.Concat(selectedAlternates).ToArray();
     }
 
+    private static IReadOnlyCollection<string> ParseSubstituteMaterialIds(
+        string materialId,
+        string? substituteSkuCodes) =>
+        MaterialSubstituteCandidateNormalizer.Normalize(
+            materialId,
+            (substituteSkuCodes ?? string.Empty)
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
     private static bool TryParseVersionReference(string versionId, out string code, out string revision)
     {
         code = string.Empty;
@@ -542,7 +560,11 @@ internal sealed record ManufacturingBomRecipeLineItem(string ParameterCode, stri
 
 internal sealed record StockAvailabilityResponse(decimal AvailableQuantity);
 
-internal sealed record MaterialRequirementLineDraft(string MaterialId, string UomCode, decimal RequiredQuantity);
+internal sealed record MaterialRequirementLineDraft(
+    string MaterialId,
+    string UomCode,
+    decimal RequiredQuantity,
+    IReadOnlyCollection<string> SubstituteMaterialIds);
 
 internal sealed record MasterDataResourceListResponse(
     IReadOnlyCollection<MasterDataResourceListItem> Resources,

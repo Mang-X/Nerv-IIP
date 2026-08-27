@@ -13,6 +13,7 @@ export {
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  returnBusinessConsoleMesLineSideMaterialMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   cancelBusinessConsolePlanningDemandMutationOptions,
   createBusinessConsoleApprovalDelegationMutationOptions,
@@ -193,6 +194,7 @@ export {
   listBusinessConsoleNotificationTasksQueryOptions,
   markBusinessConsoleNotificationMessageReadMutationOptions,
   recordBusinessConsoleBarcodeScanMutationOptions,
+  resolveBusinessConsoleBarcodeMutationOptions,
   recordBusinessConsoleTelemetrySampleMutationOptions,
   releaseBusinessConsoleSchedulingPlanMutationOptions,
   revokeBusinessConsoleSchedulingPlanMutationOptions,
@@ -265,6 +267,9 @@ export {
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
+  splitBusinessConsoleMesWorkOrderMutationOptions,
+  mergeBusinessConsoleMesWorkOrdersMutationOptions,
+  getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
   listBusinessConsolePlanningMpsBucketsQueryOptions,
   listBusinessConsolePlanningMrpRunsQueryOptions,
@@ -274,6 +279,7 @@ export {
   getBusinessConsoleQualityNcrQueryOptions,
   getBusinessConsoleQualityInspectionRecordQueryOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions,
+  listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   getBusinessConsoleQualityReasonCodeQueryOptions,
   queryBusinessConsoleQualityProcessCapabilityQueryOptions,
   queryBusinessConsoleQualitySpcControlChartQueryOptions,
@@ -286,7 +292,9 @@ export {
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
+  recordBusinessConsoleMesDefectV2MutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resolveBusinessConsoleEngineeringProductionVersionQueryOptions,
@@ -356,6 +364,7 @@ export {
   confirmBusinessConsoleInventoryCountAdjustment,
   confirmBusinessConsoleMesDowntimeRecovery,
   confirmBusinessConsoleMesLineSideMaterialReceipt,
+  returnBusinessConsoleMesLineSideMaterial,
   convertBusinessConsoleMesPlanToWorkOrder,
   cancelBusinessConsolePlanningDemand,
   createBusinessConsoleApprovalDelegation,
@@ -525,6 +534,9 @@ export {
   listBusinessConsoleMesScheduleResults,
   listBusinessConsoleMesShiftHandovers,
   listBusinessConsoleMesWorkOrders,
+  splitBusinessConsoleMesWorkOrder,
+  mergeBusinessConsoleMesWorkOrders,
+  getBusinessConsoleMesWorkOrderTransformation,
   listBusinessConsolePlanningDemands,
   listBusinessConsolePlanningMpsBuckets,
   listBusinessConsolePlanningMrpRuns,
@@ -532,6 +544,7 @@ export {
   listBusinessConsoleQualityInspectionPlans,
   listBusinessConsoleQualityNcrs,
   listBusinessConsoleQualityReasonCodes,
+  listBusinessConsoleQualityScrapReasonCodes,
   queryBusinessConsoleQualityProcessCapability,
   queryBusinessConsoleQualitySpcControlChart,
   listBusinessConsoleQualitySpcControlCharts,
@@ -543,7 +556,9 @@ export {
   pauseBusinessConsoleMesOperationTask,
   postBusinessConsoleInventoryMovement,
   recordBusinessConsoleMesDefect,
+  recordBusinessConsoleMesDefectV2,
   recordBusinessConsoleMesDowntimeEvent,
+  recordBusinessConsoleMesDowntimeEventV2,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrder,
   createOrUpdateBusinessConsoleTelemetryAlarmRule,
@@ -559,6 +574,7 @@ export {
   listBusinessConsoleNotificationTasks,
   markBusinessConsoleNotificationMessageRead,
   recordBusinessConsoleBarcodeScan,
+  resolveBusinessConsoleBarcode,
   recordBusinessConsoleTelemetrySample,
   releaseBusinessConsoleSchedulingPlan,
   revokeBusinessConsoleSchedulingPlan,
@@ -966,6 +982,7 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConvertPlanToWorkOrderRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest,
@@ -999,7 +1016,9 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReadinessArea,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReadinessIssue,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecoverDowntimeEventRequest,
@@ -1090,6 +1109,7 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityProcessCapabilityRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityProcessCapabilityResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonListRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityReasonRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateQualityReasonRequest,
@@ -1207,6 +1227,11 @@ export type {
   NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse as BusinessConsoleNotificationTaskListEnvelope,
   NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse as BusinessConsoleMarkNotificationMessageReadEnvelope,
   RecordBusinessConsoleBarcodeScanData,
+  ResolveBusinessConsoleBarcodeData,
+  ResolveBusinessConsoleBarcodeError,
+  ResolveBusinessConsoleBarcodeErrors,
+  ResolveBusinessConsoleBarcodeResponse,
+  ResolveBusinessConsoleBarcodeResponses,
   RecordBusinessConsoleTelemetrySampleData,
   RegisterBusinessConsoleErpCashReceiptData,
   ReleaseBusinessConsoleSchedulingPlanData,
@@ -1235,6 +1260,10 @@ export type {
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeRuleListResponse as BusinessConsoleBarcodeRuleListEnvelope,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeScanListResponse as BusinessConsoleBarcodeScanListEnvelope,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateListResponse as BusinessConsoleBarcodeTemplateListEnvelope,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse as BusinessConsoleBarcodeResolveEnvelope,
+  NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate as BusinessConsoleBarcodeResolveCandidate,
+  NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest as BusinessConsoleBarcodeResolveRequest,
+  NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse as BusinessConsoleBarcodeResolveResponse,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceSparePartResponse as BusinessConsoleCreateMaintenanceSparePartEnvelope,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse as BusinessConsoleCreateOrUpdateTelemetryAlarmRuleEnvelope,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceSparePartListResponse as BusinessConsoleMaintenanceSparePartListEnvelope,
@@ -1925,6 +1954,8 @@ export type BusinessConsoleMesAssignDispatchTaskRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest
 export type BusinessConsoleMesConfirmLineSideReceiptRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest
+export type BusinessConsoleMesReturnLineSideMaterialRequest =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest
 export type BusinessConsoleMesConvertPlanToWorkOrderRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConvertPlanToWorkOrderRequest
 export type BusinessConsoleMesCreateMaterialIssueRequest =
@@ -1995,8 +2026,12 @@ export type BusinessConsoleMesConsumedMaterialLot =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot
 export type BusinessConsoleMesRecordDefectRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest
+export type BusinessConsoleMesRecordDefectV2Request =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request
 export type BusinessConsoleMesRecordDowntimeEventRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest
+export type BusinessConsoleMesRecordDowntimeEventV2Request =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request
 export type BusinessConsoleMesReadinessArea =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReadinessArea
 export type BusinessConsoleMesReadinessIssue =
@@ -2020,6 +2055,17 @@ export type BusinessConsoleInventorySourceBalance =
 export type BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse
 export type { GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData }
+export type {
+  GetBusinessConsoleMesWorkOrderTransformationData,
+  GetBusinessConsoleMesWorkOrderTransformationErrors,
+  GetBusinessConsoleMesWorkOrderTransformationResponse,
+  MergeBusinessConsoleMesWorkOrdersData,
+  MergeBusinessConsoleMesWorkOrdersErrors,
+  MergeBusinessConsoleMesWorkOrdersResponse,
+  SplitBusinessConsoleMesWorkOrderData,
+  SplitBusinessConsoleMesWorkOrderErrors,
+  SplitBusinessConsoleMesWorkOrderResponse,
+} from './generated/business-console'
 export type BusinessConsoleMesScheduleResult =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult
 export type BusinessConsoleMesScheduleResultListResponse =
@@ -2144,6 +2190,8 @@ export type BusinessConsoleQualitySpcSubgroup =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcSubgroup
 export type BusinessConsoleQualityReasonListRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonListRequest
+export type BusinessConsoleScrapQualityReasonCodeListRequest =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest
 export type BusinessConsoleQualityReasonRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonRequest
 export type BusinessConsoleCreateQualityReasonRequest =
@@ -2498,6 +2546,22 @@ export type SchedulePlanSummary =
 export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow as BusinessConsoleMesTelemetryCandidateRow,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition as BusinessConsoleMesTelemetryCandidateTransition,
+} from './generated/business-console'
+
+// #1964/#2228: Inventory 权威线边余额与账龄，经 MES facade 稳定导出。
+export {
+  listBusinessConsoleMesLineSideInventoryBalances,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
+} from './generated/business-console'
+
+export type {
+  ListBusinessConsoleMesLineSideInventoryBalancesData,
+  ListBusinessConsoleMesLineSideInventoryBalancesError,
+  ListBusinessConsoleMesLineSideInventoryBalancesResponse,
+  NervIipContractsInventoryLineSideInventoryBalanceItem as BusinessConsoleMesLineSideInventoryBalanceItem,
+  NervIipContractsInventoryLineSideInventoryBalancesRequest as BusinessConsoleMesLineSideInventoryBalancesRequest,
+  NervIipContractsInventoryLineSideInventoryBalancesResponse as BusinessConsoleMesLineSideInventoryBalancesResponse,
+  NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse as BusinessConsoleMesLineSideInventoryBalancesEnvelope,
 } from './generated/business-console'
 
 // MAN-632 / #1169: unified owner-backed searchable directory contract.

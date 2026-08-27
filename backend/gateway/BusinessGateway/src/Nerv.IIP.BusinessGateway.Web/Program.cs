@@ -46,6 +46,7 @@ builder.Services
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new BusinessGatewayErrorResponseOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>
@@ -101,6 +102,10 @@ builder.Services.AddHttpClient<IBusinessQualityClient, HttpBusinessQualityClient
 {
     client.BaseAddress = qualityBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessQualityScrapReasonCodeClient, HttpBusinessQualityScrapReasonCodeClient>(client =>
+{
+    client.BaseAddress = qualityBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessProductEngineeringClient, HttpBusinessProductEngineeringClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
@@ -125,6 +130,10 @@ builder.Services.AddHttpClient<IBusinessBarcodeLabelClient, HttpBusinessBarcodeL
 {
     client.BaseAddress = barcodeLabelBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessBarcodeResolverClient, HttpBusinessBarcodeResolverClient>(client =>
+{
+    client.BaseAddress = barcodeLabelBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessNotificationClient, HttpBusinessNotificationClient>(client =>
 {
     client.BaseAddress = notificationBaseAddress;
@@ -134,6 +143,10 @@ builder.Services.AddHttpClient<IBusinessFileStorageClient, HttpBusinessFileStora
     client.BaseAddress = fileStorageBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesWorkOrderTransformationClient, HttpBusinessMesWorkOrderTransformationClient>(client =>
 {
     client.BaseAddress = mesBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();

@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
@@ -342,6 +343,29 @@ public sealed class ListInventoryDirectoryEndpoint(ISender sender)
             req.Keyword,
             req.Skip,
             req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListLineSideInventoryBalancesEndpoint(ISender sender)
+    : InventoryEndpoint<LineSideInventoryBalancesRequest, ResponseData<LineSideInventoryBalancesResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ListLineSideInventoryBalancesEndpoint>());
+    }
+
+    public override async Task HandleAsync(LineSideInventoryBalancesRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListLineSideInventoryBalancesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SiteCode,
+            req.LocationCode,
+            req.SkuCode,
+            req.AsOfDate,
+            req.Page,
+            req.PageSize), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -782,6 +806,7 @@ public static class InventoryEndpointContracts
     public static readonly IReadOnlyCollection<InventoryEndpointContract> All =
     [
         new(typeof(ListInventoryDirectoryEndpoint), "GET", "/api/inventory/v1/directory", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryDirectory"),
+        new(typeof(ListLineSideInventoryBalancesEndpoint), "GET", "/api/inventory/v1/line-side-balances", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryLineSideBalances"),
         new(typeof(CreateOrUpdateStockLocationEndpoint), "POST", "/api/inventory/v1/locations", InventoryPermissionCodes.LocationsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateInventoryLocation"),
         new(typeof(PostStockMovementEndpoint), "POST", "/api/inventory/v1/movements", InventoryPermissionCodes.MovementsCreate, InternalServiceAuthorizationPolicy.Name, "postInventoryMovement"),
         new(typeof(ListStockMovementsEndpoint), "GET", "/api/inventory/v1/movements", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryMovements"),

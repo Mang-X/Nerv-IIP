@@ -9,12 +9,17 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
+using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.ServiceAuth;
+using System.Net;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIssue557ExecutionTests
 {
+    private static readonly TimeProvider AuthorizationClock = new FixedTimeProvider(Utc("2026-06-29T09:00:00Z"));
     [Fact]
     public async Task Operation_action_lock_is_scoped_to_tenant_and_operation_task()
     {
@@ -30,6 +35,70 @@ public sealed class MesIssue557ExecutionTests
 
         Assert.Equal("business-mes:operation-task-action:org-001:env-dev:OP-10", settings.LockKey);
         Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_lock_normalizes_guid_and_request_number_to_the_same_aggregate_key()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_lock_normalizes_guid_and_request_number_to_the_same_aggregate_key));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var lockProvider = new ReturnLineSideMaterialCommandLock(dbContext);
+        var common = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "", Utc("2026-06-29T09:00:00Z"), 1m, "lock-normalization");
+
+        var byGuid = await lockProvider.GetLockKeysAsync(
+            common with { RequestId = materialRequest.Id.Id.ToString("D") },
+            CancellationToken.None);
+        var byRequestNo = await lockProvider.GetLockKeysAsync(
+            common with { RequestId = materialRequest.RequestNo },
+            CancellationToken.None);
+
+        Assert.Equal(byGuid.LockKey, byRequestNo.LockKey);
+        Assert.Equal(
+            $"business-mes:material-issue-return:org-001:env-dev:{materialRequest.Id.Id:D}",
+            byGuid.LockKey);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_concurrency_retry_replays_the_command_after_a_lost_save()
+    {
+        var databaseName = nameof(Return_line_side_material_concurrency_retry_replays_the_command_after_a_lost_save);
+        await using var dbContext = CreateDbContext(databaseName);
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        _ = await dbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == materialRequest.RequestNo);
+        await using var winningContext = CreateDbContext(databaseName);
+        var winningRequest = await winningContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == materialRequest.RequestNo);
+        winningRequest.ReturnLineSideMaterial(
+            Utc("2026-06-29T08:59:00Z"),
+            1m,
+            idempotencyKey: "winner");
+        await winningContext.SaveChangesAsync();
+
+        var behavior = new ReturnLineSideMaterialConcurrencyRetryBehavior<ReturnLineSideMaterialCommand, MesAcceptedResponse>(dbContext);
+        var command = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 1m, "retry-normalization");
+        var attempts = 0;
+
+        var result = await behavior.Handle(
+            command,
+            async _ =>
+            {
+                attempts++;
+                var currentRequest = await dbContext.MaterialIssueRequests
+                    .SingleAsync(x => x.RequestNo == materialRequest.RequestNo);
+                currentRequest.ReturnLineSideMaterial(
+                    command.ReturnedAtUtc,
+                    command.ReturnedQuantity,
+                    idempotencyKey: command.IdempotencyKey);
+                await dbContext.SaveChangesAsync();
+                return new MesAcceptedResponse("Accepted", "MIR-001", command.ReturnedAtUtc);
+            },
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", result.Status);
+        Assert.Equal(2, attempts);
     }
 
     [Fact]
@@ -178,6 +247,252 @@ public sealed class MesIssue557ExecutionTests
             CancellationToken.None));
 
         Assert.Contains("前序工序", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_bypasses_previous_operation_only_with_reason_authorizer_and_persistent_fact()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_bypasses_previous_operation_only_with_reason_authorizer_and_persistent_fact));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance, AuthorizationClock).Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-20",
+                "设备临时故障，先行处理后续工序",
+                "approval-1960-001",
+                "correlation-1960-001",
+                "skip-start-1960-001"),
+            CancellationToken.None);
+
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress.ToString(), result.Status);
+        await dbContext.SaveChangesAsync();
+        var authorization = await dbContext.OperationTaskStartAuthorizations.SingleAsync();
+        Assert.Equal("org-001", authorization.OrganizationId);
+        Assert.Equal("env-dev", authorization.EnvironmentId);
+        Assert.Equal("OP-20", authorization.OperationTaskId);
+        Assert.Equal("approval-1960-001", authorization.ApprovalChainId);
+        Assert.Equal("设备临时故障，先行处理后续工序", authorization.Reason);
+        Assert.Equal("user:supervisor-001", authorization.AuthorizedBy);
+        Assert.Equal("correlation-1960-001", authorization.CorrelationId);
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_rejects_missing_reason_or_authorizer_without_changing_task()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_rejects_missing_reason_or_authorizer_without_changing_task));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance, AuthorizationClock).Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-20",
+                " ",
+                "approval-1960-002",
+                "correlation-1960-002",
+                "skip-start-1960-002"),
+            CancellationToken.None));
+
+        var task = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20");
+        Assert.Equal(OperationTaskLifecycleStatus.Queued, task.Status);
+        Assert.Empty(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Authorization_facts_reject_update_and_delete_through_mes_uow()
+    {
+        await using var dbContext = CreateDbContext(nameof(Authorization_facts_reject_update_and_delete_through_mes_uow));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+        await new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance, AuthorizationClock)
+            .Handle(new AuthorizeAndStartOperationTaskCommand(
+                "org-001", "env-dev", "OP-20", "原因", "approval-1960-append-only", "corr-append-only", "idem-append-only"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var authorization = await dbContext.OperationTaskStartAuthorizations.SingleAsync();
+        dbContext.Entry(authorization).Property(x => x.Reason).CurrentValue = "篡改";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => dbContext.SaveChangesAsync());
+        dbContext.Entry(authorization).State = EntityState.Unchanged;
+
+        dbContext.Remove(authorization);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => dbContext.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Approval_http_client_requires_approved_exact_mes_scope_and_uses_internal_token()
+    {
+        using var httpClient = new HttpClient(new ApprovalResponseHandler(" approval-1960-http "))
+        {
+            BaseAddress = new Uri("http://approval.local"),
+        };
+        var client = new HttpMesOperationTaskStartApprovalClient(
+            httpClient,
+            new TestInternalServiceTokenProvider("internal-token"));
+
+        var approved = await client.GetApprovedAsync(
+            "approval-1960-http",
+            "org-001",
+            "env-dev",
+            "OP-20",
+            "WO-001",
+            CancellationToken.None);
+        var mismatched = await client.GetApprovedAsync(
+            "approval-1960-http",
+            "org-002",
+            "env-dev",
+            "OP-20",
+            "WO-001",
+            CancellationToken.None);
+
+        Assert.Equal("approval-1960-http", approved?.ApprovalChainId);
+        Assert.Equal("user:supervisor-001", approved?.AuthorizedBy);
+        Assert.Null(mismatched);
+
+        using var mismatchedHttpClient = new HttpClient(new ApprovalResponseHandler("approval-1960-other"))
+        {
+            BaseAddress = new Uri("http://approval.local"),
+        };
+        var mismatchedChain = await new HttpMesOperationTaskStartApprovalClient(
+            mismatchedHttpClient,
+            new TestInternalServiceTokenProvider("internal-token")).GetApprovedAsync(
+                "approval-1960-http", "org-001", "env-dev", "OP-20", "WO-001", CancellationToken.None);
+        Assert.Null(mismatchedChain);
+
+        foreach (var statusCode in new[] { HttpStatusCode.NotFound, HttpStatusCode.Forbidden })
+        {
+            using var rejectedHttpClient = new HttpClient(new ApprovalStatusHandler(statusCode))
+            {
+                BaseAddress = new Uri("http://approval.local"),
+            };
+            var rejected = await new HttpMesOperationTaskStartApprovalClient(
+                rejectedHttpClient,
+                new TestInternalServiceTokenProvider("internal-token")).GetApprovedAsync(
+                    "approval-1960-http", "org-001", "env-dev", "OP-20", "WO-001", CancellationToken.None);
+            Assert.Null(rejected);
+        }
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_replays_same_intent_and_rejects_different_payload()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_replays_same_intent_and_rejects_different_payload));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+        var handler = new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance, AuthorizationClock);
+        var command = new AuthorizeAndStartOperationTaskCommand(
+            "org-001",
+            "env-dev",
+            "OP-20",
+            "设备临时故障，先行处理后续工序",
+            "approval-1960-003",
+            "correlation-1960-003",
+            "skip-start-1960-003");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        var replay = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(first, replay);
+        Assert.Single(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { Reason = "不同原因" }, CancellationToken.None));
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { ApprovalChainId = "approval-1960-other" }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_canonicalizes_payload_before_persisting_and_replaying()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_canonicalizes_payload_before_persisting_and_replaying));
+        SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
+        await dbContext.SaveChangesAsync();
+        var handler = new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance, AuthorizationClock);
+
+        var first = await handler.Handle(new AuthorizeAndStartOperationTaskCommand(
+            " org-001 ",
+            " env-dev ",
+            " OP-20 ",
+            " 设备临时故障，先行处理后续工序 ",
+            " approval-1960-canonical ",
+            " correlation-1960-canonical ",
+            " skip-start-1960-canonical "), CancellationToken.None);
+        var replay = await handler.Handle(new AuthorizeAndStartOperationTaskCommand(
+            "org-001",
+            "env-dev",
+            "OP-20",
+            "设备临时故障，先行处理后续工序",
+            "approval-1960-canonical",
+            "correlation-1960-canonical",
+            "skip-start-1960-canonical"), CancellationToken.None);
+
+        Assert.Equal(first, replay);
+        await dbContext.SaveChangesAsync();
+        var authorization = Assert.Single(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
+        Assert.Equal("设备临时故障，先行处理后续工序", authorization.Reason);
+        Assert.Equal("correlation-1960-canonical", authorization.CorrelationId);
+        Assert.Equal("skip-start-1960-canonical", authorization.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Authorized_operation_start_does_not_use_a_previous_operation_from_another_tenant()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Authorized_operation_start_does_not_use_a_previous_operation_from_another_tenant));
+        foreach (var (organizationId, sequence, operationTaskId) in new[]
+        {
+            ("org-001", 20, "OP-20"),
+            ("org-002", 10, "OP-10"),
+        })
+        {
+            var workOrder = WorkOrder.Create(
+                organizationId,
+                "env-dev",
+                "WO-SCOPE",
+                "SKU-FG",
+                "PV-001",
+                10m,
+                1,
+                Utc("2026-06-30T08:00:00Z"),
+                "PCS");
+            workOrder.MarkReleased();
+            workOrder.RecordMaterialRequirementSnapshot(
+                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                Utc("2026-06-29T08:00:00Z"));
+            dbContext.WorkOrders.Add(workOrder);
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                organizationId,
+                "env-dev",
+                "WO-SCOPE",
+                operationTaskId,
+                OperationTaskLifecycleStatus.Queued,
+                sequence,
+                "WC-10",
+                [],
+                Utc("2026-06-29T08:00:00Z"),
+                TimeSpan.FromHours(1),
+                null,
+                null));
+        }
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new AuthorizeAndStartOperationTaskCommandHandler(dbContext, ApprovedOperationTaskStartApprovalClient.Instance, AuthorizationClock).Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-20",
+                "跨租户前序不应作为本工序依据",
+                "approval-1960-scope",
+                "correlation-1960-scope",
+                "skip-start-1960-scope"),
+            CancellationToken.None));
     }
 
     [Fact]
@@ -394,6 +709,9 @@ public sealed class MesIssue557ExecutionTests
             TimeSpan.FromHours(4),
             null,
             null));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "PR-OP-10-001", "WO-001", "OP-10",
+            1m, 0m, false, Utc("2026-06-29T11:59:00Z")));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
@@ -658,13 +976,58 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                2m),
+                2m,
+                "legacy-return-1"),
             CancellationToken.None);
 
         Assert.Equal(3m, materialRequest.ReceivedQuantity);
         var eventNames = materialRequest.GetDomainEvents().Select(x => x.GetType().Name).ToArray();
         Assert.Contains("MaterialLineSideReturnRequestedDomainEvent", eventNames);
         Assert.Contains("MaterialReturnedToWarehouseDomainEvent", eventNames);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_replays_same_idempotency_key_without_a_second_return()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_replays_same_idempotency_key_without_a_second_return));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+        var first = new ReturnLineSideMaterialCommand(
+            "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 2m, "mes-return-intent-1");
+
+        await handler.Handle(first, CancellationToken.None);
+        materialRequest.ClearDomainEvents();
+        await dbContext.SaveChangesAsync();
+
+        await handler.Handle(first, CancellationToken.None);
+
+        Assert.Equal(3m, materialRequest.ReceivedQuantity);
+        Assert.Empty(materialRequest.GetDomainEvents());
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_rejects_reusing_idempotency_key_for_different_quantity()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_rejects_reusing_idempotency_key_for_different_quantity));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+        const string key = "mes-return-intent-2";
+
+        await handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:00:00Z"), 2m, key),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001", "env-dev", "MIR-001", Utc("2026-06-29T09:01:00Z"), 1m, key),
+            CancellationToken.None));
+
+        Assert.Contains("幂等键", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(3m, materialRequest.ReceivedQuantity);
     }
 
     [Fact]
@@ -692,7 +1055,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                3m),
+                3m,
+                "legacy-return-consumed"),
             CancellationToken.None));
 
         Assert.Contains("可退", exception.Message, StringComparison.Ordinal);
@@ -713,7 +1077,8 @@ public sealed class MesIssue557ExecutionTests
                 "env-dev",
                 "MIR-001",
                 Utc("2026-06-29T09:00:00Z"),
-                5m),
+                5m,
+                "legacy-return-zero"),
             CancellationToken.None);
 
         Assert.Equal(0m, materialRequest.ReceivedQuantity);
@@ -857,6 +1222,60 @@ public sealed class MesIssue557ExecutionTests
             .UseSqlite(connection)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class ApprovedOperationTaskStartApprovalClient : IMesOperationTaskStartApprovalClient
+    {
+        public static ApprovedOperationTaskStartApprovalClient Instance { get; } = new();
+
+        public Task<MesOperationTaskStartApproval?> GetApprovedAsync(
+            string approvalChainId,
+            string organizationId,
+            string environmentId,
+            string operationTaskId,
+            string workOrderId,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal("org-001", organizationId);
+            Assert.Equal("env-dev", environmentId);
+            Assert.Equal("OP-20", operationTaskId);
+            Assert.Contains(workOrderId, new[] { "WO-001", "WO-SCOPE" });
+            Assert.False(string.IsNullOrWhiteSpace(approvalChainId));
+            return Task.FromResult<MesOperationTaskStartApproval?>(
+                new MesOperationTaskStartApproval(approvalChainId, "user:supervisor-001"));
+        }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
+
+    private sealed class ApprovalResponseHandler(string chainId) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/api/business/v1/approvals/chains/approval-1960-http", request.RequestUri?.AbsolutePath);
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("internal-token", request.Headers.Authorization?.Parameter);
+            Assert.Null(request.Content);
+            var json = """
+                {"data":{"chainId":"CHAIN_ID","organizationId":"org-001","environmentId":"env-dev","status":"approved","sourceService":"business-mes","documentType":"mes-operation-task-start-authorization","documentId":"OP-20","documentLineId":"WO-001","decisions":[{"decisionId":"decision-1","stepNo":1,"actorType":"user","actorRef":"supervisor-001","decision":"approve","decidedAtUtc":"2026-06-29T08:00:00Z"}]},"success":true,"message":"","code":0}
+                """.Replace("CHAIN_ID", chainId, StringComparison.Ordinal);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class ApprovalStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(statusCode));
     }
 
     private sealed class NoopMediator : IMediator

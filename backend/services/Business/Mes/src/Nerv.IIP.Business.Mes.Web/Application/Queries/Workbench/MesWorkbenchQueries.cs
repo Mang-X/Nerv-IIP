@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -649,8 +651,16 @@ public sealed record MesOperationTaskRow(
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null,
     string? TeamId = null,
-    string? TeamName = null)
+    string? TeamName = null,
+    // 只在工序完成后返回已冻结的累计实绩；未完成或冲销后重新打开时为 null，单位为小时。
+    [property: JsonIgnore] MesActualHours? ActualHours = null)
 {
+    [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? ActualLaborHours => ActualHours?.LaborHours;
+
+    [Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? ActualMachineHours => ActualHours?.MachineHours;
+
     public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
     public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
@@ -817,7 +827,12 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.ScheduledAtUtc,
                 x.ScheduleInvalidationReasonCode,
                 x.TeamId,
-                x.TeamName));
+                x.TeamName,
+                x.Status == OperationTaskLifecycleStatus.Completed
+                    ? new MesActualHours(
+                        x.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                        x.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
+                    : null));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -907,7 +922,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             var values = SplitCanonicalCsv(assignedUserIds);
             query = values.Length == 0
                 ? query.Where(_ => false)
-                : query.Where(x => values.Contains(x.AssignedUserId));
+                : query.Where(x =>
+                    values.Contains(x.AssignedUserId)
+                    || dbContext.OperationTaskParticipants.Any(participant =>
+                        participant.OrganizationId == x.OrganizationId
+                        && participant.EnvironmentId == x.EnvironmentId
+                        && participant.OperationTaskId == x.OperationTaskIdValue
+                        && values.Contains(participant.WorkerId)));
         }
 
         if (teamIds is not null)
@@ -956,7 +977,12 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             task.ScheduledAtUtc,
             task.ScheduleInvalidationReasonCode,
             task.TeamId,
-            task.TeamName)
+            task.TeamName,
+            task.Status == OperationTaskLifecycleStatus.Completed
+                ? new MesActualHours(
+                    task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                    task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
+                : null)
         {
             AllowedActions = readiness.AllowedActions,
             BlockReasons = readiness.BlockReasons,
@@ -1123,7 +1149,8 @@ public sealed record ListMaterialIssueRequestsQuery(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null) : IQuery<MesMaterialIssueRequestListResponse>;
+    string? Status = null,
+    string? OperationTaskId = null) : IQuery<MesMaterialIssueRequestListResponse>;
 
 public sealed record MesMaterialIssueRequestListResponse(
     IReadOnlyCollection<MesMaterialIssueRequestRow> Items,
@@ -1165,6 +1192,12 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
+        {
+            var operationTaskId = request.OperationTaskId.Trim();
+            query = query.Where(x => x.OperationTaskId == null || x.OperationTaskId == operationTaskId);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))

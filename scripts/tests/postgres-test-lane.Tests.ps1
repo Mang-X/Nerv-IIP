@@ -207,9 +207,16 @@ try {
     Assert-Contract ($discoveredFactories.Contains($sharedGovernedFactory)) 'Discovery must always find the shared governed PostgreSqlTestDatabase helper.'
     Assert-Contract ($discoveredFactories.Count -ge 5) 'Inner-database factory discovery must enumerate the test tree, not a hand-maintained list.'
     $member = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'inventory-postgres-profile' -RepositoryRoot $repoRoot
-    # 拆解②的单条试点在 #1561 之后扩为两条：InventoryDirectory 的 external 用例形态与成员一致，已并入本成员；
-    # 同类的 Docker 夹具用例仍留在 deferred 条目里。
-    Assert-Contract (@($member.expectedTestIdentities).Count -eq 2) 'The Inventory member must freeze its profile test and the external directory test.'
+    # 拆解②的单条试点在 #1561 之后扩为两条；#2228 再加入线边余额聚合的真实 PostgreSQL 翻译证据。
+    # 两条 InventoryDirectory external 用例形态与成员一致，已并入本成员；同类 Docker 夹具仍留在 deferred 条目里。
+    Assert-Contract (@($member.expectedTestIdentities).Count -eq 3) 'The Inventory member must freeze its profile test and both external directory-backed PostgreSQL tests.'
+    $expectedTestIdentitySet = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@($member.expectedTestIdentities),
+        [StringComparer]::Ordinal)
+    $lineSideBalancePostgresIdentity = 'Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.Line_side_balance_grouping_and_age_completeness_execute_on_postgres'
+    Assert-Contract (
+        $expectedTestIdentitySet.Contains($lineSideBalancePostgresIdentity)) `
+        'The Inventory member must freeze the #2228 line-side balance PostgreSQL translation proof.'
     Assert-MethodScopedFilter -Member $member
     Assert-Contract (@($member.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$member.diagnosticSchemas[0], 'inventory', [StringComparison]::Ordinal)) 'The pilot member must own its restricted diagnostic schema declaration.'
     $masterDataMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'masterdata-postgres-profile' -RepositoryRoot $repoRoot
@@ -335,17 +342,27 @@ try {
     Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
     # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
-    # Quality 同理：六个类中只有 22 条是真实 PostgreSQL 证明。
+    # Quality 同理：七个类中只有 23 条是真实 PostgreSQL 证明。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 22) 'The Quality member must freeze exactly its twenty-two governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 23) 'The Quality member must freeze exactly its twenty-three governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
-    foreach ($qualitySource in @(
+    $qualityLaneSources = @(
             'PeriodicInspectionPostgresProfileTests.cs',
             'QualityCalibrationRecordQueryTests.cs',
             'QualityCapaRedrivePostgresProfileTests.cs',
             'QualityInspectionTaskPostgresProfileTests.cs',
+            'QualityReasonPostgresProfileTests.cs',
             'QualityReinspectionPostgresProfileTests.cs',
-            'QualitySpcAnalysisTests.cs')) {
+            'QualitySpcAnalysisTests.cs')
+    $hasQualityReasonSource = $false
+    foreach ($qualitySource in $qualityLaneSources) {
+        if ([string]::Equals([string]$qualitySource, 'QualityReasonPostgresProfileTests.cs', [StringComparison]::Ordinal)) {
+            $hasQualityReasonSource = $true
+            break
+        }
+    }
+    Assert-Contract $hasQualityReasonSource 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
+    foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
         Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $qualitySourcePath -InnerDatabaseFactory 'QualityPostgresTestDatabase.CreateAsync'
@@ -354,16 +371,10 @@ try {
     # 直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
     # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
     # 只扫 InspectionTask 一个文件会留下盲区：SpcAnalysis 的 CreatePostgresProvider 与 Calibration 的
-    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部六个
+    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部七个
     # Quality lane 源，正则同时接受常量与字面量两种钉法。
     $qualityPinnedBuilders = 0
-    foreach ($qualitySource in @(
-            'PeriodicInspectionPostgresProfileTests.cs',
-            'QualityCalibrationRecordQueryTests.cs',
-            'QualityCapaRedrivePostgresProfileTests.cs',
-            'QualityInspectionTaskPostgresProfileTests.cs',
-            'QualityReinspectionPostgresProfileTests.cs',
-            'QualitySpcAnalysisTests.cs')) {
+    foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourceText = [IO.File]::ReadAllText((Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"))
         $historyOverrides = ([regex]::Matches($qualitySourceText, 'MigrationsHistoryTable\("__EFMigrationsHistory", (?:QualityFacts\.Schema|"quality")\)')).Count
         $rawNpgsqlBuilders = ([regex]::Matches($qualitySourceText, 'UseNpgsql\(')).Count
@@ -377,10 +388,10 @@ try {
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
-    # MES：新增保存边界类后，七个类中有 20 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
+    # MES：base 的既有证明加上替代料快照 1 条与 OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，共有 36 条真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
     # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 20) 'The MES member must freeze exactly its twenty governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 36) 'The MES member must freeze exactly its thirty-six governed PostgreSQL identities.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
@@ -399,11 +410,15 @@ try {
     foreach ($mesSource in @(
             'MesCapSaveBoundaryPostgresTests.cs',
             'MesCapSubscriptionTests.cs',
+            'MesCollaborationPostgresTests.cs',
+            'MesMaterialSubstituteSnapshotPostgresTests.cs',
             'MesSchedulePlanProvenancePostgresTests.cs',
+            'OperationActualTimeSettlementPostgresTests.cs',
             'RushWorkOrderHttpPostgresTests.cs',
             'SkuDisabledConsumerTests.cs',
             'TelemetryProductionReportCandidatePostgresTests.cs',
-            'WorkOrderCapitalizationConcurrencyPostgresTests.cs')) {
+            'WorkOrderCapitalizationConcurrencyPostgresTests.cs',
+            'WorkOrderTransformationApplicationPostgresTests.cs')) {
         $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
         Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'

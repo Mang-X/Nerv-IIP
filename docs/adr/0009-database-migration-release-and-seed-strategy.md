@@ -46,7 +46,7 @@
 
 ## 实施说明
 
-1. 2026-08-25 起，后果第 2 条关于 `scripts/verify-fourth-slice-real-infra.ps1` 可作为本地门禁的表述不再代表当前入口；ADR 0028 将该历史入口标记为退役墓碑，并由 AppHost/fullstack 与专用 provider lane 承接当前验证。后果第 2 条原文保留为本 ADR 作出时的历史事实。
+1. 2026-08-25 起，后果第 2 条关于 `scripts/verify-fourth-slice-real-infra.ps1` 可作为本地门禁的表述不再代表当前入口；ADR 0028 记录该历史入口的退役裁决，本次 #2176 已删除第四阶段路径及第五阶段历史验证脚本，当前真实 PostgreSQL/Redis 证明由专用 provider lane 承担，发布迁移由受控 migrator/release step 承担，全栈验证使用 `nerv.ps1 fullstack run`。后果第 2 条原文保留为本 ADR 作出时的历史事实。
 
 ## 已考虑的替代方案
 

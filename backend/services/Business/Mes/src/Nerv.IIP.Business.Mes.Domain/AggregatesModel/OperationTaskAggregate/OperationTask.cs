@@ -37,7 +37,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? uomCode,
         decimal plannedQuantity,
         bool requiresQualityInspection,
-        string? operationCode)
+        string? operationCode,
+        string? requiredSkillCode)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -58,6 +59,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
         RequiresQualityInspection = requiresQualityInspection;
         OperationCode = NormalizeOptional(operationCode);
+        RequiredSkillCode = NormalizeOptional(requiredSkillCode);
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -77,6 +79,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long PausedDurationTicks { get; private set; }
     public long LaborTimeTicks { get; private set; }
     public long MachineTimeTicks { get; private set; }
+    public long ActualTimeSettlementRevision { get; private set; }
+    public RowVersion RowVersion { get; private set; } = new(0);
     public string? AssignedUserId { get; private set; }
 
     /// <summary>Display name of the assigned worker captured when the task was dispatched.</summary>
@@ -113,6 +117,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public decimal PlannedQuantity { get; private set; }
     public bool RequiresQualityInspection { get; private set; }
     public string? OperationCode { get; private set; }
+    public string? RequiredSkillCode { get; private set; }
     public string? ScheduleInvalidationReasonCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
@@ -144,7 +149,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? requiredSkillCode = null)
     {
         return Create(
             organizationId,
@@ -163,7 +169,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             uomCode,
             plannedQuantity,
             requiresQualityInspection,
-            operationCode);
+            operationCode,
+            requiredSkillCode);
     }
 
     public static OperationTask Create(
@@ -183,7 +190,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? requiredSkillCode = null)
     {
         return new OperationTask(
             organizationId,
@@ -202,7 +210,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             uomCode,
             plannedQuantity,
             requiresQualityInspection,
-            operationCode);
+            operationCode,
+            requiredSkillCode);
     }
 
     public void Start(DateTimeOffset startedAtUtc)
@@ -255,11 +264,44 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingEndUtc = null;
     }
 
-    public void Complete(DateTimeOffset completedAtUtc)
+    public void Complete(
+        DateTimeOffset completedAtUtc,
+        IReadOnlyCollection<string> coveredProductionReportNos)
+    {
+        ArgumentNullException.ThrowIfNull(coveredProductionReportNos);
+        FreezeCompletion(completedAtUtc);
+
+        ActualTimeSettlementRevision = checked(ActualTimeSettlementRevision + 1);
+        var normalizedReportNos = NormalizeCoveredProductionReportNos(coveredProductionReportNos);
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
+        AddDomainEvent(new OperationActualTimeSettledDomainEvent(CreateActualTimeSettlementSnapshot(normalizedReportNos)));
+    }
+
+    /// <summary>
+    /// Imports a completed historical task without inventing a settlement revision or integration fact.
+    /// Runtime completion must use the governed settlement coordinator instead.
+    /// </summary>
+    internal void CompleteLegacyHistoryWithoutSettlement(DateTimeOffset completedAtUtc)
+    {
+        if (ActualTimeSettlementRevision != 0)
+        {
+            throw new InvalidOperationException("Settled operation task cannot be imported as legacy history.");
+        }
+
+        FreezeCompletion(completedAtUtc);
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
+    }
+
+    private void FreezeCompletion(DateTimeOffset completedAtUtc)
     {
         if (Status != OperationTaskLifecycleStatus.InProgress)
         {
             throw new InvalidOperationException("Only in-progress operation task can be completed.");
+        }
+
+        if (ExistingStartUtc is { } existingStartUtc && completedAtUtc < existingStartUtc)
+        {
+            throw new InvalidOperationException("Operation task cannot be completed before its current start time.");
         }
 
         Status = OperationTaskLifecycleStatus.Completed;
@@ -268,21 +310,63 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var elapsedTicks = Math.Max(0L, (completedAtUtc - ExistingStartUtc.Value).Ticks - PausedDurationTicks);
         LaborTimeTicks = elapsedTicks;
         MachineTimeTicks = elapsedTicks;
-        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
     }
 
-    public void ReopenAfterReportReversal()
+    public void ReopenAfterReportReversal(
+        OperationActualTimeSettlementSnapshot settlement,
+        DateTimeOffset voidedAtUtc)
     {
+        ArgumentNullException.ThrowIfNull(settlement);
         if (Status != OperationTaskLifecycleStatus.Completed)
         {
             return;
         }
 
+        if (ActualTimeSettlementRevision <= 0 ||
+            settlement.SettlementRevision != ActualTimeSettlementRevision ||
+            !string.Equals(settlement.OperationTaskId, OperationTaskIdValue, StringComparison.Ordinal) ||
+            !string.Equals(settlement.OrganizationId, OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(settlement.EnvironmentId, EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Completed operation task has no matching active actual-time settlement.");
+        }
+
+        if (voidedAtUtc < settlement.CompletedAtUtc)
+        {
+            throw new InvalidOperationException("Actual-time settlement cannot be voided before its completion time.");
+        }
+
         Status = OperationTaskLifecycleStatus.InProgress;
+        ExistingStartUtc = voidedAtUtc;
         ExistingEndUtc = null;
+        PausedAtUtc = null;
+        PausedDurationTicks = 0;
         LaborTimeTicks = 0;
         MachineTimeTicks = 0;
+        AddDomainEvent(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
     }
+
+    private OperationActualTimeSettlementSnapshot CreateActualTimeSettlementSnapshot(
+        IReadOnlyCollection<string> coveredProductionReportNos) =>
+        new(
+            OrganizationId,
+            EnvironmentId,
+            WorkOrderId,
+            OperationTaskIdValue,
+            WorkCenterId,
+            ActualTimeSettlementRevision,
+            ExistingEndUtc ?? throw new InvalidOperationException("Completed operation task must have an end time."),
+            LaborTimeTicks,
+            MachineTimeTicks,
+            coveredProductionReportNos.ToArray());
+
+    private static string[] NormalizeCoveredProductionReportNos(
+        IReadOnlyCollection<string> coveredProductionReportNos) =>
+        coveredProductionReportNos
+            .Select(x => DomainGuard.Required(x, nameof(coveredProductionReportNos)))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
     public void Assign(
         string? assignedUserId,

@@ -200,10 +200,16 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 
 ## 6. 四个现有 PDA 账号核对
 
-四个账号只有在 `LeaderDemo:World:Enabled=true`、IAM 使用 PostgreSQL 自动迁移/seed 路径，
-且当前进程注入非空 `Iam__Seed__DemoWorkerPassword` 时才会被开通；密码不在仓库。
-其余 World Bible 人员虽会生成 IAM user 与 MasterData worker，但随机未知口令、
+四个账号在 IAM 使用 PostgreSQL 自动迁移/seed 路径且当前进程注入非空
+`Iam__Seed__DemoWorkerPassword` 时被开通；该口令是独立的受控 PDA/WMS worker opt-in，
+不要求 `LeaderDemo:World:Enabled=true`，密码不在仓库。未提供该口令时，四个账号以及其余
+World Bible 人员虽会生成 IAM user 与 MasterData worker，但随机未知口令、
 `PasswordChangeRequired=true`，且没有 role/membership，不是可登录验收账号。
+
+当 Development 全栈显式开启 PDA/WMS worker 时，AppHost 只向 BusinessWms 转发非敏感的
+`LeaderDemo:Wms:WorkPoolSeed:Enabled=true`。WMS 该开关只补一座 `SITE-001` 收货与上架作业池、
+`user-emp-049` 的有效成员资格和一张保持 Open 的最小入库单；它不修改 IAM、不把管理员加入作业池，
+也不启动完整 History seed。未显式开启时不生成这些事实；History 开启时该最小 seed 自动保持关闭。
 
 证据：
 
@@ -228,7 +234,7 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 | PDA role             | 当前 seed 的准确 `permissionCodes`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `role-pda-operator`  | `business.mes.work-orders.read`、`business.mes.dispatch.read`、`business.mes.operations.read`、`business.mes.operations.manage`、`business.mes.reporting.read`、`business.mes.reporting.write`、`business.mes.materials.read`、`business.mes.materials.manage`、`business.mes.receipts.read`、`business.mes.receipts.manage`、`business.engineering.documents.read`、`business.iiot.alarms.read`、`business.iiot.alarms.write`、`business.maintenance.work-orders.read`、`business.maintenance.work-orders.manage`、`business.maintenance.plans.read`、`business.masterdata.resources.read` |
-| `role-pda-warehouse` | `business.wms.receipts.read`、`business.wms.receipts.manage`、`business.wms.shipments.read`、`business.wms.shipments.manage`、`business.wms.counts.read`、`business.inventory.ledger.read`、`business.inventory.counts.manage`、`business.inventory.movements.create`、`business.masterdata.resources.read`                                                                                                                                                                                                                                                                                 |
+| `role-pda-warehouse` | `business.wms.receipts.read`、`business.wms.receipts.manage`、`business.wms.shipments.read`、`business.wms.shipments.manage`、`business.masterdata.products.read`、`business.wms.counts.read`、`business.inventory.ledger.read`、`business.inventory.counts.manage`、`business.inventory.movements.create`、`business.masterdata.resources.read`                                                                                                                                                                                                                                                                                 |
 | `role-pda-inspector` | `business.quality.inspection-records.read`、`business.quality.inspection-records.create`、`business.mes.work-orders.read`、`business.masterdata.resources.read`                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 `role-pda-warehouse` 在严格匹配受管基线时写入 `site/SITE-001` role data scope；

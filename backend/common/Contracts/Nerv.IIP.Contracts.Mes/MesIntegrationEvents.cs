@@ -9,6 +9,8 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
+    public const string OperationActualTimeSettled = "mes.OperationActualTimeSettled";
+    public const string OperationActualTimeSettlementVoided = "mes.OperationActualTimeSettlementVoided";
     public const string OperationTaskManuallyDispatched = "mes.OperationTaskManuallyDispatched";
     public const string OperationTaskManualDispatchCleared = "mes.OperationTaskManualDispatchCleared";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
@@ -180,6 +182,61 @@ public sealed record OperationTaskCompletedPayload(
     string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record MesOperationActualTimeSettledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationActualTimeSettledPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationActualTimeSettledPayload(
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    DateTimeOffset CompletedAtUtc,
+    long ActualLaborTicks,
+    long ActualMachineTicks,
+    IReadOnlyCollection<string> CoveredProductionReportNos);
+
+public sealed record MesOperationActualTimeSettlementVoidedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationActualTimeSettlementVoidedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationActualTimeSettlementVoidedPayload(
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    DateTimeOffset CompletedAtUtc,
+    DateTimeOffset VoidedAtUtc,
+    long ActualLaborTicks,
+    long ActualMachineTicks,
+    IReadOnlyCollection<string> CoveredProductionReportNos);
 
 public sealed record MesOperationTaskManuallyDispatchedIntegrationEvent(
     string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,

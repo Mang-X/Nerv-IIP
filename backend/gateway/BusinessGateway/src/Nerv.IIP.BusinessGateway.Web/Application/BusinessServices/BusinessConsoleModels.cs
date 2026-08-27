@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
@@ -54,7 +55,13 @@ public sealed record BusinessConsoleResourceItem(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? Timezone = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    bool? CrossesMidnight = null,
+    int? PaidMinutes = null,
+    int? BreakMinutes = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -1770,6 +1777,13 @@ public sealed record BusinessConsoleQualityReasonListRequest(
     int Skip = 0,
     int Take = 100,
     string? DefaultDisposition = null);
+
+public sealed record BusinessConsoleScrapQualityReasonCodeListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
@@ -4244,6 +4258,19 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMesMaterialIssueRequestListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? OperationTaskId = null);
+
 /// <summary>派工任务列表专用请求：比通用 MES 列表多一个按被派工人过滤（PDA「我的任务」）。</summary>
 public sealed record BusinessConsoleMesDispatchTaskListRequest(
     string OrganizationId,
@@ -4745,11 +4772,14 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     string UomCode,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(
     IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items,
-    int Total);
+    int Total,
+    int SupplementaryCount = 0);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string RequestId,
@@ -4766,7 +4796,9 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
-    string? MaterialCode = null);
+    string? MaterialCode = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,
@@ -4776,6 +4808,14 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     decimal? ReceivedQuantity,
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ReturnedAtUtc,
+    decimal ReturnedQuantity,
+    [property: JsonRequired, Required] string IdempotencyKey);
 
 public sealed record BusinessConsoleMesDispatchTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items,
@@ -4818,7 +4858,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? ShiftId,
     string IdempotencyKey,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4827,7 +4868,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
 public sealed record BusinessConsoleMesOperationTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,
@@ -4859,7 +4901,11 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? TeamName = null,
     IReadOnlyCollection<string>? AllowedActions = null,
     IReadOnlyCollection<string>? BlockReasons = null,
-    DateTimeOffset? EvaluatedAtUtc = null);
+    DateTimeOffset? EvaluatedAtUtc = null,
+    [property: Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? ActualLaborHours = null,
+    [property: Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? ActualMachineHours = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4905,7 +4951,8 @@ public sealed record BusinessConsoleMesProductionReportDetailRequest(
 
 public sealed record BusinessConsoleMesProductionReportDetailResponse(
     BusinessConsoleMesProductionReportDetail Report,
-    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots,
+    IReadOnlyCollection<BusinessConsoleMesLaborAllocation> LaborAllocations);
 
 public sealed record BusinessConsoleMesProductionReportDetail(
     string ProductionReportId,
@@ -4928,7 +4975,11 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null,
     string? WorkOrderStatus = null,
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualLaborHours = null,
+    [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualMachineHours = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -4977,7 +5028,11 @@ public sealed record BusinessConsoleMesProductionReportRow(
     // MES 已生成的产出批次(见 CreateFinishedGoodsReceiptRequestCommandHandler),Console 据此让操作员从工单
     // 真实报工产出中选择 producedLotNo,而非前端伪造(MAN-445/#799 review)。
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualLaborHours = null,
+    [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualMachineHours = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -4988,6 +5043,28 @@ public sealed record BusinessConsoleMesRecordDefectRequest(
     decimal DefectQuantity,
     string? MaterialLotId,
     string? BatchOrSerial,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRecordDefectV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId);
+
+public sealed record BusinessMesRecordDefectRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
     string IdempotencyKey);
 
 public sealed record BusinessConsoleMesRelatedQualityItemListResponse(
@@ -5120,7 +5197,6 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    decimal? UnitCost,
     string IdempotencyKey,
     string? ProducedLotNo = null,
     string? SerialNo = null);
@@ -5155,6 +5231,32 @@ public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string ReasonCode,
     DateTimeOffset StartedAtUtc,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRecordDowntimeEventV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId,
+    DateTimeOffset? ToUtc = null);
+
+public sealed record BusinessMesRecordDowntimeEventRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey,
+    DateTimeOffset? ToUtc = null);
 
 public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: RouteParam] string DowntimeEventId,

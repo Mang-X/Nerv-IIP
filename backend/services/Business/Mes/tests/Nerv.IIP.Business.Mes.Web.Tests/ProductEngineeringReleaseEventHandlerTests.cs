@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Primitives;
@@ -73,8 +74,10 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    // Contract: DomainInvariant + Regression. Authority: Issue #2246 acceptance 2 and PR #2238 review 5024078243,
+    // which confirmed that Released AutoRebind must preserve the frozen provenance without changing readiness.
     [Fact]
-    public async Task EngineeringChangeReleasedHandler_RebindsNotStartedOrdersAndMarksStartedWipForDecision()
+    public async Task EngineeringChangeReleasedHandler_KeepsReleasedMaterialSnapshotsReadyToStartAfterRebind()
     {
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -99,13 +102,41 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
                 0m,
                 "test",
                 "PV-OLD:MAT-OLD",
-                DateTimeOffset.Parse("2026-07-06T07:00:00Z")));
+                DateTimeOffset.Parse("2026-07-06T07:00:00Z"),
+                []));
             var released = WorkOrder.Create("org-001", "env-dev", "WO-RELEASED", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
             released.MarkReleased();
             released.RecordMaterialRequirementSnapshot(
-                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                WorkOrder.MaterialRequirementSnapshotCapturedStatus,
                 DateTimeOffset.Parse("2026-07-06T07:00:00Z"));
             dbContext.WorkOrders.Add(released);
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-RELEASED",
+                "OP-RELEASED",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                "WC-ASSEMBLY",
+                [],
+                DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+                TimeSpan.FromHours(1),
+                null,
+                null));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-RELEASED",
+                null,
+                "MAT-RELEASED",
+                null,
+                10m,
+                10m,
+                0m,
+                "test",
+                "PV-OLD:MAT-RELEASED",
+                DateTimeOffset.Parse("2026-07-06T07:00:00Z"),
+                ["MAT-ALT-A"]));
             var started = WorkOrder.Create("org-001", "env-dev", "WO-STARTED", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
             started.MarkReleased();
             started.Start(DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
@@ -133,12 +164,21 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         Assert.Equal("PV-NEW", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-CREATED")).ProductionVersionId);
         var reboundReleased = await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-RELEASED");
         Assert.Equal("PV-NEW", reboundReleased.ProductionVersionId);
-        Assert.Null(reboundReleased.MaterialRequirementSnapshotStatus);
-        Assert.Null(reboundReleased.MaterialRequirementSnapshotEvaluatedAtUtc);
-        Assert.Null(reboundReleased.MaterialRequirementSnapshotProductionVersionId);
+        Assert.Equal(WorkOrder.MaterialRequirementSnapshotCapturedStatus, reboundReleased.MaterialRequirementSnapshotStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-06T07:00:00Z"), reboundReleased.MaterialRequirementSnapshotEvaluatedAtUtc);
+        Assert.Equal("PV-OLD", reboundReleased.MaterialRequirementSnapshotProductionVersionId);
         var reboundCaptured = await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-CREATED");
         Assert.Null(reboundCaptured.MaterialRequirementSnapshotStatus);
-        Assert.Empty(await assertionDbContext.MaterialRequirements.ToListAsync());
+        var frozenRequirement = Assert.Single(await assertionDbContext.MaterialRequirements.ToListAsync());
+        Assert.Equal("WO-RELEASED", frozenRequirement.WorkOrderId);
+        Assert.Equal(["MAT-ALT-A"], frozenRequirement.GetSubstituteMaterialIds());
+        var releasedTask = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-RELEASED");
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(assertionDbContext).EvaluateAsync(
+            releasedTask,
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            CancellationToken.None);
+        Assert.Equal(["start"], readiness.AllowedActions);
+        Assert.Empty(readiness.BlockReasons);
         Assert.Equal("PV-OLD", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-STARTED")).ProductionVersionId);
         Assert.Equal("PV-OLD", (await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-COMPLETE")).ProductionVersionId);
 
@@ -155,6 +195,7 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         Assert.Equal(WorkOrder.StartedStatus, impacts.Single(x => x.WorkOrderId == "WO-STARTED").WorkOrderStatusAtDetection);
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync(x => x.ConsumerName == EngineeringChangeReleasedIntegrationEventHandlerForMesWip.ConsumerName));
     }
+
 
     [Fact]
     public async Task EngineeringChangeReleasedHandler_PersistsImpactsAndPublishesInsideTransaction()
@@ -598,10 +639,14 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
                 null));
     }
 
-    private static EngineeringChangeReleasedIntegrationEvent CreateEngineeringChangeReleasedEvent()
+    private static EngineeringChangeReleasedIntegrationEvent CreateEngineeringChangeReleasedEvent(
+        string eventId = "evt-product-engineering-eco-721",
+        string changeNumber = "ECO-721",
+        string archivedProductionVersionId = "PV-OLD",
+        string supersededByProductionVersionId = "PV-NEW")
     {
         return new EngineeringChangeReleasedIntegrationEvent(
-            "evt-product-engineering-eco-721",
+            eventId,
             ProductEngineeringIntegrationEventTypes.EngineeringChangeReleased,
             ProductEngineeringIntegrationEventVersions.V1,
             DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
@@ -611,17 +656,17 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
             "org-001",
             "env-dev",
             "product-engineering",
-            "product-engineering:engineering-change-released:org-001:env-dev:ECO-721",
+            $"product-engineering:engineering-change-released:org-001:env-dev:{changeNumber}",
             new EngineeringChangeReleasedPayload(
-                "change-721",
-                "ECO-721",
-                ["PV-OLD"],
+                $"change-{changeNumber}",
+                changeNumber,
+                [archivedProductionVersionId],
                 new DateOnly(2026, 7, 6),
                 [
                     new EngineeringChangeAffectedVersionPayload(
                         "production-version",
-                        "PV-OLD",
-                        "PV-NEW")
+                        archivedProductionVersionId,
+                        supersededByProductionVersionId)
                 ]));
     }
 
@@ -629,6 +674,7 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     {
         return new ApplicationDbContext(options, new NoopMediator());
     }
+
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

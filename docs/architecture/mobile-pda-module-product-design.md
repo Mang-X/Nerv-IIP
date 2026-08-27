@@ -14,6 +14,12 @@
 
 一线操作员的诉求是「扫一下就进入正确的活、扫一步确认一步、做完有明确成功反馈」，因此 PDA 不复用 PC 的复杂菜单树，而以任务与扫码为中心组织界面（详见 §2）。
 
+PDA `/mes/issue` 在领料申请清单上方提供只读线边库存摘要，消费与 Console 相同的
+BusinessGateway 公开契约。每行以窄屏密度展示物料、站点/线边库、在手/预留/可用、单位、
+批次数与账龄完整性；刷新入口保持至少 44px 触控目标。生产日期不完整时明确显示「部分可知」
+或「未知」，不以 0 天冒充事实；加载、失败与真实空结果必须分别呈现。列表按服务端每页
+200 条提供上一页/下一页，明确显示当前页与总覆盖数，超过 200 条时不静默截断。
+
 ## 2. 信息架构（任务范式，非菜单树）
 
 PDA 首页采用任务范式而非菜单树，由三部分构成：
@@ -22,7 +28,7 @@ PDA 首页采用任务范式而非菜单树，由三部分构成：
 - **可信任务入口**：只对服务端 principal-bound 的任务使用“我的”语义；其余入口明确按当前主体授权作业范围进入。
 - **快捷应用墙（AppWall）**：收货/上架/拣货/复核发货/盘点/报工/领料/完工入库/工序执行/巡检点检/报修 等作业入口，以九宫格形式呈现。
 
-扫码结果通过 ScanResultRouter 分流：扫码串 → 识别对象（工单/库位/批次/SKU/设备/容器）→ 直接进入对应作业页。
+扫码结果由首页与 `/scan` 共用的解析器分流：唯一且目标页可按当前权限重核验的生产工单/工序强 ID 才直达；导航在途时暂停新的扫码与候选选择，路由被阻止、取消或加载失败时显示可恢复错误而不伪装已跳转。歧义结果等待人工选择，未知结果只能查看授权服务端返回的未验证候选，过期或越权 ID 由目标页再次拒绝。已识别但目标页尚无强 ID 重核验能力的类型明确显示暂不支持，不做空跳转。
 
 对象详情、动作表单、页内 Tabs **不作为常驻菜单项**（与 PC 导航硬约束一致）：它们由扫码结果、任务卡或列表行进入，属于页面布局而非导航树。
 
@@ -45,7 +51,7 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务�
 - **M2 WMS 一线闭环（已建 · 5 页）**：收货入库/复核发货/盘点（写闭环 + 幂等）+ 拣货/上架（只读任务清单）五页全量落地。#374 已补 WMS 拣货、上架、盘点独立 list facade，curated barrel 已接出（`@nerv-iip/api-client`），首页 WMS 入口五项已点亮；拣货/上架无逐任务 complete 端点，做只读清单（写闭环经父单 complete），盘点写经 count-executions complete（幂等键注入）。
 - **M3 MES 一线闭环（已建）**：报工/领料/完工入库/工序执行 —— MES 工序执行/报工/领料/完工入库 已建 (Plan 3)；当前工序已补齐服务端 `allowedActions` / `blockReasons` / `evaluatedAtUtc` 门禁旅程（MES facade 全就绪，无后端阻塞）。
 - **M4 设备轻量（已建）**：设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已落地设备字典点亮（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true）、设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。维修人员队列使用独立 `/equipment/work-orders` 路由，固定由服务端 `scopeKind=self` 绑定当前 principal，支持服务端状态/设备/关键字筛选和每页 20 条分页；每页响应的 `skip/take` 必须是安全整数并与请求精确相等，错页响应 fail closed，不写入分页缓存。HTTP 200 但 `success:false` 的读响应进入明确可重试错误态，不冒充空队列或继续展示旧行。公开工单/设备 GUID 在路由、请求与响应边界统一归一化为小写，业务编码保留 Ordinal 大小写语义；列表/详情每次 scope、筛选或路由 identity 变化都开启新的实时请求 generation，A→B→A 时拒绝 Pinia 旧 A 缓存和迟到旧请求，且设备/身份补充资料只能绑定当前 fresh 权威详情。详情以强 `workOrderId` 重新读取同一 Self 范围，仅在 `deviceAssetId`、优先级、状态、开单时间、有效版本、动作/阻塞原因/生命周期数组及生命周期关键字段均满足权威响应 shape 时展示；不完整响应清空旧详情并进入失败态，不以版本 0 或空数组补造事实。详情在生命周期写命令交付前保持只读。工单中的设备引用按 MasterData 公开契约可为设备公开 ID 或设备编码；PDA 用该引用查询有界设备详情，并只接受当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用精确相等、且 `active` 与非空 `snapshotVersion` 均存在的事实，不接纳切换工单前的迟到响应。任务入口、列表、详情和设备选择器同时要求 `business.maintenance.work-orders.read` 与 `business.masterdata.resources.read`；缺少 principal、组织/环境或任一权限时 fail closed，维修队列与设备目录均不发请求，也不使用“我的维修工单”表述。列表主体姓名与详情指派/生命周期姓名只来自精确有界身份查询；502 后的列表或详情刷新会先重验权威工单事实，再重取当前 scope/key 的身份资料。报警详情进入报修时，同一页面实例随 route 同步替换 `deviceAssetId + sourceAlarmId` 二元组；用户显式更换设备会清除旧 `sourceAlarmId`，结果未知的幂等重试则冻结原二元组。保留来源时，Gateway 在创建前按当前组织/环境精确重读唯一报警，并通过 MasterData 把报警设备和请求设备解析到同一 `DeviceAssetId`，不一致或缺失时 fail closed；canonical D GUID 报警 ID 统一小写，legacy opaque ID 仅 trim 且保留 Ordinal 大小写。创建成功还必须同时返回合法且一致的 canonical `workOrderId` 与 `operationReceipt.resourceId`；它只证明工单已创建，默认尚未指派、当前 Self 详情返回 403。成功态明确显示等待派工且不提供详情链接；外部权威派工给当前 principal 后，用户需点击“重新核验指派状态”触发同一 Self GET，核验成功才显示强 `workOrderId` 详情入口并保留报警来源上下文；不复用创建响应冒充详情，也不自动指派。
-- **M5 扫码解析增强**：接入扫码 resolve 端点（缺口 5），强化扫码直达。
+- **M5 扫码解析增强（已建）**：首页与 `/scan` 已接入 barcode resolve；双强 ID 工序、唯一/歧义/未知/无权限/过期 ID 的只读导航闭环已交付。相机、离线解析及更多对象目标页重核验仍后置。
 
 路线图保留（v1 不实现，仅预留目录与边界）：工位机/平板触摸操作台 `business-workstation`、大屏看板 `business-board`、审批移动端。
 
@@ -55,9 +61,9 @@ PDA v1 闭环依赖若干 BusinessGateway facade 能力，当前存在缺口（�
 
 - **WMS 拣货/上架/盘点独立 list 已补齐（#374）**：BusinessGateway 暴露 `GET /api/business-console/v1/wms/picking-tasks`、`GET /api/business-console/v1/wms/putaway-tasks`、`GET /api/business-console/v1/wms/count-executions`，均保留服务端分页 `skip/take/total` 与状态/库位过滤；操作员过滤参数已进入 facade，但当前 WMS 聚合尚无 assigned operator 字段，传入时返回空集，不伪造“我的任务”。
 - **「我的任务」个人过滤缺失**：WMS list facade 已接收 `operatorUserId` 参数但缺少 WMS assigned operator 持久字段，`workbench/summary` 仍只提供 KPI/待办/通知。
-- **扫码解析端点缺失**：仅有扫码记录 create+list，缺 `POST barcode/resolve`（扫码串 → 对象类型/ID/目标作业页）；对象搜索当前不支持库存批次/库位/设备类型。
+- **更多扫码目标仍后置**：`POST barcode/resolve` 与 PDA 首批 MES 强 ID 直达已交付；库存批次/库位、WMS、ERP、设备等类型须先在目标页具备当前权限下的强 ID 实时重核验，之后才可加入直达映射。
 
-处置口径：#374 已收口 WMS P0 list facade（拣货/上架/盘点 list 已交付）；扫码解析、真实个人任务收件箱和全局搜索库存批次/设备类型仍需后续下游事实支撑。缺口落地前，对应 PDA 作业页保持 disabled / feature-flag hidden 或以父单进入，不做半截入口或空跳转；不再以客户端 `assignedUserId` 或工作中心聚合伪造“我的任务”，只有服务端 principal-bound 读面可使用 Self 口径。
+处置口径：#374 已收口 WMS P0 list facade（拣货/上架/盘点 list 已交付）；更多扫码目标、真实个人任务收件箱和全局搜索库存批次/设备类型仍需后续下游事实支撑。缺口落地前，对应 PDA 作业页保持 disabled / feature-flag hidden 或以父单进入，不做半截入口或空跳转；不再以客户端 `assignedUserId` 或工作中心聚合伪造“我的任务”，只有服务端 principal-bound 读面可使用 Self 口径。
 
 ## 6. 验收
 

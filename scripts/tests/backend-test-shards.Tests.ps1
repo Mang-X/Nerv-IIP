@@ -674,10 +674,14 @@ $excludedSelectors = @(
 # WMS 的三个混合类 → 5 条方法（61 → 63）。#1561 把 InventoryDirectory 的 external 用例并入 lane，
 # 但该类含 Docker CLI 原语、必须整类排除，因此选择器总数不变。#1566 新增的保存边界类只含
 # PostgreSQL 用例，整类交给 real-postgres lane，选择器总数增加到 64。#2070 新增的周期巡检
-# PostgreSQL profile 同样整类交给 real-postgres lane，选择器总数增加到 65。
-Assert-Contract ($excludedSelectors.Count -eq 65) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# PostgreSQL profile 同样整类交给 real-postgres lane，选择器总数增加到 65；报废原因码 profile 再增加 1 个类选择器。
+# #1963 PR-A 新增 WorkOrderTransformation PostgreSQL 类后，选择器总数增加到 67；#2247 的替代料快照
+# provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane，选择器总数增加到 68。
+Assert-Contract ($excludedSelectors.Count -eq 68) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests'))) 'The Quality periodic-inspection PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests'))) 'The Quality scrap-reason PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests'))) 'The MES CAP save-boundary PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests'))) 'The MES material-substitute snapshot PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests'))) 'The Inventory directory PostgreSQL test class must be excluded from its fast shard.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must remain method-scoped.'
 Assert-Contract (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests')))) 'A mixed fast test class must not be excluded wholesale.'
@@ -1313,10 +1317,17 @@ try {
     Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
 
     $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
-    # #1561 之后该类的两条身份分属两条规则（Docker 夹具 → inventory-directory-postgres，
-    # external → inventory-directory-external）。只删其一，类选择器仍能经另一条解析成功，
-    # 变异就失去鉴别力；因此这里把覆盖该类的两条规则一并删掉，验证"选择器无处解析"这条不变量。
-    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-postgres'), [StringComparison]::Ordinal) -and -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-external'), [StringComparison]::Ordinal) })
+    # #1561 之后目录类的身份拆为 Docker 夹具 / directory external，#2228 再拆出 line-side external。
+    # 只删其中一条，类选择器仍能经其余规则解析成功，变异就失去鉴别力；因此把覆盖该类的三条规则
+    # 一并删掉，验证"选择器无处解析"这条不变量。
+    $directoryPolicyRuleIds = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            'inventory-directory-postgres',
+            'inventory-directory-external',
+            'inventory-line-side-balance-external'
+        ),
+        [StringComparer]::Ordinal)
+    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not $directoryPolicyRuleIds.Contains([string] $_.id) })
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($directoryPolicy | ConvertTo-Json -Depth 100) -NoNewline
     $missingDirectoryPolicy = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-policy-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
     Assert-Contract (-not $missingDirectoryPolicy.Passed) 'Removing the Inventory directory PostgreSQL policy rule must fail shard governance.'

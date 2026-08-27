@@ -26,6 +26,25 @@ public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesE
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
 
+public sealed record OperationActualTimeSettlementSnapshot(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    DateTimeOffset CompletedAtUtc,
+    long ActualLaborTicks,
+    long ActualMachineTicks,
+    IReadOnlyCollection<string> CoveredProductionReportNos);
+
+public sealed record OperationActualTimeSettledDomainEvent(
+    OperationActualTimeSettlementSnapshot Settlement) : IDomainEvent;
+
+public sealed record OperationActualTimeSettlementVoidedDomainEvent(
+    OperationActualTimeSettlementSnapshot Settlement,
+    DateTimeOffset VoidedAtUtc) : IDomainEvent;
+
 public sealed record OperationTaskManualDispatchSnapshot(
     string OrganizationId,
     string EnvironmentId,

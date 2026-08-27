@@ -19,6 +19,11 @@
 13. 受管进程被信号终止必须在失败信息里成文，不得只留一个裸退出码。真实故障（#1664）里 FullChain 的 `man-440` 场景内层是被 SIGKILL 的 `dotnet test`（137 = 128 + 9），而 lane 只报 `Command 'pwsh' exited with 1`，两次都被读成场景断言失败或抖动。结论必须能跨进程边界继承：受管入口在子进程捕获输出里发现 `NERV-SIGNAL-EXIT` 标记时，要把内层的信号与退出码带进自己的失败信息。这一条由 `scripts/tests/script-automation-signal-exit.Tests.ps1` 在 Script Governance job 中守住，并自带变异对照。**它只让下一次信号死亡可被识别，不构成 #1664 根因（疑似 OOM）已被证实或已被修复的证据。**
 14. FullChain lane 必须为每个场景留下内存维度证据：`scripts/lib/RuntimeMemoryEvidence.ps1` 在每个 entrypoint 的**前后**各采一次快照（`/proc/meminfo`、cgroup v2 的 `memory.current`/`max`/`peak` 与 `memory.events`，以及 `/proc/vmstat` 的全局 `oom_kill` 计数），场景失败时追加一次内核 ring buffer 的 OOM 取证，全部写进 `artifacts/full-chain-test-lane/**/summary.json`（`schemaVersion` 3）。采集一律 best-effort：读不到只记 `unavailable` 和原因，**绝不改变 lane 的成败**——采证脚本把被测 lane 弄红，等于用一个新的假红换一个旧的真红。快照点必须贴着 entrypoint 前后，取在 lane 首尾会把冷启动峰值平均掉。全局 `oom_kill` 不是 cgroup 计数的重复项：hosted runner 的 slice 上 `memory.max` 是 `max`，真发生的是全局 OOM，`memory.events.oom_kill` 因此恒为 0；`/proc/vmstat` 是 world-readable 的，不依赖 `dmesg` 权限（hosted runner 通常 `kernel.dmesg_restrict=1`）。两项计数一律看前后快照的差值，不看绝对值。本条由 `scripts/tests/full-chain-memory-evidence.Tests.ps1` 在 Script Governance job 中守住。**它只补齐证据维度，不构成 #1664 根因（疑似 OOM）已被证实的结论。**
 
+受控 FullStack session 如需开通独立的 WMS 演示工人账号，必须显式使用 `.\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker`（或等价的 `fullstack start` 参数）。脚本为该次受控进程生成与 admin password 不同的短生命周期 seed，仅注入 Aspire 子进程和后续 Playwright 子进程环境；默认不生成、不注入 worker seed。worker password 不得写入 manifest、artifact、报告或日志。
+
+同一 worker opt-in 还由 AppHost 转换为非敏感的 WMS 最小作业池 seed 开关，worker password 仍仅供 IAM 使用；
+WMS 只补 `SITE-001` 收货作业池、`user-emp-049` 有效成员资格和最小 Open 入库单，完整 History 开启时不重复写入。
+
 ## 分类矩阵
 
 | 分类 | 允许行为 | 禁止行为 | 示例 |
@@ -331,7 +336,7 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | 层级 | 目的 | 典型命令 |
 | --- | --- | --- |
 | fast | 快速发现脚本解析、治理和无外部依赖测试问题 | `pwsh scripts/check-script-governance.ps1`、`git diff --check` |
-| infra | 验证 Docker、本地依赖、真实 PostgreSQL profile、disposable database、现场连接断连和 opt-in 发布演练 | `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1`、`pwsh scripts/verify-iam-persistent-auth-foundation.ps1`、`pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`、`pwsh scripts/verify-production-release-rehearsal.ps1 -Profile dependencies` |
+| infra | 验证 Docker、本地依赖、真实 PostgreSQL/Redis provider、disposable database、现场连接断连和 opt-in 发布演练 | `pwsh scripts/run-postgres-test-lane.ps1 ...`、`pwsh scripts/run-redis-cap-test-lane.ps1 ...`、`pwsh scripts/verify-iam-persistent-auth-foundation.ps1`、`pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`、`pwsh scripts/verify-production-release-rehearsal.ps1 -Profile dependencies` |
 | full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归；真实浏览器全栈使用一次性 session | `.\nerv.ps1 fullstack run -Scenario smoke`、`.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`、`pwsh scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2`、`pwsh scripts/verify-openapi-client-drift.ps1` |
 | leader-demo | 重建隔离 PostgreSQL/Redis 演示 session，验证固定前置事实、公开 HTTP 查询、连续遥测、证据与精确清理 | `.\nerv.ps1 demo reset`、`.\nerv.ps1 demo health-check`、`pwsh scripts/verify-leader-demo-telemetry-simulator.ps1 -DurationMinutes 10 -HistoricalBackfill`、`.\nerv.ps1 demo stop`；停止后对同一 ID 执行 `.\nerv.ps1 fullstack stop -SessionId <sessionId>` 确认 `state=Stopped remaining=0`，再用 `fullstack status` 确认 `state=Stopped containers=0` |
 
@@ -387,8 +392,6 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | `tests/acceptance-scenario-matrix-equivalence.Tests.ps1` | `check` | 已受治理/fixture CI 与 compat-fast 接线 | 用 OS 临时 planning/canonical fixtures 验证同 run 中 planning=1、v1=2、shadow=1 的 mixed selective-rerun 正例，以及两轨固定 path/track/source-attempt 绑定、schema/provenance/cleanup 失败关闭、WMS planning/report scenario identity、稳定向量不受物理 attempt 影响、脱敏 source-attempt report 与原子写入；同时锁定旧 legacy 参数不再暴露。不连接真实依赖。由 Script Governance 独立 5 分钟 step 与 `compat-fast` 执行；纯合同通过不构成 hosted 等价证据。 |
 | `scripts/tests/test-evidence.Tests.ps1` | `check` | 已受治理/CI 接线 | fixture 证明三项硬门禁、双 SHA、baseline authority、selected-lane/shard 语义、脱敏与 normalized roundtrip，并锁定无 raw-path writer 参数、Ubuntu major normalization、quarantine 到期边界与两调用点错误契约；另以 AST 契约钉住 `scripts/lib/TestEvidence.ps1` 的序数比较边界（扫描面见「标识符比较的序数收口」；豁免表按「函数名 + 表达式原文精确相等」匹配，不按行号也不按子串，现为 1 条，且必须恰好命中一处），并用合成源码对扫描面本身做正反鉴别：每条覆盖轴必须报出、每条已登记盲区必须沉默、命名豁免不得吞掉同函数里另一处 `Group-Object`；由 Script Governance job 和 `compat-fast` 执行并保留真实退出码。 |
 | `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；Ubuntu 22.04.3 `compat-core-verify` 已通过，证据路径为 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`。 |
-| `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、dotnet、solution tests 和 scoped PostgreSQL test environment；baseline exemption 已移除。 |
-| `verify-fourth-slice-real-infra.ps1` | `verify` | 第一批已退役 | 保留无副作用、明确失败的路径占位；真实基础设施责任由当前 AppHost/fullstack 与专用 provider lane 承接。 |
 | `verify-third-slice-console.ps1` | `verify` + `generate` | 第一批已退役 | 保留无副作用、明确失败的路径占位；OpenAPI 导出、api-client 生成和前端质量门禁使用各自的当前入口。 |
 | `verify-openapi-client-drift.ps1` | `verify` + `generate` | 已受治理 | CI 契约漂移门禁；使用 helper 调用 OpenAPI 导出、frontend install/api-client generation 和 git diff/status 检查，失败时输出 OpenAPI 快照与 generated api-client 差异。 |
 | `verify-first-slice.ps1` | `verify` | 第一批已退役 | 保留无副作用、明确失败的路径占位；本地服务生命周期使用 `nerv.ps1`，仓库回归使用当前 CI lane。 |
@@ -425,7 +428,7 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | `export-gateway-openapi.ps1` | `generate` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免 `MissingHelper`、`ForbiddenCommand`、`DynamicInvocation` 和 `ForbiddenProcessStart`；迁移时需声明写入 OpenAPI 快照和服务启动副作用。 |
 | `verify-second-slice-ops.ps1` | `verify` | 第一批已退役 | 保留无副作用、明确失败的路径占位；Gateway/Ops/Connector Host 回归使用当前测试项目与专用 CI lane，baseline exemption 已删除。 |
 
-当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 一个 legacy exemption；新增脚本不得复用该例外口径。第一批四个历史纵切路径保留为无副作用、明确失败的兼容墓碑，不再被视为当前验证入口。`scripts/tests/**` 目前不在目录扫描范围内（这些 harness 故意以动态调用和直接进程验证治理规则本身）；把它们纳入治理需要 baseline 先支持 owner issue 与到期日，与 `backend/test-determinism-baseline.json` 同等纪律，属独立跟进项，不在 MAN-669 范围内。
+当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 一个 legacy exemption；新增脚本不得复用该例外口径。前三个历史纵切路径仍保留为无副作用、明确失败的兼容墓碑，不再被视为当前验证入口；第四、第五阶段路径已删除。`scripts/tests/**` 目前不在目录扫描范围内（这些 harness 故意以动态调用和直接进程验证治理规则本身）；把它们纳入治理需要 baseline 先支持 owner issue 与到期日，与 `backend/test-determinism-baseline.json` 同等纪律，属独立跟进项，不在 MAN-669 范围内。
 
 后端测试确定性两个脚本共用 `artifacts/test-determinism/man-662/**`：`check` 侧只读、`verify` 侧只追加新的 invocation 目录。`backend/test-determinism-baseline.json` schema 3 的每一条 `expiring-debt` 行都以 `registeredByIssue` 记录登记变更，并用不同的 `ownerIssue` 指向一个**在本变更之外仍然存在**的责任 issue；两者均只接受 `MAN-\d+` 或 `#\d+`，按命名空间与去前导零后的数字比较身份，相同即按自担保拒绝。`registeredOn` 与 `expiresOn` 使用 `yyyy-MM-dd`，登记日不得在未来，expiry 不得早于登记日且最长 45 天（正好 45 天有效），同时保留早于 UTC 今日即过期硬失败。该上界完全由本地元数据计算，不访问 GitHub 或 Linear，避免网络与权限把政策门禁变成非确定性外部依赖。`permanent` 行是唯一没有到期日的分类，代价是它的 `路径=pattern=maxRows` 白名单与容量写在脚本里而不是 baseline 里：新增常设例外或提高容量要改脚本、过脚本治理与评审，baseline 无法自我豁免；白名单只对 ordinal 精确匹配的 pair 生效，容量统计合法 permanent baseline 行而不是 occurrence，一个文件拿到 `StaticSetter` 常设位不等于它以后的 `Thread.Sleep` 也能登记成 permanent。删除 permanent 行无需先降低 cap。
 

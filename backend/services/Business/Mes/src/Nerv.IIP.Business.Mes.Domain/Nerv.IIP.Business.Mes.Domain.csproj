@@ -12,4 +12,8 @@
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.Business.Mes.Web" />
+  </ItemGroup>
+
 </Project>

@@ -32,6 +32,81 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesEndpointContractTests
 {
     [Fact]
+    public async Task Record_downtime_rejects_missing_real_context_before_sending_command()
+    {
+        var sender = new CapturingRecordDowntimeSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/downtime-events",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-001",
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, sender.CallCount);
+    }
+
+    [Fact]
+    public async Task Record_downtime_endpoint_preserves_work_center_reason_time_and_idempotency_in_the_command()
+    {
+        var sender = new CapturingRecordDowntimeSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/downtime-events",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+                workCenterId = "WC-CNC-01",
+                deviceAssetId = "DEV-01",
+                reasonCode = "MECH-FAULT",
+                startedAtUtc,
+                idempotencyKey = "downtime-http-001",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, sender.CallCount);
+        Assert.NotNull(sender.LastCommand);
+        var command = sender.LastCommand!;
+        Assert.Equal("WC-CNC-01", command.WorkCenterId);
+        Assert.Equal("MECH-FAULT", command.Reason);
+        Assert.Equal(startedAtUtc, command.FromUtc);
+        Assert.Equal("downtime-http-001", command.IdempotencyKey);
+    }
+
+    [Fact]
     public void Production_report_internal_compatibility_constructor_cannot_mint_a_caller_intent_receipt()
     {
         var internalCommand = new RecordProductionReportCommand(
@@ -87,6 +162,81 @@ public sealed class MesEndpointContractTests
         Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Queued", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Authorize_start_endpoint_forwards_scoped_request_and_ignores_caller_supplied_audit_fields()
+    {
+        var sender = new CapturingAuthorizeStartSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "principal:forged-header");
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-authorize-start-http");
+        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-authorize-start-http");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-HTTP/authorize-start",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                approvalChainId = " approval-1960-http ",
+                reason = "  HTTP route evidence  ",
+                authorizedBy = "principal:forged",
+                changedAtUtc = "2000-01-01T00:00:00Z",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var command = Assert.IsType<AuthorizeAndStartOperationTaskCommand>(sender.Command);
+        Assert.Equal("org-001", command.OrganizationId);
+        Assert.Equal("env-dev", command.EnvironmentId);
+        Assert.Equal("OP-HTTP", command.OperationTaskId);
+        Assert.Equal(" approval-1960-http ", command.ApprovalChainId);
+        Assert.Equal("  HTTP route evidence  ", command.Reason);
+        Assert.Equal("corr-authorize-start-http", command.CorrelationId);
+        Assert.Equal("idem-authorize-start-http", command.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Line_side_return_endpoint_declares_and_returns_409_for_a_domain_conflict()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new LifecycleConflictSender());
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("Idempotency-Key", "return-contract-conflict");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/material-issue-requests/MIR-CONFLICT/line-side-returns",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                returnedQuantity = 1m,
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("\"success\":false", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -247,6 +397,76 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Record_defect_endpoint_preserves_the_caller_recorded_time_in_the_command()
+    {
+        var sender = new CapturingRecordDefectSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        var recordedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            recordedAtUtc,
+            idempotencyKey = "defect-recorded-time-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, sender.CallCount);
+        Assert.NotNull(sender.LastCommand);
+        Assert.Equal(recordedAtUtc, sender.LastCommand.RecordedAtUtc);
+        Assert.Null(sender.LastCommand.OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Record_defect_endpoint_rejects_a_missing_recorded_time_before_dispatch()
+    {
+        var sender = new CapturingRecordDefectSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/defects", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-QUALITY",
+            operationTaskId = "OP-10",
+            defectCode = "SCRATCH",
+            quantity = 2.5m,
+            idempotencyKey = "defect-missing-time-001",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, sender.CallCount);
+    }
+
+    [Fact]
     public async Task Record_production_report_endpoint_returns_strong_id_wire_shape()
     {
         var productionReportId = Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689");
@@ -292,6 +512,7 @@ public sealed class MesEndpointContractTests
     public async Task Create_finished_goods_receipt_endpoint_returns_strong_id_wire_shape()
     {
         var receiptRequestId = Guid.Parse("019f88b9-1d59-7cb3-b4a0-37b88e78422e");
+        var sender = new FinishedGoodsReceiptWireShapeSender(receiptRequestId);
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -299,7 +520,7 @@ public sealed class MesEndpointContractTests
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<ISender>();
-                    services.AddSingleton<ISender>(new FinishedGoodsReceiptWireShapeSender(receiptRequestId));
+                    services.AddSingleton<ISender>(sender);
                 });
             });
         var client = factory.CreateClient();
@@ -315,6 +536,7 @@ public sealed class MesEndpointContractTests
             quantity = 1m,
             uomCode = "PCS",
             requestedAtUtc = "2026-07-22T07:00:00Z",
+            unitCost = 99.99m,
             idempotencyKey = "wire-shape-001",
             producedLotNo = "LOT-FG-WIRE-001",
         });
@@ -328,6 +550,8 @@ public sealed class MesEndpointContractTests
         Assert.True(wireId.TryGetProperty("id", out var id), rawBody);
         Assert.Equal(receiptRequestId, id.GetGuid());
         Assert.Equal("FGR-WIRE-001", root.GetProperty("requestNo").GetString());
+        Assert.NotNull(sender.Command);
+        Assert.Null(sender.Command!.UnitCost);
     }
 
     [Fact]
@@ -433,7 +657,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(55, MesEndpointContracts.All.Count);
+        Assert.Equal(59, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -565,6 +789,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/start"
             && x.PermissionCode == MesPermissionCodes.OperationsManage
             && x.OperationId == "startBusinessMesOperationTask");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start"
+            && x.PermissionCode == MesPermissionCodes.OperationsManage
+            && x.OperationId == "authorizeAndStartBusinessMesOperationTask");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/pause"
@@ -1017,6 +1246,49 @@ public sealed class MesEndpointContractTests
         Assert.Equal("env-dev", sender.Query.EnvironmentId);
         Assert.Equal("WO-EXACT-A", sender.Query.WorkOrderId);
         Assert.Equal("OP-EXACT-A", sender.Query.OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Assign_dispatch_task_endpoint_forwards_collaboration_participants()
+    {
+        var sender = new CapturingAssignDispatchTaskSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:planner");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/dispatch-tasks/OP-HTTP/assign",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                assignedUserId = "worker-a",
+                participants = new[]
+                {
+                    new { workerId = "worker-a", workerName = "Alice", sharePercent = 60m },
+                    new { workerId = "worker-b", workerName = "Bob", sharePercent = 40m },
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var command = Assert.IsType<AssignDispatchTaskCommand>(sender.Command);
+        Assert.Equal("OP-HTTP", command.OperationTaskId);
+        Assert.Equal("user:planner", command.Actor);
+        Assert.Collection(
+            Assert.IsAssignableFrom<IReadOnlyCollection<DispatchParticipantInput>>(command.Participants),
+            first => Assert.Equal(("worker-a", "Alice", 60m), (first.WorkerId, first.WorkerName, first.SharePercent)),
+            second => Assert.Equal(("worker-b", "Bob", 40m), (second.WorkerId, second.WorkerName, second.SharePercent)));
     }
 
     [Fact]
@@ -1592,6 +1864,48 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Material_issue_query_for_operation_returns_operation_and_work_order_level_received_requests()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        var operationRequest = Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-OP-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", "L", 1m, now);
+        operationRequest.ConfirmAndPostLineSideReceipt(
+            new Domain.AggregatesModel.MaterialSupplyAggregate.MaterialTransferLocations(
+                "SITE-001", "LOC-001", "LINE-001", "LINE-LOC-001"),
+            now.AddMinutes(1), 1m, "LOT-OP-001");
+        var workOrderRequest = Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-WO-001", "WO-MAT", null, "MAT-OIL", "L", 2m, now.AddMinutes(2));
+        workOrderRequest.ConfirmAndPostLineSideReceipt(
+            new Domain.AggregatesModel.MaterialSupplyAggregate.MaterialTransferLocations(
+                "SITE-001", "LOC-001", "LINE-001", "LINE-LOC-001"),
+            now.AddMinutes(3), 2m, "LOT-WO-001");
+        var otherOperationRequest = Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-OP-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", "L", 3m, now.AddMinutes(4));
+        otherOperationRequest.ConfirmAndPostLineSideReceipt(
+            new Domain.AggregatesModel.MaterialSupplyAggregate.MaterialTransferLocations(
+                "SITE-001", "LOC-001", "LINE-001", "LINE-LOC-001"),
+            now.AddMinutes(5), 3m, "LOT-OP-002");
+        dbContext.MaterialIssueRequests.AddRange(operationRequest, workOrderRequest, otherOperationRequest);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery(
+                "org-001", "env-dev", "WO-MAT", Skip: 0, Take: 10, OperationTaskId: "OP-MAT-10"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal(
+            ["MIR-WO-001", "MIR-OP-001"],
+            result.Items.Select(item => item.RequestId).ToArray());
+        Assert.All(result.Items, item => Assert.Equal(
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.ReceivedStatus,
+            item.Status));
+    }
+
+    [Fact]
     public async Task Mes_list_queries_apply_server_filters_before_count_and_page()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
@@ -1826,6 +2140,10 @@ public sealed class MesEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
         dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QUALITY", "SKU-001", "PV-001", 1m, 10, now));
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-10", OperationTaskLifecycleStatus.Queued, 10, "WC-10", [], now, TimeSpan.FromHours(1), null, null),
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-20", OperationTaskLifecycleStatus.Queued, 20, "WC-10", [], now, TimeSpan.FromHours(1), null, null),
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-30", OperationTaskLifecycleStatus.Queued, 30, "WC-10", [], now, TimeSpan.FromHours(1), null, null));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new RecordDefectCommandHandler(dbContext).Handle(
@@ -1892,7 +2210,7 @@ public sealed class MesEndpointContractTests
             "org-001",
             "env-dev",
             "WO-QUALITY",
-            "OP-10",
+            null,
             "DEF-SURFACE",
             1m,
             now.AddMinutes(1),
@@ -1902,6 +2220,9 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var secondResult = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { RecordedAtUtc = now.AddMinutes(2) },
+            CancellationToken.None));
 
         Assert.Equal(firstResult, secondResult);
         Assert.Equal(1, await dbContext.DefectRecords.CountAsync(
@@ -1909,6 +2230,89 @@ public sealed class MesEndpointContractTests
                 x.EnvironmentId == "env-dev" &&
                 x.WorkOrderId == "WO-QUALITY",
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Record_downtime_is_idempotent_for_the_same_full_payload_and_conflicts_on_a_changed_work_center()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+        var handler = new RecordDowntimeEventCommandHandler(dbContext);
+        var command = new RecordDowntimeEventCommand(
+            "org-001",
+            "env-dev",
+            "WO-DOWNTIME",
+            "OP-10",
+            "WC-CNC-01",
+            "DEV-01",
+            "MECH-FAULT",
+            startedAtUtc,
+            null,
+            "downtime-idem-001");
+
+        var firstResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var secondResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            command with { WorkCenterId = "WC-CNC-02" },
+            CancellationToken.None));
+
+        Assert.Equal(firstResult, secondResult);
+        Assert.Equal(startedAtUtc, firstResult.AcceptedAtUtc);
+        Assert.Equal(1, await dbContext.WorkCenterUnavailabilities.CountAsync(
+            x => x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.WorkCenterId == "WC-CNC-01",
+            CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("OP-OTHER")]
+    [InlineData("OP-MISSING")]
+    public async Task Record_defect_rejects_an_operation_that_is_not_under_the_target_work_order(
+        string operationTaskId)
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.WorkOrders.AddRange(
+            WorkOrder.Create("org-001", "env-dev", "WO-TARGET", "SKU-001", "PV-001", 1m, 10, now),
+            WorkOrder.Create("org-001", "env-dev", "WO-OTHER", "SKU-002", "PV-001", 1m, 10, now));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-OTHER",
+            "OP-OTHER",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            now,
+            TimeSpan.FromHours(1),
+            null,
+            null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordDefectCommandHandler(dbContext);
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new RecordDefectCommand(
+                "org-001",
+                "env-dev",
+                "WO-TARGET",
+                operationTaskId,
+                "DEF-SURFACE",
+                1m,
+                now.AddMinutes(1),
+                $"defect-invalid-operation-{operationTaskId}"),
+            CancellationToken.None));
+
+        Assert.Equal(0, await dbContext.DefectRecords.CountAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -2235,6 +2639,41 @@ public sealed class MesEndpointContractTests
             throw new NotSupportedException();
     }
 
+    private sealed class CapturingAuthorizeStartSender : ISender
+    {
+        public AuthorizeAndStartOperationTaskCommand? Command { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Command = Assert.IsType<AuthorizeAndStartOperationTaskCommand>(request);
+            var response = new MesOperationActionResponse(
+                Command.OperationTaskId,
+                "InProgress",
+                DateTimeOffset.Parse("2026-08-25T01:00:00Z"));
+            return Task.FromResult((TResponse)(object)response);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class RealOperationActionSender(ChangeOperationTaskStateCommandHandler handler) : ISender
     {
         private readonly List<DateTimeOffset> observedChangedAtUtc = [];
@@ -2404,6 +2843,40 @@ public sealed class MesEndpointContractTests
             throw new NotSupportedException();
     }
 
+    private sealed class CapturingAssignDispatchTaskSender : ISender
+    {
+        public AssignDispatchTaskCommand? Command { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Command = Assert.IsType<AssignDispatchTaskCommand>(request);
+            return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+                "Assigned",
+                Command.OperationTaskId,
+                DateTimeOffset.Parse("2026-08-25T08:00:00Z")));
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class ProductionReportWireShapeSender(Guid productionReportId) : ISender
     {
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
@@ -2430,10 +2903,12 @@ public sealed class MesEndpointContractTests
 
     private sealed class FinishedGoodsReceiptWireShapeSender(Guid receiptRequestId) : ISender
     {
+        public CreateFinishedGoodsReceiptRequestCommand? Command { get; private set; }
+
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             _ = cancellationToken;
-            Assert.IsType<CreateFinishedGoodsReceiptRequestCommand>(request);
+            Command = Assert.IsType<CreateFinishedGoodsReceiptRequestCommand>(request);
             return Task.FromResult((TResponse)(object)new FinishedGoodsReceiptRequestCommandResult(
                 new FinishedGoodsReceiptRequestId(receiptRequestId),
                 "FGR-WIRE-001"));
@@ -2510,6 +2985,80 @@ public sealed class MesEndpointContractTests
                 null,
             ]));
     }
+}
+
+internal sealed class CapturingRecordDefectSender : ISender
+{
+    public int CallCount { get; private set; }
+
+    public RecordDefectCommand? LastCommand { get; private set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        LastCommand = Assert.IsType<RecordDefectCommand>(request);
+        return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+            "Accepted",
+            "DEF-001",
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z")));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        CallCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+}
+
+internal sealed class CapturingRecordDowntimeSender : ISender
+{
+    public int CallCount { get; private set; }
+
+    public RecordDowntimeEventCommand? LastCommand { get; private set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        LastCommand = Assert.IsType<RecordDowntimeEventCommand>(request);
+        return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+            "Accepted",
+            "DOWNTIME-001",
+            DateTimeOffset.Parse("2026-08-26T00:00:00Z")));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        CallCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }
 
 internal static class MesTestProvider

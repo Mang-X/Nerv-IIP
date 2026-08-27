@@ -4,6 +4,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -47,6 +48,7 @@ var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTe
 var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 var qualityBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
+var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
 // `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
 // —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
 // 未显式配置时它回落到权威键，不再各自留一份默认值。
@@ -81,11 +83,16 @@ builder.Services.AddHttpClient<MesQualityHttpClient>(client =>
 {
     client.BaseAddress = qualityBaseAddress;
 });
+builder.Services.AddHttpClient<IMesOperationTaskStartApprovalClient, HttpMesOperationTaskStartApprovalClient>(client =>
+{
+    client.BaseAddress = approvalBaseAddress;
+});
 builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
+builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
 builder.Services.AddScoped<MesQualityInspectionPlanClient>();
 builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
     sp.GetRequiredService<MesQualityInspectionPlanClient>());
@@ -111,10 +118,18 @@ builder.Services.AddMediatR(configuration => configuration
     .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
     .AddKnownExceptionValidationBehavior()
     .AddOpenBehavior(typeof(ManualDispatchConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(ReturnLineSideMaterialConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(WorkOrderTransformationConcurrencyBehavior<,>))
     .AddUnitOfWorkBehaviors());
 builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,
     ChangeOperationTaskStateCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<AuthorizeAndStartOperationTaskCommand>,
+    AuthorizeAndStartOperationTaskCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<ReturnLineSideMaterialCommand>,
+    ReturnLineSideMaterialCommandLock>();
 // Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
 // material has no returnable lot) as the standard success=false envelope instead of an unhandled
 // HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns

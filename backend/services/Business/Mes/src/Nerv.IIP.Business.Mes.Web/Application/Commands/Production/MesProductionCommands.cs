@@ -341,10 +341,47 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
+            await OperationActualTimeSettlementCoordinator.CompleteAsync(
+                dbContext,
+                operationTask,
+                request.ReportedAtUtc,
+                [report.ReportNo],
+                cancellationToken);
         }
 
         dbContext.ProductionReports.Add(report);
+        if (request.CompletesOperation)
+        {
+            var participants = await dbContext.OperationTaskParticipants
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.OperationTaskId == request.OperationTaskId)
+                .ToArrayAsync(cancellationToken);
+            if (participants.Length == 0 && !string.IsNullOrWhiteSpace(operationTask.AssignedUserId))
+            {
+                participants =
+                [
+                    OperationTaskParticipant.Register(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.OperationTaskId,
+                        operationTask.AssignedUserId,
+                        operationTask.AssignedUserName,
+                        100m),
+                ];
+            }
+
+            dbContext.ProductionReportLaborAllocations.AddRange(
+                ProductionReportLaborAllocation.Allocate(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    report.ReportNo,
+                    request.WorkOrderId,
+                    request.OperationTaskId,
+                    operationTask.LaborTimeTicks,
+                    participants));
+        }
         dbContext.ProductionReportMaterialConsumptions.AddRange(materialConsumptions);
         if (isOutputOperation && request.GoodQuantity > 0m)
         {
@@ -499,7 +536,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
         if (original.CompletesOperation)
         {
-            operationTask.ReopenAfterReportReversal();
+            await OperationActualTimeSettlementCoordinator.VoidAsync(
+                dbContext,
+                operationTask,
+                request.ReversedAtUtc,
+                cancellationToken);
         }
 
         var reversal = ProductionReport.Reverse(
@@ -616,7 +657,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -714,7 +755,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
                     request.RequestedAtUtc,
                     request.ProducedLotNo,
                     request.SerialNo,
-                    request.UnitCost ?? workOrder.CapitalizedUnitCost,
+                    workOrder.CapitalizedUnitCost,
                     request.ProductionDate,
                     request.ExpiryDate);
                 dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);

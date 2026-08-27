@@ -11,7 +11,19 @@ import {
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
   useCanScheduleSingleOrder,
 } from '@/composables/useSingleOrderScheduling'
-import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReasons,
+  makeIdempotencyKey,
+  useMesWorkOrderTransformations,
+  useMesWorkOrderDetail,
+  type MesWorkOrderTransformationResult,
+} from '@/composables/useBusinessMes'
+import WorkOrderTransformationDialog, {
+  type MergeTransformationSubmit,
+  type SplitTransformationSubmit,
+  type WorkOrderTransformationState,
+} from '@/components/mes/WorkOrderTransformationDialog.vue'
+import { isTransformationConflict } from '@/composables/mes/workOrderTransformation'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,
@@ -94,6 +106,8 @@ const {
   closeWorkOrderPending,
   confirmLineSideReceipt,
   confirmLineSideReceiptPending,
+  returnLineSideMaterial,
+  returnLineSideMaterialPending,
   createMaterialIssueRequest,
   createMaterialIssueRequestPending,
   detail,
@@ -113,9 +127,16 @@ const {
   recordEngineeringChangeDecisionPending,
   retryCancelPreview,
   workOrderManageScopeMessage,
+  workOrderManageScope,
   workOrderManageScopeReady,
+  workOrderReadScope,
   workOrderReadScopeMessage,
 } = useMesWorkOrderDetail()
+const workOrderTransformations = useMesWorkOrderTransformations({
+  filters,
+  readScope: workOrderReadScope,
+  manageScope: workOrderManageScope,
+})
 
 watch(
   () => (route.params as Record<string, string | string[] | undefined>).workOrderId,
@@ -171,6 +192,89 @@ const errorMessage = computed(
 
 // 工单头部四卡：状态与用料给「能不能开工」的结论，工序进度给「做到哪了」。
 const skuLabel = computed(() => resolveSkuLabel(detail.value?.skuId))
+const splitDialogOpen = ref(false)
+const splitState = ref<WorkOrderTransformationState>('idle')
+const splitError = ref('')
+const splitResult = ref<MesWorkOrderTransformationResult | null>(null)
+const splitIdempotencyKey = ref('')
+const splitSource = computed(() =>
+  detail.value?.workOrderId
+    ? {
+        workOrderId: detail.value.workOrderId,
+        label: workOrderLabel.value,
+        skuId: detail.value.skuId,
+        skuLabel: skuLabel.value,
+        productionVersionId: detail.value.productionVersionId,
+        quantity: detail.value.quantity,
+        // PR-C 当前详情读契约没有返回 UOM；拆分结果由服务端继承单位，页面不猜测。
+        uomCode: undefined,
+        status: detail.value.status,
+      }
+    : undefined,
+)
+const canTransformWorkOrder = computed(
+  () =>
+    workOrderManageScopeReady.value &&
+    Boolean(detail.value) &&
+    ['created', 'released'].includes((detail.value?.status ?? '').toLowerCase()),
+)
+const splitPending = computed(
+  () => workOrderTransformations.splitWorkOrderPending.value || splitState.value === 'loading',
+)
+
+function openSplitDialog() {
+  if (!canTransformWorkOrder.value) return
+  splitState.value = 'idle'
+  splitError.value = ''
+  splitResult.value = null
+  splitIdempotencyKey.value = makeIdempotencyKey(`split-work-order-${filters.workOrderId}`)
+  splitDialogOpen.value = true
+}
+
+async function submitSplit(payload: SplitTransformationSubmit | MergeTransformationSubmit) {
+  if (!('targets' in payload)) return
+  splitState.value = 'loading'
+  splitError.value = ''
+  try {
+    const result = await workOrderTransformations.splitWorkOrder(filters.workOrderId, payload)
+    splitResult.value = result
+    if (result.readback) {
+      splitState.value = 'success'
+      notifySuccess(`工单 ${workOrderLabel.value} 已拆分，结果已回读。`)
+      await refreshDetail()
+    } else {
+      splitState.value = 'accepted'
+      notifySuccess('拆分请求已受理，但结果暂未回读；请在本窗口重试回读。')
+    }
+  } catch (error) {
+    splitState.value = isTransformationConflict(error) ? 'conflict' : 'error'
+    splitError.value = inlineErrorMessage(error, '拆分工单失败，请刷新后重试。')
+    notifyOperationFailure('拆分工单失败', error, '拆分工单失败，请刷新后重试。')
+  }
+}
+
+async function retrySplitReadback() {
+  const current = splitResult.value
+  if (!current) return
+  splitState.value = 'loading'
+  try {
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
+    splitResult.value = { ...current, readback, readbackError: undefined }
+    splitState.value = 'success'
+    notifySuccess('拆分结果已回读。')
+    await refreshDetail()
+  } catch (error) {
+    splitResult.value = { ...current, readbackError: error }
+    splitState.value = 'accepted'
+    notifyOperationFailure(
+      '回读拆分结果失败',
+      error,
+      '拆分已受理，但结果暂不可用，请稍后重试回读。',
+    )
+  }
+}
 const completedTaskCount = computed(
   () =>
     operationTasks.value.filter((task) =>
@@ -294,10 +398,8 @@ const receiveForm = reactive({
   materialLotId: '',
   idempotencyKey: '',
 })
-
-function newMaterialIdempotencyKey(scope: string) {
-  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
+const returnOpen = ref(false)
+const returnForm = reactive({ requestId: '', quantity: '', idempotencyKey: '' })
 
 const materialIssueRows = computed(() => materialIssueRequests.value)
 type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
@@ -350,7 +452,7 @@ function openIssueDialog(materialId?: string) {
   issueForm.materialId = materialId ?? ''
   issueForm.quantity = ''
   issueForm.operationTaskId = ''
-  issueForm.idempotencyKey = newMaterialIdempotencyKey(
+  issueForm.idempotencyKey = makeIdempotencyKey(
     `issue-${filters.workOrderId}-${materialId ?? 'material'}`,
   )
   issueOpen.value = true
@@ -363,14 +465,40 @@ function canReceive(row: MaterialIssueRow) {
   )
 }
 
+function returnableQuantityOfRow(row: MaterialIssueRow) {
+  return Math.max(0, (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0))
+}
+
+const returnFormMaxQuantity = computed(() => {
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  return row ? returnableQuantityOfRow(row) : undefined
+})
+
+function canReturn(row: MaterialIssueRow) {
+  return (
+    canManageMaterials.value &&
+    Boolean(row.materialLotId?.trim()) &&
+    returnableQuantityOfRow(row) > 0 &&
+    ['received', 'partiallyreceived'].includes((row.status ?? '').toLowerCase())
+  )
+}
+
 function openReceiveDialog(row: MaterialIssueRow) {
   if (!canReceive(row)) return
   receiveError.value = ''
   receiveForm.requestId = row.requestId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
-  receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
+  receiveForm.idempotencyKey = makeIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
   receiveOpen.value = true
+}
+
+function openReturnDialog(row: MaterialIssueRow) {
+  if (!canReturn(row)) return
+  returnForm.requestId = row.requestId ?? ''
+  returnForm.quantity = String(returnableQuantityOfRow(row))
+  returnForm.idempotencyKey = makeIdempotencyKey(`return-${row.requestId ?? 'request'}`)
+  returnOpen.value = true
 }
 
 async function submitIssue() {
@@ -412,6 +540,32 @@ async function submitReceipt() {
   } catch (error) {
     receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
     notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+  }
+}
+
+async function submitReturn() {
+  if (!returnForm.requestId || returnLineSideMaterialPending.value) return
+  const returnedQuantity = Number(returnForm.quantity)
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  const returnableQuantity = row ? returnableQuantityOfRow(row) : 0
+  if (!Number.isFinite(returnedQuantity) || returnedQuantity <= 0) {
+    notifyError('退料数量必须大于 0。')
+    return
+  }
+  if (returnedQuantity > returnableQuantity) {
+    notifyError(`退料数量不能超过当前可退数量 ${returnableQuantity}。`)
+    return
+  }
+  try {
+    await returnLineSideMaterial(returnForm.requestId, {
+      returnedQuantity,
+      idempotencyKey: returnForm.idempotencyKey,
+    })
+    returnOpen.value = false
+    notifySuccess('已提交线边退料，线边可用量将随库存过账回读更新。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    notifyOperationFailure('线边退料失败', error, '线边退料失败，请稍后重试。')
   }
 }
 
@@ -744,6 +898,22 @@ function formatError(error: unknown) {
           记录工程变更决策
         </NvButton>
         <NvButton
+          v-if="workOrderManageScopeReady"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="!canTransformWorkOrder || splitPending"
+          :title="
+            canTransformWorkOrder
+              ? '将当前工单拆成多个新的子工单'
+              : '只有已创建或已下达状态的工单可以拆分'
+          "
+          data-testid="open-split-work-order"
+          @click="openSplitDialog"
+        >
+          拆分工单
+        </NvButton>
+        <NvButton
           v-if="canClose"
           size="sm"
           type="button"
@@ -843,6 +1013,19 @@ function formatError(error: unknown) {
       v-model:open="scheduleOpen"
       :work-order-id="detail?.workOrderId ?? filters.workOrderId"
       :context-label="`MES 工单 ${workOrderLabel}`"
+    />
+
+    <WorkOrderTransformationDialog
+      v-model:open="splitDialogOpen"
+      mode="split"
+      :state="splitState"
+      :pending="splitPending"
+      :source="splitSource"
+      :result="splitResult"
+      :error-message="splitError"
+      :idempotency-key="splitIdempotencyKey"
+      @submit="submitSplit"
+      @retry-readback="retrySplitReadback"
     />
 
     <!-- 作业范围未就绪：说明缺什么，并直接给选择入口，不让整页只剩一句拒载（#1288）。 -->
@@ -1120,7 +1303,19 @@ function formatError(error: unknown) {
           >
             线边收料
           </NvButton>
-          <span v-else class="text-xs text-muted-foreground">无需收料</span>
+          <NvButton
+            v-if="canReturn(row)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`return-material-${row.requestId}`"
+            @click="openReturnDialog(row)"
+          >
+            线边退料
+          </NvButton>
+          <span v-if="!canReceive(row) && !canReturn(row)" class="text-xs text-muted-foreground"
+            >无需操作</span
+          >
         </template>
       </NvDataTable>
     </div>
@@ -1246,6 +1441,50 @@ function formatError(error: unknown) {
           >
             <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
             确认收料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <!-- 线边退料 -->
+    <NvAlertDialog v-model:open="returnOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle
+            >线边退料 · {{ readFaceText(returnForm.requestId) }}</NvAlertDialogTitle
+          >
+          <NvAlertDialogDescription>
+            退料会把当前线边物料退回仓库；数量不得超过当前可退余额。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="return-quantity">退料数量</NvFieldLabel>
+            <NvInput
+              id="return-quantity"
+              v-model="returnForm.quantity"
+              inputmode="decimal"
+              :max="returnFormMaxQuantity"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="returnLineSideMaterialPending"
+            @click="returnOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="returnLineSideMaterialPending"
+            data-testid="submit-line-side-return"
+            @click="submitReturn"
+          >
+            <Spinner v-if="returnLineSideMaterialPending" aria-hidden="true" />
+            提交退料
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>

@@ -8,6 +8,8 @@ param(
 
     [switch] $NoBuild,
 
+    [switch] $EnableWmsDemoWorker,
+
     [switch] $InfraOnly,
 
     [switch] $OpenDashboard,
@@ -69,6 +71,8 @@ Usage:
   .\nerv.ps1 logs [resource] [-Tail 120] [-Follow]
   .\nerv.ps1 describe [resource] [-IncludeHidden]
   .\nerv.ps1 fullstack run -Scenario smoke
+  .\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker
+  .\nerv.ps1 fullstack start -EnableWmsDemoWorker
   .\nerv.ps1 demo start
   .\nerv.ps1 demo reset
   .\nerv.ps1 demo seed
@@ -158,6 +162,7 @@ switch ($Command.ToLowerInvariant()) {
         if ($PSBoundParameters.ContainsKey('Scenario')) { $fullStackParameters['Scenario'] = $Scenario }
         if ($PSBoundParameters.ContainsKey('SessionId')) { $fullStackParameters['SessionId'] = $SessionId }
         if ($PSBoundParameters.ContainsKey('NoBuild')) { $fullStackParameters['NoBuild'] = $true }
+        if ($PSBoundParameters.ContainsKey('EnableWmsDemoWorker')) { $fullStackParameters['EnableWmsDemoWorker'] = [bool] $EnableWmsDemoWorker }
         if ($PSBoundParameters.ContainsKey('Tail')) { $fullStackParameters['Tail'] = $Tail }
         if ($PSBoundParameters.ContainsKey('Follow')) { $fullStackParameters['Follow'] = $true }
         & $fullStackScript @fullStackParameters @fullStackArguments

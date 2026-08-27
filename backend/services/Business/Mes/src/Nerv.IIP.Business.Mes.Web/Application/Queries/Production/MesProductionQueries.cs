@@ -1,5 +1,8 @@
+using System.ComponentModel;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 
@@ -44,7 +47,16 @@ public sealed record ProductionReportFact(
     string? WorkOrderStatus = null,
     // 冲销本报工的负向记录单号(服务端逐行反查,若本报工已被冲销则非空)。供 Console「已冲销」判定与
     // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
+    [property: JsonIgnore] MesActualHours? OperationActualHours = null)
+{
+    [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
+
+    [Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? OperationActualMachineHours => OperationActualHours?.MachineHours;
+}
 
 public sealed record GetProductionReportQuery(
     string OrganizationId,
@@ -53,7 +65,8 @@ public sealed record GetProductionReportQuery(
 
 public sealed record GetProductionReportResponse(
     ProductionReportFact Report,
-    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots);
+    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots,
+    IReadOnlyCollection<ProductionLaborAllocationFact> LaborAllocations);
 
 public sealed record ConsumedMaterialLotFact(
     string MaterialId,
@@ -61,6 +74,12 @@ public sealed record ConsumedMaterialLotFact(
     decimal ConsumedQuantity,
     string UomCode,
     string MaterialIssueRequestNo);
+
+public sealed record ProductionLaborAllocationFact(
+    string WorkerId,
+    string? WorkerName,
+    decimal SharePercent,
+    long AllocatedLaborTicks);
 
 internal static class ProductionReportFactProjection
 {
@@ -119,6 +138,15 @@ internal static class ProductionReportFactProjection
                     && reversal.EnvironmentId == x.EnvironmentId
                     && reversal.ReversedReportNo == x.ReportNo)
                 .Select(reversal => reversal.ReportNo)
+                .FirstOrDefault(),
+            dbContext.OperationTasks
+                .Where(task => task.OrganizationId == x.OrganizationId
+                    && task.EnvironmentId == x.EnvironmentId
+                    && task.OperationTaskIdValue == x.OperationTaskId
+                    && task.Status == OperationTaskLifecycleStatus.Completed)
+                .Select(task => new MesActualHours(
+                    task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                    task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
                 .FirstOrDefault()));
 }
 
@@ -147,7 +175,17 @@ public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbConte
                 x.MaterialId, x.MaterialLotId, x.ConsumedQuantity, x.UomCode, x.MaterialIssueRequestNo))
             .ToArrayAsync(cancellationToken);
 
-        return new GetProductionReportResponse(report, consumedMaterialLots);
+        var laborAllocations = await dbContext.ProductionReportLaborAllocations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == request.ReportNo)
+            .OrderBy(x => x.WorkerId)
+            .Select(x => new ProductionLaborAllocationFact(
+                x.WorkerId, x.WorkerName, x.SharePercent, x.AllocatedLaborTicks))
+            .ToArrayAsync(cancellationToken);
+
+        return new GetProductionReportResponse(report, consumedMaterialLots, laborAllocations);
     }
 }
 
