@@ -205,7 +205,10 @@ function Assert-ConditionalRoutingWorkflow {
 }
 
 function Assert-AcceptanceScenarioMatrixWorkflowContract {
-    param([Parameter(Mandatory)] [string] $Path)
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $ExpectedDotNetSdkVersion
+    )
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $impactJob = $parsedWorkflow.jobs.'impact-plan'
@@ -310,7 +313,7 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/setup-dotnet@v4', [StringComparison]::Ordinal)
         })
-    Assert-Contract ($dotnetSetupSteps.Count -eq 1 -and [string]::Equals([string]$dotnetSetupSteps[0].with.'dotnet-version', '10.0.302', [StringComparison]::Ordinal)) 'The planning job must setup the exact governed .NET SDK 10.0.302 exactly once.'
+    Assert-Contract ($dotnetSetupSteps.Count -eq 1 -and [string]::Equals([string]$dotnetSetupSteps[0].with.'dotnet-version', $ExpectedDotNetSdkVersion, [StringComparison]::Ordinal)) "The planning job must setup the exact manifest-governed .NET SDK $ExpectedDotNetSdkVersion exactly once."
     $impactDownloadSteps = @($planningSteps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/download-artifact@v4', [StringComparison]::Ordinal)
@@ -1207,6 +1210,31 @@ try {
     [IO.Directory]::CreateDirectory($dotNetAuthorityMutationRoot) | Out-Null
     $authorityManifest = [IO.File]::ReadAllText($dotNetSdkAuthorityManifestPath)
 
+    $synchronizedSdkVersion = '10.0.400'
+    $synchronizedManifestPath = Join-Path $dotNetAuthorityMutationRoot 'synchronized-sdk-manifest.json'
+    $synchronizedManifest = $authorityManifest.Replace(
+        '"sdk": "' + $expectedDotNetSdkVersion + '"',
+        '"sdk": "' + $synchronizedSdkVersion + '"')
+    [IO.File]::WriteAllText($synchronizedManifestPath, $synchronizedManifest, [Text.UTF8Encoding]::new($false))
+    $synchronizedExpectedSdkVersion = [string]((Get-Content -LiteralPath $synchronizedManifestPath -Raw | ConvertFrom-Json -Depth 20).toolchain.sdk)
+    Assert-Contract ([string]::Equals($synchronizedExpectedSdkVersion, $synchronizedSdkVersion, [StringComparison]::Ordinal)) 'The synchronized SDK mutation must read its expected SDK from the mutated manifest authority.'
+
+    $synchronizedWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'synchronized-sdk-workflow.yml'
+    $synchronizedWorkflow = ([regex]::new('dotnet-version:\s*' + [regex]::Escape($expectedDotNetSdkVersion))).Replace(
+        $workflow,
+        'dotnet-version: ' + $synchronizedSdkVersion)
+    [IO.File]::WriteAllText($synchronizedWorkflowPath, $synchronizedWorkflow, [Text.UTF8Encoding]::new($false))
+    $staleSdkExpectationFailure = $null
+    try {
+        Assert-AcceptanceScenarioMatrixWorkflowContract -Path $synchronizedWorkflowPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion
+    }
+    catch {
+        $staleSdkExpectationFailure = $_
+    }
+    Assert-Contract ($null -ne $staleSdkExpectationFailure) 'The synchronized workflow mutation must reject the stale repository SDK expectation.'
+    Assert-AcceptanceScenarioMatrixWorkflowContract -Path $synchronizedWorkflowPath -ExpectedDotNetSdkVersion $synchronizedExpectedSdkVersion
+    Write-Output "CI SDK synchronized authority mutation: MANIFEST=$synchronizedExpectedSdkVersion STALE=$expectedDotNetSdkVersion"
+
     if (-not $IsWindows) {
         $fakeDotNetRoot = Join-Path $dotNetAuthorityMutationRoot 'fake-dotnet-bin'
         [IO.Directory]::CreateDirectory($fakeDotNetRoot) | Out-Null
@@ -1249,6 +1277,19 @@ try {
         -ExpectedExitCode 1 `
         -ExpectedOutput @('ci-setup-dotnet-count:backend-tests-business-gateway:2')
 
+    $duplicateAuthoritySdkKeyWorkflow = $exactVersionRegex.Replace(
+        $workflow,
+        "dotnet-version: 10.0.400`n          dotnet-version: $expectedDotNetSdkVersion",
+        1)
+    $duplicateAuthoritySdkKeyWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'duplicate-dotnet-version-key.yml'
+    [IO.File]::WriteAllText($duplicateAuthoritySdkKeyWorkflowPath, $duplicateAuthoritySdkKeyWorkflow, [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'duplicate CI SDK key in one setup step' `
+        -CaseWorkflowPath $duplicateAuthoritySdkKeyWorkflowPath `
+        -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('ci-dotnet-sdk-key-count:backend-tests-business-gateway:2')
+
     $floatingAuthorityWorkflow = $exactVersionRegex.Replace($workflow, 'dotnet-version: 10.0.x', 1)
     $floatingAuthorityWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'floating-sdk.yml'
     [IO.File]::WriteAllText($floatingAuthorityWorkflowPath, $floatingAuthorityWorkflow, [Text.UTF8Encoding]::new($false))
@@ -1281,6 +1322,45 @@ try {
         -CaseManifestPath $dotNetSdkAuthorityManifestPath `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.400:expected=$expectedDotNetSdkVersion")
+
+    $manifestProjectPath = 'backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj'
+    $manifestProjectProperty = '"project": "' + $manifestProjectPath + '"'
+
+    $missingManifestProjectPath = Join-Path $dotNetAuthorityMutationRoot 'missing-manifest-project.json'
+    [IO.File]::WriteAllText($missingManifestProjectPath, $authorityManifest.Replace("  $manifestProjectProperty,`n", ''), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'missing manifest project owner root' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $missingManifestProjectPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('manifest-project-owner-invalid')
+
+    $wrongManifestProjectPath = Join-Path $dotNetAuthorityMutationRoot 'wrong-manifest-project.json'
+    [IO.File]::WriteAllText($wrongManifestProjectPath, $authorityManifest.Replace($manifestProjectProperty, '"project": "backend/gateway/BusinessGateway/src/Other.Web/Other.Web.csproj"'), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'wrong manifest project owner root' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $wrongManifestProjectPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('manifest-project-owner-invalid')
+
+    $duplicateManifestProjectPath = Join-Path $dotNetAuthorityMutationRoot 'duplicate-manifest-project.json'
+    [IO.File]::WriteAllText($duplicateManifestProjectPath, $authorityManifest.Replace($manifestProjectProperty, "$manifestProjectProperty, `"project`": `"$manifestProjectPath`""), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'duplicate manifest project owner root' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $duplicateManifestProjectPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('manifest-project-owner-invalid')
+
+    $typedManifestProjectPath = Join-Path $dotNetAuthorityMutationRoot 'non-string-manifest-project.json'
+    [IO.File]::WriteAllText($typedManifestProjectPath, $authorityManifest.Replace($manifestProjectProperty, '"project": { "path": "backend/gateway/BusinessGateway" }'), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'non-string manifest project owner root' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $typedManifestProjectPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('manifest-project-owner-invalid')
 
     $driftedManifestPath = Join-Path $dotNetAuthorityMutationRoot 'drifted-manifest.json'
     $manifestSdkProperty = '"sdk": "' + $expectedDotNetSdkVersion + '"'
@@ -1316,7 +1396,7 @@ finally {
 }
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
-Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
+Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion
 
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -1343,7 +1423,7 @@ try {
         $planningMutationPath = Join-Path $workflowMutationRoot "$($planningMutation.Name).yml"
         [IO.File]::WriteAllText($planningMutationPath, $mutatedPlanningWorkflow, [Text.UTF8Encoding]::new($false))
         $planningMutationFailure = $null
-        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $planningMutationPath } catch { $planningMutationFailure = $_ }
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $planningMutationPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $planningMutationFailure = $_ }
         Assert-Contract ($null -ne $planningMutationFailure) "Planning workflow mutation '$($planningMutation.Name)' must be rejected."
     }
 
@@ -1374,7 +1454,7 @@ try {
         $mutatedArtifactDownloadPath = Join-Path $workflowMutationRoot "$($artifactDownloadMutation.Name).yml"
         [IO.File]::WriteAllText($mutatedArtifactDownloadPath, $mutatedArtifactDownloadWorkflow, [Text.UTF8Encoding]::new($false))
         $mutatedArtifactDownloadFailure = $null
-        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $mutatedArtifactDownloadPath } catch { $mutatedArtifactDownloadFailure = $_ }
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $mutatedArtifactDownloadPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $mutatedArtifactDownloadFailure = $_ }
         Assert-Contract ($null -ne $mutatedArtifactDownloadFailure) "Artifact download mutation '$($artifactDownloadMutation.Name)' must be rejected."
     }
 
@@ -1386,7 +1466,7 @@ try {
     $workflowWithoutShadowImagesPath = Join-Path $workflowMutationRoot 'shadow-runtime-drops-dependency-images.yml'
     [IO.File]::WriteAllText($workflowWithoutShadowImagesPath, $workflowWithoutShadowImages, [Text.UTF8Encoding]::new($false))
     $shadowImagesDeletionFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutShadowImagesPath } catch { $shadowImagesDeletionFailure = $_ }
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutShadowImagesPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $shadowImagesDeletionFailure = $_ }
     Assert-Contract ($null -ne $shadowImagesDeletionFailure) 'Deleting the hosted shadow dependency image step must fail the workflow contract.'
 
     $workflowWithRelativeRuntimeArtifact = $workflow.Replace(
@@ -1397,7 +1477,7 @@ try {
     $workflowWithRelativeRuntimeArtifactPath = Join-Path $workflowMutationRoot 'shadow-runtime-relative-planning-artifact.yml'
     [IO.File]::WriteAllText($workflowWithRelativeRuntimeArtifactPath, $workflowWithRelativeRuntimeArtifact, [Text.UTF8Encoding]::new($false))
     $relativeRuntimeArtifactFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithRelativeRuntimeArtifactPath } catch { $relativeRuntimeArtifactFailure = $_ }
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithRelativeRuntimeArtifactPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $relativeRuntimeArtifactFailure = $_ }
     Assert-Contract ($null -ne $relativeRuntimeArtifactFailure) 'Passing a relative planning artifact path from the hosted shadow adapter must fail the workflow contract.'
 
     foreach ($imageMutation in @(
@@ -1409,7 +1489,7 @@ try {
         $workflowWithWrongImagePath = Join-Path $workflowMutationRoot "$($imageMutation.Name).yml"
         [IO.File]::WriteAllText($workflowWithWrongImagePath, $workflowWithWrongImage, [Text.UTF8Encoding]::new($false))
         $wrongImageFailure = $null
-        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithWrongImagePath } catch { $wrongImageFailure = $_ }
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithWrongImagePath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $wrongImageFailure = $_ }
         Assert-Contract ($null -ne $wrongImageFailure) "Shadow image mutation '$($imageMutation.Name)' must fail the workflow contract."
     }
 
@@ -1425,7 +1505,7 @@ try {
     $workflowWithoutAcceptanceScenarioContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-scenario-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceScenarioContractPath, $workflowWithoutAcceptanceScenarioContract, [Text.UTF8Encoding]::new($false))
     $workflowContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceScenarioContractPath } catch { $workflowContractFailure = $_ }
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceScenarioContractPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $workflowContractFailure = $_ }
     Assert-Contract ($null -ne $workflowContractFailure) 'Removing the acceptance scenario matrix Script Governance step must fail the workflow contract.'
 
     $acceptanceRuntimeContractStep = @'
@@ -1445,7 +1525,7 @@ try {
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceRuntimeContractPath } catch { $runtimeWorkflowContractFailure = $_ }
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceRuntimeContractPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $runtimeWorkflowContractFailure = $_ }
     $expectedRuntimeStepDiagnostic = 'Script Governance must contain exactly one independent acceptance scenario matrix runtime contract step.'
     $observedRuntimeStepDiagnostic = if ($null -eq $runtimeWorkflowContractFailure) { '<none>' } else { [string]$runtimeWorkflowContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedRuntimeStepDiagnostic, $expectedRuntimeStepDiagnostic, [StringComparison]::Ordinal)) "Removing the acceptance runtime Script Governance fixture step must fail with the exact runtime-step uniqueness diagnostic. Observed: $observedRuntimeStepDiagnostic"
@@ -1465,7 +1545,7 @@ try {
     $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
     $equivalenceWorkflowContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceEquivalenceContractPath } catch { $equivalenceWorkflowContractFailure = $_ }
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceEquivalenceContractPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $equivalenceWorkflowContractFailure = $_ }
     Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
 
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
@@ -1477,7 +1557,7 @@ try {
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath -ExpectedDotNetSdkVersion $expectedDotNetSdkVersion } catch { $budgetCommentContractFailure = $_ }
     $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 31-step/153m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"

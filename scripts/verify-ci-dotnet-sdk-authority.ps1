@@ -122,6 +122,64 @@ function Get-ManifestSdkAuthority {
     }
 }
 
+function Get-CiDotNetSdkYamlKeyFindings {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string[]] $ExpectedJobNames
+    )
+
+    $rubyProgram = @'
+require 'psych'
+require 'json'
+
+def mapping_pairs(node)
+  return [] unless node.is_a?(Psych::Nodes::Mapping)
+  node.children.each_slice(2).to_a
+end
+
+def mapping_values(node, name)
+  mapping_pairs(node).each_with_object([]) do |(key, value), values|
+    values << value if key.is_a?(Psych::Nodes::Scalar) && key.value == name
+  end
+end
+
+path = ARGV.shift
+expected_jobs = ARGV
+root = Psych.parse_file(path).root
+jobs = mapping_values(root, 'jobs').first
+findings = []
+
+expected_jobs.each do |job_name|
+  job = mapping_values(jobs, job_name).first
+  steps = mapping_values(job, 'steps').first
+  next unless steps.is_a?(Psych::Nodes::Sequence)
+
+  steps.children.each do |step|
+    uses_setup_dotnet = mapping_values(step, 'uses').any? do |uses|
+      uses.is_a?(Psych::Nodes::Scalar) && uses.value.start_with?('actions/setup-dotnet@')
+    end
+    next unless uses_setup_dotnet
+
+    key_count = mapping_values(step, 'with').sum do |with_node|
+      mapping_pairs(with_node).count do |key, _value|
+        key.is_a?(Psych::Nodes::Scalar) && key.value == 'dotnet-version'
+      end
+    end
+    findings << "ci-dotnet-sdk-key-count:#{job_name}:#{key_count}" unless key_count == 1
+  end
+end
+
+puts JSON.generate(findings)
+'@
+    $arguments = @('-rpsych', '-rjson', '-e', $rubyProgram, $Path) + $ExpectedJobNames
+    $result = Invoke-NativeCommandOutput `
+        -Command 'ruby' `
+        -Arguments $arguments `
+        -WorkingDirectory $repoRoot `
+        -Name 'verify-ci-dotnet-sdk-authority-yaml-keys'
+    return @($result.Stdout | ConvertFrom-Json -ErrorAction Stop)
+}
+
 function Get-CiDotNetSdkAuthorityFindings {
     param(
         [Parameter(Mandatory)] [string] $CiWorkflowPath,
@@ -151,6 +209,10 @@ function Get-CiDotNetSdkAuthorityFindings {
     if (-not (Test-Path -LiteralPath $CiWorkflowPath -PathType Leaf)) {
         $findings.Add('ci-workflow-missing')
         return [pscustomobject]@{ Findings = @($findings); ManifestSdk = $manifestSdk; ActualSdk = $actualSdk }
+    }
+
+    foreach ($yamlKeyFinding in @(Get-CiDotNetSdkYamlKeyFindings -Path $CiWorkflowPath -ExpectedJobNames $ExpectedJobNames)) {
+        $findings.Add([string] $yamlKeyFinding)
     }
 
     $workflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $CiWorkflowPath -WorkingDirectory $repoRoot
