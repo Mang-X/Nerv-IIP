@@ -744,6 +744,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     filterLabel?: string
     // `client` proves the rendered table after a local filter; `server` requires an exact 200 list response.
     filterResponseMode?: 'server' | 'client'
+    // The expected list scope is an independent walkthrough fact, not copied from the response.
+    // Server-filter proofs fail closed when this query is omitted.
+    expectedListQuery?: JsonRecord
     tabText?: string | RegExp
     // Reuse a settled route when a tab proof only needs refreshed data; a full reload can supersede API work.
     reuseCurrentRoute?: boolean
@@ -752,6 +755,28 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     emptyText: string
     screenshotName: string
   }
+
+  const erpListQuery = (query: JsonRecord = {}): JsonRecord => ({
+    organizationId,
+    environmentId,
+    skip: 0,
+    take: 10,
+    ...query,
+  })
+
+  const wmsListQuery = (
+    scopeKind: string,
+    scopeId: string,
+    query: JsonRecord = {},
+  ): JsonRecord => ({
+    organizationId,
+    environmentId,
+    scopeKind,
+    scopeId,
+    skip: 0,
+    take: 100,
+    ...query,
+  })
 
   const samePageRoute = (currentUrl: string, route: string): boolean => {
     if (!currentUrl) return false
@@ -830,15 +855,26 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
 
     if (options.filterLabel) {
+      const filterResponseMode = options.filterResponseMode ?? 'server'
+      const expectedListQueryFingerprint =
+        filterResponseMode === 'server'
+          ? options.expectedListQuery === undefined
+            ? (() => {
+                throw new Error(
+                  `server filter proof for ${options.listPath} requires explicit expected list query facts`,
+                )
+              })()
+            : listQueryFingerprint(queryPath(options.listPath, options.expectedListQuery))
+          : undefined
       await fillFilterAndWaitForListResponse(targetPage, {
         route: targetPage.url(),
         listPath: options.listPath,
         filterLabel: options.filterLabel,
         stableText: options.stableText,
-        responseMode: options.filterResponseMode ?? 'server',
+        responseMode: filterResponseMode,
         initialListResponse: firstList,
         initialListNavigationEpoch: firstListNavigationEpoch,
-        expectedListQueryFingerprint: listQueryFingerprint(firstList.url()),
+        expectedListQueryFingerprint,
         timeoutMs: 120_000,
       })
     }
@@ -878,7 +914,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       principalId: runtime.principalId,
       page: options.route,
       pageHttpStatus: navigation?.status() ?? 0,
-      listPath: new URL(firstList.url()).pathname,
+      listPath: options.listPath,
       listHttpStatus: firstList.status(),
       stableKey: options.stableText,
       renderedRowText: safeText(await row.innerText()),
@@ -1068,6 +1104,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/rfqs',
       listPath: '/api/business-console/v1/erp/procurement/rfqs',
       filterLabel: 'RFQ 关键字',
+      expectedListQuery: erpListQuery(),
       stableText: RFQ_NO,
       emptyText: '还没有询价单。可从采购申请或供应商策略发起真实询价。',
       screenshotName: '01-rfq.png',
@@ -1076,6 +1113,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/supplier-quotations',
       listPath: '/api/business-console/v1/erp/procurement/supplier-quotations',
       filterLabel: '供应商报价关键字',
+      expectedListQuery: erpListQuery(),
       stableText: SUPPLIER_QUOTATION_NO,
       emptyText: '还没有供应商报价。先在询价单页面发起询价，供应商回价后在此汇总比价。',
       screenshotName: '02-supplier-quotation.png',
@@ -1129,6 +1167,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/purchase-orders',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
       filterLabel: '采购订单关键字',
+      expectedListQuery: erpListQuery(),
       stableText: PURCHASE_ORDER_NO,
       emptyText: '还没有采购订单。已批准的供应商报价或采购申请转单后会在这里出现。',
       screenshotName: '03-purchase-order-pending.png',
@@ -1252,6 +1291,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/purchase-orders',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
       filterLabel: '采购订单关键字',
+      expectedListQuery: erpListQuery(),
       stableText: PURCHASE_ORDER_NO,
       emptyText: '还没有采购订单。已批准的供应商报价或采购申请转单后会在这里出现。',
       screenshotName: '05-purchase-order-released.png',
@@ -1322,6 +1362,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/receipts',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
       filterLabel: '采购收货关键字',
+      expectedListQuery: erpListQuery(),
       stableText: PURCHASE_ORDER_NO,
       emptyText: '还没有可收货的采购订单。采购订单释放后会在这里跟进入库。',
       screenshotName: '06-purchase-receipt.png',
@@ -1655,6 +1696,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/wms/inbound',
       listPath: '/api/business-console/v1/wms/inbound-orders',
       filterLabel: '关键字搜索',
+      expectedListQuery: wmsListQuery(receiptScopeKind, receiptScopeId, {
+        siteCode: SITE_CODE,
+      }),
       stableText: INBOUND_ORDER_NO,
       emptyText: '暂无入库单。收货作业产生入库单后会出现在这里。',
       screenshotName: '07-wms-inbound.png',
@@ -1698,6 +1742,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/sales/quotations',
       listPath: '/api/business-console/v1/erp/sales/quotations',
       filterLabel: '报价单关键字',
+      expectedListQuery: erpListQuery(),
       stableText: SALES_QUOTATION_NO,
       emptyText: '还没有报价单。可从销售机会或客户需求创建报价。',
       screenshotName: '08-sales-quotation.png',
@@ -1726,6 +1771,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       listPath: '/api/business-console/v1/erp/sales/sales-orders',
       filterLabel: '销售订单关键字',
       filterResponseMode: 'server',
+      expectedListQuery: erpListQuery(),
       stableText: SALES_ORDER_NO,
       emptyText: '还没有销售订单。批准报价后可在这里生成订单。',
       screenshotName: '09-sales-order.png',
@@ -2176,6 +2222,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/sales/deliveries',
       listPath: '/api/business-console/v1/erp/sales/delivery-orders',
       filterLabel: '发货关键字',
+      expectedListQuery: erpListQuery(),
       stableText: DELIVERY_ORDER_NO,
       emptyText: '还没有发货单',
       screenshotName: '16-sales-delivery.png',
@@ -2321,6 +2368,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/wms/outbound',
       listPath: '/api/business-console/v1/wms/outbound-orders',
       filterLabel: '关键字搜索',
+      expectedListQuery: wmsListQuery(shipmentScopeKind, shipmentScopeId),
       stableText: DELIVERY_ORDER_NO,
       emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
       screenshotName: '17-wms-outbound.png',
@@ -2391,6 +2439,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/finance/ar-ap',
       listPath: '/api/business-console/v1/erp/finance/receivables',
       filterLabel: '应收关键字',
+      expectedListQuery: erpListQuery(),
       stableText: DELIVERY_ORDER_NO,
       emptyText: '还没有应收账款。销售出货或手工登记后会在这里形成应收。',
       screenshotName: '18-account-receivable.png',

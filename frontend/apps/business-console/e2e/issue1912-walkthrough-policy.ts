@@ -246,7 +246,6 @@ async function installActionRequestMarker(
     if (actionMarkers[markerOptions.marker]) {
       throw new Error(`duplicate walkthrough action marker ${markerOptions.marker}`)
     }
-
     const state: ActionState = {
       actionCount: 0,
       active: false,
@@ -259,7 +258,6 @@ async function installActionRequestMarker(
     const originalXhrOpen = XMLHttpRequest.prototype.open
     const originalXhrSend = XMLHttpRequest.prototype.send
     const xhrMetadata = new WeakMap<XMLHttpRequest, { method: string; url: string }>()
-
     const queryFingerprint = (url: string) => {
       const entries = [...new URL(url, location.href).searchParams.entries()]
         .filter(([key]) => key !== 'keyword')
@@ -308,16 +306,22 @@ async function installActionRequestMarker(
       }
       return actionFetch
     }
-
-    XMLHttpRequest.prototype.open = function (
+    type XhrOpen = typeof XMLHttpRequest.prototype.open
+    const wrappedXhrOpen: XhrOpen = function (
+      this: XMLHttpRequest,
       method: string,
       url: string | URL,
-      ...rest: unknown[]
-    ) {
+      async: boolean = true,
+      username?: string | null,
+      password?: string | null,
+    ): void {
       xhrMetadata.set(this, { method, url: String(url) })
-      return originalXhrOpen.apply(this, [method, url, ...rest] as never)
+      originalXhrOpen.call(this, method, url, async, username, password)
     }
-    XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
+    const wrappedXhrSend: typeof XMLHttpRequest.prototype.send = function (
+      this: XMLHttpRequest,
+      body?: Document | XMLHttpRequestBodyInit | null,
+    ): void {
       const metadata = xhrMetadata.get(this)
       const marked =
         metadata !== undefined &&
@@ -327,9 +331,10 @@ async function installActionRequestMarker(
         this.setRequestHeader('x-nerv-walkthrough-action', markerOptions.marker)
         state.markedRequestCount += 1
       }
-      return originalXhrSend.call(this, body)
+      originalXhrSend.call(this, body)
     }
-
+    XMLHttpRequest.prototype.open = wrappedXhrOpen
+    XMLHttpRequest.prototype.send = wrappedXhrSend
     const activate = (event: Event) => {
       if (!event.composedPath().includes(element)) return
       if (!state.active) state.fetchBeforeAction = window.fetch
@@ -360,7 +365,6 @@ async function installActionRequestMarker(
     }
     document.addEventListener(markerOptions.eventName, activate, { capture: true })
     document.addEventListener(markerOptions.eventName, closeAfterEventPropagation)
-
     state.cleanup = () => {
       state.disposed = true
       document.removeEventListener(markerOptions.eventName, activate, { capture: true })
@@ -378,14 +382,10 @@ async function installActionRequestMarker(
       }
       delete actionMarkers[markerOptions.marker]
     }
-
-    const wrappedXhrOpen = XMLHttpRequest.prototype.open
-    const wrappedXhrSend = XMLHttpRequest.prototype.send
     actionMarkers[markerOptions.marker] = state
   }, options)
 }
 type ActionMarkerSnapshot = { actionCount: number; markedRequestCount: number }
-
 type ActionResponseTrackerOptions = {
   requestMatches: (request: Request) => boolean
   responseMatches: (response: Response) => boolean
@@ -524,7 +524,6 @@ async function waitForActionMarkerClosed(
     return { actionCount: state.actionCount, markedRequestCount: state.markedRequestCount }
   }, marker)
 }
-
 async function removeActionRequestMarker(page: Page, marker: string): Promise<void> {
   await page.evaluate((actionMarker) => {
     const markerWindow = window as Window & {
@@ -533,30 +532,25 @@ async function removeActionRequestMarker(page: Page, marker: string): Promise<vo
     markerWindow.__nervWalkthroughActionMarkers?.[actionMarker]?.cleanup()
   }, marker)
 }
-
 function routePathAndSearch(route: string): { pathname: string; search: string } {
   const url = new URL(route, 'http://walkthrough.fixture')
   return { pathname: url.pathname, search: url.search }
 }
-
 function isNavigationRequestForRoute(page: Page, request: Request, route: string): boolean {
   if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return false
   const expected = routePathAndSearch(route)
   const url = new URL(request.url())
   return url.pathname === expected.pathname && url.search === expected.search
 }
-
 function isFrameAtRoute(frame: { url: () => string }, route: string): boolean {
   const expected = routePathAndSearch(route)
   const url = new URL(frame.url())
   return url.pathname === expected.pathname && url.search === expected.search
 }
-
 function nextActionMarker(kind: string): string {
   actionMarkerSequence += 1
   return `__nerv_walkthrough_${kind}_${actionMarkerSequence}`
 }
-
 function isMatchingFilterRequest(
   request: Request,
   listPath: string,
@@ -573,7 +567,6 @@ function isMatchingFilterRequest(
       listQueryFingerprint(request.url()) === expectedQueryFingerprint)
   )
 }
-
 function startNavigationEpoch(page: Page): number {
   const navigationEpoch = (navigationEpochs.get(page) ?? 0) + 1
   navigationEpochs.set(page, navigationEpoch)
@@ -593,7 +586,6 @@ async function installNavigationRequestIdentity(
     const markerWindow = window as WindowWithNavigationMarker
     if (markerWindow.__nervWalkthroughNavigationMarker) return
     markerWindow.__nervWalkthroughNavigationMarker = true
-
     const originalFetch = window.fetch
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
       const request = new Request(input, init)
@@ -601,24 +593,32 @@ async function installNavigationRequestIdentity(
       headers.set('x-nerv-walkthrough-navigation', token)
       return originalFetch.call(this, new Request(request, { headers }))
     }
-
     const originalXhrOpen = XMLHttpRequest.prototype.open
     const originalXhrSend = XMLHttpRequest.prototype.send
     const xhrMetadata = new WeakMap<XMLHttpRequest, { method: string; url: string }>()
-    XMLHttpRequest.prototype.open = function (
+    type XhrOpen = typeof XMLHttpRequest.prototype.open
+    const wrappedXhrOpen: XhrOpen = function (
+      this: XMLHttpRequest,
       method: string,
       url: string | URL,
-      ...rest: unknown[]
-    ) {
+      async: boolean = true,
+      username?: string | null,
+      password?: string | null,
+    ): void {
       xhrMetadata.set(this, { method, url: String(url) })
-      return originalXhrOpen.apply(this, [method, url, ...rest] as never)
+      originalXhrOpen.call(this, method, url, async, username, password)
     }
-    XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
+    const wrappedXhrSend: typeof XMLHttpRequest.prototype.send = function (
+      this: XMLHttpRequest,
+      body?: Document | XMLHttpRequestBodyInit | null,
+    ): void {
       if (xhrMetadata.has(this)) {
         this.setRequestHeader('x-nerv-walkthrough-navigation', token)
       }
-      return originalXhrSend.call(this, body)
+      originalXhrSend.call(this, body)
     }
+    XMLHttpRequest.prototype.open = wrappedXhrOpen
+    XMLHttpRequest.prototype.send = wrappedXhrSend
   })
   await page.evaluate((token) => {
     window.name = token
@@ -637,7 +637,6 @@ function rememberListResponseOwnership(
   responses.set(listPath, { response, navigationEpoch })
   currentListResponses.set(page, responses)
 }
-
 export async function navigateAndWaitForInitialList(
   page: Page,
   options: InitialPageNavigationOptions,
@@ -702,7 +701,6 @@ export async function navigateAndWaitForInitialList(
     page.off('framenavigated', frameNavigationObserver)
   }
 }
-
 export async function clickRefreshAndWaitForListResponse(
   page: Page,
   listPath: string,
@@ -748,7 +746,6 @@ export async function clickRefreshAndWaitForListResponse(
     await removeActionRequestMarker(page, actionMarker)
   }
 }
-
 export async function clickTabAndConfirmUnmount(
   page: Page,
   tabText: string | RegExp,
@@ -795,7 +792,6 @@ export async function clickTabAndConfirmUnmount(
     }
   }
 }
-
 export type FilterResponseWaitOptions = {
   route: string
   listPath: string
