@@ -33,9 +33,13 @@ import {
   RequestFailureEvidenceTracker,
 } from './issue1912-walkthrough-policy'
 import {
+  assertWmsPageProofOptions,
   buildWmsInboundSelectionQueryFacts,
+  buildWmsInboundListQueryFacts,
   buildWmsOutboundSelectionQueryFacts,
+  buildWmsOutboundListQueryFacts,
   assertWmsInitialListResponse,
+  fillWmsKeywordAndConfirm,
   proveWmsListPage,
   withWmsInitialListResponseGuard,
   type WmsInboundListPageProofInput,
@@ -780,21 +784,14 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     navigationEpoch: number | undefined
   }>
 
-  type WmsPageProofOptions =
-    | (Omit<
-        PageProofOptions,
-        'actor' | 'refreshListBeforeProof' | 'expectedListQuery' | 'listPath'
-      > & {
-        actor: 'wms-worker'
-        wms: WmsInboundListPageProofInput
-      })
-    | (Omit<
-        PageProofOptions,
-        'actor' | 'refreshListBeforeProof' | 'expectedListQuery' | 'listPath'
-      > & {
-        actor: 'wms-worker'
-        wms: WmsOutboundListPageProofInput
-      })
+  type WmsPageProofOptions = Readonly<{
+    actor: 'wms-worker'
+    route: string
+    filterLabel: string
+    emptyText: string
+    screenshotName: string
+    wms: WmsInboundListPageProofInput | WmsOutboundListPageProofInput
+  }>
 
   const erpListQuery = (query: JsonRecord = {}): JsonRecord => ({
     organizationId,
@@ -1015,10 +1012,15 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   }
 
   const proveWmsPage = async (node: NodeName, options: WmsPageProofOptions): Promise<UiProof> => {
+    assertWmsPageProofOptions(options)
     const listPath = options.wms.query.listPath
     const pageOptions: PageProofOptions = {
-      ...options,
+      actor: 'wms-worker',
+      route: options.route,
       listPath,
+      stableText: options.wms.query.keywordQuery.keyword,
+      emptyText: options.emptyText,
+      screenshotName: options.screenshotName,
     }
     const guarded = await withWmsInitialListResponseGuard(
       workerRuntime.page,
@@ -1041,18 +1043,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       ...options.wms,
       page: established.targetPage,
     })
-    established.runtime.successfulListResponses.set(listPath, refreshedList)
-    return completePageProof(
-      node,
-      { ...pageOptions, expectedListQuery: options.wms.query.expectedQuery },
-      established,
-      {
-        page: established.targetPage,
-        listPath,
-        response: refreshedList,
-        navigationEpoch: established.runtime.lastNavigationEpoch ?? undefined,
-      },
+    const keywordList = await fillWmsKeywordAndConfirm(
+      established.targetPage,
+      options.wms.query,
+      refreshedList,
+      established.firstListNavigationEpoch,
+      options.filterLabel,
     )
+    established.runtime.successfulListResponses.set(listPath, keywordList)
+    return completePageProof(node, pageOptions, established, {
+      page: established.targetPage,
+      listPath,
+      response: keywordList,
+      navigationEpoch: established.runtime.lastNavigationEpoch ?? undefined,
+    })
   }
 
   const runProofSafely = async <T>(node: NodeName, proof: () => Promise<T>): Promise<T> => {
@@ -1827,19 +1831,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity,
     )
-    const inboundListQuery = buildWmsInboundSelectionQueryFacts({
+    const inboundQueryFacts = {
       organizationId,
       environmentId,
       scopeKind: receiptScopeKind,
       scopeId: receiptScopeId,
       siteCode: receiptReadSiteCode,
       keyword: INBOUND_ORDER_NO,
-    })
+    }
+    const inboundKeywordQuery = buildWmsInboundListQueryFacts(inboundQueryFacts)
+    const inboundListQuery = buildWmsInboundSelectionQueryFacts(inboundQueryFacts)
     const inboundUi = await proveWmsPageSafely('receipt-inbound-inventory', {
       actor: 'wms-worker',
       route: '/wms/inbound',
       filterLabel: '关键字搜索',
-      stableText: INBOUND_ORDER_NO,
       emptyText: '暂无入库单。收货作业产生入库单后会出现在这里。',
       screenshotName: '07-wms-inbound.png',
       wms: {
@@ -1855,7 +1860,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         query: {
           kind: 'inbound',
           listPath: '/api/business-console/v1/wms/inbound-orders',
-          expectedQuery: inboundListQuery,
+          selectionQuery: inboundListQuery,
+          keywordQuery: inboundKeywordQuery,
           forbiddenQueryKeys: [],
         },
       },
@@ -2520,18 +2526,19 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         version: assignedOutboundVersion,
       },
     })
-    const outboundListQuery = buildWmsOutboundSelectionQueryFacts({
+    const outboundQueryFacts = {
       organizationId,
       environmentId,
       scopeKind: shipmentScopeKind,
       scopeId: shipmentScopeId,
       keyword: DELIVERY_ORDER_NO,
-    })
+    }
+    const outboundKeywordQuery = buildWmsOutboundListQueryFacts(outboundQueryFacts)
+    const outboundListQuery = buildWmsOutboundSelectionQueryFacts(outboundQueryFacts)
     const outboundUi = await proveWmsPageSafely('delivery-wms-outbound', {
       actor: 'wms-worker',
       route: '/wms/outbound',
       filterLabel: '关键字搜索',
-      stableText: DELIVERY_ORDER_NO,
       emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
       screenshotName: '17-wms-outbound.png',
       wms: {
@@ -2546,7 +2553,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         query: {
           kind: 'outbound',
           listPath: '/api/business-console/v1/wms/outbound-orders',
-          expectedQuery: outboundListQuery,
+          selectionQuery: outboundListQuery,
+          keywordQuery: outboundKeywordQuery,
           forbiddenQueryKeys: ['siteCode'],
         },
       },

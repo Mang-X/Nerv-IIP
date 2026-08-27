@@ -4,15 +4,113 @@ import {
   NERV_1571_WMS_INBOUND_QUERY_FACTS,
   NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
 } from './issue1912-wms-walkthrough-authority'
+import { navigateAndWaitForInitialList } from './issue1912-walkthrough-policy'
 import {
+  assertWmsPageProofOptions,
+  fillWmsKeywordAndConfirm,
   proveWmsListPage,
   selectWmsPageOption,
   withWmsInitialListResponseGuard,
 } from './issue1912-wms-walkthrough-facts'
 
+const inboundPath = '/api/business-console/v1/wms/inbound-orders'
+const outboundPath = '/api/business-console/v1/wms/outbound-orders'
+
+function inboundProof(expectedQuery = NERV_1571_WMS_INBOUND_QUERY_FACTS) {
+  const { keyword: _keyword, ...selectionQuery } = expectedQuery
+  return {
+    kind: 'inbound' as const,
+    listPath: inboundPath,
+    selectionQuery,
+    keywordQuery: expectedQuery,
+    forbiddenQueryKeys: [] as const,
+  }
+}
+
+function outboundProof(expectedQuery = NERV_1571_WMS_OUTBOUND_QUERY_FACTS) {
+  const { keyword: _keyword, ...selectionQuery } = expectedQuery
+  return {
+    kind: 'outbound' as const,
+    listPath: outboundPath,
+    selectionQuery,
+    keywordQuery: expectedQuery,
+    forbiddenQueryKeys: ['siteCode'] as const,
+  }
+}
+
 test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)', () => {
   test.beforeEach(() => {
     test.skip(test.info().project.name !== 'desktop', 'WMS facts probe 仅在 desktop project 运行')
+  })
+
+  test('WMS proof 拒绝 client/reuse/旁路查询选项，不能短路 HTTP 证明', () => {
+    for (const key of [
+      'filterResponseMode',
+      'reuseCurrentRoute',
+      'refreshListBeforeProof',
+      'expectedListQuery',
+      'listPath',
+    ]) {
+      expect(() => assertWmsPageProofOptions({ [key]: true })).toThrow(
+        `option ${key} is not allowed`,
+      )
+    }
+  })
+
+  test('关键字来自独立 authority，并绑定到实际 server filter 请求', async ({ page }) => {
+    const listPath = outboundPath
+    const expectedQuery = NERV_1571_WMS_OUTBOUND_QUERY_FACTS
+    await page.route(`**${listPath}*`, async (route) => {
+      await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+    })
+    await page.route('**/wms/outbound', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        body: `
+          <base href="http://walkthrough.fixture/">
+          <label for="keyword-filter">关键字搜索</label>
+          <input id="keyword-filter">
+          <script>
+            const scenario = ${JSON.stringify(expectedQuery)}
+            const base = {
+              organizationId: scenario.organizationId,
+              environmentId: scenario.environmentId,
+              scopeKind: scenario.scopeKind,
+              scopeId: scenario.scopeId,
+              skip: String(scenario.skip),
+              take: String(scenario.take),
+            }
+            const request = (keyword) => {
+              const query = new URLSearchParams({ ...base })
+              if (keyword) query.set('keyword', keyword)
+              void fetch('${listPath}?' + query.toString())
+            }
+            setTimeout(() => request(''), 100)
+            document.querySelector('#keyword-filter').addEventListener('input', (event) => {
+              request(event.target.value)
+            })
+          </script>
+        `,
+      })
+    })
+
+    const initial = await navigateAndWaitForInitialList(page, {
+      route: '/wms/outbound',
+      listPath,
+      timeoutMs: 2_000,
+    })
+    const response = await fillWmsKeywordAndConfirm(
+      page,
+      outboundProof(expectedQuery),
+      initial.firstList,
+      initial.navigationEpoch,
+      '关键字搜索',
+      2_000,
+    )
+    expect(response.status()).toBe(200)
+    const actualUrl = new URL(response.url())
+    expect(actualUrl.searchParams.getAll('keyword')).toEqual([expectedQuery.keyword])
   })
 
   test('显式作业范围选择后，刷新只接受当前租户和默认分页的列表响应', async ({ page }) => {
@@ -82,7 +180,6 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             scopeId: selectedScopeId,
             skip: String(scenario.skip),
             take: String(refreshCount === 2 ? 999 : scenario.take),
-            keyword: scenario.keyword,
           })
           if (refreshCount === 3) query.set('siteCode', 'SITE-001')
           if (refreshCount === 4) query.set('environmentId', 'env-stale')
@@ -98,12 +195,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       selection: {
         scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
       },
-      query: {
-        kind: 'outbound',
-        listPath,
-        expectedQuery,
-        forbiddenQueryKeys: ['siteCode'],
-      },
+      query: outboundProof(expectedQuery),
     })
 
     expect(response.status()).toBe(200)
@@ -121,7 +213,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         selection: {
           scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
         },
-        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
+        query: outboundProof(expectedQuery),
       }),
     ).rejects.toThrow('query facts')
 
@@ -132,7 +224,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         selection: {
           scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
         },
-        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
+        query: outboundProof(expectedQuery),
       }),
     ).rejects.toThrow('must not send query field siteCode')
 
@@ -143,7 +235,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         selection: {
           scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
         },
-        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
+        query: outboundProof(expectedQuery),
       }),
     ).rejects.toThrow('query facts')
 
@@ -154,7 +246,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         selection: {
           scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
         },
-        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
+        query: outboundProof(expectedQuery),
       }),
     ).rejects.toThrow('query facts')
   })
@@ -169,10 +261,8 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
           site: { label: '工厂', optionCode: 'SITE-001' },
         },
         query: {
-          kind: 'inbound',
-          listPath: '/api/business-console/v1/wms/outbound-orders' as never,
-          expectedQuery: NERV_1571_WMS_INBOUND_QUERY_FACTS,
-          forbiddenQueryKeys: [],
+          ...inboundProof(NERV_1571_WMS_INBOUND_QUERY_FACTS),
+          listPath: outboundPath as never,
         },
       }),
     ).rejects.toThrow('unexpected list path')
@@ -185,18 +275,14 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
           scope: { label: '作业范围', option: '收货作业池', scopeId: 'pool-shipping-001' },
         },
         query: {
-          kind: 'outbound',
-          listPath: '/api/business-console/v1/wms/inbound-orders' as never,
-          expectedQuery: NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
-          forbiddenQueryKeys: ['siteCode'],
+          ...outboundProof(NERV_1571_WMS_OUTBOUND_QUERY_FACTS),
+          listPath: inboundPath as never,
         },
       }),
     ).rejects.toThrow('unexpected list path')
   })
 
   test('首个 WMS 列表响应为 503 或错误路径时，不接受后续 200 自洽通过', async ({ page }) => {
-    const inboundPath = '/api/business-console/v1/wms/inbound-orders'
-    const outboundPath = '/api/business-console/v1/wms/outbound-orders'
     const keyword = NERV_1571_WMS_OUTBOUND_QUERY_FACTS.keyword
     await page.route('**/api/business-console/v1/wms/*', async (route) => {
       const phase = new URL(route.request().url()).searchParams.get('phase')
@@ -251,6 +337,40 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       ).rejects.toThrow('response path')
     } finally {
       await secondPage.close()
+    }
+
+    const thirdPage = await page.context().newPage()
+    try {
+      let unknownAttempt = 0
+      await thirdPage.route('**/api/business-console/v1/wms/*', async (route) => {
+        unknownAttempt += 1
+        await route.fulfill({
+          status: unknownAttempt === 1 ? 503 : 200,
+          body: JSON.stringify({ items: [] }),
+        })
+      })
+      await thirdPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          thirdPage,
+          inboundPath,
+          async () =>
+            thirdPage.evaluate(
+              async ({ unknownPath, targetPath, requestKeyword }) => {
+                await fetch(`${unknownPath}?phase=unknown-first&keyword=${requestKeyword}`)
+                await fetch(`${targetPath}?phase=unknown-first&keyword=${requestKeyword}`)
+              },
+              {
+                unknownPath: `http://walkthrough.fixture${inboundPath}/`,
+                targetPath: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          2_000,
+        ),
+      ).rejects.toThrow('unexpected WMS list-like request path')
+    } finally {
+      await thirdPage.close()
     }
   })
 
@@ -343,7 +463,6 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             scopeId: selectedScopeId,
             skip: String(scenario.skip),
             take: String(scenario.take),
-            keyword: scenario.keyword,
             siteCode: selectedSiteCode,
           })
           void fetch('${listPath}?' + query.toString())
@@ -358,7 +477,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         scope: { label: '作业范围', option: '收货作业池', scopeId: expectedQuery.scopeId },
         site: { label: '工厂', optionCode: expectedQuery.siteCode },
       },
-      query: { kind: 'inbound', listPath, expectedQuery, forbiddenQueryKeys: [] },
+      query: inboundProof(expectedQuery),
     })
 
     expect(response.status()).toBe(200)

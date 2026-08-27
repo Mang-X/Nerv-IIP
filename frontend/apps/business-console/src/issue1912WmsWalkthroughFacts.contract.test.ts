@@ -7,6 +7,7 @@ import {
   assertWmsInboundSelectionMatchesQuery,
   assertWmsInitialListResponse,
   assertWmsListQueryFacts,
+  assertWmsPageProofOptions,
   assertWmsOutboundPageSelection,
   assertWmsOutboundSelectionMatchesQuery,
   assertWmsPageSelection,
@@ -15,9 +16,9 @@ import {
   buildWmsOutboundListQueryFacts,
   buildWmsOutboundSelectionQueryFacts,
   type WmsInboundListQueryProof,
-  type WmsInboundListQueryFacts,
+  type WmsInboundKeywordQueryFacts,
   type WmsOutboundListQueryProof,
-  type WmsOutboundListQueryFacts,
+  type WmsOutboundKeywordQueryFacts,
 } from '../e2e/issue1912-wms-walkthrough-facts'
 import {
   NERV_1571_WMS_INBOUND_FACTS,
@@ -40,23 +41,27 @@ function response(path: string, query: WalkthroughQuery, status = 200) {
 }
 
 function inboundProof(
-  expectedQuery: WmsInboundListQueryFacts = NERV_1571_WMS_INBOUND_QUERY_FACTS,
+  keywordQuery: WmsInboundKeywordQueryFacts = NERV_1571_WMS_INBOUND_QUERY_FACTS,
 ): WmsInboundListQueryProof {
+  const { keyword: _keyword, ...selectionQuery } = keywordQuery
   return {
     kind: 'inbound',
     listPath: inboundPath,
-    expectedQuery,
+    selectionQuery,
+    keywordQuery,
     forbiddenQueryKeys: [],
   }
 }
 
 function outboundProof(
-  expectedQuery: WmsOutboundListQueryFacts = NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
+  keywordQuery: WmsOutboundKeywordQueryFacts = NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
 ): WmsOutboundListQueryProof {
+  const { keyword: _keyword, ...selectionQuery } = keywordQuery
   return {
     kind: 'outbound',
     listPath: outboundPath,
-    expectedQuery,
+    selectionQuery,
+    keywordQuery,
     forbiddenQueryKeys: ['siteCode'],
   }
 }
@@ -92,10 +97,14 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
   it('fails closed for same-keyword tenant, environment, scope, pagination, site, path, and status mutations', () => {
     const expected = NERV_1571_WMS_INBOUND_QUERY_FACTS
     const proof = inboundProof(expected)
+    const { keyword: _keyword, ...selectionExpected } = expected
     const actual = (overrides: WalkthroughQuery = {}, status = 200) =>
+      response(inboundPath, { ...selectionExpected, ...overrides }, status)
+    const keywordActual = (overrides: WalkthroughQuery = {}, status = 200) =>
       response(inboundPath, { ...expected, ...overrides }, status)
 
     expect(() => assertWmsListQueryFacts(actual(), proof)).not.toThrow()
+    expect(() => assertWmsListQueryFacts(keywordActual(), proof, 'keyword')).not.toThrow()
 
     const mutations: Array<[string, ReturnType<typeof actual>, string]> = [
       ['organizationId', actual({ organizationId: 'org-other' }), 'query facts'],
@@ -104,7 +113,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
       ['scopeId', actual({ scopeId: 'self-user-049' }), 'query facts'],
       ['skip', actual({ skip: 10 }), 'query facts'],
       ['take', actual({ take: 100 }), 'query facts'],
-      ['keyword', actual({ keyword: 'IN-WALK-002' }), 'keyword'],
+      ['keyword', keywordActual({ keyword: 'IN-WALK-002' }), 'keyword'],
       ['siteCode', actual({ siteCode: 'SITE-002' }), 'query facts'],
       ['path', response(outboundPath, expected), 'response path'],
       ['status', actual({}, 503), 'HTTP 503'],
@@ -117,7 +126,23 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
       ).toThrow(expectedMessage)
     }
 
-    const missingSite: WalkthroughQuery = { ...expected }
+    const keywordMutations: Array<[string, ReturnType<typeof keywordActual>]> = [
+      ['organizationId', keywordActual({ organizationId: 'org-other' })],
+      ['environmentId', keywordActual({ environmentId: 'env-stale' })],
+      ['scopeKind', keywordActual({ scopeKind: 'self' })],
+      ['scopeId', keywordActual({ scopeId: 'self-user-049' })],
+      ['skip', keywordActual({ skip: 10 })],
+      ['take', keywordActual({ take: 100 })],
+      ['siteCode', keywordActual({ siteCode: 'SITE-002' })],
+    ]
+    for (const [mutation, mutatedResponse] of keywordMutations) {
+      expect(
+        () => assertWmsListQueryFacts(mutatedResponse, proof, 'keyword'),
+        `${mutation} mutation must fail closed in the keyword action proof`,
+      ).toThrow(/query facts/)
+    }
+
+    const missingSite: WalkthroughQuery = { ...selectionExpected }
     delete (missingSite as Record<string, unknown>).siteCode
     expect(() => assertWmsListQueryFacts(response(inboundPath, missingSite), proof)).toThrow(
       'query facts',
@@ -125,30 +150,40 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
 
     const missingKeyword: WalkthroughQuery = { ...expected }
     delete (missingKeyword as Record<string, unknown>).keyword
-    expect(() => assertWmsListQueryFacts(response(inboundPath, missingKeyword), proof)).toThrow(
-      'keyword',
-    )
+    expect(() =>
+      assertWmsListQueryFacts(response(inboundPath, missingKeyword), proof, 'keyword'),
+    ).toThrow('keyword')
 
     const duplicateKeyword = new URL(response(inboundPath, expected).url)
     duplicateKeyword.searchParams.append('keyword', expected.keyword)
     expect(() =>
-      assertWmsListQueryFacts({ status: 200, url: duplicateKeyword.toString() }, proof),
+      assertWmsListQueryFacts({ status: 200, url: duplicateKeyword.toString() }, proof, 'keyword'),
     ).toThrow('keyword')
   })
 
   it('binds outbound path, query, and forbidden siteCode as one proof contract', () => {
     const expected = NERV_1571_WMS_OUTBOUND_QUERY_FACTS
     const proof = outboundProof(expected)
-    expect(() => assertWmsListQueryFacts(response(outboundPath, expected), proof)).not.toThrow()
     expect(() =>
-      assertWmsListQueryFacts(response(outboundPath, { ...expected, siteCode: 'SITE-001' }), proof),
+      assertWmsListQueryFacts(response(outboundPath, expected), proof, 'keyword'),
+    ).not.toThrow()
+    const { keyword: _keyword, ...selectionExpected } = expected
+    expect(() =>
+      assertWmsListQueryFacts(response(outboundPath, selectionExpected), proof),
+    ).not.toThrow()
+    expect(() =>
+      assertWmsListQueryFacts(
+        response(outboundPath, { ...selectionExpected, siteCode: 'SITE-001' }),
+        proof,
+      ),
     ).toThrow('must not send query field siteCode')
 
     expect(() =>
       assertWmsListQueryFacts(response(inboundPath, NERV_1571_WMS_INBOUND_QUERY_FACTS), {
         kind: 'outbound',
         listPath: inboundPath,
-        expectedQuery: expected,
+        selectionQuery: selectionExpected,
+        keywordQuery: expected,
         forbiddenQueryKeys: [],
       } as never),
     ).toThrow(/unexpected list path|invalid forbidden query key contract/)
@@ -244,6 +279,20 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
         NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
       ),
     ).toThrow('did not match expected scopeId')
+  })
+
+  it('rejects generic proof escape hatches at the WMS wrapper boundary', () => {
+    for (const key of [
+      'filterResponseMode',
+      'reuseCurrentRoute',
+      'refreshListBeforeProof',
+      'expectedListQuery',
+      'listPath',
+    ]) {
+      expect(() => assertWmsPageProofOptions({ [key]: true })).toThrow(
+        `option ${key} is not allowed`,
+      )
+    }
   })
 
   it('rejects empty authority facts before a request can be proved', () => {
