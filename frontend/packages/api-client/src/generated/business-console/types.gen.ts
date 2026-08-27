@@ -16704,6 +16704,7 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         userId?: string | null;
         skillCode?: string | null;
         workshopCode?: string | null;
+        deviceAssetId?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };

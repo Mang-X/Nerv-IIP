@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
@@ -20,6 +22,122 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataResourceListHttpTests
 {
+    [Fact]
+    public async Task Get_device_resources_resolves_exact_id_or_code_before_paging_and_returns_canonical_id()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        DeviceAsset target;
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DeviceAssets.AddRange(Enumerable.Range(0, 101)
+                .Select(index => DeviceAsset.Register(
+                    "org-001",
+                    "env-dev",
+                    $"DEV-{index:D3}",
+                    $"Device {index:D3}",
+                    "LINE-001",
+                    "WC-001")));
+            target = DeviceAsset.Register("org-001", "env-dev", "ZZZ-TARGET", "Target", "LINE-001", "WC-001");
+            dbContext.DeviceAssets.AddRange(
+                target,
+                DeviceAsset.Register("org-001", "env-dev", "ZZZ-TARGET-EXTRA", "Prefix collision", "LINE-001", "WC-001"),
+                DeviceAsset.Register("org-002", "env-dev", "ZZZ-TARGET", "Other organization", "LINE-001", "WC-001"),
+                DeviceAsset.Register("org-001", "env-test", "ZZZ-TARGET", "Other environment", "LINE-001", "WC-001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        foreach (var reference in new[] { target.Id.ToString(), target.Code })
+        {
+            var response = await client.GetAsync(
+                "/api/business/v1/master-data/resources" +
+                $"?organizationId=org-001&environmentId=env-dev&resourceType=device-asset&deviceAssetId={reference}");
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+            using var document = JsonDocument.Parse(body);
+            var data = document.RootElement.GetProperty("data");
+            Assert.Equal(1, data.GetProperty("total").GetInt32());
+            var resource = Assert.Single(data.GetProperty("resources").EnumerateArray().ToArray());
+            Assert.Equal("ZZZ-TARGET", resource.GetProperty("code").GetString());
+            Assert.NotEqual(resource.GetProperty("code").GetString(), resource.GetProperty("deviceAssetId").GetString());
+            Assert.Equal(target.Id.ToString(), resource.GetProperty("deviceAssetId").GetString());
+        }
+
+        var missingResponse = await client.GetAsync(
+            "/api/business/v1/master-data/resources" +
+            "?organizationId=org-001&environmentId=env-dev&resourceType=device-asset&deviceAssetId=DEV-MISSING");
+        var missingBody = await missingResponse.Content.ReadAsStringAsync();
+        Assert.True(missingResponse.IsSuccessStatusCode, $"{missingResponse.StatusCode}: {missingBody}");
+        using var missingDocument = JsonDocument.Parse(missingBody);
+        Assert.Equal(0, missingDocument.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+        Assert.Empty(missingDocument.RootElement.GetProperty("data").GetProperty("resources").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Get_device_resources_rejects_id_code_namespace_collision_as_ambiguous()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        string ambiguousReference;
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var deviceById = DeviceAsset.Register("org-001", "env-dev", "DEV-B", "Device B", "LINE-B", "WC-B");
+            dbContext.DeviceAssets.Add(deviceById);
+            await dbContext.SaveChangesAsync();
+            ambiguousReference = deviceById.Id.ToString();
+            dbContext.DeviceAssets.Add(DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                ambiguousReference,
+                "Device A",
+                "LINE-A",
+                "WC-A"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/resources" +
+            $"?organizationId=org-001&environmentId=env-dev&resourceType=device-asset&deviceAssetId={ambiguousReference}");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Contains("无法唯一确定", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.False(document.RootElement.TryGetProperty("data", out _), body);
+    }
+
+    [Fact]
+    public async Task Get_shift_resources_applies_exact_shift_code_before_paging()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.Shifts.AddRange(
+                Shift.Create("org-001", "env-dev", "SHIFT-DAY", "Day", new TimeOnly(8, 0), new TimeOnly(16, 0), 480),
+                Shift.Create("org-001", "env-dev", "SHIFT-NIGHT", "Night", new TimeOnly(20, 0), new TimeOnly(4, 0), 480),
+                Shift.Create("org-001", "env-dev", "SHIFT-NIGHT-EXTRA", "Night extra", new TimeOnly(21, 0), new TimeOnly(5, 0), 480));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/resources" +
+            "?organizationId=org-001&environmentId=env-dev&resourceType=shift&shiftCode=SHIFT-NIGHT&take=1");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        var resource = Assert.Single(data.GetProperty("resources").EnumerateArray().ToArray());
+        Assert.Equal("SHIFT-NIGHT", resource.GetProperty("code").GetString());
+    }
+
     [Fact]
     public async Task Get_product_categories_uses_composed_criteria_for_tenant_keyword_and_page()
     {

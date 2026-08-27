@@ -75,7 +75,8 @@ public sealed record ListMasterDataResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -148,7 +149,8 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
                 req.ShiftCode,
                 req.UserId,
                 req.SkillCode,
-                req.WorkshopCode),
+                req.WorkshopCode,
+                req.DeviceAssetId),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }

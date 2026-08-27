@@ -283,7 +283,8 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("shiftCode", request.ShiftCode),
                 ("userId", request.UserId),
                 ("skillCode", request.SkillCode),
-                ("workshopCode", request.WorkshopCode)),
+                ("workshopCode", request.WorkshopCode),
+                ("deviceAssetId", request.DeviceAssetId)),
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);

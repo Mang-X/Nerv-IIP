@@ -65,6 +65,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertGovernedWriteIdempotencyHeaders(paths);
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/master-data/resources", "get", "deviceAssetId");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/master-data/resources", "get", "shiftCode");
         AssertSchemaProperties(
             document,
             "BusinessConsoleResourceItem",

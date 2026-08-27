@@ -1447,6 +1447,7 @@ export type {
   CreateBusinessConsoleQualityReinspectionResponse,
   OpenBusinessConsoleQualityNcrFromInspectionData,
   ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsoleMasterDataResourcesData,
   GetBusinessConsoleCodeRuleData,
   PreviewBusinessConsoleCodeRuleData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,

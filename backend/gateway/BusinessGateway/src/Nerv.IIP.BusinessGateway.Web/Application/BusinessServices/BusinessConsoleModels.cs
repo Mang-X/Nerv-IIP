@@ -310,7 +310,8 @@ public sealed record BusinessConsoleListResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null);
 
 public sealed record BusinessConsoleListDeviceAssetsRequest(
     string OrganizationId,

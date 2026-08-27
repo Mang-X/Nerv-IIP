@@ -112,6 +112,7 @@ import type {
   GetBusinessConsolePrincipalWorkContextData,
   GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsoleMasterDataResourcesData,
   ListBusinessConsoleMesOperationTasksData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
@@ -408,6 +409,16 @@ describe('generated API client contract', () => {
     >().toEqualTypeOf<502 | 503>()
     expectTypeOf(businessConsoleClient.getBusinessConsolePrincipalWorkContext).toBeFunction()
     expectTypeOf(getBusinessConsolePrincipalWorkContextQueryOptions).toBeFunction()
+  })
+
+  it('exports exact MasterData device and shift filters through the stable boundary', () => {
+    expectTypeOf<
+      Pick<ListBusinessConsoleMasterDataResourcesData['query'], 'deviceAssetId' | 'shiftCode'>
+    >().toEqualTypeOf<{
+      deviceAssetId?: string | null
+      shiftCode?: string | null
+    }>()
+    expectTypeOf(businessConsoleClient.listBusinessConsoleMasterDataResources).toBeFunction()
   })
 
   it('exports MES work-order transformation operations through the stable boundary', () => {
