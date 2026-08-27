@@ -73,6 +73,73 @@ public sealed class PeriodicInspectionIntegrationEventTests
     }
 
     [Fact]
+    public async Task Extended_mes_v1_json_with_dimension_snapshot_keeps_periodic_inspection_semantics_and_avoids_dlq()
+    {
+        const string json = """
+            {
+              "eventId": "evt-report-RPT-DIMENSION-001",
+              "eventType": "mes.ProductionReportRecorded",
+              "eventVersion": 1,
+              "occurredAtUtc": "2026-08-24T01:30:00Z",
+              "sourceService": "business-mes",
+              "correlationId": "corr-report-RPT-DIMENSION-001",
+              "causationId": "WO-001",
+              "organizationId": "org-001",
+              "environmentId": "env-dev",
+              "actor": "system:mes",
+              "idempotencyKey": "mes:production-report-recorded:org-001:env-dev:RPT-DIMENSION-001",
+              "payload": {
+                "reportNo": "RPT-DIMENSION-001",
+                "workOrderId": "WO-001",
+                "operationTaskId": "OP-001",
+                "workCenterId": "WC-001",
+                "deviceAssetId": "DEV-001",
+                "goodQuantity": 25,
+                "scrapQuantity": 0,
+                "reworkQuantity": 0,
+                "uomCode": "EA",
+                "theoreticalRatePerHour": 120,
+                "reportedAtUtc": "2026-08-24T01:30:00Z",
+                "isReversal": false,
+                "reversedReportNo": null,
+                "materialMovementCount": 0,
+                "siteCode": "SITE-SH",
+                "workshopCode": "WS-MACH",
+                "lineCode": "LINE-CNC",
+                "shiftCode": "NIGHT",
+                "siteTimezone": "Asia/Shanghai",
+                "shiftStartsAt": "22:30:00",
+                "shiftEndsAt": "06:15:00",
+                "shiftCrossesMidnight": true,
+                "shiftPaidMinutes": 435,
+                "shiftBreakMinutes": 30
+              }
+            }
+            """;
+        var integrationEvent = JsonSerializer.Deserialize<ProductionReportRecordedIntegrationEvent>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(integrationEvent);
+
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext,
+            coordinator,
+            deadLetters).HandleAsync(integrationEvent, CancellationToken.None);
+
+        var operation = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.ProductionReports)
+            .SingleAsync();
+        var productionReport = Assert.Single(operation.ProductionReports);
+        Assert.Equal("RPT-DIMENSION-001", productionReport.ReportNo);
+        Assert.Equal(25m, productionReport.GoodQuantity);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Fake_time_at_the_first_due_window_generates_one_assigned_operation_task_and_advances_watermark()
     {
         await using var dbContext = CreateDbContext();

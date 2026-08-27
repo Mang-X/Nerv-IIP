@@ -322,6 +322,31 @@ public sealed class IntegrationEventEnvelopeContractTests
     }
 
     [Fact]
+    public void Mes_production_report_v1_explicit_null_dimension_snapshot_has_a_fixed_bidirectional_json_wire()
+    {
+        const string json = """
+            {"reportNo":"RPT-OEE-NULL-001","workOrderId":"WO-001","operationTaskId":"OP-010","workCenterId":"WC-CNC-01","deviceAssetId":"DEV-CNC-01","goodQuantity":80,"scrapQuantity":10,"reworkQuantity":5,"uomCode":"PCS","theoreticalRatePerHour":120,"reportedAtUtc":"2026-08-27T14:45:00+00:00","isReversal":false,"reversedReportNo":null,"materialMovementCount":3,"siteCode":null,"workshopCode":null,"lineCode":null,"shiftCode":null,"siteTimezone":null,"shiftStartsAt":null,"shiftEndsAt":null,"shiftCrossesMidnight":null,"shiftPaidMinutes":null,"shiftBreakMinutes":null}
+            """;
+
+        var payload = JsonSerializer.Deserialize<ProductionReportRecordedPayload>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(payload);
+        Assert.Null(payload.SiteCode);
+        Assert.Null(payload.WorkshopCode);
+        Assert.Null(payload.LineCode);
+        Assert.Null(payload.ShiftCode);
+        Assert.Null(payload.SiteTimezone);
+        Assert.Null(payload.ShiftStartsAt);
+        Assert.Null(payload.ShiftEndsAt);
+        Assert.Null(payload.ShiftCrossesMidnight);
+        Assert.Null(payload.ShiftPaidMinutes);
+        Assert.Null(payload.ShiftBreakMinutes);
+        Assert.Equal(json, JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+    }
+
+    [Fact]
     public void Mes_production_report_legacy_v1_without_dimension_snapshot_remains_deserializable()
     {
         const string json = """
