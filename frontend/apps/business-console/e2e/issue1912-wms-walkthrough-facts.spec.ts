@@ -4,6 +4,7 @@ import {
   NERV_1571_WMS_INBOUND_QUERY_FACTS,
   NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
 } from './issue1912-wms-walkthrough-authority'
+import { queryPath } from './issue1912-walkthrough-query'
 import { navigateAndWaitForInitialList } from './issue1912-walkthrough-policy'
 import {
   assertWmsPageProofOptions,
@@ -111,6 +112,114 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     expect(response.status()).toBe(200)
     const actualUrl = new URL(response.url())
     expect(actualUrl.searchParams.getAll('keyword')).toEqual([expectedQuery.keyword])
+  })
+
+  test('关键字证明拒绝延迟旧 action 的同路径响应', async ({ page }) => {
+    const listPath = outboundPath
+    const expectedQuery = NERV_1571_WMS_OUTBOUND_QUERY_FACTS
+    let oldActionStarted!: () => void
+    let releaseOldAction!: () => void
+    const oldActionStartedPromise = new Promise<void>((resolve) => {
+      oldActionStarted = resolve
+    })
+    const oldActionResponsePromise = new Promise<void>((resolve) => {
+      releaseOldAction = resolve
+    })
+
+    await page.route(`**${listPath}*`, async (route) => {
+      const request = route.request()
+      const marker = request.headers()['x-nerv-walkthrough-action']
+      if (marker === 'old-action') {
+        oldActionStarted()
+        await oldActionResponsePromise
+        await route.fulfill({ status: 503, body: JSON.stringify({ items: [] }) })
+        return
+      }
+      await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+    })
+    await page.route('**/wms/outbound', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        body: `
+          <base href="http://walkthrough.fixture/">
+          <label for="keyword-filter">关键字搜索</label>
+          <input id="keyword-filter">
+          <script>
+            const scenario = ${JSON.stringify(expectedQuery)}
+            const base = {
+              organizationId: scenario.organizationId,
+              environmentId: scenario.environmentId,
+              scopeKind: scenario.scopeKind,
+              scopeId: scenario.scopeId,
+              skip: String(scenario.skip),
+              take: String(scenario.take),
+            }
+            const request = (keyword) => {
+              const query = new URLSearchParams({ ...base })
+              if (keyword) query.set('keyword', keyword)
+              void fetch('${listPath}?' + query.toString())
+            }
+            setTimeout(() => request(''), 100)
+            document.querySelector('#keyword-filter').addEventListener('input', (event) => {
+              request(event.target.value)
+            })
+          </script>
+        `,
+      })
+    })
+
+    const initial = await navigateAndWaitForInitialList(page, {
+      route: '/wms/outbound',
+      listPath,
+      timeoutMs: 2_000,
+    })
+    const oldAction = page.evaluate(
+      async ({ url }) => {
+        await fetch(url, { headers: { 'x-nerv-walkthrough-action': 'old-action' } })
+      },
+      {
+        url: `http://walkthrough.fixture${queryPath(listPath, expectedQuery)}`,
+      },
+    )
+    await oldActionStartedPromise
+
+    let currentActionResponseSeen!: () => void
+    const currentActionResponse = new Promise<void>((resolve) => {
+      currentActionResponseSeen = resolve
+    })
+    const responseObserver = (response: import('@playwright/test').Response) => {
+      const marker = response.request().headers()['x-nerv-walkthrough-action']
+      const url = new URL(response.url())
+      if (
+        response.status() === 200 &&
+        marker !== undefined &&
+        marker !== 'old-action' &&
+        url.pathname === listPath &&
+        url.searchParams.get('keyword') === expectedQuery.keyword
+      ) {
+        releaseOldAction()
+        currentActionResponseSeen()
+        page.off('response', responseObserver)
+      }
+    }
+    page.on('response', responseObserver)
+    try {
+      const response = await fillWmsKeywordAndConfirm(
+        page,
+        outboundProof(expectedQuery),
+        initial.firstList,
+        initial.navigationEpoch,
+        '关键字搜索',
+        2_000,
+      )
+      expect(response.request().headers()['x-nerv-walkthrough-action']).not.toBe('old-action')
+      await currentActionResponse
+      await oldAction
+    } finally {
+      releaseOldAction()
+      page.off('response', responseObserver)
+    }
   })
 
   test('显式作业范围选择后，刷新只接受当前租户和默认分页的列表响应', async ({ page }) => {
@@ -361,7 +470,8 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
                 await fetch(`${targetPath}?phase=unknown-first&keyword=${requestKeyword}`)
               },
               {
-                unknownPath: `http://walkthrough.fixture${inboundPath}/`,
+                unknownPath:
+                  'http://walkthrough.fixture/api/business-console/v1/wms/inbound-order-list',
                 targetPath: `http://walkthrough.fixture${inboundPath}`,
                 requestKeyword: keyword,
               },
@@ -371,6 +481,44 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       ).rejects.toThrow('unexpected WMS list-like request path')
     } finally {
       await thirdPage.close()
+    }
+
+    const fourthPage = await page.context().newPage()
+    try {
+      let attempt = 0
+      await fourthPage.route(`**${inboundPath}*`, async (route) => {
+        attempt += 1
+        if (attempt === 1) {
+          await route.abort('failed')
+          return
+        }
+        await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+      })
+      await fourthPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          fourthPage,
+          inboundPath,
+          async () =>
+            fourthPage.evaluate(
+              async ({ path, requestKeyword }) => {
+                try {
+                  await fetch(`${path}?phase=network-failure&attempt=1&keyword=${requestKeyword}`)
+                } catch {
+                  // The route abort is the failure under test; the later 200 must not replace it.
+                }
+                await fetch(`${path}?phase=network-failure&attempt=2&keyword=${requestKeyword}`)
+              },
+              {
+                path: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          2_000,
+        ),
+      ).rejects.toThrow('request failed')
+    } finally {
+      await fourthPage.close()
     }
   })
 

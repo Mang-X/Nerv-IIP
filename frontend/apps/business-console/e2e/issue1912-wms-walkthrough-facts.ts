@@ -434,9 +434,10 @@ export async function withWmsInitialListResponseGuard<T>(
   })
   let firstCandidateSeen = false
   let documentCommitted = navigationRoute === undefined
-  const listRequests = new WeakSet<Request>()
+  let firstListRequest: Request | undefined
   const isWmsListLikePath = (path: string): boolean =>
-    path.startsWith('/api/business-console/v1/wms/') && /(?:^|\/)\S*orders\/?$/.test(path)
+    path.startsWith('/api/business-console/v1/wms/') &&
+    /(?:^|\/)[^/]*(?:order|list)[^/]*\/?$/i.test(path)
   const frameNavigationObserver = (frame: { url: () => string }) => {
     if (frame !== page.mainFrame() || !navigationRoute) return
     const current = new URL(frame.url(), page.url())
@@ -444,6 +445,7 @@ export async function withWmsInitialListResponseGuard<T>(
     documentCommitted = current.pathname === expected.pathname && current.search === expected.search
   }
   const requestObserver = (request: Request) => {
+    if (firstCandidateSeen) return
     const path = new URL(request.url()).pathname
     if (
       documentCommitted &&
@@ -456,15 +458,14 @@ export async function withWmsInitialListResponseGuard<T>(
         rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
         return
       }
-      listRequests.add(request)
+      if (!firstListRequest) firstListRequest = request
     }
   }
   const responseObserver = (response: Response) => {
     if (firstCandidateSeen) return
     const request = response.request()
-    const path = new URL(response.url()).pathname
     if (
-      !listRequests.has(request) ||
+      request !== firstListRequest ||
       request.method() !== 'GET' ||
       request.frame() !== page.mainFrame()
     ) {
@@ -478,12 +479,26 @@ export async function withWmsInitialListResponseGuard<T>(
       rejectFirst(error)
     }
   }
+  const requestFailedObserver = (request: Request) => {
+    if (
+      firstCandidateSeen ||
+      request !== firstListRequest ||
+      request.method() !== 'GET' ||
+      request.frame() !== page.mainFrame()
+    ) {
+      return
+    }
+    firstCandidateSeen = true
+    const failure = request.failure()?.errorText ?? 'unknown network failure'
+    rejectFirst(new Error(`WMS initial list ${expectedPath} request failed: ${failure}`))
+  }
   const timeout = setTimeout(
     () => rejectFirst(new Error(`WMS initial list ${expectedPath} response was not observed`)),
     timeoutMs,
   )
   page.on('response', responseObserver)
   page.on('request', requestObserver)
+  page.on('requestfailed', requestFailedObserver)
   page.on('framenavigated', frameNavigationObserver)
   try {
     const actionResult = action()
@@ -493,6 +508,7 @@ export async function withWmsInitialListResponseGuard<T>(
     clearTimeout(timeout)
     page.off('response', responseObserver)
     page.off('request', requestObserver)
+    page.off('requestfailed', requestFailedObserver)
     page.off('framenavigated', frameNavigationObserver)
   }
 }
@@ -665,22 +681,33 @@ export async function fillWmsKeywordAndConfirm(
       'http://walkthrough.expected',
     ).toString(),
   )
-  const matchingResponses: Response[] = []
-  const responseObserver = (response: Response) => {
-    const request = response.request()
-    const url = new URL(response.url())
+  const actionRequests: Request[] = []
+  const actionResponses = new Map<Request, Response>()
+  let capturingActionRequest = false
+  const requestObserver = (request: Request) => {
+    if (!capturingActionRequest) return
+    const url = new URL(request.url())
+    const keywords = url.searchParams.getAll('keyword')
     if (
       request.method() === 'GET' &&
       request.frame() === page.mainFrame() &&
       url.pathname === proof.listPath &&
       Boolean(request.headers()['x-nerv-walkthrough-action']) &&
-      url.searchParams.getAll('keyword').length >= 1
+      keywords.length === 1 &&
+      keywords[0] === expectedKeyword &&
+      listQueryFingerprint(request.url()) === expectedQueryFingerprint
     ) {
-      matchingResponses.push(response)
+      actionRequests.push(request)
     }
   }
+  const responseObserver = (response: Response) => {
+    const request = response.request()
+    if (actionRequests.includes(request)) actionResponses.set(request, response)
+  }
+  page.on('request', requestObserver)
   page.on('response', responseObserver)
   try {
+    capturingActionRequest = true
     await fillFilterAndWaitForListResponse(page, {
       route: page.url(),
       listPath: proof.listPath,
@@ -692,18 +719,32 @@ export async function fillWmsKeywordAndConfirm(
       expectedListQueryFingerprint: expectedQueryFingerprint,
       timeoutMs,
     })
+    capturingActionRequest = false
     await expect
-      .poll(() => matchingResponses.length, {
+      .poll(() => actionRequests.length, {
+        timeout: timeoutMs,
+        message: `WMS keyword action did not emit exactly one marked request for ${proof.listPath}`,
+      })
+      .toBe(1)
+    const actionRequest = actionRequests[0]
+    if (!actionRequest) {
+      throw new Error(`WMS keyword action request was not observed for ${proof.listPath}`)
+    }
+    await expect
+      .poll(() => actionResponses.has(actionRequest), {
         timeout: timeoutMs,
         message: `WMS keyword action did not emit a response for ${proof.listPath}`,
       })
-      .toBeGreaterThan(0)
-    const response = matchingResponses.at(-1)
-    if (!response)
+      .toBe(true)
+    const response = actionResponses.get(actionRequest)
+    if (!response) {
       throw new Error(`WMS keyword action response was not observed for ${proof.listPath}`)
+    }
     assertWmsListQueryFacts({ url: response.url(), status: response.status() }, proof, 'keyword')
     return response
   } finally {
+    capturingActionRequest = false
+    page.off('request', requestObserver)
     page.off('response', responseObserver)
   }
 }
