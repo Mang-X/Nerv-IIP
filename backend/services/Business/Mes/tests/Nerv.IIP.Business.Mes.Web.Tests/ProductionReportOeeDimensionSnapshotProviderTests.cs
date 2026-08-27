@@ -22,7 +22,8 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
                 {"data":{"resources":[{"resourceType":"shift","code":"EARLY","displayName":"Early","active":true,"snapshotVersion":"v1","startsAt":"08:00:00","endsAt":"16:00:00","crossesMidnight":false,"paidMinutes":450,"breakMinutes":30}],"total":1,"truncated":false}}
                 """));
         var provider = new HttpProductionReportOeeDimensionSnapshotProvider(
-            new MesMasterDataHttpClient(new HttpClient(handler) { BaseAddress = new Uri("http://master-data") }));
+            new MesMasterDataHttpClient(new HttpClient(handler) { BaseAddress = new Uri("http://master-data") }),
+            new TestInternalServiceTokenProvider());
 
         var snapshot = await provider.CaptureAsync(
             new ProductionReportOeeDimensionSnapshotRequest(
@@ -51,6 +52,7 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
         Assert.Contains("deviceAssetId=DEV-CNC-01", handler.RequestUris[0].Query, StringComparison.Ordinal);
         Assert.Contains("siteCode=SITE-SH", handler.RequestUris[1].Query, StringComparison.Ordinal);
         Assert.Contains("shiftCode=EARLY", handler.RequestUris[2].Query, StringComparison.Ordinal);
+        Assert.All(handler.AuthorizationHeaders, header => Assert.Equal("Bearer internal-token", header));
     }
 
     [Fact]
@@ -116,6 +118,18 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
             "master-data-invalid-response"
         },
         {
+            Json("""{"data":{"total":1}}"""),
+            "master-data-invalid-response"
+        },
+        {
+            Json("""{"data":{"resources":[null],"total":1}}"""),
+            "master-data-invalid-response"
+        },
+        {
+            Json("""{"data":{"resources":[],"total":1}}"""),
+            "master-data-invalid-response"
+        },
+        {
             new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
             "master-data-http-503"
         },
@@ -166,7 +180,9 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
     };
 
     private static HttpProductionReportOeeDimensionSnapshotProvider CreateProvider(HttpMessageHandler handler) =>
-        new(new MesMasterDataHttpClient(new HttpClient(handler) { BaseAddress = new Uri("http://master-data") }));
+        new(
+            new MesMasterDataHttpClient(new HttpClient(handler) { BaseAddress = new Uri("http://master-data") }),
+            new TestInternalServiceTokenProvider());
 
     private static HttpResponseMessage Device(string deviceAssetId, string? workCenterCode) =>
         Json(
@@ -195,11 +211,18 @@ public sealed class ProductionReportOeeDimensionSnapshotProviderTests
         private readonly Queue<HttpResponseMessage> responses = new(responses);
 
         public List<Uri> RequestUris { get; } = [];
+        public List<string?> AuthorizationHeaders { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUris.Add(request.RequestUri!);
+            AuthorizationHeaders.Add(request.Headers.Authorization?.ToString());
             return Task.FromResult(responses.Dequeue());
         }
+    }
+
+    private sealed record TestInternalServiceTokenProvider : Nerv.IIP.ServiceAuth.IInternalServiceTokenProvider
+    {
+        public string BearerToken => "internal-token";
     }
 }

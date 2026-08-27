@@ -2,7 +2,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 
@@ -22,7 +24,7 @@ public interface IProductionReportOeeDimensionSnapshotProvider
 
 public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
     MesMasterDataHttpClient masterDataClient,
-    IInternalServiceTokenProvider? internalTokenProvider = null)
+    IInternalServiceTokenProvider internalTokenProvider)
     : IProductionReportOeeDimensionSnapshotProvider
 {
     public async Task<ProductionReportOeeDimensionSnapshot> CaptureAsync(
@@ -100,7 +102,7 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
                 "site-timezone-missing");
         }
 
-        MasterDataOeeResource? shift = null;
+        MasterDataResourceItem? shift = null;
         var shiftCode = Normalize(request.ShiftCode);
         if (shiftCode is not null)
         {
@@ -159,11 +161,7 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             (exactFilter.Name, exactFilter.Value),
             ("all", true));
         using var message = new HttpRequestMessage(HttpMethod.Get, uri);
-        var token = internalTokenProvider?.BearerToken;
-        if (!string.IsNullOrWhiteSpace(token))
-        {
-            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
 
         HttpResponseMessage response;
         try
@@ -190,10 +188,10 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
                         : $"master-data-http-{(int)response.StatusCode}");
             }
 
-            MasterDataOeeEnvelope? envelope;
+            ResponseData<ListMasterDataResourcesResponse>? envelope;
             try
             {
-                envelope = await response.Content.ReadFromJsonAsync<MasterDataOeeEnvelope>(cancellationToken);
+                envelope = await response.Content.ReadFromJsonAsync<ResponseData<ListMasterDataResourcesResponse>>(cancellationToken);
             }
             catch (System.Text.Json.JsonException)
             {
@@ -209,7 +207,7 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
             }
 
             var data = envelope?.Data;
-            if (data is null)
+            if (data?.Resources is null)
             {
                 return ResourceResult.Failed("master-data-invalid-response");
             }
@@ -219,17 +217,25 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
                 return ResourceResult.Failed("truncated");
             }
 
-            if (data.Total == 0 || data.Resources.Count == 0)
+            if (data.Total == 0 && data.Resources.Count == 0)
             {
                 return ResourceResult.Failed("not-found");
             }
 
-            if (data.Total != 1 || data.Resources.Count != 1)
+            if (data.Total != data.Resources.Count)
+            {
+                return ResourceResult.Failed("master-data-invalid-response");
+            }
+
+            if (data.Total != 1)
             {
                 return ResourceResult.Failed("ambiguous");
             }
 
-            return ResourceResult.Succeeded(data.Resources.Single());
+            var resource = data.Resources.Single();
+            return resource is null
+                ? ResourceResult.Failed("master-data-invalid-response")
+                : ResourceResult.Succeeded(resource);
         }
     }
 
@@ -260,41 +266,13 @@ public sealed class HttpProductionReportOeeDimensionSnapshotProvider(
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private sealed record ResourceResult(MasterDataOeeResource? Resource, string? FailureReason)
+    private sealed record ResourceResult(MasterDataResourceItem? Resource, string? FailureReason)
     {
         public bool IsSuccess => Resource is not null;
 
-        public static ResourceResult Succeeded(MasterDataOeeResource resource) => new(resource, null);
+        public static ResourceResult Succeeded(MasterDataResourceItem resource) => new(resource, null);
 
         public static ResourceResult Failed(string reason) => new(null, reason);
     }
 
-    private sealed record MasterDataOeeEnvelope(
-        MasterDataOeeResourceList? Data,
-        bool? Success = null,
-        string? Message = null);
-
-    private sealed record MasterDataOeeResourceList(
-        IReadOnlyCollection<MasterDataOeeResource> Resources,
-        int Total,
-        bool Truncated = false,
-        int? Limit = null);
-
-    private sealed record MasterDataOeeResource(
-        string ResourceType,
-        string Code,
-        string DisplayName,
-        bool Active,
-        string SnapshotVersion,
-        string? SiteCode = null,
-        string? LineCode = null,
-        string? WorkshopCode = null,
-        string? WorkCenterCode = null,
-        string? DeviceAssetId = null,
-        string? Timezone = null,
-        TimeOnly? StartsAt = null,
-        TimeOnly? EndsAt = null,
-        bool? CrossesMidnight = null,
-        int? PaidMinutes = null,
-        int? BreakMinutes = null);
 }
