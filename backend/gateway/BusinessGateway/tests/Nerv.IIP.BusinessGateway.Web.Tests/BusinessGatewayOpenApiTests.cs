@@ -1,9 +1,12 @@
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NJsonSchema;
 using NJsonSchema.Generation;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using NSwag;
 using NSwag.Generation;
 using NSwag.Generation.Processors.Contexts;
@@ -12,6 +15,26 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayOpenApiTests
 {
+    [Fact]
+    public async Task Mes_material_issue_detail_forwards_scope_and_maps_substitute_audit()
+    {
+        var handler = new MaterialIssueDetailStubHandler(
+            """{"data":{"requestId":"MIR-000123","workOrderId":"WO-001","operationTaskId":"OP-10","materialId":"MAT-ALT","substitutedMaterialId":"MAT-PRIMARY","uomCode":"EA","materialLotId":null,"requestedQuantity":7,"receivedQuantity":0,"consumedQuantity":0,"status":"Requested","wmsRequestId":null,"requestedAtUtc":"2026-08-27T08:00:00Z"}}""");
+        var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
+
+        var response = await client.GetMaterialIssueRequestAsync(
+            "token",
+            "MIR-000123",
+            new BusinessConsoleMesMaterialIssueRequestDetailRequest("MIR-000123", "org-a", "env-a"),
+            CancellationToken.None);
+
+        Assert.Equal("MAT-ALT", response.MaterialId);
+        Assert.Equal("MAT-PRIMARY", response.SubstitutedMaterialId);
+        Assert.Equal(
+            "/api/business/v1/mes/material-issue-requests/MIR-000123?organizationId=org-a&environmentId=env-a",
+            handler.LastRequest!.RequestUri!.PathAndQuery);
+    }
+
     [Fact]
     public async Task Business_gateway_error_response_code_supports_numeric_success_and_semantic_failure_values()
     {
@@ -1931,6 +1954,22 @@ public sealed class BusinessGatewayOpenApiTests
             {
                 document.Components.Schemas[schemaName] = new JsonSchema();
             }
+        }
+    }
+
+    private sealed class MaterialIssueDetailStubHandler(string json) : HttpMessageHandler
+    {
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            });
         }
     }
 }
