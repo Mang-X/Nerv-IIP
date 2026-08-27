@@ -75,16 +75,21 @@ function Get-NervCiDotNetSdkContractFindings {
             if (-not [string]::Equals($actualVersion, $ExpectedSdkVersion, [StringComparison]::Ordinal)) {
                 $findings.Add("ci-dotnet-sdk-version:${jobName}:$actualVersion")
             }
+            $actualInstallDirectory = ''
+            $stepEnvProperty = $setupStep.PSObject.Properties['env']
+            if ($null -ne $stepEnvProperty) {
+                $installDirectoryProperty = $stepEnvProperty.Value.PSObject.Properties['DOTNET_INSTALL_DIR']
+                if ($null -ne $installDirectoryProperty) { $actualInstallDirectory = [string]$installDirectoryProperty.Value }
+            }
+            if (-not [string]::Equals($actualInstallDirectory, $ExpectedInstallDirectory, [StringComparison]::Ordinal)) {
+                $findings.Add("ci-dotnet-install-directory:${jobName}:$actualInstallDirectory")
+            }
         }
 
-        $actualInstallDirectory = ''
         $jobEnvProperty = $job.PSObject.Properties['env']
         if ($null -ne $jobEnvProperty) {
             $installDirectoryProperty = $jobEnvProperty.Value.PSObject.Properties['DOTNET_INSTALL_DIR']
-            if ($null -ne $installDirectoryProperty) { $actualInstallDirectory = [string]$installDirectoryProperty.Value }
-        }
-        if (-not [string]::Equals($actualInstallDirectory, $ExpectedInstallDirectory, [StringComparison]::Ordinal)) {
-            $findings.Add("ci-dotnet-install-directory:${jobName}:$actualInstallDirectory")
+            if ($null -ne $installDirectoryProperty) { $findings.Add("ci-dotnet-install-directory-job-scope:$jobName") }
         }
     }
 
@@ -1108,12 +1113,12 @@ $expectedDotNetJobNames = @(
 $expectedDotNetSdkVersion = '10.0.302'
 $expectedDotNetInstallDirectory = '${{ runner.temp }}/dotnet'
 $dotNetSdkFindings = @(Get-NervCiDotNetSdkContractFindings -Path $workflowPath -ExpectedJobNames $expectedDotNetJobNames -ExpectedSdkVersion $expectedDotNetSdkVersion -ExpectedInstallDirectory $expectedDotNetInstallDirectory)
-Assert-Contract ($dotNetSdkFindings.Count -eq 0) "Every managed CI job must contain exactly one isolated setup-dotnet step for SDK $expectedDotNetSdkVersion. Findings=[$($dotNetSdkFindings -join ', ')]"
+Assert-Contract ($dotNetSdkFindings.Count -eq 0) "Every managed CI job must contain exactly one step-scoped isolated setup-dotnet step for SDK $expectedDotNetSdkVersion. Findings=[$($dotNetSdkFindings -join ', ')]"
 
 $dotNetMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-dotnet-sdk-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($dotNetMutationRoot) | Out-Null
-    $setupStepPattern = '(?ms)^      - name: Setup \.NET\r?\n        timeout-minutes: 5\r?\n        uses: actions/setup-dotnet@v4\r?\n        with:\r?\n          dotnet-version: 10\.0\.302\r?\n\r?\n'
+    $setupStepPattern = '(?ms)^      - name: Setup \.NET\r?\n        timeout-minutes: 5\r?\n        uses: actions/setup-dotnet@v4\r?\n        env:\r?\n          DOTNET_INSTALL_DIR: \$\{\{ runner\.temp \}\}/dotnet\r?\n        with:\r?\n          dotnet-version: 10\.0\.302\r?\n\r?\n'
     $setupStepRegex = [regex]::new($setupStepPattern)
     Assert-Contract ($setupStepRegex.Matches($workflow).Count -eq $expectedDotNetJobNames.Count) 'The missing-step mutation must recognize every managed setup-dotnet step.'
     $missingSetupWorkflow = $setupStepRegex.Replace($workflow, '', 1)

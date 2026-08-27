@@ -294,8 +294,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -304,6 +302,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -387,8 +387,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -397,6 +395,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -480,8 +480,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -490,6 +488,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -575,8 +575,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -585,6 +583,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -672,7 +672,6 @@ jobs:
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}
     env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=postgres;Username=nerv;Password=nerv
     services:
       postgres:
@@ -696,6 +695,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -813,7 +814,6 @@ jobs:
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}
     env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=postgres;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
     services:
@@ -847,6 +847,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -1016,8 +1018,6 @@ jobs:
       producer-run-attempt: ${{ steps.planning-artifact-identity.outputs.producer-run-attempt }}
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -1026,6 +1026,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -1112,7 +1114,6 @@ jobs:
       producer-run-attempt: ${{ steps.shadow-artifact-identity.outputs.producer-run-attempt }}
     if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
     env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
     steps:
@@ -1123,6 +1124,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -1280,7 +1283,6 @@ jobs:
       producer-run-attempt: ${{ steps.v1-artifact-identity.outputs.producer-run-attempt }}
     if: ${{ needs.acceptance-scenario-matrix-planning.result == 'success' }}
     env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=postgres;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
       COMPOSE_PROJECT_NAME: nerv_full_chain_${{ github.run_id }}_${{ github.run_attempt }}
@@ -1292,6 +1294,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -1711,8 +1715,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -1721,6 +1723,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -2066,8 +2070,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -2076,6 +2078,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
@@ -2128,8 +2132,6 @@ jobs:
     needs: impact-plan
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -2138,6 +2140,8 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.302
 
