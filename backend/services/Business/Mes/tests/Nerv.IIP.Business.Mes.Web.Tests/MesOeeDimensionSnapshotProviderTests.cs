@@ -6,8 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -142,6 +144,27 @@ public sealed class MesOeeDimensionSnapshotProviderTests
         Assert.True(snapshot.ShiftCrossesMidnight);
         Assert.Equal(450, snapshot.ShiftPaidMinutes);
         Assert.Equal(30, snapshot.ShiftBreakMinutes);
+    }
+
+    [Fact]
+    public async Task Production_report_does_not_mix_task_work_center_with_device_hierarchy_when_device_work_center_is_missing()
+    {
+        var report = await RecordProductionReportWithMasterDataHandlerAsync(new MissingDeviceWorkCenterHandler());
+
+        Assert.Equal("WC-01", report.OeeWorkCenterId);
+        Assert.Equal("DEV-01", report.OeeDeviceAssetId);
+        Assert.Null(report.OeeSiteCode);
+        Assert.Null(report.OeeWorkshopCode);
+        Assert.Null(report.OeeLineCode);
+        Assert.Null(report.OeeSiteTimezone);
+
+        var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(
+            new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
+        Assert.Equal("WC-01", integrationEvent.Payload.WorkCenterId);
+        Assert.Null(integrationEvent.Payload.SiteCode);
+        Assert.Null(integrationEvent.Payload.WorkshopCode);
+        Assert.Null(integrationEvent.Payload.LineCode);
+        Assert.Null(integrationEvent.Payload.SiteTimezone);
     }
 
     [Fact]
@@ -420,6 +443,23 @@ public sealed class MesOeeDimensionSnapshotProviderTests
                 Content = new StringContent($"{{\"data\":{data},\"success\":true,\"message\":\"\",\"code\":0}}", Encoding.UTF8, "application/json"),
             };
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class MissingDeviceWorkCenterHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var query = request.RequestUri?.Query ?? string.Empty;
+            var data = query.Contains("resourceType=device-asset", StringComparison.Ordinal)
+                ? "{\"resources\":[{\"resourceType\":\"device-asset\",\"code\":\"DEV-01\",\"displayName\":\"Device\",\"active\":true,\"snapshotVersion\":\"v1\",\"siteCode\":\"SITE-B\",\"workshopCode\":\"WORKSHOP-B\",\"lineCode\":\"LINE-B\",\"workCenterCode\":\"   \"}],\"total\":1}"
+                : query.Contains("resourceType=site", StringComparison.Ordinal)
+                    ? "{\"resources\":[{\"resourceType\":\"site\",\"code\":\"SITE-B\",\"displayName\":\"Site B\",\"active\":true,\"snapshotVersion\":\"v1\",\"timezone\":\"Asia/Shanghai\"}],\"total\":1}"
+                    : "{\"resources\":[{\"resourceType\":\"shift\",\"code\":\"NIGHT\",\"displayName\":\"Night\",\"active\":true,\"snapshotVersion\":\"v1\",\"startsAt\":\"20:00:00\",\"endsAt\":\"04:00:00\",\"crossesMidnight\":true,\"paidMinutes\":450,\"breakMinutes\":30}],\"total\":1}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($"{{\"data\":{data},\"success\":true,\"message\":\"\",\"code\":0}}", Encoding.UTF8, "application/json"),
+            });
         }
     }
 

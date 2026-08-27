@@ -201,6 +201,59 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
     }
 
     [RealPostgresFact]
+    public async Task Missing_device_work_center_event_never_projects_or_aggregates_the_untrusted_device_hierarchy_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var start = DateTimeOffset.Parse("2026-07-10T08:00:00Z");
+        var reportedAtUtc = start.AddMinutes(30);
+        var integrationEvent = new ProductionReportRecordedIntegrationEvent(
+            "evt-missing-device-wc",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-MISSING-DEVICE-WC",
+            "PRPT-MISSING-DEVICE-WC",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-MISSING-DEVICE-WC",
+            new ProductionReportRecordedPayload(
+                "PRPT-MISSING-DEVICE-WC", "WO-001", "OP-10", "WC-01", "DEV-01",
+                10m, 0m, 0m, "PCS", 10m, reportedAtUtc, false));
+
+        await new ProductionReportOeeProjectionHandler(dbContext, new InMemoryIntegrationEventDeadLetterStore())
+            .HandleAsync(integrationEvent, CancellationToken.None);
+        dbContext.DeviceStateSnapshots.Add(State("org-001", "DEV-01", "running", start, "state-missing-device-wc"));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var fact = await dbContext.OeeProductionFacts.AsNoTracking().SingleAsync();
+        Assert.Equal("WC-01", fact.WorkCenterId);
+        Assert.Null(fact.SiteCode);
+        Assert.Null(fact.WorkshopCode);
+        Assert.Null(fact.LineCode);
+
+        var handler = new QueryOeeAggregateBucketsQueryHandler(dbContext);
+        var workCenter = await handler.Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.WorkCenter,
+                start, start.AddHours(1), WorkCenterId: "WC-01"),
+            CancellationToken.None);
+        var line = await handler.Handle(
+            new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", OeeAggregateDimensions.Line,
+                start, start.AddHours(1), LineCode: "LINE-B"),
+            CancellationToken.None);
+
+        Assert.Single(workCenter.Buckets);
+        Assert.Empty(line.Buckets);
+    }
+
+    [RealPostgresFact]
     public async Task Work_center_bucket_uses_weighted_apq_and_isolates_scope_on_postgres()
     {
         await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();

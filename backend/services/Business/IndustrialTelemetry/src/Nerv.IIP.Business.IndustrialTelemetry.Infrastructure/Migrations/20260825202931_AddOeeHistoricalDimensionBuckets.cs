@@ -353,6 +353,14 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 schema: "industrial_telemetry",
                 table: "oee_production_facts");
 
+            // The previous schema cannot represent explicitly degraded OEE facts. Preserve every
+            // representable fact and remove only rows whose nullable dimensions prevent rollback.
+            migrationBuilder.Sql(
+                """
+                DELETE FROM industrial_telemetry.oee_production_facts
+                WHERE work_center_id IS NULL OR device_asset_id IS NULL;
+                """);
+
             migrationBuilder.AlterColumn<string>(
                 name: "work_center_id",
                 schema: "industrial_telemetry",

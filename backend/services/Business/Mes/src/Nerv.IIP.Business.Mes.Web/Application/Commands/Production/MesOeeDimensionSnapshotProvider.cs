@@ -80,7 +80,9 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
             .Take(2)
             .ToArray();
         var device = devices is { Length: 1 } ? devices[0] : null;
-        var siteCode = Normalize(device?.SiteCode);
+        var deviceWorkCenterCode = Normalize(device?.WorkCenterCode);
+        var hasAuthoritativeDeviceHierarchy = device is not null && deviceWorkCenterCode is not null;
+        var siteCode = hasAuthoritativeDeviceHierarchy ? Normalize(device!.SiteCode) : null;
         var siteResponse = await (siteCode is null
             ? Task.FromResult<MasterDataResourceListResponse?>(null)
             : ListAsync(request, "site", ("siteCode", siteCode), cancellationToken));
@@ -96,13 +98,13 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         var site = sites is { Length: 1 } ? sites[0] : null;
         var shift = shifts is { Length: 1 } ? shifts[0] : null;
         return new MesOeeDimensionSnapshot(
-            Normalize(device?.WorkCenterCode) ?? request.WorkCenterCode,
+            device is null ? request.WorkCenterCode : deviceWorkCenterCode ?? string.Empty,
             fallback.DeviceAssetId,
             siteCode,
-            Normalize(device?.WorkshopCode),
-            Normalize(device?.LineCode),
+            hasAuthoritativeDeviceHierarchy ? Normalize(device!.WorkshopCode) : null,
+            hasAuthoritativeDeviceHierarchy ? Normalize(device!.LineCode) : null,
             shiftCode,
-            Normalize(site?.Timezone),
+            hasAuthoritativeDeviceHierarchy ? Normalize(site?.Timezone) : null,
             shift?.StartsAt,
             shift?.EndsAt,
             shift?.CrossesMidnight,

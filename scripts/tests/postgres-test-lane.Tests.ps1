@@ -379,14 +379,14 @@ try {
         -GovernancePath (Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md') `
         -ActiveMembers $activeMembers `
         -HostedMemberIds $script:HostedPostgresMemberIds
-    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 116) 'The active PostgreSQL manifest inventory must remain 15 members and 116 frozen identities.'
-    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 108) 'The hosted PostgreSQL workflow subset must remain 14 members and 108 frozen identities.'
+    Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 118) 'The active PostgreSQL manifest inventory must remain 15 members and 118 frozen identities.'
+    Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 110) 'The hosted PostgreSQL workflow subset must remain 14 members and 110 frozen identities.'
     Assert-Contract ($laneInventory.activeNotHostedIds.Count -eq 1 -and [string]::Equals([string]$laneInventory.activeNotHostedIds[0], 'masterdata-device-reference-concurrency', [StringComparison]::Ordinal) -and $laneInventory.activeNotHostedIdentities -eq 8) 'The active-but-not-hosted inventory must explicitly identify the eight-test MasterData device-reference concurrency member.'
     $testOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'test-owned', [StringComparison]::Ordinal) }).Count
     $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
     Assert-Contract ($testOwnedCount -ge 1 -and $runnerOwnedCount -ge 1) 'Both ownership forms must stay represented; if one empties, its half of the contract stops being exercised.'
     Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
-    # IndustrialTelemetry 的四个类中只有 17 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
+    # IndustrialTelemetry 的五个类中只有 19 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
     # Quality 同理：七个类中只有 15 条是真实 PostgreSQL 证明。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
@@ -430,7 +430,7 @@ try {
     Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 17) 'The IndustrialTelemetry member must freeze exactly its seventeen governed PostgreSQL identities.'
+    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 19) 'The IndustrialTelemetry member must freeze exactly its nineteen governed PostgreSQL identities.'
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
