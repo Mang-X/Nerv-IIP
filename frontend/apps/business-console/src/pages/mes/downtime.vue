@@ -107,31 +107,23 @@ const downtimeSegments = computed(() =>
   ]),
 )
 // 停机时长按原因分类汇总：读面随列表一起返回，不受原因筛选影响，所以选中一个原因后仍能换到别的原因。
-const downtimeMinutesByReason = computed(() =>
+// 分段之和必须恒等于卡片主数值，所以主数值直接由分段求和，不另行取整（见 metricSegments 的语义前提）。
+const downtimeHoursSegments = computed<NvMetricSegment[]>(() =>
   downtimeReasonSummary.value.map((row) => ({
-    reasonCode: row.reasonCode ?? '',
-    hours: Number((((row.durationMinutes ?? 0) / 60) as number).toFixed(1)),
-    openCount: row.openCount ?? 0,
+    key: row.reasonCode ?? '',
+    label: reasonText(row.reasonName, row.reasonCode),
+    value: Number(((row.durationMinutes ?? 0) / 60).toFixed(1)),
+    tone: (row.openCount ?? 0) > 0 ? 'danger' : 'brand',
   })),
 )
 const downtimeHoursTotal = computed(() =>
-  Number(downtimeMinutesByReason.value.reduce((sum, row) => sum + row.hours, 0).toFixed(1)),
+  Number(downtimeHoursSegments.value.reduce((sum, segment) => sum + segment.value, 0).toFixed(1)),
 )
-// 分段之和必须恒等于卡片主数值，所以主数值直接由分段求和，不另行取整（见 metricSegments 的语义前提）。
-const downtimeHoursSegments = computed<NvMetricSegment[]>(() =>
-  downtimeMinutesByReason.value.map((row) => ({
-    key: row.reasonCode,
-    label: reasonLabel(row.reasonCode),
-    value: row.hours,
-    tone: row.openCount > 0 ? 'danger' : 'brand',
-  })),
-)
+// 筛选项取自权威停机原因字典而不是本次汇总：汇总只含「当前筛选下真出现过的原因」，
+// 一旦切状态把选中的原因筛没了，下拉会空白但过滤仍然生效，用户看不到也取消不掉。
 const reasonFilterOptions = computed(() => [
   { value: 'all', label: '全部原因' },
-  ...downtimeMinutesByReason.value.map((row) => ({
-    value: row.reasonCode,
-    label: reasonLabel(row.reasonCode),
-  })),
+  ...downtimeReasonOptions.value,
 ])
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
 watch(statusFilter, (value) => {
@@ -146,11 +138,9 @@ const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 
 type DowntimeRow = (typeof downtimeEvents)['value'][number]
 
-/** 原因码是 Maintenance 停机原因字典的码；字典读不到（无维修读权限等）就只显示码，不编名字。 */
-function reasonLabel(reasonCode?: string | null) {
-  const code = reasonCode?.trim()
-  if (!code) return '未指定'
-  return downtimeReasonOptions.value.find((option) => option.value === code)?.label ?? code
+/** 原因中文名由门面按 Maintenance 停机原因目录解析；目录里没有的码（历史自由文本原因）照实显示原值。 */
+function reasonText(reasonName?: string | null, reasonCode?: string | null) {
+  return reasonName?.trim() || reasonCode?.trim() || '未指定'
 }
 
 function deviceCode(row: DowntimeRow) {
@@ -192,7 +182,7 @@ const columns: NvDataTableColumn<DowntimeRow>[] = [
   {
     key: 'reasonCode',
     header: '停机原因',
-    accessor: (r) => reasonLabel(r.reasonCode),
+    accessor: (r) => reasonText(r.reasonName, r.reasonCode),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },

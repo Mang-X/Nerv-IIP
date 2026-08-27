@@ -1335,11 +1335,11 @@ describe('business MES composables', () => {
     const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
     expect(listOptions.mock.calls.at(-1)![0]!.query).not.toHaveProperty('reasonCode')
 
-    downtime.filters.reasonCode = 'equipment-fault'
+    downtime.filters.reasonCode = 'DT-MECH'
     coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
 
     expect(listOptions.mock.calls.at(-1)![0]!.query).toMatchObject({
-      reasonCode: 'equipment-fault',
+      reasonCode: 'DT-MECH',
     })
   })
 
@@ -1350,13 +1350,23 @@ describe('business MES composables', () => {
         items: [],
         total: 3,
         reasonSummary: [
-          { reasonCode: 'equipment-fault', eventCount: 2, openCount: 1, durationMinutes: 90 },
+          {
+            reasonCode: 'DT-MECH',
+            reasonName: '机械故障（轴承/传动/密封）',
+            openCount: 1,
+            durationMinutes: 90,
+          },
         ],
       },
     })
 
     expect(useMesDowntimeEvents().downtimeReasonSummary.value).toEqual([
-      { reasonCode: 'equipment-fault', eventCount: 2, openCount: 1, durationMinutes: 90 },
+      {
+        reasonCode: 'DT-MECH',
+        reasonName: '机械故障（轴承/传动/密封）',
+        openCount: 1,
+        durationMinutes: 90,
+      },
     ])
   })
 

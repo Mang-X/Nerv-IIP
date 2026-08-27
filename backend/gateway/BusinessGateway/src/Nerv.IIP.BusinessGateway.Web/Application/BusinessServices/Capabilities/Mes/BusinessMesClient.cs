@@ -1222,9 +1222,9 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
             ("workOrderId", request.WorkOrderId),
+            ("reasonCode", request.ReasonCode),
             ("skip", request.Skip),
-            ("take", request.Take),
-            ("reasonCode", request.ReasonCode));
+            ("take", request.Take));
 
     private static string MaterialIssueRequestListQuery(BusinessConsoleMesMaterialIssueRequestListRequest request) =>
         Query(

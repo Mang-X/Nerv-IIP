@@ -24,13 +24,17 @@ const openRow = {
   startedAtUtc: '2026-07-30T01:00:00Z',
   recoveredAtUtc: null,
   workCenterId: 'WC-01',
-  reasonCode: 'equipment-fault',
+  reasonCode: 'DT-MECH',
+  reasonName: '机械故障（轴承/传动/密封）',
 }
 const recoveredRow = {
   ...openRow,
   downtimeEventId: 'DT-0002',
   status: 'Recovered',
   recoveredAtUtc: '2026-07-30T02:00:00Z',
+  // 目录里没有的历史自由文本原因：门面解不出名字，页面照实显示原值。
+  reasonCode: '换型调整',
+  reasonName: null,
 }
 
 const recordDowntimeEvent = vi.fn()
@@ -80,11 +84,17 @@ vi.mock('@/composables/useBusinessMes', () => ({
     downtimeEventsPending: ref(false),
     downtimeEventsTotal: computed(() => 2),
     downtimeReasonOptions: computed(() => [
-      { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
+      { value: 'DT-MECH', label: '机械故障（轴承/传动/密封）（DT-MECH）' },
+      { value: 'DT-PM', label: '计划保养（DT-PM）' },
     ]),
     downtimeReasonSummary: computed(() => [
-      { reasonCode: 'equipment-fault', eventCount: 2, openCount: 1, durationMinutes: 90 },
-      { reasonCode: 'material-shortage', eventCount: 1, openCount: 0, durationMinutes: 30 },
+      {
+        reasonCode: 'DT-MECH',
+        reasonName: '机械故障（轴承/传动/密封）',
+        openCount: 1,
+        durationMinutes: 90,
+      },
+      { reasonCode: '换型调整', reasonName: null, openCount: 0, durationMinutes: 30 },
     ]),
     downtimeReasonsError: ref(undefined),
     downtimeReasonsPending: ref(false),
@@ -235,7 +245,7 @@ async function openRecordDialog(wrapper: ReturnType<typeof mountPage>) {
 
 async function fillValidRecordForm(wrapper: ReturnType<typeof mountPage>) {
   await wrapper.get('[aria-label="工单与工序"]').setValue('operation:OP-001')
-  await wrapper.get('[aria-label="停机原因"]').setValue('equipment-fault')
+  await wrapper.get('[aria-label="停机原因"]').setValue('DT-MECH')
   await wrapper.get('[aria-label="停机开始时间"]').setValue(toLocalDateTimeInput(startedAt))
 }
 
@@ -255,7 +265,7 @@ describe('MES downtime record entry', () => {
       operationTaskId: 'OP-001',
       workCenterId: 'WC-01',
       deviceAssetId: 'DEVICE-ID-001',
-      reasonCode: 'equipment-fault',
+      reasonCode: 'DT-MECH',
       startedAtUtc: '2026-08-26T00:30:00.000Z',
       idempotencyKey: 'record-downtime-stable-key',
       scopeKind: 'work-center',
@@ -292,7 +302,7 @@ describe('MES downtime record entry', () => {
     await flushPromises()
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
 
-    await wrapper.get('[aria-label="停机原因"]').setValue('equipment-fault')
+    await wrapper.get('[aria-label="停机原因"]').setValue('DT-MECH')
     await wrapper.get('[aria-label="停机开始时间"]').setValue('invalid-time')
     await wrapper.get('[data-testid="record-downtime-submit"]').trigger('click')
     await flushPromises()
@@ -388,29 +398,31 @@ describe('MES downtime recovery entry', () => {
 
 // #1947：停机读面必须能看见原因、按原因筛选、按原因看时长构成。
 describe('MES downtime reason read face', () => {
-  it('renders the reason column through the maintenance directory label', () => {
+  it('renders the reason column from the facade-resolved name and keeps the raw code when unresolved', () => {
     const wrapper = mountPage({ NvDataTable: cellRenderingTable })
 
     const cells = wrapper.findAll('[data-cell="reasonCode"]')
     expect(cells).toHaveLength(2)
-    expect(cells[0]!.text()).toBe('设备故障（equipment-fault）')
+    expect(cells[0]!.text()).toBe('机械故障（轴承/传动/密封）')
+    expect(cells[1]!.text()).toBe('换型调整')
   })
 
-  it('offers every summarised reason as a filter and pushes the selection into the list query', async () => {
+  it('offers the authoritative reason directory as the filter and pushes the selection into the list query', async () => {
     const wrapper = mountPage()
 
     // 弹窗里的「停机原因」下拉与工具栏筛选同名，这里按选项内容锁定工具栏那一个。
     const select = wrapper.findAll('select').find((item) => item.text().includes('全部原因'))
     expect(select).toBeDefined()
-    // 选项来自后端汇总（字典查不到的原因码原样列出），不因维修字典读不到而缺项。
+    // 选项取自权威字典而不是本次汇总：汇总只含「当前筛选下出现过的原因」，
+    // 用它当选项会让选中的原因在切筛选后从下拉里消失，过滤却还生效。
     expect(select!.findAll('option').map((option) => option.text())).toEqual([
       '全部原因',
-      '设备故障（equipment-fault）',
-      'material-shortage',
+      '机械故障（轴承/传动/密封）（DT-MECH）',
+      '计划保养（DT-PM）',
     ])
 
-    await select!.setValue('material-shortage')
-    expect(filters.reasonCode).toBe('material-shortage')
+    await select!.setValue('DT-PM')
+    expect(filters.reasonCode).toBe('DT-PM')
 
     await select!.setValue('all')
     expect(filters.reasonCode).toBeUndefined()
@@ -422,8 +434,8 @@ describe('MES downtime reason read face', () => {
     const card = wrapper.get('[data-metric="停机时长按原因"]')
     expect(card.text()).toContain('2小时')
     expect(card.findAll('[data-segment]').map((segment) => segment.text())).toEqual([
-      '设备故障（equipment-fault）=1.5',
-      'material-shortage=0.5',
+      '机械故障（轴承/传动/密封）=1.5',
+      '换型调整=0.5',
     ])
   })
 })

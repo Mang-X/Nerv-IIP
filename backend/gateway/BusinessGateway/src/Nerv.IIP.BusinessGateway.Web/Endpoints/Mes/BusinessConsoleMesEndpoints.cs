@@ -1947,6 +1947,7 @@ public sealed class CreateBusinessConsoleMesFinishedGoodsReceiptRequestEndpoint(
 public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessMaintenanceClient maintenance,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesDowntimeEventListRequest, BusinessConsoleMesDowntimeEventListResponse>(
         auth,
@@ -1956,11 +1957,58 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesDowntimeEventListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
         BusinessConsoleMesDowntimeEventListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        return await MesDowntimeReasonNameEnricher.EnrichAsync(
+            response,
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// 停机原因码归 Maintenance 的 <c>downtime-reason</c> 目录所有，MES 只存码。读面按
+/// api-contract-and-codegen §17「列表行必须随业务标识返回可显示的 *Name」在门面层补中文名，
+/// 与 <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 同一姿势（读面跨域取名走门面，不让页面自己拼）。
+/// 目录里没有的码（历史自由文本停机原因）不编名字：<c>ReasonName</c> 留空，页面照实显示原值。
+/// </summary>
+internal static class MesDowntimeReasonNameEnricher
+{
+    /// <summary>停机原因目录是受控词表（当前世界史种子 5 条），一页取回即可覆盖；取满则说明目录已越界，交由调用方按缺名处理。</summary>
+    private const int CatalogPageSize = 200;
+
+    public static async Task<BusinessConsoleMesDowntimeEventListResponse> EnrichAsync(
+        BusinessConsoleMesDowntimeEventListResponse response,
+        IBusinessMaintenanceClient maintenance,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var catalog = await maintenance.ListDowntimeReasonsAsync(
+            internalBearerToken,
+            new BusinessConsoleMaintenanceReasonDirectoryRequest(organizationId, environmentId, Take: CatalogPageSize),
+            cancellationToken);
+        var names = catalog.Items
+            .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
+            .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
+
+        string? Resolve(string? reasonCode) =>
+            reasonCode is not null && names.TryGetValue(reasonCode, out var name) ? name : null;
+
+        return response with
+        {
+            Items = [.. response.Items.Select(item => item with { ReasonName = Resolve(item.ReasonCode) })],
+            ReasonSummary = [.. response.ReasonSummary.Select(row => row with { ReasonName = Resolve(row.ReasonCode) })],
+        };
+    }
 }
 
 [Tags("Business Console MES")]

@@ -4268,9 +4268,9 @@ public sealed record BusinessConsoleMesDowntimeEventListRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null,
     string? WorkOrderId = null,
+    string? ReasonCode = null,
     int Skip = 0,
-    int Take = 100,
-    string? ReasonCode = null);
+    int Take = 100);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestListRequest(
     string OrganizationId,
@@ -5229,12 +5229,12 @@ public sealed record BusinessConsoleMesDowntimeEventListResponse(
     int Total,
     IReadOnlyCollection<BusinessConsoleMesDowntimeReasonSummaryRow> ReasonSummary);
 
-/// <summary>停机时长按原因分类汇总；不受 reasonCode 过滤影响，供停机读面做原因构成与切换筛选。</summary>
+/// <summary>停机时长按原因分类汇总；不受 reasonCode 过滤影响，供停机读面做原因构成。</summary>
 public sealed record BusinessConsoleMesDowntimeReasonSummaryRow(
     string ReasonCode,
-    int EventCount,
     int OpenCount,
-    decimal DurationMinutes);
+    decimal DurationMinutes,
+    string? ReasonName = null);
 
 public sealed record BusinessConsoleMesDowntimeEventRow(
     string DowntimeEventId,
@@ -5249,7 +5249,8 @@ public sealed record BusinessConsoleMesDowntimeEventRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     string? WorkCenterId = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    string? ReasonName = null);
 
 public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string OrganizationId,

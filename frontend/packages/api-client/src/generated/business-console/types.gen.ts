@@ -4705,13 +4705,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
     workCenterId?: string | null;
     reasonCode?: string | null;
+    reasonName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow = {
     reasonCode?: string;
-    eventCount?: number;
     openCount?: number;
     durationMinutes?: number;
+    reasonName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest = {
@@ -16080,9 +16081,9 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         shiftId?: string | null;
         deviceAssetId?: string | null;
         workOrderId?: string | null;
+        reasonCode?: string | null;
         skip?: number;
         take?: number;
-        reasonCode?: string | null;
     };
     url: '/api/business-console/v1/mes/downtime-events';
 };

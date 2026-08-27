@@ -1803,7 +1803,6 @@ public sealed record MesDowntimeEventListResponse(
 /// </summary>
 public sealed record MesDowntimeReasonSummaryRow(
     string ReasonCode,
-    int EventCount,
     int OpenCount,
     decimal DurationMinutes);
 
@@ -1905,26 +1904,35 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
         return new MesDowntimeEventListResponse(items, total, reasonSummary);
     }
 
-    // 时长差值在应用层算：DateTimeOffset 相减的 SQL 翻译按 provider 而异，
-    // 与 Maintenance MTTR（QueryAssetReliabilityQueryHandler）同一姿势，先投影时间戳再聚合。
+    /// <summary>
+    /// 按原因分组聚合，整条聚合下推数据库：读面每次翻页/改筛选都要重算，绝不能把过滤后的全部
+    /// 停机行拉回进程（那是一次无界全表投影）。Npgsql 把它翻成单条
+    /// <c>GROUP BY reason</c> + <c>sum(date_part('epoch', COALESCE(to_utc, @asOf) - from_utc)/60)</c>，
+    /// 回程行数等于原因个数。未恢复事件按查询时刻仍在累计，否则一场正在进行的停机会显示成 0。
+    /// </summary>
     private async Task<IReadOnlyCollection<MesDowntimeReasonSummaryRow>> SummarizeByReasonAsync(
         IQueryable<WorkCenterUnavailability> query,
         CancellationToken cancellationToken)
     {
-        var facts = await query
-            .Select(x => new { x.Reason, x.FromUtc, x.ToUtc })
-            .ToArrayAsync(cancellationToken);
         var asOfUtc = timeProvider.GetUtcNow();
-        return facts
-            .GroupBy(x => x.Reason, StringComparer.Ordinal)
-            .Select(group => new MesDowntimeReasonSummaryRow(
-                group.Key,
-                group.Count(),
-                group.Count(x => x.ToUtc is null),
-                Math.Round((decimal)group.Sum(x => ((x.ToUtc ?? asOfUtc) - x.FromUtc).TotalMinutes), 2)))
+        var grouped = await query
+            .GroupBy(x => x.Reason)
+            .Select(group => new
+            {
+                ReasonCode = group.Key,
+                OpenCount = group.Count(x => x.ToUtc == null),
+                DurationMinutes = group.Sum(x => ((x.ToUtc ?? asOfUtc) - x.FromUtc).TotalMinutes),
+            })
+            .ToArrayAsync(cancellationToken);
+        // 名次在进程内定：回程只有「原因个数」行，且 GROUP BY 之上没有定序来源，
+        // 名次留在 SQL 里就等于把「同时长怎么排」交给未定义的行序。
+        return [.. grouped
+            .Select(x => new MesDowntimeReasonSummaryRow(
+                x.ReasonCode,
+                x.OpenCount,
+                Math.Round((decimal)x.DurationMinutes, 2)))
             .OrderByDescending(x => x.DurationMinutes)
-            .ThenBy(x => x.ReasonCode, StringComparer.Ordinal)
-            .ToArray();
+            .ThenBy(x => x.ReasonCode, StringComparer.Ordinal)];
     }
 }
 

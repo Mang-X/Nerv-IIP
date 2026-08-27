@@ -18598,6 +18598,14 @@
             }
           },
           {
+            "name": "reasonCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -18615,14 +18623,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "reasonCode",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -47794,6 +47794,10 @@
           "reasonCode": {
             "type": "string",
             "nullable": true
+          },
+          "reasonName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -47804,10 +47808,6 @@
           "reasonCode": {
             "type": "string"
           },
-          "eventCount": {
-            "type": "integer",
-            "format": "int32"
-          },
           "openCount": {
             "type": "integer",
             "format": "int32"
@@ -47815,6 +47815,10 @@
           "durationMinutes": {
             "type": "number",
             "format": "decimal"
+          },
+          "reasonName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
