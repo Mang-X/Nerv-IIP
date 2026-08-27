@@ -298,11 +298,11 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
                 settlement.MachineTimeBasisCode));
     }
 
-    private static string ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
+    private static MesMachineTimeFactStatus ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
     {
-        MachineTimeFactStatus.Available => MesMachineTimeFactStatusCodes.Available,
-        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatusCodes.NotApplicable,
-        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatusCodes.Unavailable,
+        MachineTimeFactStatus.Available => MesMachineTimeFactStatus.Available,
+        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatus.NotApplicable,
+        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatus.Unavailable,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported machine-time fact status."),
     };
 }
@@ -350,11 +350,11 @@ public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter
                 settlement.MachineTimeBasisCode));
     }
 
-    private static string ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
+    private static MesMachineTimeFactStatus ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
     {
-        MachineTimeFactStatus.Available => MesMachineTimeFactStatusCodes.Available,
-        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatusCodes.NotApplicable,
-        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatusCodes.Unavailable,
+        MachineTimeFactStatus.Available => MesMachineTimeFactStatus.Available,
+        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatus.NotApplicable,
+        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatus.Unavailable,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported machine-time fact status."),
     };
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Contracts.Mes;
@@ -30,12 +32,15 @@ public static class MesIntegrationEventVersions
     public const int V2 = 2;
 }
 
-public static class MesMachineTimeFactStatusCodes
+public enum MesMachineTimeFactStatus
 {
-    public const string Available = "available";
-    public const string NotApplicable = "notApplicable";
-    public const string Unavailable = "unavailable";
+    Available,
+    NotApplicable,
+    Unavailable,
 }
+
+public sealed class MesMachineTimeFactStatusJsonConverter()
+    : JsonStringEnumConverter<MesMachineTimeFactStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
 
 public static class MesMachineTimeBasisCodes
 {
@@ -223,7 +228,8 @@ public sealed record OperationActualTimeSettledPayload(
     long ActualMachineTicks,
     IReadOnlyCollection<string> CoveredProductionReportNos,
     string? DeviceAssetId = null,
-    string? MachineTimeStatus = null,
+    [property: JsonConverter(typeof(MesMachineTimeFactStatusJsonConverter))]
+    MesMachineTimeFactStatus? MachineTimeStatus = null,
     long? BillableMachineTicks = null,
     string? MachineTimeBasisCode = null);
 
@@ -255,7 +261,8 @@ public sealed record OperationActualTimeSettlementVoidedPayload(
     long ActualMachineTicks,
     IReadOnlyCollection<string> CoveredProductionReportNos,
     string? DeviceAssetId = null,
-    string? MachineTimeStatus = null,
+    [property: JsonConverter(typeof(MesMachineTimeFactStatusJsonConverter))]
+    MesMachineTimeFactStatus? MachineTimeStatus = null,
     long? BillableMachineTicks = null,
     string? MachineTimeBasisCode = null);
 
