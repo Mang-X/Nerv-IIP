@@ -1,73 +1,8 @@
-# 第四阶段真实基础设施纵切
+# 已迁移：第四阶段真实基础设施纵切
 
-本文档记录第四阶段从“控制台纵切已跑通”推进到“真实基础设施门禁已通过”的历史验收口径。前三阶段分别验证接入查询、低风险动作闭环和控制台 API/codegen；第四阶段不扩大业务范围，重点把 AppHub、Ops、Gateway、Connector Host 和 Console 链路放到可验证的真实基础设施底座上。
+本路径只为历史入链兼容保留，不再是当前 Architecture、基础设施状态或验证入口。
 
-## 退役状态
+- 冻结正文：[`../status/archive/vertical-slices/fourth-real-infra.md`](../status/archive/vertical-slices/fourth-real-infra.md)
+- 纵切历史入口：[`../status/archive/vertical-slices/README.md`](../status/archive/vertical-slices/README.md)
 
-第一至第四阶段的纵切脚本已按 #2157 退役；前三个历史路径曾保留为无副作用、明确失败的兼容墓碑，第四阶段路径现已删除。本文中的脚本命令和通过输出均是历史执行记录，不是当前推荐入口。当前本地开发使用 `nerv.ps1 dev` 与 `nerv.ps1 fullstack run`，OpenAPI/api-client 漂移使用 `scripts/verify-openapi-client-drift.ps1`，真实 PostgreSQL/Redis/provider 证明使用专用 CI lane；发布演练使用 `scripts/verify-production-release-rehearsal.ps1`。
-
-## 目标
-
-1. 将 AppHub 和 Ops 从内存态纵切推进到 netcorepal/CleanDDD 形态。
-2. 以 PostgreSQL 作为首个真实持久化 profile，验证服务事实跨 DbContext 生命周期保存。
-3. 接入 Redis、RabbitMQ 和 CAP 基础包，冻结后续缓存、消息和 outbox 接线边界；当前运行口径已进一步把 RabbitMQ 调整为 `Messaging:Provider=RabbitMQ` 时的可选 broker。
-4. 建立平台级 Aspire AppHost，作为 AppHub、Ops、Gateway、Connector Host 与基础设施资源的统一拓扑入口。
-5. 历史上保留前三阶段验证入口，并提供一个能拉起真实依赖、复跑控制台链路的第四阶段总门禁；这些入口现已按 #2157 退役，第四阶段总门禁脚本已删除。
-
-## 已落地范围
-
-1. AppHub 已拆出 Domain aggregate、Application command/query、Infrastructure `ApplicationDbContext`、entity configuration 和 repository。
-2. Ops 已拆出 Domain aggregate、Application command/query、Infrastructure `ApplicationDbContext`、entity configuration 和 repository。
-3. AppHub/Ops Web endpoint 已通过 MediatR 调用 command/query，不再直接把 endpoint 绑定到具体 store。
-4. AppHub/Ops PostgreSQL profile 已通过集成测试证明核心事实可持久化。
-5. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
-6. 历史 `scripts/verify-second-slice-ops.ps1` 和 `scripts/verify-third-slice-console.ps1` 曾支持 `-UsePostgres`，现已退役。
-7. 历史 `scripts/verify-fourth-slice-real-infra.ps1` 曾拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，现已删除；当前真实基础设施验证由 AppHost/fullstack 与专用 provider lane 承接，不应恢复该历史路径。
-8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 在 `Messaging:Provider=RabbitMQ` profile 下加入拓扑。
-
-## 验证命令
-
-历史第四阶段总门禁（已删除）：
-
-```powershell
-pwsh scripts/verify-fourth-slice-real-infra.ps1
-```
-
-通过时最终输出：
-
-```text
-Fourth vertical slice real infrastructure verified.
-```
-
-该脚本历史上覆盖 AppHub/Ops PostgreSQL profile tests、backend solution tests、connector-hosts solution tests、Gateway OpenAPI 导出、frontend api-client 生成、console typecheck/test/build，以及 PostgreSQL 模式下的 Gateway/AppHub/Ops/Connector Host 联调；脚本退役后不再执行这些步骤。
-
-前端质量门禁仍需单独保持：
-
-```powershell
-pnpm -C frontend check
-pnpm -C frontend fmt
-pnpm -C frontend lint
-pnpm -C frontend typecheck
-pnpm -C frontend test
-pnpm -C frontend build
-```
-
-## 当前限制
-
-1. 本文档记录第四阶段验收口径；当时 AppHub/Ops 本地验证路径允许使用 EF 直接建表快捷路径。第五阶段迁移发布底座已经 supersede 该限制：AppHub/Ops 当前使用 migration-based verification，dev/local 自动迁移必须显式设置 `Persistence:AutoMigrate=true`，生产级迁移、初始化、seed 和回滚策略由 ADR 0009 与数据库发布 runbook 承接。
-2. CAP/RabbitMQ 当前是基础包、连接和资源拓扑已接线；后续默认单机 profile 使用 CAP InMemory message queue，RabbitMQ 只在显式 messaging profile 中启用。业务集成事件 outbox、消费者幂等和发布订阅验收尚未进入本阶段完成定义。
-3. IAM 的内存态认证授权骨架是第四阶段历史范围；第七阶段已落地 IAM Persistent Auth、Gateway permission enforcement、Console Auth 和 Connector Host credential validation，Phase 8 已补齐 IAM Admin Console。
-4. FileStorage 已进入 AppHost 拓扑并具备 MinIO provider 接线；完整业务上传下载、下载授权和清理任务仍属于后续功能纵切。
-5. AppHost 尚未覆盖 Knowledge、AI Integration 和 Qdrant。
-6. Docker Compose 仍是本地依赖兜底入口，并与 AppHost 的 PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector 本地依赖保持对齐；RabbitMQ 保留为可选 messaging profile 资源。完整 Compose 产物、安装包和 Windows/Linux 整合安装脚本尚未落地。
-
-## 后续承接
-
-第五阶段不应直接跳到生产 MVP、高风险运维或复杂 AI 能力。推荐优先选择一个可以形成真实用户价值且能补齐平台底座的纵切，例如：
-
-1. IAM 登录与 Gateway/Console 权限 guard。
-2. FileStorage 上传下载闭环与 MinIO provider。
-3. 数据库迁移发布基线、初始化脚本和部署硬化。
-4. Ops 审批、复杂重试、outbox 和通知联动。
-
-这些方向可以并行设计，但实施计划应保持单纵切可验收，避免一次性打开过多服务边界。
+当前命令和基础设施事实必须从代码、AppHost、Runbook 与 CI 核实。兼容入口的删除条件由 M2-M 汇总后交给 M4。

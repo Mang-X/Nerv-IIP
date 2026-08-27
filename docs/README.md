@@ -13,7 +13,8 @@
 | 本地启动、部署、迁移、恢复或排障 | 当前位于 `architecture/` 的对应 runbook | M2 迁移前以架构入口路由为准 |
 | 产品、角色、IA 或 UX 设计 | 对应 `*-module-product-design.md` 与产品文档 | 不从项目状态页推断产品语义 |
 | 测试、脚本或协作治理 | 对应 governance 文档 | 只加载与任务直接相关的规则 |
-| 历史计划或规格核对 | `superpowers/`、[`status/archive/`](status/archive/) | 历史记录不自动构成当前执行入口 |
+| 调查、实验、审计或修复历史 | [`reports/README.md`](reports/README.md) | 报告只证明声明的时点与范围，不构成当前规则 |
+| 历史阶段、计划或规格核对 | `superpowers/`、[`status/archive/`](status/archive/) | 历史记录不自动构成当前执行入口 |
 
 ## 文档类型
 
@@ -25,20 +26,20 @@
 | Runbook | 如何启动、部署、迁移、恢复或排障？ | 随当前操作入口更新 |
 | Reference | 当前有哪些字段、Schema、路由、矩阵和清单？ | 生成或随权威生产者更新 |
 | Status | 当前重点、阻塞和全仓级入口是什么？ | 高频替换，不累积已完成历史 |
-| Report | 某次调查、实验、审计或修复发现了什么？ | 完成后冻结 |
+| Report | 某次调查、实验、审计或修复发现了什么？ | 完成后冻结；当前事实回到代码与现态文档 |
 | Product | 给谁使用、解决什么问题、业务与 UX 如何工作？ | 随产品裁决更新 |
 
-## 状态与历史
+## 状态、报告与历史
 
 - 当前全仓级状态：[`status/current.md`](status/current.md)。
+- 冻结报告入口：[`reports/README.md`](reports/README.md)。
+- 阶段与状态快照：[`status/archive/README.md`](status/archive/README.md)。
 - `architecture/implementation-readiness.md`：旧链接兼容入口，不再承载状态或裁决。
-- readiness 冻结快照：[`status/archive/implementation-readiness-2026-08-26.md`](status/archive/implementation-readiness-2026-08-26.md)。
-- 2026 年 5 月非实时看板：[`status/archive/project-status-dashboard-2026-05-26.html`](status/archive/project-status-dashboard-2026-05-26.html)。
 
 ## 权威来源纪律
 
 1. 当前命令、版本、目录、生成入口和实现行为优先以代码、配置、脚本、帮助输出和测试为准。
 2. 当前项目进度、负责人、阻塞细节和验收证据留在 GitHub/Linear。
 3. 同一事实只维护一个权威住所；其它文档使用链接和简短上下文，不复制正文。
-4. 历史快照可以保留当时判断，但不得冒充当前入口。
+4. 历史快照和报告可以保留当时判断，但不得冒充当前入口。
 5. 新增文档前先判断其变更频率；无法明确类型时，先在 Issue/PR 中完成分类裁决。
