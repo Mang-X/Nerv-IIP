@@ -619,6 +619,121 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     } finally {
       await sixthPage.close()
     }
+
+    const seventhPage = await page.context().newPage()
+    try {
+      let firstRequestSeen = false
+      await seventhPage.route('**/api/business-console/v1/wms/**', async (route) => {
+        const path = new URL(route.request().url()).pathname
+        if (path === inboundPath && !firstRequestSeen) {
+          firstRequestSeen = true
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        }
+        await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+      })
+      await seventhPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          seventhPage,
+          inboundPath,
+          async () =>
+            seventhPage.evaluate(
+              async ({ unknownPath, targetPath, requestKeyword }) => {
+                const initial = fetch(
+                  `${targetPath}?phase=unknown-after-first&keyword=${requestKeyword}`,
+                )
+                await new Promise((resolve) => setTimeout(resolve, 20))
+                await fetch(`${unknownPath}?phase=unknown-after-first&keyword=${requestKeyword}`)
+                await initial
+              },
+              {
+                unknownPath: 'http://walkthrough.fixture/api/business-console/v1/wms/unknown',
+                targetPath: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          lifecycleTimeoutMs,
+        ),
+      ).rejects.toThrow('unexpected WMS list-like request path')
+    } finally {
+      await seventhPage.close()
+    }
+
+    const eighthPage = await page.context().newPage()
+    try {
+      let firstRequestSeen = false
+      await eighthPage.route(`**${inboundPath}*`, async (route) => {
+        if (!firstRequestSeen) {
+          firstRequestSeen = true
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        }
+        await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+      })
+      await eighthPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          eighthPage,
+          inboundPath,
+          async () =>
+            eighthPage.evaluate(
+              async ({ path, requestKeyword }) => {
+                const initial = fetch(`${path}?phase=method-after-first&keyword=${requestKeyword}`)
+                await new Promise((resolve) => setTimeout(resolve, 20))
+                await fetch(`${path}?phase=method-after-first&keyword=${requestKeyword}`, {
+                  method: 'POST',
+                  body: '{}',
+                })
+                await initial
+              },
+              {
+                path: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          lifecycleTimeoutMs,
+        ),
+      ).rejects.toThrow('unexpected WMS initial list request method POST')
+    } finally {
+      await eighthPage.close()
+    }
+
+    const ninthPage = await page.context().newPage()
+    try {
+      let requestCount = 0
+      await ninthPage.route(`**${inboundPath}*`, async (route) => {
+        requestCount += 1
+        if (requestCount === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        }
+        await route.fulfill({
+          status: requestCount === 2 ? 503 : 200,
+          body: JSON.stringify({ items: [] }),
+        })
+      })
+      await ninthPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          ninthPage,
+          inboundPath,
+          async () =>
+            ninthPage.evaluate(
+              async ({ path, requestKeyword }) => {
+                const initial = fetch(`${path}?phase=status-after-first&keyword=${requestKeyword}`)
+                await new Promise((resolve) => setTimeout(resolve, 20))
+                await fetch(`${path}?phase=status-after-first&keyword=${requestKeyword}`)
+                await initial
+              },
+              {
+                path: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          lifecycleTimeoutMs,
+        ),
+      ).rejects.toThrow('HTTP 503')
+    } finally {
+      await ninthPage.close()
+    }
   })
 
   test('入库必须显式选择范围和已加载工厂，公开请求带有所选 siteCode', async ({ page }) => {

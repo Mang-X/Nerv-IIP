@@ -472,6 +472,10 @@ export async function withWmsInitialListResponseGuard<T>(
   let firstCandidateSeen = false
   let documentCommitted = navigationRoute === undefined
   let firstListRequest: Request | undefined
+  const failFirst = (message: string) => {
+    firstCandidateSeen = true
+    rejectFirst(new Error(message))
+  }
   const frameNavigationObserver = (frame: { url: () => string }) => {
     if (frame !== page.mainFrame() || !navigationRoute) return
     const current = new URL(frame.url(), page.url())
@@ -479,70 +483,64 @@ export async function withWmsInitialListResponseGuard<T>(
     documentCommitted = current.pathname === expected.pathname && current.search === expected.search
   }
   const requestObserver = (request: Request) => {
-    if (firstCandidateSeen || firstListRequest) return
+    if (firstCandidateSeen) return
     if (!documentCommitted || request.frame() !== page.mainFrame()) return
     const path = new URL(request.url()).pathname
     const endpointKind = classifyWmsInitialEndpoint(path)
     if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
     if (endpointKind === 'unknown') {
-      firstCandidateSeen = true
-      rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
+      failFirst(`unexpected WMS list-like request path ${path}`)
       return
     }
     if (request.method() !== 'GET') {
-      firstCandidateSeen = true
-      rejectFirst(new Error(`unexpected WMS initial list request method ${request.method()}`))
+      failFirst(`unexpected WMS initial list request method ${request.method()}`)
       return
     }
-    firstListRequest = request
+    firstListRequest ??= request
   }
   const responseObserver = (response: Response) => {
     if (firstCandidateSeen || !documentCommitted) return
     const request = response.request()
     if (request.frame() !== page.mainFrame()) return
-    if (firstListRequest && request !== firstListRequest) return
     const path = new URL(response.url()).pathname
     const endpointKind = classifyWmsInitialEndpoint(path)
     if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
     if (endpointKind === 'unknown') {
-      firstCandidateSeen = true
-      rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
+      failFirst(`unexpected WMS list-like request path ${path}`)
       return
     }
     if (request.method() !== 'GET') {
-      firstCandidateSeen = true
-      rejectFirst(new Error(`unexpected WMS initial list request method ${request.method()}`))
+      failFirst(`unexpected WMS initial list request method ${request.method()}`)
       return
     }
-    firstListRequest ??= request
-    firstCandidateSeen = true
     try {
       assertWmsInitialListResponse({ url: response.url(), status: response.status() }, expectedPath)
-      resolveFirst(response)
     } catch (error) {
+      firstCandidateSeen = true
       rejectFirst(error)
+      return
     }
+    if (firstListRequest && request !== firstListRequest) return
+    firstListRequest ??= request
+    firstCandidateSeen = true
+    resolveFirst(response)
   }
   const requestFailedObserver = (request: Request) => {
     if (firstCandidateSeen || !documentCommitted || request.frame() !== page.mainFrame()) return
-    if (firstListRequest && request !== firstListRequest) return
     const path = new URL(request.url()).pathname
     const endpointKind = classifyWmsInitialEndpoint(path)
     if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
     if (endpointKind === 'unknown') {
-      firstCandidateSeen = true
-      rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
+      failFirst(`unexpected WMS list-like request path ${path}`)
       return
     }
     if (request.method() !== 'GET') {
-      firstCandidateSeen = true
-      rejectFirst(new Error(`unexpected WMS initial list request method ${request.method()}`))
+      failFirst(`unexpected WMS initial list request method ${request.method()}`)
       return
     }
     firstListRequest ??= request
-    firstCandidateSeen = true
     const failure = request.failure()?.errorText ?? 'unknown network failure'
-    rejectFirst(new Error(`WMS initial list ${expectedPath} request failed: ${failure}`))
+    failFirst(`WMS initial list ${expectedPath} request failed: ${failure}`)
   }
   const timeout = setTimeout(
     () => rejectFirst(new Error(`WMS initial list ${expectedPath} response was not observed`)),
