@@ -42,9 +42,15 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       <script>
         const scope = document.querySelector('[aria-label="作业范围"]')
         const menu = document.querySelector('[role="listbox"]')
+        const search = menu.querySelector('input')
         const scenario = ${JSON.stringify(expectedQuery)}
         let selectedScopeId = ''
         let refreshCount = 0
+        const syncScopeOption = () => {
+          const option = menu.querySelector('[role="option"]')
+          if (option) option.hidden = search.value.trim() !== option.dataset.scopeId
+        }
+        search.addEventListener('input', syncScopeOption)
         scope.addEventListener('click', () => {
           menu.hidden = false
           scope.setAttribute('aria-expanded', 'true')
@@ -55,10 +61,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               option.setAttribute('role', 'option')
               option.textContent = '发货作业池'
               option.dataset.scopeId = scenario.scopeId
+              option.hidden = search.value.trim() !== option.dataset.scopeId
               option.addEventListener('click', () => {
                 selectedScopeId = option.dataset.scopeId || ''
                 menu.hidden = true
                 scope.textContent = option.textContent
+                scope.dataset.scopeId = selectedScopeId
                 scope.setAttribute('aria-expanded', 'false')
               })
               menu.append(option)
@@ -100,6 +108,10 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
 
     expect(response.status()).toBe(200)
     expect(new URL(response.url()).searchParams.get('take')).toBe('10')
+    await expect(page.getByLabel('作业范围', { exact: true })).toHaveAttribute(
+      'data-scope-id',
+      expectedQuery.scopeId,
+    )
     expect(requests).toHaveLength(1)
 
     await expect(
@@ -270,11 +282,17 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       <script>
         const scope = document.querySelector('[aria-label="作业范围"]')
         const scopeMenu = document.querySelector('#scope-menu')
+        const scopeSearch = scopeMenu.querySelector('input')
         const site = document.querySelector('[aria-label="工厂"]')
         const siteMenu = document.querySelector('#site-menu')
         const scenario = ${JSON.stringify(expectedQuery)}
         let selectedScopeId = ''
         let selectedSiteCode = ''
+        const syncScopeOption = () => {
+          const option = scopeMenu.querySelector('[role="option"]')
+          if (option) option.hidden = scopeSearch.value.trim() !== option.dataset.scopeId
+        }
+        scopeSearch.addEventListener('input', syncScopeOption)
         scope.addEventListener('click', () => {
           scopeMenu.hidden = false
           scope.setAttribute('aria-expanded', 'true')
@@ -285,10 +303,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               option.setAttribute('role', 'option')
               option.textContent = '收货作业池'
               option.dataset.scopeId = scenario.scopeId
+              option.hidden = scopeSearch.value.trim() !== option.dataset.scopeId
               option.addEventListener('click', () => {
                 selectedScopeId = option.dataset.scopeId || ''
                 scopeMenu.hidden = true
                 scope.textContent = option.textContent
+                scope.dataset.scopeId = selectedScopeId
                 scope.setAttribute('aria-expanded', 'false')
               })
               scopeMenu.append(option)
@@ -336,13 +356,17 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       page,
       selection: {
         scope: { label: '作业范围', option: '收货作业池', scopeId: expectedQuery.scopeId },
-        site: { label: '工厂', optionCode: 'SITE-001' },
+        site: { label: '工厂', optionCode: expectedQuery.siteCode },
       },
       query: { kind: 'inbound', listPath, expectedQuery, forbiddenQueryKeys: [] },
     })
 
     expect(response.status()).toBe(200)
     expect(new URL(response.url()).searchParams.get('siteCode')).toBe('SITE-001')
+    await expect(page.getByLabel('作业范围', { exact: true })).toHaveAttribute(
+      'data-scope-id',
+      expectedQuery.scopeId,
+    )
     expect(requests).toHaveLength(1)
   })
 
