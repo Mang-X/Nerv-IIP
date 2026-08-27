@@ -113,6 +113,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 maxLength: 100,
                 nullable: true,
                 comment: "Authoritative MasterData workshop code captured with the production report.");
+
+            migrationBuilder.Sql("UPDATE mes.production_reports SET good_quantity = 0;");
         }
 
         /// <inheritdoc />
