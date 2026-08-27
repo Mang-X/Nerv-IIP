@@ -3201,6 +3201,10 @@ public sealed class BusinessGatewayProxyTests
 
     // 追溯图上的检验结论带出缺陷码与处置结论，属 authorization-matrix 里 business.mes.quality.read 的质量下钻内容；
     // 只持 traceability.read 的主体仍拿到整张执行图，但不含检验结论节点及其边。三个读面同一口径。
+    //
+    // 下面假下游响应与断言里的 "InspectionResult" 是**刻意保留的 wire 字面量**，不要改成
+    // MesTraceabilityNodeTypes.InspectionResult：本用例扮演的是下游 MES 发来的 JSON，用常量引用会让
+    // 夹具与被测代码引用同一符号、跟着一起改，从而对「gateway 与 MES wire 值漂移」零鉴别力（#2686 实测）。
     [Theory]
     [MemberData(nameof(TraceabilityRoutesByQualityRead))]
     public async Task Mes_traceability_facades_scope_inspection_verdicts_to_quality_read(string route, bool holdsQualityRead)
