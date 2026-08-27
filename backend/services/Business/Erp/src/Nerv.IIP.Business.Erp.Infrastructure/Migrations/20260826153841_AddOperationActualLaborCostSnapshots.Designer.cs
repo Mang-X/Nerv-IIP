@@ -3515,7 +3515,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id")
-                        .HasComment("Work-center cost-rate id.");
+                        .HasComment("Work-center standard labor-rate id.");
 
                     b.Property<DateTimeOffset>("ChangedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -3558,7 +3558,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("hourly_rate")
-                        .HasComment("Positive actual labor rate per hour.");
+                        .HasComment("Positive standard labor hourly rate.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -3597,7 +3597,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.ToTable("work_center_cost_rates", "erp", t =>
                         {
-                            t.HasComment("ERP append-only, effective-dated labor hourly-rate revision history by work center.");
+                            t.HasComment("ERP append-only, effective-dated standard labor hourly-rate revision history by work center.");
                         });
                 });
 
@@ -3659,6 +3659,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization boundary.");
+
+                    b.Property<string>("LaborCurrencyCode")
+                        .IsFixedLength()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("labor_currency_code")
+                        .HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
 
                     b.Property<int>("ReceivedMaterialMovementCount")
                         .HasColumnType("integer")

@@ -85,16 +85,31 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
                 return;
             }
         }
-        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == integrationEvent.Payload.WorkOrderId, cancellationToken);
         if (cost is null)
         {
             cost = WorkOrderCost.Open(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, integrationEvent.Payload.WorkOrderId, integrationEvent.Payload.WorkOrderId);
             dbContext.WorkOrderCosts.Add(cost);
         }
+        if (hasLaborBasis)
+        {
+            var selectedRate = rate ?? throw new InvalidOperationException("A priced production report requires an applicable standard labor rate.");
+            if (!cost.TryFreezeLaborCurrency(selectedRate.CurrencyCode))
+            {
+                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "incompatible-work-order-labor-currency", $"Work order '{integrationEvent.Payload.WorkOrderId}' already contains priced labor in a currency incompatible with '{selectedRate.CurrencyCode}'."), cancellationToken);
+                return;
+            }
+        }
+        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var priorTotal = cost.TotalAccumulatedCost;
         if (hasLaborBasis)
-            cost.RecordLabor(integrationEvent.Payload.ReportNo, integrationEvent.Payload.WorkCenterId, outputQuantity / integrationEvent.Payload.TheoreticalRatePerHour!.Value, rate!.HourlyRate, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
+        {
+            var theoreticalRate = integrationEvent.Payload.TheoreticalRatePerHour
+                ?? throw new InvalidOperationException("A priced production report requires a theoretical output rate.");
+            var selectedRate = rate
+                ?? throw new InvalidOperationException("A priced production report requires an applicable standard labor rate.");
+            cost.RecordLabor(integrationEvent.Payload.ReportNo, integrationEvent.Payload.WorkCenterId, outputQuantity / theoreticalRate, selectedRate.HourlyRate, selectedRate.CurrencyCode, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
+        }
         else
             cost.RecordUncostedReport(integrationEvent.Payload.ReportNo, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
         if (cost.CapitalizationPublished && integrationEvent.Payload.IsReversal)

@@ -33,6 +33,7 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public string WorkOrderId { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
+    public string? LaborCurrencyCode { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public int ExpectedReportCount { get; private set; }
@@ -54,8 +55,22 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void AssignSku(string skuCode) => SkuCode = ErpText.Required(skuCode, nameof(skuCode));
 
-    public void RecordLabor(string sourceDocumentId, string workCenterId, decimal hours, decimal hourlyRate, bool isReversal, DateTimeOffset occurredAtUtc)
+    public bool TryFreezeLaborCurrency(string currencyCode)
     {
+        var normalized = NormalizeLaborCurrency(currencyCode);
+        if (LaborCurrencyCode is not null)
+            return string.Equals(LaborCurrencyCode, normalized, StringComparison.Ordinal);
+        if (details.Any(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis != LaborCostBasis.UncostedReport
+                && x.Amount != 0m))
+            return false;
+        LaborCurrencyCode = normalized;
+        return true;
+    }
+
+    public void RecordLabor(string sourceDocumentId, string workCenterId, decimal hours, decimal hourlyRate, string currencyCode, bool isReversal, DateTimeOffset occurredAtUtc)
+    {
+        EnsureLaborCurrency(currencyCode);
         ErpText.Positive(hours, nameof(hours));
         ErpText.Positive(hourlyRate, nameof(hourlyRate));
         details.Add(WorkOrderCostDetail.CreateLabor(
@@ -132,6 +147,7 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void RecordActualLabor(OperationLaborSettlement settlement)
     {
+        EnsureLaborCurrency(settlement.CurrencyCode);
         details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, "settled"),
             settlement.WorkCenterId,
@@ -146,6 +162,7 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void RecordActualLaborVoid(OperationLaborSettlementVoid settlementVoid)
     {
+        EnsureLaborCurrency(settlementVoid.CurrencyCode);
         details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision, "voided"),
             settlementVoid.WorkCenterId,
@@ -159,6 +176,7 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void RecordActualLaborSuperseded(OperationLaborSettlement settlement, long supersedingRevision, DateTimeOffset occurredAtUtc)
     {
+        EnsureLaborCurrency(settlement.CurrencyCode);
         details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, $"superseded-by-{supersedingRevision}"),
             settlement.WorkCenterId,
@@ -175,6 +193,20 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     private static string ActualLaborSourceId(string operationTaskId, long revision, string suffix)
         => $"actual-labor:{ActualLaborLineageId(operationTaskId, revision)}:{suffix}";
+
+    private void EnsureLaborCurrency(string currencyCode)
+    {
+        if (!TryFreezeLaborCurrency(currencyCode))
+            throw new InvalidOperationException($"Work order '{WorkOrderId}' labor currency is incompatible with '{currencyCode}'.");
+    }
+
+    private static string NormalizeLaborCurrency(string currencyCode)
+    {
+        var normalized = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
+        if (normalized.Length != 3)
+            throw new ArgumentOutOfRangeException(nameof(currencyCode), currencyCode, "Currency code must contain exactly three characters.");
+        return normalized;
+    }
 
     public void RecordMaterial(string sourceDocumentId, string reportNo, string skuCode, decimal signedQuantity, decimal unitCost, DateTimeOffset occurredAtUtc)
     {

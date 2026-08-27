@@ -107,27 +107,52 @@ public sealed partial class OperationLaborSettlementOrchestrator
             return;
         }
 
-        var rateResolution = await ResolveRateAsync(
-            integrationEvent,
-            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
-            existing is null,
-            payload.WorkOrderId,
+        if (existing is not null)
+        {
+            await TryRecordInboxAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                integrationEvent,
+                cancellationToken);
+            return;
+        }
+
+        var rate = await FindApplicableRateAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
             payload.WorkCenterId,
             payload.CompletedAtUtc,
             cancellationToken);
-        if (!rateResolution.ShouldContinue)
+        if (rate is null)
+        {
+            await AddRateDeadLetterAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                integrationEvent,
+                payload.WorkCenterId,
+                payload.CompletedAtUtc,
+                cancellationToken);
             return;
+        }
 
+        var cost = await GetOrOpenWorkOrderCostAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            cancellationToken);
+        if (!cost.TryFreezeLaborCurrency(rate.CurrencyCode))
+        {
+            await AddCurrencyDeadLetterAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                integrationEvent,
+                payload.WorkOrderId,
+                rate.CurrencyCode,
+                cancellationToken);
+            return;
+        }
         if (!await TryRecordInboxAsync(
                 MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
                 integrationEvent,
                 cancellationToken))
             return;
-
-        if (existing is not null)
-        {
-            return;
-        }
 
         var settlement = OperationLaborSettlement.Create(
             integrationEvent.OrganizationId,
@@ -138,10 +163,10 @@ public sealed partial class OperationLaborSettlementOrchestrator
             payload.SettlementRevision,
             payload.CompletedAtUtc,
             payload.ActualLaborTicks,
-            rateResolution.Rate!.Id,
-            rateResolution.Rate.Revision,
-            rateResolution.Rate.CurrencyCode,
-            rateResolution.Rate.HourlyRate,
+            rate.Id,
+            rate.Revision,
+            rate.CurrencyCode,
+            rate.HourlyRate,
             integrationEvent.EventId,
             payloadHash);
         dbContext.OperationLaborSettlements.Add(settlement);
@@ -162,11 +187,6 @@ public sealed partial class OperationLaborSettlementOrchestrator
             payload.OperationTaskId,
             payload.SettlementRevision,
             coveredReports,
-            cancellationToken);
-        var cost = await GetOrOpenWorkOrderCostAsync(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            payload.WorkOrderId,
             cancellationToken);
         var priorTotal = cost.TotalAccumulatedCost;
         if (transition.PreviousActiveRevision is { } previousRevision)
@@ -227,58 +247,28 @@ public sealed partial class OperationLaborSettlementOrchestrator
                 dbContext.OperationLaborCoveredReports.Add(OperationLaborCoveredReport.Create(organizationId, environmentId, workOrderId, operationTaskId, revision, reportNo));
     }
 
-    private async Task<RateResolution> ResolveRateAsync<TIntegrationEvent>(
-        TIntegrationEvent integrationEvent,
-        string consumerName,
-        bool rateRequired,
-        string workOrderId,
+    private Task<WorkCenterCostRate?> FindApplicableRateAsync(
+        string organizationId,
+        string environmentId,
         string workCenterId,
         DateTimeOffset completedAtUtc,
         CancellationToken cancellationToken)
-        where TIntegrationEvent : IIntegrationEventEnvelope
-    {
-        if (!rateRequired)
-            return new RateResolution(true, null);
-
-        var rate = await dbContext.WorkCenterCostRates
-            .Where(x => x.OrganizationId == integrationEvent.OrganizationId
-                && x.EnvironmentId == integrationEvent.EnvironmentId
+        => dbContext.WorkCenterCostRates
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
                 && x.WorkCenterId == workCenterId
                 && x.EffectiveFromUtc <= completedAtUtc
                 && (x.EffectiveToUtc == null || completedAtUtc < x.EffectiveToUtc))
             .OrderByDescending(x => x.Revision)
             .FirstOrDefaultAsync(cancellationToken);
-        if (rate is null)
-        {
-            await deadLetterStore.AddAsync(
-                IntegrationEventDeadLetterMessage.Create(
-                    consumerName,
-                    integrationEvent,
-                    "missing-work-center-cost-rate",
-                    $"Work-center cost rate '{workCenterId}' has no active revision at '{completedAtUtc:O}'."),
-                cancellationToken);
-            return new RateResolution(false, null);
-        }
 
-        if (await dbContext.OperationLaborSettlements.AnyAsync(
-                x => x.OrganizationId == integrationEvent.OrganizationId
-                    && x.EnvironmentId == integrationEvent.EnvironmentId
-                    && x.WorkOrderId == workOrderId
-                    && x.CurrencyCode != rate.CurrencyCode,
-                cancellationToken))
-        {
-            await deadLetterStore.AddAsync(
-                IntegrationEventDeadLetterMessage.Create(
-                    consumerName,
-                    integrationEvent,
-                    "incompatible-work-order-labor-currency",
-                    $"Work order '{workOrderId}' already contains actual labor in a currency incompatible with '{rate.CurrencyCode}'."),
-                cancellationToken);
-            return new RateResolution(false, null);
-        }
+    private Task AddRateDeadLetterAsync<TIntegrationEvent>(string consumerName, TIntegrationEvent integrationEvent, string workCenterId, DateTimeOffset completedAtUtc, CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+        => deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, "missing-work-center-cost-rate", $"Work-center cost rate '{workCenterId}' has no active revision at '{completedAtUtc:O}'."), cancellationToken);
 
-        return new RateResolution(true, rate);
-    }
+    private Task AddCurrencyDeadLetterAsync<TIntegrationEvent>(string consumerName, TIntegrationEvent integrationEvent, string workOrderId, string currencyCode, CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+        => deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, "incompatible-work-order-labor-currency", $"Work order '{workOrderId}' already contains priced labor in a currency incompatible with '{currencyCode}'."), cancellationToken);
 
     private Task<bool> TryRecordInboxAsync<TIntegrationEvent>(
         string consumerName,
@@ -351,8 +341,6 @@ public sealed partial class OperationLaborSettlementOrchestrator
                 postedAtUtc,
                 cancellationToken);
     }
-
-    private sealed record RateResolution(bool ShouldContinue, WorkCenterCostRate? Rate);
 
     internal static string ComputePayloadHash(
         MesOperationActualTimeSettledIntegrationEvent integrationEvent,
@@ -498,30 +486,34 @@ public sealed partial class OperationLaborSettlementOrchestrator
             return;
         }
 
-        var rateResolution = await ResolveRateAsync(
-            integrationEvent,
-            MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
-            settlement is null,
-            payload.WorkOrderId,
-            payload.WorkCenterId,
-            payload.CompletedAtUtc,
-            cancellationToken);
-        if (!rateResolution.ShouldContinue)
-            return;
-
-        if (!await TryRecordInboxAsync(
-                MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
-                integrationEvent,
-                cancellationToken))
-            return;
-
         if (existingVoid is not null)
         {
+            await TryRecordInboxAsync(
+                MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+                integrationEvent,
+                cancellationToken);
             return;
         }
 
+        var createsSettlement = settlement is null;
         if (settlement is null)
         {
+            var rate = await FindApplicableRateAsync(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.WorkCenterId,
+                payload.CompletedAtUtc,
+                cancellationToken);
+            if (rate is null)
+            {
+                await AddRateDeadLetterAsync(
+                    MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+                    integrationEvent,
+                    payload.WorkCenterId,
+                    payload.CompletedAtUtc,
+                    cancellationToken);
+                return;
+            }
             settlement = OperationLaborSettlement.Create(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
@@ -531,14 +523,36 @@ public sealed partial class OperationLaborSettlementOrchestrator
                 payload.SettlementRevision,
                 payload.CompletedAtUtc,
                 payload.ActualLaborTicks,
-                rateResolution.Rate!.Id,
-                rateResolution.Rate.Revision,
-                rateResolution.Rate.CurrencyCode,
-                rateResolution.Rate.HourlyRate,
+                rate.Id,
+                rate.Revision,
+                rate.CurrencyCode,
+                rate.HourlyRate,
                 integrationEvent.EventId,
                 settlementPayloadHash);
-            dbContext.OperationLaborSettlements.Add(settlement);
         }
+
+        var cost = await GetWorkOrderCostAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            cancellationToken);
+        if (cost is not null && !cost.TryFreezeLaborCurrency(settlement.CurrencyCode))
+        {
+            await AddCurrencyDeadLetterAsync(
+                MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+                integrationEvent,
+                payload.WorkOrderId,
+                settlement.CurrencyCode,
+                cancellationToken);
+            return;
+        }
+        if (!await TryRecordInboxAsync(
+                MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+                integrationEvent,
+                cancellationToken))
+            return;
+        if (createsSettlement)
+            dbContext.OperationLaborSettlements.Add(settlement);
 
         var settlementVoid = OperationLaborSettlementVoid.Create(
             settlement,
@@ -563,11 +577,6 @@ public sealed partial class OperationLaborSettlementOrchestrator
             payload.OperationTaskId,
             payload.SettlementRevision,
             coveredReports,
-            cancellationToken);
-        var cost = await GetWorkOrderCostAsync(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            payload.WorkOrderId,
             cancellationToken);
         if (cost is null)
             return;

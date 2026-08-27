@@ -37,6 +37,7 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         GLAccountEntityTypeConfiguration.AddTenant(builder);
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Finished-good SKU code.");
+        builder.Property(x => x.LaborCurrencyCode).HasColumnName("labor_currency_code").HasMaxLength(3).IsFixedLength().HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).HasComment("MES good quantity at completion.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("MES completion timestamp.");
         builder.Property(x => x.CapitalizedCost).HasColumnName("capitalized_cost").HasPrecision(18, 6).HasComment("Finished-goods inventory value posted for this work order.");
@@ -198,10 +199,10 @@ public sealed class WorkCenterCostRateEntityTypeConfiguration : IEntityTypeConfi
 {
     public void Configure(EntityTypeBuilder<WorkCenterCostRate> builder)
     {
-        builder.ToTable("work_center_cost_rates", table => table.HasComment("ERP append-only, effective-dated labor hourly-rate revision history by work center.")); builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work-center cost-rate id."); GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.ToTable("work_center_cost_rates", table => table.HasComment("ERP append-only, effective-dated standard labor hourly-rate revision history by work center.")); builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work-center standard labor-rate id."); GLAccountEntityTypeConfiguration.AddTenant(builder);
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MES work-center public identifier.");
-        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Positive actual labor rate per hour.");
+        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Positive standard labor hourly rate.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(3).IsFixedLength().HasComment("Normalized ISO-style three-letter uppercase currency code.");
         builder.Property(x => x.EffectiveFromUtc).HasColumnName("effective_from_utc").HasComment("Inclusive UTC instant from which this revision may apply.");
         builder.Property(x => x.EffectiveToUtc).HasColumnName("effective_to_utc").HasComment("Optional exclusive UTC instant after which this revision no longer applies.");

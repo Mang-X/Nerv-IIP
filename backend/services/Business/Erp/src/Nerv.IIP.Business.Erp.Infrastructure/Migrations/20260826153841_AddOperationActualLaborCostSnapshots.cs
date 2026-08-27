@@ -12,6 +12,20 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
+                name: "labor_currency_code",
+                schema: "erp",
+                table: "work_order_costs",
+                type: "character(3)",
+                fixedLength: true,
+                maxLength: 3,
+                nullable: true,
+                comment: "Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
+
+            migrationBuilder.Sql("COMMENT ON TABLE erp.work_center_cost_rates IS 'ERP append-only, effective-dated standard labor hourly-rate revision history by work center.';");
+            migrationBuilder.Sql("COMMENT ON COLUMN erp.work_center_cost_rates.id IS 'Work-center standard labor-rate id.';");
+            migrationBuilder.Sql("COMMENT ON COLUMN erp.work_center_cost_rates.hourly_rate IS 'Positive standard labor hourly rate.';");
+
+            migrationBuilder.AddColumn<string>(
                 name: "labor_basis",
                 schema: "erp",
                 table: "work_order_cost_details",
@@ -199,6 +213,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("COMMENT ON TABLE erp.work_center_cost_rates IS 'ERP append-only, effective-dated labor hourly-rate revision history by work center.';");
+            migrationBuilder.Sql("COMMENT ON COLUMN erp.work_center_cost_rates.id IS 'Work-center cost-rate id.';");
+            migrationBuilder.Sql("COMMENT ON COLUMN erp.work_center_cost_rates.hourly_rate IS 'Positive actual labor rate per hour.';");
+
+            migrationBuilder.DropColumn(
+                name: "labor_currency_code",
+                schema: "erp",
+                table: "work_order_costs");
+
             migrationBuilder.DropTable(
                 name: "operation_labor_covered_reports",
                 schema: "erp");

@@ -223,6 +223,88 @@ public sealed class OperationLaborSettlementHandlerTests
         Assert.DoesNotContain(await db.ProcessedIntegrationEvents.ToListAsync(), x => x.EventId == "evt-settled-r2");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Theoretical_usd_then_actual_cny_fails_closed_without_partial_commit(bool capitalized)
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), SeptemberStartsAtUtc, "USD"),
+            Rate(8, 88m, SeptemberStartsAtUtc, null, "CNY"));
+        await db.SaveChangesAsync();
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+                db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
+            .HandleAsync(Report("evt-report-usd", "RPT-USD", AugustCompletedAtUtc), CancellationToken.None);
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        if (capitalized)
+        {
+            cost.Complete(10m, 1, 0, AugustCompletedAtUtc.AddMinutes(1));
+            cost.Capitalize("MOVE-FG-USD", 10m, 16m, AugustCompletedAtUtc.AddMinutes(2));
+            cost.RecordWipClearance(160m);
+            await db.SaveChangesAsync();
+        }
+
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(
+                Settled("evt-settled-cny", 1, SeptemberStartsAtUtc,
+                    2 * TimeSpan.TicksPerHour, ["RPT-USD"]),
+                CancellationToken.None);
+
+        cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal("USD", cost.LaborCurrencyCode);
+        Assert.Equal(160m, cost.LaborCost);
+        Assert.Single(cost.Details);
+        Assert.Empty(await db.OperationLaborSettlements.ToListAsync());
+        Assert.Empty(await db.OperationLaborSettlementStates.ToListAsync());
+        Assert.Empty(await db.OperationLaborCoveredReports.ToListAsync());
+        Assert.Empty(await db.JournalVouchers.ToListAsync());
+        Assert.DoesNotContain(await db.ProcessedIntegrationEvents.ToListAsync(),
+            x => x.EventId == "evt-settled-cny");
+        Assert.Equal("incompatible-work-order-labor-currency",
+            Assert.Single(await deadLetters.ListAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None)).FailureCode);
+    }
+
+    [Fact]
+    public async Task Existing_priced_labor_with_unknown_currency_fails_closed_without_backfill()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(
+            7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        var cost = WorkOrderCost.Open("org-001", "env-prod", "WO-001", "FG-001");
+        cost.RecordLabor("RPT-HISTORY", "WC-01", 2m, 80m, "CNY", false, AugustCompletedAtUtc);
+        typeof(WorkOrderCost).GetProperty(nameof(WorkOrderCost.LaborCurrencyCode))!
+            .SetValue(cost, null);
+        db.WorkOrderCosts.Add(cost);
+        await db.SaveChangesAsync();
+
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(
+                Settled("evt-settled-history", 1, AugustCompletedAtUtc,
+                    2 * TimeSpan.TicksPerHour, ["RPT-HISTORY"]),
+                CancellationToken.None);
+
+        cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Null(cost.LaborCurrencyCode);
+        Assert.Equal(160m, cost.LaborCost);
+        Assert.Empty(await db.OperationLaborSettlements.ToListAsync());
+        Assert.Empty(await db.ProcessedIntegrationEvents.Where(x => x.EventId == "evt-settled-history").ToListAsync());
+        Assert.Equal("incompatible-work-order-labor-currency",
+            Assert.Single(await deadLetters.ListAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None)).FailureCode);
+    }
+
     [Fact]
     public async Task Missing_rate_leaves_no_successful_fact_and_the_same_event_can_be_replayed()
     {

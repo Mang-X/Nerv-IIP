@@ -262,6 +262,24 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Contains("ix_work_center_cost_rates_effective_lookup", indexes.Keys);
         Assert.DoesNotContain("IX_work_center_cost_rates_organization_id_environment_id_work_~", indexes.Keys);
 
+        await using (var metadataCommand = new NpgsqlCommand("""
+            SELECT
+                obj_description('erp.work_center_cost_rates'::regclass),
+                col_description('erp.work_center_cost_rates'::regclass, (
+                    SELECT attnum FROM pg_attribute
+                    WHERE attrelid = 'erp.work_center_cost_rates'::regclass AND attname = 'hourly_rate')),
+                col_description('erp.work_order_costs'::regclass, (
+                    SELECT attnum FROM pg_attribute
+                    WHERE attrelid = 'erp.work_order_costs'::regclass AND attname = 'labor_currency_code'))
+            """, (NpgsqlConnection)db.Database.GetDbConnection()))
+        await using (var metadata = await metadataCommand.ExecuteReaderAsync())
+        {
+            Assert.True(await metadata.ReadAsync());
+            Assert.Equal("ERP append-only, effective-dated standard labor hourly-rate revision history by work center.", metadata.GetString(0));
+            Assert.Equal("Positive standard labor hourly rate.", metadata.GetString(1));
+            Assert.Equal("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.", metadata.GetString(2));
+        }
+
         db.WorkCenterCostRates.AddRange(
             WorkCenterCostRate.Define("org-legacy", "env-legacy", "WC-LEGACY", 40m, "CNY", DateTimeOffset.UnixEpoch, null, 2, "system:test", "first concurrent candidate", DateTimeOffset.UtcNow),
             WorkCenterCostRate.Define("org-legacy", "env-legacy", "WC-LEGACY", 41m, "CNY", DateTimeOffset.UnixEpoch, null, 2, "system:test", "second concurrent candidate", DateTimeOffset.UtcNow));
@@ -283,7 +301,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         db.JournalVouchers.Add(JournalVoucher.Post("org-pg", "env-pg", "JV-PG-001", new DateOnly(2026, 7, 11),
             [new JournalVoucherLineDraft("1406-FINISHED-GOODS", 160m, 0m, "capitalization"), new JournalVoucherLineDraft("1405-WIP", 0m, 160m, "clear WIP")]));
         var cost = WorkOrderCost.Open("org-pg", "env-pg", "WO-PG-001", "FG-PG-001");
-        cost.RecordLabor("RPT-PG-001", "WC-PG", 2m, 50m, false, DateTimeOffset.UtcNow);
+        cost.RecordLabor("RPT-PG-001", "WC-PG", 2m, 50m, "CNY", false, DateTimeOffset.UtcNow);
         cost.RecordMaterial("MOVE-PG-RM", "RPT-PG-001", "RM-PG", 3m, 20m, DateTimeOffset.UtcNow);
         cost.Complete(8m, 1, 1, DateTimeOffset.UtcNow);
         cost.Capitalize("MOVE-PG-FG", 8m, 20m, DateTimeOffset.UtcNow);
@@ -294,6 +312,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         db.ChangeTracker.Clear();
         var persisted = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         Assert.Equal(160m, persisted.TotalAccumulatedCost);
+        Assert.Equal("CNY", persisted.LaborCurrencyCode);
         Assert.Equal(persisted.TotalAccumulatedCost, persisted.WipClearedCost);
         Assert.Equal(2, await db.JournalVouchers.SelectMany(x => x.Lines).CountAsync());
     }
@@ -348,7 +367,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
             "system:test", "capitalization rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
         var cost = WorkOrderCost.Open("org-cap", "env-cap", "WO-CAP", "FG-CAP");
-        cost.RecordLabor("RPT-CAP", "WC-CAP", 2m, 80m, false, DateTimeOffset.Parse("2026-08-31T15:40:00Z"));
+        cost.RecordLabor("RPT-CAP", "WC-CAP", 2m, 80m, "CNY", false, DateTimeOffset.Parse("2026-08-31T15:40:00Z"));
         cost.Complete(10m, 1, 0, DateTimeOffset.Parse("2026-08-31T15:50:00Z"));
         cost.Capitalize("MOVE-CAP", 10m, 16m, DateTimeOffset.Parse("2026-08-31T15:51:00Z"));
         cost.RecordWipClearance(160m);
@@ -368,13 +387,51 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(settled, CancellationToken.None);
 
+        var mixedCost = WorkOrderCost.Open("org-cap", "env-cap", "WO-MIXED", "FG-MIXED");
+        mixedCost.RecordLabor("RPT-MIXED", "WC-CAP", 1m, 80m, "USD", false,
+            DateTimeOffset.Parse("2026-08-31T15:40:00Z"));
+        db.WorkOrderCosts.Add(mixedCost);
+        await db.SaveChangesAsync();
+        var mixedSettlement = settled with
+        {
+            EventId = "evt-cap-mixed",
+            IdempotencyKey = "actual-time:OP-MIXED:1:settled",
+            Payload = settled.Payload with
+            {
+                WorkOrderId = "WO-MIXED",
+                OperationTaskId = "OP-MIXED",
+                CoveredProductionReportNos = ["RPT-MIXED"],
+            },
+        };
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, new PostgreSqlWorkOrderCostMutationLock(db),
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(mixedSettlement, CancellationToken.None);
+
         await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
-        var persistedCost = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        var persistedCost = await assertDb.WorkOrderCosts.Include(x => x.Details)
+            .SingleAsync(x => x.WorkOrderId == "WO-CAP");
         var voucher = await assertDb.JournalVouchers.Include(x => x.Lines).SingleAsync();
         Assert.Equal(120m, persistedCost.LaborCost);
+        Assert.Equal("CNY", persistedCost.LaborCurrencyCode);
         Assert.Equal(120m, persistedCost.WipClearedCost);
         Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount));
         Assert.Equal(40m, voucher.Lines.Sum(x => x.DebitAmount));
+        var persistedMixedCost = await assertDb.WorkOrderCosts.Include(x => x.Details)
+            .SingleAsync(x => x.WorkOrderId == "WO-MIXED");
+        Assert.Equal("USD", persistedMixedCost.LaborCurrencyCode);
+        Assert.Equal(80m, persistedMixedCost.LaborCost);
+        Assert.DoesNotContain(await assertDb.OperationLaborSettlements.ToListAsync(),
+            x => x.OperationTaskId == "OP-MIXED");
+        Assert.DoesNotContain(await assertDb.OperationLaborSettlementStates.ToListAsync(),
+            x => x.OperationTaskId == "OP-MIXED");
+        Assert.DoesNotContain(await assertDb.ProcessedIntegrationEvents.ToListAsync(),
+            x => x.EventId == "evt-cap-mixed");
+        Assert.Equal("incompatible-work-order-labor-currency",
+            Assert.Single(await deadLetters.ListAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None)).FailureCode);
 
         var indexes = await assertDb.Database.SqlQueryRaw<string>("""
             SELECT indexname AS "Value"
