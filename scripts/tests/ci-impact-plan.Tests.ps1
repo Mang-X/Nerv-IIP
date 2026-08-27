@@ -1173,6 +1173,7 @@ function Invoke-DotNetSdkAuthorityCase {
         Assert-Contract ($outputText.Contains($expected, [StringComparison]::Ordinal)) "CI SDK authority case '$Name' did not report '$expected'. Output: $outputText"
     }
     Write-Output "CI SDK authority case: NAME=$Name EXIT=$actualExitCode"
+    $script:LASTEXITCODE = 0
 }
 
 Assert-Contract (Test-Path -LiteralPath $dotNetSdkAuthorityCheckerPath -PathType Leaf) 'The CI SDK authority checker is missing.'
