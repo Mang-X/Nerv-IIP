@@ -18,6 +18,8 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/AccountReceivableSourceDocumentGuard.cs";
     private const string ConfigureWorkCenterCostRateCommandPath =
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ConfigureWorkCenterCostRateCommand.cs";
+    private const string WorkCenterRateRevisionAllocatorPath =
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/WorkCenterRateRevisionAllocator.cs";
     private const string ErpFinanceCommandsPath =
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ErpFinanceCommands.cs";
     private const string ErpProcurementCommandsPath =
@@ -40,6 +42,7 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         AccountPayableSourceDocumentGuardPath,
         AccountReceivableSourceDocumentGuardPath,
         ConfigureWorkCenterCostRateCommandPath,
+        WorkCenterRateRevisionAllocatorPath,
         ErpFinanceCommandsPath,
         ErpProcurementCommandsPath,
         ErpSalesCommandsPath,
@@ -56,7 +59,7 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Excluded(WmsOutboundCancellationClientPath, "HttpWmsOutboundCancellationClient", "FindOutboundOrderAsync", 1, "deferred sales-order cancellation; no public facade"),
         Target(AccountPayableSourceDocumentGuardPath, "AccountPayableSourceDocumentGuard", "EnsureSourceDocumentAndSupplierAsync", 2, "sync payable commands"),
         Target(AccountReceivableSourceDocumentGuardPath, "AccountReceivableSourceDocumentGuard", "EnsureSourceDocumentAndCustomerAsync", 2, "sync receivable commands"),
-        Target(ConfigureWorkCenterCostRateCommandPath, "ConfigureWorkCenterCostRateCommandHandler", "Handle", 1, "sync work-center cost-rate facade"),
+        Target(WorkCenterRateRevisionAllocatorPath, "WorkCenterRateRevisionAllocator", "AllocateAsync", 1, "shared helper reaches sync work-center rate facades"),
 
         Target(ErpFinanceCommandsPath, "AccountingPeriodPostingGuard", "FindPeriodAsync", 1, "shared helper reaches sync finance facades"),
         Target(ErpFinanceCommandsPath, "AccountingPeriodPostingGuard", "EnsureOpenAsync", 1, "shared helper reaches sync finance facades"),

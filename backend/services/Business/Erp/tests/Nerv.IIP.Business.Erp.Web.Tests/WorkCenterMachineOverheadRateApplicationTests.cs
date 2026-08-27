@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.Repositories;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 using NetCorePal.Extensions.Primitives;
@@ -23,9 +25,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
             Period("org-a", "env-a", "2026-06", 6),
             Period("org-a", "env-a", "2026-07", 7));
         await db.SaveChangesAsync();
-        var handler = new ConfigureWorkCenterMachineOverheadRateCommandHandler(
-            db,
-            new PostgreSqlErpAdvisoryLockAllocator(db));
+        var handler = Handler(db);
 
         await handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None);
         await handler.Handle(ApplicableCommand("2026-06", 31_000m), CancellationToken.None);
@@ -52,9 +52,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         await using var db = CreateDb();
         db.AccountingPeriods.Add(Period("org-other", "env-a", "2026-06", 6));
         await db.SaveChangesAsync();
-        var handler = new ConfigureWorkCenterMachineOverheadRateCommandHandler(
-            db,
-            new PostgreSqlErpAdvisoryLockAllocator(db));
+        var handler = Handler(db);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None));
@@ -69,9 +67,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         await using var db = CreateDb();
         db.AccountingPeriods.Add(Period("org-a", "env-a", "2026-06", 6));
         await db.SaveChangesAsync();
-        var handler = new ConfigureWorkCenterMachineOverheadRateCommandHandler(
-            db,
-            new PostgreSqlErpAdvisoryLockAllocator(db));
+        var handler = Handler(db);
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => handler.Handle(
             ApplicableCommand("2026-06", 30_000m) with
@@ -91,9 +87,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         await using var db = CreateDb();
         db.AccountingPeriods.Add(Period("org-a", "env-a", "2026-06", 6));
         await db.SaveChangesAsync();
-        var handler = new ConfigureWorkCenterMachineOverheadRateCommandHandler(
-            db,
-            new PostgreSqlErpAdvisoryLockAllocator(db));
+        var handler = Handler(db);
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => handler.Handle(
             ApplicableCommand("2026-06", 30_000m) with
@@ -112,9 +106,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
             Period("org-a", "env-a", "2026-06", 6),
             Period("org-a", "env-a", "2026-07", 7));
         await db.SaveChangesAsync();
-        var handler = new ConfigureWorkCenterMachineOverheadRateCommandHandler(
-            db,
-            new PostgreSqlErpAdvisoryLockAllocator(db));
+        var handler = Handler(db);
         await handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None);
         await db.SaveChangesAsync();
 
@@ -169,6 +161,53 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
     }
 
     [Fact]
+    public async Task Audit_query_is_explicitly_paginated_while_current_revision_covers_the_full_scope()
+    {
+        await using var db = CreateDb();
+        db.WorkCenterMachineOverheadRates.AddRange(
+            Rate("org-a", "env-a", "WC-01", "2026-06", 1, 30_000m),
+            Rate("org-a", "env-a", "WC-01", "2026-06", 2, 31_000m),
+            Rate("org-a", "env-a", "WC-01", "2026-06", 3, 32_000m));
+        await db.SaveChangesAsync();
+
+        var response = await new ListWorkCenterMachineOverheadRatesQueryHandler(db).Handle(
+            new("org-a", "env-a", "WC-01", "2026-06", PageNumber: 2, PageSize: 1), CancellationToken.None);
+
+        Assert.Equal(3, response.TotalCount);
+        Assert.Equal(3, response.CurrentRevision);
+        Assert.Equal(2, response.PageNumber);
+        Assert.Equal(1, response.PageSize);
+        Assert.Equal(2, Assert.Single(response.Items).Revision);
+    }
+
+    [Fact]
+    public async Task Not_applicable_command_is_preserved_through_audit_and_resolution()
+    {
+        await using var db = CreateDb();
+        db.AccountingPeriods.Add(Period("org-a", "env-a", "2026-06", 6));
+        await db.SaveChangesAsync();
+        var command = ApplicableCommand("2026-06", 30_000m) with
+        {
+            Applicability = MachineOverheadApplicability.NotApplicable,
+            FixedOverheadBudget = 0m,
+            VariableOverheadBudget = 0m,
+            NormalCapacityMachineHours = 0m,
+        };
+        var id = await Handler(db).Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var audit = await new ListWorkCenterMachineOverheadRatesQueryHandler(db).Handle(
+            new("org-a", "env-a", "WC-01", "2026-06"), CancellationToken.None);
+        var resolved = await new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(db).Handle(
+            new("org-a", "env-a", "WC-01", new(2026, 6, 15, 8, 0, 0, TimeSpan.Zero)), CancellationToken.None);
+
+        Assert.Equal(id.ToString(), Assert.Single(audit.Items).WorkCenterMachineOverheadRateId);
+        Assert.Equal(nameof(MachineOverheadApplicability.NotApplicable), resolved.Applicability);
+        Assert.Equal(0m, resolved.TotalHourlyRate);
+        Assert.Equal(id.ToString(), resolved.WorkCenterMachineOverheadRateId);
+    }
+
+    [Fact]
     public async Task Settlement_rate_resolution_uses_completion_period_and_freezes_the_latest_revision_identity()
     {
         await using var db = CreateDb();
@@ -208,6 +247,10 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
             Rate("org-b", "env-a", "WC-01", "2026-06", 1, 88_000m),
             Rate("org-a", "env-b", "WC-01", "2026-06", 1, 77_000m),
             Rate("org-a", "env-a", "WC-02", "2026-06", 1, 66_000m));
+        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+            "org-a", "env-a", "WC-01", 999m, "CNY",
+            new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), null, 1,
+            "system:test", "人工费率干扰项", ChangedAtUtc));
         await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
@@ -218,6 +261,23 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
                 CancellationToken.None));
 
         Assert.Contains("缺少适用或明确不适用的机器制造费用率", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Settlement_rate_resolution_fails_closed_when_completion_date_matches_overlapping_periods()
+    {
+        await using var db = CreateDb();
+        db.AccountingPeriods.AddRange(
+            Period("org-a", "env-a", "2026-06", 6),
+            AccountingPeriod.Open("org-a", "env-a", "2026-H2-overlap", new(2026, 6, 15), new(2026, 7, 15)));
+        db.WorkCenterMachineOverheadRates.Add(Rate("org-a", "env-a", "WC-01", "2026-06", 1, 30_000m));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(db).Handle(
+                new("org-a", "env-a", "WC-01", new(2026, 6, 20, 8, 0, 0, TimeSpan.Zero)), CancellationToken.None));
+
+        Assert.Contains("未唯一匹配", exception.Message, StringComparison.Ordinal);
     }
 
     private static ConfigureWorkCenterMachineOverheadRateCommand ApplicableCommand(
@@ -274,6 +334,11 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }
+
+    private static ConfigureWorkCenterMachineOverheadRateCommandHandler Handler(ApplicationDbContext db) => new(
+        new AccountingPeriodRepository(db),
+        new WorkCenterMachineOverheadRateRepository(db),
+        new WorkCenterRateRevisionAllocator(db, new PostgreSqlErpAdvisoryLockAllocator(db)));
 
     private sealed class NoopMediator : IMediator
     {

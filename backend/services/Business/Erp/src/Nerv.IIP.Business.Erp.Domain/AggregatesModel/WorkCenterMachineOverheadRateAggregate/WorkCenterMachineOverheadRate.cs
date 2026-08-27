@@ -10,10 +10,10 @@ public enum MachineOverheadApplicability
     NotApplicable,
 }
 
-public sealed class WorkCenterMachineOverheadRate
+public class WorkCenterMachineOverheadRate
     : Entity<WorkCenterMachineOverheadRateId>, IAggregateRoot
 {
-    private WorkCenterMachineOverheadRate()
+    protected WorkCenterMachineOverheadRate()
     {
     }
 

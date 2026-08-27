@@ -1,6 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.Repositories;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
@@ -21,99 +21,45 @@ public sealed class ConfigureWorkCenterCostRateCommandValidator : AbstractValida
 {
     public ConfigureWorkCenterCostRateCommandValidator()
     {
-        RuleFor(x => x.OrganizationId).Must(BeNonBlank).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).Must(BeNonBlank).MaximumLength(100);
-        RuleFor(x => x.WorkCenterId).Must(BeNonBlank).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).Must(WorkCenterRateCanonicalization.IsNonBlank).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).Must(WorkCenterRateCanonicalization.IsNonBlank).MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).Must(WorkCenterRateCanonicalization.IsNonBlank).MaximumLength(100);
         RuleFor(x => x.HourlyRate).GreaterThan(0m);
-        RuleFor(x => x.CurrencyCode).Must(BeAsciiCurrencyCode);
+        RuleFor(x => x.CurrencyCode).Must(WorkCenterRateCanonicalization.IsAsciiCurrencyCode);
         RuleFor(x => x.EffectiveFromUtc).NotEmpty().Must(BeUtc);
         RuleFor(x => x.EffectiveToUtc)
             .Must(value => value is null || BeUtc(value.Value))
             .Must((command, value) => value is null || value > command.EffectiveFromUtc);
-        RuleFor(x => x.ChangedBy).Must(BeCanonicalActor).MaximumLength(200);
-        RuleFor(x => x.Reason).Must(BeNonBlank).MaximumLength(500);
+        RuleFor(x => x.ChangedBy).Must(WorkCenterRateCanonicalization.IsCanonicalActor).MaximumLength(200);
+        RuleFor(x => x.Reason).Must(WorkCenterRateCanonicalization.IsNonBlank).MaximumLength(500);
         RuleFor(x => x.ChangedAtUtc).Must(BeUtc);
-    }
-
-    private static bool BeNonBlank(string value) => !string.IsNullOrWhiteSpace(value);
-
-    private static bool BeAsciiCurrencyCode(string value)
-        => !string.IsNullOrWhiteSpace(value)
-            && value.Trim().Length == 3
-            && value.Trim().All(character => character is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z'));
-
-    private static bool BeCanonicalActor(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value != value.Trim() || value.Any(char.IsWhiteSpace)) return false;
-        var separator = value.IndexOf(':', StringComparison.Ordinal);
-        return separator > 0 && separator < value.Length - 1;
     }
 
     private static bool BeUtc(DateTimeOffset value) => value.Offset == TimeSpan.Zero;
 }
 
 public sealed class ConfigureWorkCenterCostRateCommandHandler(
-    ApplicationDbContext dbContext,
-    IErpAdvisoryLockAllocator revisionLock)
+    IWorkCenterCostRateRepository rates,
+    IWorkCenterRateRevisionAllocator revisions)
     : ICommandHandler<ConfigureWorkCenterCostRateCommand, WorkCenterCostRateId>
 {
     public async Task<WorkCenterCostRateId> Handle(ConfigureWorkCenterCostRateCommand request, CancellationToken cancellationToken)
     {
-        var organizationId = request.OrganizationId.Trim();
-        var environmentId = request.EnvironmentId.Trim();
-        var workCenterId = request.WorkCenterId.Trim();
-        var currencyCode = request.CurrencyCode.Trim().ToUpperInvariant();
-        await revisionLock.AcquireAsync(
-            ErpAdvisoryLockDomain.WorkCenterLaborCostRate,
-            organizationId,
-            environmentId,
-            workCenterId,
-            cancellationToken);
-        var persistedCurrencies = await dbContext.WorkCenterCostRates
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.WorkCenterId == workCenterId)
-            .Select(x => x.CurrencyCode)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        var localCurrencies = dbContext.WorkCenterCostRates.Local
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.WorkCenterId == workCenterId)
-            .Select(x => x.CurrencyCode);
-        if (persistedCurrencies.Concat(localCurrencies)
-            .Any(existing => !string.Equals(existing, currencyCode, StringComparison.Ordinal)))
-        {
-            throw new KnownException(
-                $"成本率『{organizationId}·{environmentId}·{workCenterId}』币种已固定。");
-        }
-        var databaseRevision = await dbContext.WorkCenterCostRates
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.WorkCenterId == workCenterId)
-            .Select(x => (int?)x.Revision)
-            .MaxAsync(cancellationToken) ?? 0;
-        var localRevision = dbContext.WorkCenterCostRates.Local
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.WorkCenterId == workCenterId)
-            .Select(x => x.Revision)
-            .DefaultIfEmpty(0)
-            .Max();
+        var allocation = await revisions.AllocateAsync(WorkCenterRateKind.Labor,
+            request.OrganizationId, request.EnvironmentId, request.WorkCenterId, null,
+            request.CurrencyCode, cancellationToken);
 
         var rate = WorkCenterCostRate.Define(
-            organizationId,
-            environmentId,
-            workCenterId,
+            allocation.OrganizationId, allocation.EnvironmentId, allocation.WorkCenterId,
             request.HourlyRate,
-            currencyCode,
+            allocation.CurrencyCode,
             request.EffectiveFromUtc,
             request.EffectiveToUtc,
-            Math.Max(databaseRevision, localRevision) + 1,
+            allocation.Revision,
             request.ChangedBy,
             request.Reason,
             request.ChangedAtUtc);
-        dbContext.WorkCenterCostRates.Add(rate);
+        await rates.AddAsync(rate, cancellationToken);
         return rate.Id;
     }
 }

@@ -7,7 +7,9 @@ public sealed record ListWorkCenterMachineOverheadRatesQuery(
     string OrganizationId,
     string EnvironmentId,
     string WorkCenterId,
-    string AccountingPeriodCode) : IQuery<ListWorkCenterMachineOverheadRatesResponse>;
+    string AccountingPeriodCode,
+    int PageNumber = 1,
+    int PageSize = 50) : IQuery<ListWorkCenterMachineOverheadRatesResponse>;
 
 public sealed class ListWorkCenterMachineOverheadRatesQueryValidator
     : AbstractValidator<ListWorkCenterMachineOverheadRatesQuery>
@@ -18,6 +20,8 @@ public sealed class ListWorkCenterMachineOverheadRatesQueryValidator
         RuleFor(x => x.EnvironmentId).Must(BeNonBlank).MaximumLength(100);
         RuleFor(x => x.WorkCenterId).Must(BeNonBlank).MaximumLength(100);
         RuleFor(x => x.AccountingPeriodCode).Must(BeNonBlank).MaximumLength(50);
+        RuleFor(x => x.PageNumber).GreaterThanOrEqualTo(1);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
     }
 
     private static bool BeNonBlank(string value) => !string.IsNullOrWhiteSpace(value);
@@ -29,6 +33,9 @@ public sealed record ListWorkCenterMachineOverheadRatesResponse(
     string WorkCenterId,
     string AccountingPeriodCode,
     int? CurrentRevision,
+    int PageNumber,
+    int PageSize,
+    int TotalCount,
     IReadOnlyList<WorkCenterMachineOverheadRateListItem> Items);
 
 public sealed record WorkCenterMachineOverheadRateListItem(
@@ -58,13 +65,18 @@ public sealed class ListWorkCenterMachineOverheadRatesQueryHandler(ApplicationDb
         var environmentId = request.EnvironmentId.Trim();
         var workCenterId = request.WorkCenterId.Trim();
         var accountingPeriodCode = request.AccountingPeriodCode.Trim();
-        var items = await dbContext.WorkCenterMachineOverheadRates
+        var scoped = dbContext.WorkCenterMachineOverheadRates
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.WorkCenterId == workCenterId
-                && x.AccountingPeriodCode == accountingPeriodCode)
+                && x.AccountingPeriodCode == accountingPeriodCode);
+        var totalCount = await scoped.CountAsync(cancellationToken);
+        var currentRevision = await scoped.Select(x => (int?)x.Revision).MaxAsync(cancellationToken);
+        var items = await scoped
             .OrderByDescending(x => x.Revision)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
             .Select(x => new WorkCenterMachineOverheadRateListItem(
                 x.Id.ToString(),
                 x.AccountingPeriodCode,
@@ -87,7 +99,10 @@ public sealed class ListWorkCenterMachineOverheadRatesQueryHandler(ApplicationDb
             environmentId,
             workCenterId,
             accountingPeriodCode,
-            items.Count == 0 ? null : items[0].Revision,
+            currentRevision,
+            request.PageNumber,
+            request.PageSize,
+            totalCount,
             items);
     }
 }

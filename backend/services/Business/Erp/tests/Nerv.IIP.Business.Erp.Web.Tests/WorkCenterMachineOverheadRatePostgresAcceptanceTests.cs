@@ -3,11 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.Primitives;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -170,6 +172,34 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         Assert.Equal(0.007812m, rounded.FixedHourlyRate);
         Assert.Equal(0.023438m, rounded.VariableHourlyRate);
         Assert.Equal(0.031250m, rounded.TotalHourlyRate);
+
+        db.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineNotApplicable(
+            "org-pg", "env-pg", "WC-NOT-APPLICABLE", "2026-06", "CNY", 1,
+            "system:test", "无机器费用", DateTimeOffset.UtcNow));
+        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+            "org-pg", "env-pg", "WC-LABOR-ONLY", 999m, "CNY",
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), null, 1,
+            "system:test", "人工费率干扰项", DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var notApplicable = await new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(db).Handle(
+            new("org-pg", "env-pg", "WC-NOT-APPLICABLE", new(2026, 6, 15, 8, 0, 0, TimeSpan.Zero)),
+            CancellationToken.None);
+        Assert.Equal(nameof(MachineOverheadApplicability.NotApplicable), notApplicable.Applicability);
+        Assert.Equal(0m, notApplicable.TotalHourlyRate);
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(db).Handle(
+                new("org-pg", "env-pg", "WC-LABOR-ONLY", new(2026, 6, 15, 8, 0, 0, TimeSpan.Zero)),
+                CancellationToken.None));
+
+        db.AccountingPeriods.Add(AccountingPeriod.Open(
+            "org-pg", "env-pg", "2026-OVERLAP", new(2026, 6, 15), new(2026, 7, 15)));
+        await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(db).Handle(
+                new("org-pg", "env-pg", "WC-PG", new(2026, 6, 20, 8, 0, 0, TimeSpan.Zero)),
+                CancellationToken.None));
 
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync();
