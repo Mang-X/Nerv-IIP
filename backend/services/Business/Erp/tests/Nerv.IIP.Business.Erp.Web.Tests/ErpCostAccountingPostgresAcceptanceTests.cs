@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Nerv.IIP.Business.Erp.Domain;
@@ -15,6 +16,9 @@ using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -70,10 +74,11 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 2 * TimeSpan.TicksPerHour, 2 * TimeSpan.TicksPerHour, ["RPT-CONCURRENT"]));
 
         var reportTask = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-                reportDb, deadLetters, reportDb)
+                reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb))
             .HandleAsync(report, CancellationToken.None);
         var settlementTask = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
-                settlementDb, deadLetters, settlementDb)
+                settlementDb, settlementDb, new PostgreSqlWorkOrderCostMutationLock(settlementDb),
+                new OperationLaborSettlementOrchestrator(settlementDb, deadLetters))
             .HandleAsync(settled, CancellationToken.None);
         await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 2);
         Assert.False(reportTask.IsCompleted);
@@ -293,6 +298,98 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(2, await db.JournalVouchers.SelectMany(x => x.Lines).CountAsync());
     }
 
+    [ErpCostPostgresFact]
+    public async Task PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.MigrateAsync();
+        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+            "org-rollback", "env-rollback", "WC-ROLLBACK", 80m, "CNY",
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
+            "system:test", "rollback rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        await db.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var failingUnitOfWork = new SaveThenFailUnitOfWork(db);
+        var settled = new MesOperationActualTimeSettledIntegrationEvent(
+            "evt-rollback", MesIntegrationEventTypes.OperationActualTimeSettled, 1,
+            DateTimeOffset.Parse("2026-08-31T16:00:00Z"), MesIntegrationEventSources.BusinessMes,
+            "correlation-rollback", "causation-rollback", "org-rollback", "env-rollback",
+            "operator:test", "actual-time:OP-ROLLBACK:1:settled",
+            new OperationActualTimeSettledPayload(
+                "WO-ROLLBACK", "OP-ROLLBACK", "WC-ROLLBACK", 1,
+                DateTimeOffset.Parse("2026-08-31T15:50:00Z"),
+                2 * TimeSpan.TicksPerHour, 2 * TimeSpan.TicksPerHour, ["RPT-ROLLBACK"]));
+        var handler = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+            db, failingUnitOfWork, new PostgreSqlWorkOrderCostMutationLock(db),
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+
+        await Assert.ThrowsAsync<InjectedSaveFailureException>(
+            () => handler.HandleAsync(settled, CancellationToken.None));
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Empty(await assertDb.OperationLaborSettlements.ToListAsync());
+        Assert.Empty(await assertDb.OperationLaborSettlementStates.ToListAsync());
+        Assert.Empty(await assertDb.OperationLaborCoveredReports.ToListAsync());
+        Assert.Empty(await assertDb.WorkOrderCosts.ToListAsync());
+        Assert.Empty(await assertDb.ProcessedIntegrationEvents.ToListAsync());
+    }
+
+    [ErpCostPostgresFact]
+    public async Task PostgreSQL_capitalized_settlement_reads_back_balanced_voucher_and_unique_lineage_indexes()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.MigrateAsync();
+        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+            "org-cap", "env-cap", "WC-CAP", 80m, "CNY",
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
+            "system:test", "capitalization rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        var cost = WorkOrderCost.Open("org-cap", "env-cap", "WO-CAP", "FG-CAP");
+        cost.RecordLabor("RPT-CAP", "WC-CAP", 2m, 80m, false, DateTimeOffset.Parse("2026-08-31T15:40:00Z"));
+        cost.Complete(10m, 1, 0, DateTimeOffset.Parse("2026-08-31T15:50:00Z"));
+        cost.Capitalize("MOVE-CAP", 10m, 16m, DateTimeOffset.Parse("2026-08-31T15:51:00Z"));
+        cost.RecordWipClearance(160m);
+        db.WorkOrderCosts.Add(cost);
+        await db.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var settled = new MesOperationActualTimeSettledIntegrationEvent(
+            "evt-cap", MesIntegrationEventTypes.OperationActualTimeSettled, 1,
+            DateTimeOffset.Parse("2026-08-31T16:00:00Z"), MesIntegrationEventSources.BusinessMes,
+            "correlation-cap", "causation-cap", "org-cap", "env-cap", "operator:test",
+            "actual-time:OP-CAP:1:settled",
+            new OperationActualTimeSettledPayload(
+                "WO-CAP", "OP-CAP", "WC-CAP", 1, DateTimeOffset.Parse("2026-08-31T15:50:00Z"),
+                90 * TimeSpan.TicksPerMinute, 90 * TimeSpan.TicksPerMinute, ["RPT-CAP"]));
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, new PostgreSqlWorkOrderCostMutationLock(db),
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(settled, CancellationToken.None);
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        var persistedCost = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        var voucher = await assertDb.JournalVouchers.Include(x => x.Lines).SingleAsync();
+        Assert.Equal(120m, persistedCost.LaborCost);
+        Assert.Equal(120m, persistedCost.WipClearedCost);
+        Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount));
+        Assert.Equal(40m, voucher.Lines.Sum(x => x.DebitAmount));
+
+        var indexes = await assertDb.Database.SqlQueryRaw<string>("""
+            SELECT indexname AS "Value"
+            FROM pg_indexes
+            WHERE schemaname = 'erp'
+              AND indexname IN (
+                'ux_operation_labor_settlements_business_identity',
+                'ux_operation_labor_settlement_voids_business_identity',
+                'ux_operation_labor_covered_reports_report')
+              AND indexdef ILIKE '%UNIQUE%'
+            ORDER BY indexname
+            """).ToListAsync();
+        Assert.Equal(3, indexes.Count);
+    }
+
     private sealed class NoopMediator : IMediator
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -303,6 +400,35 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
+
+    private sealed class SaveThenFailUnitOfWork(ITransactionUnitOfWork inner) : ITransactionUnitOfWork
+    {
+        public IDbContextTransaction? CurrentTransaction
+        {
+            get => inner.CurrentTransaction;
+            set => inner.CurrentTransaction = value;
+        }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+            => inner.SaveChangesAsync(cancellationToken);
+
+        public async Task<bool> SaveEntitiesAsync(CancellationToken cancellationToken = default)
+        {
+            _ = await ((IUnitOfWork)inner).SaveEntitiesAsync(cancellationToken);
+            throw new InjectedSaveFailureException();
+        }
+
+        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+            => inner.BeginTransactionAsync(cancellationToken);
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+            => inner.CommitAsync(cancellationToken);
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+            => inner.RollbackAsync(cancellationToken);
+        public void Dispose() { }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class InjectedSaveFailureException : Exception;
 
     private static async Task WaitForAdvisoryLockWaitersAsync(
         string connectionString,

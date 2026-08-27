@@ -26,9 +26,9 @@ public sealed class OperationLaborSettlementHandlerTests
             Rate(8, 88m, SeptemberStartsAtUtc, null));
         await db.SaveChangesAsync();
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(Settled("evt-settled-r1", 1, AugustCompletedAtUtc, 2 * TimeSpan.TicksPerHour, ["RPT-001"]), CancellationToken.None);
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -57,7 +57,7 @@ public sealed class OperationLaborSettlementHandlerTests
             "evt-settled-boundary", 1, SeptemberStartsAtUtc,
             2 * TimeSpan.TicksPerHour, ["RPT-BOUNDARY"])
             with { OccurredAtUtc = SeptemberStartsAtUtc.AddMonths(3) };
-        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
+        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
 
         await consumer.HandleAsync(original, CancellationToken.None);
         await consumer.HandleAsync(
@@ -88,9 +88,9 @@ public sealed class OperationLaborSettlementHandlerTests
             SeptemberStartsAtUtc));
         await db.SaveChangesAsync();
 
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(Settled("evt-settled-r1", 1, AugustCompletedAtUtc, 2 * TimeSpan.TicksPerHour, ["RPT-001"]), CancellationToken.None);
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -118,7 +118,7 @@ public sealed class OperationLaborSettlementHandlerTests
             2 * TimeSpan.TicksPerHour,
             ["RPT-001"]);
 
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(settled, CancellationToken.None);
         db.WorkCenterCostRates.Add(Rate(
             9,
@@ -128,7 +128,7 @@ public sealed class OperationLaborSettlementHandlerTests
         await db.SaveChangesAsync();
 
         var voided = Voided("evt-void-r1", settled, SeptemberStartsAtUtc.AddDays(1));
-        var consumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, deadLetters, db);
+        var consumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
         await consumer.HandleAsync(voided, CancellationToken.None);
         await consumer.HandleAsync(voided with { EventId = "evt-void-r1-retry", IdempotencyKey = "actual-time:OP-001:1:voided:retry" }, CancellationToken.None);
 
@@ -150,7 +150,7 @@ public sealed class OperationLaborSettlementHandlerTests
             Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), SeptemberStartsAtUtc),
             Rate(8, 88m, SeptemberStartsAtUtc, null, "USD"));
         await db.SaveChangesAsync();
-        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
+        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
 
         await consumer.HandleAsync(
             Settled("evt-settled-r1", 1, AugustCompletedAtUtc, 2 * TimeSpan.TicksPerHour, ["RPT-001"]),
@@ -181,7 +181,7 @@ public sealed class OperationLaborSettlementHandlerTests
             AugustCompletedAtUtc,
             2 * TimeSpan.TicksPerHour,
             ["RPT-001"]);
-        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
+        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
 
         await consumer.HandleAsync(settlement, CancellationToken.None);
 
@@ -219,7 +219,7 @@ public sealed class OperationLaborSettlementHandlerTests
             AugustCompletedAtUtc,
             2 * TimeSpan.TicksPerHour,
             ["RPT-001"]);
-        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
+        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
         await consumer.HandleAsync(original, CancellationToken.None);
 
         var conflict = original with
@@ -259,11 +259,11 @@ public sealed class OperationLaborSettlementHandlerTests
             2 * TimeSpan.TicksPerHour,
             ["RPT-001"]);
 
-        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(Voided("evt-void-r1", settlement, SeptemberStartsAtUtc.AddDays(1)), CancellationToken.None);
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(settlement, CancellationToken.None);
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
 
         var state = await db.OperationLaborSettlementStates.SingleAsync();
@@ -288,11 +288,11 @@ public sealed class OperationLaborSettlementHandlerTests
             "evt-settled-r1", 1, AugustCompletedAtUtc,
             2 * TimeSpan.TicksPerHour, ["RPT-001"]);
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
-        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(Voided("evt-void-r1", settlement, SeptemberStartsAtUtc), CancellationToken.None);
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(settlement, CancellationToken.None);
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -310,8 +310,8 @@ public sealed class OperationLaborSettlementHandlerTests
             Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), SeptemberStartsAtUtc),
             Rate(8, 88m, SeptemberStartsAtUtc, null));
         await db.SaveChangesAsync();
-        var settledConsumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
-        var voidConsumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, deadLetters, db);
+        var settledConsumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
+        var voidConsumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
         var revisionOne = Settled(
             "evt-settled-r1",
             1,
@@ -343,13 +343,13 @@ public sealed class OperationLaborSettlementHandlerTests
         db.WorkCenterCostRates.Add(Rate(
             7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
         await db.SaveChangesAsync();
-        var settledConsumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
-        var voidConsumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, deadLetters, db);
+        var settledConsumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
+        var voidConsumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
         var revisionOne = Settled(
             "evt-settled-r1", 1, AugustCompletedAtUtc,
             2 * TimeSpan.TicksPerHour, ["RPT-001"]);
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
         await settledConsumer.HandleAsync(revisionOne, CancellationToken.None);
         await voidConsumer.HandleAsync(
@@ -378,7 +378,7 @@ public sealed class OperationLaborSettlementHandlerTests
         db.WorkCenterCostRates.Add(Rate(
             7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
         await db.SaveChangesAsync();
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
@@ -386,7 +386,7 @@ public sealed class OperationLaborSettlementHandlerTests
         cost.RecordWipClearance(160m);
         await db.SaveChangesAsync();
 
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(
                 Settled("evt-settled-r1", 1, AugustCompletedAtUtc,
                     90 * TimeSpan.TicksPerMinute, ["RPT-001"]),
@@ -399,6 +399,76 @@ public sealed class OperationLaborSettlementHandlerTests
         var voucher = await db.JournalVouchers.Include(x => x.Lines).SingleAsync();
         Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount));
         Assert.Equal(40m, voucher.Lines.Sum(x => x.DebitAmount));
+    }
+
+    [Fact]
+    public async Task Late_void_for_an_older_revision_does_not_supersede_the_active_revision()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(
+            7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        await db.SaveChangesAsync();
+        var settledConsumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+            db, db, TestWorkOrderCostMutationLock.Instance,
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+        var voidConsumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+            db, db, TestWorkOrderCostMutationLock.Instance,
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+        var revisionOne = Settled(
+            "evt-settled-r1", 1, AugustCompletedAtUtc,
+            2 * TimeSpan.TicksPerHour, ["RPT-001"]);
+        var revisionTwo = Settled(
+            "evt-settled-r2", 2, AugustCompletedAtUtc.AddHours(1),
+            3 * TimeSpan.TicksPerHour, ["RPT-002"]);
+
+        await settledConsumer.HandleAsync(revisionOne, CancellationToken.None);
+        await settledConsumer.HandleAsync(revisionTwo, CancellationToken.None);
+        await voidConsumer.HandleAsync(
+            Voided("evt-void-late-r1", revisionOne, AugustCompletedAtUtc.AddHours(2)),
+            CancellationToken.None);
+
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        var state = await db.OperationLaborSettlementStates.SingleAsync();
+        Assert.Equal(240m, cost.LaborCost);
+        Assert.Equal(2, state.ActiveRevision);
+        Assert.DoesNotContain(cost.Details, x => x.SourceDocumentId.Contains("r2:superseded", StringComparison.Ordinal));
+        Assert.Single(await db.OperationLaborSettlementVoids.ToListAsync());
+    }
+
+    [Fact]
+    public async Task First_actual_settlement_switches_the_whole_work_order_and_late_reports_stay_uncosted()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(
+            7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        await db.SaveChangesAsync();
+        var reportConsumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+            db, deadLetters, db, TestWorkOrderCostMutationLock.Instance);
+
+        await reportConsumer.HandleAsync(
+            Report("evt-report-op1", "RPT-OP1", AugustCompletedAtUtc.AddMinutes(-20), "OP-001"),
+            CancellationToken.None);
+        await reportConsumer.HandleAsync(
+            Report("evt-report-op2", "RPT-OP2", AugustCompletedAtUtc.AddMinutes(-10), "OP-002"),
+            CancellationToken.None);
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(
+                Settled("evt-settled-op1", 1, AugustCompletedAtUtc,
+                    2 * TimeSpan.TicksPerHour, ["RPT-OP1"], "OP-001"),
+                CancellationToken.None);
+        await reportConsumer.HandleAsync(
+            Report("evt-report-op2-late", "RPT-OP2-LATE", AugustCompletedAtUtc.AddMinutes(10), "OP-002"),
+            CancellationToken.None);
+
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(160m, cost.LaborCost);
+        Assert.Equal(2, cost.Details.Count(x => x.LaborBasis == LaborCostBasis.TheoreticalReportReplacement));
+        Assert.Single(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperation);
+        Assert.Contains(cost.Details, x => x.SourceDocumentId == "RPT-OP2-LATE" && x.LaborBasis == LaborCostBasis.UncostedReport);
     }
 
     private static ApplicationDbContext CreateDb()
@@ -424,7 +494,8 @@ public sealed class OperationLaborSettlementHandlerTests
     private static ProductionReportRecordedIntegrationEvent Report(
         string eventId,
         string reportNo,
-        DateTimeOffset reportedAtUtc)
+        DateTimeOffset reportedAtUtc,
+        string operationTaskId = "OP-001")
         => new(
             eventId,
             MesIntegrationEventTypes.ProductionReportRecorded,
@@ -440,7 +511,7 @@ public sealed class OperationLaborSettlementHandlerTests
             new ProductionReportRecordedPayload(
                 reportNo,
                 "WO-001",
-                "OP-001",
+                operationTaskId,
                 "WC-01",
                 null,
                 10m,
@@ -457,7 +528,8 @@ public sealed class OperationLaborSettlementHandlerTests
         long revision,
         DateTimeOffset completedAtUtc,
         long actualLaborTicks,
-        IReadOnlyCollection<string> coveredReports)
+        IReadOnlyCollection<string> coveredReports,
+        string operationTaskId = "OP-001")
         => new(
             eventId,
             MesIntegrationEventTypes.OperationActualTimeSettled,
@@ -469,10 +541,10 @@ public sealed class OperationLaborSettlementHandlerTests
             "org-001",
             "env-prod",
             "operator:test",
-            $"actual-time:OP-001:{revision}:settled",
+            $"actual-time:{operationTaskId}:{revision}:settled",
             new OperationActualTimeSettledPayload(
                 "WO-001",
-                "OP-001",
+                operationTaskId,
                 "WC-01",
                 revision,
                 completedAtUtc,

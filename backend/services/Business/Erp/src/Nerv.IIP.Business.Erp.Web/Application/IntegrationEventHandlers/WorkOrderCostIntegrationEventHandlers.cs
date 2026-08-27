@@ -20,7 +20,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ITransactionUnitOfWork unitOfWork,
-    IWorkOrderCostMutationLock? mutationLock = null)
+    IWorkOrderCostMutationLock mutationLock)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
@@ -33,7 +33,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
             unitOfWork,
             async () =>
             {
-                await (mutationLock ?? new PostgreSqlWorkOrderCostMutationLock(dbContext)).AcquireAsync(
+                await mutationLock.AcquireAsync(
                     integrationEvent.OrganizationId,
                     integrationEvent.EnvironmentId,
                     integrationEvent.Payload.WorkOrderId,
@@ -53,7 +53,18 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.ReportNo == integrationEvent.Payload.ReportNo,
             cancellationToken);
+        var workOrderUsesActualLabor = await dbContext.OperationLaborSettlements.AnyAsync(
+            settlement => settlement.OrganizationId == integrationEvent.OrganizationId
+                && settlement.EnvironmentId == integrationEvent.EnvironmentId
+                && settlement.WorkOrderId == integrationEvent.Payload.WorkOrderId
+                && dbContext.OperationLaborSettlementStates.Any(
+                    state => state.OrganizationId == settlement.OrganizationId
+                        && state.EnvironmentId == settlement.EnvironmentId
+                        && state.OperationTaskId == settlement.OperationTaskId
+                        && state.ActiveRevision == settlement.SettlementRevision),
+            cancellationToken);
         var hasLaborBasis = !isCoveredByActualSettlement
+            && !workOrderUsesActualLabor
             && !string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId)
             && integrationEvent.Payload.TheoreticalRatePerHour is > 0m
             && outputQuantity > 0m;

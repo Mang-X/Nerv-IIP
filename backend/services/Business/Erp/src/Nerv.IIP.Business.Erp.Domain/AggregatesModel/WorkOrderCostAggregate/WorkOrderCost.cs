@@ -58,32 +58,30 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     {
         ErpText.Positive(hours, nameof(hours));
         ErpText.Positive(hourlyRate, nameof(hourlyRate));
-        details.Add(WorkOrderCostDetail.Create(
-            WorkOrderCostDetailType.Labor,
+        details.Add(WorkOrderCostDetail.CreateLabor(
             sourceDocumentId,
             workCenterId,
             hours,
             hourlyRate,
             isReversal ? -(hours * hourlyRate) : hours * hourlyRate,
             occurredAtUtc,
-            laborBasis: LaborCostBasis.TheoreticalReport,
-            laborLineageId: sourceDocumentId));
+            LaborCostBasis.TheoreticalReport,
+            sourceDocumentId));
         if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
     }
 
     public void RecordUncostedReport(string sourceDocumentId, bool isReversal, DateTimeOffset occurredAtUtc)
     {
-        details.Add(WorkOrderCostDetail.Create(
-            WorkOrderCostDetailType.Labor,
+        details.Add(WorkOrderCostDetail.CreateLabor(
             sourceDocumentId,
             "UNSPECIFIED",
             0m,
             0m,
             0m,
             occurredAtUtc,
-            laborBasis: LaborCostBasis.UncostedReport,
-            laborLineageId: sourceDocumentId));
+            LaborCostBasis.UncostedReport,
+            sourceDocumentId));
         if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
     }
@@ -105,60 +103,71 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
             .ToArray();
         foreach (var detail in theoreticalDetails)
         {
-            details.Add(WorkOrderCostDetail.Create(
-                WorkOrderCostDetailType.Labor,
+            details.Add(WorkOrderCostDetail.CreateLabor(
                 replacementSourceDocumentId,
                 detail.DimensionCode,
                 -detail.Quantity,
                 detail.Rate,
                 -detail.Amount,
                 occurredAtUtc,
-                laborBasis: LaborCostBasis.TheoreticalReportReplacement,
-                laborLineageId: reportNo));
+                LaborCostBasis.TheoreticalReportReplacement,
+                reportNo));
         }
+    }
+
+    public void ReplaceAllTheoreticalLabor(string replacementScope, DateTimeOffset occurredAtUtc)
+    {
+        var activeReportNos = details
+            .Where(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis == LaborCostBasis.TheoreticalReport)
+            .Select(x => x.SourceDocumentId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        foreach (var reportNo in activeReportNos)
+            ReplaceTheoreticalLabor(
+                reportNo,
+                $"{replacementScope}:replace:{reportNo}",
+                occurredAtUtc);
     }
 
     public void RecordActualLabor(OperationLaborSettlement settlement)
     {
-        details.Add(WorkOrderCostDetail.Create(
-            WorkOrderCostDetailType.Labor,
+        details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, "settled"),
             settlement.WorkCenterId,
             settlement.ActualLaborHours,
             settlement.HourlyRate,
             settlement.Amount,
             settlement.CompletedAtUtc,
-            laborBasis: LaborCostBasis.ActualOperation,
-            laborLineageId: ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+            LaborCostBasis.ActualOperation,
+            ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
         TryPublishCapitalization();
     }
 
     public void RecordActualLaborVoid(OperationLaborSettlementVoid settlementVoid)
     {
-        details.Add(WorkOrderCostDetail.Create(
-            WorkOrderCostDetailType.Labor,
+        details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision, "voided"),
             settlementVoid.WorkCenterId,
             -settlementVoid.ActualLaborHours,
             settlementVoid.HourlyRate,
             settlementVoid.Amount,
             settlementVoid.VoidedAtUtc,
-            laborBasis: LaborCostBasis.ActualOperationVoid,
-            laborLineageId: ActualLaborLineageId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision)));
+            LaborCostBasis.ActualOperationVoid,
+            ActualLaborLineageId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision)));
     }
 
     public void RecordActualLaborSuperseded(OperationLaborSettlement settlement, long supersedingRevision, DateTimeOffset occurredAtUtc)
     {
-        details.Add(WorkOrderCostDetail.Create(
-            WorkOrderCostDetailType.Labor,
+        details.Add(WorkOrderCostDetail.CreateLabor(
             ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, $"superseded-by-{supersedingRevision}"),
             settlement.WorkCenterId,
             -settlement.ActualLaborHours,
             settlement.HourlyRate,
             -settlement.Amount,
             occurredAtUtc,
-            laborBasis: LaborCostBasis.ActualOperationSuperseded,
-            laborLineageId: ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+            LaborCostBasis.ActualOperationSuperseded,
+            ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
     }
 
     private static string ActualLaborLineageId(string operationTaskId, long revision)
@@ -171,7 +180,9 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     {
         if (signedQuantity == 0m) throw new ArgumentOutOfRangeException(nameof(signedQuantity));
         ErpText.Positive(unitCost, nameof(unitCost));
-        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Material, sourceDocumentId, skuCode, signedQuantity, unitCost, signedQuantity * unitCost, occurredAtUtc, reportNo));
+        details.Add(WorkOrderCostDetail.CreateMaterial(
+            sourceDocumentId, skuCode, signedQuantity, unitCost,
+            signedQuantity * unitCost, occurredAtUtc, reportNo));
         if (signedQuantity > 0m) ReceivedMaterialMovementCount++;
         TryPublishCapitalization();
     }
@@ -338,16 +349,44 @@ public sealed class WorkOrderCostDetail : Entity<WorkOrderCostDetailId>
     public decimal Rate { get; private set; }
     public decimal Amount { get; private set; }
     public DateTimeOffset OccurredAtUtc { get; private set; }
-    internal static WorkOrderCostDetail Create(
-        WorkOrderCostDetailType type,
+    internal static WorkOrderCostDetail CreateLabor(
         string sourceDocumentId,
         string dimensionCode,
         decimal quantity,
         decimal rate,
         decimal amount,
         DateTimeOffset occurredAtUtc,
-        string? reportNo = null,
-        LaborCostBasis? laborBasis = null,
-        string? laborLineageId = null)
-        => new(type, sourceDocumentId, dimensionCode, quantity, rate, amount, occurredAtUtc, reportNo, laborBasis, laborLineageId);
+        LaborCostBasis laborBasis,
+        string laborLineageId)
+        => new(
+            WorkOrderCostDetailType.Labor,
+            sourceDocumentId,
+            dimensionCode,
+            quantity,
+            rate,
+            amount,
+            occurredAtUtc,
+            null,
+            laborBasis,
+            ErpText.Required(laborLineageId, nameof(laborLineageId)));
+
+    internal static WorkOrderCostDetail CreateMaterial(
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        string reportNo)
+        => new(
+            WorkOrderCostDetailType.Material,
+            sourceDocumentId,
+            dimensionCode,
+            quantity,
+            rate,
+            amount,
+            occurredAtUtc,
+            ErpText.Required(reportNo, nameof(reportNo)),
+            null,
+            null);
 }

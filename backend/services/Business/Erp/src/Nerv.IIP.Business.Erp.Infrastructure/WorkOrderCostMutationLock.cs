@@ -4,17 +4,9 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore.Storage;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
-
-public interface IWorkOrderCostMutationLock
-{
-    Task AcquireAsync(
-        string organizationId,
-        string environmentId,
-        string workOrderId,
-        CancellationToken cancellationToken);
-}
 
 public sealed class PostgreSqlWorkOrderCostMutationLock(ApplicationDbContext dbContext)
     : IWorkOrderCostMutationLock

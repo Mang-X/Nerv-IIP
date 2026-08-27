@@ -16,9 +16,9 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.MesOperationActualTimeSettledIntegrationEvent", ConsumerName)]
 public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore,
     ITransactionUnitOfWork unitOfWork,
-    IWorkOrderCostMutationLock? mutationLock = null)
+    IWorkOrderCostMutationLock mutationLock,
+    OperationLaborSettlementOrchestrator orchestrator)
     : IIntegrationEventHandler<MesOperationActualTimeSettledIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.operation-actual-time-labor-cost";
@@ -34,12 +34,12 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
             unitOfWork,
             async () =>
             {
-                await (mutationLock ?? new PostgreSqlWorkOrderCostMutationLock(dbContext)).AcquireAsync(
+                await mutationLock.AcquireAsync(
                     integrationEvent.OrganizationId,
                     integrationEvent.EnvironmentId,
                     integrationEvent.Payload.WorkOrderId,
                     cancellationToken);
-                await HandleValidAsync(integrationEvent, cancellationToken);
+                await orchestrator.ProcessSettlementAsync(integrationEvent, cancellationToken);
             },
             cancellationToken);
     }
@@ -49,8 +49,22 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
         MesOperationActualTimeSettledIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
+}
 
-    private async Task HandleValidAsync(
+public sealed partial class OperationLaborSettlementOrchestrator
+{
+    private readonly ApplicationDbContext dbContext;
+    private readonly IIntegrationEventDeadLetterStore deadLetterStore;
+
+    public OperationLaborSettlementOrchestrator(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore)
+    {
+        this.dbContext = dbContext;
+        this.deadLetterStore = deadLetterStore;
+    }
+
+    public async Task ProcessSettlementAsync(
         MesOperationActualTimeSettledIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
@@ -95,7 +109,7 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
         {
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
-                    ConsumerName,
+            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
                     integrationEvent,
                     "missing-work-center-cost-rate",
                     $"Work-center cost rate '{payload.WorkCenterId}' has no active revision at '{payload.CompletedAtUtc:O}'."),
@@ -111,7 +125,7 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
         {
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
-                    ConsumerName,
+                    MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
                     integrationEvent,
                     "incompatible-work-order-labor-currency",
                     $"Work order '{payload.WorkOrderId}' already contains actual labor in a currency incompatible with '{rate!.CurrencyCode}'."),
@@ -121,7 +135,7 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
 
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(
                 dbContext,
-                ConsumerName,
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
                 integrationEvent,
                 cancellationToken))
             return;
@@ -163,6 +177,9 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
         }
 
         var transition = state.ApplySettlement(payload.SettlementRevision);
+        if (transition.Transition != OperationLaborSettlementTransition.Activated)
+            return;
+
         foreach (var reportNo in coveredReports)
         {
             if (!await dbContext.OperationLaborCoveredReports.AnyAsync(
@@ -179,7 +196,6 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
                     reportNo));
         }
 
-        if (transition.Transition == OperationLaborSettlementTransition.Activated)
         {
             var cost = await dbContext.WorkOrderCosts
                 .Include(x => x.Details)
@@ -210,11 +226,9 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
                 cost.RecordActualLaborSuperseded(previous, payload.SettlementRevision, payload.CompletedAtUtc);
             }
 
-            foreach (var reportNo in coveredReports)
-                cost.ReplaceTheoreticalLabor(
-                    reportNo,
-                    $"actual-labor:{payload.OperationTaskId}:r{payload.SettlementRevision}:replace:{reportNo}",
-                    payload.CompletedAtUtc);
+            cost.ReplaceAllTheoreticalLabor(
+                $"actual-labor:{payload.OperationTaskId}:r{payload.SettlementRevision}",
+                payload.CompletedAtUtc);
             cost.RecordActualLabor(settlement);
 
             if (cost.CapitalizationPublished)
@@ -226,7 +240,6 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
                     payload.CompletedAtUtc,
                     cancellationToken);
         }
-
     }
 
     private Task AddConflictDeadLetterAsync(
@@ -234,7 +247,7 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
         CancellationToken cancellationToken)
         => deadLetterStore.AddAsync(
             IntegrationEventDeadLetterMessage.Create(
-                ConsumerName,
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
                 integrationEvent,
                 "conflicting-operation-labor-settlement",
                 $"Operation actual-time settlement '{integrationEvent.Payload.OperationTaskId}' revision '{integrationEvent.Payload.SettlementRevision}' conflicts with the frozen business fact."),
@@ -298,9 +311,9 @@ public sealed class MesOperationActualTimeSettledIntegrationEventHandlerForAccum
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.MesOperationActualTimeSettlementVoidedIntegrationEvent", ConsumerName)]
 public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore,
     ITransactionUnitOfWork unitOfWork,
-    IWorkOrderCostMutationLock? mutationLock = null)
+    IWorkOrderCostMutationLock mutationLock,
+    OperationLaborSettlementOrchestrator orchestrator)
     : IIntegrationEventHandler<MesOperationActualTimeSettlementVoidedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.operation-actual-time-labor-cost-void";
@@ -316,12 +329,12 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
             unitOfWork,
             async () =>
             {
-                await (mutationLock ?? new PostgreSqlWorkOrderCostMutationLock(dbContext)).AcquireAsync(
+                await mutationLock.AcquireAsync(
                     integrationEvent.OrganizationId,
                     integrationEvent.EnvironmentId,
                     integrationEvent.Payload.WorkOrderId,
                     cancellationToken);
-                await HandleValidAsync(integrationEvent, cancellationToken);
+                await orchestrator.ProcessVoidAsync(integrationEvent, cancellationToken);
             },
             cancellationToken);
     }
@@ -331,16 +344,17 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
         MesOperationActualTimeSettlementVoidedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
+}
 
-    private async Task HandleValidAsync(
+public sealed partial class OperationLaborSettlementOrchestrator
+{
+    public async Task ProcessVoidAsync(
         MesOperationActualTimeSettlementVoidedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        var coveredReports = MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost
-            .NormalizeCoveredReports(payload.CoveredProductionReportNos);
-        var settlementPayloadHash = MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost
-            .ComputeSettlementPayloadHash(
+        var coveredReports = NormalizeCoveredReports(payload.CoveredProductionReportNos);
+        var settlementPayloadHash = ComputeSettlementPayloadHash(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 payload.WorkOrderId,
@@ -393,7 +407,7 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
         {
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
-                    ConsumerName,
+                    MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
                     integrationEvent,
                     "missing-work-center-cost-rate",
                     $"Work-center cost rate '{payload.WorkCenterId}' has no active revision at '{payload.CompletedAtUtc:O}'."),
@@ -409,7 +423,7 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
         {
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
-                    ConsumerName,
+                    MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
                     integrationEvent,
                     "incompatible-work-order-labor-currency",
                     $"Work order '{payload.WorkOrderId}' already contains actual labor in a currency incompatible with '{rate!.CurrencyCode}'."),
@@ -419,7 +433,7 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
 
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(
                 dbContext,
-                ConsumerName,
+                MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
                 integrationEvent,
                 cancellationToken))
             return;
@@ -471,6 +485,9 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
         }
 
         var transition = state.ApplyVoid(payload.SettlementRevision);
+        if (transition.Transition != OperationLaborSettlementTransition.Voided)
+            return;
+
         foreach (var reportNo in coveredReports)
         {
             if (!await dbContext.OperationLaborCoveredReports.AnyAsync(
@@ -536,7 +553,7 @@ public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventHandle
         CancellationToken cancellationToken)
         => deadLetterStore.AddAsync(
             IntegrationEventDeadLetterMessage.Create(
-                ConsumerName,
+                MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
                 integrationEvent,
                 "conflicting-operation-labor-settlement-void",
                 $"Operation actual-time settlement void '{integrationEvent.Payload.OperationTaskId}' revision '{integrationEvent.Payload.SettlementRevision}' conflicts with the frozen business fact."),

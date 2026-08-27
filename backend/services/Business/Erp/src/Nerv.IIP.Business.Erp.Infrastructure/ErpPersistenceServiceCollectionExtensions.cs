@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;

@@ -277,7 +277,7 @@ public sealed class WorkCenterCostRateApplicationTests
         await db.SaveChangesAsync();
 
         await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-            db, new InMemoryIntegrationEventDeadLetterStore(), db).HandleAsync(Report("event-active", July1), CancellationToken.None);
+            db, new InMemoryIntegrationEventDeadLetterStore(), db, TestWorkOrderCostMutationLock.Instance).HandleAsync(Report("event-active", July1), CancellationToken.None);
         await db.SaveChangesAsync();
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -295,7 +295,7 @@ public sealed class WorkCenterCostRateApplicationTests
             Rate("org-001", "env-dev", "WC-01", 2, 60m, July1.AddDays(1), null));
         await db.SaveChangesAsync();
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("event-no-active", July1), CancellationToken.None);
 
         Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
@@ -313,7 +313,7 @@ public sealed class WorkCenterCostRateApplicationTests
         await using var db = CreateDb();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var report = Report("event-replay", July1);
-        var consumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
+        var consumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance);
 
         await consumer.HandleAsync(report, CancellationToken.None);
         Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
