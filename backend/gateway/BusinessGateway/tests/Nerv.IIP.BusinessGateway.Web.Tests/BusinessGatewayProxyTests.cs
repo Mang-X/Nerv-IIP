@@ -1506,6 +1506,52 @@ public sealed class BusinessGatewayProxyTests
             Take: 15), mes.LastWorkOrderListRequest);
     }
 
+    // Contract: GatewayProxy + Regression. Authority: Issue #2223 acceptance 3-4.
+    [Fact]
+    public async Task Mes_material_readiness_proxy_preserves_substitute_candidate_ids()
+    {
+        var mes = new RecordingMesClient
+        {
+            MaterialReadinessResponse = new BusinessConsoleMesMaterialReadinessResponse(
+                "WO-SUB-GATEWAY",
+                "Ready",
+                [],
+                [new BusinessConsoleMesMaterialReadinessRow(
+                    "MAT-PRIMARY",
+                    null,
+                    10m,
+                    12m,
+                    0m,
+                    0m,
+                    0m,
+                    0m,
+                    "Ready",
+                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"])])
+        };
+        await using var lease = LeaseHost(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesMaterialsRead),
+            services =>
+            {
+                services.RemoveAll<IBusinessMesClient>();
+                services.AddSingleton<IBusinessMesClient>(mes);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders/WO-SUB-GATEWAY/material-readiness?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var row = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal(
+            ["MAT-ALT-A", "MAT-ALT-B"],
+            row.GetProperty("substituteMaterialIds").EnumerateArray().Select(x => x.GetString()!).ToArray());
+    }
+
     [Fact]
     public async Task Mes_scoped_work_order_list_requires_realtime_principal_context()
     {
@@ -16606,6 +16652,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Exception? StartOperationFailure { get; init; }
 
+    public BusinessConsoleMesMaterialReadinessResponse? MaterialReadinessResponse { get; init; }
+
     public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
 
     public int? WorkOrdersTotal { get; init; }
@@ -16961,7 +17009,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesMaterialReadinessResponse(workOrderId, "Ready", [], []));
+        return Task.FromResult(MaterialReadinessResponse ?? new BusinessConsoleMesMaterialReadinessResponse(workOrderId, "Ready", [], []));
     }
 
     public Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(

@@ -4740,7 +4740,8 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal ShortageQuantity,
     string Status,
     // 缺口卡在哪个环节：none / awaitingPreparation（还没发起领料）/ awaitingDelivery（仓库在配）。
-    string? ShortageStage = null);
+    string? ShortageStage = null,
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
 
 // 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
 // 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read
