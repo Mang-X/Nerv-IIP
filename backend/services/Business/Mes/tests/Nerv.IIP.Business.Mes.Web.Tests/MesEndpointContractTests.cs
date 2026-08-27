@@ -1200,7 +1200,7 @@ public sealed class MesEndpointContractTests
         dbContext.OperationTasks.AddRange(tasks);
         var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-001", "OP-10", "MIR-WIP-SCRAP", dueUtc.AddMinutes(-20), 1m);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new RecordProductionReportCommandHandler(dbContext).Handle(
+        await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 8m, 1m, false, dueUtc, ConsumedMaterialLots: scrapLots),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1445,7 +1445,7 @@ public sealed class MesEndpointContractTests
         var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-OUTPUT", "OP-30", "MIR-OUTPUT-SCRAP", reportedAt.AddMinutes(20), 1m);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
         await handler.Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-10", 100m, 0m, true, reportedAt),
             CancellationToken.None);
@@ -1505,7 +1505,7 @@ public sealed class MesEndpointContractTests
         dbContext.OperationTasks.AddRange(tasks);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => new RecordProductionReportCommandHandler(dbContext).Handle(
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-404", 1m, 0m, false, reportedAt),
             CancellationToken.None));
 
@@ -1546,7 +1546,7 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2727,7 +2727,7 @@ public sealed class MesEndpointContractTests
         dbContext.OperationTasks.AddRange(tasks);
         var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-001", "OP-10", "MIR-PUBLIC-SCRAP", reportedAt.AddMinutes(-5), 1m);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var reportResult = await new RecordProductionReportCommandHandler(dbContext).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, reportedAt, ConsumedMaterialLots: scrapLots),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
