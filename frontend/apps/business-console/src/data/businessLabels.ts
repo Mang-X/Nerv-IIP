@@ -133,18 +133,47 @@ export const STOCK_OWNER_TYPE_LABELS: Readonly<Record<string, string>> = {
 // qualityDispositionLabel，那份还会把词表外的历史自由文本显式标成「未知处置：xxx」。
 // 单一事实源，别在本文件另起一份。
 
-/** 追溯节点类型（MES 追溯图 nodeType）。 */
+/**
+ * 追溯节点类型（MES 追溯图 nodeType）。
+ *
+ * 权威来源是 MES 读面的 `MesTraceabilityNodeTypes` 常量表，本表按它逐条对齐；
+ * `traceNodeType.contract.test.ts` 双向校验，后端加一类节点而这里没跟进即红。
+ *
+ * 曾经这里是照着**边**的 relationType 抄的（`received-lot` / `produced-serial` /
+ * `consumed-serial`）外加两个后端从未发过的 `shipment` / `inspection`，
+ * 与节点类型集合只在四个键上碰巧对得上，其余节点在「类型」列上印英文码。
+ *
+ * 末两条不是节点类型常量，而是需求计划来源节点的**开放集**取值：那个节点的类型直接取工单上
+ * 持久化的 `SourceDocumentType`（外部写入方给的自由文本），登记不进后端常量表，
+ * 只能按已知取值补说法，未知值仍如实回显原文。
+ */
 export const TRACE_NODE_TYPE_LABELS: Readonly<Record<string, string>> = {
   'work-order': '生产工单',
+  'demand-source': '需求来源',
   'operation-task': '工序任务',
-  'material-lot': '投入批次',
+  'production-report': '报工记录',
+  operator: '报工人',
+  'device-asset': '生产设备',
+  'inspection-result': '检验结论',
   'produced-lot': '产出批次',
-  'received-lot': '收货批次',
-  'produced-serial': '产出序列号',
-  'consumed-serial': '消耗序列号',
-  shipment: '发货',
-  inspection: '检验记录',
+  serial: '产出序列号',
+  'produced-lot-or-serial': '产出批次/序列号',
+  material: '物料',
+  'material-lot': '投入批次',
+  'material-issue-request': '领料单',
+  'batch-or-serial': '批次/序列号',
+  'planning-suggestion': '计划建议',
+  'rework-work-order': '返工工单',
 }
+
+/**
+ * 上表中不属于后端节点类型常量的键——见表头说明的开放集取值。
+ * 供 `traceNodeType.contract.test.ts` 反向校验时排除，别在这里堆无来源的键。
+ */
+export const TRACE_NODE_TYPE_OPEN_SET_KEYS: readonly string[] = [
+  'planning-suggestion',
+  'rework-work-order',
+]
 
 /** 报工候选挂起原因（TelemetryProductionReportCandidate.suspensionReason）。 */
 export const REPORT_SUSPENSION_REASON_LABELS: Readonly<Record<string, string>> = {

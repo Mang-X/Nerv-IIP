@@ -2080,6 +2080,37 @@ public sealed record MesTraceabilityNode(
 public sealed record MesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 
 /// <summary>
+/// MES 追溯读面能发出的节点类型全集。追溯图上的节点类型是给人看的分类码，散在十几个
+/// 调用点上写字面量时，前端词表无从知道该覆盖哪些，界面上就会印出 <c>ProductionReport</c>
+/// 这样的英文码。因此所有发节点的地方一律引用本表，新增一类节点先在这里登记。
+/// <para>
+/// 前端追溯词表按本表做完备性契约（<c>frontend/apps/business-console/src/data/traceNodeType.contract.test.ts</c>）：
+/// 这里加一个常量而词表没跟进即红。那条契约同时校验没有调用点绕开本表另写字面量。
+/// </para>
+/// <para>
+/// 唯一的例外是需求计划来源单据节点：它的类型取自工单上持久化的 <c>SourceDocumentType</c>，
+/// 由外部写入方给（<c>MaximumLength(100)</c> 的自由文本），是开放集合，登记不了。
+/// </para>
+/// </summary>
+public static class MesTraceabilityNodeTypes
+{
+    public const string WorkOrder = "WorkOrder";
+    public const string DemandSource = "DemandSource";
+    public const string OperationTask = "OperationTask";
+    public const string ProductionReport = "ProductionReport";
+    public const string Operator = "Operator";
+    public const string DeviceAsset = "DeviceAsset";
+    public const string InspectionResult = "InspectionResult";
+    public const string ProducedLot = "ProducedLot";
+    public const string Serial = "Serial";
+    public const string Material = "Material";
+    public const string MaterialLot = "MaterialLot";
+    public const string MaterialIssueRequest = "MaterialIssueRequest";
+    public const string BatchOrSerial = "BatchOrSerial";
+    public const string ProducedLotOrSerial = "ProducedLotOrSerial";
+}
+
+/// <summary>
 /// 一条报工事实在追溯图上的完整投影输入：报工号、报工时刻、报工人、报工时固化的设备快照，
 /// 以及该报工所属的工单与工序（检验结论按工序归属查不良记录）。
 /// </summary>
@@ -2092,11 +2123,6 @@ public sealed record MesTraceabilityReportContext(
 
 public static class MesTraceabilityProductionReportQueries
 {
-    public const string ProductionReportNodeType = "ProductionReport";
-    public const string OperatorNodeType = "Operator";
-    public const string DeviceAssetNodeType = "DeviceAsset";
-    public const string InspectionResultNodeType = "InspectionResult";
-
     public static IQueryable<ProductionReport> ActiveProductionReports(this ApplicationDbContext dbContext)
     {
         return dbContext.ProductionReports
@@ -2163,24 +2189,24 @@ public static class MesTraceabilityProductionReportQueries
 
         foreach (var report in reports)
         {
-            AddNode(report.ReportNo, ProductionReportNodeType, report.ReportNo, "Reported", report.ReportedAtUtc);
+            AddNode(report.ReportNo, MesTraceabilityNodeTypes.ProductionReport, report.ReportNo, "Reported", report.ReportedAtUtc);
 
             if (!string.IsNullOrWhiteSpace(report.ReportedBy))
             {
-                AddNode(report.ReportedBy, OperatorNodeType, report.ReportedBy, "Reported", report.ReportedAtUtc);
+                AddNode(report.ReportedBy, MesTraceabilityNodeTypes.Operator, report.ReportedBy, "Reported", report.ReportedAtUtc);
                 AddEdge(report.ReportNo, report.ReportedBy, "reported-by");
             }
 
             if (!string.IsNullOrWhiteSpace(report.DeviceAssetId))
             {
-                AddNode(report.DeviceAssetId, DeviceAssetNodeType, report.DeviceAssetId, "Reported", report.ReportedAtUtc);
+                AddNode(report.DeviceAssetId, MesTraceabilityNodeTypes.DeviceAsset, report.DeviceAssetId, "Reported", report.ReportedAtUtc);
                 AddEdge(report.ReportNo, report.DeviceAssetId, "reported-on-device");
             }
 
             foreach (var defectRecord in defectRecords.Where(x =>
                 string.Equals(x.OperationTaskId, report.OperationTaskId, StringComparison.Ordinal)))
             {
-                AddNode(defectRecord.DefectNo, InspectionResultNodeType, defectRecord.DefectCode, defectRecord.Status, defectRecord.RecordedAtUtc);
+                AddNode(defectRecord.DefectNo, MesTraceabilityNodeTypes.InspectionResult, defectRecord.DefectCode, defectRecord.Status, defectRecord.RecordedAtUtc);
                 AddEdge(report.OperationTaskId, defectRecord.DefectNo, "inspected-as");
             }
         }
@@ -2202,7 +2228,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         if (workOrder is null)
         {
             return new MesTraceabilityResponse(
-                [new MesTraceabilityNode(request.WorkOrderId, "WorkOrder", request.WorkOrderId, "Unknown")],
+                [new MesTraceabilityNode(request.WorkOrderId, MesTraceabilityNodeTypes.WorkOrder, request.WorkOrderId, "Unknown")],
                 []);
         }
 
@@ -2230,7 +2256,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
 
         var nodes = new List<MesTraceabilityNode>
         {
-            new(detail.WorkOrderId, "WorkOrder", detail.WorkOrderId, detail.Status),
+            new MesTraceabilityNode(detail.WorkOrderId, MesTraceabilityNodeTypes.WorkOrder, detail.WorkOrderId, detail.Status),
         };
         var edges = new List<MesTraceabilityEdge>();
 
@@ -2266,7 +2292,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             {
                 nodes.Add(new MesTraceabilityNode(
                     demandReference,
-                    "DemandSource",
+                    MesTraceabilityNodeTypes.DemandSource,
                     demandReference,
                     "Source"));
                 edges.Add(new MesTraceabilityEdge(
@@ -2278,7 +2304,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
 
         foreach (var task in detail.OperationTasks)
         {
-            nodes.Add(new MesTraceabilityNode(task.OperationTaskId, "OperationTask", task.OperationTaskId, task.Status));
+            nodes.Add(new MesTraceabilityNode(task.OperationTaskId, MesTraceabilityNodeTypes.OperationTask, task.OperationTaskId, task.Status));
             edges.Add(new MesTraceabilityEdge(detail.WorkOrderId, task.OperationTaskId, "has-operation"));
         }
 
@@ -2295,13 +2321,13 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.Id, "has-report"));
             if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
             {
-                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, "ProducedLot", report.ProducedLotNo, "Produced"));
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, MesTraceabilityNodeTypes.ProducedLot, report.ProducedLotNo, "Produced"));
                 edges.Add(new MesTraceabilityEdge(report.Id, report.ProducedLotNo, "produced-lot"));
             }
 
             if (!string.IsNullOrWhiteSpace(report.SerialNo))
             {
-                nodes.Add(new MesTraceabilityNode(report.SerialNo, "Serial", report.SerialNo, "Produced"));
+                nodes.Add(new MesTraceabilityNode(report.SerialNo, MesTraceabilityNodeTypes.Serial, report.SerialNo, "Produced"));
                 edges.Add(new MesTraceabilityEdge(report.Id, report.SerialNo, "produced-serial"));
             }
         }
@@ -2317,13 +2343,13 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             .ToArrayAsync(cancellationToken);
         foreach (var consumption in consumptions)
         {
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialLotId, "MaterialLot", consumption.MaterialLotId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, MesTraceabilityNodeTypes.Material, consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialLotId, MesTraceabilityNodeTypes.MaterialLot, consumption.MaterialLotId, "Consumed"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
             if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
             {
-                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeTypes.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
         }
@@ -2385,7 +2411,7 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
         if (consumptions.Length == 0 && producedReports.Length == 0)
         {
             return new MesTraceabilityResponse(
-                [new MesTraceabilityNode(request.BatchOrSerial, "BatchOrSerial", request.BatchOrSerial, "Unknown")],
+                [new MesTraceabilityNode(request.BatchOrSerial, MesTraceabilityNodeTypes.BatchOrSerial, request.BatchOrSerial, "Unknown")],
                 []);
         }
 
@@ -2408,7 +2434,7 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
 
         var nodes = new List<MesTraceabilityNode>
         {
-            new(request.BatchOrSerial, producedReports.Length > 0 ? "ProducedLotOrSerial" : "MaterialLot", request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"),
+            new MesTraceabilityNode(request.BatchOrSerial, producedReports.Length > 0 ? MesTraceabilityNodeTypes.ProducedLotOrSerial : MesTraceabilityNodeTypes.MaterialLot, request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"),
         };
         var edges = new List<MesTraceabilityEdge>();
 
@@ -2425,8 +2451,8 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
 
         foreach (var report in producedReports)
         {
-            nodes.Add(new MesTraceabilityNode(report.WorkOrderId, "WorkOrder", report.WorkOrderId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(report.OperationTaskId, "OperationTask", report.OperationTaskId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(report.WorkOrderId, MesTraceabilityNodeTypes.WorkOrder, report.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(report.OperationTaskId, MesTraceabilityNodeTypes.OperationTask, report.OperationTaskId, "Reported"));
             edges.Add(new MesTraceabilityEdge(report.ReportNo, request.BatchOrSerial, report.SerialNo == request.BatchOrSerial ? "produced-serial" : "produced-lot"));
             edges.Add(new MesTraceabilityEdge(report.ReportNo, report.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.WorkOrderId, "belongs-to-work-order"));
@@ -2434,16 +2460,16 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
 
         foreach (var consumption in consumptions)
         {
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
-            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, "WorkOrder", consumption.WorkOrderId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, "OperationTask", consumption.OperationTaskId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, MesTraceabilityNodeTypes.Material, consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, MesTraceabilityNodeTypes.WorkOrder, consumption.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, MesTraceabilityNodeTypes.OperationTask, consumption.OperationTaskId, "Reported"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
             edges.Add(new MesTraceabilityEdge(consumption.ReportNo, consumption.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(consumption.OperationTaskId, consumption.WorkOrderId, "belongs-to-work-order"));
             if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
             {
-                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeTypes.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
         }
@@ -2488,7 +2514,7 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
 
         var nodes = new List<MesTraceabilityNode>
         {
-            new(request.MaterialLotId, "MaterialLot", request.MaterialLotId, consumptions.Length > 0 ? "Consumed" : "Unknown"),
+            new MesTraceabilityNode(request.MaterialLotId, MesTraceabilityNodeTypes.MaterialLot, request.MaterialLotId, consumptions.Length > 0 ? "Consumed" : "Unknown"),
         };
         var edges = new List<MesTraceabilityEdge>();
         var reportNos = consumptions.Select(x => x.ReportNo).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -2520,16 +2546,16 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
 
         foreach (var consumption in consumptions)
         {
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
-            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, "WorkOrder", consumption.WorkOrderId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, "OperationTask", consumption.OperationTaskId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, MesTraceabilityNodeTypes.Material, consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, MesTraceabilityNodeTypes.WorkOrder, consumption.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, MesTraceabilityNodeTypes.OperationTask, consumption.OperationTaskId, "Reported"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
             edges.Add(new MesTraceabilityEdge(consumption.ReportNo, consumption.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(consumption.OperationTaskId, consumption.WorkOrderId, "belongs-to-work-order"));
             if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
             {
-                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeTypes.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
         }
@@ -2538,13 +2564,13 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
         {
             if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
             {
-                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, "ProducedLot", report.ProducedLotNo, "Produced"));
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, MesTraceabilityNodeTypes.ProducedLot, report.ProducedLotNo, "Produced"));
                 edges.Add(new MesTraceabilityEdge(report.ReportNo, report.ProducedLotNo, "produced-lot"));
             }
 
             if (!string.IsNullOrWhiteSpace(report.SerialNo))
             {
-                nodes.Add(new MesTraceabilityNode(report.SerialNo, "Serial", report.SerialNo, "Produced"));
+                nodes.Add(new MesTraceabilityNode(report.SerialNo, MesTraceabilityNodeTypes.Serial, report.SerialNo, "Produced"));
                 edges.Add(new MesTraceabilityEdge(report.ReportNo, report.SerialNo, "produced-serial"));
             }
         }
