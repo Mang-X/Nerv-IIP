@@ -642,6 +642,73 @@ public sealed class OperationLaborSettlementHandlerTests
     }
 
     [Fact]
+    public async Task Completion_event_without_finished_goods_posting_does_not_post_settle_or_void_variance()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(
+            7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        await db.SaveChangesAsync();
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+                db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
+            .HandleAsync(Report("evt-report-pre-posting", "RPT-PRE-POSTING", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
+        await db.SaveChangesAsync();
+        Assert.True(cost.CapitalizationPublished);
+        Assert.Equal(0m, cost.CapitalizedQuantity);
+
+        var settled = Settled(
+            "evt-settled-pre-posting", 1, AugustCompletedAtUtc,
+            90 * TimeSpan.TicksPerMinute, ["RPT-PRE-POSTING"]);
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(settled, CancellationToken.None);
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(Voided("evt-void-pre-posting", settled, AugustCompletedAtUtc.AddMinutes(5)), CancellationToken.None);
+
+        Assert.Empty(await db.JournalVouchers.ToListAsync());
+        Assert.Equal(0m, (await db.WorkOrderCosts.Include(x => x.Details).SingleAsync()).LaborCost);
+    }
+
+    [Fact]
+    public async Task Void_after_finished_goods_posting_posts_one_balanced_delta()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(
+            7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        await db.SaveChangesAsync();
+        var settled = Settled(
+            "evt-settled-before-capitalization", 1, AugustCompletedAtUtc,
+            90 * TimeSpan.TicksPerMinute, ["RPT-CAP-VOID"]);
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(settled, CancellationToken.None);
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
+        cost.Capitalize("MOVE-FG-CAP-VOID", 10m, 12m, AugustCompletedAtUtc.AddMinutes(1));
+        cost.RecordWipClearance(120m);
+        await db.SaveChangesAsync();
+
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(Voided("evt-void-after-posting", settled, AugustCompletedAtUtc.AddMinutes(5)), CancellationToken.None);
+
+        cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(0m, cost.LaborCost);
+        Assert.Equal(0m, cost.WipClearedCost);
+        var voucher = await db.JournalVouchers.Include(x => x.Lines).SingleAsync();
+        Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount));
+        Assert.Equal(120m, voucher.Lines.Sum(x => x.DebitAmount));
+    }
+
+    [Fact]
     public async Task Late_void_for_an_older_revision_does_not_supersede_the_active_revision()
     {
         await using var db = CreateDb();

@@ -408,6 +408,43 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 new OperationLaborSettlementOrchestrator(db, deadLetters))
             .HandleAsync(mixedSettlement, CancellationToken.None);
 
+        var readyButUnposted = WorkOrderCost.Open("org-cap", "env-cap", "WO-READY", "FG-READY");
+        readyButUnposted.RecordLabor("RPT-READY", "WC-CAP", 2m, 80m, "CNY", false,
+            DateTimeOffset.Parse("2026-08-31T15:40:00Z"));
+        readyButUnposted.Complete(10m, 1, 0, DateTimeOffset.Parse("2026-08-31T15:50:00Z"));
+        db.WorkOrderCosts.Add(readyButUnposted);
+        await db.SaveChangesAsync();
+        var prePostingSettlement = settled with
+        {
+            EventId = "evt-ready-settled",
+            IdempotencyKey = "actual-time:OP-READY:1:settled",
+            Payload = settled.Payload with
+            {
+                WorkOrderId = "WO-READY",
+                OperationTaskId = "OP-READY",
+                CoveredProductionReportNos = ["RPT-READY"],
+            },
+        };
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, new PostgreSqlWorkOrderCostMutationLock(db),
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(prePostingSettlement, CancellationToken.None);
+        await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+                db, db, new PostgreSqlWorkOrderCostMutationLock(db),
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(new MesOperationActualTimeSettlementVoidedIntegrationEvent(
+                "evt-ready-void", MesIntegrationEventTypes.OperationActualTimeSettlementVoided, 1,
+                DateTimeOffset.Parse("2026-08-31T16:05:00Z"), MesIntegrationEventSources.BusinessMes,
+                "correlation-ready", "causation-ready", "org-cap", "env-cap", "operator:test",
+                "actual-time:OP-READY:1:voided",
+                new OperationActualTimeSettlementVoidedPayload(
+                    "WO-READY", "OP-READY", "WC-CAP", 1,
+                    DateTimeOffset.Parse("2026-08-31T15:50:00Z"),
+                    DateTimeOffset.Parse("2026-08-31T16:05:00Z"),
+                    90 * TimeSpan.TicksPerMinute, 90 * TimeSpan.TicksPerMinute,
+                    ["RPT-READY"])),
+                CancellationToken.None);
+
         await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
         var persistedCost = await assertDb.WorkOrderCosts.Include(x => x.Details)
             .SingleAsync(x => x.WorkOrderId == "WO-CAP");
@@ -432,6 +469,12 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
                 IntegrationEventDeadLetterStatus.Pending,
                 CancellationToken.None)).FailureCode);
+        var persistedReady = await assertDb.WorkOrderCosts.Include(x => x.Details)
+            .SingleAsync(x => x.WorkOrderId == "WO-READY");
+        Assert.True(persistedReady.CapitalizationPublished);
+        Assert.Equal(0m, persistedReady.CapitalizedQuantity);
+        Assert.Equal(0m, persistedReady.LaborCost);
+        Assert.Single(await assertDb.JournalVouchers.ToListAsync());
 
         var indexes = await assertDb.Database.SqlQueryRaw<string>("""
             SELECT indexname AS "Value"

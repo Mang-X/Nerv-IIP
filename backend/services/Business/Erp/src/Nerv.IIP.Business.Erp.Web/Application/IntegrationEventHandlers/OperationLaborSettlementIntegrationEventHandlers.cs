@@ -332,7 +332,7 @@ public sealed partial class OperationLaborSettlementOrchestrator
         DateTimeOffset postedAtUtc,
         CancellationToken cancellationToken)
     {
-        if (cost.CapitalizationPublished)
+        if (cost.CapitalizedQuantity > 0m)
             await CostVariancePosting.PostLateAdjustmentAsync(
                 dbContext,
                 cost,
