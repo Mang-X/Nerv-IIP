@@ -911,13 +911,14 @@
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Cross_day_reversal_reuses_original_historical_buckets_and_nets_original_bucket_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Combined_carry_in_and_window_state_limit_executes_exact_boundary_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeMigrationRollbackPostgresTests.Oee_historical_dimension_migration_removes_unrepresentable_degraded_facts_before_rollback_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeMigrationRollbackPostgresTests.Oee_historical_dimension_migration_backfills_old_reported_time_and_round_trips_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Missing_device_work_center_event_never_projects_or_aggregates_the_untrusted_device_hierarchy_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests.Full_scale_device_history_seed_stays_within_the_startup_budget_and_reruns_clean",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Same_occurred_at_states_use_recorded_at_and_source_sequence_for_carry_in_and_window_tail_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Device_hierarchy_migration_degrades_runtime_metrics_instead_of_reusing_the_full_window_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.State_queries_ignore_same_device_and_environment_from_other_organizations_on_postgres"
       ],
-      "expectedRuntimeTestCount": 20
+      "expectedRuntimeTestCount": 21
     },
     {
       "id": "maintenance-world-history",
@@ -1046,7 +1047,7 @@
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:LeaderDemoScaleSeedPostgresTests|MesCollaborationPostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesOeeDimensionSnapshotProviderTests|MesSchedulePlanProvenancePostgresTests|MesOeeDimensionSnapshotProviderTests|OperationActualTimeSettlementPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:LeaderDemoScaleSeedPostgresTests|MesCollaborationPostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesOeeDimensionSnapshotProviderTests|MesSchedulePlanProvenancePostgresTests|OperationActualTimeSettlementPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
       "allowedLanes": [
         "backend"
