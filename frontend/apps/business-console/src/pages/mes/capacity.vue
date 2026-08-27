@@ -223,7 +223,7 @@ function formatError(error: unknown) {
       :loading="capacityImpactsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无产能影响。先在设备与停机登记异常或维护占用，再回到这里跟踪对产线产能的影响。"
+      empty-message="暂无产能影响。先在「设备与停机」登记停机，或在「维护工单」登记占用，再回到这里跟踪对产线产能的影响。"
     >
       <template #cell-workCenterId="{ row }">
         <CodeWithNameCell :code="workCenterCode(row)" :name="workCenterName(row)" fallback="无" />
