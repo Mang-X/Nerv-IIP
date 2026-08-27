@@ -44,6 +44,28 @@ public sealed class WorkCenterMachineOverheadRateTests
         Assert.Equal(ChangedAtUtc, rate.ChangedAtUtc);
     }
 
+    [Fact]
+    public void Applicable_rate_uses_bankers_rounding_for_exact_six_decimal_midpoints()
+    {
+        // DomainInvariant: the approved six-decimal rule is midpoint-to-even.
+        // 1 / 128 ends in ...8125 and must round down because the retained digit is even;
+        // 3 / 128 ends in ...4375 and must round up because the retained digit is odd.
+        var rate = WorkCenterMachineOverheadRate.DefineApplicable(
+            "org", "env", "WC", "2026-06",
+            fixedOverheadBudget: 1m,
+            variableOverheadBudget: 3m,
+            normalCapacityMachineHours: 128m,
+            currencyCode: "CNY",
+            revision: 1,
+            changedBy: "user:finance",
+            reason: "bankers rounding vector",
+            changedAtUtc: ChangedAtUtc);
+
+        Assert.Equal(0.007812m, rate.FixedHourlyRate);
+        Assert.Equal(0.023438m, rate.VariableHourlyRate);
+        Assert.Equal(0.031250m, rate.TotalHourlyRate);
+    }
+
     [Theory]
     [InlineData(-1, 10, 100)]
     [InlineData(10, -1, 100)]

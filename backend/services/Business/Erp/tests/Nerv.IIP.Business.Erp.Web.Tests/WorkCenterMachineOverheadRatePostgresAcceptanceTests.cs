@@ -46,7 +46,8 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
 
         await using var gateDb = new ApplicationDbContext(options, new NoopMediator());
         await using var gateTransaction = await gateDb.Database.BeginTransactionAsync();
-        await new PostgreSqlWorkCenterMachineOverheadRateRevisionLock(gateDb).AcquireAsync(
+        await new PostgreSqlErpAdvisoryLockAllocator(gateDb).AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadRate,
             "org-concurrent", "env-concurrent", "WC-CONCURRENT", CancellationToken.None);
 
         var firstSend = firstScope.ServiceProvider.GetRequiredService<ISender>().Send(
@@ -119,6 +120,33 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             CancellationToken.None);
         Assert.Equal(1, audit.CurrentRevision);
         Assert.Equal("Applicable", Assert.Single(audit.Items).Applicability);
+
+        db.WorkCenterMachineOverheadRates.AddRange(
+            WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-pg", "env-pg", "WC-PG", "2026-06",
+                31_000m, 10_000m, 1_000m, "CNY", 2,
+                "system:test", "latest settlement rate", DateTimeOffset.UtcNow),
+            WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-pg", "env-pg", "WC-ROUND", "2026-06",
+                1m, 3m, 128m, "CNY", 1,
+                "system:test", "bankers rounding vector", DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var resolved = await new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(db).Handle(
+            new ResolveWorkCenterMachineOverheadRateForSettlementQuery(
+                "org-pg", "env-pg", "WC-PG",
+                new DateTimeOffset(2026, 6, 30, 23, 59, 59, TimeSpan.Zero)),
+            CancellationToken.None);
+        Assert.Equal("2026-06", resolved.AccountingPeriodCode);
+        Assert.Equal(2, resolved.Revision);
+        Assert.Equal(31m, resolved.FixedHourlyRate);
+
+        var rounded = await db.WorkCenterMachineOverheadRates
+            .SingleAsync(x => x.WorkCenterId == "WC-ROUND");
+        Assert.Equal(0.007812m, rounded.FixedHourlyRate);
+        Assert.Equal(0.023438m, rounded.VariableHourlyRate);
+        Assert.Equal(0.031250m, rounded.TotalHourlyRate);
 
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync();

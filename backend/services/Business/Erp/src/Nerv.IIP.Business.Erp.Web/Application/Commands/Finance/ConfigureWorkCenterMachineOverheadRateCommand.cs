@@ -69,7 +69,7 @@ public sealed class ConfigureWorkCenterMachineOverheadRateCommandValidator
 
 public sealed class ConfigureWorkCenterMachineOverheadRateCommandHandler(
     ApplicationDbContext dbContext,
-    IWorkCenterMachineOverheadRateRevisionLock revisionLock)
+    IErpAdvisoryLockAllocator revisionLock)
     : ICommandHandler<ConfigureWorkCenterMachineOverheadRateCommand, WorkCenterMachineOverheadRateId>
 {
     public async Task<WorkCenterMachineOverheadRateId> Handle(
@@ -94,6 +94,7 @@ public sealed class ConfigureWorkCenterMachineOverheadRateCommandHandler(
         }
 
         await revisionLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadRate,
             organizationId,
             environmentId,
             workCenterId,

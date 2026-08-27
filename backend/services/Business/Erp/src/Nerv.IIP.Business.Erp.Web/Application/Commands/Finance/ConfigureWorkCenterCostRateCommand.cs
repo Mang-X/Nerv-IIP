@@ -54,7 +54,7 @@ public sealed class ConfigureWorkCenterCostRateCommandValidator : AbstractValida
 
 public sealed class ConfigureWorkCenterCostRateCommandHandler(
     ApplicationDbContext dbContext,
-    IWorkCenterCostRateRevisionLock revisionLock)
+    IErpAdvisoryLockAllocator revisionLock)
     : ICommandHandler<ConfigureWorkCenterCostRateCommand, WorkCenterCostRateId>
 {
     public async Task<WorkCenterCostRateId> Handle(ConfigureWorkCenterCostRateCommand request, CancellationToken cancellationToken)
@@ -63,7 +63,12 @@ public sealed class ConfigureWorkCenterCostRateCommandHandler(
         var environmentId = request.EnvironmentId.Trim();
         var workCenterId = request.WorkCenterId.Trim();
         var currencyCode = request.CurrencyCode.Trim().ToUpperInvariant();
-        await revisionLock.AcquireAsync(organizationId, environmentId, workCenterId, cancellationToken);
+        await revisionLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterLaborCostRate,
+            organizationId,
+            environmentId,
+            workCenterId,
+            cancellationToken);
         var persistedCurrencies = await dbContext.WorkCenterCostRates
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId

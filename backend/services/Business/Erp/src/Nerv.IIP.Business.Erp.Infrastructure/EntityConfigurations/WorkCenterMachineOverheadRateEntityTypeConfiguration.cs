@@ -20,8 +20,26 @@ public sealed class WorkCenterMachineOverheadRateEntityTypeConfiguration
                      AND variable_overhead_budget >= 0
                      AND fixed_overhead_budget + variable_overhead_budget > 0
                      AND normal_capacity_machine_hours > 0
-                     AND fixed_hourly_rate = round(fixed_overhead_budget / normal_capacity_machine_hours, 6)
-                     AND variable_hourly_rate = round(variable_overhead_budget / normal_capacity_machine_hours, 6)
+                     AND fixed_hourly_rate =
+                         trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6)
+                         + CASE
+                             WHEN fixed_overhead_budget / normal_capacity_machine_hours
+                                      - trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6) > 0.0000005
+                               OR (fixed_overhead_budget / normal_capacity_machine_hours
+                                      - trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6) = 0.0000005
+                                   AND mod(trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6) * 1000000, 2) = 1)
+                             THEN 0.000001 ELSE 0
+                           END
+                     AND variable_hourly_rate =
+                         trunc(variable_overhead_budget / normal_capacity_machine_hours, 6)
+                         + CASE
+                             WHEN variable_overhead_budget / normal_capacity_machine_hours
+                                      - trunc(variable_overhead_budget / normal_capacity_machine_hours, 6) > 0.0000005
+                               OR (variable_overhead_budget / normal_capacity_machine_hours
+                                      - trunc(variable_overhead_budget / normal_capacity_machine_hours, 6) = 0.0000005
+                                   AND mod(trunc(variable_overhead_budget / normal_capacity_machine_hours, 6) * 1000000, 2) = 1)
+                             THEN 0.000001 ELSE 0
+                           END
                      AND total_hourly_rate = fixed_hourly_rate + variable_hourly_rate)
                     OR
                     (applicability = 'NotApplicable'
