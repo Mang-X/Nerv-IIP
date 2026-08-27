@@ -247,7 +247,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.mes.downtime.manage` | `user` / `external-client` / `internal-service` | environment + resource | 记录停机、确认恢复并影响短期执行能力。 |
 | `business.mes.handovers.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看班次交接和未结事项。 |
 | `business.mes.handovers.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建和接收班次交接。 |
-| `business.mes.traceability.read` | `user` / `external-client` / `internal-service` | environment + resource | 按工单、批次/序列号、物料批追溯执行证据。执行证据包含报工节点及其报工人、报工时固化的设备快照与发生时刻；**检验结论节点（缺陷码与处置结论）另需 `business.mes.quality.read`**，只持追溯权限的主体拿到同一张图但不含检验结论节点及其边（与「工单详情给保留摘要、逐事件时间线另要 quality.read」同一分层口径）。 |
+| `business.mes.traceability.read` | `user` / `external-client` / `internal-service` | environment + resource | 按工单、批次/序列号、物料批追溯执行证据。执行证据包含报工节点及其报工人、报工时固化的设备快照与发生时刻；**经 BusinessGateway 门面访问时，检验结论节点（缺陷码与处置结论）另需 `business.mes.quality.read`**：只持追溯权限的主体拿到同一张图但不含检验结论节点及其边。分层发生在门面，MES 服务端 route 仍只挂本权限并返回完整图，直连服务端的 `internal-service` / `external-client` 不受该裁剪约束（与「工单详情给保留摘要、逐事件时间线另要 quality.read」同一分层口径）。 |
 | `business.mes.schedules.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看规则排程版本和执行结果。 |
 | `business.mes.schedules.manage` | `user` / `external-client` / `internal-service` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
 | `business.mes.capacity.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看产能影响、设备不可用和执行阻塞摘要。 |

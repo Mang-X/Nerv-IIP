@@ -3181,12 +3181,29 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>三个 MES 追溯读面的 console 路由；检验结论分层对它们必须一视同仁。</summary>
+    public static TheoryData<string, bool> TraceabilityRoutesByQualityRead()
+    {
+        var data = new TheoryData<string, bool>();
+        foreach (var route in new[]
+        {
+            "/api/business-console/v1/mes/traceability/work-orders/WO-001",
+            "/api/business-console/v1/mes/traceability/batches/SN-001",
+            "/api/business-console/v1/mes/traceability/material-lots/LOT-001",
+        })
+        {
+            data.Add(route, true);
+            data.Add(route, false);
+        }
+
+        return data;
+    }
+
     // 追溯图上的检验结论带出缺陷码与处置结论，属 authorization-matrix 里 business.mes.quality.read 的质量下钻内容；
-    // 只持 traceability.read 的主体仍拿到整张执行图，但不含检验结论节点及其边。
+    // 只持 traceability.read 的主体仍拿到整张执行图，但不含检验结论节点及其边。三个读面同一口径。
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Mes_traceability_facade_scopes_inspection_verdicts_to_quality_read(bool holdsQualityRead)
+    [MemberData(nameof(TraceabilityRoutesByQualityRead))]
+    public async Task Mes_traceability_facades_scope_inspection_verdicts_to_quality_read(string route, bool holdsQualityRead)
     {
         var permissions = holdsQualityRead
             ? new[] { BusinessGatewayPermissions.MesTraceabilityRead, BusinessGatewayPermissions.MesQualityRead }
@@ -3214,8 +3231,7 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.GetAsync(
-            "/api/business-console/v1/mes/traceability/batches/SN-001?organizationId=org-001&environmentId=env-dev");
+        var response = await client.GetAsync($"{route}?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -17533,30 +17549,35 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    // 三个追溯读面接同一份下游响应，故追溯类用例可以把「哪个读面」当成可枚举维度，
+    // 而不是给每个读面手写一条用例。
+    public BusinessConsoleMesTraceabilityResponse? Traceability { get; init; }
+
     public Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
-
-    public BusinessConsoleMesTraceabilityResponse? Traceability { get; init; }
+        TraceabilityResponse();
 
     public Task<BusinessConsoleMesTraceabilityResponse> GetBatchTraceabilityAsync(
         string internalBearerToken,
         string batchOrSerial,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        Traceability is null
-            ? throw new NotSupportedException()
-            : Task.FromResult(Traceability);
+        TraceabilityResponse();
 
     public Task<BusinessConsoleMesTraceabilityResponse> GetMaterialLotTraceabilityAsync(
         string internalBearerToken,
         string materialLotId,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        TraceabilityResponse();
+
+    private Task<BusinessConsoleMesTraceabilityResponse> TraceabilityResponse() =>
+        Traceability is null
+            ? throw new NotSupportedException()
+            : Task.FromResult(Traceability);
 
     public Task<BusinessConsoleMesCapacityImpactListResponse> ListCapacityImpactsAsync(
         string internalBearerToken,

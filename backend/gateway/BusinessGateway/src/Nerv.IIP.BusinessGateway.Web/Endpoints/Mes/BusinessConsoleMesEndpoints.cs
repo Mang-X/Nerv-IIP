@@ -2175,22 +2175,34 @@ public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
 }
 
 /// <summary>
-/// 追溯图里的检验结论节点带出缺陷码与处置结论，按 authorization-matrix 属 <c>business.mes.quality.read</c>
-/// 的质量下钻内容（同一份矩阵已有「工单详情给保留摘要、逐事件时间线另要 quality.read」的先例）。
-/// 只持 <c>business.mes.traceability.read</c> 的主体仍拿到整张执行追溯图，但不含检验结论节点及其边。
+/// MES 追溯读面的公共门面：取到执行追溯图后，按 <c>business.mes.quality.read</c> 分层检验结论。
+/// 检验结论节点带出缺陷码与处置结论，按 authorization-matrix 属质量下钻内容（同一份矩阵已有
+/// 「工单列表由 Gateway 按权限感知范围裁剪内容」与「工单详情给保留摘要、逐事件时间线另要 quality.read」
+/// 两条内容级分层先例）。只持 <c>business.mes.traceability.read</c> 的主体仍拿到整张执行追溯图，
+/// 但不含检验结论节点及其边。
+/// <para>
+/// <see cref="ForwardAsync"/> 是 sealed 的：追溯端点只能实现 <see cref="LoadTraceabilityAsync"/>，
+/// 无法各自决定裁不裁剪，故新增追溯读面不可能漏掉这层分层。
+/// </para>
 /// </summary>
-internal static class BusinessConsoleMesTraceabilityQualityScope
+public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessProxyEndpoint<TRequest, BusinessConsoleMesTraceabilityResponse>(
+        auth,
+        BusinessGatewayPermissions.MesTraceabilityRead)
+    where TRequest : notnull
 {
     public const string InspectionResultNodeType = "InspectionResult";
 
-    public static async Task<BusinessConsoleMesTraceabilityResponse> WithInspectionScopedToPrincipalAsync(
-        BusinessConsoleMesTraceabilityResponse response,
-        IBusinessGatewayAuthorizationClient auth,
+    protected abstract Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
+        TRequest request,
+        CancellationToken cancellationToken);
+
+    protected sealed override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+        TRequest request,
         string bearerToken,
-        string organizationId,
-        string environmentId,
         CancellationToken cancellationToken)
     {
+        var response = await LoadTraceabilityAsync(request, cancellationToken);
         var inspectionNodeIds = response.Nodes
             .Where(x => string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))
             .Select(x => x.NodeId)
@@ -2200,12 +2212,12 @@ internal static class BusinessConsoleMesTraceabilityQualityScope
             return response;
         }
 
-        var quality = await auth.CheckAsync(
+        var quality = await AuthorizationClient.CheckAsync(
             bearerToken,
             new BusinessGatewayPermissionRequirement(
                 BusinessGatewayPermissions.MesQualityRead,
-                organizationId,
-                environmentId,
+                OrganizationId(request),
+                EnvironmentId(request),
                 null,
                 null),
             BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
@@ -2228,28 +2240,19 @@ public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest, BusinessConsoleMesTraceabilityResponse>(
-        auth,
-        BusinessGatewayPermissions.MesTraceabilityRead)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest>(auth)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.EnvironmentId;
 
-    protected override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         BusinessConsoleMesTraceabilityByWorkOrderRequest request,
-        string bearerToken,
         CancellationToken cancellationToken) =>
-        await BusinessConsoleMesTraceabilityQualityScope.WithInspectionScopedToPrincipalAsync(
-            await mes.GetWorkOrderTraceabilityAsync(
-                tokenProvider.BearerToken,
-                request.WorkOrderId,
-                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
-                cancellationToken),
-            AuthorizationClient,
-            bearerToken,
-            request.OrganizationId,
-            request.EnvironmentId,
+        mes.GetWorkOrderTraceabilityAsync(
+            tokenProvider.BearerToken,
+            request.WorkOrderId,
+            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
 }
 
@@ -2260,28 +2263,19 @@ public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByBatchRequest, BusinessConsoleMesTraceabilityResponse>(
-        auth,
-        BusinessGatewayPermissions.MesTraceabilityRead)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByBatchRequest>(auth)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByBatchRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByBatchRequest request) => request.EnvironmentId;
 
-    protected override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         BusinessConsoleMesTraceabilityByBatchRequest request,
-        string bearerToken,
         CancellationToken cancellationToken) =>
-        await BusinessConsoleMesTraceabilityQualityScope.WithInspectionScopedToPrincipalAsync(
-            await mes.GetBatchTraceabilityAsync(
-                tokenProvider.BearerToken,
-                request.BatchOrSerial,
-                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
-                cancellationToken),
-            AuthorizationClient,
-            bearerToken,
-            request.OrganizationId,
-            request.EnvironmentId,
+        mes.GetBatchTraceabilityAsync(
+            tokenProvider.BearerToken,
+            request.BatchOrSerial,
+            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
 }
 
@@ -2292,28 +2286,19 @@ public sealed class GetBusinessConsoleMesMaterialLotTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByMaterialLotRequest, BusinessConsoleMesTraceabilityResponse>(
-        auth,
-        BusinessGatewayPermissions.MesTraceabilityRead)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByMaterialLotRequest>(auth)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByMaterialLotRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByMaterialLotRequest request) => request.EnvironmentId;
 
-    protected override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         BusinessConsoleMesTraceabilityByMaterialLotRequest request,
-        string bearerToken,
         CancellationToken cancellationToken) =>
-        await BusinessConsoleMesTraceabilityQualityScope.WithInspectionScopedToPrincipalAsync(
-            await mes.GetMaterialLotTraceabilityAsync(
-                tokenProvider.BearerToken,
-                request.MaterialLotId,
-                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
-                cancellationToken),
-            AuthorizationClient,
-            bearerToken,
-            request.OrganizationId,
-            request.EnvironmentId,
+        mes.GetMaterialLotTraceabilityAsync(
+            tokenProvider.BearerToken,
+            request.MaterialLotId,
+            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
 }
 

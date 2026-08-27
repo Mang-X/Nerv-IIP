@@ -2469,7 +2469,17 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            SeedTraceabilityExecution(dbContext, "org-001", "WO-TRACE-001", "OP-TRACE-10", reportedAtUtc);
+            SeedTraceabilityWorkOrder(dbContext, "org-001", "WO-TRACE-001", reportedAtUtc);
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-001",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "PRPT-TRACE-001",
+                reportedAtUtc,
+                "user-emp-010",
+                "DEV-CNC-01",
+                serialNo: "SN-TRACE-001");
             dbContext.DefectRecords.Add(DefectRecord.Create(
                 "org-001",
                 "env-dev",
@@ -2479,8 +2489,19 @@ public sealed class MesPersistenceContractTests
                 "SCRAP-SURFACE",
                 1m,
                 inspectedAtUtc));
-            // 跨租户对照：同工序号、同不良号落在另一个组织，绝不能被本组织的追溯图读到。
-            SeedTraceabilityExecution(dbContext, "org-002", "WO-TRACE-001", "OP-TRACE-10", reportedAtUtc);
+            // 跨租户对照：同工单号、同工序号、同序列号落在另一个组织，且操作人与设备取不同值——
+            // 报工查询与不良查询任一侧丢掉 org/env 谓词，都会让外租户的人员/设备/检验结论漏进本图。
+            SeedTraceabilityWorkOrder(dbContext, "org-002", "WO-TRACE-001", reportedAtUtc);
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-002",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "PRPT-TRACE-FOREIGN",
+                reportedAtUtc,
+                "user-foreign-999",
+                "DEV-FOREIGN-99",
+                serialNo: "SN-TRACE-001");
             dbContext.DefectRecords.Add(DefectRecord.Create(
                 "org-002",
                 "env-dev",
@@ -2520,23 +2541,34 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Edges, x => x.FromNodeId == "OP-TRACE-10" && x.ToNodeId == "DEF-TRACE-001" && x.RelationType == "inspected-as");
     }
 
-    // 验收 2（#1948）：工单追溯读面与序列号读面共用同一份装配逻辑，且同一操作人的多条报工只发一个人员节点
-    //（本读面末尾没有 DistinctBy，去重失效会让重复节点真的流到响应里）。
+    // 验收 2（#1948）：工单追溯读面与序列号读面共用同一份装配逻辑。本用例同时钉住两条：
+    // 同一操作人的多条报工只发一个人员节点（本读面末尾没有 DistinctBy，去重失效会让重复节点真的流到响应里）；
+    // 不良只能扣到它自己那道工序头上（工单下有两道工序，不良只记在第一道）。
     [Fact]
-    public async Task Work_order_traceability_returns_operator_device_and_inspection_without_duplicating_shared_nodes()
+    public async Task Work_order_traceability_attaches_each_inspection_to_its_own_operation_without_duplicating_shared_nodes()
     {
-        var services = CreateServices(nameof(Work_order_traceability_returns_operator_device_and_inspection_without_duplicating_shared_nodes));
+        var services = CreateServices(nameof(Work_order_traceability_attaches_each_inspection_to_its_own_operation_without_duplicating_shared_nodes));
         var reportedAtUtc = DateTimeOffset.Parse("2026-05-30T09:15:00Z");
 
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            SeedTraceabilityExecution(dbContext, "org-001", "WO-TRACE-WO", "OP-TRACE-WO-10", reportedAtUtc);
-            // 同一操作人、同一台设备上的第二条报工。
+            SeedTraceabilityWorkOrder(dbContext, "org-001", "WO-TRACE-WO", reportedAtUtc);
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-001",
+                "WO-TRACE-WO",
+                "OP-TRACE-WO-10",
+                "PRPT-TRACE-WO-A",
+                reportedAtUtc,
+                "user-emp-010",
+                "DEV-CNC-01",
+                operationSequence: 10);
+            // 同一操作人、同一台设备上的第二条报工，仍落在第一道工序。
             dbContext.ProductionReports.Add(ProductionReport.Record(
                 "org-001",
                 "env-dev",
-                "PRPT-TRACE-001-B",
+                "PRPT-TRACE-WO-B",
                 "WO-TRACE-WO",
                 "OP-TRACE-WO-10",
                 3m,
@@ -2545,6 +2577,17 @@ public sealed class MesPersistenceContractTests
                 reportedAtUtc.AddMinutes(30),
                 oeeProjection: new ProductionReportOeeProjection("WC-FILL", "DEV-CNC-01", "PCS", null),
                 reportedBy: "user-emp-010"));
+            // 第二道工序也有报工，但没有不良：检验结论不得被扣到它头上。
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-001",
+                "WO-TRACE-WO",
+                "OP-TRACE-WO-20",
+                "PRPT-TRACE-WO-C",
+                reportedAtUtc.AddMinutes(60),
+                "user-emp-010",
+                "DEV-CNC-01",
+                operationSequence: 20);
             dbContext.DefectRecords.Add(DefectRecord.Create(
                 "org-001",
                 "env-dev",
@@ -2566,12 +2609,15 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("user-emp-010", operatorNode.NodeId);
         Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
         Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
-        Assert.Equal(2, traceability.Nodes.Count(x => x.NodeType == "ProductionReport"));
+        Assert.Equal(3, traceability.Nodes.Count(x => x.NodeType == "ProductionReport"));
         Assert.All(
             traceability.Nodes.Where(x => x.NodeType == "ProductionReport"),
             node => Assert.NotNull(node.OccurredAtUtc));
-        Assert.Single(traceability.Edges, x => x.ToNodeId == "DEF-TRACE-WO" && x.RelationType == "inspected-as");
-        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-001-B" && x.ToNodeId == "user-emp-010" && x.RelationType == "reported-by");
+
+        var inspectionEdge = Assert.Single(traceability.Edges, x => x.RelationType == "inspected-as");
+        Assert.Equal("OP-TRACE-WO-10", inspectionEdge.FromNodeId);
+        Assert.Equal("DEF-TRACE-WO", inspectionEdge.ToNodeId);
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-WO-B" && x.ToNodeId == "user-emp-010" && x.RelationType == "reported-by");
     }
 
     // 验收 2（#1948）：投入批次两个读面（物料批读面、批次读面的消耗侧）同样要能查到「谁在哪台设备上用掉的」。
@@ -2660,22 +2706,33 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-CONSUME-001" && x.ToNodeId == "user-emp-020" && x.RelationType == "reported-by");
     }
 
-    /// <summary>一条工单 + 一道工序 + 一条带操作人与设备快照的产出报工，供追溯读面用例复用。</summary>
-    private static void SeedTraceabilityExecution(
+    private static void SeedTraceabilityWorkOrder(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string workOrderId,
+        DateTimeOffset reportedAtUtc) =>
+        dbContext.WorkOrders.Add(WorkOrder.Create(organizationId, "env-dev", workOrderId, "FG-FSA", "PV-FSA-1", 10m, 20, reportedAtUtc.AddHours(8)));
+
+    /// <summary>一道工序 + 一条带操作人与设备快照的产出报工，供追溯读面用例复用。</summary>
+    private static void SeedTraceabilityOperationReport(
         ApplicationDbContext dbContext,
         string organizationId,
         string workOrderId,
         string operationTaskId,
-        DateTimeOffset reportedAtUtc)
+        string reportNo,
+        DateTimeOffset reportedAtUtc,
+        string reportedBy,
+        string deviceAssetId,
+        int operationSequence = 10,
+        string? serialNo = null)
     {
-        dbContext.WorkOrders.Add(WorkOrder.Create(organizationId, "env-dev", workOrderId, "FG-FSA", "PV-FSA-1", 10m, 20, reportedAtUtc.AddHours(8)));
         dbContext.OperationTasks.Add(OperationTask.Create(
             organizationId,
             "env-dev",
             workOrderId,
             operationTaskId,
             OperationTaskLifecycleStatus.InProgress,
-            10,
+            operationSequence,
             "WC-FILL",
             [],
             reportedAtUtc,
@@ -2685,17 +2742,17 @@ public sealed class MesPersistenceContractTests
         dbContext.ProductionReports.Add(ProductionReport.Record(
             organizationId,
             "env-dev",
-            "PRPT-TRACE-001",
+            reportNo,
             workOrderId,
             operationTaskId,
             9m,
             1m,
             true,
             reportedAtUtc,
-            producedLotNo: "LOT-TRACE-001",
-            serialNo: "SN-TRACE-001",
-            oeeProjection: new ProductionReportOeeProjection("WC-FILL", "DEV-CNC-01", "PCS", null),
-            reportedBy: "user-emp-010"));
+            producedLotNo: $"LOT-{reportNo}",
+            serialNo: serialNo,
+            oeeProjection: new ProductionReportOeeProjection("WC-FILL", deviceAssetId, "PCS", null),
+            reportedBy: reportedBy));
     }
 
     [Fact]
