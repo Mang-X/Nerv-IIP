@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import {
   makeIdempotencyKey,
   useMesDowntimeEvents,
@@ -59,6 +59,7 @@ const {
   downtimeEventsPending,
   downtimeEventsTotal,
   downtimeReasonOptions,
+  downtimeReasonSummary,
   downtimeReasonsError,
   downtimeReasonsPending,
   downtimeWriteCoversWorkOrder,
@@ -84,9 +85,10 @@ const {
 const { keyword } = useMesKeywordFilter(filters)
 const { statusLabel } = useMesReferenceLabels()
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.status, () => filters.keyword],
+  resetOn: [() => filters.status, () => filters.keyword, () => filters.reasonCode],
 })
 const statusFilter = shallowRef('all')
+const reasonFilter = shallowRef('all')
 const route = useRoute()
 
 const openCount = computed(
@@ -104,15 +106,52 @@ const downtimeSegments = computed(() =>
     },
   ]),
 )
+// 停机时长按原因分类汇总：读面随列表一起返回，不受原因筛选影响，所以选中一个原因后仍能换到别的原因。
+const downtimeMinutesByReason = computed(() =>
+  downtimeReasonSummary.value.map((row) => ({
+    reasonCode: row.reasonCode ?? '',
+    hours: Number((((row.durationMinutes ?? 0) / 60) as number).toFixed(1)),
+    openCount: row.openCount ?? 0,
+  })),
+)
+const downtimeHoursTotal = computed(() =>
+  Number(downtimeMinutesByReason.value.reduce((sum, row) => sum + row.hours, 0).toFixed(1)),
+)
+// 分段之和必须恒等于卡片主数值，所以主数值直接由分段求和，不另行取整（见 metricSegments 的语义前提）。
+const downtimeHoursSegments = computed<NvMetricSegment[]>(() =>
+  downtimeMinutesByReason.value.map((row) => ({
+    key: row.reasonCode,
+    label: reasonLabel(row.reasonCode),
+    value: row.hours,
+    tone: row.openCount > 0 ? 'danger' : 'brand',
+  })),
+)
+const reasonFilterOptions = computed(() => [
+  { value: 'all', label: '全部原因' },
+  ...downtimeMinutesByReason.value.map((row) => ({
+    value: row.reasonCode,
+    label: reasonLabel(row.reasonCode),
+  })),
+])
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
+})
+watch(reasonFilter, (value) => {
+  filters.reasonCode = value === 'all' ? undefined : value
 })
 
 // 停机读面只回设备编码，中文设备名在设备台账里，按编码 join 出来。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 
 type DowntimeRow = (typeof downtimeEvents)['value'][number]
+
+/** 原因码是 Maintenance 停机原因字典的码；字典读不到（无维修读权限等）就只显示码，不编名字。 */
+function reasonLabel(reasonCode?: string | null) {
+  const code = reasonCode?.trim()
+  if (!code) return '未指定'
+  return downtimeReasonOptions.value.find((option) => option.value === code)?.label ?? code
+}
 
 function deviceCode(row: DowntimeRow) {
   return row.deviceAssetCode ?? row.deviceAssetId ?? ''
@@ -149,6 +188,11 @@ const columns: NvDataTableColumn<DowntimeRow>[] = [
     key: 'deviceAssetId',
     header: '设备',
     accessor: (r) => deviceText(r),
+  },
+  {
+    key: 'reasonCode',
+    header: '停机原因',
+    accessor: (r) => reasonLabel(r.reasonCode),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
@@ -467,7 +511,7 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <div class="grid gap-4 sm:grid-cols-2">
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <NvMetricCard
         variant="breakdown"
         label="停机事件"
@@ -490,6 +534,14 @@ function formatError(error: unknown) {
           openCount > 0 ? '优先处理仍在影响工序执行的停机事件。' : '当前没有未恢复的停机事件。'
         "
       />
+      <NvMetricCard
+        variant="breakdown"
+        label="停机时长按原因"
+        :value="downtimeHoursTotal"
+        unit="小时"
+        :segments="downtimeHoursSegments"
+        foot-start="未恢复的停机按当前时刻仍在累计。"
+      />
     </div>
 
     <NvToolbar :show-search="false">
@@ -507,6 +559,19 @@ function formatError(error: unknown) {
           <NvSelectContent>
             <NvSelectItem
               v-for="option in mesDowntimeStatusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
+        <NvSelect v-model="reasonFilter">
+          <NvSelectTrigger class="h-9 w-44" aria-label="按停机原因筛选"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in reasonFilterOptions"
               :key="option.value"
               :value="option.value"
               >{{ option.label }}</NvSelectItem

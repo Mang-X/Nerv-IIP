@@ -262,7 +262,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesDowntimeEventListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
@@ -982,12 +982,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesDowntimeEventListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesDowntimeEventListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/downtime-events?" + ListQuery(request),
+            "/api/business/v1/mes/downtime-events?" + DowntimeEventListQuery(request),
             null,
             cancellationToken);
 
@@ -1211,6 +1211,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("workOrderId", request.WorkOrderId),
             ("skip", request.Skip),
             ("take", request.Take));
+
+    private static string DowntimeEventListQuery(BusinessConsoleMesDowntimeEventListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("workOrderId", request.WorkOrderId),
+            ("skip", request.Skip),
+            ("take", request.Take),
+            ("reasonCode", request.ReasonCode));
 
     private static string MaterialIssueRequestListQuery(BusinessConsoleMesMaterialIssueRequestListRequest request) =>
         Query(

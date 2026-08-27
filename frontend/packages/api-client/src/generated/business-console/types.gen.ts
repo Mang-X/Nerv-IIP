@@ -4688,6 +4688,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEvent
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow>;
     total?: number;
+    reasonSummary?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
@@ -4704,6 +4705,17 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
     workCenterId?: string | null;
     reasonCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow = {
+    reasonCode?: string;
+    eventCount?: number;
+    openCount?: number;
+    durationMinutes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {
@@ -16070,6 +16082,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         workOrderId?: string | null;
         skip?: number;
         take?: number;
+        reasonCode?: string | null;
     };
     url: '/api/business-console/v1/mes/downtime-events';
 };

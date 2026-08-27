@@ -39,7 +39,15 @@ const refreshDowntimeEvents = vi.fn().mockResolvedValue(undefined)
 const refreshOperationTasks = vi.fn().mockResolvedValue(undefined)
 const refreshDowntimeWriteScope = vi.fn().mockResolvedValue(undefined)
 const { notifySuccess, notifyOperationFailure } = notifyMocks
-const filters = reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 10 })
+const filters = reactive<{
+  organizationId: string
+  environmentId: string
+  skip: number
+  take: number
+  status?: string
+  keyword?: string
+  reasonCode?: string
+}>({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 10 })
 const writeScope = ref({ kind: 'work-center', id: 'WC-01', displayName: '装配一线' })
 const operationTaskFixture = {
   operationTaskId: 'OP-001',
@@ -73,6 +81,10 @@ vi.mock('@/composables/useBusinessMes', () => ({
     downtimeEventsTotal: computed(() => 2),
     downtimeReasonOptions: computed(() => [
       { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
+    ]),
+    downtimeReasonSummary: computed(() => [
+      { reasonCode: 'equipment-fault', eventCount: 2, openCount: 1, durationMinutes: 90 },
+      { reasonCode: 'material-shortage', eventCount: 1, openCount: 0, durationMinutes: 30 },
     ]),
     downtimeReasonsError: ref(undefined),
     downtimeReasonsPending: ref(false),
@@ -173,13 +185,33 @@ const stubs = {
   NvDialogFooter: { template: '<div><slot /></div>' },
 }
 
-function mountPage() {
-  return mount(DowntimePage, { global: { stubs } })
+function mountPage(stubOverrides: Record<string, unknown> = {}) {
+  return mount(DowntimePage, { global: { stubs: { ...stubs, ...stubOverrides } } })
+}
+
+/** 逐列渲染的表格桩：默认桩只出「操作」列，读面列断言必须自己把 accessor 跑一遍。 */
+const cellRenderingTable = {
+  props: ['rows', 'columns'],
+  template:
+    '<section><div v-for="(row, index) in rows" :key="index" data-row>' +
+    '<span v-for="column in columns" :key="column.key" :data-cell="column.key">' +
+    '{{ column.accessor ? column.accessor(row) : row[column.key] }}</span>' +
+    '</div></section>',
+}
+
+/** 渲染分段的指标卡桩：默认桩是空 div，汇总断言看不到任何东西。 */
+const segmentRenderingMetricCard = {
+  props: ['label', 'value', 'unit', 'segments'],
+  template:
+    '<div :data-metric="label">{{ value }}{{ unit }}' +
+    '<span v-for="segment in segments ?? []" :key="segment.key" :data-segment="segment.key">' +
+    '{{ segment.label }}={{ segment.value }}</span></div>',
 }
 
 beforeEach(() => {
   filters.organizationId = 'org'
   filters.environmentId = 'dev'
+  filters.reasonCode = undefined
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
   permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
@@ -351,5 +383,47 @@ describe('MES downtime recovery entry', () => {
     expect(body.recoveredAtUtc).toBeTruthy()
     // #1219：幂等键对同一停机事件稳定（不含时间戳），二次点击不产生新键。
     expect(body.idempotencyKey).toBe('downtime-recover-DT-0001')
+  })
+})
+
+// #1947：停机读面必须能看见原因、按原因筛选、按原因看时长构成。
+describe('MES downtime reason read face', () => {
+  it('renders the reason column through the maintenance directory label', () => {
+    const wrapper = mountPage({ NvDataTable: cellRenderingTable })
+
+    const cells = wrapper.findAll('[data-cell="reasonCode"]')
+    expect(cells).toHaveLength(2)
+    expect(cells[0]!.text()).toBe('设备故障（equipment-fault）')
+  })
+
+  it('offers every summarised reason as a filter and pushes the selection into the list query', async () => {
+    const wrapper = mountPage()
+
+    // 弹窗里的「停机原因」下拉与工具栏筛选同名，这里按选项内容锁定工具栏那一个。
+    const select = wrapper.findAll('select').find((item) => item.text().includes('全部原因'))
+    expect(select).toBeDefined()
+    // 选项来自后端汇总（字典查不到的原因码原样列出），不因维修字典读不到而缺项。
+    expect(select!.findAll('option').map((option) => option.text())).toEqual([
+      '全部原因',
+      '设备故障（equipment-fault）',
+      'material-shortage',
+    ])
+
+    await select!.setValue('material-shortage')
+    expect(filters.reasonCode).toBe('material-shortage')
+
+    await select!.setValue('all')
+    expect(filters.reasonCode).toBeUndefined()
+  })
+
+  it('breaks total downtime hours down by reason', () => {
+    const wrapper = mountPage({ NvMetricCard: segmentRenderingMetricCard })
+
+    const card = wrapper.get('[data-metric="停机时长按原因"]')
+    expect(card.text()).toContain('2小时')
+    expect(card.findAll('[data-segment]').map((segment) => segment.text())).toEqual([
+      '设备故障（equipment-fault）=1.5',
+      'material-shortage=0.5',
+    ])
   })
 })

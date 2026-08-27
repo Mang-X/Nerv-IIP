@@ -1948,16 +1948,16 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesDowntimeEventListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesDowntimeEventListRequest, BusinessConsoleMesDowntimeEventListResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesDowntimeEventListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesDowntimeEventListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesDowntimeEventListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);

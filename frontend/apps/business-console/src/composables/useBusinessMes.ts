@@ -76,6 +76,7 @@ import {
   type BusinessConsoleMesDispatchTaskRow,
   type BusinessConsoleMesDowntimeEventListEnvelope,
   type BusinessConsoleMesDowntimeEventRow,
+  type BusinessConsoleMesDowntimeReasonSummaryRow,
   type BusinessConsoleMesFoundationReadinessEnvelope,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
@@ -223,6 +224,8 @@ export interface MesListFilters {
   assignedUserId?: string
   source?: string
   readinessStatus?: string
+  /** 停机原因码过滤（停机读面按原因筛选用）。 */
+  reasonCode?: string
   skip: number
   take: number
 }
@@ -2972,7 +2975,7 @@ export function useMesDowntimeEvents() {
   const downtimeQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesDowntimeEventsQueryOptions({
-        query: toListQuery(filters),
+        query: { ...toListQuery(filters), ...optionalQuery('reasonCode', filters.reasonCode) },
       }),
       filters,
     ),
@@ -2988,7 +2991,7 @@ export function useMesDowntimeEvents() {
         rankingMode: 'default',
       },
     }),
-    enabled: hasBusinessContext(filters) && downtimeWriteScope.scopeReady.value,
+    enabled: hasBusinessContext(filters),
   }))
   const recordMutation = useMutation({
     ...recordBusinessConsoleMesDowntimeEventV2MutationOptions(),
@@ -3018,6 +3021,12 @@ export function useMesDowntimeEvents() {
     downtimeEventsPending: downtimeQuery.isLoading,
     downtimeEventsState: businessReadState(downtimeQuery, () => hasBusinessContext(filters)),
     downtimeEventsTotal: computed(() => envelopeTotal(downtimeQuery.data.value)),
+    // 汇总由读面随列表一起返回，且不受 reasonCode 过滤影响，所以选中某个原因后仍能看到全部原因。
+    downtimeReasonSummary: computed<BusinessConsoleMesDowntimeReasonSummaryRow[]>(() => {
+      const envelope = downtimeQuery.data.value
+      if (envelope?.success !== true) return []
+      return envelope.data?.reasonSummary ?? []
+    }),
     downtimeReasonOptions: computed(() => {
       const envelope = downtimeReasonsQuery.data.value
       if (envelope?.success !== true || envelope.data?.status === 'unavailable') return []

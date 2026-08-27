@@ -430,7 +430,8 @@ public sealed record ListDowntimeEventsRequest(
     int Take = 100,
     string? Keyword = null,
     string? ShiftId = null,
-    string? Status = null);
+    string? Status = null,
+    string? ReasonCode = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -1537,7 +1538,8 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Take,
             req.Keyword,
             req.ShiftId,
-            req.Status), ct);
+            req.Status,
+            req.ReasonCode), ct);
         await Send.OkAsync(response, ct);
     }
 }
