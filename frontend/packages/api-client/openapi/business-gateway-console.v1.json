@@ -18598,6 +18598,14 @@
             }
           },
           {
+            "name": "reasonCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -47702,6 +47710,12 @@
           "total": {
             "type": "integer",
             "format": "int32"
+          },
+          "reasonSummary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow"
+            }
           }
         }
       },
@@ -47790,8 +47804,37 @@
           "reasonCode": {
             "type": "string",
             "nullable": true
+          },
+          "reasonName": {
+            "type": "string",
+            "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reasonCode": {
+            "type": "string"
+          },
+          "openCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "durationMinutes": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reasonName": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest": {
         "type": "object",

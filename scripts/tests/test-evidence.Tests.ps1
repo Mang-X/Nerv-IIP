@@ -1283,7 +1283,10 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 25 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its twenty-five governed PostgreSQL identities.'
+Assert-Equal 28 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its twenty-eight governed PostgreSQL identities.'
+$mesDowntimeReadFaceIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code'
+Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesDowntimeReadFaceIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime read-face summary identity exactly once.'
+Assert-True ($mesDowntimeReadFaceIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime read-face identity.'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesMaterialSubstituteIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the material-substitute snapshot identity exactly once.'
 Assert-True ($mesMaterialSubstituteIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the material-substitute snapshot identity.'
 $mesCapPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-cap-postgres', [StringComparison]::Ordinal) })

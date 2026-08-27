@@ -1329,6 +1329,62 @@ describe('business MES composables', () => {
     })
   })
 
+  // #1947：停机读面要按原因显示、筛选与汇总。
+  it('forwards the selected downtime reason into the list query and leaves it out when unset', () => {
+    const downtime = useMesDowntimeEvents()
+    const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+    expect(listOptions.mock.calls.at(-1)![0]!.query).not.toHaveProperty('reasonCode')
+
+    downtime.filters.reasonCode = 'DT-MECH'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+    expect(listOptions.mock.calls.at(-1)![0]!.query).toMatchObject({
+      reasonCode: 'DT-MECH',
+    })
+  })
+
+  it('exposes the reason summary facet carried by the downtime list envelope', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesDowntimeEvents', {
+      success: true,
+      data: {
+        items: [],
+        total: 3,
+        reasonSummary: [
+          {
+            reasonCode: 'DT-MECH',
+            reasonName: '机械故障（轴承/传动/密封）',
+            openCount: 1,
+            durationMinutes: 90,
+          },
+        ],
+      },
+    })
+
+    expect(useMesDowntimeEvents().downtimeReasonSummary.value).toEqual([
+      {
+        reasonCode: 'DT-MECH',
+        reasonName: '机械故障（轴承/传动/密封）',
+        openCount: 1,
+        durationMinutes: 90,
+      },
+    ])
+  })
+
+  // 原因中文名是读面要素：没有停机登记范围（只读用户）也必须能取到字典。
+  it('reads the downtime-reason directory without waiting for a write scope', () => {
+    coladaState.queryDataById.delete(
+      'getBusinessConsolePrincipalWorkContext:business.mes.downtime.manage',
+    )
+
+    const downtime = useMesDowntimeEvents()
+    expect(downtime.downtimeWriteScopeReady.value).toBe(false)
+
+    const directoryFactory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleSearchableDirectory',
+    )!
+    expect(directoryFactory().enabled).toBe(true)
+  })
+
   it('uses the searchable-directory 1-based page and server page-size bound for downtime reasons', () => {
     useMesDowntimeEvents()
 
@@ -1363,8 +1419,9 @@ describe('business MES composables', () => {
 
     const downtime = useMesDowntimeEvents()
 
+    // label 是登记弹窗既有的「名称（码）」口径；name 是只读面用的纯名称。
     expect(downtime.downtimeReasonOptions.value).toEqual([
-      { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
+      { value: 'equipment-fault', label: '设备故障（equipment-fault）', name: '设备故障' },
     ])
     expect(downtime.downtimeReasonsError.value).toBeUndefined()
   })
