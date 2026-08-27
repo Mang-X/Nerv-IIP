@@ -84,8 +84,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     downtimeEventsPending: ref(false),
     downtimeEventsTotal: computed(() => 2),
     downtimeReasonOptions: computed(() => [
-      { value: 'DT-MECH', label: '机械故障（轴承/传动/密封）（DT-MECH）' },
-      { value: 'DT-PM', label: '计划保养（DT-PM）' },
+      {
+        value: 'DT-MECH',
+        label: '机械故障（轴承/传动/密封）（DT-MECH）',
+        name: '机械故障（轴承/传动/密封）',
+      },
+      { value: 'DT-PM', label: '计划保养（DT-PM）', name: '计划保养' },
     ]),
     downtimeReasonSummary: computed(() => [
       {
@@ -415,10 +419,11 @@ describe('MES downtime reason read face', () => {
     expect(select).toBeDefined()
     // 选项取自权威字典而不是本次汇总：汇总只含「当前筛选下出现过的原因」，
     // 用它当选项会让选中的原因在切筛选后从下拉里消失，过滤却还生效。
+    // 只读面一律显示纯名称：不把原因码打在界面上，也与列/分段卡的文字一致。
     expect(select!.findAll('option').map((option) => option.text())).toEqual([
       '全部原因',
-      '机械故障（轴承/传动/密封）（DT-MECH）',
-      '计划保养（DT-PM）',
+      '机械故障（轴承/传动/密封）',
+      '计划保养',
     ])
 
     await select!.setValue('DT-PM')

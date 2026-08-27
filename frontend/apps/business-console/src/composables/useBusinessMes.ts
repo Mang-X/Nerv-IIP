@@ -3027,6 +3027,9 @@ export function useMesDowntimeEvents() {
       if (envelope?.success !== true) return []
       return envelope.data?.reasonSummary ?? []
     }),
+    // `label` 是登记弹窗既有的「名称（码）」口径；`name` 是同一条目的纯名称，供只读面用
+    // （读面不把工程码打在界面上，见 business-console AGENTS「UI 不暴露工程语言」）。
+    // 没有名称时两者都回落成码——那是「字典没给名字」的实情，不编名字。
     downtimeReasonOptions: computed(() => {
       const envelope = downtimeReasonsQuery.data.value
       if (envelope?.success !== true || envelope.data?.status === 'unavailable') return []
@@ -3035,9 +3038,11 @@ export function useMesDowntimeEvents() {
           const value = item.code?.trim()
           if (!value) return undefined
           const name = item.displayName?.trim()
-          return { value, label: name ? `${name}（${value}）` : value }
+          return { value, label: name ? `${name}（${value}）` : value, name: name || value }
         })
-        .filter((item): item is { value: string; label: string } => item !== undefined)
+        .filter(
+          (item): item is { value: string; label: string; name: string } => item !== undefined,
+        )
     }),
     downtimeReasonsError: downtimeReasonsQuery.error,
     downtimeReasonsPending: downtimeReasonsQuery.isLoading,

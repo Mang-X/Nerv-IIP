@@ -2999,6 +2999,9 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("DT-MECH", mes.LastDowntimeEventListRequest!.ReasonCode);
+        // 跨域取名必须按当前请求的租户/环境查目录：串了范围就会拿别的组织的词表解名。
+        Assert.Equal("org-001", maintenance.LastDowntimeReasonDirectoryRequest!.OrganizationId);
+        Assert.Equal("env-dev", maintenance.LastDowntimeReasonDirectoryRequest!.EnvironmentId);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         var items = data.GetProperty("items");
@@ -3009,6 +3012,64 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("机械故障（轴承/传动/密封）", summary[0].GetProperty("reasonName").GetString());
         Assert.Null(summary[1].GetProperty("reasonName").GetString());
     }
+
+    // 取名是增补而不是事实来源：Maintenance 不可用时停机数据本身完好，整页 502 等于拿一个
+    // 可降级的依赖否决一个能正常回答的读面。降级口径与「目录里没有这个码」一致（照实回原值）。
+    [Theory]
+    [MemberData(nameof(UnavailableDowntimeReasonDirectoryFailures))]
+    public async Task Mes_downtime_list_degrades_to_unresolved_reason_names_when_the_maintenance_directory_is_unavailable(
+        Exception failure)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var mes = new RecordingMesClient
+        {
+            DowntimeEventListResponse = new(
+                [
+                    new BusinessConsoleMesDowntimeEventRow(
+                        "DT-0001", null, null, "EQ-001", "Open",
+                        DateTimeOffset.Parse("2026-07-30T08:00:00Z"), null,
+                        WorkCenterId: "WC-01", ReasonCode: "DT-MECH"),
+                ],
+                1,
+                [new BusinessConsoleMesDowntimeReasonSummaryRow("DT-MECH", 1, 90m)]),
+        };
+        var maintenance = new RecordingMaintenanceFacadeClient { DowntimeReasonDirectoryFailure = failure };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        var item = data.GetProperty("items")[0];
+        // 停机事实一条不少，原因码原值仍在，只是解不出中文名。
+        Assert.Equal("DT-0001", item.GetProperty("downtimeEventId").GetString());
+        Assert.Equal("DT-MECH", item.GetProperty("reasonCode").GetString());
+        Assert.Null(item.GetProperty("reasonName").GetString());
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        var summary = data.GetProperty("reasonSummary")[0];
+        Assert.Equal("DT-MECH", summary.GetProperty("reasonCode").GetString());
+        Assert.Null(summary.GetProperty("reasonName").GetString());
+    }
+
+    /// <summary>与 canonical <c>MaintenanceDeviceAssetWarrantyEnricher</c> 判定可达的失败集合同口径。</summary>
+    public static TheoryData<Exception> UnavailableDowntimeReasonDirectoryFailures() =>
+    [
+        BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "downstream-unavailable"),
+        BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "downstream-missing"),
+        BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.RequestTimeout, "downstream-timeout"),
+        new HttpRequestException("maintenance unreachable"),
+        new TaskCanceledException("maintenance timed out"),
+    ];
 
     [Fact]
     public async Task Mes_downtime_v1_route_is_preserved_but_fails_closed_without_real_work_center_context()

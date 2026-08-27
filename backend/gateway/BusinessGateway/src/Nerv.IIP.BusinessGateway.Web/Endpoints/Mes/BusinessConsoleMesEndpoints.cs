@@ -1981,7 +1981,10 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
 /// </summary>
 internal static class MesDowntimeReasonNameEnricher
 {
-    /// <summary>停机原因目录是受控词表（当前世界史种子 5 条），一页取回即可覆盖；取满则说明目录已越界，交由调用方按缺名处理。</summary>
+    /// <summary>
+    /// 停机原因目录是受控词表（当前世界史种子 5 条），一页取回即可覆盖。目录真超过这一页时本方法
+    /// **静默截断**：多出来的码解不出名字，与「目录里没有这个码」落在同一条降级路径上。
+    /// </summary>
     private const int CatalogPageSize = 200;
 
     public static async Task<BusinessConsoleMesDowntimeEventListResponse> EnrichAsync(
@@ -1992,13 +1995,8 @@ internal static class MesDowntimeReasonNameEnricher
         string environmentId,
         CancellationToken cancellationToken)
     {
-        var catalog = await maintenance.ListDowntimeReasonsAsync(
-            internalBearerToken,
-            new BusinessConsoleMaintenanceReasonDirectoryRequest(organizationId, environmentId, Take: CatalogPageSize),
-            cancellationToken);
-        var names = catalog.Items
-            .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
-            .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
+        var names = await LoadReasonNamesAsync(
+            maintenance, internalBearerToken, organizationId, environmentId, cancellationToken);
 
         string? Resolve(string? reasonCode) =>
             reasonCode is not null && names.TryGetValue(reasonCode, out var name) ? name : null;
@@ -2009,6 +2007,48 @@ internal static class MesDowntimeReasonNameEnricher
             ReasonSummary = [.. response.ReasonSummary.Select(row => row with { ReasonName = Resolve(row.ReasonCode) })],
         };
     }
+
+    /// <summary>
+    /// 取名是**增补**，不是停机读面的事实来源：Maintenance 不可用时停机数据本身完好、原因码原值也在，
+    /// 整页 502 是拿一个可降级的依赖去否决一个能正常回答的读面。因此按
+    /// <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 已判定可达的同一组失败降级为「解不出名字」，
+    /// 与「目录里没有这个码」走同一条路径（页面照实显示原值），不新增前端分支。
+    /// 调用方自己取消不在此列：那不是下游故障，必须原样抛回。
+    /// </summary>
+    private static async Task<Dictionary<string, string>> LoadReasonNamesAsync(
+        IBusinessMaintenanceClient maintenance,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var catalog = await maintenance.ListDowntimeReasonsAsync(
+                internalBearerToken,
+                new BusinessConsoleMaintenanceReasonDirectoryRequest(organizationId, environmentId, Take: CatalogPageSize),
+                cancellationToken);
+            return catalog.Items
+                .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
+                .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
+        }
+        catch (BusinessServiceProxyException exception) when (IsUnavailableReasonDirectory(exception.StatusCode))
+        {
+            return [];
+        }
+        catch (HttpRequestException)
+        {
+            return [];
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return [];
+        }
+    }
+
+    private static bool IsUnavailableReasonDirectory(System.Net.HttpStatusCode statusCode) =>
+        statusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.RequestTimeout
+        || (int)statusCode >= 500;
 }
 
 [Tags("Business Console MES")]

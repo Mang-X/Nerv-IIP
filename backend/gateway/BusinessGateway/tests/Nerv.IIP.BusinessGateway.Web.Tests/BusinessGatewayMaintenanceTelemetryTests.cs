@@ -3086,6 +3086,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public BusinessConsoleMaintenanceReasonDirectoryRequest? LastDowntimeReasonDirectoryRequest { get; private set; }
 
+    /// <summary>设置后目录调用改为抛出该异常，用来覆盖 Maintenance 不可用时读面的降级路径。</summary>
+    public Exception? DowntimeReasonDirectoryFailure { get; init; }
+
     public Task<BusinessConsoleMaintenanceReasonDirectoryResponse> ListDowntimeReasonsAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceReasonDirectoryRequest request,
@@ -3093,6 +3096,11 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     {
         LastInternalToken = internalBearerToken;
         LastDowntimeReasonDirectoryRequest = request;
+        if (DowntimeReasonDirectoryFailure is not null)
+        {
+            return Task.FromException<BusinessConsoleMaintenanceReasonDirectoryResponse>(DowntimeReasonDirectoryFailure);
+        }
+
         return Task.FromResult(new BusinessConsoleMaintenanceReasonDirectoryResponse(
             DowntimeReasonDirectory,
             request.Skip,

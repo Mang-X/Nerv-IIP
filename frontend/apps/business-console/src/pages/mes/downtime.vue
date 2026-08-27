@@ -121,9 +121,10 @@ const downtimeHoursTotal = computed(() =>
 )
 // 筛选项取自权威停机原因字典而不是本次汇总：汇总只含「当前筛选下真出现过的原因」，
 // 一旦切状态把选中的原因筛没了，下拉会空白但过滤仍然生效，用户看不到也取消不掉。
+// 只取纯名称：读面（列、分段卡、筛选）同一个原因必须显示同一串文字，且不把原因码打在界面上。
 const reasonFilterOptions = computed(() => [
   { value: 'all', label: '全部原因' },
-  ...downtimeReasonOptions.value,
+  ...downtimeReasonOptions.value.map((option) => ({ value: option.value, label: option.name })),
 ])
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
 watch(statusFilter, (value) => {

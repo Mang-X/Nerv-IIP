@@ -1419,8 +1419,9 @@ describe('business MES composables', () => {
 
     const downtime = useMesDowntimeEvents()
 
+    // label 是登记弹窗既有的「名称（码）」口径；name 是只读面用的纯名称。
     expect(downtime.downtimeReasonOptions.value).toEqual([
-      { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
+      { value: 'equipment-fault', label: '设备故障（equipment-fault）', name: '设备故障' },
     ])
     expect(downtime.downtimeReasonsError.value).toBeUndefined()
   })
