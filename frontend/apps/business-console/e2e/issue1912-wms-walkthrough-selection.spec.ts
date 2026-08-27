@@ -22,7 +22,10 @@ function inboundProof(expectedQuery = NERV_1571_WMS_INBOUND_QUERY_FACTS) {
 
 test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)', () => {
   test.beforeEach(() => {
-    test.skip(test.info().project.name !== 'desktop', 'WMS selection probe 仅在 desktop project 运行')
+    test.skip(
+      test.info().project.name !== 'desktop',
+      'WMS selection probe 仅在 desktop project 运行',
+    )
   })
 
   test('入库必须显式选择范围和已加载工厂，公开请求带有所选 siteCode', async ({ page }) => {

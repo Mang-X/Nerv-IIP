@@ -31,7 +31,10 @@ const mountedPageSession = {
 
 test.describe('NERV-1571 / #1912 WMS lifecycle facts', () => {
   test.beforeEach(() => {
-    test.skip(test.info().project.name !== 'desktop', 'WMS lifecycle probe 仅在 desktop project 运行')
+    test.skip(
+      test.info().project.name !== 'desktop',
+      'WMS lifecycle probe 仅在 desktop project 运行',
+    )
   })
 
   test('页面挂载期间的完整 WMS auxiliary 读面不冒充目标列表', async ({ page }) => {
@@ -222,13 +225,14 @@ test.describe('NERV-1571 / #1912 WMS lifecycle facts', () => {
         { method: 'GET', path: '/api/business-console/v1/wms/supplier-return-requests' },
       ]),
     )
-    expect(requests.filter((request) => request.path.startsWith('/api/business-console/v1/wms/')))
-      .toEqual(
-        expect.not.arrayContaining([
-          { method: 'GET', path: '/api/business-console/v1/wms/inbound-orders/extra' },
-          { method: 'GET', path: '/api/business-console/v1/wms/unknown' },
-        ]),
-      )
+    expect(
+      requests.filter((request) => request.path.startsWith('/api/business-console/v1/wms/')),
+    ).toEqual(
+      expect.not.arrayContaining([
+        { method: 'GET', path: '/api/business-console/v1/wms/inbound-orders/extra' },
+        { method: 'GET', path: '/api/business-console/v1/wms/unknown' },
+      ]),
+    )
   })
 
   test('首个 WMS 列表响应为 503 或错误路径时，不接受后续 200 自洽通过', async ({ page }) => {
