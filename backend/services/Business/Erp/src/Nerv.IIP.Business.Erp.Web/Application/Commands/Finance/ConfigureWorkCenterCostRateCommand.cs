@@ -45,14 +45,15 @@ public sealed class ConfigureWorkCenterCostRateCommandHandler(
 {
     public async Task<WorkCenterCostRateId> Handle(ConfigureWorkCenterCostRateCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await revisions.AllocateAsync(WorkCenterRateKind.Labor,
-            request.OrganizationId, request.EnvironmentId, request.WorkCenterId, null,
-            request.CurrencyCode, cancellationToken);
+        var allocation = await revisions.AllocateLaborAsync(
+            WorkCenterRateScope.From(request.OrganizationId, request.EnvironmentId, request.WorkCenterId),
+            WorkCenterRateCurrency.From(request.CurrencyCode),
+            cancellationToken);
 
         var rate = WorkCenterCostRate.Define(
-            allocation.OrganizationId, allocation.EnvironmentId, allocation.WorkCenterId,
+            allocation.Scope.OrganizationId, allocation.Scope.EnvironmentId, allocation.Scope.WorkCenterId,
             request.HourlyRate,
-            allocation.CurrencyCode,
+            allocation.Currency.Value,
             request.EffectiveFromUtc,
             request.EffectiveToUtc,
             allocation.Revision,

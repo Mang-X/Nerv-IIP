@@ -147,6 +147,21 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
+    public async Task Configure_rejects_currency_changes_against_an_unsaved_local_labor_revision()
+    {
+        await using var db = CreateDb();
+        var handler = Handler(db);
+        await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            Command("org-a", "env-a", 45m) with { CurrencyCode = "USD" },
+            CancellationToken.None));
+
+        Assert.Contains("币种已固定", exception.Message, StringComparison.Ordinal);
+        Assert.Single(db.WorkCenterCostRates.Local);
+    }
+
+    [Fact]
     public async Task Advisory_lock_key_is_stable_for_normalized_scope_and_distinct_across_scope_axes()
     {
         await using var db = CreateDb();

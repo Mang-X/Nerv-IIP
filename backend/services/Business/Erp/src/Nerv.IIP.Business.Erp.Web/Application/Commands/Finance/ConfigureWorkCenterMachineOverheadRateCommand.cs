@@ -64,25 +64,30 @@ public sealed class ConfigureWorkCenterMachineOverheadRateCommandHandler(
         ConfigureWorkCenterMachineOverheadRateCommand request,
         CancellationToken cancellationToken)
     {
-        var allocation = await revisions.AllocateAsync(WorkCenterRateKind.MachineOverhead,
-            request.OrganizationId, request.EnvironmentId, request.WorkCenterId,
-            request.AccountingPeriodCode, request.CurrencyCode, cancellationToken);
-        var periodExists = await accountingPeriods.ExistsAsync(allocation.OrganizationId, allocation.EnvironmentId,
-            allocation.AccountingPeriodCode!, cancellationToken);
+        var allocation = await revisions.AllocateMachineAsync(
+            WorkCenterRateScope.From(request.OrganizationId, request.EnvironmentId, request.WorkCenterId),
+            WorkCenterRateAccountingPeriod.From(request.AccountingPeriodCode),
+            WorkCenterRateCurrency.From(request.CurrencyCode),
+            cancellationToken);
+        var periodExists = await accountingPeriods.ExistsAsync(
+            allocation.Scope.OrganizationId,
+            allocation.Scope.EnvironmentId,
+            allocation.AccountingPeriod.Value,
+            cancellationToken);
         if (!periodExists)
         {
             throw new KnownException(
-                $"未找到会计期间『{allocation.OrganizationId}·{allocation.EnvironmentId}·{allocation.AccountingPeriodCode}』。");
+                $"未找到会计期间『{allocation.Scope.OrganizationId}·{allocation.Scope.EnvironmentId}·{allocation.AccountingPeriod.Value}』。");
         }
 
         var rate = request.Applicability switch
         {
             MachineOverheadApplicability.Applicable => WorkCenterMachineOverheadRate.DefineApplicable(
-                allocation.OrganizationId, allocation.EnvironmentId, allocation.WorkCenterId, allocation.AccountingPeriodCode!,
+                allocation.Scope.OrganizationId, allocation.Scope.EnvironmentId, allocation.Scope.WorkCenterId, allocation.AccountingPeriod.Value,
                 request.FixedOverheadBudget,
                 request.VariableOverheadBudget,
                 request.NormalCapacityMachineHours,
-                allocation.CurrencyCode, allocation.Revision,
+                allocation.Currency.Value, allocation.Revision,
                 request.ChangedBy,
                 request.Reason,
                 request.ChangedAtUtc),
@@ -91,8 +96,8 @@ public sealed class ConfigureWorkCenterMachineOverheadRateCommandHandler(
                     && request.VariableOverheadBudget == 0m
                     && request.NormalCapacityMachineHours == 0m
                 => WorkCenterMachineOverheadRate.DefineNotApplicable(
-                allocation.OrganizationId, allocation.EnvironmentId, allocation.WorkCenterId, allocation.AccountingPeriodCode!,
-                allocation.CurrencyCode, allocation.Revision,
+                allocation.Scope.OrganizationId, allocation.Scope.EnvironmentId, allocation.Scope.WorkCenterId, allocation.AccountingPeriod.Value,
+                allocation.Currency.Value, allocation.Revision,
                 request.ChangedBy,
                 request.Reason,
                 request.ChangedAtUtc),

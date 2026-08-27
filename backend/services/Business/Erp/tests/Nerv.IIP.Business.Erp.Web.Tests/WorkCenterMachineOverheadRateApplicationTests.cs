@@ -18,6 +18,34 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         new(2026, 5, 25, 8, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Revision_allocator_interface_makes_labor_and_machine_period_invariants_unrepresentable()
+    {
+        var allocatorType = typeof(IWorkCenterRateRevisionAllocator);
+        var methods = allocatorType.GetMethods().OrderBy(method => method.Name).ToArray();
+
+        Assert.Equal(["AllocateLaborAsync", "AllocateMachineAsync"], methods.Select(method => method.Name).ToArray());
+        Assert.DoesNotContain(allocatorType.Assembly.GetTypes(), type => type.Name == "WorkCenterRateKind");
+
+        var labor = methods[0];
+        Assert.DoesNotContain(labor.GetParameters(), parameter => parameter.Name == "accountingPeriodCode");
+        Assert.Equal(
+            [typeof(WorkCenterRateScope), typeof(WorkCenterRateCurrency), typeof(CancellationToken)],
+            labor.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+        Assert.Equal("LaborRateRevisionAllocation", labor.ReturnType.GenericTypeArguments.Single().Name);
+
+        var machine = methods[1];
+        var period = Assert.Single(machine.GetParameters(), parameter => parameter.Name == "accountingPeriodCode");
+        Assert.Equal("WorkCenterRateAccountingPeriod", period.ParameterType.Name);
+        Assert.Equal(
+            [typeof(WorkCenterRateScope), typeof(WorkCenterRateAccountingPeriod), typeof(WorkCenterRateCurrency), typeof(CancellationToken)],
+            machine.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+        Assert.Equal("MachineRateRevisionAllocation", machine.ReturnType.GenericTypeArguments.Single().Name);
+        Assert.All(
+            new[] { typeof(WorkCenterRateScope), typeof(WorkCenterRateAccountingPeriod), typeof(WorkCenterRateCurrency) },
+            valueType => Assert.DoesNotContain(valueType.GetConstructors(), constructor => constructor.IsPublic));
+    }
+
+    [Fact]
     public async Task Configure_assigns_append_only_revisions_inside_period_scope()
     {
         await using var db = CreateDb();
@@ -116,6 +144,25 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
 
         Assert.Contains("币种已固定", exception.Message, StringComparison.Ordinal);
         Assert.Single(await db.WorkCenterMachineOverheadRates.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Configure_rejects_currency_drift_against_an_unsaved_local_machine_revision()
+    {
+        await using var db = CreateDb();
+        db.AccountingPeriods.AddRange(
+            Period("org-a", "env-a", "2026-06", 6),
+            Period("org-a", "env-a", "2026-07", 7));
+        await db.SaveChangesAsync();
+        var handler = Handler(db);
+        await handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            ApplicableCommand("2026-07", 30_000m) with { CurrencyCode = "USD" },
+            CancellationToken.None));
+
+        Assert.Contains("币种已固定", exception.Message, StringComparison.Ordinal);
+        Assert.Single(db.WorkCenterMachineOverheadRates.Local);
     }
 
     [Fact]

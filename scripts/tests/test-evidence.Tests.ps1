@@ -3061,6 +3061,30 @@ Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleane
 $governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
 Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
 $governanceDoc = Get-Content $governanceDocPath -Raw
+$backendShardManifest = Get-Content (Join-Path $repoRoot 'scripts/backend-test-shards.json') -Raw | ConvertFrom-Json
+$selectorCount = @(
+    foreach ($shard in @($backendShardManifest.fastShards)) {
+        @($shard.excludedTestClasses)
+        @($shard.excludedTests)
+    }
+).Count
+$postgresManifest = Get-Content (Join-Path $repoRoot 'scripts/postgres-test-lane.json') -Raw | ConvertFrom-Json
+$activeCoreMembers = @($postgresManifest.members | Where-Object {
+    [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and
+    [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
+})
+$activeCoreIdentityCount = @($activeCoreMembers.expectedTestIdentities).Count
+Assert-True ($governanceDoc.Contains("当前全部 $selectorCount 个选择器", [StringComparison]::Ordinal)) 'Governance document selector count must match the canonical backend shard manifest.'
+Assert-True ($governanceDoc.Contains("当前 active core manifest 为 $($activeCoreMembers.Count) 个成员、$activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document active/core totals must match the canonical PostgreSQL manifest.'
+$documentedServiceLabels = [ordered]@{
+    Inventory = 'Inventory 的 '; MasterData = 'MasterData 的 '; Scheduling = 'Scheduling 的 '; AppHub = 'AppHub '
+    BarcodeLabel = 'BarcodeLabel/FileStorage/Maintenance 各 '; FileStorage = 'BarcodeLabel/FileStorage/Maintenance 各 '; Maintenance = 'BarcodeLabel/FileStorage/Maintenance 各 '
+    IndustrialTelemetry = 'IndustrialTelemetry '; Quality = 'Quality '; Mes = 'MES '; Wms = 'WMS '; Erp = 'ERP '; DemandPlanning = 'DemandPlanning '; Acceptance = '跨业务 Acceptance '
+}
+foreach ($service in $documentedServiceLabels.Keys) {
+    $serviceIdentityCount = @($activeCoreMembers | Where-Object { [string]::Equals([string]$_.service, $service, [StringComparison]::Ordinal) } | ForEach-Object { @($_.expectedTestIdentities) }).Count
+    Assert-True ($governanceDoc.Contains("$($documentedServiceLabels[$service])$serviceIdentityCount 个", [StringComparison]::Ordinal)) "Governance document $service identity count must match the canonical PostgreSQL manifest."
+}
 foreach ($requiredText in @(
     'optional', 'environment-gated', 'quarantined',
     'unregistered-skip', 'illegal-quarantine', 'zero-execution',
