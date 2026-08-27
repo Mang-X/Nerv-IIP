@@ -6,12 +6,55 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 // Contract: Governance + Regression. Authority: Issue #2234 and Review 5042969162.
 public sealed class MesMaterialRequirementSnapshotBoundaryTests
 {
+    [Fact]
+    public void Material_requirement_source_root_scan_covers_the_entire_MES_Web_project()
+    {
+        var webRoot = FindMesWebRoot();
+        var actual = EnumerateProductionScanPaths()
+            .Select(path => Path.GetRelativePath(webRoot, path).Replace(Path.DirectorySeparatorChar, '/'))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("Application/Readiness/MaterialRequirementSnapshotReader.cs", actual);
+        Assert.Contains("Endpoints/Mes/MesEndpoints.cs", actual);
+        Assert.Contains("Program.cs", actual);
+    }
+
+    [Fact]
+    public void Canonical_reader_caller_inventory_uses_symbol_identity_instead_of_source_spelling()
+    {
+        const string source = """
+            using SnapshotReader = Nerv.IIP.Business.Mes.Web.Application.Readiness.MaterialRequirementSnapshotReader;
+
+            namespace Probe;
+
+            internal sealed class AliasProbe
+            {
+                internal async Task Handle(
+                    Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext dbContext,
+                    CancellationToken cancellationToken)
+                {
+                    _ = await SnapshotReader.LoadLatestByWorkOrderAsync(
+                        dbContext,
+                        "org",
+                        "env",
+                        "wo",
+                        cancellationToken);
+                }
+            }
+            """;
+
+        var actual = FindCanonicalReaderCallers("Application/Queries/AliasProbe.cs", source);
+
+        Assert.Equal(["Probe.AliasProbe.Handle"], actual);
+    }
+
     public static TheoryData<string, string> EquivalentEfReadBypasses => new()
     {
         {
@@ -56,42 +99,72 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         },
     };
 
+    public static TheoryData<string, string> EfSourcesBehindStorageAndCastShapes => new()
+    {
+        {
+            "field assignment",
+            """
+            private readonly IQueryable<MaterialRequirement> rows;
+
+            internal BypassProbe(ApplicationDbContext dbContext)
+            {
+                rows = dbContext.MaterialRequirements;
+            }
+            """
+        },
+        {
+            "property assignment",
+            """
+            private IQueryable<MaterialRequirement> Rows { get; }
+
+            internal BypassProbe(ApplicationDbContext dbContext)
+            {
+                Rows = dbContext.Set<MaterialRequirement>();
+            }
+            """
+        },
+        {
+            "assignment after non-generic return cast",
+            """
+            internal void Read(ApplicationDbContext dbContext)
+            {
+                object untyped = dbContext.MaterialRequirements;
+                IQueryable<MaterialRequirement> rows = (IQueryable<MaterialRequirement>)untyped;
+                _ = rows;
+            }
+            """
+        },
+    };
+
     [Fact]
     public void Every_online_snapshot_consumer_calls_the_canonical_reader_directly()
     {
-        var applicationRoot = Path.Combine(
-            FindRepositoryRoot(),
-            "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application");
-        var actual = Directory.EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories)
-            .SelectMany(FindCanonicalReaderCallers)
+        var actual = FindCanonicalReaderCallers(EnumerateProductionScanPaths())
             .ToHashSet(StringComparer.Ordinal);
         var expected = new HashSet<string>(StringComparer.Ordinal)
         {
-            "CreateMaterialIssueRequestCommandHandler.Handle",
-            "CreateMaterialIssueRequestCommandHandler.ResolveFrozenMaterialSelectionAsync",
-            "GetMesOverviewQueryHandler.CountReleasedWorkOrdersWithMaterialShortageAsync",
-            "GetMaterialReadinessQueryHandler.Handle",
-            "MaterialReadinessGuards.EnsureRequirementSnapshotsAsync",
-            "MesOperationTaskActionReadinessEvaluator.EvaluateManyAsync",
-            "MaterialReadinessGuards.GetShortageReasonsAsync",
-            "PrevalidateMaterialScanQueryHandler.Handle",
+            "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.CreateMaterialIssueRequestCommandHandler.Handle",
+            "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.CreateMaterialIssueRequestCommandHandler.ResolveFrozenMaterialSelectionAsync",
+            "Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench.GetMesOverviewQueryHandler.CountReleasedWorkOrdersWithMaterialShortageAsync",
+            "Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench.GetMaterialReadinessQueryHandler.Handle",
+            "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards.EnsureRequirementSnapshotsAsync",
+            "Nerv.IIP.Business.Mes.Web.Application.Readiness.MesOperationTaskActionReadinessEvaluator.EvaluateManyAsync",
+            "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards.GetShortageReasonsAsync",
+            "Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench.PrevalidateMaterialScanQueryHandler.Handle",
         };
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), actual.Order(StringComparer.Ordinal));
     }
 
     [Fact]
-    public void Online_material_requirement_consumers_cannot_bypass_the_canonical_reader()
+    public void MES_Web_material_requirement_EF_source_roots_are_exactly_owned()
     {
-        var applicationRoot = Path.Combine(
-            FindRepositoryRoot(),
-            "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application");
         var violations = FindRawMaterialRequirementAccesses(
-                Directory.EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories))
+                EnumerateProductionScanPaths())
             .Where(access => !IsApprovedRawAccess(access))
             .OrderBy(access => access.Path, StringComparer.Ordinal)
             .ThenBy(access => access.Line)
-            .Select(access => $"{Path.GetRelativePath(applicationRoot, access.Path)}:{access.Line}:{access.ContainingType}.{access.Method}:{access.Kind}")
+            .Select(access => $"{Path.GetRelativePath(FindMesWebRoot(), access.Path)}:{access.Line}:{access.ContainingType}.{access.Method}:{access.Kind}")
             .ToArray();
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
@@ -100,11 +173,8 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     [Fact]
     public void Approved_non_consumer_EF_access_inventory_is_exact()
     {
-        var applicationRoot = Path.Combine(
-            FindRepositoryRoot(),
-            "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application");
         var actual = FindRawMaterialRequirementAccesses(
-                Directory.EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories))
+                EnumerateProductionScanPaths())
             .Where(IsApprovedRawAccess)
             .GroupBy(access => access.ApprovalKey, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
@@ -174,7 +244,73 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     }
 
     [Fact]
-    public void Typed_query_carrier_injected_into_a_consumer_is_rejected()
+    public void Material_requirement_type_metadata_without_EF_reflection_is_not_a_source_root()
+    {
+        const string source = """
+            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+
+            namespace Probe;
+
+            internal sealed class NonEfProbe
+            {
+                internal Type Read() => typeof(MaterialRequirement);
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/NonEfProbe.cs", source);
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Empty(violations);
+    }
+
+    [Theory]
+    [MemberData(nameof(EfSourcesBehindStorageAndCastShapes))]
+    public void EF_sources_are_rejected_at_the_root_after_storage_or_cast(string _, string members)
+    {
+        var source = $$"""
+            using System.Linq;
+            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+            using Nerv.IIP.Business.Mes.Infrastructure;
+
+            namespace Probe;
+
+            internal sealed class BypassProbe
+            {
+                {{members}}
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.NotEmpty(violations);
+    }
+
+    [Fact]
+    public void Direct_EF_source_outside_Application_is_rejected()
+    {
+        const string source = """
+            using Nerv.IIP.Business.Mes.Infrastructure;
+
+            namespace Nerv.IIP.Business.Mes.Web.Endpoints;
+
+            internal sealed class BypassProbe
+            {
+                internal void Read(ApplicationDbContext dbContext)
+                {
+                    _ = dbContext.MaterialRequirements;
+                }
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Endpoints/BypassProbe.cs", source);
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Contains(violations, violation => violation.Kind == "DbSetProperty");
+    }
+
+    [Fact]
+    public void Typed_carriers_without_a_MES_Web_EF_source_are_not_reported_as_raw_accesses()
     {
         const string source = """
             using System.Linq;
@@ -184,9 +320,12 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
 
             internal sealed class BypassProbe
             {
-                internal void Read(IQueryable<MaterialRequirement> requirements)
+                private IQueryable<MaterialRequirement> Rows { get; set; } = default!;
+
+                internal void Read(object untyped)
                 {
-                    _ = requirements;
+                    Rows = (IQueryable<MaterialRequirement>)untyped;
+                    _ = Rows;
                 }
             }
             """;
@@ -194,55 +333,29 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
 
         Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
-        Assert.Contains(violations, violation => violation.Kind == "CarrierParameter");
+        Assert.Empty(violations);
     }
 
     [Fact]
-    public void Typed_query_carrier_returned_by_a_consumer_is_rejected()
+    public void Canonical_reader_exposes_only_materialized_snapshot_values()
     {
-        const string source = """
-            using System.Linq;
-            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+        var methods = typeof(MaterialRequirementSnapshotReader)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Where(method => method.Name.StartsWith("LoadLatest", StringComparison.Ordinal))
+            .ToArray();
 
-            namespace Probe;
-
-            internal sealed class BypassProbe
-            {
-                internal IQueryable<MaterialRequirement> Read() => default!;
-            }
-            """;
-
-        var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
-
-        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
-        Assert.Contains(violations, violation => violation.Kind == "CarrierReturn");
-    }
-
-    [Fact]
-    public void Retyped_query_carrier_cannot_cross_a_non_generic_helper()
-    {
-        const string source = """
-            using System.Linq;
-            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
-
-            namespace Probe;
-
-            internal sealed class BypassProbe
-            {
-                internal void Read(IQueryable requirements)
-                {
-                    var typed = requirements.OfType<MaterialRequirement>().AsQueryable();
-                    Consume((IQueryable)typed);
-                }
-
-                private static void Consume(IQueryable requirements) => _ = requirements;
-            }
-            """;
-
-        var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
-
-        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
-        Assert.Contains(violations, violation => violation.Kind == "CarrierArgument");
+        Assert.NotEmpty(methods);
+        Assert.All(methods, method =>
+        {
+            var exposedTypes = FlattenType(method.ReturnType).ToArray();
+            Assert.DoesNotContain(typeof(MaterialRequirement), exposedTypes);
+            Assert.DoesNotContain(exposedTypes, type =>
+                type.IsGenericType
+                && type.GetGenericTypeDefinition() is { } definition
+                && (definition == typeof(IQueryable<>)
+                    || definition == typeof(IAsyncEnumerable<>)
+                    || definition == typeof(DbSet<>)));
+        });
     }
 
     [Fact]
@@ -295,13 +408,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     private static IEnumerable<RawAccess> FindRawMaterialRequirementAccesses(IEnumerable<string> paths)
     {
         var scanPaths = paths.ToHashSet(StringComparer.Ordinal);
-        var webRoot = Path.Combine(
-            FindRepositoryRoot(),
-            "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web");
-        var projectTrees = Directory.EnumerateFiles(webRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsBuildOutput(path))
-            .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), ProductionParseOptions, path: path))
-            .ToArray();
+        var projectTrees = CreateMesWebProjectTrees();
         var scanTrees = projectTrees.Where(tree => scanPaths.Contains(tree.FilePath)).ToArray();
         var compilation = CreateCompilation(
             projectTrees,
@@ -386,24 +493,6 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
                 yield return new SemanticAccess(node, kind);
             }
         }
-
-        foreach (var parameter in tree.GetRoot().DescendantNodes().OfType<ParameterSyntax>())
-        {
-            var symbol = semanticModel.GetDeclaredSymbol(parameter);
-            if (symbol is not null && IsMaterialRequirementQueryCarrier(symbol.Type) && reported.Add(parameter.Span))
-            {
-                yield return new SemanticAccess(parameter, "CarrierParameter");
-            }
-        }
-
-        foreach (var method in tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
-        {
-            var symbol = semanticModel.GetDeclaredSymbol(method);
-            if (symbol is not null && IsMaterialRequirementQueryCarrier(symbol.ReturnType) && reported.Add(method.ReturnType.Span))
-            {
-                yield return new SemanticAccess(method.ReturnType, "CarrierReturn");
-            }
-        }
     }
 
     private static string? ClassifyOperation(IOperation operation) => operation switch
@@ -412,17 +501,12 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             "DbSetProperty",
         IInvocationOperation invocation when IsMaterialRequirementEfMethod(invocation.TargetMethod) =>
             $"Invocation:{invocation.TargetMethod.Name}",
+        IInvocationOperation invocation when IsMaterialRequirementSetReflection(invocation) =>
+            "Reflection:Set",
         IMethodReferenceOperation methodReference when IsMaterialRequirementEfMethod(methodReference.Method) =>
             $"MethodReference:{methodReference.Method.Name}",
-        ITypeOfOperation typeOf when IsMaterialRequirement(typeOf.TypeOperand) =>
-            "TypeOf",
         IDynamicInvocationOperation dynamicInvocation when IsDynamicMaterialRequirementEfInvocation(dynamicInvocation, operation.SemanticModel!) =>
             "DynamicInvocation",
-        IInvocationOperation invocation when IsMaterialRequirementCarrierRetype(invocation.TargetMethod) =>
-            $"CarrierRetype:{invocation.TargetMethod.Name}",
-        IArgumentOperation argument when ContainsMaterialRequirementCarrier(argument.Value)
-            && !IsQueryPreservingMethod(argument.Parent as IInvocationOperation) =>
-            "CarrierArgument",
         _ => null,
     };
 
@@ -459,65 +543,33 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             .Any(type => IsMaterialRequirement(semanticModel.GetTypeInfo(type).Type));
     }
 
-    private static bool IsMaterialRequirementCarrierRetype(IMethodSymbol method)
+    private static bool IsMaterialRequirementSetReflection(IInvocationOperation invocation)
     {
-        var original = method.ReducedFrom ?? method;
-        return original.ContainingType.ToDisplayString() == "System.Linq.Queryable"
-            && original.Name is "Cast" or "OfType" or "AsQueryable"
-            && (method.TypeArguments.Concat(original.TypeArguments).Any(IsMaterialRequirement)
-                || IsMaterialRequirementQueryCarrier(method.ReturnType));
-    }
-
-    private static bool IsQueryPreservingMethod(IInvocationOperation? invocation)
-    {
-        if (invocation is null)
+        if (invocation.TargetMethod.Name != nameof(System.Reflection.MethodInfo.MakeGenericMethod)
+            || invocation.TargetMethod.ContainingType.ToDisplayString() != "System.Reflection.MethodInfo")
         {
             return false;
         }
 
-        var original = invocation.TargetMethod.ReducedFrom ?? invocation.TargetMethod;
-        var containingType = original.ContainingType.ToDisplayString();
-        return containingType is "System.Linq.Queryable"
-            or "Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions"
-            or "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions";
-    }
-
-    private static bool ContainsMaterialRequirementCarrier(IOperation operation)
-    {
-        for (var current = operation; current is not null; current = current switch
-        {
-            IConversionOperation conversion => conversion.Operand,
-            IParenthesizedOperation parenthesized => parenthesized.Operand,
-            _ => null,
-        })
-        {
-            if (IsMaterialRequirementQueryCarrier(current.Type))
-            {
-                return true;
-            }
-        }
-
-        return operation.Descendants().Any(descendant => IsMaterialRequirementQueryCarrier(descendant.Type));
-    }
-
-    private static bool IsMaterialRequirementQueryCarrier(ITypeSymbol? type)
-    {
-        if (type is not INamedTypeSymbol named)
+        var closesOverMaterialRequirement = invocation.Arguments
+            .SelectMany(argument => argument.Value.DescendantsAndSelf())
+            .OfType<ITypeOfOperation>()
+            .Any(typeOf => IsMaterialRequirement(typeOf.TypeOperand));
+        if (!closesOverMaterialRequirement)
         {
             return false;
         }
 
-        if (named.IsGenericType
-            && named.TypeArguments.Any(IsMaterialRequirement)
-            && named.ConstructedFrom.ToDisplayString() is "System.Linq.IQueryable<T>"
-                or "System.Collections.Generic.IAsyncEnumerable<T>"
-                or "Microsoft.EntityFrameworkCore.DbSet<TEntity>"
-                or "Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity>")
-        {
-            return true;
-        }
-
-        return named.AllInterfaces.Any(IsMaterialRequirementQueryCarrier);
+        return invocation.Instance?.DescendantsAndSelf()
+            .OfType<IInvocationOperation>()
+            .Any(getMethod =>
+                getMethod.TargetMethod.Name == nameof(Type.GetMethod)
+                && getMethod.TargetMethod.ContainingType.ToDisplayString() == typeof(Type).FullName
+                && getMethod.Instance?.DescendantsAndSelf()
+                    .OfType<ITypeOfOperation>()
+                    .Any(typeOf => IsOrInheritsFrom(typeOf.TypeOperand as INamedTypeSymbol, typeof(DbContext).FullName!)) == true
+                && getMethod.Arguments.Any(argument =>
+                    argument.Value.ConstantValue is { HasValue: true, Value: "Set" })) == true;
     }
 
     private static bool IsOrInheritsFrom(INamedTypeSymbol? type, string metadataName)
@@ -542,6 +594,26 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
 
     private static bool IsMaterialRequirement(ITypeSymbol? type) =>
         type?.ToDisplayString() == typeof(MaterialRequirement).FullName;
+
+    private static IEnumerable<Type> FlattenType(Type type)
+    {
+        yield return type;
+        foreach (var argument in type.GetGenericArguments())
+        {
+            foreach (var nested in FlattenType(argument))
+            {
+                yield return nested;
+            }
+        }
+
+        if (type.HasElementType && type.GetElementType() is { } element)
+        {
+            foreach (var nested in FlattenType(element))
+            {
+                yield return nested;
+            }
+        }
+    }
 
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
     {
@@ -589,17 +661,90 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             || normalized.Contains("/obj/", StringComparison.Ordinal);
     }
 
-    private static IEnumerable<string> FindCanonicalReaderCallers(string path)
+    private static string FindMesWebRoot() => Path.Combine(
+        FindRepositoryRoot(),
+        "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web");
+
+    private static IEnumerable<string> EnumerateProductionScanPaths()
     {
-        var root = CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path).GetRoot();
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                     .Where(x => x.Expression.ToString().StartsWith("MaterialRequirementSnapshotReader.LoadLatest", StringComparison.Ordinal)))
+        return Directory.EnumerateFiles(FindMesWebRoot(), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path));
+    }
+
+    private static IEnumerable<string> FindCanonicalReaderCallers(IEnumerable<string> paths)
+    {
+        var projectTrees = CreateMesWebProjectTrees();
+        var scanPaths = paths.ToHashSet(StringComparer.Ordinal);
+        var compilation = CreateCompilation(
+            projectTrees,
+            "Nerv.IIP.Business.Mes.Web",
+            OutputKind.ConsoleApplication);
+        return FindCanonicalReaderCallers(
+            projectTrees.Where(tree => scanPaths.Contains(tree.FilePath)),
+            compilation);
+    }
+
+    private static IEnumerable<string> FindCanonicalReaderCallers(string path, string source)
+    {
+        var tree = CSharpSyntaxTree.ParseText(source, ProductionParseOptions, path: path);
+        var projectTrees = CreateMesWebProjectTrees();
+        var compilation = CreateCompilation(
+            projectTrees.Append(tree),
+            "MesMaterialRequirementSnapshotCallerFixture",
+            OutputKind.ConsoleApplication);
+        return FindCanonicalReaderCallers([tree], compilation);
+    }
+
+    private static IEnumerable<string> FindCanonicalReaderCallers(
+        IEnumerable<SyntaxTree> trees,
+        CSharpCompilation compilation)
+    {
+        foreach (var tree in trees)
         {
-            var method = invocation.Ancestors().OfType<MethodDeclarationSyntax>().First();
-            var type = method.Ancestors().OfType<TypeDeclarationSyntax>().First();
-            yield return $"{type.Identifier.ValueText}.{method.Identifier.ValueText}";
+            var semanticModel = compilation.GetSemanticModel(tree);
+            var reported = new HashSet<TextSpan>();
+            foreach (var node in tree.GetRoot().DescendantNodesAndSelf())
+            {
+                var operation = semanticModel.GetOperation(node);
+                var target = operation switch
+                {
+                    IInvocationOperation invocation => invocation.TargetMethod,
+                    IMethodReferenceOperation methodReference => methodReference.Method,
+                    _ => null,
+                };
+                if (target is null || !IsCanonicalReaderMethod(target) || !reported.Add(operation!.Syntax.Span))
+                {
+                    continue;
+                }
+
+                var ownerSyntax = operation.Syntax.AncestorsAndSelf().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+                var owner = ownerSyntax is null ? null : semanticModel.GetDeclaredSymbol(ownerSyntax);
+                if (owner?.ContainingType.ToDisplayString()
+                    == "Nerv.IIP.Business.Mes.Web.Application.Readiness.MaterialRequirementSnapshotReader")
+                {
+                    continue;
+                }
+
+                yield return owner is null
+                    ? "<unknown>"
+                    : $"{owner.ContainingType.ToDisplayString()}.{owner.Name}";
+            }
         }
     }
+
+    private static bool IsCanonicalReaderMethod(IMethodSymbol method) =>
+        method.ContainingType.ToDisplayString()
+            == "Nerv.IIP.Business.Mes.Web.Application.Readiness.MaterialRequirementSnapshotReader"
+        && method.Name.StartsWith("LoadLatest", StringComparison.Ordinal);
+
+    private static SyntaxTree[] CreateMesWebProjectTrees() =>
+        Directory.EnumerateFiles(FindMesWebRoot(), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .Select(path => CSharpSyntaxTree.ParseText(
+                File.ReadAllText(path),
+                ProductionParseOptions,
+                path: path))
+            .ToArray();
 
     private static bool IsApprovedRawAccess(RawAccess access)
     {
