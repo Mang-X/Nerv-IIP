@@ -1,4 +1,4 @@
-import { expect, type Page, type Response } from '@playwright/test'
+import { expect, type Page, type Request, type Response } from '@playwright/test'
 
 import {
   clickRefreshAndWaitForListResponse,
@@ -26,9 +26,14 @@ export type WmsListQueryFacts = Readonly<
 
 export type WmsInboundListQueryFacts = Readonly<WmsListQueryFacts & { siteCode: string }>
 export type WmsOutboundListQueryFacts = Readonly<WmsListQueryFacts & { siteCode?: never }>
+export type WmsInboundKeywordQueryFacts = Readonly<WmsInboundListQueryFacts & { keyword: string }>
+export type WmsOutboundKeywordQueryFacts = Readonly<WmsOutboundListQueryFacts & { keyword: string }>
 export type WmsInboundListPath = '/api/business-console/v1/wms/inbound-orders'
 export type WmsOutboundListPath = '/api/business-console/v1/wms/outbound-orders'
 export type WmsListPath = WmsInboundListPath | WmsOutboundListPath
+
+type WmsExpectedInboundQuery = WmsInboundListQueryFacts | WmsInboundKeywordQueryFacts
+type WmsExpectedOutboundQuery = WmsOutboundListQueryFacts | WmsOutboundKeywordQueryFacts
 
 export type WmsPageSelection =
   | Readonly<{ label: string; option: string; optionCode?: never }>
@@ -37,7 +42,7 @@ export type WmsPageSelection =
 export type WmsScopeSelection = Readonly<{
   label: '作业范围'
   option: string
-  optionCode?: never
+  scopeId: string
 }>
 
 export type WmsSiteSelection = Readonly<{
@@ -59,6 +64,22 @@ export type WmsListResponseFacts = Readonly<{
   url: string
   status: number
 }>
+
+export type WmsInboundListQueryProof = Readonly<{
+  kind: 'inbound'
+  listPath: WmsInboundListPath
+  expectedQuery: WmsExpectedInboundQuery
+  forbiddenQueryKeys: readonly []
+}>
+
+export type WmsOutboundListQueryProof = Readonly<{
+  kind: 'outbound'
+  listPath: WmsOutboundListPath
+  expectedQuery: WmsExpectedOutboundQuery
+  forbiddenQueryKeys: readonly ['siteCode']
+}>
+
+export type WmsListQueryProof = WmsInboundListQueryProof | WmsOutboundListQueryProof
 
 type WmsScenarioFacts = WmsWalkthroughScenarioFacts &
   Readonly<{
@@ -84,6 +105,7 @@ function workPoolScopeFacts(facts: WmsScenarioFacts): WmsWorkPoolScopeFacts {
 
 function listQueryFacts(facts: WmsScenarioFacts): WmsListQueryFacts {
   const scope = workPoolScopeFacts(facts)
+  requiredText('keyword', facts.keyword)
   return {
     organizationId: requiredText('organizationId', facts.organizationId),
     environmentId: requiredText('environmentId', facts.environmentId),
@@ -95,17 +117,39 @@ function listQueryFacts(facts: WmsScenarioFacts): WmsListQueryFacts {
 
 export function buildWmsInboundListQueryFacts(
   facts: WmsInboundWalkthroughScenarioFacts,
-): WmsInboundListQueryFacts {
+): WmsInboundKeywordQueryFacts {
   return {
     ...listQueryFacts(facts),
+    keyword: requiredText('keyword', facts.keyword),
     siteCode: requiredText('siteCode', facts.siteCode),
   }
 }
 
 export function buildWmsOutboundListQueryFacts(
   facts: WmsWalkthroughScenarioFacts,
+): WmsOutboundKeywordQueryFacts {
+  return {
+    ...listQueryFacts(facts),
+    keyword: requiredText('keyword', facts.keyword),
+  }
+}
+
+/**
+ * The selection-bound refresh intentionally omits the optional keyword filter. The full
+ * authority vector above is used for the subsequent keyword request and its independent checks.
+ */
+export function buildWmsInboundSelectionQueryFacts(
+  facts: WmsInboundWalkthroughScenarioFacts,
+): WmsInboundListQueryFacts {
+  const { keyword: _keyword, ...selectionFacts } = buildWmsInboundListQueryFacts(facts)
+  return selectionFacts
+}
+
+export function buildWmsOutboundSelectionQueryFacts(
+  facts: WmsWalkthroughScenarioFacts,
 ): WmsOutboundListQueryFacts {
-  return listQueryFacts(facts)
+  const { keyword: _keyword, ...selectionFacts } = buildWmsOutboundListQueryFacts(facts)
+  return selectionFacts
 }
 
 /**
@@ -137,7 +181,7 @@ export function assertWmsInboundPageSelection(selection: WmsInboundPageSelection
   if (selection.scope.label !== '作业范围' || selection.site.label !== '工厂') {
     throw new Error('WMS inbound proof received an unexpected selection label')
   }
-  assertWmsPageSelection(selection.scope)
+  assertWmsScopeSelection(selection.scope)
   assertWmsPageSelection(selection.site)
 }
 
@@ -146,6 +190,11 @@ export function assertWmsInboundSelectionMatchesQuery(
   expectedQuery: WmsInboundListQueryFacts,
 ): void {
   assertWmsInboundPageSelection(selection)
+  if (selection.scope.scopeId !== expectedQuery.scopeId) {
+    throw new Error(
+      `WMS inbound scope selection ${selection.scope.scopeId} did not match expected scopeId ${expectedQuery.scopeId}`,
+    )
+  }
   if (selection.site.optionCode !== expectedQuery.siteCode) {
     throw new Error(
       `WMS inbound site selection ${selection.site.optionCode} did not match expected siteCode ${expectedQuery.siteCode}`,
@@ -160,40 +209,124 @@ export function assertWmsOutboundPageSelection(selection: WmsOutboundPageSelecti
   if (selection.scope.label !== '作业范围') {
     throw new Error('WMS outbound proof received an unexpected selection label')
   }
-  assertWmsPageSelection(selection.scope)
+  assertWmsScopeSelection(selection.scope)
+}
+
+export function assertWmsOutboundSelectionMatchesQuery(
+  selection: WmsOutboundPageSelection,
+  expectedQuery: WmsExpectedOutboundQuery,
+): void {
+  assertWmsOutboundPageSelection(selection)
+  if (selection.scope.scopeId !== expectedQuery.scopeId) {
+    throw new Error(
+      `WMS outbound scope selection ${selection.scope.scopeId} did not match expected scopeId ${expectedQuery.scopeId}`,
+    )
+  }
+}
+
+function assertWmsScopeSelection(selection: WmsScopeSelection): void {
+  if (
+    selection.label !== '作业范围' ||
+    'optionCode' in selection ||
+    typeof selection.option !== 'string' ||
+    typeof selection.scopeId !== 'string' ||
+    !selection.option.trim() ||
+    !selection.scopeId.trim()
+  ) {
+    throw new Error('WMS scope selection must expose exactly one option and a non-empty scopeId')
+  }
+}
+
+function expectedWmsListPath(kind: WmsListQueryProof['kind']): WmsListPath {
+  return kind === 'inbound'
+    ? '/api/business-console/v1/wms/inbound-orders'
+    : '/api/business-console/v1/wms/outbound-orders'
+}
+
+function assertExpectedQueryFacts(proof: WmsListQueryProof): asserts proof is WmsListQueryProof {
+  if (proof.listPath !== expectedWmsListPath(proof.kind)) {
+    throw new Error(`WMS ${proof.kind} proof received unexpected list path ${proof.listPath}`)
+  }
+
+  const expectedForbiddenKeys = proof.kind === 'outbound' ? ['siteCode'] : []
+  if (
+    !Array.isArray(proof.forbiddenQueryKeys) ||
+    proof.forbiddenQueryKeys.length !== expectedForbiddenKeys.length ||
+    proof.forbiddenQueryKeys.some((key, index) => key !== expectedForbiddenKeys[index])
+  ) {
+    throw new Error(`WMS ${proof.kind} proof has an invalid forbidden query key contract`)
+  }
+
+  const expected = proof.expectedQuery
+  for (const [name, value] of [
+    ['organizationId', expected.organizationId],
+    ['environmentId', expected.environmentId],
+    ['scopeKind', expected.scopeKind],
+    ['scopeId', expected.scopeId],
+  ] as const) {
+    requiredText(name, value)
+  }
+  if (expected.scopeKind !== 'work-pool') {
+    throw new Error(`WMS scenario fact scopeKind must be work-pool, received ${expected.scopeKind}`)
+  }
+  if (expected.skip !== 0 || expected.take !== 10) {
+    throw new Error(
+      `WMS scenario fact pagination must be skip=0/take=10, received skip=${expected.skip}/take=${expected.take}`,
+    )
+  }
+  if (proof.kind === 'inbound') {
+    requiredText('siteCode', proof.expectedQuery.siteCode)
+  } else if ('siteCode' in expected && expected.siteCode !== undefined) {
+    throw new Error('WMS outbound proof must not define a siteCode fact')
+  }
+  if ('keyword' in expected) requiredText('keyword', expected.keyword)
 }
 
 /**
  * Validates the public list request against the NERV-1571 facts. A 200 response alone is not
- * evidence: tenant, scope and pagination must all match, and outbound may explicitly forbid
- * siteCode. The expected query is supplied by scenario input, never by the response.
+ * evidence: tenant, scope and pagination must all match, and outbound must explicitly forbid
+ * siteCode. The kind/path/query/forbidden-key tuple is supplied by scenario input, never by the
+ * response.
  */
 export function assertWmsListQueryFacts(
   response: WmsListResponseFacts,
-  listPath: WmsListPath,
-  expectedQuery: WmsInboundListQueryFacts | WmsOutboundListQueryFacts,
-  forbiddenQueryKeys: readonly 'siteCode'[] = [],
+  proof: WmsListQueryProof,
 ): void {
+  assertExpectedQueryFacts(proof)
   if (response.status !== 200) {
-    throw new Error(`WMS list ${listPath} returned HTTP ${response.status}`)
+    throw new Error(`WMS list ${proof.listPath} returned HTTP ${response.status}`)
   }
 
   const actualUrl = new URL(response.url)
-  if (actualUrl.pathname !== listPath) {
-    throw new Error(`WMS list response path ${actualUrl.pathname} did not match ${listPath}`)
+  if (actualUrl.pathname !== proof.listPath) {
+    throw new Error(`WMS list response path ${actualUrl.pathname} did not match ${proof.listPath}`)
   }
 
-  for (const key of forbiddenQueryKeys) {
+  for (const key of proof.forbiddenQueryKeys) {
     if (actualUrl.searchParams.has(key)) {
-      throw new Error(`WMS list ${listPath} must not send query field ${key}`)
+      throw new Error(`WMS list ${proof.listPath} must not send query field ${key}`)
     }
   }
 
-  const expectedUrl = queryPath(listPath, expectedQuery)
+  const expectedUrl = queryPath(proof.listPath, proof.expectedQuery)
   const expectedAbsoluteUrl = new URL(expectedUrl, 'http://walkthrough.expected').toString()
+  const expectedKeyword =
+    'keyword' in proof.expectedQuery
+      ? requiredText('keyword', proof.expectedQuery.keyword)
+      : undefined
+  const actualKeywords = actualUrl.searchParams.getAll('keyword')
+  if (expectedKeyword === undefined && actualKeywords.length > 0) {
+    throw new Error(`WMS list ${proof.listPath} must not send query field keyword`)
+  }
+  if (
+    expectedKeyword !== undefined &&
+    (actualKeywords.length !== 1 || actualKeywords[0] !== expectedKeyword)
+  ) {
+    throw new Error(`WMS list ${proof.listPath} keyword did not match expected ${expectedKeyword}`)
+  }
   if (listQueryFingerprint(actualUrl.toString()) !== listQueryFingerprint(expectedAbsoluteUrl)) {
     throw new Error(
-      `WMS list ${listPath} query facts did not match: expected=${new URL(expectedAbsoluteUrl).search} actual=${actualUrl.search}`,
+      `WMS list ${proof.listPath} query facts did not match: expected=${new URL(expectedAbsoluteUrl).search} actual=${actualUrl.search}`,
     )
   }
 }
@@ -212,6 +345,93 @@ export function assertWmsInitialListResponse(
   const actualPath = new URL(response.url).pathname
   if (actualPath !== listPath) {
     throw new Error(`WMS initial list response path ${actualPath} did not match ${listPath}`)
+  }
+}
+
+const wmsListPaths: readonly WmsListPath[] = [
+  '/api/business-console/v1/wms/inbound-orders',
+  '/api/business-console/v1/wms/outbound-orders',
+]
+
+function isWmsListPath(path: string): path is WmsListPath {
+  return wmsListPaths.includes(path as WmsListPath)
+}
+
+/**
+ * Adds the NERV-1571 lifecycle boundary around an existing navigation action. The generic
+ * walkthrough policy intentionally waits for a successful target response; this guard observes
+ * the first WMS list response itself so an initial 503 or wrong WMS path cannot be hidden by a
+ * later 200. It is deliberately an action wrapper, keeping the NERV-1456 policy unchanged.
+ */
+export async function withWmsInitialListResponseGuard<T>(
+  page: Page,
+  expectedPath: WmsListPath,
+  action: () => Promise<T>,
+  timeoutMs = 120_000,
+  navigationRoute?: string,
+): Promise<Readonly<{ result: T; firstList: Response }>> {
+  let resolveFirst!: (response: Response) => void
+  let rejectFirst!: (error: unknown) => void
+  const firstResponse = new Promise<Response>((resolve, reject) => {
+    resolveFirst = resolve
+    rejectFirst = reject
+  })
+  let firstCandidateSeen = false
+  let documentCommitted = navigationRoute === undefined
+  const listRequests = new WeakSet<Request>()
+  const frameNavigationObserver = (frame: { url: () => string }) => {
+    if (frame !== page.mainFrame() || !navigationRoute) return
+    const current = new URL(frame.url(), page.url())
+    const expected = new URL(navigationRoute, page.url())
+    documentCommitted = current.pathname === expected.pathname && current.search === expected.search
+  }
+  const requestObserver = (request: Request) => {
+    const path = new URL(request.url()).pathname
+    if (
+      documentCommitted &&
+      request.method() === 'GET' &&
+      isWmsListPath(path) &&
+      request.frame() === page.mainFrame()
+    ) {
+      listRequests.add(request)
+    }
+  }
+  const responseObserver = (response: Response) => {
+    if (firstCandidateSeen) return
+    const request = response.request()
+    const path = new URL(response.url()).pathname
+    if (
+      !listRequests.has(request) ||
+      request.method() !== 'GET' ||
+      !isWmsListPath(path) ||
+      request.frame() !== page.mainFrame()
+    ) {
+      return
+    }
+    firstCandidateSeen = true
+    try {
+      assertWmsInitialListResponse({ url: response.url(), status: response.status() }, expectedPath)
+      resolveFirst(response)
+    } catch (error) {
+      rejectFirst(error)
+    }
+  }
+  const timeout = setTimeout(
+    () => rejectFirst(new Error(`WMS initial list ${expectedPath} response was not observed`)),
+    timeoutMs,
+  )
+  page.on('response', responseObserver)
+  page.on('request', requestObserver)
+  page.on('framenavigated', frameNavigationObserver)
+  try {
+    const actionResult = action()
+    const [result, firstList] = await Promise.all([actionResult, firstResponse])
+    return { result, firstList }
+  } finally {
+    clearTimeout(timeout)
+    page.off('response', responseObserver)
+    page.off('request', requestObserver)
+    page.off('framenavigated', frameNavigationObserver)
   }
 }
 
@@ -281,36 +501,52 @@ export async function selectWmsPageOption(
   }
 }
 
+/**
+ * Work-scope options expose their stable value through the search input (the NvSearchSelect value
+ * is searchable even though only the human label is rendered). Requiring the scope id in that
+ * input makes the clicked page option and the later query fact share one public selection.
+ */
+export async function selectWmsScopeOption(
+  page: Page,
+  selection: WmsScopeSelection,
+  timeoutMs = 120_000,
+): Promise<void> {
+  assertWmsScopeSelection(selection)
+  const trigger = page.getByLabel(selection.label, { exact: true })
+  await trigger.click({ timeout: timeoutMs })
+  await expect(page.locator('[role="listbox"]:visible')).toHaveCount(1, { timeout: timeoutMs })
+  const search = page.getByRole('combobox', { name: `搜索${selection.label}`, exact: true })
+  await expect(search).toHaveCount(1, { timeout: timeoutMs })
+  await search.fill(selection.scopeId)
+  const option = page.getByRole('option', { name: selection.option, exact: true })
+  await waitForUniqueVisibleOption(option, selection.label, timeoutMs)
+  await option.click({ timeout: timeoutMs })
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
+  await expect(trigger).toContainText(selection.option, { timeout: timeoutMs })
+}
+
 export type WmsListPageProofOptions =
   | Readonly<{
       kind: 'inbound'
       page: Page
-      listPath: WmsInboundListPath
       selection: WmsInboundPageSelection
-      expectedQuery: WmsInboundListQueryFacts
+      query: WmsInboundListQueryProof
     }>
   | Readonly<{
       kind: 'outbound'
       page: Page
-      listPath: WmsOutboundListPath
       selection: WmsOutboundPageSelection
-      expectedQuery: WmsOutboundListQueryFacts
+      query: WmsOutboundListQueryProof
     }>
 
 export type WmsInboundListPageProofInput = Omit<
   Extract<WmsListPageProofOptions, { kind: 'inbound' }>,
-  'page' | 'listPath'
+  'page'
 >
 export type WmsOutboundListPageProofInput = Omit<
   Extract<WmsListPageProofOptions, { kind: 'outbound' }>,
-  'page' | 'listPath'
+  'page'
 >
-
-function expectedWmsListPath(kind: WmsListPageProofOptions['kind']): WmsListPath {
-  return kind === 'inbound'
-    ? '/api/business-console/v1/wms/inbound-orders'
-    : '/api/business-console/v1/wms/outbound-orders'
-}
 
 /**
  * WMS-only proof layer: explicit scope/site selection, then action-bound refresh and exact facts.
@@ -318,40 +554,30 @@ function expectedWmsListPath(kind: WmsListPageProofOptions['kind']): WmsListPath
  * directly testable regression instead of an optional branch hidden in a shared helper.
  */
 export async function proveWmsListPage(options: WmsListPageProofOptions): Promise<Response> {
-  if (options.listPath !== expectedWmsListPath(options.kind)) {
-    throw new Error(`WMS ${options.kind} proof received unexpected list path ${options.listPath}`)
+  assertExpectedQueryFacts(options.query)
+  if (options.query.kind !== options.kind) {
+    throw new Error(`WMS ${options.kind} proof received a ${options.query.kind} query contract`)
   }
 
   if (options.kind === 'inbound') {
-    assertWmsInboundSelectionMatchesQuery(options.selection, options.expectedQuery)
-    await selectWmsPageOption(options.page, options.selection.scope)
+    assertWmsInboundSelectionMatchesQuery(options.selection, options.query.expectedQuery)
+    await selectWmsScopeOption(options.page, options.selection.scope)
     await selectWmsPageOption(options.page, options.selection.site)
   } else {
-    assertWmsOutboundPageSelection(options.selection)
-    await selectWmsPageOption(options.page, options.selection.scope)
+    assertWmsOutboundSelectionMatchesQuery(options.selection, options.query.expectedQuery)
+    await selectWmsScopeOption(options.page, options.selection.scope)
   }
 
-  return refreshWmsListAndConfirm(
-    options.page,
-    options.listPath,
-    options.expectedQuery,
-    options.kind === 'outbound' ? ['siteCode'] : [],
-  )
+  return refreshWmsListAndConfirm(options.page, options.query)
 }
 
 export async function refreshWmsListAndConfirm(
   page: Page,
-  listPath: WmsListPath,
-  expectedQuery: WmsInboundListQueryFacts | WmsOutboundListQueryFacts,
-  forbiddenQueryKeys: readonly 'siteCode'[] = [],
+  proof: WmsListQueryProof,
   timeoutMs = 120_000,
 ): Promise<Response> {
-  const response = await clickRefreshAndWaitForListResponse(page, listPath, timeoutMs)
-  assertWmsListQueryFacts(
-    { url: response.url(), status: response.status() },
-    listPath,
-    expectedQuery,
-    forbiddenQueryKeys,
-  )
+  assertExpectedQueryFacts(proof)
+  const response = await clickRefreshAndWaitForListResponse(page, proof.listPath, timeoutMs)
+  assertWmsListQueryFacts({ url: response.url(), status: response.status() }, proof)
   return response
 }

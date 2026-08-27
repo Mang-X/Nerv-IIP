@@ -10,6 +10,7 @@ export type WmsWalkthroughScenarioFacts = Readonly<{
   environmentId: string
   scopeKind: string
   scopeId: string
+  keyword: string
 }>
 
 export type WmsInboundWalkthroughScenarioFacts = WmsWalkthroughScenarioFacts &
@@ -39,6 +40,7 @@ export const NERV_1571_WMS_INBOUND_FACTS: WmsInboundWalkthroughScenarioFacts = {
   environmentId: 'env-live',
   scopeKind: 'work-pool',
   scopeId: 'pool-receiving-001',
+  keyword: 'IN-WALK-001',
   siteCode: 'SITE-001',
 }
 
@@ -47,6 +49,7 @@ export const NERV_1571_WMS_OUTBOUND_FACTS: WmsWalkthroughScenarioFacts = {
   environmentId: 'env-live',
   scopeKind: 'work-pool',
   scopeId: 'pool-shipping-001',
+  keyword: 'DO-WALK-001',
 }
 
 export const NERV_1571_WMS_INBOUND_QUERY_FACTS: WmsInboundWalkthroughQueryFacts = {

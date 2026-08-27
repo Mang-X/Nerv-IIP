@@ -1,11 +1,14 @@
 import { expect, test } from '@playwright/test'
 
-import { queryPath } from './issue1912-walkthrough-query'
 import {
   NERV_1571_WMS_INBOUND_QUERY_FACTS,
   NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
 } from './issue1912-wms-walkthrough-authority'
-import { proveWmsListPage, selectWmsPageOption } from './issue1912-wms-walkthrough-facts'
+import {
+  proveWmsListPage,
+  selectWmsPageOption,
+  withWmsInitialListResponseGuard,
+} from './issue1912-wms-walkthrough-facts'
 
 test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)', () => {
   test.beforeEach(() => {
@@ -17,17 +20,6 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     // provider, HTTP service, persistence, or cleanup evidence for FullStack/FullChain.
     const listPath = '/api/business-console/v1/wms/outbound-orders'
     const expectedQuery = NERV_1571_WMS_OUTBOUND_QUERY_FACTS
-    const validQuery = queryPath(listPath, expectedQuery, 'http://walkthrough.fixture')
-    const invalidQuery = queryPath(
-      listPath,
-      { ...expectedQuery, take: 999 },
-      'http://walkthrough.fixture',
-    )
-    const forbiddenSiteQuery = queryPath(
-      listPath,
-      { ...expectedQuery, siteCode: 'SITE-001' },
-      'http://walkthrough.fixture',
-    )
     const requests: string[] = []
 
     await page.route(`**${listPath}*`, async (route) => {
@@ -45,12 +37,13 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     await page.setContent(`
       <base href="http://walkthrough.fixture/">
       <button type="button" aria-label="作业范围" aria-expanded="false">自动首项</button>
-      <div role="listbox" hidden></div>
+      <div role="listbox" hidden><input role="combobox" aria-label="搜索作业范围"></div>
       <button id="refresh" type="button">刷新</button>
       <script>
         const scope = document.querySelector('[aria-label="作业范围"]')
         const menu = document.querySelector('[role="listbox"]')
-        let scopeSelected = false
+        const scenario = ${JSON.stringify(expectedQuery)}
+        let selectedScopeId = ''
         let refreshCount = 0
         scope.addEventListener('click', () => {
           menu.hidden = false
@@ -60,11 +53,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               const option = document.createElement('button')
               option.type = 'button'
               option.setAttribute('role', 'option')
-              option.textContent = '收货作业池'
+              option.textContent = '发货作业池'
+              option.dataset.scopeId = scenario.scopeId
               option.addEventListener('click', () => {
-                scopeSelected = true
+                selectedScopeId = option.dataset.scopeId || ''
                 menu.hidden = true
-                scope.textContent = '收货作业池'
+                scope.textContent = option.textContent
                 scope.setAttribute('aria-expanded', 'false')
               })
               menu.append(option)
@@ -73,12 +67,19 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         })
         document.querySelector('#refresh').addEventListener('click', () => {
           refreshCount += 1
-          const query = scopeSelected && refreshCount === 1
-            ? '${validQuery.slice(validQuery.indexOf('?') + 1)}'
-            : refreshCount === 2
-              ? '${invalidQuery.slice(invalidQuery.indexOf('?') + 1)}'
-              : '${forbiddenSiteQuery.slice(forbiddenSiteQuery.indexOf('?') + 1)}'
-          void fetch('${listPath}?' + query)
+          const query = new URLSearchParams({
+            organizationId: scenario.organizationId,
+            environmentId: scenario.environmentId,
+            scopeKind: scenario.scopeKind,
+            scopeId: selectedScopeId,
+            skip: String(scenario.skip),
+            take: String(refreshCount === 2 ? 999 : scenario.take),
+            keyword: scenario.keyword,
+          })
+          if (refreshCount === 3) query.set('siteCode', 'SITE-001')
+          if (refreshCount === 4) query.set('environmentId', 'env-stale')
+          if (refreshCount === 5) query.set('scopeId', 'pool-other-001')
+          void fetch('${listPath}?' + query.toString())
         })
       </script>
     `)
@@ -86,9 +87,15 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     const response = await proveWmsListPage({
       kind: 'outbound',
       page,
-      listPath,
-      selection: { scope: { label: '作业范围', option: '收货作业池' } },
-      expectedQuery,
+      selection: {
+        scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+      },
+      query: {
+        kind: 'outbound',
+        listPath,
+        expectedQuery,
+        forbiddenQueryKeys: ['siteCode'],
+      },
     })
 
     expect(response.status()).toBe(200)
@@ -99,9 +106,10 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       proveWmsListPage({
         kind: 'outbound',
         page,
-        listPath,
-        selection: { scope: { label: '作业范围', option: '收货作业池' } },
-        expectedQuery,
+        selection: {
+          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+        },
+        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
       }),
     ).rejects.toThrow('query facts')
 
@@ -109,11 +117,34 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       proveWmsListPage({
         kind: 'outbound',
         page,
-        listPath,
-        selection: { scope: { label: '作业范围', option: '收货作业池' } },
-        expectedQuery,
+        selection: {
+          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+        },
+        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
       }),
     ).rejects.toThrow('must not send query field siteCode')
+
+    await expect(
+      proveWmsListPage({
+        kind: 'outbound',
+        page,
+        selection: {
+          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+        },
+        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
+      }),
+    ).rejects.toThrow('query facts')
+
+    await expect(
+      proveWmsListPage({
+        kind: 'outbound',
+        page,
+        selection: {
+          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+        },
+        query: { kind: 'outbound', listPath, expectedQuery, forbiddenQueryKeys: ['siteCode'] },
+      }),
+    ).rejects.toThrow('query facts')
   })
 
   test('范围类型与列表路径不一致时在发起选择前失败关闭', async ({ page }) => {
@@ -121,12 +152,16 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       proveWmsListPage({
         kind: 'inbound',
         page,
-        listPath: '/api/business-console/v1/wms/outbound-orders' as never,
         selection: {
-          scope: { label: '作业范围', option: '收货作业池' },
+          scope: { label: '作业范围', option: '收货作业池', scopeId: 'pool-receiving-001' },
           site: { label: '工厂', optionCode: 'SITE-001' },
         },
-        expectedQuery: NERV_1571_WMS_INBOUND_QUERY_FACTS,
+        query: {
+          kind: 'inbound',
+          listPath: '/api/business-console/v1/wms/outbound-orders' as never,
+          expectedQuery: NERV_1571_WMS_INBOUND_QUERY_FACTS,
+          forbiddenQueryKeys: [],
+        },
       }),
     ).rejects.toThrow('unexpected list path')
 
@@ -134,11 +169,77 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       proveWmsListPage({
         kind: 'outbound',
         page,
-        listPath: '/api/business-console/v1/wms/inbound-orders' as never,
-        selection: { scope: { label: '作业范围', option: '收货作业池' } },
-        expectedQuery: NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
+        selection: {
+          scope: { label: '作业范围', option: '收货作业池', scopeId: 'pool-shipping-001' },
+        },
+        query: {
+          kind: 'outbound',
+          listPath: '/api/business-console/v1/wms/inbound-orders' as never,
+          expectedQuery: NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
+          forbiddenQueryKeys: ['siteCode'],
+        },
       }),
     ).rejects.toThrow('unexpected list path')
+  })
+
+  test('首个 WMS 列表响应为 503 或错误路径时，不接受后续 200 自洽通过', async ({ page }) => {
+    const inboundPath = '/api/business-console/v1/wms/inbound-orders'
+    const outboundPath = '/api/business-console/v1/wms/outbound-orders'
+    const keyword = NERV_1571_WMS_OUTBOUND_QUERY_FACTS.keyword
+    await page.route('**/api/business-console/v1/wms/*', async (route) => {
+      const phase = new URL(route.request().url()).searchParams.get('phase')
+      const attempt = new URL(route.request().url()).searchParams.get('attempt')
+      await route.fulfill({
+        status: phase === '503-first' && attempt === '1' ? 503 : 200,
+        body: JSON.stringify({ items: [] }),
+      })
+    })
+    await page.setContent('<base href="http://walkthrough.fixture/">')
+
+    await expect(
+      withWmsInitialListResponseGuard(
+        page,
+        inboundPath,
+        async () =>
+          page.evaluate(
+            async ({ path, keyword: requestKeyword }) => {
+              await fetch(`${path}?phase=503-first&attempt=1&keyword=${requestKeyword}`)
+              await fetch(`${path}?phase=503-first&attempt=2&keyword=${requestKeyword}`)
+            },
+            { path: `http://walkthrough.fixture${inboundPath}`, keyword },
+          ),
+        2_000,
+      ),
+    ).rejects.toThrow('HTTP 503')
+
+    const secondPage = await page.context().newPage()
+    try {
+      await secondPage.route('**/api/business-console/v1/wms/*', async (route) => {
+        await route.fulfill({ status: 200, body: JSON.stringify({}) })
+      })
+      await secondPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          secondPage,
+          inboundPath,
+          async () =>
+            secondPage.evaluate(
+              async ({ wrongPath, targetPath, requestKeyword }) => {
+                await fetch(`${wrongPath}&keyword=${requestKeyword}`)
+                await fetch(`${targetPath}&keyword=${requestKeyword}`)
+              },
+              {
+                wrongPath: `http://walkthrough.fixture${outboundPath}?phase=wrong-first`,
+                targetPath: `http://walkthrough.fixture${inboundPath}?phase=wrong-first`,
+                requestKeyword: keyword,
+              },
+            ),
+          2_000,
+        ),
+      ).rejects.toThrow('response path')
+    } finally {
+      await secondPage.close()
+    }
   })
 
   test('入库必须显式选择范围和已加载工厂，公开请求带有所选 siteCode', async ({ page }) => {
@@ -146,20 +247,13 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     // 并确保移除任一选择都会失败关闭。
     const listPath = '/api/business-console/v1/wms/inbound-orders'
     const expectedQuery = NERV_1571_WMS_INBOUND_QUERY_FACTS
-    const validQuery = queryPath(listPath, expectedQuery, 'http://walkthrough.fixture')
-    const missingSiteQuery = queryPath(
-      listPath,
-      Object.fromEntries(Object.entries(expectedQuery).filter(([key]) => key !== 'siteCode')),
-      'http://walkthrough.fixture',
-    )
     const requests: string[] = []
 
     await page.route(`**${listPath}*`, async (route) => {
       const url = route.request().url()
       requests.push(url)
-      const valid = url === `http://walkthrough.fixture${validQuery}`
       await route.fulfill({
-        status: valid ? 200 : 400,
+        status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ items: [] }),
       })
@@ -167,7 +261,9 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     await page.setContent(`
       <base href="http://walkthrough.fixture/">
       <button type="button" aria-label="作业范围" aria-expanded="false">未选择范围</button>
-      <div id="scope-menu" role="listbox" hidden></div>
+      <div id="scope-menu" role="listbox" hidden>
+        <input role="combobox" aria-label="搜索作业范围">
+      </div>
       <button type="button" aria-label="工厂" aria-expanded="false">未选择工厂</button>
       <div id="site-menu" role="listbox" hidden></div>
       <button id="refresh" type="button">刷新</button>
@@ -176,8 +272,9 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         const scopeMenu = document.querySelector('#scope-menu')
         const site = document.querySelector('[aria-label="工厂"]')
         const siteMenu = document.querySelector('#site-menu')
-        let scopeSelected = false
-        let siteSelected = false
+        const scenario = ${JSON.stringify(expectedQuery)}
+        let selectedScopeId = ''
+        let selectedSiteCode = ''
         scope.addEventListener('click', () => {
           scopeMenu.hidden = false
           scope.setAttribute('aria-expanded', 'true')
@@ -187,10 +284,11 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               option.type = 'button'
               option.setAttribute('role', 'option')
               option.textContent = '收货作业池'
+              option.dataset.scopeId = scenario.scopeId
               option.addEventListener('click', () => {
-                scopeSelected = true
+                selectedScopeId = option.dataset.scopeId || ''
                 scopeMenu.hidden = true
-                scope.textContent = '收货作业池'
+                scope.textContent = option.textContent
                 scope.setAttribute('aria-expanded', 'false')
               })
               scopeMenu.append(option)
@@ -206,10 +304,11 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               option.type = 'button'
               option.setAttribute('role', 'option')
               option.innerHTML = '<span>一号工厂</span><span>SITE-001</span>'
+              option.dataset.siteCode = scenario.siteCode
               option.addEventListener('click', () => {
-                siteSelected = true
+                selectedSiteCode = option.dataset.siteCode || ''
                 siteMenu.hidden = true
-                site.textContent = '一号工厂（SITE-001）'
+                site.textContent = '一号工厂（' + selectedSiteCode + '）'
                 site.setAttribute('aria-expanded', 'false')
               })
               siteMenu.append(option)
@@ -217,10 +316,17 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
           }
         })
         document.querySelector('#refresh').addEventListener('click', () => {
-          const query = scopeSelected && siteSelected
-            ? '${validQuery.slice(validQuery.indexOf('?'))}'
-            : '${missingSiteQuery.slice(missingSiteQuery.indexOf('?'))}'
-          void fetch('${listPath}' + query)
+          const query = new URLSearchParams({
+            organizationId: scenario.organizationId,
+            environmentId: scenario.environmentId,
+            scopeKind: scenario.scopeKind,
+            scopeId: selectedScopeId,
+            skip: String(scenario.skip),
+            take: String(scenario.take),
+            keyword: scenario.keyword,
+            siteCode: selectedSiteCode,
+          })
+          void fetch('${listPath}?' + query.toString())
         })
       </script>
     `)
@@ -228,12 +334,11 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     const response = await proveWmsListPage({
       kind: 'inbound',
       page,
-      listPath,
       selection: {
-        scope: { label: '作业范围', option: '收货作业池' },
+        scope: { label: '作业范围', option: '收货作业池', scopeId: expectedQuery.scopeId },
         site: { label: '工厂', optionCode: 'SITE-001' },
       },
-      expectedQuery,
+      query: { kind: 'inbound', listPath, expectedQuery, forbiddenQueryKeys: [] },
     })
 
     expect(response.status()).toBe(200)
