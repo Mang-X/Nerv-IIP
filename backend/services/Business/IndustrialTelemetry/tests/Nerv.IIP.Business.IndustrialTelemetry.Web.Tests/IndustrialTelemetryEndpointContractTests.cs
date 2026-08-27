@@ -686,8 +686,12 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Null(facts["PRPT-OEE-DST-AMBIGUOUS"].ShiftBucketStartUtc);
     }
 
-    [Fact]
-    public async Task Reversal_without_an_original_in_the_same_scope_fails_for_replay_without_borrowing_another_scope()
+    [Theory]
+    [InlineData("org-other", "env-dev")]
+    [InlineData("org-001", "env-other")]
+    public async Task Reversal_without_an_original_in_the_same_scope_fails_for_replay_without_borrowing_another_scope(
+        string originalOrganizationId,
+        string originalEnvironmentId)
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         await using var scope = factory.Services.CreateAsyncScope();
@@ -702,8 +706,9 @@ public sealed class IndustrialTelemetryEndpointContractTests
             new TimeOnly(6, 0),
             true) with
         {
-            EnvironmentId = "env-other",
-            IdempotencyKey = "production-report-recorded:org-001:env-other:PRPT-OEE-SCOPED-ORIGINAL"
+            OrganizationId = originalOrganizationId,
+            EnvironmentId = originalEnvironmentId,
+            IdempotencyKey = $"production-report-recorded:{originalOrganizationId}:{originalEnvironmentId}:PRPT-OEE-SCOPED-ORIGINAL"
         };
         var reversalAtUtc = new DateTimeOffset(2026, 8, 16, 1, 0, 0, TimeSpan.Zero);
         var reversal = new ProductionReportRecordedIntegrationEvent(

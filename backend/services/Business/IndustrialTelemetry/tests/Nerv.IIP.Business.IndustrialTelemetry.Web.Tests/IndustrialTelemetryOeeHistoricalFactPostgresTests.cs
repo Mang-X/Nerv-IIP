@@ -150,13 +150,18 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         await using var otherScopeContext = CreateLaneDbContext();
         await new ProductionReportOeeProjectionHandler(otherScopeContext, new InMemoryIntegrationEventDeadLetterStore())
             .HandleAsync(CreateHistoricalEvent("env-other"), CancellationToken.None);
+        await new ProductionReportOeeProjectionHandler(otherScopeContext, new InMemoryIntegrationEventDeadLetterStore())
+            .HandleAsync(CreateHistoricalEvent("env-dev", "org-other"), CancellationToken.None);
 
         await using var assertionContext = CreateLaneDbContext();
         var facts = await assertionContext.OeeProductionFacts
-            .OrderBy(x => x.EnvironmentId)
+            .OrderBy(x => x.OrganizationId)
+            .ThenBy(x => x.EnvironmentId)
             .ToArrayAsync();
-        Assert.Equal(2, facts.Length);
-        Assert.Equal(["env-dev", "env-other"], facts.Select(x => x.EnvironmentId));
+        Assert.Equal(3, facts.Length);
+        Assert.Equal(
+            [("org-001", "env-dev"), ("org-001", "env-other"), ("org-other", "env-dev")],
+            facts.Select(x => (x.OrganizationId, x.EnvironmentId)));
         Assert.All(facts, fact => Assert.Equal("PRPT-OEE-CONCURRENT-001", fact.SourceReportNo));
     }
 
@@ -187,21 +192,23 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         DateTimeOffset.Parse("2026-08-14T22:00:00Z"),
         OeeHistoricalDimensionStatus.Resolved);
 
-    private static ProductionReportRecordedIntegrationEvent CreateHistoricalEvent(string environmentId)
+    private static ProductionReportRecordedIntegrationEvent CreateHistoricalEvent(
+        string environmentId,
+        string organizationId = "org-001")
     {
         var reportedAtUtc = DateTimeOffset.Parse("2026-08-14T17:30:00Z");
         return new ProductionReportRecordedIntegrationEvent(
-            $"evt-oee-concurrent-{environmentId}",
+            $"evt-oee-concurrent-{organizationId}-{environmentId}",
             MesIntegrationEventTypes.ProductionReportRecorded,
             MesIntegrationEventVersions.V1,
             reportedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             "PRPT-OEE-CONCURRENT-001",
             "PRPT-OEE-CONCURRENT-001",
-            "org-001",
+            organizationId,
             environmentId,
             "system:mes",
-            $"production-report-recorded:org-001:{environmentId}:PRPT-OEE-CONCURRENT-001",
+            $"production-report-recorded:{organizationId}:{environmentId}:PRPT-OEE-CONCURRENT-001",
             new ProductionReportRecordedPayload(
                 "PRPT-OEE-CONCURRENT-001",
                 "WO-001",
