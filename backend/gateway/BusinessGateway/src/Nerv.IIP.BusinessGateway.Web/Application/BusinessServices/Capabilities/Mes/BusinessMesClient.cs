@@ -144,6 +144,12 @@ public interface IBusinessMesClient
         BusinessConsoleMesMaterialIssueRequestListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesMaterialIssueRequestRow> GetMaterialIssueRequestAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesMaterialIssueRequestDetailRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
         string internalBearerToken,
         string requestId,
@@ -683,6 +689,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/mes/material-issue-requests?" + MaterialIssueRequestListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesMaterialIssueRequestRow> GetMaterialIssueRequestAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesMaterialIssueRequestDetailRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesMaterialIssueRequestRow>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}?" +
+            ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 

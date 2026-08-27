@@ -2873,6 +2873,19 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/material-issue-requests/{requestId}",
+      "operationId": "getBusinessMesMaterialIssueRequest",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesMaterialIssueRequest"
+      ]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts",
       "operationId": "confirmBusinessMesLineSideMaterialReceipt",

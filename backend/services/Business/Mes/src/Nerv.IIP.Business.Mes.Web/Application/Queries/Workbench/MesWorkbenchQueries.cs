@@ -1178,7 +1178,8 @@ public sealed record MesMaterialIssueRequestRow(
     string? WmsRequestId = null,
     string? WmsPickingTaskNo = null,
     bool IsSupplementary = false,
-    string? OriginalMaterialIssueRequestNo = null);
+    string? OriginalMaterialIssueRequestNo = null,
+    string? SubstitutedMaterialId = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -1237,11 +1238,18 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
 
         var total = await query.CountAsync(cancellationToken);
         var supplementaryCount = await query.CountAsync(x => x.IsSupplementary, cancellationToken);
-        var items = await query
+        var items = await ProjectRows(query, dbContext)
             .OrderByDescending(x => x.RequestedAtUtc)
             .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
-            .Select(x => new MesMaterialIssueRequestRow(
+            .ToArrayAsync(cancellationToken);
+        return new MesMaterialIssueRequestListResponse(items, total, supplementaryCount);
+    }
+
+    internal static IQueryable<MesMaterialIssueRequestRow> ProjectRows(
+        IQueryable<MaterialIssueRequest> query,
+        ApplicationDbContext dbContext) =>
+        query.Select(x => new MesMaterialIssueRequestRow(
                 x.RequestNo,
                 x.WorkOrderId,
                 x.OperationTaskId,
@@ -1271,9 +1279,34 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.WmsRequestId,
                 x.WmsPickingTaskNo,
                 x.IsSupplementary,
-                x.OriginalMaterialIssueRequestNo))
-            .ToArrayAsync(cancellationToken);
-        return new MesMaterialIssueRequestListResponse(items, total, supplementaryCount);
+                x.OriginalMaterialIssueRequestNo,
+                x.SubstitutedMaterialId));
+}
+
+public sealed record GetMaterialIssueRequestQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string RequestId) : IQuery<MesMaterialIssueRequestRow>;
+
+public sealed class GetMaterialIssueRequestQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetMaterialIssueRequestQuery, MesMaterialIssueRequestRow>
+{
+    public async Task<MesMaterialIssueRequestRow> Handle(
+        GetMaterialIssueRequestQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId);
+        query = Guid.TryParse(request.RequestId, out var requestGuid)
+            ? query.Where(x => x.Id.Id == requestGuid)
+            : query.Where(x => x.RequestNo == request.RequestId);
+        return await ListMaterialIssueRequestsQueryHandler
+            .ProjectRows(query, dbContext)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException("未找到领料申请。");
     }
 }
 

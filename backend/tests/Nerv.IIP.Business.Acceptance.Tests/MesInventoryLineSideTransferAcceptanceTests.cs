@@ -1158,6 +1158,20 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             null);
         operationTask.Start(now);
         mesDb.OperationTasks.Add(operationTask);
+        mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            workOrderId,
+            "OP-10",
+            "MAT-OIL",
+            null,
+            10m,
+            10m,
+            0m,
+            "MBOM",
+            $"SNAP-{workOrderId}-MAT-OIL",
+            now,
+            []));
     }
 
     private static async Task RecordMesOutputLotAsync(

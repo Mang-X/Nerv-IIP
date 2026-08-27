@@ -337,6 +337,11 @@ public sealed record ListMaterialIssueRequestsRequest(
     string? Status = null,
     string? OperationTaskId = null);
 
+public sealed record GetMaterialIssueRequestRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string RequestId);
+
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -976,6 +981,20 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
             req.DeviceAssetId,
             req.Status,
             req.OperationTaskId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetMaterialIssueRequestEndpoint(ISender sender)
+    : MesEndpoint<GetMaterialIssueRequestRequest, MesMaterialIssueRequestRow>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetMaterialIssueRequestEndpoint>());
+
+    public override async Task HandleAsync(GetMaterialIssueRequestRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetMaterialIssueRequestQuery(req.OrganizationId, req.EnvironmentId, req.RequestId),
+            ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1725,6 +1744,7 @@ public static class MesEndpointContracts
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),
+        new(typeof(GetMaterialIssueRequestEndpoint), "GET", "/api/business/v1/mes/material-issue-requests/{requestId}", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialIssueRequest"),
         new(typeof(ConfirmLineSideMaterialReceiptEndpoint), "POST", "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts", MesPermissionCodes.MaterialsManage, "confirmBusinessMesLineSideMaterialReceipt"),
         new(typeof(ReturnLineSideMaterialEndpoint), "POST", "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns", MesPermissionCodes.MaterialsManage, "returnBusinessMesLineSideMaterial"),
         new(typeof(ListDispatchTasksEndpoint), "GET", "/api/business/v1/mes/dispatch-tasks", MesPermissionCodes.DispatchRead, "listBusinessMesDispatchTasks"),

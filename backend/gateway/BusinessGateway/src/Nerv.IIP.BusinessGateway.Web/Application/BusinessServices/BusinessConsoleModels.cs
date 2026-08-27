@@ -4799,7 +4799,13 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string? OperationTaskNo = null,
     string? MaterialCode = null,
     bool IsSupplementary = false,
-    string? OriginalMaterialIssueRequestNo = null);
+    string? OriginalMaterialIssueRequestNo = null,
+    string? SubstitutedMaterialId = null);
+
+public sealed record BusinessConsoleMesMaterialIssueRequestDetailRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,

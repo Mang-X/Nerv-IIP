@@ -42,8 +42,8 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 ["MAT-ALT-A", "MAT-ALT-B"]));
             var substitutedIssue = MaterialIssueRequest.Create(
                 "org-001", "env-dev", "MIR-SUBSTITUTE-PG-001", "WO-SUBSTITUTE-PG-001", null,
-                "MAT-PRIMARY", "PCS", 1m, capturedAtUtc);
-            setup.Entry(substitutedIssue).Property(x => x.SubstitutedMaterialId).CurrentValue = "MAT-ALT-A";
+                "MAT-ALT-A", "PCS", 1m, capturedAtUtc,
+                substitutedMaterialId: "MAT-PRIMARY");
             setup.MaterialIssueRequests.AddRange(
                 substitutedIssue,
                 MaterialIssueRequest.Create(
@@ -198,7 +198,8 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
                 timeout: PostgresOperationTimeout,
                 cancellationToken);
             Assert.Equal(["MAT-ALT-A", "MAT-ALT-B"], requirement.GetSubstituteMaterialIds());
-            Assert.Equal("MAT-ALT-A", issues["MIR-SUBSTITUTE-PG-001"].SubstitutedMaterialId);
+            Assert.Equal("MAT-ALT-A", issues["MIR-SUBSTITUTE-PG-001"].MaterialId);
+            Assert.Equal("MAT-PRIMARY", issues["MIR-SUBSTITUTE-PG-001"].SubstitutedMaterialId);
             Assert.Null(issues["MIR-SUBSTITUTE-PG-NULL"].SubstitutedMaterialId);
         }
         finally
