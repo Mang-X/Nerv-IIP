@@ -87,6 +87,32 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
     }
 
     [Fact]
+    public async Task Default_issue_quantity_uses_tracked_override_from_latest_capture()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(CreateReleasedWorkOrder());
+        var requirement = Requirement("OP-10", "MAT-A", null, 10m, Latest);
+        dbContext.MaterialRequirements.Add(requirement);
+        await dbContext.SaveChangesAsync();
+        dbContext.Entry(requirement).Property(x => x.RequiredQuantity).CurrentValue = 5m;
+
+        var accepted = await new CreateMaterialIssueRequestCommandHandler(dbContext).Handle(
+            new CreateMaterialIssueRequestCommand(
+                OrganizationId,
+                EnvironmentId,
+                WorkOrderId,
+                "OP-10",
+                "MAT-A",
+                "PCS",
+                null,
+                Latest.AddMinutes(1)),
+            CancellationToken.None);
+
+        var issue = Assert.Single(dbContext.MaterialIssueRequests.Local, x => x.RequestNo == accepted.ReferenceId);
+        Assert.Equal(5m, issue.RequestedQuantity);
+    }
+
+    [Fact]
     public async Task Overview_does_not_count_material_deleted_from_latest_capture_as_shortage()
     {
         await using var dbContext = CreateDbContext();
@@ -95,6 +121,23 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
             Requirement("OP-10", "MAT-A", null, 5m, Earlier),
             Requirement("OP-20", "MAT-B", null, 7m, Latest, availableQuantity: 7m));
         await dbContext.SaveChangesAsync();
+
+        var response = await new GetMesOverviewQueryHandler(dbContext).Handle(
+            new GetMesOverviewQuery(OrganizationId, EnvironmentId),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(response.Blockers, x => x.Code == "MATERIAL_SHORTAGE");
+    }
+
+    [Fact]
+    public async Task Overview_uses_tracked_override_from_latest_capture()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(CreateReleasedWorkOrder());
+        var requirement = Requirement("OP-10", "MAT-A", null, 5m, Latest);
+        dbContext.MaterialRequirements.Add(requirement);
+        await dbContext.SaveChangesAsync();
+        dbContext.Entry(requirement).Property(x => x.AvailableQuantity).CurrentValue = 5m;
 
         var response = await new GetMesOverviewQueryHandler(dbContext).Handle(
             new GetMesOverviewQuery(OrganizationId, EnvironmentId),
@@ -145,6 +188,30 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
 
         Assert.Equal(["start"], readiness.AllowedActions);
         Assert.Empty(readiness.BlockReasons);
+    }
+
+    [Fact]
+    public async Task Operation_readiness_retains_distinct_ids_with_identical_business_fields()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = CreateReleasedWorkOrder();
+        workOrder.RecordMaterialRequirementSnapshot(WorkOrder.MaterialRequirementSnapshotCapturedStatus, Latest);
+        var task = CreateQueuedTask("OP-10", 10);
+        dbContext.AddRange(
+            workOrder,
+            task,
+            Requirement("OP-10", "MAT-A", null, 5m, Latest),
+            Requirement("OP-10", "MAT-A", null, 5m, Latest),
+            ReceivedIssue("OP-10", "MAT-A", 5m));
+        await dbContext.SaveChangesAsync();
+
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext).EvaluateAsync(
+            task,
+            Latest.AddMinutes(1),
+            CancellationToken.None);
+
+        Assert.DoesNotContain("start", readiness.AllowedActions);
+        Assert.Contains(readiness.BlockReasons, reason => reason.Contains("MAT-A", StringComparison.Ordinal));
     }
 
     [Fact]

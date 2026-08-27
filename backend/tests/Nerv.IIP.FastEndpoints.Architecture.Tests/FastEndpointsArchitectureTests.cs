@@ -1,9 +1,65 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Nerv.IIP.FastEndpoints.Architecture.Tests;
 
 public sealed class FastEndpointsArchitectureTests
 {
+    [Fact]
+    public void Business_gateway_restore_manifest_matches_pinned_evaluated_project_graph()
+    {
+        var root = FindRepositoryRoot();
+        var manifestPath = Path.Combine(root, "docs/architecture/business-gateway-api-surface-restore.manifest.json");
+        using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        var manifestRoot = manifest.RootElement;
+        var projectRelativePath = manifestRoot.GetProperty("project").GetString()!;
+        Assert.Equal("10.0.302", manifestRoot.GetProperty("toolchain").GetProperty("sdk").GetString());
+        Assert.Equal("net10.0", manifestRoot.GetProperty("toolchain").GetProperty("tfm").GetString());
+        Assert.Equal("10.0.302", ReadDotnetVersion(root));
+
+        var evaluatedProjects = EvaluateProjectReferenceClosure(root, Path.Combine(root, projectRelativePath));
+        var expectedLockPaths = evaluatedProjects
+            .Select(project => Path.GetRelativePath(root, Path.Combine(Path.GetDirectoryName(project)!, "packages.lock.json"))
+                .Replace(Path.DirectorySeparatorChar, '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var manifestLockPaths = manifestRoot.GetProperty("lock").GetProperty("paths")
+            .EnumerateArray()
+            .Select(element => element.GetString()!)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedLockPaths, manifestLockPaths);
+
+        var inputs = manifestRoot.GetProperty("inputs").EnumerateArray().ToArray();
+        Assert.Equal(
+            [
+                "NuGet.config",
+                "backend/Directory.Build.props",
+                "backend/Directory.Packages.props",
+                projectRelativePath,
+            ],
+            inputs
+                .Select(element => element.GetProperty("path").GetString()!)
+                .Where(path => !path.EndsWith("/packages.lock.json", StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal));
+        var manifestLockInputs = inputs
+            .Select(element => element.GetProperty("path").GetString()!)
+            .Where(path => path.EndsWith("/packages.lock.json", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedLockPaths, manifestLockInputs);
+        Assert.All(inputs, input =>
+        {
+            var relativePath = input.GetProperty("path").GetString()!;
+            var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(fullPath), $"Restore manifest input is missing: {relativePath}");
+            var actualHash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(fullPath)));
+            Assert.Equal(input.GetProperty("sha256").GetString(), actualHash);
+        });
+    }
+
     public static TheoryData<string> PlatformWebProjects => new()
     {
         "backend/services/Iam/src/Nerv.IIP.Iam.Web",
@@ -675,5 +731,78 @@ public sealed class FastEndpointsArchitectureTests
         }
 
         throw new DirectoryNotFoundException("Repository root was not found.");
+    }
+
+    private static string[] EvaluateProjectReferenceClosure(string repositoryRoot, string rootProject)
+    {
+        var pending = new Queue<string>();
+        var evaluated = new HashSet<string>(StringComparer.Ordinal);
+        pending.Enqueue(Path.GetFullPath(rootProject));
+        while (pending.TryDequeue(out var project))
+        {
+            if (!evaluated.Add(project))
+            {
+                continue;
+            }
+
+            using var result = EvaluateProjectReferences(repositoryRoot, project);
+            foreach (var reference in result.RootElement.GetProperty("Items").GetProperty("ProjectReference").EnumerateArray())
+            {
+                pending.Enqueue(reference.GetProperty("FullPath").GetString()!);
+            }
+        }
+
+        return evaluated.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    private static JsonDocument EvaluateProjectReferences(string repositoryRoot, string project)
+    {
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = repositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("msbuild");
+        startInfo.ArgumentList.Add(project);
+        startInfo.ArgumentList.Add("-getItem:ProjectReference");
+        startInfo.ArgumentList.Add("-getProperty:TargetFramework");
+        startInfo.ArgumentList.Add("-p:Configuration=Release");
+        startInfo.ArgumentList.Add("-p:TargetFramework=net10.0");
+        startInfo.ArgumentList.Add("-p:DesignTimeBuild=false");
+        startInfo.ArgumentList.Add("-p:Deterministic=true");
+        startInfo.ArgumentList.Add("-nologo");
+        startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Unable to start pinned MSBuild evaluation.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(
+            process.ExitCode == 0,
+            $"Pinned MSBuild evaluation failed for {Path.GetRelativePath(repositoryRoot, project)}: {standardError}");
+        var result = JsonDocument.Parse(standardOutput);
+        Assert.Equal("net10.0", result.RootElement.GetProperty("Properties").GetProperty("TargetFramework").GetString());
+        return result;
+    }
+
+    private static string ReadDotnetVersion(string repositoryRoot)
+    {
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = repositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("--version");
+        startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Unable to inspect the .NET SDK version.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, $"Unable to inspect the .NET SDK version: {standardError}");
+        return standardOutput.Trim();
     }
 }

@@ -75,8 +75,8 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(60, discovered.Count);
-        Assert.Equal(143, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(61, discovered.Count);
+        Assert.Equal(144, discovered.Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(140, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 

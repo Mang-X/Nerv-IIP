@@ -120,6 +120,7 @@ public sealed partial class MesMaterialScanPrevalidationTests
     [InlineData("wrong-organization")]
     [InlineData("non-released-impact")]
     [InlineData("broken-version-chain")]
+    [InlineData("branched-version-chain")]
     public async Task Scan_fails_closed_when_the_rebind_is_not_a_scoped_released_chain(string mutation)
     {
         await using var db = CreateDbContext();
@@ -138,6 +139,20 @@ public sealed partial class MesMaterialScanPrevalidationTests
             "PV-002",
             new DateOnly(2026, 8, 26),
             Now.AddMinutes(2)));
+        if (mutation == "branched-version-chain")
+        {
+            db.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.AutoRebound(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-001",
+                WorkOrder.ReleasedStatus,
+                "ECO-SCAN-BRANCH",
+                "PV-001",
+                "PV-OTHER",
+                new DateOnly(2026, 8, 26),
+                Now.AddMinutes(2)));
+        }
         await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>

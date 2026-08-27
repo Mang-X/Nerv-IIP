@@ -1010,24 +1010,21 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             throw new KnownException("领料申请的单位不能是占位值，请按物料主档的基本计量单位提交。");
         }
 
-        var frozenSelection = request.IsSupplementary
+        var resolvedFrozenSelection = request.IsSupplementary
             ? null
             : await ResolveFrozenMaterialSelectionAsync(request, materialId, cancellationToken);
+        var frozenSelection = resolvedFrozenSelection?.SubstitutedMaterialId is null
+            ? null
+            : resolvedFrozenSelection;
         var requirementRows = request.Quantity.HasValue || frozenSelection is not null
             ? []
-            : await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId)
-            .ToArrayAsync(cancellationToken);
-        var requestedQuantity = request.Quantity ?? frozenSelection?.RequiredQuantity ??
-            MaterialReadinessGuards.SelectLatestRequirementSnapshotsByWorkOrder(
-                requirementRows,
-                x => x.WorkOrderId,
-                x => x.CapturedAtUtc,
-                x => x.Id)
+            : await MaterialReadinessGuards.LoadLatestRequirementSnapshotsByWorkOrderAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                [request.WorkOrderId],
+                cancellationToken);
+        var requestedQuantity = request.Quantity ?? frozenSelection?.RequiredQuantity ?? requirementRows
             .Where(x =>
                 (request.OperationTaskId == null ||
                     x.OperationTaskId == null ||
@@ -1968,27 +1965,26 @@ internal static class MaterialReadinessGuards
                 group => group.Select(x => x.SupersededByProductionVersionId!).Distinct(StringComparer.Ordinal).ToArray(),
                 StringComparer.Ordinal);
         var visited = new HashSet<string>(StringComparer.Ordinal) { snapshotProductionVersionId };
-        var pending = new Queue<string>();
-        pending.Enqueue(snapshotProductionVersionId);
-        while (pending.TryDequeue(out var archivedVersionId))
+        var archivedVersionId = snapshotProductionVersionId;
+        while (successorsByArchivedVersion.TryGetValue(archivedVersionId, out var successors))
         {
-            if (!successorsByArchivedVersion.TryGetValue(archivedVersionId, out var successors))
+            if (successors.Length != 1)
             {
-                continue;
+                return false;
             }
 
-            foreach (var successor in successors)
+            var successor = successors[0];
+            if (string.Equals(successor, currentProductionVersionId, StringComparison.Ordinal))
             {
-                if (string.Equals(successor, currentProductionVersionId, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                if (visited.Add(successor))
-                {
-                    pending.Enqueue(successor);
-                }
+                return true;
             }
+
+            if (!visited.Add(successor))
+            {
+                return false;
+            }
+
+            archivedVersionId = successor;
         }
 
         return false;
@@ -2151,44 +2147,12 @@ internal static class MaterialReadinessGuards
         string? operationTaskId,
         CancellationToken cancellationToken)
     {
-        var persistedRequirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                x.WorkOrderId == workOrderId)
-            .Select(x => new MaterialRequirementSnapshot(
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc))
-            .ToArrayAsync(cancellationToken);
-        var localRequirements = dbContext.MaterialRequirements.Local
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                x.WorkOrderId == workOrderId)
-            .Select(x => new MaterialRequirementSnapshot(
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc));
-        var requirements = SelectLatestRequirementSnapshotsByWorkOrder(
-            persistedRequirements,
-            localRequirements,
-            x => x.WorkOrderId,
-            x => x.CapturedAtUtc,
-            x => x.Id);
+        var requirements = await LoadLatestRequirementSnapshotsByWorkOrderAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            [workOrderId],
+            cancellationToken);
 
         if (requirements.Length == 0)
         {
@@ -2298,40 +2262,68 @@ internal static class MaterialReadinessGuards
         T[] Requirements);
 
     /// <summary>
-    /// Selects one complete latest capture per work order before resolving EF tracked duplicates.
-    /// A tracked row with the same stable entity identity overrides its persisted projection.
-    /// Operation/material scoping intentionally belongs to callers after this pipeline.
+    /// Loads the complete material-requirement scope for each work order, selects its latest capture,
+    /// then resolves EF tracked copies by stable entity identity. Callers may scope by operation or
+    /// material only after this canonical pipeline returns.
     /// </summary>
-    internal static T[] SelectLatestRequirementSnapshotsByWorkOrder<T, TIdentity>(
-        IEnumerable<T> persistedRequirements,
-        Func<T, string> workOrderId,
-        Func<T, DateTimeOffset> capturedAtUtc,
-        Func<T, TIdentity> identity) where TIdentity : notnull =>
-        SelectLatestRequirementSnapshotsByWorkOrder(
-            persistedRequirements,
-            [],
-            workOrderId,
-            capturedAtUtc,
-            identity);
+    internal static async Task<MaterialRequirementSnapshot[]> LoadLatestRequirementSnapshotsByWorkOrderAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> workOrderIds,
+        CancellationToken cancellationToken)
+    {
+        var persistedRequirements = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new MaterialRequirementSnapshot(
+                x.Id,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity,
+                x.CapturedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        var localRequirements = dbContext.MaterialRequirements.Local
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new MaterialRequirementSnapshot(
+                x.Id,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity,
+                x.CapturedAtUtc));
 
-    internal static T[] SelectLatestRequirementSnapshotsByWorkOrder<T, TIdentity>(
-        IEnumerable<T> persistedRequirements,
-        IEnumerable<T> localRequirements,
-        Func<T, string> workOrderId,
-        Func<T, DateTimeOffset> capturedAtUtc,
-        Func<T, TIdentity> identity) where TIdentity : notnull =>
+        return SelectLatestRequirementSnapshotsByWorkOrder(persistedRequirements, localRequirements);
+    }
+
+    private static MaterialRequirementSnapshot[] SelectLatestRequirementSnapshotsByWorkOrder(
+        IEnumerable<MaterialRequirementSnapshot> persistedRequirements,
+        IEnumerable<MaterialRequirementSnapshot> localRequirements) =>
         persistedRequirements
-            .Select(x => new RequirementSnapshotCandidate<T>(x, IsLocal: false))
-            .Concat(localRequirements.Select(x => new RequirementSnapshotCandidate<T>(x, IsLocal: true)))
-            .GroupBy(x => workOrderId(x.Requirement), StringComparer.Ordinal)
+            .Select(x => new RequirementSnapshotCandidate(x, IsLocal: false))
+            .Concat(localRequirements.Select(x => new RequirementSnapshotCandidate(x, IsLocal: true)))
+            .GroupBy(x => x.Requirement.WorkOrderId, StringComparer.Ordinal)
             .SelectMany(group =>
-                SelectLatestRequirementSnapshot(group, x => capturedAtUtc(x.Requirement))
+                SelectLatestRequirementSnapshot(group, x => x.Requirement.CapturedAtUtc)
                     .Requirements
-                    .GroupBy(x => identity(x.Requirement))
+                    .GroupBy(x => x.Requirement.Id)
                     .Select(identityGroup => identityGroup.OrderBy(x => x.IsLocal).Last().Requirement))
             .ToArray();
 
-    private sealed record RequirementSnapshotCandidate<T>(T Requirement, bool IsLocal);
+    private sealed record RequirementSnapshotCandidate(MaterialRequirementSnapshot Requirement, bool IsLocal);
 
     internal sealed record MaterialRequirementSnapshot(
         MaterialRequirementId Id,
@@ -2343,7 +2335,7 @@ internal static class MaterialReadinessGuards
         decimal AvailableQuantity,
         decimal StagedQuantity,
         DateTimeOffset CapturedAtUtc,
-        IReadOnlyCollection<string>? SubstituteMaterialIds = null) : IMaterialRequirementSnapshot;
+        IReadOnlyCollection<string>? SubstituteMaterialIds = null);
 }
 
 internal sealed record ReadinessBlockingIssue(

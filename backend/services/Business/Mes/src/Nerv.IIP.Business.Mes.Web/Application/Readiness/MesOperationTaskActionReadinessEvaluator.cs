@@ -101,44 +101,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 (x.ToUtc == null || x.ToUtc > evaluatedAtUtc))
             .Select(x => new UnavailabilityFact(x.WorkCenterId, x.Reason))
             .ToArrayAsync(cancellationToken);
-        var persistedRequirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new MaterialRequirementFact(
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc))
-            .ToArrayAsync(cancellationToken);
-        var localRequirements = dbContext.MaterialRequirements.Local
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new MaterialRequirementFact(
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc));
-        var requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshotsByWorkOrder(
-            persistedRequirements,
-            localRequirements,
-            x => x.WorkOrderId,
-            x => x.CapturedAtUtc,
-            x => x.Id);
+        var requirements = await MaterialReadinessGuards.LoadLatestRequirementSnapshotsByWorkOrderAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderIds,
+            cancellationToken);
         var receipts = await dbContext.MaterialIssueRequests
             .AsNoTracking()
             .Where(x =>
@@ -180,7 +148,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         IReadOnlyCollection<MaterialReadinessGuards.AutomaticRebindEdge> automaticRebinds,
         IReadOnlyCollection<QualityHoldFact> activeQualityHolds,
         IReadOnlyCollection<UnavailabilityFact> activeUnavailabilities,
-        IReadOnlyCollection<MaterialRequirementFact> requirements,
+        IReadOnlyCollection<MaterialReadinessGuards.MaterialRequirementSnapshot> requirements,
         IReadOnlyCollection<ReceiptFact> receipts)
     {
         if (task.Status == OperationTaskLifecycleStatus.InProgress)
@@ -300,17 +268,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             canonicalReasons,
             evaluatedAtUtc);
     }
-
-    private sealed record MaterialRequirementFact(
-        MaterialRequirementId Id,
-        string WorkOrderId,
-        string? OperationTaskId,
-        string MaterialId,
-        string? MaterialLotId,
-        decimal RequiredQuantity,
-        decimal AvailableQuantity,
-        decimal StagedQuantity,
-        DateTimeOffset CapturedAtUtc);
 
     private sealed record OperationFact(
         string WorkOrderId,

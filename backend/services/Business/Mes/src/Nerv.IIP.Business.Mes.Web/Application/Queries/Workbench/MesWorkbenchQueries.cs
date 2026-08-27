@@ -507,7 +507,8 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
     /// <summary>
     /// 「已下达未开工」工单里按最新齐套快照仍缺料的数量。口径与放行门禁
     /// <see cref="MaterialReadinessGuards.GetShortageReasonsAsync"/> 一致：
-    /// 同 (工序, 物料, 批次) 取最新快照，缺口 = 需求 − 可用 − 备料 − 已线边接收。
+    /// 每个工单先选择一次完整最新 capture，再按 (物料, 批次) 聚合；
+    /// 缺口 = 需求 − 可用 − 备料 − 已线边接收。
     /// released 工单集合有限（历史形状约 3%），加载后在内存完成快照去重。
     /// </summary>
     private async Task<int> CountReleasedWorkOrdersWithMaterialShortageAsync(
@@ -525,23 +526,12 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             return 0;
         }
 
-        var requirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
-                releasedWorkOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new
-            {
-                x.Id,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-            })
-            .ToArrayAsync(cancellationToken);
+        var requirements = await MaterialReadinessGuards.LoadLatestRequirementSnapshotsByWorkOrderAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            releasedWorkOrderIds,
+            cancellationToken);
         if (requirements.Length == 0)
         {
             return 0;
@@ -561,11 +551,7 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             })
             .ToArrayAsync(cancellationToken);
 
-        return MaterialReadinessGuards.SelectLatestRequirementSnapshotsByWorkOrder(
-                requirements,
-                x => x.WorkOrderId,
-                x => x.CapturedAtUtc,
-                x => x.Id)
+        return requirements
             .GroupBy(x => new { x.WorkOrderId, x.MaterialId, x.MaterialLotId })
             .Select(group =>
             {
@@ -1480,6 +1466,8 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 x.WorkOrderId == request.WorkOrderId)
             .Select(x => new
             {
+                x.Id,
+                x.WorkOrderId,
                 x.OperationTaskId,
                 x.MaterialId,
                 x.MaterialLotId,

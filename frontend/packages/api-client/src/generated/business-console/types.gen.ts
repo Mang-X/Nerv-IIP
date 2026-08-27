@@ -4196,6 +4196,32 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesMaterialScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesMaterialScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesMaterialScanDecision;
+    reasonCode: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    materialId?: string | null;
+    materialLotId?: string | null;
+    materialQualification?: string | null;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesMaterialScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesMaterialScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
     materialLotId?: string | null;
     receivedQuantity?: number | null;
@@ -15155,6 +15181,42 @@ export type GetBusinessConsoleMesMaterialIssueRequestResponses = {
 };
 
 export type GetBusinessConsoleMesMaterialIssueRequestResponse = GetBusinessConsoleMesMaterialIssueRequestResponses[keyof GetBusinessConsoleMesMaterialIssueRequestResponses];
+
+export type PrevalidateBusinessConsoleMesMaterialScanData = {
+    body: NervIipContractsMesMesMaterialScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/material-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanError = PrevalidateBusinessConsoleMesMaterialScanErrors[keyof PrevalidateBusinessConsoleMesMaterialScanErrors];
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponse = PrevalidateBusinessConsoleMesMaterialScanResponses[keyof PrevalidateBusinessConsoleMesMaterialScanResponses];
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest;
