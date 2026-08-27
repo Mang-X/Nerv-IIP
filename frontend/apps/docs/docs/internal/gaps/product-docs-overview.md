@@ -5,7 +5,8 @@
 ## 证据页面
 
 - `/`
-- `docs/architecture/implementation-readiness.md`
+- `docs/status/current.md`
+- `docs/architecture/README.md`
 - `frontend/apps/business-console/src/pages`
 
 ## 建议 Issue 标题
@@ -28,7 +29,7 @@
 
 ### 术语不清
 
-- 当前能力边界依赖实施就绪文档人工维护，缺少可生成的产品能力矩阵来统一“已落地、过渡、后置”的口径。
+- 当前能力边界仍需要从产品文档、Architecture、代码、公开契约和 GitHub/Linear 多处人工对照，缺少可生成的产品能力矩阵来统一“已落地、过渡、后置”的口径。
 
 ### 反馈不足
 

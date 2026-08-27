@@ -1,14 +1,13 @@
 # 文档目录路由
 
-修改 `docs/` 下的人工文档前，先从 `docs/README.md` 确认该内容的类型与权威住所，并读取 `docs/architecture/document-language-governance.md`。
+修改 `docs/` 下的人工文档前，先从 `docs/README.md` 确认内容类型与权威住所，并读取 `docs/architecture/document-language-governance.md`。
 
-- **机器输入或生成物分类：** 先读 `docs/architecture/document-language-governance.md` 中的权威分类表，不以宽泛目录排除人工文档。
-- **新增或修订 ADR、判断决策与当前实现的分工：** 先读 `docs/adr/README.md` 与 `docs/architecture/decision-record-governance.md`。
-- **新增或修订当前架构：** 先读 `docs/architecture/README.md`，只描述当前组件、边界、事实所有权、依赖方向和交互，不混入项目进度或事故过程。
-- **发布、里程碑或跨域能力盘点：** M0 迁移期间才按需读取 `docs/architecture/implementation-readiness.md`；普通文档和代码任务不读取它。
+- **当前状态：** 只在 `docs/status/current.md` 维护全仓级重点、阻塞、统一入口和少量跨域注意事项；完成项直接删除，不增加历史章节。
+- **历史状态：** `docs/status/archive/README.md` 是可维护的目录索引；目录内日期化快照为冻结资产，禁止原地修订。发现错误时在当前文档或新的日期化报告中说明。
+- **旧兼容入口：** `docs/architecture/implementation-readiness.md` 只负责导航，不得重新添加项目状态、实现说明、事故过程或裁决。
+- **机器输入或生成物：** 按 `docs/architecture/document-language-governance.md` 的权威分类表处理，不因所在目录宽泛而跳过分类。
+- **ADR：** 新增或修订前读取 `docs/adr/README.md` 与 `docs/architecture/decision-record-governance.md`。
+- **当前架构：** 先读 `docs/architecture/README.md`，只描述当前组件、边界、事实所有权、依赖方向和交互，不混入项目进度或事故过程。
+- **任务进度与证据：** 留在 GitHub/Linear 和对应 PR，不复制为仓库长期总账。
 
-## implementation-readiness 冻结
-
-自 [GitHub #2288](https://github.com/Mang-X/Nerv-IIP/issues/2288) 的 M0 阶段起，`docs/architecture/implementation-readiness.md` 停止接收新的功能完成日志、Issue/PR 级实施说明、事故过程、focused gate 明细和历史增量段落。
-
-迁移期间只允许修正会直接误导当前发布、迁移或运行入口的严重错误；当前任务进度与验收证据留在 GitHub/Linear 和对应 PR。完整状态总账的归档与兼容入口由 M1 独立处理。
+不得为状态页新增生成脚本、永久 manifest、自然语言 checker 或独立 CI step。
