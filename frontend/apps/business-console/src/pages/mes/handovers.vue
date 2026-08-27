@@ -482,7 +482,7 @@ function formatError(error: unknown) {
       :loading="handoversPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无班次交接。先在班次结束时创建交接单登记未完成事项，再由接班人在这里确认接收。"
+      empty-message="暂无班次交接。点击上方「新建交接」登记未完成事项，接班人可在这里确认接收。"
     >
       <template #cell-handoverStatus="{ row }">
         <NvStatusBadge
