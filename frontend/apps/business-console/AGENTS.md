@@ -10,10 +10,10 @@
 
 ## 0. 开工前
 
-1. 先读当前 Issue/spec 与所改业务域的**产品业务文档**（§2 清单），以它们为业务/IA/UX 事实依据；普通页面、组件、测试和局部修复不读取全局 `implementation-readiness.md`。
+1. 先读当前 Issue/spec 与所改业务域的**产品业务文档**（§2 清单），以它们为业务/IA/UX 事实依据；普通页面、组件、测试和局部修复不读取全局状态或历史快照。
 2. 读取目标页面、composable、facade、生成客户端和相关测试；后端能力以 **facade（门面）代码事实**为准，不臆测——**必要时登录后探针真实接口看真返回**（曾踩坑：以为 MES facade 回 GUID、实为人读编码 `WO-…/WC-…/SKU-…`，导致把现成可读单号藏成"待接入"占位；探一下就避免了）；缺什么就发 Issue（§2）。
 3. 涉及服务边界、跨域数据所有权或公开契约时，从 `docs/architecture/README.md` 按任务加载相关当前架构文档；涉及长期决策时读取 `docs/adr/README.md` 与相关 ADR。
-4. 只有发布、里程碑规划或跨域能力盘点，才在 M0 迁移期按需读取 `docs/architecture/implementation-readiness.md`。
+4. 只有发布、里程碑规划或跨域能力盘点才读取 `docs/status/current.md`；状态页不能替代 facade、生成客户端、公开契约和测试的当前事实。
 
 ## 1. 三大支柱：产品 · 业务 · UX（最高准则）
 

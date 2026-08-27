@@ -222,6 +222,22 @@ function Assert-PostgresLaneInventoryNarrative(
         activeNotHostedIdentities = $activeNotHostedIdentityCount
     }
 }
+function Get-PostgresLaneAutomationNarrative([object]$Inventory) {
+    return '当前 active manifest 为 {0} 个成员、{1} 个冻结身份；hosted job 仅选择其中 {2} 个成员、{3} 个身份。唯一未由 hosted 选择的 active 成员 `{4}` 有 {5} 个身份，原因是共享 workflow 接入仍待独立 Scope-Gate；它目前只由按需真实 PostgreSQL lane 承接，active 不能替代 hosted 执行证据。' -f `
+        $Inventory.activeMembers,
+        $Inventory.activeIdentities,
+        $Inventory.hostedMembers,
+        $Inventory.hostedIdentities,
+        ($Inventory.activeNotHostedIds -join ','),
+        $Inventory.activeNotHostedIdentities
+}
+function Assert-PostgresLaneAutomationNarrative(
+    [string]$GovernancePath,
+    [object]$Inventory) {
+    $expectedNarrative = Get-PostgresLaneAutomationNarrative -Inventory $Inventory
+    $governance = [IO.File]::ReadAllText($GovernancePath)
+    Assert-Contract ($governance.Contains($expectedNarrative, [StringComparison]::Ordinal)) "PostgreSQL script automation governance must contain the manifest/workflow-derived hosted-subset narrative: $expectedNarrative"
+}
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
     # 对账用**第二条独立推导路径**：从调用点反推（`X.CreateAsync(` 的类型名，且其声明文件含 CREATE DATABASE），
@@ -382,6 +398,22 @@ try {
     Assert-Contract ($laneInventory.activeMembers -eq 15 -and $laneInventory.activeIdentities -eq 118) 'The active PostgreSQL manifest inventory must remain 15 members and 118 frozen identities.'
     Assert-Contract ($laneInventory.hostedMembers -eq 14 -and $laneInventory.hostedIdentities -eq 110) 'The hosted PostgreSQL workflow subset must remain 14 members and 110 frozen identities.'
     Assert-Contract ($laneInventory.activeNotHostedIds.Count -eq 1 -and [string]::Equals([string]$laneInventory.activeNotHostedIds[0], 'masterdata-device-reference-concurrency', [StringComparison]::Ordinal) -and $laneInventory.activeNotHostedIdentities -eq 8) 'The active-but-not-hosted inventory must explicitly identify the eight-test MasterData device-reference concurrency member.'
+    Assert-PostgresLaneAutomationNarrative `
+        -GovernancePath (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') `
+        -Inventory $laneInventory
+    $canonicalAutomationNarrative = Get-PostgresLaneAutomationNarrative -Inventory $laneInventory
+    $automationNarrativeMutationCases = @(
+        @{ name = 'old-all-active-claim'; text = '当前 hosted job 接入拆解③登记的全部非规模种子成员。' },
+        @{ name = 'wrong-hosted-counts'; text = $canonicalAutomationNarrative.Replace('hosted job 仅选择其中 14 个成员、110 个身份', 'hosted job 仅选择其中 15 个成员、118 个身份') },
+        @{ name = 'missing-not-hosted-reason'; text = $canonicalAutomationNarrative.Replace('原因是共享 workflow 接入仍待独立 Scope-Gate；', '') }
+    )
+    foreach ($mutationCase in $automationNarrativeMutationCases) {
+        $mutatedAutomationPath = Join-Path $fixtureRoot "script-automation-$($mutationCase.name).md"
+        [IO.File]::WriteAllText($mutatedAutomationPath, [string]$mutationCase.text, [Text.UTF8Encoding]::new($false))
+        $mutationRejected = $false
+        try { Assert-PostgresLaneAutomationNarrative -GovernancePath $mutatedAutomationPath -Inventory $laneInventory } catch { $mutationRejected = $_.Exception.Message.Contains('hosted-subset narrative', [StringComparison]::Ordinal) }
+        Assert-Contract $mutationRejected "PostgreSQL script automation narrative mutation '$($mutationCase.name)' must fail closed."
+    }
     $testOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'test-owned', [StringComparison]::Ordinal) }).Count
     $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
     Assert-Contract ($testOwnedCount -ge 1 -and $runnerOwnedCount -ge 1) 'Both ownership forms must stay represented; if one empties, its half of the contract stops being exercised.'
@@ -529,32 +561,6 @@ try {
         Assert-Contract ($wmsSourceText -cnotmatch '"[^"\r\n]*CREATE DATABASE') "WMS lane source '$wmsSource' must not hand-roll CREATE DATABASE; NERV-822 converged these files onto the shared helper."
     }
 
-    # 「其余服务（…）仍属于拆解③后续批次」这句已经三次把已接入的服务写回未接入列表（#1553 的 Quality、
-    # #1555 的 Quality/IndustrialTelemetry、#1557 的 WMS）。只改文字会让它第四次回潮，因此把它变成门禁：
-    # 该句列出的服务集合与 manifest 里 active 成员的 service 集合，交集必须为空。
-    function Assert-PendingServiceListExcludesLaneMembers([string]$ReadinessPath, [object[]]$ActiveMembers) {
-        $readiness = [IO.File]::ReadAllText($ReadinessPath)
-        $sentence = [regex]::Match($readiness, '其余服务（(?<list>[^）]*)）仍属于拆解③后续批次')
-        if (-not $sentence.Success) {
-            # 全部接入后该句合法消失，但必须换成同样可核的收尾表述，否则"没有待接入服务"就无从证伪。
-            if ($readiness.Contains('拆解③登记的服务至此全部接入', [StringComparison]::Ordinal)) { return }
-            throw 'The readiness narrative must either name the pending services or state that none remain, so the gate has something to check.'
-        }
-        $pendingServices = @($sentence.Groups['list'].Value -split '、' | ForEach-Object { $_.Replace(' 等', '').Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        foreach ($activeMember in $ActiveMembers) {
-            foreach ($pendingService in $pendingServices) {
-                if ([string]::Equals($pendingService, [string]$activeMember.service, [StringComparison]::OrdinalIgnoreCase)) {
-                    throw "Service '$pendingService' is already an active lane member but the readiness narrative still lists it as pending."
-                }
-            }
-        }
-    }
-    Assert-PendingServiceListExcludesLaneMembers -ReadinessPath (Join-Path $repoRoot 'docs/architecture/implementation-readiness.md') -ActiveMembers $activeMembers
-    $regressedReadinessPath = Join-Path $fixtureRoot 'regressed-readiness.md'
-    [IO.File]::WriteAllText($regressedReadinessPath, '其余服务（WMS、ERP、DemandPlanning 等）仍属于拆解③后续批次。', [Text.UTF8Encoding]::new($false))
-    $pendingListRejected = $false
-    try { Assert-PendingServiceListExcludesLaneMembers -ReadinessPath $regressedReadinessPath -ActiveMembers $activeMembers } catch { $pendingListRejected = $_.Exception.Message.Contains('still lists it as pending', [StringComparison]::Ordinal) }
-    Assert-Contract $pendingListRejected 'Listing an already-onboarded service as pending must fail closed.'
     # runner 形态必须留一根钉：MasterData 是裁决原文里 runner 的动机样本（失败时要留 CAP outbox 状态），
     # 钉住它，"runner 半边契约仍被行使"才不是一句空话。
     $masterDataOwnership = @($activeMembers | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })
