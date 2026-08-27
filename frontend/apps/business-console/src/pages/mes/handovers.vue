@@ -204,7 +204,7 @@ function resetCreateForm() {
 }
 
 function openCreateDialog() {
-  if (!canManageHandovers.value || !handoverContextReady.value) return
+  if (createEntryBlocker.value) return
   resetCreateForm()
   createIdempotencyKey.value = makeIdempotencyKey('mes-handover-create')
   createDialogOpen.value = true
