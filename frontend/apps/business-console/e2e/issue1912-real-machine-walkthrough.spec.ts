@@ -1853,6 +1853,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           scope: {
             label: '作业范围',
             option: receiptScope.displayName,
+            scopeKind: inboundListQuery.scopeKind,
             scopeId: inboundListQuery.scopeId,
           },
           site: { label: '工厂', optionCode: inboundListQuery.siteCode },
@@ -2547,6 +2548,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           scope: {
             label: '作业范围',
             option: shipmentScope.displayName,
+            scopeKind: outboundListQuery.scopeKind,
             scopeId: outboundListQuery.scopeId,
           },
         },

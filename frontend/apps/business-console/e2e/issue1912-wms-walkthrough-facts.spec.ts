@@ -255,7 +255,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         let refreshCount = 0
         const syncScopeOption = () => {
           const option = menu.querySelector('[role="option"]')
-          if (option) option.hidden = search.value.trim() !== option.dataset.scopeId
+          if (option) option.hidden = search.value.trim() !== option.dataset.scopeValue
         }
         search.addEventListener('input', syncScopeOption)
         scope.addEventListener('click', () => {
@@ -266,11 +266,14 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               const option = document.createElement('button')
               option.type = 'button'
               option.setAttribute('role', 'option')
+              option.setAttribute('aria-selected', 'false')
               option.textContent = '发货作业池'
               option.dataset.scopeId = scenario.scopeId
-              option.hidden = search.value.trim() !== option.dataset.scopeId
+              option.dataset.scopeValue = scenario.scopeKind + ':' + scenario.scopeId
+              option.hidden = search.value.trim() !== option.dataset.scopeValue
               option.addEventListener('click', () => {
                 selectedScopeId = option.dataset.scopeId || ''
+                option.setAttribute('aria-selected', 'true')
                 menu.hidden = true
                 scope.textContent = option.textContent
                 scope.dataset.scopeId = selectedScopeId
@@ -302,7 +305,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       kind: 'outbound',
       page,
       selection: {
-        scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+        scope: {
+          label: '作业范围',
+          option: '发货作业池',
+          scopeKind: expectedQuery.scopeKind,
+          scopeId: expectedQuery.scopeId,
+        },
       },
       query: outboundProof(expectedQuery),
     })
@@ -320,7 +328,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         kind: 'outbound',
         page,
         selection: {
-          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+          scope: {
+            label: '作业范围',
+            option: '发货作业池',
+            scopeKind: expectedQuery.scopeKind,
+            scopeId: expectedQuery.scopeId,
+          },
         },
         query: outboundProof(expectedQuery),
       }),
@@ -331,7 +344,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         kind: 'outbound',
         page,
         selection: {
-          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+          scope: {
+            label: '作业范围',
+            option: '发货作业池',
+            scopeKind: expectedQuery.scopeKind,
+            scopeId: expectedQuery.scopeId,
+          },
         },
         query: outboundProof(expectedQuery),
       }),
@@ -342,7 +360,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         kind: 'outbound',
         page,
         selection: {
-          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+          scope: {
+            label: '作业范围',
+            option: '发货作业池',
+            scopeKind: expectedQuery.scopeKind,
+            scopeId: expectedQuery.scopeId,
+          },
         },
         query: outboundProof(expectedQuery),
       }),
@@ -353,7 +376,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         kind: 'outbound',
         page,
         selection: {
-          scope: { label: '作业范围', option: '发货作业池', scopeId: expectedQuery.scopeId },
+          scope: {
+            label: '作业范围',
+            option: '发货作业池',
+            scopeKind: expectedQuery.scopeKind,
+            scopeId: expectedQuery.scopeId,
+          },
         },
         query: outboundProof(expectedQuery),
       }),
@@ -366,7 +394,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         kind: 'inbound',
         page,
         selection: {
-          scope: { label: '作业范围', option: '收货作业池', scopeId: 'pool-receiving-001' },
+          scope: {
+            label: '作业范围',
+            option: '收货作业池',
+            scopeKind: 'work-pool',
+            scopeId: 'pool-receiving-001',
+          },
           site: { label: '工厂', optionCode: 'SITE-001' },
         },
         query: {
@@ -381,7 +414,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         kind: 'outbound',
         page,
         selection: {
-          scope: { label: '作业范围', option: '收货作业池', scopeId: 'pool-shipping-001' },
+          scope: {
+            label: '作业范围',
+            option: '收货作业池',
+            scopeKind: 'work-pool',
+            scopeId: 'pool-shipping-001',
+          },
         },
         query: {
           ...outboundProof(NERV_1571_WMS_OUTBOUND_QUERY_FACTS),
@@ -393,6 +431,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
 
   test('首个 WMS 列表响应为 503 或错误路径时，不接受后续 200 自洽通过', async ({ page }) => {
     const keyword = NERV_1571_WMS_OUTBOUND_QUERY_FACTS.keyword
+    const lifecycleTimeoutMs = 5_000
     await page.route('**/api/business-console/v1/wms/*', async (route) => {
       const phase = new URL(route.request().url()).searchParams.get('phase')
       const attempt = new URL(route.request().url()).searchParams.get('attempt')
@@ -415,7 +454,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             },
             { path: `http://walkthrough.fixture${inboundPath}`, keyword },
           ),
-        2_000,
+        lifecycleTimeoutMs,
       ),
     ).rejects.toThrow('HTTP 503')
 
@@ -441,7 +480,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
                 requestKeyword: keyword,
               },
             ),
-          2_000,
+          lifecycleTimeoutMs,
         ),
       ).rejects.toThrow('response path')
     } finally {
@@ -470,13 +509,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
                 await fetch(`${targetPath}?phase=unknown-first&keyword=${requestKeyword}`)
               },
               {
-                unknownPath:
-                  'http://walkthrough.fixture/api/business-console/v1/wms/inbound-order-list',
+                unknownPath: 'http://walkthrough.fixture/api/business-console/v1/wms/unknown',
                 targetPath: `http://walkthrough.fixture${inboundPath}`,
                 requestKeyword: keyword,
               },
             ),
-          2_000,
+          lifecycleTimeoutMs,
         ),
       ).rejects.toThrow('unexpected WMS list-like request path')
     } finally {
@@ -514,11 +552,71 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
                 requestKeyword: keyword,
               },
             ),
-          2_000,
+          lifecycleTimeoutMs,
         ),
       ).rejects.toThrow('request failed')
     } finally {
       await fourthPage.close()
+    }
+
+    const fifthPage = await page.context().newPage()
+    try {
+      await fifthPage.route('**/api/business-console/v1/wms/**', async (route) => {
+        await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+      })
+      await fifthPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          fifthPage,
+          inboundPath,
+          async () =>
+            fifthPage.evaluate(
+              async ({ nestedPath, targetPath, requestKeyword }) => {
+                await fetch(`${nestedPath}?phase=nested-first&keyword=${requestKeyword}`)
+                await fetch(`${targetPath}?phase=nested-first&keyword=${requestKeyword}`)
+              },
+              {
+                nestedPath: `http://walkthrough.fixture${inboundPath}/extra`,
+                targetPath: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          lifecycleTimeoutMs,
+        ),
+      ).rejects.toThrow('unexpected WMS list-like request path')
+    } finally {
+      await fifthPage.close()
+    }
+
+    const sixthPage = await page.context().newPage()
+    try {
+      await sixthPage.route(`**${inboundPath}*`, async (route) => {
+        await route.fulfill({ status: 200, body: JSON.stringify({ items: [] }) })
+      })
+      await sixthPage.setContent('<base href="http://walkthrough.fixture/">')
+      await expect(
+        withWmsInitialListResponseGuard(
+          sixthPage,
+          inboundPath,
+          async () =>
+            sixthPage.evaluate(
+              async ({ path, requestKeyword }) => {
+                await fetch(`${path}?phase=method-first&keyword=${requestKeyword}`, {
+                  method: 'POST',
+                  body: '{}',
+                })
+                await fetch(`${path}?phase=method-first&keyword=${requestKeyword}`)
+              },
+              {
+                path: `http://walkthrough.fixture${inboundPath}`,
+                requestKeyword: keyword,
+              },
+            ),
+          lifecycleTimeoutMs,
+        ),
+      ).rejects.toThrow('unexpected WMS initial list request method POST')
+    } finally {
+      await sixthPage.close()
     }
   })
 
@@ -558,7 +656,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
         let selectedSiteCode = ''
         const syncScopeOption = () => {
           const option = scopeMenu.querySelector('[role="option"]')
-          if (option) option.hidden = scopeSearch.value.trim() !== option.dataset.scopeId
+          if (option) option.hidden = scopeSearch.value.trim() !== option.dataset.scopeValue
         }
         scopeSearch.addEventListener('input', syncScopeOption)
         scope.addEventListener('click', () => {
@@ -569,11 +667,14 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
               const option = document.createElement('button')
               option.type = 'button'
               option.setAttribute('role', 'option')
+              option.setAttribute('aria-selected', 'false')
               option.textContent = '收货作业池'
               option.dataset.scopeId = scenario.scopeId
-              option.hidden = scopeSearch.value.trim() !== option.dataset.scopeId
+              option.dataset.scopeValue = scenario.scopeKind + ':' + scenario.scopeId
+              option.hidden = scopeSearch.value.trim() !== option.dataset.scopeValue
               option.addEventListener('click', () => {
                 selectedScopeId = option.dataset.scopeId || ''
+                option.setAttribute('aria-selected', 'true')
                 scopeMenu.hidden = true
                 scope.textContent = option.textContent
                 scope.dataset.scopeId = selectedScopeId
@@ -622,7 +723,12 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       kind: 'inbound',
       page,
       selection: {
-        scope: { label: '作业范围', option: '收货作业池', scopeId: expectedQuery.scopeId },
+        scope: {
+          label: '作业范围',
+          option: '收货作业池',
+          scopeKind: expectedQuery.scopeKind,
+          scopeId: expectedQuery.scopeId,
+        },
         site: { label: '工厂', optionCode: expectedQuery.siteCode },
       },
       query: inboundProof(expectedQuery),

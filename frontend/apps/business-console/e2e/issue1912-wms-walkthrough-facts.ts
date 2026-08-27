@@ -1,4 +1,5 @@
 import { expect, type Page, type Request, type Response } from '@playwright/test'
+import { formatWorkScopeKey } from '@nerv-iip/business-core'
 
 import {
   clickRefreshAndWaitForListResponse,
@@ -10,6 +11,33 @@ import type {
   WmsInboundWalkthroughScenarioFacts,
   WmsWalkthroughScenarioFacts,
 } from './issue1912-wms-walkthrough-authority'
+
+const WMS_INBOUND_LIST_PATH = '/api/business-console/v1/wms/inbound-orders' as const
+const WMS_OUTBOUND_LIST_PATH = '/api/business-console/v1/wms/outbound-orders' as const
+
+type WmsInitialEndpointKind = 'list' | 'auxiliary' | 'unknown' | 'outside'
+
+/**
+ * The initial page can issue auxiliary WMS reads while its list query is being enabled. Every
+ * path in that phase is nevertheless classified by this registry: the two `list` entries are the
+ * only acceptable list candidates, and an unregistered WMS path is never silently ignored.
+ */
+const wmsInitialEndpointRegistry: Readonly<
+  Record<string, Exclude<WmsInitialEndpointKind, 'outside'>>
+> = {
+  [WMS_INBOUND_LIST_PATH]: 'list',
+  [WMS_OUTBOUND_LIST_PATH]: 'list',
+  '/api/business-console/v1/wms/work-scopes/receipts': 'auxiliary',
+  '/api/business-console/v1/wms/work-scopes/shipments': 'auxiliary',
+  '/api/business-console/v1/wms/operational-candidates/receipts': 'auxiliary',
+  '/api/business-console/v1/wms/operational-candidates/shipments': 'auxiliary',
+  '/api/business-console/v1/wms/receiving-quality-gates': 'auxiliary',
+  '/api/business-console/v1/wms/supplier-return-requests': 'auxiliary',
+}
+
+export type WmsInboundListPath = typeof WMS_INBOUND_LIST_PATH
+export type WmsOutboundListPath = typeof WMS_OUTBOUND_LIST_PATH
+export type WmsListPath = WmsInboundListPath | WmsOutboundListPath
 
 export type WmsWorkPoolScopeFacts = Readonly<{
   scopeKind: 'work-pool'
@@ -29,9 +57,6 @@ export type WmsInboundListQueryFacts = Readonly<WmsListQueryFacts & { siteCode: 
 export type WmsOutboundListQueryFacts = Readonly<WmsListQueryFacts & { siteCode?: never }>
 export type WmsInboundKeywordQueryFacts = Readonly<WmsInboundListQueryFacts & { keyword: string }>
 export type WmsOutboundKeywordQueryFacts = Readonly<WmsOutboundListQueryFacts & { keyword: string }>
-export type WmsInboundListPath = '/api/business-console/v1/wms/inbound-orders'
-export type WmsOutboundListPath = '/api/business-console/v1/wms/outbound-orders'
-export type WmsListPath = WmsInboundListPath | WmsOutboundListPath
 
 export type WmsPageSelection =
   | Readonly<{ label: string; option: string; optionCode?: never }>
@@ -40,6 +65,7 @@ export type WmsPageSelection =
 export type WmsScopeSelection = Readonly<{
   label: '作业范围'
   option: string
+  scopeKind: 'work-pool'
   scopeId: string
 }>
 
@@ -212,6 +238,11 @@ export function assertWmsInboundSelectionMatchesQuery(
       `WMS inbound scope selection ${selection.scope.scopeId} did not match expected scopeId ${expectedQuery.scopeId}`,
     )
   }
+  if (selection.scope.scopeKind !== expectedQuery.scopeKind) {
+    throw new Error(
+      `WMS inbound scope selection ${selection.scope.scopeKind} did not match expected scopeKind ${expectedQuery.scopeKind}`,
+    )
+  }
   if (selection.site.optionCode !== expectedQuery.siteCode) {
     throw new Error(
       `WMS inbound site selection ${selection.site.optionCode} did not match expected siteCode ${expectedQuery.siteCode}`,
@@ -239,11 +270,23 @@ export function assertWmsOutboundSelectionMatchesQuery(
       `WMS outbound scope selection ${selection.scope.scopeId} did not match expected scopeId ${expectedQuery.scopeId}`,
     )
   }
+  if (selection.scope.scopeKind !== expectedQuery.scopeKind) {
+    throw new Error(
+      `WMS outbound scope selection ${selection.scope.scopeKind} did not match expected scopeKind ${expectedQuery.scopeKind}`,
+    )
+  }
 }
 
 function assertWmsScopeSelection(selection: WmsScopeSelection): void {
+  if (selection.label !== '作业范围') {
+    throw new Error('WMS scope selection must use the 作业范围 label')
+  }
+  if (selection.scopeKind !== 'work-pool') {
+    throw new Error(
+      `WMS scope selection scopeKind must be work-pool, received ${selection.scopeKind}`,
+    )
+  }
   if (
-    selection.label !== '作业范围' ||
     'optionCode' in selection ||
     typeof selection.option !== 'string' ||
     typeof selection.scopeId !== 'string' ||
@@ -255,9 +298,7 @@ function assertWmsScopeSelection(selection: WmsScopeSelection): void {
 }
 
 function expectedWmsListPath(kind: WmsListQueryProof['kind']): WmsListPath {
-  return kind === 'inbound'
-    ? '/api/business-console/v1/wms/inbound-orders'
-    : '/api/business-console/v1/wms/outbound-orders'
+  return kind === 'inbound' ? WMS_INBOUND_LIST_PATH : WMS_OUTBOUND_LIST_PATH
 }
 
 function assertQueryFacts(
@@ -404,13 +445,9 @@ export function assertWmsInitialListResponse(
   }
 }
 
-const wmsListPaths: readonly WmsListPath[] = [
-  '/api/business-console/v1/wms/inbound-orders',
-  '/api/business-console/v1/wms/outbound-orders',
-]
-
-function isWmsListPath(path: string): path is WmsListPath {
-  return wmsListPaths.includes(path as WmsListPath)
+function classifyWmsInitialEndpoint(path: string): WmsInitialEndpointKind {
+  if (!path.startsWith('/api/business-console/v1/wms/')) return 'outside'
+  return wmsInitialEndpointRegistry[path] ?? 'unknown'
 }
 
 /**
@@ -435,9 +472,6 @@ export async function withWmsInitialListResponseGuard<T>(
   let firstCandidateSeen = false
   let documentCommitted = navigationRoute === undefined
   let firstListRequest: Request | undefined
-  const isWmsListLikePath = (path: string): boolean =>
-    path.startsWith('/api/business-console/v1/wms/') &&
-    /(?:^|\/)[^/]*(?:order|list)[^/]*\/?$/i.test(path)
   const frameNavigationObserver = (frame: { url: () => string }) => {
     if (frame !== page.mainFrame() || !navigationRoute) return
     const current = new URL(frame.url(), page.url())
@@ -445,32 +479,42 @@ export async function withWmsInitialListResponseGuard<T>(
     documentCommitted = current.pathname === expected.pathname && current.search === expected.search
   }
   const requestObserver = (request: Request) => {
-    if (firstCandidateSeen) return
+    if (firstCandidateSeen || firstListRequest) return
+    if (!documentCommitted || request.frame() !== page.mainFrame()) return
     const path = new URL(request.url()).pathname
-    if (
-      documentCommitted &&
-      request.method() === 'GET' &&
-      isWmsListLikePath(path) &&
-      request.frame() === page.mainFrame()
-    ) {
-      if (!isWmsListPath(path)) {
-        firstCandidateSeen = true
-        rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
-        return
-      }
-      if (!firstListRequest) firstListRequest = request
-    }
-  }
-  const responseObserver = (response: Response) => {
-    if (firstCandidateSeen) return
-    const request = response.request()
-    if (
-      request !== firstListRequest ||
-      request.method() !== 'GET' ||
-      request.frame() !== page.mainFrame()
-    ) {
+    const endpointKind = classifyWmsInitialEndpoint(path)
+    if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
+    if (endpointKind === 'unknown') {
+      firstCandidateSeen = true
+      rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
       return
     }
+    if (request.method() !== 'GET') {
+      firstCandidateSeen = true
+      rejectFirst(new Error(`unexpected WMS initial list request method ${request.method()}`))
+      return
+    }
+    firstListRequest = request
+  }
+  const responseObserver = (response: Response) => {
+    if (firstCandidateSeen || !documentCommitted) return
+    const request = response.request()
+    if (request.frame() !== page.mainFrame()) return
+    if (firstListRequest && request !== firstListRequest) return
+    const path = new URL(response.url()).pathname
+    const endpointKind = classifyWmsInitialEndpoint(path)
+    if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
+    if (endpointKind === 'unknown') {
+      firstCandidateSeen = true
+      rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
+      return
+    }
+    if (request.method() !== 'GET') {
+      firstCandidateSeen = true
+      rejectFirst(new Error(`unexpected WMS initial list request method ${request.method()}`))
+      return
+    }
+    firstListRequest ??= request
     firstCandidateSeen = true
     try {
       assertWmsInitialListResponse({ url: response.url(), status: response.status() }, expectedPath)
@@ -480,14 +524,22 @@ export async function withWmsInitialListResponseGuard<T>(
     }
   }
   const requestFailedObserver = (request: Request) => {
-    if (
-      firstCandidateSeen ||
-      request !== firstListRequest ||
-      request.method() !== 'GET' ||
-      request.frame() !== page.mainFrame()
-    ) {
+    if (firstCandidateSeen || !documentCommitted || request.frame() !== page.mainFrame()) return
+    if (firstListRequest && request !== firstListRequest) return
+    const path = new URL(request.url()).pathname
+    const endpointKind = classifyWmsInitialEndpoint(path)
+    if (endpointKind === 'outside' || endpointKind === 'auxiliary') return
+    if (endpointKind === 'unknown') {
+      firstCandidateSeen = true
+      rejectFirst(new Error(`unexpected WMS list-like request path ${path}`))
       return
     }
+    if (request.method() !== 'GET') {
+      firstCandidateSeen = true
+      rejectFirst(new Error(`unexpected WMS initial list request method ${request.method()}`))
+      return
+    }
+    firstListRequest ??= request
     firstCandidateSeen = true
     const failure = request.failure()?.errorText ?? 'unknown network failure'
     rejectFirst(new Error(`WMS initial list ${expectedPath} request failed: ${failure}`))
@@ -520,17 +572,18 @@ async function waitForUniqueVisibleOption(
 ): Promise<void> {
   try {
     let previousCount: number | undefined
-    let stableSamples = 0
+    let stableSince: number | undefined
     await expect
       .poll(
         async () => {
           const currentCount = await option.count()
-          if (currentCount === previousCount) stableSamples += 1
-          else {
+          if (currentCount !== previousCount) {
             previousCount = currentCount
-            stableSamples = 1
+            stableSince = currentCount === 1 ? Date.now() : undefined
           }
-          return currentCount === 1 && stableSamples >= 2 ? 1 : 0
+          return currentCount === 1 && stableSince !== undefined && Date.now() - stableSince >= 200
+            ? 1
+            : 0
         },
         {
           timeout: timeoutMs,
@@ -595,12 +648,26 @@ export async function selectWmsScopeOption(
   await expect(page.locator('[role="listbox"]:visible')).toHaveCount(1, { timeout: timeoutMs })
   const search = page.getByRole('combobox', { name: `搜索${selection.label}`, exact: true })
   await expect(search).toHaveCount(1, { timeout: timeoutMs })
-  await search.fill(selection.scopeId)
+  const expectedOptionValue = formatWorkScopeKey(selection.scopeKind, selection.scopeId)
+  await search.fill(expectedOptionValue)
   const option = page.getByRole('option', { name: selection.option, exact: true })
   await waitForUniqueVisibleOption(option, selection.label, timeoutMs)
   await option.click({ timeout: timeoutMs })
   await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
   await expect(trigger).toContainText(selection.option, { timeout: timeoutMs })
+
+  // Re-open and filter by the canonical option value. The selected marker is computed from the
+  // component's model value, so this readback proves the underlying `scopeKind:scopeId`, not just
+  // the trigger's human label or a remembered/default selection.
+  await trigger.click({ timeout: timeoutMs })
+  await expect(page.locator('[role="listbox"]:visible')).toHaveCount(1, { timeout: timeoutMs })
+  const readbackSearch = page.getByRole('combobox', { name: `搜索${selection.label}`, exact: true })
+  await readbackSearch.fill(expectedOptionValue)
+  const readbackOption = page.getByRole('option', { name: selection.option, exact: true })
+  await waitForUniqueVisibleOption(readbackOption, selection.label, timeoutMs)
+  await expect(readbackOption).toHaveAttribute('aria-selected', 'true', { timeout: timeoutMs })
+  await readbackOption.click({ timeout: timeoutMs })
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
 }
 
 export type WmsListPageProofOptions =

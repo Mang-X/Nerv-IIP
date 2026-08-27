@@ -215,7 +215,12 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
     expect(() => assertWmsPageSelection({ label: '', option: '工厂' })).toThrow('label')
     expect(() =>
       assertWmsOutboundPageSelection({
-        scope: { label: '作业范围', option: '发货作业池', scopeId: '' },
+        scope: {
+          label: '作业范围',
+          option: '发货作业池',
+          scopeKind: 'work-pool',
+          scopeId: '',
+        },
       }),
     ).toThrow('scopeId')
 
@@ -224,6 +229,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
         scope: {
           label: '作业范围',
           option: '收货作业池',
+          scopeKind: 'work-pool',
           scopeId: 'pool-receiving-001',
         },
       } as never),
@@ -233,6 +239,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
         scope: {
           label: '作业范围',
           option: '收货作业池',
+          scopeKind: 'work-pool',
           scopeId: 'pool-receiving-001',
           optionCode: 'POOL-001',
         },
@@ -240,6 +247,16 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
       } as never),
     ).toThrow('exactly one')
     expect(() => assertWmsOutboundPageSelection({} as never)).toThrow('scope selection')
+    expect(() =>
+      assertWmsOutboundPageSelection({
+        scope: {
+          label: '作业范围',
+          option: '发货作业池',
+          scopeKind: 'self',
+          scopeId: 'pool-shipping-001',
+        },
+      } as never),
+    ).toThrow('scopeKind')
 
     expect(() =>
       assertWmsInboundSelectionMatchesQuery(
@@ -247,6 +264,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
           scope: {
             label: '作业范围',
             option: '收货作业池',
+            scopeKind: 'work-pool',
             scopeId: 'pool-receiving-001',
           },
           site: { label: '工厂', optionCode: 'SITE-002' },
@@ -260,6 +278,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
           scope: {
             label: '作业范围',
             option: '收货作业池',
+            scopeKind: 'work-pool',
             scopeId: 'pool-other-001',
           },
           site: { label: '工厂', optionCode: 'SITE-001' },
@@ -273,6 +292,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
           scope: {
             label: '作业范围',
             option: '发货作业池',
+            scopeKind: 'work-pool',
             scopeId: 'pool-other-001',
           },
         },
