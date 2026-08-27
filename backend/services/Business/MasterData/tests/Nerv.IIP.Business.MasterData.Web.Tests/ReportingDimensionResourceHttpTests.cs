@@ -21,6 +21,82 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 public sealed class ReportingDimensionResourceHttpTests
 {
     [Fact]
+    public async Task Resource_directory_applies_canonical_device_and_shift_identifiers_before_all_limit()
+    {
+        await using var factory = new ReportingDimensionResourceHttpTestFactory();
+        string stableDeviceAssetId;
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var targetDevice = DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                "DEV-CANONICAL",
+                "MODEL-CANONICAL",
+                "LINE-CANONICAL",
+                "WC-CANONICAL");
+            dbContext.DeviceAssets.AddRange(
+                targetDevice,
+                DeviceAsset.Register(
+                    "org-001",
+                    "env-dev",
+                    "DEV-DECOY",
+                    "MODEL-CANONICAL",
+                    "LINE-DECOY",
+                    "WC-DECOY"));
+            dbContext.Shifts.Add(Shift.Create(
+                "org-001",
+                "env-dev",
+                "SHIFT-TARGET",
+                "Target shift",
+                new TimeOnly(8, 0),
+                new TimeOnly(16, 0),
+                450,
+                30));
+            for (var index = 0; index < 5001; index++)
+            {
+                dbContext.Shifts.Add(Shift.Create(
+                    "org-001",
+                    "env-dev",
+                    $"SHIFT-DECOY-{index:0000}",
+                    "Decoy shift",
+                    new TimeOnly(8, 0),
+                    new TimeOnly(16, 0),
+                    450,
+                    30));
+            }
+
+            await dbContext.SaveChangesAsync();
+            stableDeviceAssetId = targetDevice.Id.ToString();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "reporting-dimension-http-token");
+
+        using var byStableId = await GetResourceListAsync(
+            client,
+            $"resourceType=device-asset&deviceAssetId={stableDeviceAssetId}&all=true");
+        AssertCanonicalSingle(byStableId, "DEV-CANONICAL", expectedTotal: 1);
+
+        using var byCodeAlias = await GetResourceListAsync(
+            client,
+            "resourceType=device-asset&deviceAssetId=DEV-CANONICAL&all=true");
+        AssertCanonicalSingle(byCodeAlias, "DEV-CANONICAL", expectedTotal: 1);
+
+        using var byModel = await GetResourceListAsync(
+            client,
+            "resourceType=device-asset&deviceAssetId=MODEL-CANONICAL&all=true");
+        Assert.Empty(byModel.RootElement.GetProperty("resources").EnumerateArray());
+        Assert.Equal(0, byModel.RootElement.GetProperty("total").GetInt32());
+
+        using var shift = await GetResourceListAsync(
+            client,
+            "resourceType=shift&shiftCode=SHIFT-TARGET&all=true");
+        AssertCanonicalSingle(shift, "SHIFT-TARGET", expectedTotal: 1);
+        Assert.False(shift.RootElement.GetProperty("truncated").GetBoolean());
+    }
+
+    [Fact]
     public async Task Resource_directory_returns_site_timezone_and_cross_midnight_shift_window_over_http()
     {
         await using var factory = new ReportingDimensionResourceHttpTestFactory();
@@ -102,6 +178,23 @@ public sealed class ReportingDimensionResourceHttpTests
             .GetProperty("resources")
             .EnumerateArray());
         return JsonDocument.Parse(resource.GetRawText());
+    }
+
+    private static async Task<JsonDocument> GetResourceListAsync(HttpClient client, string query)
+    {
+        using var response = await client.GetAsync(
+            "/api/business/v1/master-data/resources" +
+            $"?organizationId=org-001&environmentId=env-dev&{query}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return JsonDocument.Parse(document.RootElement.GetProperty("data").GetRawText());
+    }
+
+    private static void AssertCanonicalSingle(JsonDocument document, string expectedCode, int expectedTotal)
+    {
+        var resource = Assert.Single(document.RootElement.GetProperty("resources").EnumerateArray());
+        Assert.Equal(expectedCode, resource.GetProperty("code").GetString());
+        Assert.Equal(expectedTotal, document.RootElement.GetProperty("total").GetInt32());
     }
 
     private sealed class ReportingDimensionResourceHttpTestFactory : WebApplicationFactory<Program>

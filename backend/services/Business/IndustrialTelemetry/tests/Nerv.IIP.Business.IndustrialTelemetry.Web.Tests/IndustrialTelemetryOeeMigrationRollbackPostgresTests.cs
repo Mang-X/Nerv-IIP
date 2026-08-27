@@ -13,6 +13,22 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
 {
     private const string PriorMigration = "20260718040416_HardenConnectorTagBindingConstraints";
 
+    private static readonly string[] PriorFactColumns =
+    [
+        "id",
+        "organization_id",
+        "environment_id",
+        "source_report_no",
+        "work_center_id",
+        "device_asset_id",
+        "good_quantity",
+        "scrap_quantity",
+        "rework_quantity",
+        "uom_code",
+        "theoretical_rate_per_hour",
+        "reported_at_utc"
+    ];
+
     [RealPostgresFact]
     public async Task Oee_historical_dimension_migration_backfills_old_reported_time_and_round_trips_on_postgres()
     {
@@ -26,15 +42,18 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         var migrator = dbContext.GetService<IMigrator>();
         await migrator.MigrateAsync(PriorMigration);
+        await AssertPriorFactColumnsAsync();
 
         var historicalRows = new[]
         {
             new LegacyFact(
                 Guid.CreateVersion7(), "org-history-a", "env-history-a", "PR-HISTORY-ORDINARY",
-                "WC-HISTORY-A", "DEV-HISTORY-A", DateTimeOffset.Parse("2024-02-29T12:34:56.789012Z")),
+                "WC-HISTORY-A", "DEV-HISTORY-A", 10.125m, 1.25m, 2.5m, "PCS-A", 60.75m,
+                DateTimeOffset.Parse("2024-02-29T12:34:56.789012Z")),
             new LegacyFact(
                 Guid.CreateVersion7(), "org-history-b", "env-history-b", "PR-HISTORY-UTC-BOUNDARY",
-                "WC-HISTORY-B", "DEV-HISTORY-B", DateTimeOffset.Parse("2025-01-01T00:00:00Z"))
+                "WC-HISTORY-B", "DEV-HISTORY-B", 20.5m, 0.75m, 1.125m, "PCS-B", 120.25m,
+                DateTimeOffset.Parse("2025-01-01T00:00:00Z"))
         };
 
         await AssertColumnPresenceAsync("aggregation_occurred_at_utc", expected: false);
@@ -45,6 +64,7 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
 
         await migrator.MigrateAsync(PriorMigration);
         await AssertColumnPresenceAsync("aggregation_occurred_at_utc", expected: false);
+        await AssertPriorFactColumnsAsync();
         await AssertLegacyFactsAsync(historicalRows);
 
         await migrator.MigrateAsync();
@@ -128,7 +148,8 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
                      good_quantity, scrap_quantity, rework_quantity, uom_code, theoretical_rate_per_hour, reported_at_utc)
                 VALUES
                     (@id, @organizationId, @environmentId, @sourceReportNo, @workCenterId, @deviceAssetId,
-                     10.000000, 1.000000, 2.000000, 'PCS', 60.000000, @reportedAtUtc);
+                     @goodQuantity, @scrapQuantity, @reworkQuantity, @uomCode, @theoreticalRatePerHour,
+                     @reportedAtUtc);
                 """;
             command.Parameters.AddWithValue("id", fact.Id);
             command.Parameters.AddWithValue("organizationId", fact.OrganizationId);
@@ -136,6 +157,11 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
             command.Parameters.AddWithValue("sourceReportNo", fact.SourceReportNo);
             command.Parameters.AddWithValue("workCenterId", fact.WorkCenterId);
             command.Parameters.AddWithValue("deviceAssetId", fact.DeviceAssetId);
+            command.Parameters.AddWithValue("goodQuantity", fact.GoodQuantity);
+            command.Parameters.AddWithValue("scrapQuantity", fact.ScrapQuantity);
+            command.Parameters.AddWithValue("reworkQuantity", fact.ReworkQuantity);
+            command.Parameters.AddWithValue("uomCode", fact.UomCode);
+            command.Parameters.AddWithValue("theoreticalRatePerHour", fact.TheoreticalRatePerHour);
             command.Parameters.AddWithValue("reportedAtUtc", fact.ReportedAtUtc);
             Assert.Equal(1, await command.ExecuteNonQueryAsync());
         }
@@ -150,6 +176,7 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         command.CommandText =
             """
             SELECT id, organization_id, environment_id, source_report_no, work_center_id, device_asset_id,
+                   good_quantity, scrap_quantity, rework_quantity, uom_code, theoretical_rate_per_hour,
                    reported_at_utc, aggregation_occurred_at_utc,
                    site_code, workshop_code, line_code, site_timezone,
                    business_date, day_bucket_start_utc, day_bucket_end_utc,
@@ -165,24 +192,25 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         {
             actualFacts.Add(new UpgradedFact(
                 reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6),
-                reader.GetFieldValue<DateTimeOffset>(7),
-                reader.IsDBNull(8) ? null : reader.GetString(8),
-                reader.IsDBNull(9) ? null : reader.GetString(9),
-                reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetString(11),
-                reader.IsDBNull(12) ? null : reader.GetFieldValue<DateOnly>(12),
-                reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13),
-                reader.IsDBNull(14) ? null : reader.GetFieldValue<DateTimeOffset>(14),
+                reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7),
+                reader.GetDecimal(8), reader.GetString(9), reader.GetDecimal(10),
+                reader.GetFieldValue<DateTimeOffset>(11), reader.GetFieldValue<DateTimeOffset>(12),
+                reader.IsDBNull(13) ? null : reader.GetString(13),
+                reader.IsDBNull(14) ? null : reader.GetString(14),
                 reader.IsDBNull(15) ? null : reader.GetString(15),
-                reader.IsDBNull(16) ? null : reader.GetFieldValue<TimeOnly>(16),
-                reader.IsDBNull(17) ? null : reader.GetFieldValue<TimeOnly>(17),
-                reader.IsDBNull(18) ? null : reader.GetBoolean(18),
-                reader.IsDBNull(19) ? null : reader.GetInt32(19),
-                reader.IsDBNull(20) ? null : reader.GetInt32(20),
-                reader.IsDBNull(21) ? null : reader.GetFieldValue<DateOnly>(21),
-                reader.IsDBNull(22) ? null : reader.GetFieldValue<DateTimeOffset>(22),
-                reader.IsDBNull(23) ? null : reader.GetFieldValue<DateTimeOffset>(23)));
+                reader.IsDBNull(16) ? null : reader.GetString(16),
+                reader.IsDBNull(17) ? null : reader.GetFieldValue<DateOnly>(17),
+                reader.IsDBNull(18) ? null : reader.GetFieldValue<DateTimeOffset>(18),
+                reader.IsDBNull(19) ? null : reader.GetFieldValue<DateTimeOffset>(19),
+                reader.IsDBNull(20) ? null : reader.GetString(20),
+                reader.IsDBNull(21) ? null : reader.GetFieldValue<TimeOnly>(21),
+                reader.IsDBNull(22) ? null : reader.GetFieldValue<TimeOnly>(22),
+                reader.IsDBNull(23) ? null : reader.GetBoolean(23),
+                reader.IsDBNull(24) ? null : reader.GetInt32(24),
+                reader.IsDBNull(25) ? null : reader.GetInt32(25),
+                reader.IsDBNull(26) ? null : reader.GetFieldValue<DateOnly>(26),
+                reader.IsDBNull(27) ? null : reader.GetFieldValue<DateTimeOffset>(27),
+                reader.IsDBNull(28) ? null : reader.GetFieldValue<DateTimeOffset>(28)));
         }
 
         Assert.Equal(expectedFacts.Count, actualFacts.Count);
@@ -194,6 +222,11 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
             Assert.Equal(expected.EnvironmentId, actual.EnvironmentId);
             Assert.Equal(expected.WorkCenterId, actual.WorkCenterId);
             Assert.Equal(expected.DeviceAssetId, actual.DeviceAssetId);
+            Assert.Equal(expected.GoodQuantity, actual.GoodQuantity);
+            Assert.Equal(expected.ScrapQuantity, actual.ScrapQuantity);
+            Assert.Equal(expected.ReworkQuantity, actual.ReworkQuantity);
+            Assert.Equal(expected.UomCode, actual.UomCode);
+            Assert.Equal(expected.TheoreticalRatePerHour, actual.TheoreticalRatePerHour);
             Assert.Equal(expected.ReportedAtUtc, actual.ReportedAtUtc);
             Assert.Equal(expected.ReportedAtUtc, actual.AggregationOccurredAtUtc);
             Assert.Null(actual.SiteCode);
@@ -275,7 +308,9 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT id, organization_id, environment_id, source_report_no, work_center_id, device_asset_id, reported_at_utc
+            SELECT id, organization_id, environment_id, source_report_no, work_center_id, device_asset_id,
+                   good_quantity, scrap_quantity, rework_quantity, uom_code, theoretical_rate_per_hour,
+                   reported_at_utc
             FROM industrial_telemetry.oee_production_facts
             ORDER BY source_report_no;
             """;
@@ -285,7 +320,9 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         {
             actualFacts.Add(new LegacyFact(
                 reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6)));
+                reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7),
+                reader.GetDecimal(8), reader.GetString(9), reader.GetDecimal(10),
+                reader.GetFieldValue<DateTimeOffset>(11)));
         }
 
         Assert.Equal(
@@ -311,6 +348,29 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         Assert.Equal(expected, (bool)(await command.ExecuteScalarAsync())!);
     }
 
+    private static async Task AssertPriorFactColumnsAsync()
+    {
+        await using var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'industrial_telemetry'
+              AND table_name = 'oee_production_facts'
+            ORDER BY column_name;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var actualColumns = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            actualColumns.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(PriorFactColumns.Order(StringComparer.Ordinal), actualColumns);
+    }
+
     private sealed record LegacyFact(
         Guid Id,
         string OrganizationId,
@@ -318,6 +378,11 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         string SourceReportNo,
         string WorkCenterId,
         string DeviceAssetId,
+        decimal GoodQuantity,
+        decimal ScrapQuantity,
+        decimal ReworkQuantity,
+        string UomCode,
+        decimal TheoreticalRatePerHour,
         DateTimeOffset ReportedAtUtc);
 
     private sealed record UpgradedFact(
@@ -327,6 +392,11 @@ public sealed class IndustrialTelemetryOeeMigrationRollbackPostgresTests
         string SourceReportNo,
         string WorkCenterId,
         string DeviceAssetId,
+        decimal GoodQuantity,
+        decimal ScrapQuantity,
+        decimal ReworkQuantity,
+        string UomCode,
+        decimal TheoreticalRatePerHour,
         DateTimeOffset ReportedAtUtc,
         DateTimeOffset AggregationOccurredAtUtc,
         string? SiteCode,

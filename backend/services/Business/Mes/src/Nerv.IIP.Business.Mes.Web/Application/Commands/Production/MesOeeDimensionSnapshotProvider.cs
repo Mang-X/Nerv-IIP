@@ -66,7 +66,7 @@ public sealed class HttpMesOeeDimensionSnapshotProvider(
         var shiftCode = Normalize(request.ShiftCode);
         var deviceTask = fallback.DeviceAssetId is null
             ? Task.FromResult<MasterDataResourceListResponse?>(null)
-            : ListAsync(request, "device-asset", ("keyword", fallback.DeviceAssetId), cancellationToken);
+            : ListAsync(request, "device-asset", ("deviceAssetId", fallback.DeviceAssetId), cancellationToken);
         var shiftTask = shiftCode is null
             ? Task.FromResult<MasterDataResourceListResponse?>(null)
             : ListAsync(request, "shift", ("shiftCode", shiftCode), cancellationToken);

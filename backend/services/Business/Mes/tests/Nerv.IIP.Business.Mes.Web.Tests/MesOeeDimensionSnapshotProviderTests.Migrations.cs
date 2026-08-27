@@ -25,6 +25,34 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
         "oee_workshop_code"
     ];
 
+    private static readonly string[] PriorProductionReportColumns =
+    [
+        "id",
+        "organization_id",
+        "environment_id",
+        "report_no",
+        "work_order_id",
+        "operation_task_id",
+        "good_quantity",
+        "scrap_quantity",
+        "rework_quantity",
+        "completes_operation",
+        "reported_at_utc",
+        "source",
+        "material_movement_count",
+        "defect_record_no",
+        "produced_lot_no",
+        "reversal_reason",
+        "reversed_by",
+        "reversed_report_no",
+        "scrap_reason_code",
+        "serial_no",
+        "oee_work_center_id",
+        "oee_device_asset_id",
+        "oee_uom_code",
+        "oee_theoretical_rate_per_hour"
+    ];
+
     private static async Task ExecuteHistoricalDimensionSnapshotMigrationContractAsync()
     {
         await using var dbContext = new Infrastructure.ApplicationDbContext(
@@ -35,6 +63,7 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
 
         await migrator.MigrateAsync(PriorHistoricalDimensionSnapshotMigration);
         await AssertHistoricalDimensionColumnsAsync(expected: false);
+        await AssertPriorProductionReportColumnsAsync();
         var expected = new PriorProductionReport(
             Guid.Parse("aef861a1-b6e9-42d9-aae1-f135cd74f84b"),
             "org-oee-prior",
@@ -49,6 +78,13 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
             DateTimeOffset.Parse("2026-08-25T17:59:59.999999Z"),
             "telemetry",
             3,
+            "DEFECT-PRIOR-001",
+            "LOT-PRIOR-001",
+            "Reversal reason prior sentinel",
+            "user:prior-reverser",
+            "PR-OEE-ORIGINAL-001",
+            "SCRAP-PRIOR-001",
+            "SERIAL-PRIOR-001",
             "WC-PRIOR",
             "DEVICE-PRIOR",
             "EA",
@@ -60,6 +96,7 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
 
         await migrator.MigrateAsync(PriorHistoricalDimensionSnapshotMigration);
         await AssertHistoricalDimensionColumnsAsync(expected: false);
+        await AssertPriorProductionReportColumnsAsync();
         await AssertPriorProductionReportAsync(expected);
 
         await migrator.MigrateAsync(HistoricalDimensionSnapshotMigration);
@@ -81,12 +118,16 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
                 INSERT INTO mes.production_reports
                     (id, organization_id, environment_id, report_no, work_order_id, operation_task_id,
                      good_quantity, scrap_quantity, rework_quantity, completes_operation, reported_at_utc,
-                     source, material_movement_count, oee_work_center_id, oee_device_asset_id,
+                     source, material_movement_count, defect_record_no, produced_lot_no, reversal_reason,
+                     reversed_by, reversed_report_no, scrap_reason_code, serial_no,
+                     oee_work_center_id, oee_device_asset_id,
                      oee_uom_code, oee_theoretical_rate_per_hour)
                 VALUES
                     (@id, @organizationId, @environmentId, @reportNo, @workOrderId, @operationTaskId,
                      @goodQuantity, @scrapQuantity, @reworkQuantity, @completesOperation, @reportedAtUtc,
-                     @source, @materialMovementCount, @oeeWorkCenterId, @oeeDeviceAssetId,
+                     @source, @materialMovementCount, @defectRecordNo, @producedLotNo, @reversalReason,
+                     @reversedBy, @reversedReportNo, @scrapReasonCode, @serialNo,
+                     @oeeWorkCenterId, @oeeDeviceAssetId,
                      @oeeUomCode, @oeeTheoreticalRatePerHour);
                 """;
             command.Parameters.AddWithValue("id", expected.Id);
@@ -102,6 +143,13 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
             command.Parameters.AddWithValue("reportedAtUtc", expected.ReportedAtUtc);
             command.Parameters.AddWithValue("source", expected.Source);
             command.Parameters.AddWithValue("materialMovementCount", expected.MaterialMovementCount);
+            command.Parameters.AddWithValue("defectRecordNo", expected.DefectRecordNo);
+            command.Parameters.AddWithValue("producedLotNo", expected.ProducedLotNo);
+            command.Parameters.AddWithValue("reversalReason", expected.ReversalReason);
+            command.Parameters.AddWithValue("reversedBy", expected.ReversedBy);
+            command.Parameters.AddWithValue("reversedReportNo", expected.ReversedReportNo);
+            command.Parameters.AddWithValue("scrapReasonCode", expected.ScrapReasonCode);
+            command.Parameters.AddWithValue("serialNo", expected.SerialNo);
             command.Parameters.AddWithValue("oeeWorkCenterId", expected.OeeWorkCenterId);
             command.Parameters.AddWithValue("oeeDeviceAssetId", expected.OeeDeviceAssetId);
             command.Parameters.AddWithValue("oeeUomCode", expected.OeeUomCode);
@@ -123,22 +171,21 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT id, organization_id, environment_id, report_no, work_order_id, operation_task_id,
-                   good_quantity, scrap_quantity, rework_quantity, completes_operation, reported_at_utc,
-                   source, material_movement_count, oee_work_center_id, oee_device_asset_id,
-                   oee_uom_code, oee_theoretical_rate_per_hour,
-                   oee_line_code, oee_shift_break_minutes, oee_shift_code, oee_shift_crosses_midnight,
-                   oee_shift_ends_at, oee_shift_paid_minutes, oee_shift_starts_at,
-                   oee_site_code, oee_site_timezone, oee_workshop_code
-            FROM mes.production_reports
-            WHERE id = @id;
-            """;
+            $"""
+             SELECT {string.Join(", ", PriorProductionReportColumns)},
+                    oee_line_code, oee_shift_break_minutes, oee_shift_code, oee_shift_crosses_midnight,
+                    oee_shift_ends_at, oee_shift_paid_minutes, oee_shift_starts_at,
+                    oee_site_code, oee_site_timezone, oee_workshop_code
+             FROM mes.production_reports
+             WHERE id = @id;
+             """;
         command.Parameters.AddWithValue("id", expected.Id);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         AssertPriorProductionReport(expected, reader);
-        for (var ordinal = 17; ordinal < 27; ordinal++)
+        for (var ordinal = PriorProductionReportColumns.Length;
+             ordinal < PriorProductionReportColumns.Length + HistoricalDimensionSnapshotColumns.Length;
+             ordinal++)
         {
             Assert.True(reader.IsDBNull(ordinal), $"Expected upgraded legacy column ordinal {ordinal} to remain NULL.");
         }
@@ -151,14 +198,11 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT id, organization_id, environment_id, report_no, work_order_id, operation_task_id,
-                   good_quantity, scrap_quantity, rework_quantity, completes_operation, reported_at_utc,
-                   source, material_movement_count, oee_work_center_id, oee_device_asset_id,
-                   oee_uom_code, oee_theoretical_rate_per_hour
-            FROM mes.production_reports
-            WHERE id = @id;
-            """;
+            $"""
+             SELECT {string.Join(", ", PriorProductionReportColumns)}
+             FROM mes.production_reports
+             WHERE id = @id;
+             """;
         command.Parameters.AddWithValue("id", expected.Id);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -181,10 +225,40 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
         Assert.Equal(expected.ReportedAtUtc, reader.GetFieldValue<DateTimeOffset>(10));
         Assert.Equal(expected.Source, reader.GetString(11));
         Assert.Equal(expected.MaterialMovementCount, reader.GetInt32(12));
-        Assert.Equal(expected.OeeWorkCenterId, reader.GetString(13));
-        Assert.Equal(expected.OeeDeviceAssetId, reader.GetString(14));
-        Assert.Equal(expected.OeeUomCode, reader.GetString(15));
-        Assert.Equal(expected.OeeTheoreticalRatePerHour, reader.GetDecimal(16));
+        Assert.Equal(expected.DefectRecordNo, reader.GetString(13));
+        Assert.Equal(expected.ProducedLotNo, reader.GetString(14));
+        Assert.Equal(expected.ReversalReason, reader.GetString(15));
+        Assert.Equal(expected.ReversedBy, reader.GetString(16));
+        Assert.Equal(expected.ReversedReportNo, reader.GetString(17));
+        Assert.Equal(expected.ScrapReasonCode, reader.GetString(18));
+        Assert.Equal(expected.SerialNo, reader.GetString(19));
+        Assert.Equal(expected.OeeWorkCenterId, reader.GetString(20));
+        Assert.Equal(expected.OeeDeviceAssetId, reader.GetString(21));
+        Assert.Equal(expected.OeeUomCode, reader.GetString(22));
+        Assert.Equal(expected.OeeTheoreticalRatePerHour, reader.GetDecimal(23));
+    }
+
+    private static async Task AssertPriorProductionReportColumnsAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'mes'
+              AND table_name = 'production_reports'
+            ORDER BY column_name;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var actualColumns = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            actualColumns.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(PriorProductionReportColumns.Order(StringComparer.Ordinal), actualColumns);
     }
 
     private static async Task AssertHistoricalDimensionColumnsAsync(bool expected)
@@ -238,6 +312,13 @@ public sealed partial class MesOeeDimensionSnapshotProviderTests
         DateTimeOffset ReportedAtUtc,
         string Source,
         int MaterialMovementCount,
+        string DefectRecordNo,
+        string ProducedLotNo,
+        string ReversalReason,
+        string ReversedBy,
+        string ReversedReportNo,
+        string ScrapReasonCode,
+        string SerialNo,
         string OeeWorkCenterId,
         string OeeDeviceAssetId,
         string OeeUomCode,

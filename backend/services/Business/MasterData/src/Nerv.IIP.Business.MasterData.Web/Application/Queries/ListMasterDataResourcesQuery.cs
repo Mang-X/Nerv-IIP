@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Text;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
@@ -24,7 +25,8 @@ public sealed record ListMasterDataResourcesQuery(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null) : IQuery<MasterDataResourceListResponse>;
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null) : IQuery<MasterDataResourceListResponse>;
 
 public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<ListMasterDataResourcesQuery>
 {
@@ -300,12 +302,27 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
 
     private IQueryable<MasterDataResourceItem> ListDeviceAssets(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        return dbContext.DeviceAssets
+        var query = dbContext.DeviceAssets
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
-            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode);
+        var deviceAssetReference = request.DeviceAssetId?.Trim();
+        if (!string.IsNullOrWhiteSpace(deviceAssetReference))
+        {
+            if (Guid.TryParse(deviceAssetReference, out var parsedDeviceAssetId) && parsedDeviceAssetId != Guid.Empty)
+            {
+                var deviceAssetId = new DeviceAssetId(parsedDeviceAssetId);
+                query = query.Where(x => x.Id == deviceAssetId || x.Code == deviceAssetReference);
+            }
+            else
+            {
+                query = query.Where(x => x.Code == deviceAssetReference);
+            }
+        }
+
+        return query
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Model.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => new MasterDataResourceItem(
@@ -403,6 +420,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
+            .Where(x => string.IsNullOrWhiteSpace(request.ShiftCode) || x.Code == request.ShiftCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => new MasterDataResourceItem(
