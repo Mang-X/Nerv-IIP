@@ -133,28 +133,6 @@ public sealed partial class OperationLaborSettlementOrchestrator
             return;
         }
 
-        var cost = await GetOrOpenWorkOrderCostAsync(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            payload.WorkOrderId,
-            cancellationToken);
-        var settlementAmount = payload.ActualLaborTicks / (decimal)TimeSpan.TicksPerHour * rate.HourlyRate;
-        if (settlementAmount != 0m && !cost.TryFreezeLaborCurrency(rate.CurrencyCode))
-        {
-            await AddCurrencyDeadLetterAsync(
-                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
-                integrationEvent,
-                payload.WorkOrderId,
-                rate.CurrencyCode,
-                cancellationToken);
-            return;
-        }
-        if (!await TryRecordInboxAsync(
-                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
-                integrationEvent,
-                cancellationToken))
-            return;
-
         var settlement = OperationLaborSettlement.Create(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -170,6 +148,27 @@ public sealed partial class OperationLaborSettlementOrchestrator
             rate.HourlyRate,
             integrationEvent.EventId,
             payloadHash);
+        var cost = await GetOrOpenWorkOrderCostAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            cancellationToken);
+        if (settlement.Amount != 0m && !cost.TryFreezeLaborCurrency(rate.CurrencyCode))
+        {
+            await AddCurrencyDeadLetterAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                integrationEvent,
+                payload.WorkOrderId,
+                rate.CurrencyCode,
+                cancellationToken);
+            return;
+        }
+        if (!await TryRecordInboxAsync(
+                MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+                integrationEvent,
+                cancellationToken))
+            return;
+
         dbContext.OperationLaborSettlements.Add(settlement);
 
         var state = await GetOrCreateStateAsync(
@@ -333,7 +332,8 @@ public sealed partial class OperationLaborSettlementOrchestrator
         DateTimeOffset postedAtUtc,
         CancellationToken cancellationToken)
     {
-        if (cost.CapitalizedQuantity > 0m)
+        if (cost.CompletedQuantity > 0m
+            && cost.CapitalizedQuantity >= cost.CompletedQuantity - 0.000001m)
             await CostVariancePosting.PostLateAdjustmentAsync(
                 dbContext,
                 cost,

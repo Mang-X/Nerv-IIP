@@ -548,9 +548,19 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(10m, persisted.CapitalizedQuantity);
         Assert.Equal(0m, persisted.WipClearedCost);
         var vouchers = await assertDb.JournalVouchers.Include(x => x.Lines).ToListAsync();
-        Assert.Equal(4, vouchers.Count);
+        Assert.Equal(2, vouchers.Count);
         Assert.All(vouchers, voucher =>
             Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount)));
+        var lines = vouchers.SelectMany(x => x.Lines).ToList();
+        Assert.Equal(160m, lines.Where(x => x.AccountCode == "1406-FINISHED-GOODS").Sum(x => x.DebitAmount));
+        Assert.Equal(80m, lines.Where(x => x.AccountCode == "1405-WIP").Sum(x => x.DebitAmount));
+        Assert.Equal(80m, lines.Where(x => x.AccountCode == "1405-WIP").Sum(x => x.CreditAmount));
+        var varianceLine = Assert.Single(lines, x => x.AccountCode == "5101-PRODUCTION-VARIANCE");
+        Assert.Equal(0m, varianceLine.DebitAmount);
+        Assert.Equal(160m, varianceLine.CreditAmount);
+        Assert.Equal(
+            persisted.WipClearedCost,
+            lines.Where(x => x.AccountCode == "1405-WIP").Sum(x => x.CreditAmount - x.DebitAmount));
         Assert.Empty(await deadLetters.ListAsync(
             MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
