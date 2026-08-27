@@ -10,6 +10,7 @@ import {
   assertWmsPageProofOptions,
   fillWmsKeywordAndConfirm,
   proveWmsListPage,
+  selectWmsScopeOption,
   selectWmsPageOption,
   withWmsInitialListResponseGuard,
 } from './issue1912-wms-walkthrough-facts'
@@ -741,6 +742,48 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       expectedQuery.scopeId,
     )
     expect(requests).toHaveLength(1)
+  })
+
+  test('作业范围 option 的底层 value 未回读为已选时失败关闭', async ({ page }) => {
+    await page.setContent(`
+      <base href="http://walkthrough.fixture/">
+      <button type="button" aria-label="作业范围" aria-expanded="false">未选择范围</button>
+      <div role="listbox" hidden>
+        <input role="combobox" aria-label="搜索作业范围">
+        <button type="button" role="option" aria-selected="false">发货作业池</button>
+      </div>
+      <script>
+        const trigger = document.querySelector('[aria-label="作业范围"]')
+        const menu = document.querySelector('[role="listbox"]')
+        const search = menu.querySelector('[role="combobox"]')
+        const option = menu.querySelector('[role="option"]')
+        trigger.addEventListener('click', () => {
+          menu.hidden = false
+          trigger.setAttribute('aria-expanded', 'true')
+        })
+        search.addEventListener('input', () => {
+          option.hidden = search.value.trim() !== 'work-pool:pool-shipping-001'
+        })
+        option.addEventListener('click', () => {
+          menu.hidden = true
+          trigger.textContent = '发货作业池'
+          trigger.setAttribute('aria-expanded', 'false')
+        })
+      </script>
+    `)
+
+    await expect(
+      selectWmsScopeOption(
+        page,
+        {
+          label: '作业范围',
+          option: '发货作业池',
+          scopeKind: 'work-pool',
+          scopeId: 'pool-shipping-001',
+        },
+        2_000,
+      ),
+    ).rejects.toThrow(/true/)
   })
 
   test('工厂选择按公开编码匹配，缺失或重复编码均失败关闭', async ({ page }) => {
