@@ -248,7 +248,6 @@ function listQueryFingerprint(url: string): string {
 
 type ActionRequestMarkerOptions = {
   eventName: 'click' | 'input'
-  eventWindow: 'microtasks' | 'sync'
   expectedKeyword?: string
   expectedQueryFingerprint?: string
   listPath: string
@@ -261,15 +260,15 @@ async function installActionRequestMarker(
   options: ActionRequestMarkerOptions,
 ): Promise<void> {
   // The marker is attached by the browser-side event boundary, not inferred from request order.
-  // It covers the synchronous handler and the microtasks it schedules; requests outside that
-  // bounded action window remain unmarked and therefore cannot satisfy the waiter.
+  // It covers event propagation plus two explicit microtask turns; requests outside that bounded
+  // action window remain unmarked and therefore cannot satisfy the waiter.
   await target.evaluate((element, markerOptions) => {
     type ActionState = {
+      actionCount: number
       active: boolean
-      clearTimer?: number
+      closedActionCount: number
       cleanup: () => void
-      marker: string
-      retryArmed: boolean
+      markedRequestCount: number
     }
     type WindowWithActionMarkers = Window & {
       __nervWalkthroughActionMarkers?: Record<string, ActionState>
@@ -282,10 +281,11 @@ async function installActionRequestMarker(
     }
 
     const state: ActionState = {
+      actionCount: 0,
       active: false,
-      marker: markerOptions.marker,
-      retryArmed: false,
+      closedActionCount: 0,
       cleanup: () => undefined,
+      markedRequestCount: 0,
     }
     const originalFetch = window.fetch
     const originalXhrOpen = XMLHttpRequest.prototype.open
@@ -315,10 +315,10 @@ async function installActionRequestMarker(
         queryFingerprint(parsed.toString()) === markerOptions.expectedQueryFingerprint
       )
     }
-    const actionIsArmed = () => state.active || state.retryArmed
+    const actionIsArmed = () => state.active
     const markRequest = (headers: Headers) => {
       headers.set('x-nerv-walkthrough-action', markerOptions.marker)
-      state.retryArmed = false
+      state.markedRequestCount += 1
     }
 
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
@@ -338,10 +338,7 @@ async function installActionRequestMarker(
 
       const response = originalFetch.call(this, markedInput, markedInit)
       if (!marked) return response
-      return Promise.resolve(response).then((resolved) => {
-        if (resolved.status >= 400) state.retryArmed = true
-        return resolved
-      })
+      return response
     }
 
     XMLHttpRequest.prototype.open = function (
@@ -360,14 +357,7 @@ async function installActionRequestMarker(
         matchesActionRequest(metadata.method, metadata.url)
       if (marked) {
         this.setRequestHeader('x-nerv-walkthrough-action', markerOptions.marker)
-        state.retryArmed = false
-        this.addEventListener(
-          'loadend',
-          () => {
-            if (this.status >= 400) state.retryArmed = true
-          },
-          { once: true },
-        )
+        state.markedRequestCount += 1
       }
       return originalXhrSend.call(this, body)
     }
@@ -375,27 +365,28 @@ async function installActionRequestMarker(
     const activate = (event: Event) => {
       if (!event.composedPath().includes(element)) return
       state.active = true
-      state.retryArmed = false
-      if (state.clearTimer !== undefined) window.clearTimeout(state.clearTimer)
-      if (markerOptions.eventWindow === 'sync') {
+      state.actionCount += 1
+    }
+    const closeAfterEventPropagation = (event: Event) => {
+      if (!state.active || !event.composedPath().includes(element)) return
+      const actionCountAtBoundary = state.actionCount
+      // The boundary is the end of this event's propagation plus two explicit microtask turns.
+      // No timer is included: a zero-delay timer is observably outside this action.
+      queueMicrotask(() => {
         queueMicrotask(() => {
-          state.active = false
+          if (state.active && state.actionCount === actionCountAtBoundary) {
+            state.active = false
+            state.closedActionCount = actionCountAtBoundary
+          }
         })
-      } else {
-        Promise.resolve().then(() => {
-          Promise.resolve().then(() => {
-            state.clearTimer = window.setTimeout(() => {
-              state.active = false
-            }, 0)
-          })
-        })
-      }
+      })
     }
     document.addEventListener(markerOptions.eventName, activate, { capture: true })
+    document.addEventListener(markerOptions.eventName, closeAfterEventPropagation)
 
     state.cleanup = () => {
       document.removeEventListener(markerOptions.eventName, activate, { capture: true })
-      if (state.clearTimer !== undefined) window.clearTimeout(state.clearTimer)
+      document.removeEventListener(markerOptions.eventName, closeAfterEventPropagation)
       if (window.fetch === wrappedFetch) window.fetch = originalFetch
       if (XMLHttpRequest.prototype.open === wrappedXhrOpen) {
         XMLHttpRequest.prototype.open = originalXhrOpen
@@ -411,6 +402,48 @@ async function installActionRequestMarker(
     const wrappedXhrSend = XMLHttpRequest.prototype.send
     actionMarkers[markerOptions.marker] = state
   }, options)
+}
+
+type ActionMarkerSnapshot = {
+  actionCount: number
+  markedRequestCount: number
+}
+
+async function waitForActionMarkerClosed(
+  page: Page,
+  marker: string,
+  timeoutMs: number,
+): Promise<ActionMarkerSnapshot> {
+  await page.waitForFunction(
+    (actionMarker) => {
+      const markerWindow = window as Window & {
+        __nervWalkthroughActionMarkers?: Record<
+          string,
+          { active: boolean; actionCount: number; closedActionCount: number }
+        >
+      }
+      const state = markerWindow.__nervWalkthroughActionMarkers?.[actionMarker]
+      return (
+        state !== undefined &&
+        state.actionCount > 0 &&
+        !state.active &&
+        state.closedActionCount === state.actionCount
+      )
+    },
+    marker,
+    { timeout: timeoutMs },
+  )
+  return page.evaluate((actionMarker) => {
+    const markerWindow = window as Window & {
+      __nervWalkthroughActionMarkers?: Record<
+        string,
+        { actionCount: number; markedRequestCount: number }
+      >
+    }
+    const state = markerWindow.__nervWalkthroughActionMarkers?.[actionMarker]
+    if (!state) throw new Error(`walkthrough action marker ${actionMarker} was removed early`)
+    return { actionCount: state.actionCount, markedRequestCount: state.markedRequestCount }
+  }, marker)
 }
 
 async function removeActionRequestMarker(page: Page, marker: string): Promise<void> {
@@ -552,39 +585,15 @@ export async function clickRefreshAndWaitForListResponse(
   const actionMarker = nextActionMarker('refresh')
   await installActionRequestMarker(page, refreshButton, {
     eventName: 'click',
-    eventWindow: 'microtasks',
     listPath,
     marker: actionMarker,
   })
   let refreshRequest: Request | undefined
   let ambiguousActionRequest = false
+  let actionClosed = false
+  let actionSnapshot: ActionMarkerSnapshot | undefined
+  const actionRequests = new Set<Request>()
   const responsesByRequest = new Map<Request, Response>()
-  const requestObserver = (request: Request) => {
-    if (
-      !isListRequest(request, listPath) ||
-      request.headers()[ACTION_MARKER_HEADER] !== actionMarker
-    ) {
-      return
-    }
-    if (refreshRequest) {
-      ambiguousActionRequest = true
-      return
-    }
-    refreshRequest = request
-  }
-  const responseObserver = (response: Response) => {
-    const request = response.request()
-    if (!isListRequest(request, listPath)) return
-    responsesByRequest.set(request, response)
-    if (request !== refreshRequest) return
-    if (response.status() >= 400) {
-      rejectRefreshedListResponse(
-        new Error(`refresh action list request returned HTTP ${response.status()}`),
-      )
-      return
-    }
-    if (response.status() === 200) resolveRefreshedListResponse(response)
-  }
   let resolveRefreshedListResponse: (response: Response) => void = () => undefined
   let rejectRefreshedListResponse: (error: Error) => void = () => undefined
   let responseTimer: ReturnType<typeof setTimeout> | undefined
@@ -592,6 +601,52 @@ export async function clickRefreshAndWaitForListResponse(
     resolveRefreshedListResponse = resolve
     rejectRefreshedListResponse = reject
   })
+  const settleRefreshedListResponse = () => {
+    if (!actionClosed || !refreshRequest || !actionSnapshot) return
+    if (
+      ambiguousActionRequest ||
+      actionRequests.size !== 1 ||
+      actionSnapshot.actionCount !== 1 ||
+      actionSnapshot.markedRequestCount !== 1
+    ) {
+      rejectRefreshedListResponse(
+        new Error(
+          'refresh action emitted more than one marked list request; response ownership is ambiguous',
+        ),
+      )
+      return
+    }
+    const response = responsesByRequest.get(refreshRequest)
+    if (!response) return
+    if (response.status() !== 200) {
+      rejectRefreshedListResponse(
+        new Error(`refresh action list request returned HTTP ${response.status()}`),
+      )
+      return
+    }
+    resolveRefreshedListResponse(response)
+  }
+  const requestObserver = (request: Request) => {
+    if (
+      !isListRequest(request, listPath) ||
+      request.headers()[ACTION_MARKER_HEADER] !== actionMarker
+    ) {
+      return
+    }
+    actionRequests.add(request)
+    if (refreshRequest) {
+      ambiguousActionRequest = true
+    } else {
+      refreshRequest = request
+    }
+    settleRefreshedListResponse()
+  }
+  const responseObserver = (response: Response) => {
+    const request = response.request()
+    if (!isListRequest(request, listPath)) return
+    responsesByRequest.set(request, response)
+    settleRefreshedListResponse()
+  }
   page.on('request', requestObserver)
   page.on('response', responseObserver)
   const refreshedListRequest = page.waitForRequest(
@@ -602,25 +657,28 @@ export async function clickRefreshAndWaitForListResponse(
   try {
     await refreshButton.click({ timeout: timeoutMs })
     const request = await refreshedListRequest
-    if (ambiguousActionRequest || refreshRequest !== request) {
+    if (request !== refreshRequest) {
       throw new Error(
-        'refresh action emitted more than one marked list request; response ownership is ambiguous',
+        'refresh response was not bound to the completed request emitted by the refresh action',
       )
     }
-    const observedResponse = responsesByRequest.get(refreshRequest)
-    if (observedResponse && observedResponse.status() !== 200) {
-      throw new Error(`refresh action list request returned HTTP ${observedResponse.status()}`)
-    }
-    if (observedResponse?.status() === 200) {
-      resolveRefreshedListResponse(observedResponse)
-    } else {
-      responseTimer = setTimeout(
-        () => rejectRefreshedListResponse(new Error('refresh response timed out')),
-        timeoutMs,
-      )
-    }
+    actionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
+    actionClosed = true
+    settleRefreshedListResponse()
+    responseTimer = setTimeout(
+      () => rejectRefreshedListResponse(new Error('refresh response timed out')),
+      timeoutMs,
+    )
     const response = await refreshedListResponse
-    if (response.request() !== refreshRequest || response.status() !== 200) {
+    const finalActionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
+    if (
+      ambiguousActionRequest ||
+      response.request() !== refreshRequest ||
+      response.status() !== 200 ||
+      actionRequests.size !== 1 ||
+      finalActionSnapshot.actionCount !== 1 ||
+      finalActionSnapshot.markedRequestCount !== 1
+    ) {
       throw new Error(
         'refresh response was not bound to the completed request emitted by the refresh action',
       )
@@ -823,18 +881,53 @@ export async function fillFilterAndWaitForListResponse(
   }
   const expectedQueryFingerprint = listQueryFingerprint(baselineResponse.url())
   const actionMarker = nextActionMarker('filter')
+  // A non-200 response is terminal for this explicit fill. A later background request has no
+  // fill-event ownership and is never inferred to be a retry.
   await installActionRequestMarker(page, filter, {
     eventName: 'input',
-    eventWindow: 'microtasks',
     expectedKeyword: options.stableText,
     expectedQueryFingerprint,
     listPath: options.listPath,
     marker: actionMarker,
   })
   let fillRequest: Request | undefined
-  let retryRequestAllowed = false
   let ambiguousActionRequest = false
   const fillRequests = new Set<Request>()
+  const responsesByRequest = new Map<Request, Response>()
+  let actionClosed = false
+  let actionSnapshot: ActionMarkerSnapshot | undefined
+  let resolveFilteredListResponse: (response: Response) => void = () => undefined
+  let rejectFilteredListResponse: (error: Error) => void = () => undefined
+  let responseTimer: ReturnType<typeof setTimeout> | undefined
+  const filteredListResponse = new Promise<Response>((resolve, reject) => {
+    resolveFilteredListResponse = resolve
+    rejectFilteredListResponse = reject
+  })
+  const settleFilteredListResponse = () => {
+    if (!actionClosed || !fillRequest || !actionSnapshot) return
+    if (
+      ambiguousActionRequest ||
+      fillRequests.size !== 1 ||
+      actionSnapshot.actionCount !== 1 ||
+      actionSnapshot.markedRequestCount !== 1
+    ) {
+      rejectFilteredListResponse(
+        new Error(
+          'filter response was not bound to the completed request emitted by the fill action',
+        ),
+      )
+      return
+    }
+    const response = responsesByRequest.get(fillRequest)
+    if (!response) return
+    if (response.status() !== 200) {
+      rejectFilteredListResponse(
+        new Error(`filter action list request returned HTTP ${response.status()}`),
+      )
+      return
+    }
+    resolveFilteredListResponse(response)
+  }
   const requestObserver = (request: Request) => {
     if (
       !isMatchingFilterRequest(
@@ -852,40 +945,59 @@ export async function fillFilterAndWaitForListResponse(
       fillRequests.add(request)
       return
     }
-    if (retryRequestAllowed) {
-      fillRequests.add(request)
-      retryRequestAllowed = false
+    fillRequests.add(request)
+    ambiguousActionRequest = true
+    settleFilteredListResponse()
+  }
+  const responseObserver = (response: Response) => {
+    const request = response.request()
+    if (
+      !isMatchingFilterRequest(
+        request,
+        options.listPath,
+        options.stableText,
+        expectedQueryFingerprint,
+      )
+    ) {
       return
     }
-    ambiguousActionRequest = true
+    responsesByRequest.set(request, response)
+    settleFilteredListResponse()
   }
   page.on('request', requestObserver)
-  const filteredListRequest = page.waitForRequest((request) => fillRequests.has(request), {
-    timeout: timeoutMs,
-  })
-  const filteredListResponse = page.waitForResponse(
-    (response) => {
-      const request = response.request()
-      if (!fillRequests.has(request)) return false
-      if (response.status() >= 400) {
-        retryRequestAllowed = true
-        return false
-      }
-      return response.status() === 200
-    },
+  page.on('response', responseObserver)
+  const filteredListRequest = page.waitForRequest(
+    (request) =>
+      isMatchingFilterRequest(
+        request,
+        options.listPath,
+        options.stableText,
+        expectedQueryFingerprint,
+      ) && request.headers()[ACTION_MARKER_HEADER] === actionMarker,
     { timeout: timeoutMs },
   )
   try {
     await filter.fill(options.stableText)
     const request = await filteredListRequest
-    if (ambiguousActionRequest || request !== fillRequest) {
+    if (request !== fillRequest) {
       throw new Error('filter response was not bound to the request emitted by the fill action')
     }
+    actionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
+    actionClosed = true
+    settleFilteredListResponse()
+    responseTimer = setTimeout(
+      () => rejectFilteredListResponse(new Error('filter response timed out')),
+      timeoutMs,
+    )
     const response = await filteredListResponse
+    const finalActionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
     if (
       ambiguousActionRequest ||
-      !fillRequests.has(response.request()) ||
-      response.status() !== 200
+      response.request() !== fillRequest ||
+      response.status() !== 200 ||
+      fillRequests.size !== 1 ||
+      finalActionSnapshot.actionCount !== 1 ||
+      finalActionSnapshot.markedRequestCount !== 1
     ) {
       throw new Error(
         'filter response was not bound to the completed request emitted by the fill action',
@@ -894,7 +1006,9 @@ export async function fillFilterAndWaitForListResponse(
     rememberListResponseOwnership(page, response)
     return { waitedForResponse: true, reason: 'server-response' }
   } finally {
+    if (responseTimer) clearTimeout(responseTimer)
     page.off('request', requestObserver)
+    page.off('response', responseObserver)
     await removeActionRequestMarker(page, actionMarker)
   }
 }

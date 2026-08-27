@@ -322,10 +322,9 @@ test.describe('walkthrough filter response boundary', () => {
       const keyword = new URL(route.request().url()).searchParams.get('keyword') ?? ''
       queries.push(keyword)
       changedAttempts += keyword === 'SO-WALK-001' ? 1 : 0
-      const status = keyword === 'SO-WALK-001' && changedAttempts === 1 ? 503 : 200
+      const status = 200
       statuses.push(status)
-      if (status === 200 && changedAttempts > 1)
-        await new Promise((resolve) => setTimeout(resolve, 100))
+      if (keyword === 'SO-WALK-001') await new Promise((resolve) => setTimeout(resolve, 100))
       await route.fulfill({
         status,
         contentType: 'application/json',
@@ -353,8 +352,80 @@ test.describe('walkthrough filter response boundary', () => {
     })
 
     expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
-    expect(statuses).toEqual([200, 503, 200])
-    expect(queries).toEqual(['SO-OLD-001', 'SO-WALK-001', 'SO-WALK-001'])
+    expect(changedAttempts).toBe(1)
+    expect(statuses).toEqual([200, 200])
+    expect(queries).toEqual(['SO-OLD-001', 'SO-WALK-001'])
+  })
+
+  test('筛选首个请求 4xx 后后台轮询不能冒充本次 fill retry', async ({ page }) => {
+    const queries: string[] = []
+    const markers: (string | undefined)[] = []
+    const staticQuery = '&organizationId=org-001&environmentId=env-dev&status=open&skip=0&take=10'
+    const retryFixtureHtml = `<!doctype html>
+      <meta charset="utf-8">
+      <label>关键字搜索 <input aria-label="关键字搜索" /></label>
+      <script>
+        const input = document.querySelector('input')
+        input.value = 'SO-OLD-001'
+        void fetch('${listPath}?keyword=SO-OLD-001${staticQuery}')
+        input.addEventListener('input', event => {
+          const value = event.target.value
+          void fetch('${listPath}?keyword=' + encodeURIComponent(value) + '${staticQuery}')
+          setTimeout(() => {
+            void fetch('${listPath}?keyword=' + encodeURIComponent(value) + '${staticQuery}')
+          }, 20)
+        })
+      </script>`
+
+    await page.route(`**${fixturePath}*`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: retryFixtureHtml }),
+    )
+    let targetAttempts = 0
+    await page.route(`**${listPath}*`, async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const keyword = url.searchParams.get('keyword') ?? ''
+      queries.push(`${keyword}:${url.searchParams.get('take') ?? ''}`)
+      markers.push(request.headers()['x-nerv-walkthrough-action'])
+      if (keyword === 'SO-WALK-001') {
+        targetAttempts += 1
+        await route.fulfill({
+          status: targetAttempts === 1 ? 503 : 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [{ code: keyword }] }),
+        })
+        return
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ code: keyword }] }),
+      })
+    })
+
+    const { firstList, navigationEpoch } = await navigateAndWaitForInitialList(page, {
+      route: `${fixturePath}?keyword=SO-OLD-001`,
+      listPath,
+      timeoutMs: 2_000,
+    })
+
+    await expect(
+      fillFilterAndWaitForListResponse(page, {
+        route: page.url(),
+        listPath,
+        filterLabel: '关键字搜索',
+        stableText: 'SO-WALK-001',
+        responseMode: 'server',
+        initialListResponse: firstList,
+        initialListNavigationEpoch: navigationEpoch,
+        timeoutMs: 500,
+      }),
+    ).rejects.toThrow('HTTP 503')
+    await page.waitForTimeout(50)
+
+    expect(targetAttempts).toBe(2)
+    expect(markers[1]).toBeTruthy()
+    expect(markers[2]).toBeUndefined()
+    expect(queries).toEqual(['SO-OLD-001:10', 'SO-WALK-001:10', 'SO-WALK-001:10'])
   })
 
   test('服务端筛选只接受目标 keyword 的已完成响应', async ({ page }) => {
@@ -719,6 +790,94 @@ test.describe('walkthrough filter response boundary', () => {
     expect(markersByRevision.get('fresh-1')).not.toBe(markersByRevision.get('fresh-2'))
     expect(markersByRevision.get('after-1')).toBeUndefined()
     expect(markersByRevision.get('after-2')).toBeUndefined()
+  })
+
+  test('刷新响应延迟时点击前 capture listener 的 zero-delay timer 仍在 action 外', async ({
+    page,
+  }) => {
+    const refreshFixturePath = '/issue1912-refresh-after-window-fixture'
+    const refreshPath = '/api/issue1912-refresh-after-window-list'
+    const revisions: string[] = []
+    const markersByRevision = new Map<string, string | undefined>()
+
+    await page.route(`**${refreshFixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <meta charset="utf-8">
+          <button type="button">刷新</button>
+          <script>
+            const button = document.querySelector('button')
+            document.addEventListener('click', () => {
+              setTimeout(() => void fetch('${refreshPath}?revision=after-window'), 0)
+            }, { capture: true })
+            button.addEventListener('click', () => {
+              void fetch('${refreshPath}?revision=fresh')
+            })
+          </script>`,
+      }),
+    )
+    await page.route(`**${refreshPath}*`, async (route) => {
+      const request = route.request()
+      const revision = new URL(request.url()).searchParams.get('revision') ?? ''
+      revisions.push(revision)
+      markersByRevision.set(revision, request.headers()['x-nerv-walkthrough-action'])
+      if (revision === 'fresh') await new Promise((resolve) => setTimeout(resolve, 100))
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ revision }),
+      })
+    })
+
+    await page.goto(refreshFixturePath)
+    const refreshed = await clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)
+
+    expect(new URL(refreshed.url()).searchParams.get('revision')).toBe('fresh')
+    expect(revisions).toEqual(expect.arrayContaining(['after-window', 'fresh']))
+    expect(markersByRevision.get('after-window')).toBeUndefined()
+    expect(markersByRevision.get('fresh')).toBeTruthy()
+  })
+
+  test('刷新首个 marked 请求响应等待期间晚到 duplicate 时失败关闭', async ({ page }) => {
+    const refreshFixturePath = '/issue1912-refresh-delayed-duplicate-fixture'
+    const refreshPath = '/api/issue1912-refresh-delayed-duplicate-list'
+    const markedRevisions: string[] = []
+
+    await page.route(`**${refreshFixturePath}*`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <meta charset="utf-8">
+          <button type="button">刷新</button>
+          <script>
+            let clickCount = 0
+            document.querySelector('button').addEventListener('click', () => {
+              const revision = clickCount++ === 0 ? 'first' : 'late-duplicate'
+              void fetch('${refreshPath}?revision=' + revision)
+            })
+          </script>`,
+      }),
+    )
+    await page.route(`**${refreshPath}*`, async (route) => {
+      const request = route.request()
+      const revision = new URL(request.url()).searchParams.get('revision') ?? ''
+      if (request.headers()['x-nerv-walkthrough-action']) markedRevisions.push(revision)
+      if (revision === 'first') {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        await page.evaluate(() => document.querySelector('button')?.click())
+        await new Promise((resolve) => setTimeout(resolve, 70))
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ revision }),
+      })
+    })
+
+    await page.goto(refreshFixturePath)
+    await expect(clickRefreshAndWaitForListResponse(page, refreshPath, 2_000)).rejects.toThrow(
+      'more than one marked list request',
+    )
+    expect(markedRevisions).toEqual(['first', 'late-duplicate'])
   })
 
   test('刷新 action 同一次 click 发出多个同路径请求时失败关闭', async ({ page }) => {
