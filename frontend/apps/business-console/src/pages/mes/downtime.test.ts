@@ -37,6 +37,15 @@ const recoveredRow = {
   reasonName: null,
 }
 
+// 历史停机事件可能连原因码都没有（读面契约里 reasonCode / reasonName 都可空）。
+const unreasonedRow = {
+  ...openRow,
+  downtimeEventId: 'DT-0003',
+  reasonCode: null,
+  reasonName: null,
+}
+const downtimeRows = ref<Array<typeof openRow | typeof recoveredRow | typeof unreasonedRow>>([])
+
 const recordDowntimeEvent = vi.fn()
 const recoverDowntimeEvent = vi.fn().mockResolvedValue(undefined)
 const refreshDowntimeEvents = vi.fn().mockResolvedValue(undefined)
@@ -79,7 +88,7 @@ function toLocalDateTimeInput(date: Date) {
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: () => 'record-downtime-stable-key',
   useMesDowntimeEvents: () => ({
-    downtimeEvents: computed(() => [openRow, recoveredRow]),
+    downtimeEvents: computed(() => downtimeRows.value),
     downtimeEventsError: ref(undefined),
     downtimeEventsPending: ref(false),
     downtimeEventsTotal: computed(() => 2),
@@ -226,6 +235,7 @@ beforeEach(() => {
   filters.organizationId = 'org'
   filters.environmentId = 'dev'
   filters.reasonCode = undefined
+  downtimeRows.value = [openRow, recoveredRow]
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
   permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
@@ -409,6 +419,16 @@ describe('MES downtime reason read face', () => {
     expect(cells).toHaveLength(2)
     expect(cells[0]!.text()).toBe('机械故障（轴承/传动/密封）')
     expect(cells[1]!.text()).toBe('换型调整')
+  })
+
+  it('labels a downtime event that carries neither a reason name nor a reason code', () => {
+    // 两者皆空是读面契约里可达的一支（历史上没填原因码的停机事件）。
+    // 这一格必须说人话，不能留成空白单元格——空白在表格里读起来像还没加载完或坏了。
+    downtimeRows.value = [unreasonedRow]
+    const wrapper = mountPage({ NvDataTable: cellRenderingTable })
+
+    const cell = wrapper.get('[data-cell="reasonCode"]')
+    expect(cell.text()).toBe('未指定')
   })
 
   it('offers the authoritative reason directory as the filter and pushes the selection into the list query', async () => {
