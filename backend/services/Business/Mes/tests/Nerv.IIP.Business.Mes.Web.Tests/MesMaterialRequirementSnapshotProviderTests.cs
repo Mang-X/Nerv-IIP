@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -89,12 +90,24 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
             new MesMaterialRequirementInventoryOptions { SiteCodes = ["SITE-A", "SITE-B"] });
 
         var snapshotTask = provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
-        await firstRequestStarted.Task;
-        var observedParallelRequests = twoRequestsStarted.Task.IsCompleted;
-        releaseInventory.TrySetResult();
+        try
+        {
+            await TestTimeout.RunAsync(
+                operation: "observe the first Inventory availability request",
+                action: token => new ValueTask(firstRequestStarted.Task.WaitAsync(token)),
+                timeout: TimeSpan.FromSeconds(5));
+            await TestTimeout.RunAsync(
+                operation: "observe overlapping Inventory availability requests",
+                action: token => new ValueTask(twoRequestsStarted.Task.WaitAsync(token)),
+                timeout: TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            releaseInventory.TrySetResult();
+        }
+
         var result = await snapshotTask;
 
-        Assert.True(observedParallelRequests, "Expected independent Inventory requests to overlap before the release gate opened.");
         Assert.InRange(peakConcurrency, 2, 8);
         Assert.Equal(20, inventoryRequests.Count);
         Assert.All(inventoryRequests, pathAndQuery =>
@@ -109,6 +122,42 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                 pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal));
         });
         Assert.Equal(30m, Assert.Single(result.Lines).AvailableQuantity);
+    }
+
+    // Contract: ProviderBehavior + Regression. Authority: Issue #2223 review 5036805693.
+    // Treating one failed candidate/UOM/site branch as zero would publish a partial aggregate as a complete snapshot.
+    [Fact]
+    public async Task Http_provider_fails_the_whole_snapshot_when_any_inventory_candidate_branch_fails()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
+            "MAT-PRIMARY",
+            "PCS",
+            "MAT-ALT-A");
+        var inventoryRequests = new List<string>();
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+        {
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            inventoryRequests.Add(pathAndQuery);
+            return pathAndQuery.Contains("skuCode=MAT-ALT-A", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = JsonContent.Create(new { message = "candidate unavailable" }),
+                }
+                : JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 5m));
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetSnapshotAsync(
+            NewSnapshotRequest(),
+            CancellationToken.None));
+
+        Assert.Contains("MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE", exception.Message);
+        Assert.Contains("Inventory", exception.Message);
+        Assert.Contains("503", exception.Message);
+        Assert.Equal(2, inventoryRequests.Count);
     }
 
     // Contract: DomainInvariant + Regression. Authority: Issue #2223 acceptance 1-2.
