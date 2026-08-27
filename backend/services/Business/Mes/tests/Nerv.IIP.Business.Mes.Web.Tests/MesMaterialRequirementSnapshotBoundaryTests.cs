@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -45,6 +46,14 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             "FromSql rooted at generic Set",
             "var rows = dbContext.Set<MaterialRequirement>().FromSqlRaw(\"SELECT * FROM mes.material_requirements\");"
         },
+        {
+            "generic Set method group",
+            "Func<DbSet<MaterialRequirement>> read = dbContext.Set<MaterialRequirement>; var rows = read();"
+        },
+        {
+            "ChangeTracker entries",
+            "var rows = dbContext.ChangeTracker.Entries<MaterialRequirement>();"
+        },
     };
 
     [Fact]
@@ -82,10 +91,10 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             .Where(access => !IsApprovedRawAccess(access))
             .OrderBy(access => access.Path, StringComparer.Ordinal)
             .ThenBy(access => access.Line)
-            .Select(access => $"{Path.GetRelativePath(applicationRoot, access.Path)}:{access.Line}:{access.Method}")
+            .Select(access => $"{Path.GetRelativePath(applicationRoot, access.Path)}:{access.Line}:{access.ContainingType}.{access.Method}:{access.Kind}")
             .ToArray();
 
-        Assert.Empty(violations);
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
     [Fact]
@@ -101,12 +110,12 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var expected = new Dictionary<string, int>(StringComparer.Ordinal)
         {
-            ["Readiness/MaterialRequirementSnapshotReader.cs|LoadLatestCapturesAsync|DbSetProperty"] = 2,
-            ["Commands/Workbench/MesWorkbenchCommands.cs|EnsureRequirementSnapshotsAsync|DbSetProperty"] = 1,
-            ["IntegrationEventHandlers/EngineeringChangeReleasedIntegrationEventHandlerForMesWip.cs|HandleValidEventCoreAsync|DbSetProperty"] = 2,
-            ["Seed/WorldHistorySeedService.cs|WriteMaterialFacts|DbSetProperty"] = 1,
-            ["Seed/WorldHistoryConsistencyValidator.cs|LoadKittingCountsAsync|DbSetProperty"] = 1,
-            ["Seed/WorldHistoryConsistencyValidator.cs|LoadKittingGapsAsync|DbSetProperty"] = 1,
+            ["Readiness/MaterialRequirementSnapshotReader.cs|Nerv.IIP.Business.Mes.Web.Application.Readiness.MaterialRequirementSnapshotReader|LoadLatestCapturesAsync|DbSetProperty"] = 2,
+            ["Commands/Workbench/MesWorkbenchCommands.cs|Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards|EnsureRequirementSnapshotsAsync|DbSetProperty"] = 1,
+            ["IntegrationEventHandlers/EngineeringChangeReleasedIntegrationEventHandlerForMesWip.cs|Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers.EngineeringChangeReleasedIntegrationEventHandlerForMesWip|HandleValidEventCoreAsync|DbSetProperty"] = 2,
+            ["Seed/WorldHistorySeedService.cs|Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistorySeedService|WriteMaterialFacts|DbSetProperty"] = 1,
+            ["Seed/WorldHistoryConsistencyValidator.cs|Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistoryConsistencyValidator|LoadKittingCountsAsync|DbSetProperty"] = 1,
+            ["Seed/WorldHistoryConsistencyValidator.cs|Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistoryConsistencyValidator|LoadKittingGapsAsync|DbSetProperty"] = 1,
         };
 
         Assert.Equal(
@@ -119,6 +128,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     public void Equivalent_EF_read_shapes_are_rejected(string _, string statement)
     {
         var source = $$"""
+            using System;
             using Microsoft.EntityFrameworkCore;
             using Requirement = Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate.MaterialRequirement;
             using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -137,6 +147,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
 
         var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source).ToArray();
 
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
         Assert.NotEmpty(violations);
     }
 
@@ -162,46 +173,196 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void Typed_query_carrier_injected_into_a_consumer_is_rejected()
+    {
+        const string source = """
+            using System.Linq;
+            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+
+            namespace Probe;
+
+            internal sealed class BypassProbe
+            {
+                internal void Read(IQueryable<MaterialRequirement> requirements)
+                {
+                    _ = requirements;
+                }
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Contains(violations, violation => violation.Kind == "CarrierParameter");
+    }
+
+    [Fact]
+    public void Typed_query_carrier_returned_by_a_consumer_is_rejected()
+    {
+        const string source = """
+            using System.Linq;
+            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+
+            namespace Probe;
+
+            internal sealed class BypassProbe
+            {
+                internal IQueryable<MaterialRequirement> Read() => default!;
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Contains(violations, violation => violation.Kind == "CarrierReturn");
+    }
+
+    [Fact]
+    public void Retyped_query_carrier_cannot_cross_a_non_generic_helper()
+    {
+        const string source = """
+            using System.Linq;
+            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+
+            namespace Probe;
+
+            internal sealed class BypassProbe
+            {
+                internal void Read(IQueryable requirements)
+                {
+                    var typed = requirements.OfType<MaterialRequirement>().AsQueryable();
+                    Consume((IQueryable)typed);
+                }
+
+                private static void Consume(IQueryable requirements) => _ = requirements;
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source);
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Contains(violations, violation => violation.Kind == "CarrierArgument");
+    }
+
+    [Fact]
+    public void Invalid_compilation_fails_closed_before_semantic_analysis()
+    {
+        const string source = """
+            namespace Probe;
+
+            internal sealed class BypassProbe
+            {
+                internal void Read(MissingMaterialRequirementContext context) => _ = context;
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/InvalidProbe.cs", source);
+
+        Assert.Contains(violations, violation => violation.Kind.StartsWith("CompilationError:CS0246:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Approved_method_name_in_an_unapproved_containing_type_is_rejected()
+    {
+        const string source = """
+            using Nerv.IIP.Business.Mes.Infrastructure;
+
+            namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+
+            internal sealed class ApprovalCollision
+            {
+                internal void EnsureRequirementSnapshotsAsync(ApplicationDbContext dbContext)
+                {
+                    _ = dbContext.MaterialRequirements;
+                }
+            }
+            """;
+        var repositoryRoot = FindRepositoryRoot();
+        var path = Path.Combine(
+            repositoryRoot,
+            "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs");
+        var violations = FindRawMaterialRequirementAccesses(path, source)
+            .ToArray();
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Contains(violations, access =>
+            access.Kind == "DbSetProperty"
+            && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.ApprovalCollision"
+            && !IsApprovedRawAccess(access));
+    }
+
     private static IEnumerable<RawAccess> FindRawMaterialRequirementAccesses(IEnumerable<string> paths)
     {
-        var trees = paths
-            .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path))
+        var scanPaths = paths.ToHashSet(StringComparer.Ordinal);
+        var webRoot = Path.Combine(
+            FindRepositoryRoot(),
+            "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web");
+        var projectTrees = Directory.EnumerateFiles(webRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), ProductionParseOptions, path: path))
             .ToArray();
-        var compilation = CSharpCompilation.Create(
-            "MesMaterialRequirementSnapshotBoundary",
-            trees,
-            CreateMetadataReferences());
-        return trees.SelectMany(tree => FindRawMaterialRequirementAccesses(tree, compilation.GetSemanticModel(tree)));
+        var scanTrees = projectTrees.Where(tree => scanPaths.Contains(tree.FilePath)).ToArray();
+        var compilation = CreateCompilation(
+            projectTrees,
+            "Nerv.IIP.Business.Mes.Web",
+            OutputKind.ConsoleApplication);
+        return FindRawMaterialRequirementAccesses(scanTrees, projectTrees, compilation);
     }
 
     private static IEnumerable<RawAccess> FindRawMaterialRequirementAccesses(string path, string source)
     {
-        var tree = CSharpSyntaxTree.ParseText(source, path: path);
-        var compilation = CSharpCompilation.Create(
-            "MesMaterialRequirementSnapshotBoundary",
+        var tree = CSharpSyntaxTree.ParseText(source, ProductionParseOptions, path: path);
+        var compilation = CreateCompilation(
             [tree],
-            CreateMetadataReferences());
-        return FindRawMaterialRequirementAccesses(tree, compilation.GetSemanticModel(tree));
+            "MesMaterialRequirementSnapshotBoundaryFixture",
+            OutputKind.DynamicallyLinkedLibrary);
+        return FindRawMaterialRequirementAccesses([tree], [tree], compilation);
     }
 
     private static IEnumerable<RawAccess> FindRawMaterialRequirementAccesses(
-        SyntaxTree tree,
-        SemanticModel semanticModel)
+        IReadOnlyCollection<SyntaxTree> trees,
+        IReadOnlyCollection<SyntaxTree> diagnosticTrees,
+        CSharpCompilation compilation)
     {
-        var path = tree.FilePath;
-        foreach (var access in FindMaterialRequirementEfAccesses(tree, semanticModel))
+        var diagnostics = compilation.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Location.SourceTree is not null
+                && diagnosticTrees.Contains(diagnostic.Location.SourceTree))
+            .OrderBy(diagnostic => diagnostic.Location.SourceTree!.FilePath, StringComparer.Ordinal)
+            .ThenBy(diagnostic => diagnostic.Location.SourceSpan.Start)
+            .ToArray();
+        if (diagnostics.Length > 0)
         {
-            var method = access.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
-            var line = tree.GetLineSpan(access.Span).StartLinePosition.Line + 1;
-            var kind = access switch
+            return diagnostics.Select(diagnostic =>
             {
-                MemberAccessExpressionSyntax => "DbSetProperty",
-                InvocationExpressionSyntax invocation => $"Invocation:{GetInvocationName(invocation)}",
-                TypeOfExpressionSyntax => "TypeOf",
-                _ => access.Kind().ToString(),
-            };
-            yield return new RawAccess(path, line, method?.Identifier.ValueText ?? "<unknown>", kind);
+                var tree = diagnostic.Location.SourceTree!;
+                var line = diagnostic.Location.GetLineSpan().StartLinePosition.Line + 1;
+                return new RawAccess(
+                    tree.FilePath,
+                    line,
+                    "<compilation>",
+                    "<compilation>",
+                    $"CompilationError:{diagnostic.Id}:{diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}");
+            }).ToArray();
         }
+
+        return trees.SelectMany(tree =>
+        {
+            var semanticModel = compilation.GetSemanticModel(tree);
+            return FindMaterialRequirementEfAccesses(tree, semanticModel).Select(access =>
+            {
+                var methodSyntax = access.Node.AncestorsAndSelf().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+                var method = methodSyntax is null ? null : semanticModel.GetDeclaredSymbol(methodSyntax);
+                var line = tree.GetLineSpan(access.Node.Span).StartLinePosition.Line + 1;
+                return new RawAccess(
+                    tree.FilePath,
+                    line,
+                    method?.ContainingType.ToDisplayString() ?? "<unknown>",
+                    method?.Name ?? "<unknown>",
+                    access.Kind);
+            });
+        }).ToArray();
     }
 
     private static string GetInvocationName(InvocationExpressionSyntax invocation) => invocation.Expression switch
@@ -211,69 +372,165 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         _ => invocation.Expression.ToString(),
     };
 
-    private static IEnumerable<SyntaxNode> FindMaterialRequirementEfAccesses(
+    private static IEnumerable<SemanticAccess> FindMaterialRequirementEfAccesses(
         SyntaxTree tree,
         SemanticModel semanticModel)
     {
         var reported = new HashSet<TextSpan>();
-        foreach (var memberAccess in tree.GetRoot().DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+        foreach (var node in tree.GetRoot().DescendantNodesAndSelf())
         {
-            var symbol = semanticModel.GetSymbolInfo(memberAccess).Symbol;
-            if (((symbol is IPropertySymbol property && IsMaterialRequirementSet(property.Type))
-                    || (symbol is null && memberAccess.Name.Identifier.ValueText == "MaterialRequirements"))
-                && reported.Add(memberAccess.Span))
+            var operation = semanticModel.GetOperation(node);
+            var kind = operation is null ? null : ClassifyOperation(operation);
+            if (kind is not null && reported.Add(node.Span))
             {
-                yield return memberAccess;
+                yield return new SemanticAccess(node, kind);
             }
         }
 
-        foreach (var invocation in tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+        foreach (var parameter in tree.GetRoot().DescendantNodes().OfType<ParameterSyntax>())
         {
-            var symbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-            var isRelevant = symbol is not null
-                ? IsMaterialRequirementEfMethod(symbol)
-                : IsUnresolvedMaterialRequirementEfInvocation(invocation, semanticModel);
-
-            if (isRelevant && reported.Add(invocation.Span))
+            var symbol = semanticModel.GetDeclaredSymbol(parameter);
+            if (symbol is not null && IsMaterialRequirementQueryCarrier(symbol.Type) && reported.Add(parameter.Span))
             {
-                yield return invocation;
+                yield return new SemanticAccess(parameter, "CarrierParameter");
             }
         }
 
-        foreach (var typeOf in tree.GetRoot().DescendantNodes().OfType<TypeOfExpressionSyntax>())
+        foreach (var method in tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
-            if (IsMaterialRequirement(semanticModel.GetTypeInfo(typeOf.Type).Type)
-                && reported.Add(typeOf.Span))
+            var symbol = semanticModel.GetDeclaredSymbol(method);
+            if (symbol is not null && IsMaterialRequirementQueryCarrier(symbol.ReturnType) && reported.Add(method.ReturnType.Span))
             {
-                yield return typeOf;
+                yield return new SemanticAccess(method.ReturnType, "CarrierReturn");
             }
         }
     }
+
+    private static string? ClassifyOperation(IOperation operation) => operation switch
+    {
+        IPropertyReferenceOperation property when IsMaterialRequirementSet(property.Property.Type) =>
+            "DbSetProperty",
+        IInvocationOperation invocation when IsMaterialRequirementEfMethod(invocation.TargetMethod) =>
+            $"Invocation:{invocation.TargetMethod.Name}",
+        IMethodReferenceOperation methodReference when IsMaterialRequirementEfMethod(methodReference.Method) =>
+            $"MethodReference:{methodReference.Method.Name}",
+        ITypeOfOperation typeOf when IsMaterialRequirement(typeOf.TypeOperand) =>
+            "TypeOf",
+        IDynamicInvocationOperation dynamicInvocation when IsDynamicMaterialRequirementEfInvocation(dynamicInvocation, operation.SemanticModel!) =>
+            "DynamicInvocation",
+        IInvocationOperation invocation when IsMaterialRequirementCarrierRetype(invocation.TargetMethod) =>
+            $"CarrierRetype:{invocation.TargetMethod.Name}",
+        IArgumentOperation argument when ContainsMaterialRequirementCarrier(argument.Value)
+            && !IsQueryPreservingMethod(argument.Parent as IInvocationOperation) =>
+            "CarrierArgument",
+        _ => null,
+    };
 
     private static bool IsMaterialRequirementEfMethod(IMethodSymbol method)
     {
         var original = method.ReducedFrom ?? method;
-        if (method.TypeArguments.Concat(original.TypeArguments).Any(IsMaterialRequirement))
-        {
-            return original.Name is "Set" or "SqlQuery" or "SqlQueryRaw" or "FromSql" or "FromSqlRaw" or "FromSqlInterpolated";
-        }
-
-        return false;
-    }
-
-    private static bool IsUnresolvedMaterialRequirementEfInvocation(
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel)
-    {
-        if (GetInvocationName(invocation) is not ("Set" or "SqlQuery" or "SqlQueryRaw" or "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"))
+        if (!method.TypeArguments.Concat(original.TypeArguments).Any(IsMaterialRequirement))
         {
             return false;
         }
 
-        return invocation.Expression.DescendantNodesAndSelf()
+        var containingType = original.ContainingType.ToDisplayString();
+        return (original.Name == "Set" && IsOrInheritsFrom(original.ContainingType, typeof(DbContext).FullName!))
+            || (original.Name == "Entries" && containingType == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker")
+            || (original.Name is "SqlQuery" or "SqlQueryRaw"
+                && containingType == "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions")
+            || (original.Name is "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"
+                && containingType == "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions");
+    }
+
+    private static bool IsDynamicMaterialRequirementEfInvocation(
+        IDynamicInvocationOperation invocation,
+        SemanticModel semanticModel)
+    {
+        if (invocation.Syntax is not InvocationExpressionSyntax syntax
+            || GetInvocationName(syntax) is not ("Set" or "SqlQuery" or "SqlQueryRaw" or "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"))
+        {
+            return false;
+        }
+
+        return syntax.Expression.DescendantNodesAndSelf()
             .OfType<GenericNameSyntax>()
             .SelectMany(generic => generic.TypeArgumentList.Arguments)
             .Any(type => IsMaterialRequirement(semanticModel.GetTypeInfo(type).Type));
+    }
+
+    private static bool IsMaterialRequirementCarrierRetype(IMethodSymbol method)
+    {
+        var original = method.ReducedFrom ?? method;
+        return original.ContainingType.ToDisplayString() == "System.Linq.Queryable"
+            && original.Name is "Cast" or "OfType" or "AsQueryable"
+            && (method.TypeArguments.Concat(original.TypeArguments).Any(IsMaterialRequirement)
+                || IsMaterialRequirementQueryCarrier(method.ReturnType));
+    }
+
+    private static bool IsQueryPreservingMethod(IInvocationOperation? invocation)
+    {
+        if (invocation is null)
+        {
+            return false;
+        }
+
+        var original = invocation.TargetMethod.ReducedFrom ?? invocation.TargetMethod;
+        var containingType = original.ContainingType.ToDisplayString();
+        return containingType is "System.Linq.Queryable"
+            or "Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions"
+            or "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions";
+    }
+
+    private static bool ContainsMaterialRequirementCarrier(IOperation operation)
+    {
+        for (var current = operation; current is not null; current = current switch
+        {
+            IConversionOperation conversion => conversion.Operand,
+            IParenthesizedOperation parenthesized => parenthesized.Operand,
+            _ => null,
+        })
+        {
+            if (IsMaterialRequirementQueryCarrier(current.Type))
+            {
+                return true;
+            }
+        }
+
+        return operation.Descendants().Any(descendant => IsMaterialRequirementQueryCarrier(descendant.Type));
+    }
+
+    private static bool IsMaterialRequirementQueryCarrier(ITypeSymbol? type)
+    {
+        if (type is not INamedTypeSymbol named)
+        {
+            return false;
+        }
+
+        if (named.IsGenericType
+            && named.TypeArguments.Any(IsMaterialRequirement)
+            && named.ConstructedFrom.ToDisplayString() is "System.Linq.IQueryable<T>"
+                or "System.Collections.Generic.IAsyncEnumerable<T>"
+                or "Microsoft.EntityFrameworkCore.DbSet<TEntity>"
+                or "Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity>")
+        {
+            return true;
+        }
+
+        return named.AllInterfaces.Any(IsMaterialRequirementQueryCarrier);
+    }
+
+    private static bool IsOrInheritsFrom(INamedTypeSymbol? type, string metadataName)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (current.ToDisplayString() == metadataName)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsMaterialRequirementSet(ITypeSymbol type) =>
@@ -294,14 +551,42 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             .Concat(AppDomain.CurrentDomain.GetAssemblies()
                 .Where(assembly => !assembly.IsDynamic && !string.IsNullOrWhiteSpace(assembly.Location))
                 .Select(assembly => assembly.Location))
+            .Concat(Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll", SearchOption.TopDirectoryOnly))
             .Append(typeof(ApplicationDbContext).Assembly.Location)
             .Append(typeof(MaterialRequirement).Assembly.Location)
             .Append(typeof(DbContext).Assembly.Location)
             .Append(typeof(RelationalDatabaseFacadeExtensions).Assembly.Location)
+            .Where(path => Path.GetFileName(path) is not "Nerv.IIP.Business.Mes.Web.dll"
+                and not "Nerv.IIP.Business.Mes.Web.Tests.dll")
             .Distinct(StringComparer.Ordinal)
             ?? [typeof(object).Assembly.Location];
 
         return paths.Select(path => MetadataReference.CreateFromFile(path)).ToArray();
+    }
+
+    private static CSharpCompilation CreateCompilation(
+        IEnumerable<SyntaxTree> sourceTrees,
+        string assemblyName,
+        OutputKind outputKind)
+    {
+        var globalUsings = CSharpSyntaxTree.ParseText(
+            WebGlobalUsings,
+            ProductionParseOptions,
+            path: "MesWebGlobalUsings.g.cs");
+        return CSharpCompilation.Create(
+            assemblyName,
+            sourceTrees.Prepend(globalUsings),
+            CreateMetadataReferences(),
+            new CSharpCompilationOptions(
+                outputKind,
+                nullableContextOptions: NullableContextOptions.Enable));
+    }
+
+    private static bool IsBuildOutput(string path)
+    {
+        var normalized = path.Replace(Path.DirectorySeparatorChar, '/');
+        return normalized.Contains("/bin/", StringComparison.Ordinal)
+            || normalized.Contains("/obj/", StringComparison.Ordinal);
     }
 
     private static IEnumerable<string> FindCanonicalReaderCallers(string path)
@@ -324,14 +609,20 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         }
 
         var normalized = access.Path.Replace(Path.DirectorySeparatorChar, '/');
-        return normalized.EndsWith("/Readiness/MaterialRequirementSnapshotReader.cs", StringComparison.Ordinal)
+        return (normalized.EndsWith("/Readiness/MaterialRequirementSnapshotReader.cs", StringComparison.Ordinal)
+                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Readiness.MaterialRequirementSnapshotReader"
+                && access.Method == "LoadLatestCapturesAsync")
             || (normalized.EndsWith("/Commands/Workbench/MesWorkbenchCommands.cs", StringComparison.Ordinal)
+                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards"
                 && access.Method == "EnsureRequirementSnapshotsAsync")
             || (normalized.EndsWith("/IntegrationEventHandlers/EngineeringChangeReleasedIntegrationEventHandlerForMesWip.cs", StringComparison.Ordinal)
+                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers.EngineeringChangeReleasedIntegrationEventHandlerForMesWip"
                 && access.Method == "HandleValidEventCoreAsync")
             || (normalized.EndsWith("/Seed/WorldHistorySeedService.cs", StringComparison.Ordinal)
+                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistorySeedService"
                 && access.Method == "WriteMaterialFacts")
             || (normalized.EndsWith("/Seed/WorldHistoryConsistencyValidator.cs", StringComparison.Ordinal)
+                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistoryConsistencyValidator"
                 && access.Method is "LoadKittingCountsAsync" or "LoadKittingGapsAsync");
     }
 
@@ -352,7 +643,32 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         throw new DirectoryNotFoundException("Repository root was not found.");
     }
 
-    private sealed record RawAccess(string Path, int Line, string Method, string Kind)
+    private static readonly CSharpParseOptions ProductionParseOptions = new(LanguageVersion.Preview);
+
+    private const string WebGlobalUsings = """
+        global using System;
+        global using System.Collections.Generic;
+        global using System.IO;
+        global using System.Linq;
+        global using System.Net.Http;
+        global using System.Net.Http.Json;
+        global using System.Threading;
+        global using System.Threading.Tasks;
+        global using Microsoft.AspNetCore.Builder;
+        global using Microsoft.AspNetCore.Hosting;
+        global using Microsoft.AspNetCore.Http;
+        global using Microsoft.AspNetCore.Routing;
+        global using Microsoft.Extensions.Configuration;
+        global using Microsoft.Extensions.DependencyInjection;
+        global using Microsoft.Extensions.Hosting;
+        global using Microsoft.Extensions.Logging;
+        global using NetCorePal.Extensions.DependencyInjection;
+        global using NetCorePal.Extensions.Primitives;
+        """;
+
+    private sealed record SemanticAccess(SyntaxNode Node, string Kind);
+
+    private sealed record RawAccess(string Path, int Line, string ContainingType, string Method, string Kind)
     {
         public string ApprovalKey
         {
@@ -362,7 +678,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
                 var normalized = Path.Replace(System.IO.Path.DirectorySeparatorChar, '/');
                 var markerIndex = normalized.LastIndexOf(marker, StringComparison.Ordinal);
                 var relative = markerIndex >= 0 ? normalized[(markerIndex + marker.Length)..] : normalized;
-                return $"{relative}|{Method}|{Kind}";
+                return $"{relative}|{ContainingType}|{Method}|{Kind}";
             }
         }
     }
