@@ -100,8 +100,15 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.MigrateAsync();
 
-        db.AccountingPeriods.Add(AccountingPeriod.Open(
-            "org-pg", "env-pg", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)));
+        db.AccountingPeriods.AddRange(
+            AccountingPeriod.Open(
+                "org-pg", "env-pg", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            AccountingPeriod.Open(
+                "org-other", "env-pg", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            AccountingPeriod.Open(
+                "org-pg", "env-other", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            AccountingPeriod.Open(
+                "org-pg", "env-pg", "2026-07", new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
         db.WorkCenterMachineOverheadRates.Add(
             WorkCenterMachineOverheadRate.DefineApplicable(
                 "org-pg", "env-pg", "WC-PG", "2026-06",
@@ -129,7 +136,23 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             WorkCenterMachineOverheadRate.DefineApplicable(
                 "org-pg", "env-pg", "WC-ROUND", "2026-06",
                 1m, 3m, 128m, "CNY", 1,
-                "system:test", "bankers rounding vector", DateTimeOffset.UtcNow));
+                "system:test", "bankers rounding vector", DateTimeOffset.UtcNow),
+            WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-other", "env-pg", "WC-PG", "2026-06",
+                99_000m, 0m, 1_000m, "CNY", 99,
+                "system:test", "cross-organization distractor", DateTimeOffset.UtcNow),
+            WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-pg", "env-other", "WC-PG", "2026-06",
+                98_000m, 0m, 1_000m, "CNY", 98,
+                "system:test", "cross-environment distractor", DateTimeOffset.UtcNow),
+            WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-pg", "env-pg", "WC-OTHER", "2026-06",
+                97_000m, 0m, 1_000m, "CNY", 97,
+                "system:test", "cross-work-center distractor", DateTimeOffset.UtcNow),
+            WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-pg", "env-pg", "WC-PG", "2026-07",
+                96_000m, 0m, 1_000m, "CNY", 96,
+                "system:test", "cross-period distractor", DateTimeOffset.UtcNow));
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
