@@ -27,7 +27,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 type: "character varying(20)",
                 maxLength: 20,
                 nullable: true,
-                defaultValue: "resolved",
                 comment: "Event-time OEE dimension resolution outcome: resolved or degraded; NULL marks legacy rows predating the snapshot contract.");
 
             migrationBuilder.AddColumn<string>(
