@@ -20205,6 +20205,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
