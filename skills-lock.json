@@ -82,7 +82,7 @@
     "nerv-pr-review": {
       "source": "./skills/nerv-pr-review",
       "sourceType": "local",
-      "computedHash": "5cba8bf15f80dc19a0b43f897d79e6e6f4b39b2ed0067a65c97aa7e8d8ad3d02"
+      "computedHash": "f6336b22e1328733908a919aa1a8416ed769e4356f4174938dfb4236fec1ec14"
     },
     "nerv-task-delivery": {
       "source": "./skills/nerv-task-delivery",
