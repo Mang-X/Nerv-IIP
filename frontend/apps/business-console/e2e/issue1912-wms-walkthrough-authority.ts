@@ -17,6 +17,23 @@ export type WmsInboundWalkthroughScenarioFacts = WmsWalkthroughScenarioFacts &
     siteCode: string
   }>
 
+export type WmsWalkthroughQueryFacts = Omit<WmsWalkthroughScenarioFacts, 'scopeKind'> &
+  Readonly<{
+    scopeKind: 'work-pool'
+    skip: 0
+    take: 10
+  }>
+
+export type WmsInboundWalkthroughQueryFacts = Omit<
+  WmsInboundWalkthroughScenarioFacts,
+  'scopeKind'
+> &
+  Readonly<{
+    scopeKind: 'work-pool'
+    skip: 0
+    take: 10
+  }>
+
 export const NERV_1571_WMS_INBOUND_FACTS: WmsInboundWalkthroughScenarioFacts = {
   organizationId: 'org-live',
   environmentId: 'env-live',
@@ -30,4 +47,18 @@ export const NERV_1571_WMS_OUTBOUND_FACTS: WmsWalkthroughScenarioFacts = {
   environmentId: 'env-live',
   scopeKind: 'work-pool',
   scopeId: 'pool-shipping-001',
+}
+
+export const NERV_1571_WMS_INBOUND_QUERY_FACTS: WmsInboundWalkthroughQueryFacts = {
+  ...NERV_1571_WMS_INBOUND_FACTS,
+  scopeKind: 'work-pool',
+  skip: 0,
+  take: 10,
+}
+
+export const NERV_1571_WMS_OUTBOUND_QUERY_FACTS: WmsWalkthroughQueryFacts = {
+  ...NERV_1571_WMS_OUTBOUND_FACTS,
+  scopeKind: 'work-pool',
+  skip: 0,
+  take: 10,
 }

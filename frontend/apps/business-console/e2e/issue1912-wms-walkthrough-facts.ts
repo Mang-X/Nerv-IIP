@@ -26,6 +26,9 @@ export type WmsListQueryFacts = Readonly<
 
 export type WmsInboundListQueryFacts = Readonly<WmsListQueryFacts & { siteCode: string }>
 export type WmsOutboundListQueryFacts = Readonly<WmsListQueryFacts & { siteCode?: never }>
+export type WmsInboundListPath = '/api/business-console/v1/wms/inbound-orders'
+export type WmsOutboundListPath = '/api/business-console/v1/wms/outbound-orders'
+export type WmsListPath = WmsInboundListPath | WmsOutboundListPath
 
 export type WmsPageSelection =
   | Readonly<{ label: string; option: string; optionCode?: never }>
@@ -138,6 +141,18 @@ export function assertWmsInboundPageSelection(selection: WmsInboundPageSelection
   assertWmsPageSelection(selection.site)
 }
 
+export function assertWmsInboundSelectionMatchesQuery(
+  selection: WmsInboundPageSelection,
+  expectedQuery: WmsInboundListQueryFacts,
+): void {
+  assertWmsInboundPageSelection(selection)
+  if (selection.site.optionCode !== expectedQuery.siteCode) {
+    throw new Error(
+      `WMS inbound site selection ${selection.site.optionCode} did not match expected siteCode ${expectedQuery.siteCode}`,
+    )
+  }
+}
+
 export function assertWmsOutboundPageSelection(selection: WmsOutboundPageSelection): void {
   if (!selection?.scope) {
     throw new Error('WMS outbound proof requires exactly one scope selection')
@@ -155,7 +170,7 @@ export function assertWmsOutboundPageSelection(selection: WmsOutboundPageSelecti
  */
 export function assertWmsListQueryFacts(
   response: WmsListResponseFacts,
-  listPath: string,
+  listPath: WmsListPath,
   expectedQuery: WmsInboundListQueryFacts | WmsOutboundListQueryFacts,
   forbiddenQueryKeys: readonly 'siteCode'[] = [],
 ): void {
@@ -183,17 +198,48 @@ export function assertWmsListQueryFacts(
   }
 }
 
+/**
+ * 首个列表请求属于页面建立阶段，是目标端点和状态的公开生命周期证据，但不是选择证据：
+ * 精确的范围/工厂事实必须由显式选择后的 action-bound 刷新证明。
+ */
+export function assertWmsInitialListResponse(
+  response: WmsListResponseFacts,
+  listPath: WmsListPath,
+): void {
+  if (response.status !== 200) {
+    throw new Error(`WMS initial list ${listPath} returned HTTP ${response.status}`)
+  }
+  const actualPath = new URL(response.url).pathname
+  if (actualPath !== listPath) {
+    throw new Error(`WMS initial list response path ${actualPath} did not match ${listPath}`)
+  }
+}
+
 async function waitForUniqueVisibleOption(
   option: ReturnType<Page['locator']>,
   label: string,
   timeoutMs: number,
 ): Promise<void> {
   try {
+    let previousCount: number | undefined
+    let stableSamples = 0
     await expect
-      .poll(() => option.count(), {
-        timeout: timeoutMs,
-        message: `WMS page selection ${label} catalog did not settle on one visible option`,
-      })
+      .poll(
+        async () => {
+          const currentCount = await option.count()
+          if (currentCount === previousCount) stableSamples += 1
+          else {
+            previousCount = currentCount
+            stableSamples = 1
+          }
+          return currentCount === 1 && stableSamples >= 2 ? 1 : 0
+        },
+        {
+          timeout: timeoutMs,
+          intervals: [50, 100, 250, 500],
+          message: `WMS page selection ${label} catalog did not settle on one visible option`,
+        },
+      )
       .toBe(1)
   } catch {
     const optionCount = await option.count()
@@ -225,25 +271,42 @@ export async function selectWmsPageOption(
   await waitForUniqueVisibleOption(option, selection.label, timeoutMs)
   await option.click({ timeout: timeoutMs })
   await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
+  const selectedText = 'option' in selection ? (selection.option ?? '') : selection.optionCode
+  try {
+    await expect(trigger).toContainText(selectedText, { timeout: timeoutMs })
+  } catch {
+    throw new Error(
+      `WMS page selection ${selection.label} did not expose selected value ${selectedText}`,
+    )
+  }
 }
 
 export type WmsListPageProofOptions =
   | Readonly<{
       kind: 'inbound'
       page: Page
-      listPath: string
+      listPath: WmsInboundListPath
       selection: WmsInboundPageSelection
       expectedQuery: WmsInboundListQueryFacts
     }>
   | Readonly<{
       kind: 'outbound'
       page: Page
-      listPath: string
+      listPath: WmsOutboundListPath
       selection: WmsOutboundPageSelection
       expectedQuery: WmsOutboundListQueryFacts
     }>
 
-function expectedWmsListPath(kind: WmsListPageProofOptions['kind']): string {
+export type WmsInboundListPageProofInput = Omit<
+  Extract<WmsListPageProofOptions, { kind: 'inbound' }>,
+  'page' | 'listPath'
+>
+export type WmsOutboundListPageProofInput = Omit<
+  Extract<WmsListPageProofOptions, { kind: 'outbound' }>,
+  'page' | 'listPath'
+>
+
+function expectedWmsListPath(kind: WmsListPageProofOptions['kind']): WmsListPath {
   return kind === 'inbound'
     ? '/api/business-console/v1/wms/inbound-orders'
     : '/api/business-console/v1/wms/outbound-orders'
@@ -260,12 +323,7 @@ export async function proveWmsListPage(options: WmsListPageProofOptions): Promis
   }
 
   if (options.kind === 'inbound') {
-    assertWmsInboundPageSelection(options.selection)
-    if (options.selection.site.optionCode !== options.expectedQuery.siteCode) {
-      throw new Error(
-        `WMS inbound site selection ${options.selection.site.optionCode} did not match expected siteCode ${options.expectedQuery.siteCode}`,
-      )
-    }
+    assertWmsInboundSelectionMatchesQuery(options.selection, options.expectedQuery)
     await selectWmsPageOption(options.page, options.selection.scope)
     await selectWmsPageOption(options.page, options.selection.site)
   } else {
@@ -283,7 +341,7 @@ export async function proveWmsListPage(options: WmsListPageProofOptions): Promis
 
 export async function refreshWmsListAndConfirm(
   page: Page,
-  listPath: string,
+  listPath: WmsListPath,
   expectedQuery: WmsInboundListQueryFacts | WmsOutboundListQueryFacts,
   forbiddenQueryKeys: readonly 'siteCode'[] = [],
   timeoutMs = 120_000,

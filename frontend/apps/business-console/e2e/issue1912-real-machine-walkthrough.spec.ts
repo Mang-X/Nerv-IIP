@@ -35,7 +35,12 @@ import {
 import {
   buildWmsInboundListQueryFacts,
   buildWmsOutboundListQueryFacts,
+  assertWmsInitialListResponse,
   proveWmsListPage,
+  type WmsInboundListPageProofInput,
+  type WmsInboundListPath,
+  type WmsOutboundListPageProofInput,
+  type WmsOutboundListPath,
 } from './issue1912-wms-walkthrough-facts'
 import { queryPath as canonicalQueryPath } from './issue1912-walkthrough-query'
 
@@ -768,13 +773,23 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     firstListNavigationEpoch: number | undefined
   }
 
-  type WmsPageProofOptions = Omit<
-    PageProofOptions,
-    'actor' | 'refreshListBeforeProof' | 'expectedListQuery'
-  > & {
-    actor: 'wms-worker'
-    wms: Parameters<typeof proveWmsListPage>[0]
-  }
+  type WmsPageProofOptions =
+    | (Omit<
+        PageProofOptions,
+        'actor' | 'refreshListBeforeProof' | 'expectedListQuery' | 'listPath'
+      > & {
+        actor: 'wms-worker'
+        listPath: WmsInboundListPath
+        wms: WmsInboundListPageProofInput
+      })
+    | (Omit<
+        PageProofOptions,
+        'actor' | 'refreshListBeforeProof' | 'expectedListQuery' | 'listPath'
+      > & {
+        actor: 'wms-worker'
+        listPath: WmsOutboundListPath
+        wms: WmsOutboundListPageProofInput
+      })
 
   const erpListQuery = (query: JsonRecord = {}): JsonRecord => ({
     organizationId,
@@ -960,7 +975,15 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
 
   const proveWmsPage = async (node: NodeName, options: WmsPageProofOptions): Promise<UiProof> => {
     const established = await establishPage(options)
-    const refreshedList = await proveWmsListPage(options.wms)
+    assertWmsInitialListResponse(
+      { url: established.firstList.url(), status: established.firstList.status() },
+      options.listPath,
+    )
+    const refreshedList = await proveWmsListPage({
+      ...options.wms,
+      page: established.targetPage,
+      listPath: options.listPath,
+    })
     established.runtime.successfulListResponses.set(options.listPath, refreshedList)
     return completePageProof(
       node,
@@ -970,23 +993,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     )
   }
 
-  const provePageSafely = async (node: NodeName, options: PageProofOptions) => {
+  const runProofSafely = async <T>(node: NodeName, proof: () => Promise<T>): Promise<T> => {
     try {
-      return await provePage(node, options)
+      return await proof()
     } catch (error) {
       markFailure(node, error, 'mixed')
       throw error
     }
   }
 
-  const proveWmsPageSafely = async (node: NodeName, options: WmsPageProofOptions) => {
-    try {
-      return await proveWmsPage(node, options)
-    } catch (error) {
-      markFailure(node, error, 'mixed')
-      throw error
-    }
-  }
+  const provePageSafely = (node: NodeName, options: PageProofOptions) =>
+    runProofSafely(node, () => provePage(node, options))
+
+  const proveWmsPageSafely = (node: NodeName, options: WmsPageProofOptions) =>
+    runProofSafely(node, () => proveWmsPage(node, options))
 
   try {
     await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 120_000 })
@@ -1762,8 +1782,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       screenshotName: '07-wms-inbound.png',
       wms: {
         kind: 'inbound',
-        page: workerPage,
-        listPath: '/api/business-console/v1/wms/inbound-orders',
         selection: {
           scope: { label: '作业范围', option: receiptScope.displayName },
           site: { label: '工厂', optionCode: inboundListQuery.siteCode },
@@ -2447,8 +2465,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       screenshotName: '17-wms-outbound.png',
       wms: {
         kind: 'outbound',
-        page: workerPage,
-        listPath: '/api/business-console/v1/wms/outbound-orders',
         selection: { scope: { label: '作业范围', option: shipmentScope.displayName } },
         expectedQuery: outboundListQuery,
       },
