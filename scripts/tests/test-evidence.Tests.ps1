@@ -108,6 +108,29 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
+function Get-NervCiDotNetSdkContractFindings {
+    param(
+        [Parameter(Mandatory)] $Jobs,
+        [Parameter(Mandatory)] [string] $ExpectedSdkVersion
+    )
+
+    $setupStepCount = 0
+    foreach ($job in $Jobs) {
+        foreach ($step in $job.Steps) {
+            if (([string]$step.Uses).StartsWith('actions/setup-dotnet@', [StringComparison]::Ordinal)) {
+                $setupStepCount++
+                $actualVersion = [string]$step.With['dotnet-version']
+                if (-not [string]::Equals($actualVersion, $ExpectedSdkVersion, [StringComparison]::Ordinal)) {
+                    "ci-dotnet-sdk-version:$($job.Name):$actualVersion"
+                }
+            }
+        }
+    }
+    if ($setupStepCount -eq 0) {
+        'ci-setup-dotnet-missing'
+    }
+}
+
 # #1941 / #1865 Task 2：正式 full-chain evidence 的 rerun authority 必须跟随实际执行者，
 # 稳定 aggregate 没有执行测试，不能拿它为上一 attempt 的 lane 结果背书。
 $fullChainPhysicalJobName = 'Business FullChain Acceptance / v1 Authority'
@@ -2701,6 +2724,32 @@ Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Or
 
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $ciJobs = Get-NervCiWorkflowBudgets -Path $workflowPath
+$ciDotNetSdkVersion = '10.0.302'
+$ciDotNetSdkFindings = @(Get-NervCiDotNetSdkContractFindings -Jobs $ciJobs -ExpectedSdkVersion $ciDotNetSdkVersion)
+Assert-Equal 0 $ciDotNetSdkFindings.Count "Every setup-dotnet step in CI must select exact SDK $ciDotNetSdkVersion. Findings=[$($ciDotNetSdkFindings -join ', ')]"
+
+$ciDotNetSdkFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-dotnet-sdk-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($ciDotNetSdkFixtureRoot) | Out-Null
+    $workflowSource = [IO.File]::ReadAllText($workflowPath)
+    $exactVersionPattern = 'dotnet-version:\s*' + [regex]::Escape($ciDotNetSdkVersion)
+    $exactVersionRegex = [regex]::new($exactVersionPattern)
+    Assert-True ($exactVersionRegex.IsMatch($workflowSource)) 'The CI SDK mutation must target a managed setup-dotnet version.'
+    $floatingSdkWorkflow = $exactVersionRegex.Replace($workflowSource, 'dotnet-version: 10.0.x', 1)
+    $floatingSdkWorkflowPath = Join-Path $ciDotNetSdkFixtureRoot 'floating-dotnet-sdk.yml'
+    [IO.File]::WriteAllText($floatingSdkWorkflowPath, $floatingSdkWorkflow, [Text.UTF8Encoding]::new($false))
+    $floatingSdkFindings = @(
+        Get-NervCiDotNetSdkContractFindings `
+            -Jobs (Get-NervCiWorkflowBudgets -Path $floatingSdkWorkflowPath) `
+            -ExpectedSdkVersion $ciDotNetSdkVersion
+    )
+    Assert-Equal 1 $floatingSdkFindings.Count 'Changing one managed setup-dotnet step back to a floating SDK must produce one finding.'
+    Assert-True ([string]$floatingSdkFindings[0]).EndsWith(':10.0.x', [StringComparison]::Ordinal) 'The floating SDK finding must identify the rejected value.'
+}
+finally {
+    if (Test-Path -LiteralPath $ciDotNetSdkFixtureRoot) { Remove-Item -LiteralPath $ciDotNetSdkFixtureRoot -Recurse -Force }
+}
+Assert-True (-not (Test-Path -LiteralPath $ciDotNetSdkFixtureRoot)) 'CI SDK mutation fixtures must be cleaned up.'
 $frontendUnitStart = $workflow.IndexOf("  frontend-unit-tests:`n", [StringComparison]::Ordinal)
 $frontendBuildStart = $workflow.IndexOf("  frontend:`n", [StringComparison]::Ordinal)
 Assert-True ($frontendUnitStart -ge 0 -and $frontendUnitStart -lt $frontendBuildStart) 'Frontend Unit Tests must be a dedicated job before the existing frontend build job.'

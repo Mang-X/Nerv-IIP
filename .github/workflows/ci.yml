@@ -303,7 +303,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -394,7 +394,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -485,7 +485,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -578,7 +578,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -688,7 +688,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -838,7 +838,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -1015,7 +1015,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Validate CI impact-plan artifact identity
         timeout-minutes: 1
@@ -1111,7 +1111,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -1279,7 +1279,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -1706,7 +1706,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -2059,7 +2059,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -2119,7 +2119,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Run script governance check
         timeout-minutes: 5

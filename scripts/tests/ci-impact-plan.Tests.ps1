@@ -240,7 +240,7 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/setup-dotnet@v4', [StringComparison]::Ordinal)
         })
-    Assert-Contract ($dotnetSetupSteps.Count -eq 1 -and [string]::Equals([string]$dotnetSetupSteps[0].with.'dotnet-version', '10.0.x', [StringComparison]::Ordinal)) 'The planning job must setup the governed .NET 10 SDK exactly once.'
+    Assert-Contract ($dotnetSetupSteps.Count -eq 1 -and [string]::Equals([string]$dotnetSetupSteps[0].with.'dotnet-version', '10.0.302', [StringComparison]::Ordinal)) 'The planning job must setup the exact governed .NET SDK 10.0.302 exactly once.'
     $impactDownloadSteps = @($planningSteps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/download-artifact@v4', [StringComparison]::Ordinal)
