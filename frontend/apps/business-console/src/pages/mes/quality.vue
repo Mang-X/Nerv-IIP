@@ -483,7 +483,7 @@ async function submitDefect() {
       :loading="qualityItemsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的检验结果或不良，登记后可在这里跟进处置与关闭。"
+      empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的不良，登记后可在这里跟进处置与关闭。"
     >
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink

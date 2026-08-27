@@ -84,6 +84,12 @@ const handoverContextReady = computed(() =>
   Boolean(filters.organizationId.trim() && filters.environmentId.trim()),
 )
 
+const createEntryBlocker = computed(() => {
+  if (!canManageHandovers.value) return '没有交接单管理权限'
+  if (!handoverContextReady.value) return '请先完成业务上下文选择'
+  return ''
+})
+
 const shiftCatalog = useBusinessMasterDataResources('shift')
 const teamCatalog = useBusinessMasterDataResources('team')
 shiftCatalog.filters.take = CATALOG_TAKE
@@ -392,12 +398,11 @@ function formatError(error: unknown) {
     >
       <template #actions>
         <NvButton
-          v-if="canManageHandovers"
           aria-label="新建班次交接"
           size="sm"
           type="button"
-          :disabled="!handoverContextReady"
-          :title="handoverContextReady ? undefined : '请先完成业务上下文选择'"
+          :disabled="Boolean(createEntryBlocker)"
+          :title="createEntryBlocker || '新建班次交接单'"
           @click="openCreateDialog"
         >
           <PlusIcon aria-hidden="true" />
