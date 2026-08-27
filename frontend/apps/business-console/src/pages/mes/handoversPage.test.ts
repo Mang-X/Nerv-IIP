@@ -216,6 +216,15 @@ describe('MES handovers read-face guard', () => {
     expect(visibleText).not.toMatch(TECHNICAL_USER_PATTERN)
   })
 
+  it('disables the create button and explains why when the user lacks manage permission', () => {
+    state.principal.permissionCodes = []
+    const wrapper = mountPage()
+
+    const button = wrapper.get('[aria-label="新建班次交接"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe('没有交接单管理权限')
+  })
+
   it('validates the create form before issuing a mutation', async () => {
     const wrapper = mountPage()
 
