@@ -16,6 +16,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/CiImpactPlan.ps1'
 $entrypointPath = Join-Path $repoRoot 'scripts/get-ci-impact-plan.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$dotNetSdkAuthorityCheckerPath = Join-Path $repoRoot 'scripts/verify-ci-dotnet-sdk-authority.ps1'
+$dotNetSdkAuthorityManifestPath = Join-Path $repoRoot 'docs/architecture/business-gateway-api-surface-restore.manifest.json'
 $acceptanceScenarioMatrixOwningPaths = @(
     'scripts/acceptance-scenario-matrix.json'
     'scripts/lib/AcceptanceScenarioMatrix.ps1'
@@ -1110,7 +1112,8 @@ $expectedDotNetJobNames = @(
     'openapi-client-drift'
     'script-governance'
 )
-$expectedDotNetSdkVersion = '10.0.302'
+$restoreAuthorityManifest = Get-Content -LiteralPath $dotNetSdkAuthorityManifestPath -Raw | ConvertFrom-Json -Depth 20
+$expectedDotNetSdkVersion = [string] $restoreAuthorityManifest.toolchain.sdk
 $expectedDotNetInstallDirectory = '${{ runner.temp }}/dotnet'
 $dotNetSdkFindings = @(Get-NervCiDotNetSdkContractFindings -Path $workflowPath -ExpectedJobNames $expectedDotNetJobNames -ExpectedSdkVersion $expectedDotNetSdkVersion -ExpectedInstallDirectory $expectedDotNetInstallDirectory)
 Assert-Contract ($dotNetSdkFindings.Count -eq 0) "Every managed CI job must contain exactly one step-scoped isolated setup-dotnet step for SDK $expectedDotNetSdkVersion. Findings=[$($dotNetSdkFindings -join ', ')]"
@@ -1118,7 +1121,7 @@ Assert-Contract ($dotNetSdkFindings.Count -eq 0) "Every managed CI job must cont
 $dotNetMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-dotnet-sdk-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($dotNetMutationRoot) | Out-Null
-    $setupStepPattern = '(?ms)^      - name: Setup \.NET\r?\n        timeout-minutes: 5\r?\n        uses: actions/setup-dotnet@v4\r?\n        env:\r?\n          DOTNET_INSTALL_DIR: \$\{\{ runner\.temp \}\}/dotnet\r?\n        with:\r?\n          dotnet-version: 10\.0\.302\r?\n\r?\n'
+    $setupStepPattern = '(?ms)^      - name: Setup \.NET\r?\n        timeout-minutes: 5\r?\n        uses: actions/setup-dotnet@v4\r?\n        env:\r?\n          DOTNET_INSTALL_DIR: \$\{\{ runner\.temp \}\}/dotnet\r?\n        with:\r?\n          dotnet-version: ' + [regex]::Escape($expectedDotNetSdkVersion) + '\r?\n\r?\n'
     $setupStepRegex = [regex]::new($setupStepPattern)
     Assert-Contract ($setupStepRegex.Matches($workflow).Count -eq $expectedDotNetJobNames.Count) 'The missing-step mutation must recognize every managed setup-dotnet step.'
     $missingSetupWorkflow = $setupStepRegex.Replace($workflow, '', 1)
@@ -1148,6 +1151,151 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $dotNetMutationRoot) { Remove-Item -LiteralPath $dotNetMutationRoot -Recurse -Force }
+}
+
+function Invoke-DotNetSdkAuthorityCase {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $CaseWorkflowPath,
+        [Parameter(Mandatory)] [string] $CaseManifestPath,
+        [Parameter(Mandatory)] [int] $ExpectedExitCode,
+        [string[]] $ExpectedOutput = @()
+    )
+
+    $output = & pwsh -NoProfile -ExecutionPolicy Bypass -File $dotNetSdkAuthorityCheckerPath `
+        -WorkflowPath $CaseWorkflowPath `
+        -ManifestPath $CaseManifestPath 2>&1
+    $actualExitCode = $LASTEXITCODE
+    $outputText = $output | Out-String
+
+    Assert-Contract ($actualExitCode -eq $ExpectedExitCode) "CI SDK authority case '$Name' expected exit $ExpectedExitCode but got $actualExitCode. Output: $outputText"
+    foreach ($expected in $ExpectedOutput) {
+        Assert-Contract ($outputText.Contains($expected, [StringComparison]::Ordinal)) "CI SDK authority case '$Name' did not report '$expected'. Output: $outputText"
+    }
+    Write-Output "CI SDK authority case: NAME=$Name EXIT=$actualExitCode"
+}
+
+Assert-Contract (Test-Path -LiteralPath $dotNetSdkAuthorityCheckerPath -PathType Leaf) 'The CI SDK authority checker is missing.'
+Assert-Contract (Test-Path -LiteralPath $dotNetSdkAuthorityManifestPath -PathType Leaf) 'The BusinessGateway restore authority manifest is missing.'
+
+Invoke-DotNetSdkAuthorityCase `
+    -Name 'repository authority' `
+    -CaseWorkflowPath $workflowPath `
+    -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+    -ExpectedExitCode 0 `
+    -ExpectedOutput @("CI .NET SDK authority verified: manifestSdk=$expectedDotNetSdkVersion actualSdk=$expectedDotNetSdkVersion managedJobs=12")
+
+$dotNetAuthorityMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-dotnet-sdk-authority-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($dotNetAuthorityMutationRoot) | Out-Null
+    $authorityManifest = [IO.File]::ReadAllText($dotNetSdkAuthorityManifestPath)
+
+    if (-not $IsWindows) {
+        $fakeDotNetRoot = Join-Path $dotNetAuthorityMutationRoot 'fake-dotnet-bin'
+        [IO.Directory]::CreateDirectory($fakeDotNetRoot) | Out-Null
+        $fakeDotNetPath = Join-Path $fakeDotNetRoot 'dotnet'
+        [IO.File]::WriteAllText($fakeDotNetPath, "#!/bin/sh`nprintf '10.0.400\n'`n", [Text.UTF8Encoding]::new($false))
+        & chmod +x $fakeDotNetPath
+        Assert-Contract ($LASTEXITCODE -eq 0) 'The fake dotnet mutation executable must be made executable.'
+        $originalPath = $env:PATH
+        try {
+            $env:PATH = $fakeDotNetRoot + [IO.Path]::PathSeparator + $originalPath
+            Invoke-DotNetSdkAuthorityCase `
+                -Name 'actual SDK drift' `
+                -CaseWorkflowPath $workflowPath `
+                -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+                -ExpectedExitCode 1 `
+                -ExpectedOutput @("actual-dotnet-sdk-version:10.0.400:expected=$expectedDotNetSdkVersion")
+        }
+        finally {
+            $env:PATH = $originalPath
+        }
+    }
+
+    $missingAuthoritySetupWorkflow = $setupStepRegex.Replace($workflow, '', 1)
+    $missingAuthoritySetupWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'missing-setup-dotnet.yml'
+    [IO.File]::WriteAllText($missingAuthoritySetupWorkflowPath, $missingAuthoritySetupWorkflow, [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'missing CI SDK selector' `
+        -CaseWorkflowPath $missingAuthoritySetupWorkflowPath `
+        -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('ci-setup-dotnet-count:backend-tests-business-gateway:0')
+
+    $duplicateAuthoritySetupWorkflow = $setupStepRegex.Replace($workflow, '$0$0', 1)
+    $duplicateAuthoritySetupWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'duplicate-setup-dotnet.yml'
+    [IO.File]::WriteAllText($duplicateAuthoritySetupWorkflowPath, $duplicateAuthoritySetupWorkflow, [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'duplicate CI SDK selector' `
+        -CaseWorkflowPath $duplicateAuthoritySetupWorkflowPath `
+        -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('ci-setup-dotnet-count:backend-tests-business-gateway:2')
+
+    $floatingAuthorityWorkflow = $exactVersionRegex.Replace($workflow, 'dotnet-version: 10.0.x', 1)
+    $floatingAuthorityWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'floating-sdk.yml'
+    [IO.File]::WriteAllText($floatingAuthorityWorkflowPath, $floatingAuthorityWorkflow, [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'floating CI SDK' `
+        -CaseWorkflowPath $floatingAuthorityWorkflowPath `
+        -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.x:expected=$expectedDotNetSdkVersion")
+
+    $driftedAuthorityWorkflow = $exactVersionRegex.Replace($workflow, 'dotnet-version: 10.0.400', 1)
+    $driftedAuthorityWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'drifted-sdk.yml'
+    [IO.File]::WriteAllText($driftedAuthorityWorkflowPath, $driftedAuthorityWorkflow, [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'drifted CI SDK' `
+        -CaseWorkflowPath $driftedAuthorityWorkflowPath `
+        -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.400:expected=$expectedDotNetSdkVersion")
+
+    $fakeEvidenceWorkflow = $exactVersionRegex.Replace(
+        $workflow,
+        "dotnet-version: 10.0.400`n      - name: Fake SDK evidence`n        timeout-minutes: 1`n        shell: bash`n        run: echo 'dotnet-sdk=$expectedDotNetSdkVersion'",
+        1)
+    $fakeEvidenceWorkflowPath = Join-Path $dotNetAuthorityMutationRoot 'fake-sdk-evidence.yml'
+    [IO.File]::WriteAllText($fakeEvidenceWorkflowPath, $fakeEvidenceWorkflow, [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'fake SDK evidence cannot mask selector drift' `
+        -CaseWorkflowPath $fakeEvidenceWorkflowPath `
+        -CaseManifestPath $dotNetSdkAuthorityManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("ci-dotnet-sdk-version:backend-tests-business-gateway:10.0.400:expected=$expectedDotNetSdkVersion")
+
+    $driftedManifestPath = Join-Path $dotNetAuthorityMutationRoot 'drifted-manifest.json'
+    $manifestSdkProperty = '"sdk": "' + $expectedDotNetSdkVersion + '"'
+    [IO.File]::WriteAllText($driftedManifestPath, $authorityManifest.Replace($manifestSdkProperty, '"sdk": "10.0.400"'), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'drifted manifest SDK' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $driftedManifestPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("actual-dotnet-sdk-version:${expectedDotNetSdkVersion}:expected=10.0.400", "ci-dotnet-sdk-version:backend-tests-business-gateway:${expectedDotNetSdkVersion}:expected=10.0.400")
+
+    $missingManifestSdkPath = Join-Path $dotNetAuthorityMutationRoot 'missing-manifest-sdk.json'
+    $manifestSdkLine = '    "sdk": "' + $expectedDotNetSdkVersion + '",' + [Environment]::NewLine
+    [IO.File]::WriteAllText($missingManifestSdkPath, $authorityManifest.Replace($manifestSdkLine, ''), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'missing manifest SDK' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $missingManifestSdkPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('manifest-toolchain-sdk-count:0')
+
+    $duplicateManifestSdkPath = Join-Path $dotNetAuthorityMutationRoot 'duplicate-manifest-sdk.json'
+    [IO.File]::WriteAllText($duplicateManifestSdkPath, $authorityManifest.Replace($manifestSdkProperty, "$manifestSdkProperty, `"sdk`": `"10.0.400`""), [Text.UTF8Encoding]::new($false))
+    Invoke-DotNetSdkAuthorityCase `
+        -Name 'duplicate manifest SDK' `
+        -CaseWorkflowPath $workflowPath `
+        -CaseManifestPath $duplicateManifestSdkPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('manifest-toolchain-sdk-count:2')
+}
+finally {
+    if (Test-Path -LiteralPath $dotNetAuthorityMutationRoot) { Remove-Item -LiteralPath $dotNetAuthorityMutationRoot -Recurse -Force }
 }
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
