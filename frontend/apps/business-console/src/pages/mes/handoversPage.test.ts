@@ -225,6 +225,25 @@ describe('MES handovers read-face guard', () => {
     expect(button.attributes('title')).toBe('没有交接单管理权限')
   })
 
+  it('does not open the create dialog when the entry guard trips between render and click (stale-DOM race)', async () => {
+    // 复现真实竞态：按钮渲染时守卫未拦截（未禁用），业务上下文在同一 tick 内失效——Vue 的 DOM patch
+    // 要到下一个 microtask 才落地，而 vue-test-utils 的 trigger() 派发前会同步读取当前 DOM 的
+    // disabled 属性；不等 nextTick 就直接改状态再点击，能在 DOM 还没来得及重渲染成禁用之前触发
+    // 点击，从而真正跑进 openCreateDialog 内部的 `if (createEntryBlocker.value) return`。
+    // `reactive(state.filters)` 拿到的是 Vue 按目标对象缓存的同一个响应式代理（组件内部
+    // useMesShiftHandovers() 拿到的也是它），必须经这个代理写，直接改 state.filters 的裸对象
+    // 不会触发依赖更新。这是本票要补的鉴别力：删掉那一行，此用例必须变红。
+    const wrapper = mountPage()
+    const button = wrapper.get('[aria-label="新建班次交接"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    reactive(state.filters).environmentId = ''
+    await button.trigger('click')
+
+    expect(mutations.makeIdempotencyKey).not.toHaveBeenCalled()
+    expect(mutations.createShiftHandover).not.toHaveBeenCalled()
+  })
+
   it('validates the create form before issuing a mutation', async () => {
     const wrapper = mountPage()
 

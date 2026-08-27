@@ -245,6 +245,24 @@ describe('MES downtime record entry', () => {
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
   })
 
+  it('does not populate the record form when the entry guard trips between render and click (stale-DOM race)', async () => {
+    // 同一竞态手法（见上一条用例）：按钮渲染时守卫未拦截，业务上下文在同一 tick 内失效——
+    // DOM 的 disabled 属性还没来得及重渲染，trigger() 读到的仍是旧值，点击得以派发，
+    // 从而真正跑进 openRecordDialog 内部的 `if (recordEntryBlocker.value) return`。
+    // 断言取「开始时间」输入框——它只在守卫放行后由 openRecordDialog 写入当前时间，是
+    // 不依赖 NvDialog 开合状态的业务信号。删掉那一行，此用例必须变红。
+    const wrapper = mountPage()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(button).toBeDefined()
+    expect(button!.attributes('disabled')).toBeUndefined()
+
+    filters.organizationId = ''
+    await button!.trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('[aria-label="停机开始时间"]').element.value).toBe('')
+    expect(recordDowntimeEvent).not.toHaveBeenCalled()
+  })
+
   it('fails closed without an operation target, configured reason or valid time', async () => {
     vi.setSystemTime(fakeNow)
     const wrapper = mountPage()

@@ -135,7 +135,10 @@ const uiStubs = {
   SelectValue: true,
   NvSelectContent: passthrough,
   NvSelectItem: passthrough,
-  NvDialog: {
+  // NvDialog 是 reka-ui DialogRoot 的重命名再导出（frontend/packages/ui/src/components/pc/dialog/index.ts），
+  // <script setup> 编译期直接绑定导入标识符，不经过按名解析；stub 必须按其真实组件名 DialogRoot 匹配，
+  // 否则真实 DialogRoot（内容始终无条件渲染 slot）会绕过本 stub，dialog 的开合状态在测试里恒为"已渲染"。
+  DialogRoot: {
     props: ['open'],
     emits: ['update:open'],
     template: '<div v-if="open"><slot /></div>',
@@ -403,6 +406,42 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       expect.any(Error),
       expect.stringContaining('当前主体可见范围'),
     )
+  })
+
+  it('does not open the defect dialog when the entry guard trips between render and click (stale-DOM race)', async () => {
+    // 同族竞态手法（见 downtime/handovers 同名用例）：按钮渲染时守卫未拦截，权限在同一 tick 内
+    // 失效——DOM 的 disabled 属性还没来得及重渲染，trigger() 读到的仍是旧值，点击得以派发，
+    // 从而真正跑进 openDefectDialog 内部的 `if (defectEntryBlocker.value) return`。
+    // principal 由 shallowRef 承载（frontend/packages/auth/src/store.ts），只有对 principal 本身
+    // 重新赋值才会被追踪；改嵌套字段（如 permissionCodes）不会触发依赖更新，必须整体替换。
+    // 断言取对话框内容是否挂载而非 recordDefect 是否被调用：defectTargets/eligibleOperationTasks
+    // 对权限有独立判空，缺权限时无论 openDefectDialog 内部守卫在不在，目标列表都会先一步清空，
+    // 用「表单是否有值」无法专门证伪这一行；对话框开合状态才是这条守卫独有、不与其它防线重叠的信号。
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalId: 'qa-1',
+        principalType: 'user',
+        organizationId: 'org-1',
+        environmentId: 'prod',
+        loginName: 'quality.engineer',
+        permissionCodes: [
+          'business.mes.quality.read',
+          'business.mes.quality.write',
+          'business.mes.operations.read',
+        ],
+      },
+    })
+    const wrapper = mount(QualityPage, { global: { plugins: [pinia], stubs: uiStubs } })
+    const btn = button(wrapper, '登记缺陷')
+    expect(btn.attributes('disabled')).toBeUndefined()
+
+    auth.principal = { ...auth.principal!, permissionCodes: [] }
+    await btn.trigger('click')
+
+    expect(wrapper.find('[aria-label="工单与工序"]').exists()).toBe(false)
+    expect(recordDefect).not.toHaveBeenCalled()
   })
 
   it('gates missing permission and a write scope that does not cover the selected operation', async () => {
