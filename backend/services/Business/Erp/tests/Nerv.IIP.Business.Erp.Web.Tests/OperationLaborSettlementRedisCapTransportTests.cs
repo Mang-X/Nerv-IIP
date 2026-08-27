@@ -37,6 +37,15 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         });
 
         var redeliveredCapMessageId = await ForceSameCapMessageRedeliveryAsync(factory, revisionTwo.EventId);
+        await AssertEventuallyAsync(factory, async (db, token) =>
+        {
+            var status = await db.Database.SqlQuery<string>($"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
+            var retries = await db.Database.SqlQuery<int>($"SELECT \"Retries\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
+            var expiresAt = await db.Database.SqlQuery<DateTime?>($"SELECT \"ExpiresAt\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
+            Assert.Equal("Succeeded", status);
+            Assert.Equal(0, retries);
+            Assert.NotNull(expiresAt);
+        });
 
         await PublishAsync(factory, async publisher =>
         {
@@ -64,6 +73,10 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             Assert.Equal(3, publishedCount);
             var redelivered = await db.Database.SqlQuery<long>($"SELECT \"Id\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
             Assert.Equal(redeliveredCapMessageId, redelivered);
+            var redeliveredStatus = await db.Database.SqlQuery<string>($"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
+            var redeliveredRetries = await db.Database.SqlQuery<int>($"SELECT \"Retries\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
+            Assert.Equal("Succeeded", redeliveredStatus);
+            Assert.Equal(0, redeliveredRetries);
         });
 
     }
@@ -73,7 +86,9 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var id = await db.Database.SqlQuery<long>($"SELECT \"Id\" AS \"Value\" FROM cap.received WHERE \"Content\" LIKE {'%' + eventId + '%'} ORDER BY \"Id\" DESC LIMIT 1").SingleAsync();
-        await db.Database.ExecuteSqlAsync($"UPDATE cap.received SET \"StatusName\" = 'Failed', \"Retries\" = 0, \"ExpiresAt\" = NULL WHERE \"Id\" = {id}");
+        Assert.Equal(1, await db.Database.ExecuteSqlAsync($"UPDATE cap.received SET \"StatusName\" = 'Failed', \"Retries\" = 0, \"Added\" = now() - interval '31 seconds', \"ExpiresAt\" = NULL WHERE \"Id\" = {id}"));
+        var failedStatus = await db.Database.SqlQuery<string>($"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Id\" = {id}").SingleAsync();
+        Assert.Equal("Failed", failedStatus);
         return id;
     }
 
@@ -101,6 +116,7 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 options.SucceedMessageExpiredAfter = 3600;
                 options.CollectorCleaningInterval = 3600;
                 options.FailedRetryInterval = 1;
+                options.FallbackWindowLookbackSeconds = 30;
             }));
         });
     }

@@ -83,6 +83,18 @@ public sealed partial class OperationLaborSettlementOrchestrator
             return;
         }
 
+        if (await HasLifecycleScopeConflictAsync(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.OperationTaskId,
+                payload.WorkOrderId,
+                payload.WorkCenterId,
+                cancellationToken))
+        {
+            await AddConflictDeadLetterAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
         var conflictingCoveredReport = await dbContext.OperationLaborCoveredReports.FirstOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
@@ -134,37 +146,49 @@ public sealed partial class OperationLaborSettlementOrchestrator
             payloadHash);
         dbContext.OperationLaborSettlements.Add(settlement);
 
-        await ReconcileAsync(
-            new ReconciliationContext(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                payload.WorkOrderId,
-                payload.OperationTaskId,
-                payload.SettlementRevision,
-                payload.CompletedAtUtc,
-                coveredReports,
-                OperationLaborSettlementTransition.Activated,
-                true,
-                $"{payload.OperationTaskId}-r{payload.SettlementRevision}"),
-            state => state.ApplySettlement(payload.SettlementRevision),
-            async (cost, transition) =>
-            {
-            if (transition.PreviousActiveRevision is { } previousRevision)
-            {
-                var previous = await dbContext.OperationLaborSettlements.SingleAsync(
-                    x => x.OrganizationId == integrationEvent.OrganizationId
-                        && x.EnvironmentId == integrationEvent.EnvironmentId
-                        && x.OperationTaskId == payload.OperationTaskId
-                        && x.SettlementRevision == previousRevision,
-                    cancellationToken);
-                cost.RecordActualLaborSuperseded(previous, payload.SettlementRevision, payload.CompletedAtUtc);
-            }
+        var state = await GetOrCreateStateAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.OperationTaskId,
+            cancellationToken);
+        var transition = state.ApplySettlement(payload.SettlementRevision);
+        if (transition.Transition != OperationLaborSettlementTransition.Activated)
+            return;
 
-            cost.ReplaceAllTheoreticalLabor(
-                $"actual-labor:{payload.OperationTaskId}:r{payload.SettlementRevision}",
-                payload.CompletedAtUtc);
-            cost.RecordActualLabor(settlement);
-            },
+        await RecordCoveredReportsAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            payload.OperationTaskId,
+            payload.SettlementRevision,
+            coveredReports,
+            cancellationToken);
+        var cost = await GetOrOpenWorkOrderCostAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            cancellationToken);
+        var priorTotal = cost.TotalAccumulatedCost;
+        if (transition.PreviousActiveRevision is { } previousRevision)
+        {
+            var previous = await dbContext.OperationLaborSettlements.SingleAsync(
+                x => x.OrganizationId == integrationEvent.OrganizationId
+                    && x.EnvironmentId == integrationEvent.EnvironmentId
+                    && x.OperationTaskId == payload.OperationTaskId
+                    && x.SettlementRevision == previousRevision,
+                cancellationToken);
+            cost.RecordActualLaborSuperseded(previous, payload.SettlementRevision, payload.CompletedAtUtc);
+        }
+
+        cost.ReplaceAllTheoreticalLabor(
+            $"actual-labor:{payload.OperationTaskId}:r{payload.SettlementRevision}",
+            payload.CompletedAtUtc);
+        cost.RecordActualLabor(settlement);
+        await PostLateAdjustmentIfCapitalizedAsync(
+            cost,
+            priorTotal,
+            $"{payload.OperationTaskId}-r{payload.SettlementRevision}",
+            payload.CompletedAtUtc,
             cancellationToken);
     }
 
@@ -263,66 +287,72 @@ public sealed partial class OperationLaborSettlementOrchestrator
         where TIntegrationEvent : IIntegrationEventEnvelope
         => ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, consumerName, integrationEvent, cancellationToken);
 
-    private async Task ReconcileAsync(
-        ReconciliationContext context,
-        Func<OperationLaborSettlementState, OperationLaborSettlementTransitionResult> applyTransition,
-        Func<WorkOrderCost, OperationLaborSettlementTransitionResult, Task> applyCost,
+    private Task<bool> HasLifecycleScopeConflictAsync(
+        string organizationId,
+        string environmentId,
+        string operationTaskId,
+        string workOrderId,
+        string workCenterId,
         CancellationToken cancellationToken)
-    {
-        var state = await GetOrCreateStateAsync(context.OrganizationId, context.EnvironmentId, context.OperationTaskId, cancellationToken);
-        var transition = applyTransition(state);
-        if (transition.Transition != context.ExpectedTransition)
-            return;
-
-        await RecordCoveredReportsAsync(
-            context.OrganizationId,
-            context.EnvironmentId,
-            context.WorkOrderId,
-            context.OperationTaskId,
-            context.SettlementRevision,
-            context.CoveredReports,
+        => dbContext.OperationLaborSettlements.AnyAsync(
+            x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.OperationTaskId == operationTaskId
+                && (x.WorkOrderId != workOrderId || x.WorkCenterId != workCenterId),
             cancellationToken);
 
+    private async Task<WorkOrderCost> GetOrOpenWorkOrderCostAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
         var cost = await dbContext.WorkOrderCosts
             .Include(x => x.Details)
             .SingleOrDefaultAsync(
-                x => x.OrganizationId == context.OrganizationId
-                    && x.EnvironmentId == context.EnvironmentId
-                    && x.WorkOrderId == context.WorkOrderId,
+                x => x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
+                    && x.WorkOrderId == workOrderId,
                 cancellationToken);
-        if (cost is null && context.OpenCostIfMissing)
+        if (cost is null)
         {
-            cost = WorkOrderCost.Open(context.OrganizationId, context.EnvironmentId, context.WorkOrderId, context.WorkOrderId);
+            cost = WorkOrderCost.Open(organizationId, environmentId, workOrderId, workOrderId);
             dbContext.WorkOrderCosts.Add(cost);
         }
-        if (cost is null)
-            return;
+        return cost;
+    }
 
-        var priorTotal = cost.TotalAccumulatedCost;
-        await applyCost(cost, transition);
+    private Task<WorkOrderCost?> GetWorkOrderCostAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+        => dbContext.WorkOrderCosts
+            .Include(x => x.Details)
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
+                    && x.WorkOrderId == workOrderId,
+                cancellationToken);
+
+    private async Task PostLateAdjustmentIfCapitalizedAsync(
+        WorkOrderCost cost,
+        decimal priorTotal,
+        string postingIdentity,
+        DateTimeOffset postedAtUtc,
+        CancellationToken cancellationToken)
+    {
         if (cost.CapitalizationPublished)
             await CostVariancePosting.PostLateAdjustmentAsync(
                 dbContext,
                 cost,
                 cost.TotalAccumulatedCost - priorTotal,
-                context.PostingIdentity,
-                context.PostedAtUtc,
+                postingIdentity,
+                postedAtUtc,
                 cancellationToken);
     }
 
     private sealed record RateResolution(bool ShouldContinue, WorkCenterCostRate? Rate);
-
-    private sealed record ReconciliationContext(
-        string OrganizationId,
-        string EnvironmentId,
-        string WorkOrderId,
-        string OperationTaskId,
-        long SettlementRevision,
-        DateTimeOffset PostedAtUtc,
-        IReadOnlyCollection<string> CoveredReports,
-        OperationLaborSettlementTransition ExpectedTransition,
-        bool OpenCostIfMissing,
-        string PostingIdentity);
 
     internal static string ComputePayloadHash(
         MesOperationActualTimeSettledIntegrationEvent integrationEvent,
@@ -443,6 +473,18 @@ public sealed partial class OperationLaborSettlementOrchestrator
             return;
         }
 
+        if (await HasLifecycleScopeConflictAsync(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.OperationTaskId,
+                payload.WorkOrderId,
+                payload.WorkCenterId,
+                cancellationToken))
+        {
+            await AddConflictDeadLetterAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
         var existingVoid = await dbContext.OperationLaborSettlementVoids.SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
@@ -505,43 +547,59 @@ public sealed partial class OperationLaborSettlementOrchestrator
             voidPayloadHash);
         dbContext.OperationLaborSettlementVoids.Add(settlementVoid);
 
-        await ReconcileAsync(
-            new ReconciliationContext(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                payload.WorkOrderId,
-                payload.OperationTaskId,
-                payload.SettlementRevision,
-                payload.VoidedAtUtc,
-                coveredReports,
-                OperationLaborSettlementTransition.Voided,
-                false,
-                $"{payload.OperationTaskId}-r{payload.SettlementRevision}-void"),
-            state => state.ApplyVoid(payload.SettlementRevision),
-            async (cost, transition) =>
-            {
-            foreach (var reportNo in coveredReports)
-                cost.ReplaceTheoreticalLabor(
-                    reportNo,
-                    $"actual-labor:{payload.OperationTaskId}:r{payload.SettlementRevision}:void-replace:{reportNo}",
-                    payload.VoidedAtUtc);
+        var state = await GetOrCreateStateAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.OperationTaskId,
+            cancellationToken);
+        var transition = state.ApplyVoid(payload.SettlementRevision);
+        if (transition.Transition != OperationLaborSettlementTransition.Voided)
+            return;
 
-            if (transition.PreviousActiveRevision is { } previousActiveRevision)
+        await RecordCoveredReportsAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            payload.OperationTaskId,
+            payload.SettlementRevision,
+            coveredReports,
+            cancellationToken);
+        var cost = await GetWorkOrderCostAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.WorkOrderId,
+            cancellationToken);
+        if (cost is null)
+            return;
+
+        var priorTotal = cost.TotalAccumulatedCost;
+        foreach (var reportNo in coveredReports)
+            cost.ReplaceTheoreticalLabor(
+                reportNo,
+                $"actual-labor:{payload.OperationTaskId}:r{payload.SettlementRevision}:void-replace:{reportNo}",
+                payload.VoidedAtUtc);
+
+        if (transition.PreviousActiveRevision is { } previousActiveRevision)
+        {
+            if (previousActiveRevision == payload.SettlementRevision)
+                cost.RecordActualLaborVoid(settlementVoid);
+            else
             {
-                if (previousActiveRevision == payload.SettlementRevision)
-                    cost.RecordActualLaborVoid(settlementVoid);
-                else
-                {
-                    var previous = await dbContext.OperationLaborSettlements.SingleAsync(
-                        x => x.OrganizationId == integrationEvent.OrganizationId
-                            && x.EnvironmentId == integrationEvent.EnvironmentId
-                            && x.OperationTaskId == payload.OperationTaskId
-                            && x.SettlementRevision == previousActiveRevision,
-                        cancellationToken);
-                    cost.RecordActualLaborSuperseded(previous, payload.SettlementRevision, payload.VoidedAtUtc);
-                }
+                var previous = await dbContext.OperationLaborSettlements.SingleAsync(
+                    x => x.OrganizationId == integrationEvent.OrganizationId
+                        && x.EnvironmentId == integrationEvent.EnvironmentId
+                        && x.OperationTaskId == payload.OperationTaskId
+                        && x.SettlementRevision == previousActiveRevision,
+                    cancellationToken);
+                cost.RecordActualLaborSuperseded(previous, payload.SettlementRevision, payload.VoidedAtUtc);
             }
-            },
+        }
+
+        await PostLateAdjustmentIfCapitalizedAsync(
+            cost,
+            priorTotal,
+            $"{payload.OperationTaskId}-r{payload.SettlementRevision}-void",
+            payload.VoidedAtUtc,
             cancellationToken);
     }
 

@@ -294,6 +294,111 @@ public sealed class OperationLaborSettlementHandlerTests
         Assert.Equal("conflicting-operation-labor-settlement", deadLetter.FailureCode);
     }
 
+    [Theory]
+    [InlineData("WO-002", "WC-01")]
+    [InlineData("WO-001", "WC-02")]
+    public async Task Higher_revision_cannot_cross_the_frozen_work_order_or_work_center(
+        string conflictingWorkOrderId,
+        string conflictingWorkCenterId)
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null),
+            WorkCenterCostRate.Define(
+                "org-001", "env-prod", "WC-02", 90m, "CNY",
+                DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
+                "operator:test", "alternate work center", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        await db.SaveChangesAsync();
+        var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+            db, db, TestWorkOrderCostMutationLock.Instance,
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+
+        await consumer.HandleAsync(
+            Settled("evt-settled-r1", 1, AugustCompletedAtUtc,
+                2 * TimeSpan.TicksPerHour, ["RPT-001"]),
+            CancellationToken.None);
+        var conflictingRevision = Settled(
+            "evt-settled-r2-cross-scope", 2, AugustCompletedAtUtc.AddHours(1),
+            3 * TimeSpan.TicksPerHour, ["RPT-002"])
+            with
+        {
+            Payload = Settled(
+                "evt-settled-r2-cross-scope", 2, AugustCompletedAtUtc.AddHours(1),
+                3 * TimeSpan.TicksPerHour, ["RPT-002"]).Payload with
+            {
+                WorkOrderId = conflictingWorkOrderId,
+                WorkCenterId = conflictingWorkCenterId,
+            },
+        };
+
+        await consumer.HandleAsync(conflictingRevision, CancellationToken.None);
+
+        Assert.Single(await db.OperationLaborSettlements.ToListAsync());
+        Assert.Equal(1, (await db.OperationLaborSettlementStates.SingleAsync()).ActiveRevision);
+        Assert.Equal(160m, (await db.WorkOrderCosts.Include(x => x.Details).SingleAsync()).LaborCost);
+        Assert.DoesNotContain(await db.ProcessedIntegrationEvents.ToListAsync(),
+            x => x.EventId == conflictingRevision.EventId);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("conflicting-operation-labor-settlement", deadLetter.FailureCode);
+    }
+
+    [Theory]
+    [InlineData("WO-002", "WC-01")]
+    [InlineData("WO-001", "WC-02")]
+    public async Task Higher_revision_void_cannot_reverse_the_frozen_amount_into_another_work_order_or_work_center(
+        string conflictingWorkOrderId,
+        string conflictingWorkCenterId)
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null),
+            WorkCenterCostRate.Define(
+                "org-001", "env-prod", "WC-02", 90m, "CNY",
+                DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
+                "operator:test", "alternate work center", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        await db.SaveChangesAsync();
+        var settledConsumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+            db, db, TestWorkOrderCostMutationLock.Instance,
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+        var voidConsumer = new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
+            db, db, TestWorkOrderCostMutationLock.Instance,
+            new OperationLaborSettlementOrchestrator(db, deadLetters));
+        await settledConsumer.HandleAsync(
+            Settled("evt-settled-r1", 1, AugustCompletedAtUtc,
+                2 * TimeSpan.TicksPerHour, ["RPT-001"]),
+            CancellationToken.None);
+        var revisionTwo = Settled(
+            "evt-settled-r2-cross-scope", 2, AugustCompletedAtUtc.AddHours(1),
+            3 * TimeSpan.TicksPerHour, ["RPT-002"]);
+        revisionTwo = revisionTwo with
+        {
+            Payload = revisionTwo.Payload with
+            {
+                WorkOrderId = conflictingWorkOrderId,
+                WorkCenterId = conflictingWorkCenterId,
+            },
+        };
+
+        await voidConsumer.HandleAsync(
+            Voided("evt-void-r2-cross-scope", revisionTwo, AugustCompletedAtUtc.AddHours(2)),
+            CancellationToken.None);
+
+        Assert.Single(await db.OperationLaborSettlements.ToListAsync());
+        Assert.Empty(await db.OperationLaborSettlementVoids.ToListAsync());
+        Assert.Equal(1, (await db.OperationLaborSettlementStates.SingleAsync()).ActiveRevision);
+        Assert.Equal(160m, (await db.WorkOrderCosts.Include(x => x.Details).SingleAsync()).LaborCost);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("conflicting-operation-labor-settlement-void", deadLetter.FailureCode);
+    }
+
     [Fact]
     public async Task Void_first_then_late_settlement_converges_to_zero_and_blocks_old_theoretical_labor()
     {
