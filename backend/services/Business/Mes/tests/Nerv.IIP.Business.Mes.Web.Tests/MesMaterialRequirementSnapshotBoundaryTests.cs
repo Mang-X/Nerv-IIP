@@ -55,90 +55,6 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         Assert.Equal(["Probe.AliasProbe.Handle"], actual);
     }
 
-    public static TheoryData<string, string> EquivalentEfReadBypasses => new()
-    {
-        {
-            "DbSet property through receiver alias",
-            "var context = dbContext; var rows = context.MaterialRequirements;"
-        },
-        {
-            "generic Set",
-            "var rows = dbContext.Set<MaterialRequirement>();"
-        },
-        {
-            "generic Set through receiver and entity aliases",
-            "DbContext context = dbContext; var rows = context.Set<Requirement>();"
-        },
-        {
-            "dynamic receiver with a resolved entity alias",
-            "dynamic context = dbContext; var rows = context.Set<Requirement>();"
-        },
-        {
-            "shared type Set",
-            "var rows = dbContext.Set<MaterialRequirement>(\"material-requirements\");"
-        },
-        {
-            "Set Type reflection",
-            "var rows = typeof(DbContext).GetMethod(nameof(DbContext.Set))!.MakeGenericMethod(typeof(MaterialRequirement));"
-        },
-        {
-            "typed raw query",
-            "var rows = dbContext.Database.SqlQuery<MaterialRequirement>($\"SELECT * FROM mes.material_requirements\");"
-        },
-        {
-            "FromSql rooted at generic Set",
-            "var rows = dbContext.Set<MaterialRequirement>().FromSqlRaw(\"SELECT * FROM mes.material_requirements\");"
-        },
-        {
-            "generic Set method group",
-            "Func<DbSet<MaterialRequirement>> read = dbContext.Set<MaterialRequirement>; var rows = read();"
-        },
-        {
-            "ChangeTracker entries",
-            "var rows = dbContext.ChangeTracker.Entries<MaterialRequirement>();"
-        },
-        {
-            "generic Find",
-            "var row = dbContext.Find<MaterialRequirement>(new object());"
-        },
-        {
-            "generic FindAsync cancellation overload",
-            "var row = dbContext.FindAsync<MaterialRequirement>([new object()], CancellationToken.None);"
-        },
-        {
-            "Type Find",
-            "var row = dbContext.Find(typeof(MaterialRequirement), new object());"
-        },
-        {
-            "Type FindAsync cancellation overload",
-            "var row = dbContext.FindAsync(typeof(MaterialRequirement), [new object()], CancellationToken.None);"
-        },
-        {
-            "unknown Type Find fails closed",
-            "Type entityType = DateTime.UtcNow.Ticks > 0 ? typeof(MaterialRequirement) : typeof(string); var row = dbContext.Find(entityType, new object());"
-        },
-        {
-            "non-generic ChangeTracker entries",
-            "var rows = dbContext.ChangeTracker.Entries().Where(entry => entry.Entity is MaterialRequirement);"
-        },
-        {
-            "generic Find method reference",
-            "Func<object?[], MaterialRequirement?> find = dbContext.Find<MaterialRequirement>; var row = find([new object()]);"
-        },
-        {
-            "non-generic Entries method reference",
-            "Func<IEnumerable<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry>> entries = dbContext.ChangeTracker.Entries; var rows = entries();"
-        },
-        {
-            "FromExpression invocation",
-            "var rows = dbContext.FromExpression<MaterialRequirement>(() => Array.Empty<MaterialRequirement>().AsQueryable());"
-        },
-        {
-            "FromExpression method reference",
-            "Func<Expression<Func<IQueryable<MaterialRequirement>>>, IQueryable<MaterialRequirement>> query = dbContext.FromExpression<MaterialRequirement>; var rows = query(() => Array.Empty<MaterialRequirement>().AsQueryable());"
-        },
-    };
-
     public static TheoryData<string, string> EfSourcesBehindStorageAndCastShapes => new()
     {
         {
@@ -234,7 +150,9 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     }
 
     [Theory]
-    [MemberData(nameof(EquivalentEfReadBypasses))]
+    [MemberData(
+        nameof(MesMaterialRequirementEfSourceFixtures.EquivalentEfReadBypasses),
+        MemberType = typeof(MesMaterialRequirementEfSourceFixtures))]
     public void Equivalent_EF_read_shapes_are_rejected(string _, string statement)
     {
         var source = $$"""
@@ -254,12 +172,54 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
                     {{statement}}
                 }
             }
+
+            internal sealed class OtherEntity;
+            internal sealed class OtherDynamicState
+            {
+                internal object[] Entries() => [];
+            }
             """;
 
         var violations = FindRawMaterialRequirementAccesses("Application/Queries/BypassProbe.cs", source).ToArray();
 
         Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
         Assert.NotEmpty(violations);
+    }
+
+    [Theory]
+    [MemberData(
+        nameof(MesMaterialRequirementEfSourceFixtures.KnownNonTargetEfReadShapes),
+        MemberType = typeof(MesMaterialRequirementEfSourceFixtures))]
+    public void Known_non_target_EF_shapes_are_not_reported(string _, string statement)
+    {
+        var source = $$"""
+            using System;
+            using System.Linq.Expressions;
+            using Microsoft.EntityFrameworkCore;
+            using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+            using Nerv.IIP.Business.Mes.Infrastructure;
+
+            namespace Probe;
+
+            internal sealed class BypassProbe
+            {
+                internal void Read(ApplicationDbContext dbContext)
+                {
+                    {{statement}}
+                }
+            }
+
+            internal sealed class OtherEntity;
+            internal sealed class OtherDynamicState
+            {
+                internal object[] Entries() => [];
+            }
+            """;
+
+        var violations = FindRawMaterialRequirementAccesses("Application/Queries/NonTargetProbe.cs", source).ToArray();
+
+        Assert.DoesNotContain(violations, violation => violation.Kind.StartsWith("CompilationError:", StringComparison.Ordinal));
+        Assert.Empty(violations);
     }
 
     [Fact]
@@ -513,13 +473,6 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         }).ToArray();
     }
 
-    private static string GetInvocationName(InvocationExpressionSyntax invocation) => invocation.Expression switch
-    {
-        MemberAccessExpressionSyntax member => member.Name.Identifier.ValueText,
-        IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
-        _ => invocation.Expression.ToString(),
-    };
-
     private static IEnumerable<SemanticAccess> FindMaterialRequirementEfAccesses(
         SyntaxTree tree,
         SemanticModel semanticModel)
@@ -540,102 +493,111 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     {
         IPropertyReferenceOperation property when IsMaterialRequirementSet(property.Property.Type) =>
             "DbSetProperty",
-        IInvocationOperation invocation when IsMaterialRequirementEfMethod(invocation.TargetMethod) =>
+        IInvocationOperation invocation when IsMaterialRequirementEfRoot(invocation.TargetMethod, invocation) =>
             $"Invocation:{invocation.TargetMethod.Name}",
-        IInvocationOperation invocation when IsPotentialMaterialRequirementNonGenericRoot(invocation) =>
-            $"Invocation:{invocation.TargetMethod.Name}",
-        IInvocationOperation invocation when IsMaterialRequirementSetReflection(invocation) =>
-            "Reflection:Set",
-        IMethodReferenceOperation methodReference when IsMaterialRequirementEfMethod(methodReference.Method) =>
-            $"MethodReference:{methodReference.Method.Name}",
-        IMethodReferenceOperation methodReference when IsPotentialMaterialRequirementNonGenericRoot(methodReference.Method) =>
+        IInvocationOperation invocation when IsMaterialRequirementEfReflectionRoot(invocation) =>
+            "Reflection:Root",
+        IMethodReferenceOperation methodReference when IsMaterialRequirementEfRoot(methodReference.Method, null) =>
             $"MethodReference:{methodReference.Method.Name}",
         IDynamicInvocationOperation dynamicInvocation when IsDynamicMaterialRequirementEfInvocation(dynamicInvocation, operation.SemanticModel!) =>
             "DynamicInvocation",
         _ => null,
     };
 
-    private static bool IsMaterialRequirementEfMethod(IMethodSymbol method)
+    private static bool IsMaterialRequirementEfRoot(IMethodSymbol method, IInvocationOperation? invocation)
     {
-        var original = method.ReducedFrom ?? method;
-        if (!method.TypeArguments.Concat(original.TypeArguments).Any(IsMaterialRequirement))
+        if (!MesEfSourceRootApiSurfaceTests.TryGetRule(method, out var rule)
+            || rule.Category != MesEfSourceRootApiSurfaceTests.ApiCategory.Root)
         {
             return false;
         }
 
-        var containingType = original.ContainingType.ToDisplayString();
-        return (original.Name is "Set" or "Find" or "FindAsync" or "FromExpression"
-                && IsOrInheritsFrom(original.ContainingType, typeof(DbContext).FullName!))
-            || (original.Name == "Entries" && containingType == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker")
-            || (original.Name is "SqlQuery" or "SqlQueryRaw"
-                && containingType == "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions")
-            || (original.Name is "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"
-                && containingType == "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions");
+        return EvaluateEvidence(
+            rule.Evidence,
+            method.TypeArguments,
+            invocation?.Arguments,
+            invocation?.SemanticModel);
     }
 
-    private static bool IsPotentialMaterialRequirementNonGenericRoot(IInvocationOperation invocation)
+    private static bool EvaluateEvidence(
+        MesEfSourceRootApiSurfaceTests.EntityEvidencePolicy evidence,
+        IReadOnlyList<ITypeSymbol> typeArguments,
+        IReadOnlyList<IArgumentOperation>? arguments,
+        SemanticModel? semanticModel)
     {
-        if (IsNonGenericChangeTrackerEntries(invocation.TargetMethod))
+        if (evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.AllTrackedEntities)
         {
             return true;
         }
 
-        if (!IsNonGenericDbContextFind(invocation.TargetMethod))
+        if (evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.ClosedGenericTypeArgument)
         {
-            return false;
+            return evidence.Position >= 0
+                && evidence.Position < typeArguments.Count
+                && IsMaterialRequirement(typeArguments[evidence.Position]);
         }
 
-        var entityTypeArgument = invocation.Arguments
-            .First(argument => argument.Parameter?.Ordinal == 0)
-            .Value;
-        while (entityTypeArgument is IConversionOperation conversion)
+        if (evidence.Kind != MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.RuntimeTypeArgument
+            || arguments is null)
         {
-            entityTypeArgument = conversion.Operand;
+            return evidence.UnknownFailClosed;
         }
 
-        return entityTypeArgument is not ITypeOfOperation typeOf
-            || IsMaterialRequirement(typeOf.TypeOperand);
-    }
-
-    private static bool IsPotentialMaterialRequirementNonGenericRoot(IMethodSymbol method) =>
-        IsNonGenericChangeTrackerEntries(method) || IsNonGenericDbContextFind(method);
-
-    private static bool IsNonGenericChangeTrackerEntries(IMethodSymbol method)
-    {
-        var original = method.ReducedFrom ?? method;
-        return original.Arity == 0
-            && original.Name == "Entries"
-            && original.ContainingType.ToDisplayString()
-                == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker";
-    }
-
-    private static bool IsNonGenericDbContextFind(IMethodSymbol method)
-    {
-        var original = method.ReducedFrom ?? method;
-        return original.Arity == 0
-            && original.Name is "Find" or "FindAsync"
-            && IsOrInheritsFrom(original.ContainingType, typeof(DbContext).FullName!)
-            && original.Parameters.Length > 0
-            && original.Parameters[0].Type.ToDisplayString() == typeof(Type).FullName;
+        var argument = arguments.FirstOrDefault(item => item.Parameter?.Ordinal == evidence.Position);
+        return ResolveRuntimeType(argument?.Value, semanticModel, allowLocal: true) switch
+        {
+            RuntimeTypeEvidence.MaterialRequirement => true,
+            RuntimeTypeEvidence.Other => false,
+            _ => evidence.UnknownFailClosed,
+        };
     }
 
     private static bool IsDynamicMaterialRequirementEfInvocation(
         IDynamicInvocationOperation invocation,
         SemanticModel semanticModel)
     {
-        if (invocation.Syntax is not InvocationExpressionSyntax syntax
-            || GetInvocationName(syntax) is not ("Set" or "Find" or "FindAsync" or "FromExpression" or "SqlQuery" or "SqlQueryRaw" or "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"))
+        if (invocation.Syntax is not InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax member } syntax
+            || ResolveDynamicOwner(member.Expression, semanticModel, allowLocal: true) is not { } owner)
         {
             return false;
         }
 
-        return syntax.Expression.DescendantNodesAndSelf()
-            .OfType<GenericNameSyntax>()
-            .SelectMany(generic => generic.TypeArgumentList.Arguments)
-            .Any(type => IsMaterialRequirement(semanticModel.GetTypeInfo(type).Type));
+        var genericArguments = member.Name is GenericNameSyntax generic
+            ? generic.TypeArgumentList.Arguments.Select(type => semanticModel.GetTypeInfo(type).Type).ToArray()
+            : [];
+        if (!MesEfSourceRootApiSurfaceTests.TryGetDynamicRule(
+                owner,
+                member.Name.Identifier.ValueText,
+                genericArguments.Length,
+                syntax.ArgumentList.Arguments.Count,
+                out var rule))
+        {
+            return false;
+        }
+
+        if (rule.Evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.AllTrackedEntities)
+        {
+            return true;
+        }
+
+        if (rule.Evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.ClosedGenericTypeArgument)
+        {
+            return rule.Evidence.Position < genericArguments.Length
+                && IsMaterialRequirement(genericArguments[rule.Evidence.Position]);
+        }
+
+        var argument = rule.Evidence.Position < syntax.ArgumentList.Arguments.Count
+            ? semanticModel.GetOperation(syntax.ArgumentList.Arguments[rule.Evidence.Position].Expression)
+            : null;
+        return ResolveRuntimeType(argument, semanticModel, allowLocal: true) switch
+        {
+            RuntimeTypeEvidence.MaterialRequirement => true,
+            RuntimeTypeEvidence.Other => false,
+            _ => rule.Evidence.UnknownFailClosed,
+        };
     }
 
-    private static bool IsMaterialRequirementSetReflection(IInvocationOperation invocation)
+    private static bool IsMaterialRequirementEfReflectionRoot(IInvocationOperation invocation)
     {
         if (invocation.TargetMethod.Name != nameof(System.Reflection.MethodInfo.MakeGenericMethod)
             || invocation.TargetMethod.ContainingType.ToDisplayString() != "System.Reflection.MethodInfo")
@@ -657,11 +619,87 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             .Any(getMethod =>
                 getMethod.TargetMethod.Name == nameof(Type.GetMethod)
                 && getMethod.TargetMethod.ContainingType.ToDisplayString() == typeof(Type).FullName
-                && getMethod.Instance?.DescendantsAndSelf()
-                    .OfType<ITypeOfOperation>()
-                    .Any(typeOf => IsOrInheritsFrom(typeOf.TypeOperand as INamedTypeSymbol, typeof(DbContext).FullName!)) == true
-                && getMethod.Arguments.Any(argument =>
-                    argument.Value.ConstantValue is { HasValue: true, Value: "Set" })) == true;
+                && getMethod.Instance?.DescendantsAndSelf().OfType<ITypeOfOperation>().FirstOrDefault() is { } ownerType
+                && getMethod.Arguments.FirstOrDefault()?.Value.ConstantValue is { HasValue: true, Value: string methodName }
+                && MesEfSourceRootApiSurfaceTests.HasReflectedGenericRoot(
+                    MapOwner(ownerType.TypeOperand as INamedTypeSymbol) ?? string.Empty,
+                    methodName,
+                    1)) == true;
+    }
+
+    private static string? ResolveDynamicOwner(ExpressionSyntax expression, SemanticModel semanticModel, bool allowLocal)
+    {
+        while (expression is ParenthesizedExpressionSyntax
+               || expression is CastExpressionSyntax { Type: IdentifierNameSyntax { Identifier.ValueText: "dynamic" } })
+        {
+            expression = expression switch
+            {
+                ParenthesizedExpressionSyntax parenthesized => parenthesized.Expression,
+                CastExpressionSyntax cast => cast.Expression,
+                _ => expression,
+            };
+        }
+
+        if (MapOwner(semanticModel.GetTypeInfo(expression).Type as INamedTypeSymbol) is { } direct)
+        {
+            return direct;
+        }
+
+        if (!allowLocal || expression is not IdentifierNameSyntax identifier
+            || semanticModel.GetSymbolInfo(identifier).Symbol is not ILocalSymbol local
+            || local.DeclaringSyntaxReferences.SingleOrDefault()?.GetSyntax() is not VariableDeclaratorSyntax declarator
+            || declarator.Initializer?.Value is not { } initializer
+            || HasLocalWrites(local, declarator, semanticModel))
+        {
+            return null;
+        }
+
+        return ResolveDynamicOwner(initializer, semanticModel, allowLocal: false);
+    }
+
+    private static string? MapOwner(INamedTypeSymbol? type)
+    {
+        if (IsOrInheritsFrom(type, typeof(DbContext).FullName!))
+        {
+            return typeof(DbContext).FullName;
+        }
+
+        return type?.ToDisplayString() == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker"
+            ? type.ToDisplayString()
+            : null;
+    }
+
+    private static RuntimeTypeEvidence ResolveRuntimeType(IOperation? operation, SemanticModel? semanticModel, bool allowLocal)
+    {
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        if (operation is ITypeOfOperation typeOf)
+        {
+            return IsMaterialRequirement(typeOf.TypeOperand)
+                ? RuntimeTypeEvidence.MaterialRequirement
+                : RuntimeTypeEvidence.Other;
+        }
+
+        if (!allowLocal || semanticModel is null || operation is not ILocalReferenceOperation localReference
+            || localReference.Local.DeclaringSyntaxReferences.SingleOrDefault()?.GetSyntax() is not VariableDeclaratorSyntax declarator
+            || declarator.Initializer?.Value is not { } initializer
+            || HasLocalWrites(localReference.Local, declarator, semanticModel))
+        {
+            return RuntimeTypeEvidence.Unknown;
+        }
+
+        return ResolveRuntimeType(semanticModel.GetOperation(initializer), semanticModel, allowLocal: false);
+    }
+
+    private static bool HasLocalWrites(ILocalSymbol local, VariableDeclaratorSyntax declarator, SemanticModel semanticModel)
+    {
+        var method = declarator.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        return method?.DescendantNodes().OfType<AssignmentExpressionSyntax>()
+            .SelectMany(assignment => assignment.Left.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>())
+            .Any(identifier => SymbolEqualityComparer.Default.Equals(semanticModel.GetSymbolInfo(identifier).Symbol, local)) == true;
     }
 
     private static bool IsOrInheritsFrom(INamedTypeSymbol? type, string metadataName)
@@ -904,6 +942,13 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         """;
 
     private sealed record SemanticAccess(SyntaxNode Node, string Kind);
+
+    private enum RuntimeTypeEvidence
+    {
+        Unknown,
+        MaterialRequirement,
+        Other,
+    }
 
     private sealed record RawAccess(string Path, int Line, string ContainingType, string Method, string Kind)
     {
