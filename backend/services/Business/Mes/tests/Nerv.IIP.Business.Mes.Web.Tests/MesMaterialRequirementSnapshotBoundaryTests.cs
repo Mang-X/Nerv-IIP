@@ -97,6 +97,46 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             "ChangeTracker entries",
             "var rows = dbContext.ChangeTracker.Entries<MaterialRequirement>();"
         },
+        {
+            "generic Find",
+            "var row = dbContext.Find<MaterialRequirement>(new object());"
+        },
+        {
+            "generic FindAsync cancellation overload",
+            "var row = dbContext.FindAsync<MaterialRequirement>([new object()], CancellationToken.None);"
+        },
+        {
+            "Type Find",
+            "var row = dbContext.Find(typeof(MaterialRequirement), new object());"
+        },
+        {
+            "Type FindAsync cancellation overload",
+            "var row = dbContext.FindAsync(typeof(MaterialRequirement), [new object()], CancellationToken.None);"
+        },
+        {
+            "unknown Type Find fails closed",
+            "Type entityType = DateTime.UtcNow.Ticks > 0 ? typeof(MaterialRequirement) : typeof(string); var row = dbContext.Find(entityType, new object());"
+        },
+        {
+            "non-generic ChangeTracker entries",
+            "var rows = dbContext.ChangeTracker.Entries().Where(entry => entry.Entity is MaterialRequirement);"
+        },
+        {
+            "generic Find method reference",
+            "Func<object?[], MaterialRequirement?> find = dbContext.Find<MaterialRequirement>; var row = find([new object()]);"
+        },
+        {
+            "non-generic Entries method reference",
+            "Func<IEnumerable<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry>> entries = dbContext.ChangeTracker.Entries; var rows = entries();"
+        },
+        {
+            "FromExpression invocation",
+            "var rows = dbContext.FromExpression<MaterialRequirement>(() => Array.Empty<MaterialRequirement>().AsQueryable());"
+        },
+        {
+            "FromExpression method reference",
+            "Func<Expression<Func<IQueryable<MaterialRequirement>>>, IQueryable<MaterialRequirement>> query = dbContext.FromExpression<MaterialRequirement>; var rows = query(() => Array.Empty<MaterialRequirement>().AsQueryable());"
+        },
     };
 
     public static TheoryData<string, string> EfSourcesBehindStorageAndCastShapes => new()
@@ -199,6 +239,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
     {
         var source = $$"""
             using System;
+            using System.Linq.Expressions;
             using Microsoft.EntityFrameworkCore;
             using Requirement = Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate.MaterialRequirement;
             using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -501,9 +542,13 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             "DbSetProperty",
         IInvocationOperation invocation when IsMaterialRequirementEfMethod(invocation.TargetMethod) =>
             $"Invocation:{invocation.TargetMethod.Name}",
+        IInvocationOperation invocation when IsPotentialMaterialRequirementNonGenericRoot(invocation) =>
+            $"Invocation:{invocation.TargetMethod.Name}",
         IInvocationOperation invocation when IsMaterialRequirementSetReflection(invocation) =>
             "Reflection:Set",
         IMethodReferenceOperation methodReference when IsMaterialRequirementEfMethod(methodReference.Method) =>
+            $"MethodReference:{methodReference.Method.Name}",
+        IMethodReferenceOperation methodReference when IsPotentialMaterialRequirementNonGenericRoot(methodReference.Method) =>
             $"MethodReference:{methodReference.Method.Name}",
         IDynamicInvocationOperation dynamicInvocation when IsDynamicMaterialRequirementEfInvocation(dynamicInvocation, operation.SemanticModel!) =>
             "DynamicInvocation",
@@ -519,7 +564,8 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         }
 
         var containingType = original.ContainingType.ToDisplayString();
-        return (original.Name == "Set" && IsOrInheritsFrom(original.ContainingType, typeof(DbContext).FullName!))
+        return (original.Name is "Set" or "Find" or "FindAsync" or "FromExpression"
+                && IsOrInheritsFrom(original.ContainingType, typeof(DbContext).FullName!))
             || (original.Name == "Entries" && containingType == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker")
             || (original.Name is "SqlQuery" or "SqlQueryRaw"
                 && containingType == "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions")
@@ -527,12 +573,58 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
                 && containingType == "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions");
     }
 
+    private static bool IsPotentialMaterialRequirementNonGenericRoot(IInvocationOperation invocation)
+    {
+        if (IsNonGenericChangeTrackerEntries(invocation.TargetMethod))
+        {
+            return true;
+        }
+
+        if (!IsNonGenericDbContextFind(invocation.TargetMethod))
+        {
+            return false;
+        }
+
+        var entityTypeArgument = invocation.Arguments
+            .First(argument => argument.Parameter?.Ordinal == 0)
+            .Value;
+        while (entityTypeArgument is IConversionOperation conversion)
+        {
+            entityTypeArgument = conversion.Operand;
+        }
+
+        return entityTypeArgument is not ITypeOfOperation typeOf
+            || IsMaterialRequirement(typeOf.TypeOperand);
+    }
+
+    private static bool IsPotentialMaterialRequirementNonGenericRoot(IMethodSymbol method) =>
+        IsNonGenericChangeTrackerEntries(method) || IsNonGenericDbContextFind(method);
+
+    private static bool IsNonGenericChangeTrackerEntries(IMethodSymbol method)
+    {
+        var original = method.ReducedFrom ?? method;
+        return original.Arity == 0
+            && original.Name == "Entries"
+            && original.ContainingType.ToDisplayString()
+                == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker";
+    }
+
+    private static bool IsNonGenericDbContextFind(IMethodSymbol method)
+    {
+        var original = method.ReducedFrom ?? method;
+        return original.Arity == 0
+            && original.Name is "Find" or "FindAsync"
+            && IsOrInheritsFrom(original.ContainingType, typeof(DbContext).FullName!)
+            && original.Parameters.Length > 0
+            && original.Parameters[0].Type.ToDisplayString() == typeof(Type).FullName;
+    }
+
     private static bool IsDynamicMaterialRequirementEfInvocation(
         IDynamicInvocationOperation invocation,
         SemanticModel semanticModel)
     {
         if (invocation.Syntax is not InvocationExpressionSyntax syntax
-            || GetInvocationName(syntax) is not ("Set" or "SqlQuery" or "SqlQueryRaw" or "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"))
+            || GetInvocationName(syntax) is not ("Set" or "Find" or "FindAsync" or "FromExpression" or "SqlQuery" or "SqlQueryRaw" or "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"))
         {
             return false;
         }
