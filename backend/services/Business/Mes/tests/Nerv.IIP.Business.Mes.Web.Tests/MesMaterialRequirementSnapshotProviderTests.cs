@@ -44,6 +44,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
             limit = (int?)null,
         }));
         var releaseInventory = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstRequestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var twoRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var inventoryRequests = new List<string>();
         var concurrencyLock = new object();
@@ -57,6 +58,11 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                 inventoryRequests.Add(pathAndQuery);
                 activeRequests++;
                 peakConcurrency = Math.Max(peakConcurrency, activeRequests);
+                if (activeRequests == 1)
+                {
+                    firstRequestStarted.TrySetResult();
+                }
+
                 if (activeRequests >= 2)
                 {
                     twoRequestsStarted.TrySetResult();
@@ -83,9 +89,8 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
             new MesMaterialRequirementInventoryOptions { SiteCodes = ["SITE-A", "SITE-B"] });
 
         var snapshotTask = provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
-        var observedParallelRequests = await Task.WhenAny(
-            twoRequestsStarted.Task,
-            Task.Delay(TimeSpan.FromSeconds(1))) == twoRequestsStarted.Task;
+        await firstRequestStarted.Task;
+        var observedParallelRequests = twoRequestsStarted.Task.IsCompleted;
         releaseInventory.TrySetResult();
         var result = await snapshotTask;
 
