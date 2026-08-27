@@ -2174,6 +2174,53 @@ public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
         mes.AcceptShiftHandoverAsync(tokenProvider.BearerToken, request.HandoverId, request, cancellationToken);
 }
 
+/// <summary>
+/// 追溯图里的检验结论节点带出缺陷码与处置结论，按 authorization-matrix 属 <c>business.mes.quality.read</c>
+/// 的质量下钻内容（同一份矩阵已有「工单详情给保留摘要、逐事件时间线另要 quality.read」的先例）。
+/// 只持 <c>business.mes.traceability.read</c> 的主体仍拿到整张执行追溯图，但不含检验结论节点及其边。
+/// </summary>
+internal static class BusinessConsoleMesTraceabilityQualityScope
+{
+    public const string InspectionResultNodeType = "InspectionResult";
+
+    public static async Task<BusinessConsoleMesTraceabilityResponse> WithInspectionScopedToPrincipalAsync(
+        BusinessConsoleMesTraceabilityResponse response,
+        IBusinessGatewayAuthorizationClient auth,
+        string bearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var inspectionNodeIds = response.Nodes
+            .Where(x => string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))
+            .Select(x => x.NodeId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (inspectionNodeIds.Count == 0)
+        {
+            return response;
+        }
+
+        var quality = await auth.CheckAsync(
+            bearerToken,
+            new BusinessGatewayPermissionRequirement(
+                BusinessGatewayPermissions.MesQualityRead,
+                organizationId,
+                environmentId,
+                null,
+                null),
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            cancellationToken);
+        if (quality.IsAllowed)
+        {
+            return response;
+        }
+
+        return new BusinessConsoleMesTraceabilityResponse(
+            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))],
+            [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))]);
+    }
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/traceability/work-orders/{workOrderId}")]
 [BusinessGatewayOperationId("getBusinessConsoleMesWorkOrderTraceability")]
@@ -2189,14 +2236,20 @@ public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
         BusinessConsoleMesTraceabilityByWorkOrderRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.GetWorkOrderTraceabilityAsync(
-            tokenProvider.BearerToken,
-            request.WorkOrderId,
-            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+        await BusinessConsoleMesTraceabilityQualityScope.WithInspectionScopedToPrincipalAsync(
+            await mes.GetWorkOrderTraceabilityAsync(
+                tokenProvider.BearerToken,
+                request.WorkOrderId,
+                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+                cancellationToken),
+            AuthorizationClient,
+            bearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
             cancellationToken);
 }
 
@@ -2215,14 +2268,20 @@ public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByBatchRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
         BusinessConsoleMesTraceabilityByBatchRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.GetBatchTraceabilityAsync(
-            tokenProvider.BearerToken,
-            request.BatchOrSerial,
-            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+        await BusinessConsoleMesTraceabilityQualityScope.WithInspectionScopedToPrincipalAsync(
+            await mes.GetBatchTraceabilityAsync(
+                tokenProvider.BearerToken,
+                request.BatchOrSerial,
+                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+                cancellationToken),
+            AuthorizationClient,
+            bearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
             cancellationToken);
 }
 
@@ -2241,14 +2300,20 @@ public sealed class GetBusinessConsoleMesMaterialLotTraceabilityEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByMaterialLotRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
         BusinessConsoleMesTraceabilityByMaterialLotRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.GetMaterialLotTraceabilityAsync(
-            tokenProvider.BearerToken,
-            request.MaterialLotId,
-            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+        await BusinessConsoleMesTraceabilityQualityScope.WithInspectionScopedToPrincipalAsync(
+            await mes.GetMaterialLotTraceabilityAsync(
+                tokenProvider.BearerToken,
+                request.MaterialLotId,
+                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+                cancellationToken),
+            AuthorizationClient,
+            bearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
             cancellationToken);
 }
 

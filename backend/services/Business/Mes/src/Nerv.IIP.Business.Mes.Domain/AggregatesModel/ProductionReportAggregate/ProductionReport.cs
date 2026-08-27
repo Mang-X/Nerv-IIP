@@ -60,7 +60,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         ReversedReportNo = string.IsNullOrWhiteSpace(reversedReportNo) ? null : reversedReportNo.Trim();
         ReversalReason = string.IsNullOrWhiteSpace(reversalReason) ? null : reversalReason.Trim();
         ReversedBy = string.IsNullOrWhiteSpace(reversedBy) ? null : reversedBy.Trim();
-        ReportedBy = NormalizeReportedBy(reportedBy);
+        ReportedBy = string.IsNullOrWhiteSpace(reportedBy) ? null : reportedBy.Trim();
         OeeWorkCenterId = string.IsNullOrWhiteSpace(oeeProjection?.WorkCenterId) ? null : oeeProjection.WorkCenterId.Trim();
         OeeDeviceAssetId = string.IsNullOrWhiteSpace(oeeProjection?.DeviceAssetId) ? null : oeeProjection.DeviceAssetId.Trim();
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
@@ -212,19 +212,6 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public static bool IsSupportedSource(string source) =>
         string.Equals(source, ManualSource, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(source, TelemetrySource, StringComparison.OrdinalIgnoreCase);
-
-    private static string? NormalizeReportedBy(string? reportedBy)
-    {
-        if (string.IsNullOrWhiteSpace(reportedBy))
-        {
-            return null;
-        }
-
-        var normalized = reportedBy.Trim();
-        return normalized.Length <= ReportedByMaxLength
-            ? normalized
-            : throw new ArgumentOutOfRangeException(nameof(reportedBy), $"Reported-by reference cannot exceed {ReportedByMaxLength} characters.");
-    }
 
     private static string NormalizeSource(string source)
     {

@@ -3181,6 +3181,55 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // 追溯图上的检验结论带出缺陷码与处置结论，属 authorization-matrix 里 business.mes.quality.read 的质量下钻内容；
+    // 只持 traceability.read 的主体仍拿到整张执行图，但不含检验结论节点及其边。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Mes_traceability_facade_scopes_inspection_verdicts_to_quality_read(bool holdsQualityRead)
+    {
+        var permissions = holdsQualityRead
+            ? new[] { BusinessGatewayPermissions.MesTraceabilityRead, BusinessGatewayPermissions.MesQualityRead }
+            : [BusinessGatewayPermissions.MesTraceabilityRead];
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(permissions);
+        var mes = new RecordingMesClient
+        {
+            Traceability = new BusinessConsoleMesTraceabilityResponse(
+                [
+                    new BusinessConsoleMesTraceabilityNode("SN-001", "ProducedLotOrSerial", "SN-001", "Produced"),
+                    new BusinessConsoleMesTraceabilityNode("OP-10", "OperationTask", "OP-10", "Reported"),
+                    new BusinessConsoleMesTraceabilityNode("user-emp-010", "Operator", "user-emp-010", "Reported"),
+                    new BusinessConsoleMesTraceabilityNode("DEF-001", "InspectionResult", "SCRAP-SURFACE", "ScrapAccepted"),
+                ],
+                [
+                    new BusinessConsoleMesTraceabilityEdge("PRPT-001", "user-emp-010", "reported-by"),
+                    new BusinessConsoleMesTraceabilityEdge("OP-10", "DEF-001", "inspected-as"),
+                ]),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/traceability/batches/SN-001?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        var nodeTypes = data.GetProperty("nodes").EnumerateArray().Select(x => x.GetProperty("nodeType").GetString()).ToArray();
+        var relations = data.GetProperty("edges").EnumerateArray().Select(x => x.GetProperty("relationType").GetString()).ToArray();
+
+        // 执行追溯本体（人员、工序）两种主体都拿得到。
+        Assert.Contains("Operator", nodeTypes);
+        Assert.Contains("reported-by", relations);
+        Assert.Equal(holdsQualityRead, nodeTypes.Contains("InspectionResult"));
+        Assert.Equal(holdsQualityRead, relations.Contains("inspected-as"));
+    }
+
     [Fact]
     public async Task Mes_production_report_facade_reports_the_authenticated_principal_as_operator()
     {
@@ -3188,10 +3237,10 @@ public sealed class BusinessGatewayProxyTests
             scopeGrants:
             [
                 new AuthorizationScopeGrant(
-                    "membership",
-                    "membership-operator",
-                    "self",
-                    "user-admin",
+                    "role",
+                    "role-team-operator",
+                    "team",
+                    "TEAM-MC-A",
                     [BusinessGatewayPermissions.MesReportingWrite]),
             ]);
         var mes = new RecordingMesClient
@@ -3206,8 +3255,8 @@ public sealed class BusinessGatewayProxyTests
                     "WC-A",
                     null,
                     null,
-                    "user-admin",
-                    "当前人员",
+                    "user-other",
+                    "同班组的另一人",
                     null,
                     null,
                     "Ready"),
@@ -3217,10 +3266,10 @@ public sealed class BusinessGatewayProxyTests
         {
             PrincipalWorkContext = PrincipalWorkContext(
                 new BusinessMasterDataWorkContextCandidateScope(
-                    "self",
-                    "user-admin",
-                    "当前人员",
-                    "worker-mapping",
+                    "team",
+                    "TEAM-MC-A",
+                    "机加早班组",
+                    "active-membership",
                     [])),
         };
         await using var lease = LeaseHost(auth, services =>
@@ -3246,8 +3295,9 @@ public sealed class BusinessGatewayProxyTests
                 completesOperation = false,
                 reportedAtUtc = DateTimeOffset.Parse("2026-07-29T08:00:00Z"),
                 idempotencyKey = "report-operator-001",
-                scopeKind = "self",
-                scopeId = "user-admin",
+                // 作用域取班组：scopeId 与 principal 不同值，故「拿调用方自带的作用域当身份」这类改法会被这条用例抓到。
+                scopeKind = "team",
+                scopeId = "TEAM-MC-A",
                 // 调用方即使自报身份也不作数：报工人只能来自已认证 principal。
                 reportedBy = "user-impostor",
             });
@@ -17490,12 +17540,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    public BusinessConsoleMesTraceabilityResponse? Traceability { get; init; }
+
     public Task<BusinessConsoleMesTraceabilityResponse> GetBatchTraceabilityAsync(
         string internalBearerToken,
         string batchOrSerial,
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        Traceability is null
+            ? throw new NotSupportedException()
+            : Task.FromResult(Traceability);
 
     public Task<BusinessConsoleMesTraceabilityResponse> GetMaterialLotTraceabilityAsync(
         string internalBearerToken,
