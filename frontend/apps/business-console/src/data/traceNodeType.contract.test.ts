@@ -32,11 +32,16 @@ const NODE_TYPE_DECLARATION = join(
 
 const declarationSource = readFileSync(NODE_TYPE_DECLARATION, 'utf8')
 
+/** 封闭类型 `MesTraceabilityNodeType` 的类型体。 */
+function nodeTypeBody(): string {
+  const start = declarationSource.indexOf('public sealed record MesTraceabilityNodeType')
+  expect(start, 'MesTraceabilityNodeType 已被改名或移走').toBeGreaterThanOrEqual(0)
+  return declarationSource.slice(start, declarationSource.indexOf('\n}', start))
+}
+
 /** `MesTraceabilityNodeType` 上登记的受控节点类型取值。 */
 function declaredNodeTypes(): string[] {
-  const start = declarationSource.indexOf('public readonly record struct MesTraceabilityNodeType')
-  expect(start, 'MesTraceabilityNodeType 已被改名或移走').toBeGreaterThanOrEqual(0)
-  const body = declarationSource.slice(start, declarationSource.indexOf('\n}', start))
+  const body = nodeTypeBody()
 
   const fields = [
     ...body.matchAll(/public static readonly MesTraceabilityNodeType \w+ = new\("([^"]+)"\);/g),
@@ -84,9 +89,22 @@ describe('追溯节点类型词表契约', () => {
     expect(dead, `这些键后端从不发，留着只会让人以为词表已对齐：${dead.join('、')}`).toEqual([])
   })
 
-  it('自由文本通道只有需求计划来源节点一个调用点', () => {
-    // FromSourceDocumentType 是 MesTraceabilityNodeType 封闭性上仅剩的口子：它收 string。
-    // 多一个调用点，就多一类不受本契约约束、会在界面上印英文码的节点类型。
+  it('自由文本通道只有一个入口、一个调用点', () => {
+    // 封闭性靠编译器：构造函数私有、字符串无到本类型的隐式转换，`default` / `new()` / `null`
+    // 在 Nullable + TreatWarningsAsErrors 下都是编译错误。**唯一**绕得过它的是本类型上收 string
+    // 的公开入口——再加一个 `FromCode(string)` 之类的工厂就等于把护栏拆了，而那既编译得过、
+    // 调用点数也还是一个。所以先数入口，再数调用点，两头都得是一。
+    const body = nodeTypeBody()
+    const entryPoints = [
+      ...(body.match(/public static MesTraceabilityNodeType \w+\(string/g) ?? []),
+      ...(body.match(/public MesTraceabilityNodeType\(string/g) ?? []),
+    ]
+    expect(
+      entryPoints,
+      `MesTraceabilityNodeType 上收 string 的公开入口应当只有 FromSourceDocumentType 一个，` +
+        `实际：${entryPoints.join('、')}。多一个入口，节点类型就又能被任意字符串扩大。`,
+    ).toEqual(['public static MesTraceabilityNodeType FromSourceDocumentType(string'])
+
     const callSites: string[] = []
     for (const file of csharpFiles(MES_WEB_SRC)) {
       const source = readFileSync(file, 'utf8')

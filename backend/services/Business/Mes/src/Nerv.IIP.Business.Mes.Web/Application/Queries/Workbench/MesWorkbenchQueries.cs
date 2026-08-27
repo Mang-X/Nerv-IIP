@@ -2113,15 +2113,22 @@ public sealed record MesTraceabilityEdge(string FromNodeId, string ToNodeId, str
 /// 这样的英文码——本票修的就是这个。
 /// <para>
 /// 所以这里不是一张「常量表」而是一个**封闭类型**：构造函数私有，字符串没有到本类型的隐式转换，
-/// 因此调用点写不出表外的值——无论是集合初始化器里的 target-typed <c>new(...)</c>、三元的某一支，
+/// 因此调用点写不出表外的字面量——无论是集合初始化器里的 target-typed <c>new(...)</c>、三元的某一支，
 /// 还是先落到局部变量再传进来，都在编译期不成立。新增一类节点只能在下面加一个静态字段。
+/// </para>
+/// <para>
+/// 它是 <c>sealed record</c>（引用类型）而不是 <c>record struct</c>，这一条是**被实测逼出来的**：
+/// 值类型有隐式公共无参构造，<c>default</c> 与 <c>new MesTraceabilityNodeType()</c> 都绕得过私有构造，
+/// 拿到 <c>Value == null</c> 的实例，编译还是绿的，界面上那一行的「类型」列直接空白。
+/// 换成引用类型后，这两种写法在 <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> +
+/// <c>TreatWarningsAsErrors</c> 下都是编译错误。
 /// </para>
 /// <para>
 /// 前端追溯词表按本表做完备性契约（<c>frontend/apps/business-console/src/data/traceNodeType.contract.test.ts</c>）：
 /// 这里加一个字段而词表没跟进即红。
 /// </para>
 /// </summary>
-public readonly record struct MesTraceabilityNodeType
+public sealed record MesTraceabilityNodeType
 {
     private MesTraceabilityNodeType(string value) => Value = value;
 
@@ -2151,8 +2158,9 @@ public readonly record struct MesTraceabilityNodeType
     /// <c>SourceDocumentType</c>，由外部写入方经公开端点给（<c>MaximumLength(100)</c> 的自由文本，
     /// 无取值校验），是开放集合，登记不进上面的表。
     /// <para>
-    /// 这是本类型封闭性上仅剩的口子，因此故意起了个显眼的名字并只允许一个调用点；
-    /// 前端契约测试会数它的引用数，多一处即红。要发新的**受控**节点类型，加静态字段，不要走这里。
+    /// 这是本类型封闭性上仅剩的口子。前端契约测试盯两件事：本类型上**收 string 的公开入口**只能有
+    /// 这一个（再加一个 <c>FromCode(string)</c> 之类的工厂，就等于把护栏拆了），且它只能有一个调用点。
+    /// 要发新的**受控**节点类型，加静态字段，不要走这里。
     /// </para>
     /// </summary>
     public static MesTraceabilityNodeType FromSourceDocumentType(string sourceDocumentType) =>
