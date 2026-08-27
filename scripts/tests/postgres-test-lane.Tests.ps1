@@ -483,7 +483,8 @@ try {
     )
     $mesIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesMember.expectedTestIdentities), [StringComparer]::Ordinal)
     Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
-    Assert-Contract ($mesIdentitySet.Contains('Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Historical_dimension_snapshot_migration_preserves_complete_prior_report_row_contract')) 'The MES member must freeze the prior-row historical-dimension migration contract identity.'
+    $mesHistoricalDimensionMigrationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesOeeDimensionSnapshotProviderTests.Historical_dimension_snapshot_migration_preserves_complete_prior_report_row_contract'
+    Assert-Contract ($mesIdentitySet.Contains($mesHistoricalDimensionMigrationIdentity)) 'The MES member must freeze the prior-row historical-dimension migration contract identity.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
     foreach ($mesSource in @(
