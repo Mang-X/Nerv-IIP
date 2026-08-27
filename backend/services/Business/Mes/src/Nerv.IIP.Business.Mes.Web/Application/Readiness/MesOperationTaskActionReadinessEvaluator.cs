@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -107,6 +108,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 x.EnvironmentId == environmentId &&
                 workOrderIds.Contains(x.WorkOrderId))
             .Select(x => new MaterialRequirementFact(
+                x.Id,
                 x.WorkOrderId,
                 x.OperationTaskId,
                 x.MaterialId,
@@ -122,6 +124,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 x.EnvironmentId == environmentId &&
                 workOrderIds.Contains(x.WorkOrderId))
             .Select(x => new MaterialRequirementFact(
+                x.Id,
                 x.WorkOrderId,
                 x.OperationTaskId,
                 x.MaterialId,
@@ -130,13 +133,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 x.AvailableQuantity,
                 x.StagedQuantity,
                 x.CapturedAtUtc));
-        var requirements = persistedRequirements
-            .Concat(localRequirements)
-            .GroupBy(
-                x => $"{x.WorkOrderId.ToUpperInvariant()}|{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
-                StringComparer.Ordinal)
-            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
-            .ToArray();
+        var requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshotsByWorkOrder(
+            persistedRequirements,
+            localRequirements,
+            x => x.WorkOrderId,
+            x => x.CapturedAtUtc,
+            x => x.Id);
         var receipts = await dbContext.MaterialIssueRequests
             .AsNoTracking()
             .Where(x =>
@@ -236,12 +238,14 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             blockReasons.Add($"{classification.Code}: {classification.Message}");
         }
 
-        var scopedRequirements = requirements
+        var workOrderRequirements = requirements
+            .Where(x => x.WorkOrderId == task.WorkOrderId)
+            .ToArray();
+        var scopedRequirements = workOrderRequirements
             .Where(x =>
-                x.WorkOrderId == task.WorkOrderId &&
                 (x.OperationTaskId == null || x.OperationTaskId == task.OperationTaskIdValue))
             .ToArray();
-        var expectedSnapshotStatus = scopedRequirements.Length == 0
+        var expectedSnapshotStatus = workOrderRequirements.Length == 0
             ? WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus
             : WorkOrder.MaterialRequirementSnapshotCapturedStatus;
         var materialSnapshotProven = false;
@@ -298,6 +302,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
     }
 
     private sealed record MaterialRequirementFact(
+        MaterialRequirementId Id,
         string WorkOrderId,
         string? OperationTaskId,
         string MaterialId,

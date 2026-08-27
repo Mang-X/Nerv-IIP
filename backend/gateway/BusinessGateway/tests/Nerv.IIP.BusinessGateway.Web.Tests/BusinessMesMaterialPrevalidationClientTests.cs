@@ -155,6 +155,113 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Client_rejects_present_but_blank_reason_code(string reasonCode)
+    {
+        var response = RejectedResponse() with { ReasonCode = reasonCode };
+
+        await AssertInvalidResponseAsync(response);
+    }
+
+    [Fact]
+    public async Task Client_rejects_present_but_minimum_evaluation_time()
+    {
+        var response = AcceptedResponse() with { EvaluatedAtUtc = DateTimeOffset.MinValue };
+
+        await AssertInvalidResponseAsync(response);
+    }
+
+    [Theory]
+    [InlineData("materialId")]
+    [InlineData("materialLotId")]
+    [InlineData("materialQualification")]
+    public async Task Client_rejects_each_invalid_accepted_required_fact_independently(string invalidFact)
+    {
+        var valid = AcceptedResponse();
+        var response = invalidFact switch
+        {
+            "materialId" => valid with { MaterialId = " " },
+            "materialLotId" => valid with { MaterialLotId = "" },
+            "materialQualification" => valid with { MaterialQualification = "unexpected" },
+            _ => throw new ArgumentOutOfRangeException(nameof(invalidFact), invalidFact, null),
+        };
+
+        await AssertInvalidResponseAsync(response);
+    }
+
+    [Fact]
+    public async Task Client_allows_rejected_response_to_retain_material_identifiers_when_qualification_is_null()
+    {
+        var response = new MesMaterialScanPrevalidationResponse(
+            MesMaterialScanDecision.Rejected,
+            "material-not-required",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "LOT-001",
+            null,
+            DateTimeOffset.Parse("2026-08-26T08:00:00Z"));
+        var client = ClientReturning(response);
+
+        var actual = await client.PrevalidateAsync(
+            "internal-token",
+            "corr-001",
+            new MesMaterialScanPrevalidationRequest(
+                "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+            CancellationToken.None);
+
+        Assert.Equal(response, actual);
+    }
+
+    private static async Task AssertInvalidResponseAsync(MesMaterialScanPrevalidationResponse response)
+    {
+        var client = ClientReturning(response);
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
+            "internal-token",
+            "corr-001",
+            new MesMaterialScanPrevalidationRequest(
+                "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+            CancellationToken.None));
+    }
+
+    private static HttpBusinessMesMaterialPrevalidationClient ClientReturning(
+        MesMaterialScanPrevalidationResponse response) =>
+        new(new HttpClient(new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(response),
+        }))
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+    private static MesMaterialScanPrevalidationResponse AcceptedResponse() =>
+        new(
+            MesMaterialScanDecision.Accepted,
+            "material-scan-accepted",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "LOT-001",
+            "primary",
+            DateTimeOffset.Parse("2026-08-26T08:00:00Z"));
+
+    private static MesMaterialScanPrevalidationResponse RejectedResponse() =>
+        new(
+            MesMaterialScanDecision.Rejected,
+            "material-not-required",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "LOT-001",
+            null,
+            DateTimeOffset.Parse("2026-08-26T08:00:00Z"));
+
     private sealed class RecordingHandler(Func<HttpResponseMessage>? responseFactory = null) : HttpMessageHandler
     {
         public HttpMethod? Method { get; private set; }

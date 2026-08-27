@@ -531,6 +531,7 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
                 releasedWorkOrderIds.Contains(x.WorkOrderId))
             .Select(x => new
             {
+                x.Id,
                 x.WorkOrderId,
                 x.OperationTaskId,
                 x.MaterialId,
@@ -560,9 +561,11 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             })
             .ToArrayAsync(cancellationToken);
 
-        return requirements
-            .GroupBy(x => new { x.WorkOrderId, x.OperationTaskId, x.MaterialId, x.MaterialLotId })
-            .Select(group => group.OrderByDescending(x => x.CapturedAtUtc).First())
+        return MaterialReadinessGuards.SelectLatestRequirementSnapshotsByWorkOrder(
+                requirements,
+                x => x.WorkOrderId,
+                x => x.CapturedAtUtc,
+                x => x.Id)
             .GroupBy(x => new { x.WorkOrderId, x.MaterialId, x.MaterialLotId })
             .Select(group =>
             {
@@ -1489,6 +1492,8 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             .ToArrayAsync(cancellationToken);
         var requirements = persistedRequirements
             .Select(x => new MaterialReadinessGuards.MaterialRequirementSnapshot(
+                x.Id,
+                x.WorkOrderId,
                 x.OperationTaskId,
                 x.MaterialId,
                 x.MaterialLotId,

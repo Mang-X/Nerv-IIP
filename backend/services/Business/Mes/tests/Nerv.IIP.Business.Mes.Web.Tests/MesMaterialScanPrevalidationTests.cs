@@ -22,6 +22,17 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed partial class MesMaterialScanPrevalidationTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-26T08:00:00Z");
+    private static readonly string[] DependencyLogPropertyKeys =
+    [
+        "correlationId",
+        "errorCode",
+        "exceptionType",
+        "failureKind",
+        "materialId",
+        "materialLotId",
+        "serviceName",
+        "statusCode",
+    ];
 
     [Fact]
     public async Task Accepted_primary_material_requires_completed_line_side_lot_and_inventory_authority()
@@ -615,6 +626,9 @@ public sealed partial class MesMaterialScanPrevalidationTests
         Assert.Equal("LOT-001", entry.Properties["materialLotId"]);
         Assert.Equal("corr-001", entry.Properties["correlationId"]);
         Assert.Equal(failureKind == "exception" ? "transport" : "http-status", entry.Properties["failureKind"]);
+        Assert.Equal(DependencyLogPropertyKeys, entry.Properties.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(failureKind == "exception" ? nameof(HttpRequestException) : null, entry.Properties["exceptionType"]);
+        Assert.Equal(failureKind == "reason-phrase" ? 503 : null, entry.Properties["statusCode"]);
         Assert.DoesNotContain("CorrelationId", entry.Properties.Keys, StringComparer.Ordinal);
     }
 
@@ -644,6 +658,11 @@ public sealed partial class MesMaterialScanPrevalidationTests
         Assert.Equal("LOT-001", entry.Properties["materialLotId"]);
         Assert.Equal("corr-001", entry.Properties["correlationId"]);
         Assert.Equal(failureKind, entry.Properties["failureKind"]);
+        Assert.Equal(DependencyLogPropertyKeys, entry.Properties.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            failureKind == "contract-shape" ? "InventoryContractViolationException" : null,
+            entry.Properties["exceptionType"]);
+        Assert.Null(entry.Properties["statusCode"]);
     }
 
     private static PrevalidateMaterialScanQueryHandler CreateHandler(
