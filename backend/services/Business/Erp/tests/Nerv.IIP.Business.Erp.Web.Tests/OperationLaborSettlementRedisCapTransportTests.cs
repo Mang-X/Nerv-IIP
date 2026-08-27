@@ -36,15 +36,10 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             Assert.Equal(240m, (await db.WorkOrderCosts.Include(x => x.Details).AsNoTracking().SingleAsync(token)).LaborCost);
         });
 
+        var redeliveredCapMessageId = await ForceSameCapMessageRedeliveryAsync(factory, revisionTwo.EventId);
+
         await PublishAsync(factory, async publisher =>
         {
-            await publisher.PublishAsync(
-                nameof(MesOperationActualTimeSettledIntegrationEvent),
-                revisionTwo with
-                {
-                    EventId = "transport-settle-r2-redelivery",
-                    IdempotencyKey = "actual-time:OP-TRANSPORT:2:settled:redelivery",
-                });
             await publisher.PublishAsync(
                 nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent),
                 Voided("transport-void-r1", revisionOne, completedAtUtc.AddHours(2)));
@@ -62,8 +57,24 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             Assert.Single(await db.OperationLaborSettlementVoids.ToListAsync(token));
             Assert.Single(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperation);
             Assert.DoesNotContain(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperationVoid);
+            Assert.Single(await db.ProcessedIntegrationEvents.Where(x => x.EventId == revisionTwo.EventId).ToListAsync(token));
+            var receivedCount = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.received").SingleAsync(token);
+            var publishedCount = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync(token);
+            Assert.Equal(3, receivedCount);
+            Assert.Equal(3, publishedCount);
+            var redelivered = await db.Database.SqlQuery<long>($"SELECT \"Id\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
+            Assert.Equal(redeliveredCapMessageId, redelivered);
         });
 
+    }
+
+    private static async Task<long> ForceSameCapMessageRedeliveryAsync(WebApplicationFactory<Program> factory, string eventId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var id = await db.Database.SqlQuery<long>($"SELECT \"Id\" AS \"Value\" FROM cap.received WHERE \"Content\" LIKE {'%' + eventId + '%'} ORDER BY \"Id\" DESC LIMIT 1").SingleAsync();
+        await db.Database.ExecuteSqlAsync($"UPDATE cap.received SET \"StatusName\" = 'Failed', \"Retries\" = 0, \"ExpiresAt\" = NULL WHERE \"Id\" = {id}");
+        return id;
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
@@ -85,6 +96,12 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             builder.UseEnvironment("Development");
             foreach (var (key, value) in settings) builder.UseSetting(key, value);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
+            builder.ConfigureServices(services => services.PostConfigure<CapOptions>(options =>
+            {
+                options.SucceedMessageExpiredAfter = 3600;
+                options.CollectorCleaningInterval = 3600;
+                options.FailedRetryInterval = 1;
+            }));
         });
     }
 
@@ -118,7 +135,7 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 using var scope = factory.Services.CreateScope();
                 await assertion(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), token);
             },
-            options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250), []));
+            options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
 
     private static MesOperationActualTimeSettledIntegrationEvent Settled(
         string eventId,

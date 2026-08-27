@@ -390,6 +390,51 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(3, indexes.Count);
     }
 
+    [ErpCostPostgresFact]
+    public async Task PostgreSQL_rejects_duplicate_settlement_void_and_covered_report_without_half_commit()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        await using (var seed = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await seed.Database.MigrateAsync();
+            var rate = WorkCenterCostRate.Define("org-unique", "env-unique", "WC-UNIQUE", 80m, "CNY", DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1, "system:test", "unique proof", DateTimeOffset.Parse("2026-08-01T00:00:00Z"));
+            seed.WorkCenterCostRates.Add(rate);
+            var settlement = OperationLaborSettlement.Create("org-unique", "env-unique", "WO-UNIQUE", "OP-UNIQUE", "WC-UNIQUE", 1, DateTimeOffset.Parse("2026-08-31T15:00:00Z"), TimeSpan.TicksPerHour, rate.Id, 1, "CNY", 80m, "evt-unique", new string('a', 64));
+            seed.OperationLaborSettlements.Add(settlement);
+            seed.OperationLaborSettlementVoids.Add(OperationLaborSettlementVoid.Create(settlement, DateTimeOffset.Parse("2026-08-31T16:00:00Z"), "evt-void", new string('b', 64)));
+            seed.OperationLaborCoveredReports.Add(OperationLaborCoveredReport.Create("org-unique", "env-unique", "WO-UNIQUE", "OP-UNIQUE", 1, "RPT-UNIQUE"));
+            await seed.SaveChangesAsync();
+        }
+
+        await AssertConstraintAsync(options, "ux_operation_labor_settlements_business_identity", db =>
+        {
+            var rateId = db.WorkCenterCostRates.Select(x => x.Id).Single();
+            db.OperationLaborSettlements.Add(OperationLaborSettlement.Create("org-unique", "env-unique", "WO-DUP", "OP-UNIQUE", "WC-UNIQUE", 1, DateTimeOffset.Parse("2026-08-31T15:00:00Z"), TimeSpan.TicksPerHour, rateId, 1, "CNY", 80m, "evt-dup", new string('c', 64)));
+        });
+        await AssertConstraintAsync(options, "ux_operation_labor_settlement_voids_business_identity", db =>
+        {
+            var settlement = db.OperationLaborSettlements.Single();
+            db.OperationLaborSettlementVoids.Add(OperationLaborSettlementVoid.Create(settlement, DateTimeOffset.Parse("2026-08-31T17:00:00Z"), "evt-void-dup", new string('d', 64)));
+        });
+        await AssertConstraintAsync(options, "ux_operation_labor_covered_reports_report", db =>
+            db.OperationLaborCoveredReports.Add(OperationLaborCoveredReport.Create("org-unique", "env-unique", "WO-DUP", "OP-DUP", 2, "RPT-UNIQUE")));
+
+        await using var verify = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Equal(1, await verify.OperationLaborSettlements.CountAsync());
+        Assert.Equal(1, await verify.OperationLaborSettlementVoids.CountAsync());
+        Assert.Equal(1, await verify.OperationLaborCoveredReports.CountAsync());
+    }
+
+    private static async Task AssertConstraintAsync(DbContextOptions<ApplicationDbContext> options, string constraintName, Action<ApplicationDbContext> arrange)
+    {
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        arrange(db);
+        var error = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        var postgres = Assert.IsType<PostgresException>(error.InnerException);
+        Assert.Equal(constraintName, postgres.ConstraintName);
+    }
+
     private sealed class NoopMediator : IMediator
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
