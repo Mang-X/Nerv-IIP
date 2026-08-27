@@ -3076,6 +3076,7 @@ $activeCoreMembers = @($postgresManifest.members | Where-Object {
 $activeCoreIdentityCount = @($activeCoreMembers.expectedTestIdentities).Count
 Assert-True ($governanceDoc.Contains("当前全部 $selectorCount 个选择器", [StringComparison]::Ordinal)) 'Governance document selector count must match the canonical backend shard manifest.'
 Assert-True ($governanceDoc.Contains("当前 active core manifest 为 $($activeCoreMembers.Count) 个成员、$activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document active/core totals must match the canonical PostgreSQL manifest.'
+Assert-True ($governanceDoc.Contains("顺序执行 $($activeCoreMembers.Count) 个 active core manifest member，共 $activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document hosted PostgreSQL execution totals must match the canonical manifest.'
 $documentedServiceLabels = [ordered]@{
     Inventory = 'Inventory 的 '; MasterData = 'MasterData 的 '; Scheduling = 'Scheduling 的 '; AppHub = 'AppHub '
     BarcodeLabel = 'BarcodeLabel/FileStorage/Maintenance 各 '; FileStorage = 'BarcodeLabel/FileStorage/Maintenance 各 '; Maintenance = 'BarcodeLabel/FileStorage/Maintenance 各 '
