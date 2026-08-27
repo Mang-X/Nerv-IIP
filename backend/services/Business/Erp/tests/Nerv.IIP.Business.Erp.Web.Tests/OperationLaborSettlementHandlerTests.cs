@@ -56,7 +56,8 @@ public sealed class OperationLaborSettlementHandlerTests
         var original = Settled(
             "evt-settled-boundary", 1, SeptemberStartsAtUtc,
             2 * TimeSpan.TicksPerHour, ["RPT-BOUNDARY"])
-            with { OccurredAtUtc = SeptemberStartsAtUtc.AddMonths(3) };
+            with
+        { OccurredAtUtc = SeptemberStartsAtUtc.AddMonths(3) };
         var consumer = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters));
 
         await consumer.HandleAsync(original, CancellationToken.None);
@@ -74,6 +75,58 @@ public sealed class OperationLaborSettlementHandlerTests
         Assert.Equal(176m, settlement.Amount);
         Assert.Single((await db.WorkOrderCosts.Include(x => x.Details).SingleAsync()).Details,
             x => x.LaborBasis == LaborCostBasis.ActualOperation);
+    }
+
+    [Fact]
+    public async Task Settlement_delivered_after_rate_boundary_still_uses_completion_period_rate()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), SeptemberStartsAtUtc),
+            Rate(8, 88m, SeptemberStartsAtUtc, null));
+        await db.SaveChangesAsync();
+        var delayed = Settled(
+            "evt-settled-delayed", 1, AugustCompletedAtUtc,
+            2 * TimeSpan.TicksPerHour, ["RPT-DELAYED"])
+            with
+        { OccurredAtUtc = SeptemberStartsAtUtc.AddMonths(3) };
+
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(delayed, CancellationToken.None);
+
+        var settlement = await db.OperationLaborSettlements.SingleAsync();
+        Assert.Equal(7, settlement.RateRevision);
+        Assert.Equal(160m, settlement.Amount);
+    }
+
+    [Fact]
+    public async Task Settlement_rate_selection_is_isolated_by_organization_and_environment()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.AddRange(
+            Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null),
+            WorkCenterCostRate.Define(
+                "org-001", "env-other", "WC-01", 999m, "CNY",
+                DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 99,
+                "system:test", "other environment rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        await db.SaveChangesAsync();
+
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
+                db, db, TestWorkOrderCostMutationLock.Instance,
+                new OperationLaborSettlementOrchestrator(db, deadLetters))
+            .HandleAsync(
+                Settled("evt-settled-scoped", 1, AugustCompletedAtUtc,
+                    2 * TimeSpan.TicksPerHour, ["RPT-SCOPED"]),
+                CancellationToken.None);
+
+        var settlement = await db.OperationLaborSettlements.SingleAsync();
+        Assert.Equal("env-prod", settlement.EnvironmentId);
+        Assert.Equal(7, settlement.RateRevision);
+        Assert.Equal(160m, settlement.Amount);
     }
 
     [Fact]
