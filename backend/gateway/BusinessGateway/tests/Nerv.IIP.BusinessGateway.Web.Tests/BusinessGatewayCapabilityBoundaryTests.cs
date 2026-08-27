@@ -438,6 +438,186 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void IndustrialTelemetry_capability_boundary_mutation_matrix_rejects_each_escape()
+    {
+        var baseDocuments = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                "Capabilities/IndustrialTelemetry/BusinessIndustrialTelemetryClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public partial interface IBusinessIndustrialTelemetryClient {} " +
+                "public partial class HttpBusinessIndustrialTelemetryClient : " +
+                "BusinessServiceHttpClient, IBusinessIndustrialTelemetryClient {}"),
+            new SourceDocument(
+                "Capabilities/IndustrialTelemetry/IndustrialTelemetryWireDto.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed record IndustrialTelemetryWireDto(string Value);"),
+            new SourceDocument(
+                "BusinessServiceClients.cs.config.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed class IndustrialTelemetryOptions {} " +
+                "public sealed class NestedHolder { " +
+                "public sealed class NestedDto {} }"),
+        };
+        var contract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>(),
+            managedSeedCapabilities: new Dictionary<string, string>
+            {
+                [Identity("Interface", "IBusinessIndustrialTelemetryClient")] =
+                    "IndustrialTelemetry",
+                [Identity("Class", "HttpBusinessIndustrialTelemetryClient")] =
+                    "IndustrialTelemetry",
+            },
+            capabilityDirectories: new Dictionary<string, string>
+            {
+                ["IndustrialTelemetry"] = "Capabilities/IndustrialTelemetry",
+            });
+
+        Assert.Empty(AnalyzeCapabilityBoundary(baseDocuments, contract));
+
+        var mutations = new[]
+        {
+            new CapabilityBoundaryMutation(
+                "old giant re-add",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legacy-rollback.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessIndustrialTelemetryClient {} " +
+                    "public partial class HttpBusinessIndustrialTelemetryClient : " +
+                    "BusinessServiceHttpClient, IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "new client in old giant",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.new-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnnamedIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "duplicate interface",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-interface.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "duplicate class",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-class.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "partial class escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.partial.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessIndustrialTelemetryClient " +
+                    "{ public void LegacyPartialFragment() {} }"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "nested client escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.nested.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class LegacyOuter { " +
+                    "public sealed class NestedIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {} }"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "wrong directory",
+                new SourceDocument(
+                    "Capabilities/Quality/WrongIndustrialTelemetryClient.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class WrongDirectoryIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "bidirectional interface escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.bidirectional.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public interface IDerivedIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {} " +
+                    "public sealed class NonConventionalIndustrialTelemetryClient : " +
+                    "IDerivedIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "indirect base-chain escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.indirect-base-chain.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public abstract class NonConventionalBase : " +
+                    "HttpBusinessIndustrialTelemetryClient {} " +
+                    "public sealed class LegacyDerivedIndustrialTelemetryClient : " +
+                    "NonConventionalBase {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "unassigned shared-base client",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.unassigned-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnassignedIndustrialTelemetryClient : " +
+                    "BusinessServiceHttpClient {}"),
+                "Unassigned capability client"),
+        };
+
+        foreach (var mutation in mutations)
+        {
+            var violations = AnalyzeCapabilityBoundary(
+                baseDocuments.Append(mutation.Document),
+                contract);
+            var report = string.Join(Environment.NewLine, violations);
+
+            Assert.True(
+                violations.Count > 0,
+                $"Mutation '{mutation.Name}' was accepted by the IndustrialTelemetry boundary contract.");
+            Assert.Contains(mutation.Document.RelativePath, report, StringComparison.Ordinal);
+            Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
+        }
+
+        var legacyRollbackContract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>
+            {
+                [Identity("Interface", "IBusinessIndustrialTelemetryClient")] =
+                    new("IndustrialTelemetry", ["BusinessServiceClients.cs"]),
+                [Identity("Class", "HttpBusinessIndustrialTelemetryClient")] =
+                    new("IndustrialTelemetry", ["BusinessServiceClients.cs"]),
+            },
+            managedSeedCapabilities: contract.ManagedSeedCapabilities,
+            capabilityDirectories: contract.CapabilityDirectories);
+        var legacyRollbackReport = string.Join(
+            Environment.NewLine,
+            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
+
+        Assert.Contains(
+            "Legacy symbol " + Identity("Interface", "IBusinessIndustrialTelemetryClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Legacy symbol " + Identity("Class", "HttpBusinessIndustrialTelemetryClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+
+        var falsePositiveViolations = AnalyzeCapabilityBoundary(
+            baseDocuments.Append(
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legitimate.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class IndustrialTelemetryOptionsDto {}")),
+            contract);
+
+        Assert.Empty(falsePositiveViolations);
+    }
+
+    [Fact]
     public void Erp_client_declarations_live_together_in_its_capability_file()
     {
         var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
@@ -469,6 +649,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         {
             Identity("Interface", "IBusinessBarcodeLabelClient"),
             Identity("Class", "HttpBusinessBarcodeLabelClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void IndustrialTelemetry_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/IndustrialTelemetry/BusinessIndustrialTelemetryClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessIndustrialTelemetryClient"),
+            Identity("Class", "HttpBusinessIndustrialTelemetryClient"),
         })
         {
             var owners = declarations
@@ -831,7 +1033,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Quality" &&
                     capability != "Approval" &&
                     capability != "Notification" &&
-                    capability != "BarcodeLabel");
+                    capability != "BarcodeLabel" &&
+                    capability != "IndustrialTelemetry");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -849,7 +1052,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Quality" &&
                     capability != "Approval" &&
                     capability != "Notification" &&
-                    capability != "BarcodeLabel");
+                    capability != "BarcodeLabel" &&
+                    capability != "IndustrialTelemetry");
         }
 
         seedCapabilities.Add(
@@ -999,6 +1203,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "BusinessServices"));
 
     private sealed record SourceDocument(string RelativePath, string Source);
+
+    private sealed record CapabilityBoundaryMutation(
+        string Name,
+        SourceDocument Document,
+        string ExpectedViolation);
 
     private sealed record SharedTypeDeclaration(string RelativePath, string TypeName);
 
