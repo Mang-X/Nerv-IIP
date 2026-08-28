@@ -8,6 +8,8 @@ using Npgsql;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
@@ -45,6 +47,13 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 "org-concurrent", "env-concurrent", "WC-CONCURRENT", 80m, "CNY",
                 new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), null, 1,
                 "system:test", "approved standard labor rate", DateTimeOffset.UtcNow));
+            setupDb.AccountingPeriods.Add(AccountingPeriod.Open(
+                "org-concurrent", "env-concurrent", "2026-08",
+                new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31)));
+            setupDb.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-concurrent", "env-concurrent", "WC-CONCURRENT", "2026-08",
+                30_000m, 10_000m, 1_000m, "CNY", 1,
+                "system:test", "approved machine overhead rate", DateTimeOffset.UtcNow));
             await setupDb.SaveChangesAsync();
         }
 
@@ -55,6 +64,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
 
         await using var reportDb = new ApplicationDbContext(options, new NoopMediator());
         await using var settlementDb = new ApplicationDbContext(options, new NoopMediator());
+        await using var machineDb = new ApplicationDbContext(options, new NoopMediator());
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var reportedAtUtc = new DateTimeOffset(2026, 8, 31, 15, 40, 0, TimeSpan.Zero);
         var completedAtUtc = reportedAtUtc.AddMinutes(10);
@@ -73,6 +83,17 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             new OperationActualTimeSettledPayload(
                 "WO-CONCURRENT", "OP-CONCURRENT", "WC-CONCURRENT", 1, completedAtUtc,
                 2 * TimeSpan.TicksPerHour, 2 * TimeSpan.TicksPerHour, ["RPT-CONCURRENT"]));
+        var machineSettled = new MesOperationActualTimeSettledV2IntegrationEvent(
+            "evt-machine-concurrent", MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V2, completedAtUtc.AddMinutes(1), MesIntegrationEventSources.BusinessMes,
+            "correlation-concurrent", "causation-concurrent", "org-concurrent", "env-concurrent",
+            "operator:test", "actual-time:OP-CONCURRENT:1:settled:v2",
+            new OperationActualTimeSettledV2Payload(
+                "WO-CONCURRENT", "OP-CONCURRENT", "WC-CONCURRENT", 1, completedAtUtc,
+                2 * TimeSpan.TicksPerHour, 2 * TimeSpan.TicksPerHour, ["RPT-CONCURRENT"],
+                "DEVICE-CONCURRENT", MesMachineTimeFactStatus.Available,
+                2 * TimeSpan.TicksPerHour,
+                MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1));
 
         var reportTask = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
                 reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb))
@@ -81,12 +102,17 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 settlementDb, settlementDb, new PostgreSqlWorkOrderCostMutationLock(settlementDb),
                 new OperationLaborSettlementOrchestrator(settlementDb, deadLetters))
             .HandleAsync(settled, CancellationToken.None);
-        await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 2);
+        var machineTask = new MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead(
+                machineDb, machineDb, new PostgreSqlWorkOrderCostMutationLock(machineDb),
+                new OperationMachineOverheadSettlementOrchestrator(machineDb, deadLetters))
+            .HandleAsync(machineSettled, CancellationToken.None);
+        await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 3);
         Assert.False(reportTask.IsCompleted);
         Assert.False(settlementTask.IsCompleted);
+        Assert.False(machineTask.IsCompleted);
 
         await gateTransaction.CommitAsync();
-        await Task.WhenAll(reportTask, settlementTask).WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.WhenAll(reportTask, settlementTask, machineTask).WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
         var cost = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -101,6 +127,10 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Single(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperation);
         Assert.Single(await assertDb.OperationLaborSettlements.ToListAsync());
         Assert.Single(await assertDb.OperationLaborCoveredReports.ToListAsync());
+        Assert.Equal(80m, cost.MachineOverheadCost);
+        Assert.Single(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperation);
+        Assert.Single(await assertDb.OperationMachineOverheadSettlements.ToListAsync());
+        Assert.Equal(1, (await assertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
@@ -593,6 +623,21 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             seed.OperationLaborSettlements.Add(settlement);
             seed.OperationLaborSettlementVoids.Add(OperationLaborSettlementVoid.Create(settlement, DateTimeOffset.Parse("2026-08-31T16:00:00Z"), "evt-void", new string('b', 64)));
             seed.OperationLaborCoveredReports.Add(OperationLaborCoveredReport.Create("org-unique", "env-unique", "WO-UNIQUE", "OP-UNIQUE", 1, "RPT-UNIQUE"));
+            var machineRate = WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-unique", "env-unique", "WC-UNIQUE", "2026-08",
+                30_000m, 10_000m, 1_000m, "CNY", 1,
+                "system:test", "machine unique proof", DateTimeOffset.Parse("2026-08-01T00:00:00Z"));
+            seed.WorkCenterMachineOverheadRates.Add(machineRate);
+            var machineSettlement = OperationMachineOverheadSettlement.CreateApplied(
+                "org-unique", "env-unique", "WO-UNIQUE", "OP-UNIQUE", "WC-UNIQUE", 1,
+                DateTimeOffset.Parse("2026-08-31T15:00:00Z"), "DEVICE-UNIQUE",
+                TimeSpan.TicksPerHour, MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1,
+                machineRate.Id, "2026-08", 1, "CNY", 30m, 10m,
+                "evt-machine-unique", new string('e', 64));
+            seed.OperationMachineOverheadSettlements.Add(machineSettlement);
+            seed.OperationMachineOverheadSettlementVoids.Add(OperationMachineOverheadSettlementVoid.Create(
+                machineSettlement, DateTimeOffset.Parse("2026-08-31T16:00:00Z"),
+                "evt-machine-void", new string('f', 64)));
             await seed.SaveChangesAsync();
         }
 
@@ -608,11 +653,29 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         });
         await AssertConstraintAsync(options, "ux_operation_labor_covered_reports_report", db =>
             db.OperationLaborCoveredReports.Add(OperationLaborCoveredReport.Create("org-unique", "env-unique", "WO-DUP", "OP-DUP", 2, "RPT-UNIQUE")));
+        await AssertConstraintAsync(options, "ux_op_machine_overhead_settlements_identity", db =>
+        {
+            var rateId = db.WorkCenterMachineOverheadRates.Select(x => x.Id).Single();
+            db.OperationMachineOverheadSettlements.Add(OperationMachineOverheadSettlement.CreateApplied(
+                "org-unique", "env-unique", "WO-DUP", "OP-UNIQUE", "WC-UNIQUE", 1,
+                DateTimeOffset.Parse("2026-08-31T15:00:00Z"), "DEVICE-DUP", TimeSpan.TicksPerHour,
+                MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1,
+                rateId, "2026-08", 1, "CNY", 30m, 10m, "evt-machine-dup", new string('1', 64)));
+        });
+        await AssertConstraintAsync(options, "ux_op_machine_overhead_settlement_voids_identity", db =>
+        {
+            var settlement = db.OperationMachineOverheadSettlements.Single();
+            db.OperationMachineOverheadSettlementVoids.Add(OperationMachineOverheadSettlementVoid.Create(
+                settlement, DateTimeOffset.Parse("2026-08-31T17:00:00Z"),
+                "evt-machine-void-dup", new string('2', 64)));
+        });
 
         await using var verify = new ApplicationDbContext(options, new NoopMediator());
         Assert.Equal(1, await verify.OperationLaborSettlements.CountAsync());
         Assert.Equal(1, await verify.OperationLaborSettlementVoids.CountAsync());
         Assert.Equal(1, await verify.OperationLaborCoveredReports.CountAsync());
+        Assert.Equal(1, await verify.OperationMachineOverheadSettlements.CountAsync());
+        Assert.Equal(1, await verify.OperationMachineOverheadSettlementVoids.CountAsync());
     }
 
     private static async Task AssertConstraintAsync(DbContextOptions<ApplicationDbContext> options, string constraintName, Action<ApplicationDbContext> arrange)

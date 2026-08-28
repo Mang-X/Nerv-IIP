@@ -38,6 +38,7 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Finished-good SKU code.");
         builder.Property(x => x.LaborCurrencyCode).HasColumnName("labor_currency_code").HasMaxLength(3).IsFixedLength().HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
+        builder.Property(x => x.MachineOverheadCurrencyCode).HasColumnName("machine_overhead_currency_code").HasMaxLength(3).IsFixedLength().HasComment("Frozen machine-overhead currency; it must match priced labor when both exist.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).HasComment("MES good quantity at completion.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("MES completion timestamp.");
         builder.Property(x => x.CapitalizedCost).HasColumnName("capitalized_cost").HasPrecision(18, 6).HasComment("Finished-goods inventory value posted for this work order.");
@@ -48,7 +49,7 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ExpectedMaterialMovementCount).HasColumnName("expected_material_movement_count").HasComment("MES completion count of expected material postings.");
         builder.Property(x => x.ReceivedMaterialMovementCount).HasColumnName("received_material_movement_count").HasComment("Actual Inventory material postings received by ERP.");
         builder.Property(x => x.CapitalizationPublished).HasColumnName("capitalization_published").HasComment("Whether the cost-ready capitalization event has been published.");
-        builder.Ignore(x => x.LaborCost); builder.Ignore(x => x.MaterialCost); builder.Ignore(x => x.TotalAccumulatedCost); builder.Ignore(x => x.VarianceCost);
+        builder.Ignore(x => x.LaborCost); builder.Ignore(x => x.MaterialCost); builder.Ignore(x => x.MachineOverheadCost); builder.Ignore(x => x.TotalAccumulatedCost); builder.Ignore(x => x.VarianceCost);
         builder.HasMany(x => x.Details).WithOne().HasForeignKey("WorkOrderCostId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Details).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId }).IsUnique();
@@ -85,6 +86,8 @@ public sealed class WorkOrderCostDetailEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.ReportNo).HasColumnName("report_no").HasMaxLength(100).HasComment("MES report number for material-to-work-order correlation.");
         builder.Property(x => x.LaborBasis).HasColumnName("labor_basis").HasConversion<string>().HasMaxLength(50).HasComment("Labor costing basis: theoretical report, actual operation, or append-only reversal/replacement.");
         builder.Property(x => x.LaborLineageId).HasColumnName("labor_lineage_id").HasMaxLength(200).HasComment("Stable MES report or operation-settlement lineage for auditable labor replacement and reversal.");
+        builder.Property(x => x.MachineOverheadBasis).HasColumnName("machine_overhead_basis").HasConversion<string>().HasMaxLength(50).HasComment("Machine-overhead basis: actual operation, explicit not-applicable, or append-only reversal/supersession.");
+        builder.Property(x => x.MachineOverheadLineageId).HasColumnName("machine_overhead_lineage_id").HasMaxLength(200).HasComment("Stable MES operation-settlement lineage for machine-overhead audit.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Labor hours or material quantity.");
         builder.Property(x => x.Rate).HasColumnName("rate").HasPrecision(18, 6).HasComment("Hourly rate or moving-average unit cost.");
         builder.Property(x => x.Amount).HasColumnName("amount").HasPrecision(18, 6).HasComment("Signed actual cost amount.");
