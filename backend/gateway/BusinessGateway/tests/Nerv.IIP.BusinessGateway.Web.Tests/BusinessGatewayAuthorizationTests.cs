@@ -540,7 +540,8 @@ public sealed class BusinessGatewayAuthorizationTests
             environmentId = "env-dev",
             workOrderId = "WO-001",
             operationTaskId = "OP-10",
-            deviceAssetId = "device-001",
+            objectType = "deviceAsset",
+            scannedObjectId = "device-001",
         },
         "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
         "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
