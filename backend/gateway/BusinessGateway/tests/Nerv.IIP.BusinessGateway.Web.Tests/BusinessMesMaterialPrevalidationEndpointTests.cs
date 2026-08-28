@@ -13,6 +13,41 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessMesMaterialPrevalidationEndpointTests
 {
     [Fact]
+    public async Task Context_prevalidation_facade_preserves_the_resolved_strong_id_contract()
+    {
+        var mes = new RecordingContextMesClient();
+        await using var lease = BusinessGatewayTestHost.Lease(
+            FakeBusinessGatewayAuthorizationClient.Allowed(),
+            services =>
+            {
+                services.RemoveAll<IBusinessMesContextPrevalidationClient>();
+                services.AddSingleton<IBusinessMesContextPrevalidationClient>(mes);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(
+                    new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/context-scan-prevalidation",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+                userId = "worker-001",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(mes.LastRequest);
+        Assert.Equal("worker-001", mes.LastRequest.UserId);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.False(string.IsNullOrWhiteSpace(mes.LastCorrelationId));
+    }
+
+    [Fact]
     public async Task Generated_correlation_is_identical_in_response_log_scope_and_mes_call()
     {
         var loggerProvider = new ScopeRecordingLoggerProvider();
@@ -83,6 +118,32 @@ public sealed class BusinessMesMaterialPrevalidationEndpointTests
                 "LOT-001",
                 "primary",
                 DateTimeOffset.Parse("2026-08-26T08:00:00Z")));
+        }
+    }
+
+    private sealed class RecordingContextMesClient : IBusinessMesContextPrevalidationClient
+    {
+        public MesContextScanPrevalidationRequest? LastRequest { get; private set; }
+        public string? LastInternalToken { get; private set; }
+        public string? LastCorrelationId { get; private set; }
+
+        public Task<MesContextScanPrevalidationResponse> PrevalidateAsync(
+            string internalBearerToken,
+            string correlationId,
+            MesContextScanPrevalidationRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            LastInternalToken = internalBearerToken;
+            LastCorrelationId = correlationId;
+            return Task.FromResult(new MesContextScanPrevalidationResponse(
+                MesContextScanDecision.Accepted,
+                "personnel-scan-accepted",
+                request.WorkOrderId,
+                request.OperationTaskId,
+                MesContextScanObjectType.Personnel,
+                request.UserId!,
+                DateTimeOffset.Parse("2026-08-28T01:00:00Z")));
         }
     }
 
