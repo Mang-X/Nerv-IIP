@@ -3038,6 +3038,8 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("DT-MECH", mes.LastDowntimeEventListRequest!.ReasonCode);
+        // 取名走内部服务令牌，不消耗调用方自己的 Maintenance 权限。
+        Assert.Equal("local-internal-service-token", maintenance.LastInternalToken);
         // 跨域取名必须按当前请求的租户/环境查目录：串了范围就会拿别的组织的词表解名。
         Assert.Equal("org-001", maintenance.LastDowntimeReasonDirectoryRequest!.OrganizationId);
         Assert.Equal("env-dev", maintenance.LastDowntimeReasonDirectoryRequest!.EnvironmentId);
@@ -3088,6 +3090,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         // 取名与词表共用一次调用：多回一个字段不得把下游读放大成两次。
         Assert.Equal(1, maintenance.DowntimeReasonDirectoryCallCount);
+        // 判据 1 的承重机制：目录用内部服务令牌取，不转发调用方令牌——否则只授
+        // business.mes.downtime.read 的角色会因为缺 MaintenanceWorkOrdersRead 而拿到空词表。
+        // 断言的是「不是调用方令牌」这件事，光靠端点上只挂 MesDowntimeRead 证明不了。
+        Assert.Equal("local-internal-service-token", maintenance.LastInternalToken);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var catalog = document.RootElement.GetProperty("data").GetProperty("reasonCatalog");
         // 词表是整份目录，不是「本次数据里出现过的原因」：DT-PM 这次一条停机都没有，仍必须能筛。

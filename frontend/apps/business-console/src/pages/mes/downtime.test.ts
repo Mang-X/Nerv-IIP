@@ -478,6 +478,16 @@ describe('MES downtime reason read face', () => {
     ])
   })
 
+  // #2696：读面词表为空时**不得**回落到写面目录——回落会把「名称（码）」打回筛选下拉（破坏判据 3），
+  // 并且把只读角色重新绑回 MaintenanceWorkOrdersRead（破坏判据 1）。空就是空，那是门面取目录失败的实情。
+  it('does not fall back to the write-side directory when the read-face catalog is empty', () => {
+    reasonCatalog.value = []
+    const wrapper = mountPage()
+
+    const select = wrapper.findAll('select').find((item) => item.text().includes('全部原因'))
+    expect(select!.findAll('option').map((option) => option.text())).toEqual(['全部原因'])
+  })
+
   // #2696 判据 3：读面三处（原因列、时长构成卡分段、筛选下拉）对同一原因必须是同一串纯名称。
   it('shows one and the same plain reason name across the column, the breakdown card and the filter', () => {
     const wrapper = mountPage({

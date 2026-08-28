@@ -2019,6 +2019,8 @@ internal static class MesDowntimeReasonNameEnricher
     /// <summary>
     /// 停机原因目录是受控词表（当前世界史种子 5 条），一页取回即可覆盖。目录真超过这一页时本方法
     /// **静默截断**：多出来的码解不出名字，与「目录里没有这个码」落在同一条降级路径上。
+    /// #2696 之后这条截断的后果更重：被截掉的码不只是没有中文名，它们**根本进不了读面的原因筛选下拉**
+    /// （<c>ReasonCatalog</c> 同样只含取回的这一页），用户在界面上筛不出这些原因。
     /// </summary>
     private const int CatalogPageSize = 200;
 
