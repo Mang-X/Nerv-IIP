@@ -887,12 +887,19 @@ public sealed class QualityInspectionTaskWorkflowTests
     {
         await using var dbContext = CreateDbContext(nameof(Mes_first_production_report_opens_first_article_task_with_stable_trigger_key));
         var plan = ActivePlan("PLAN-FA-1000", "first-article", "SKU-FG-1000", "WC-MIX");
-        dbContext.InspectionPlans.Add(plan);
-        dbContext.PeriodicInspectionOperations.Add(ReleasedOperation("WO-001", "OP-10", "SKU-FG-1000", "WC-MIX"));
+        var otherSkuPlan = ActivePlan("PLAN-FA-2000", "first-article", "SKU-FG-2000", "WC-MIX");
+        dbContext.InspectionPlans.AddRange(plan, otherSkuPlan);
+        dbContext.PeriodicInspectionOperations.AddRange(
+            ReleasedOperation("WO-001", "OP-10", "SKU-FG-1000", "WC-MIX"),
+            // 每条对照行只在一个维度上与被查工序不同，且都挂着能命中首件档的另一个 SKU：
+            // SKU 反查少任何一条谓词都会取到错误 SKU 或命中多行。
+            ReleasedOperation("WO-001", "OP-20", "SKU-FG-2000", "WC-MIX"),
+            ReleasedOperation("WO-002", "OP-10", "SKU-FG-2000", "WC-MIX"),
+            ReleasedOperation("WO-001", "OP-10", "SKU-FG-2000", "WC-MIX", organizationId: "org-002"));
         await dbContext.SaveChangesAsync();
         var handler = CreateMesFirstArticleHandler(dbContext);
 
-        await handler.HandleAsync(MesProductionReportRecorded("RPT-001", "WO-001", "OP-10", "WC-MIX", 1m), CancellationToken.None);
+        await handler.HandleAsync(MesProductionReportRecorded("RPT-001", "WO-001", "OP-10", "WC-MIX", 8m), CancellationToken.None);
 
         var task = await dbContext.InspectionTasks.SingleAsync();
         Assert.Equal(InspectionTaskStatuses.Pending, task.Status);
@@ -902,6 +909,7 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal("WO-001", task.SourceDocumentId);
         Assert.Equal("OP-10", task.SourceDocumentLineId);
         Assert.Equal("SKU-FG-1000", task.SkuCode);
+        // 首件取样数量恒为 1，不随本次报工良品数（8）变动。
         Assert.Equal(1m, task.Quantity);
         Assert.Equal("pcs", task.UomCode);
         Assert.Equal("quality:first-article:org-001:env-dev:WO-001:OP-10", task.TriggerIdempotencyKey);
@@ -922,6 +930,29 @@ public sealed class QualityInspectionTaskWorkflowTests
 
         var task = await dbContext.InspectionTasks.SingleAsync();
         Assert.Equal(1m, task.Quantity);
+    }
+
+    [Fact]
+    public async Task Mes_first_article_tasks_are_opened_per_operation_of_the_same_work_order()
+    {
+        await using var dbContext = CreateDbContext(nameof(Mes_first_article_tasks_are_opened_per_operation_of_the_same_work_order));
+        dbContext.InspectionPlans.AddRange(
+            ActivePlan("PLAN-FA-1000", "first-article", "SKU-FG-1000", "WC-MIX"),
+            ActivePlan("PLAN-FA-1000-ASSY", "first-article", "SKU-FG-1000", "WC-ASSY"));
+        dbContext.PeriodicInspectionOperations.AddRange(
+            ReleasedOperation("WO-001", "OP-10", "SKU-FG-1000", "WC-MIX"),
+            ReleasedOperation("WO-001", "OP-20", "SKU-FG-1000", "WC-ASSY"));
+        await dbContext.SaveChangesAsync();
+        var handler = CreateMesFirstArticleHandler(dbContext);
+
+        await handler.HandleAsync(MesProductionReportRecorded("RPT-001", "WO-001", "OP-10", "WC-MIX", 1m), CancellationToken.None);
+        await handler.HandleAsync(MesProductionReportRecorded("RPT-002", "WO-001", "OP-20", "WC-ASSY", 1m), CancellationToken.None);
+
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.SourceDocumentLineId).ToListAsync();
+        Assert.Equal(["OP-10", "OP-20"], tasks.Select(x => x.SourceDocumentLineId));
+        Assert.Equal(
+            ["quality:first-article:org-001:env-dev:WO-001:OP-10", "quality:first-article:org-001:env-dev:WO-001:OP-20"],
+            tasks.Select(x => x.TriggerIdempotencyKey));
     }
 
     [Fact]
@@ -957,7 +988,7 @@ public sealed class QualityInspectionTaskWorkflowTests
 
         var task = await dbContext.InspectionTasks.SingleAsync();
         Assert.Equal("OP-10", task.SourceDocumentLineId);
-        Assert.Equal(2m, task.Quantity);
+        Assert.Equal("SKU-FG-1000", task.SkuCode);
     }
 
     [Fact]
@@ -986,9 +1017,10 @@ public sealed class QualityInspectionTaskWorkflowTests
         string workOrderId,
         string operationId,
         string skuCode,
-        string workCenterId)
+        string workCenterId,
+        string organizationId = "org-001")
     {
-        var operation = PeriodicInspectionOperation.CreatePending("org-001", "env-dev", workOrderId, operationId);
+        var operation = PeriodicInspectionOperation.CreatePending(organizationId, "env-dev", workOrderId, operationId);
         operation.ApplyRelease(skuCode, 10, workCenterId, DateTime.Parse("2026-07-05T07:00:00Z").ToUniversalTime(), []);
         return operation;
     }

@@ -234,8 +234,34 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
 }
 
 /// <summary>
+/// 首件检验任务的**唯一身份**（#2779）：写面按此键建任务，读面按同一键定位任务，两侧不得各写一份等价谓词。
+/// </summary>
+public static class FirstArticleInspection
+{
+    /// <summary>首件任务与首件检验档的来源环节，等于 <c>InspectionPlan.Category</c>。</summary>
+    public const string SourceType = "first-article";
+
+    /// <summary>首件任务的来源服务：触发事实来自 MES 报工。</summary>
+    public const string SourceService = "mes";
+
+    /// <summary>首件取样数量固定为 1 个报工单位，不随本次报工良品数变动。</summary>
+    public const decimal SampleQuantity = 1m;
+
+    /// <summary>
+    /// 按「工单 + 工序」构成，不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务；
+    /// 它同时是 <c>ux_inspection_tasks_scope_trigger_key</c> 上的读面定位键。
+    /// </summary>
+    public static string TriggerIdempotencyKey(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string operationId) =>
+        $"quality:first-article:{organizationId}:{environmentId}:{workOrderId}:{operationId}";
+}
+
+/// <summary>
 /// 首件触发点（#2779）：工单工序开工／换型后的第一件报工开出 <c>first-article</c> 检验任务。
-/// 幂等键按「工单 + 工序」构成而不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务。
+/// 报工事件不带换型标识，因此「换型」与「开工」在事件面不可分辨，同一工序只开一张首件任务。
 /// </summary>
 [IntegrationEventConsumer(nameof(ProductionReportRecordedIntegrationEvent), ConsumerName)]
 public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateFirstArticleInspectionTask(
@@ -291,19 +317,19 @@ public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateF
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "first-article",
-            sourceService: "mes",
+            sourceType: FirstArticleInspection.SourceType,
+            sourceService: FirstArticleInspection.SourceService,
             sourceDocumentId: payload.WorkOrderId,
             sourceDocumentLineId: payload.OperationTaskId,
             skuCode: skuCode,
-            quantity: payload.GoodQuantity,
+            quantity: FirstArticleInspection.SampleQuantity,
             uomCode: payload.UomCode,
             batchNo: null,
             serialNo: null,
             workCenterId: payload.WorkCenterId,
             sourceDocumentType: null,
             occurredAtUtc: integrationEvent.OccurredAtUtc,
-            triggerIdempotencyKey: FirstArticleTriggerIdempotencyKey(
+            triggerIdempotencyKey: FirstArticleInspection.TriggerIdempotencyKey(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 payload.WorkOrderId,
@@ -311,13 +337,6 @@ public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateF
             cancellationToken);
         await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
-
-    public static string FirstArticleTriggerIdempotencyKey(
-        string organizationId,
-        string environmentId,
-        string workOrderId,
-        string operationId) =>
-        $"quality:first-article:{organizationId}:{environmentId}:{workOrderId}:{operationId}";
 }
 
 internal static class InspectionTaskGeneration
@@ -492,7 +511,7 @@ internal static class InspectionTaskGeneration
             || message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static Task<InspectionPlan?> MatchPlanAsync(
+    public static Task<InspectionPlan?> MatchPlanAsync(
         ApplicationDbContext dbContext,
         string organizationId,
         string environmentId,
