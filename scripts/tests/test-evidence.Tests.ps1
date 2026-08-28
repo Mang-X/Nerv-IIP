@@ -3081,16 +3081,34 @@ $activeCoreMembers = @($postgresManifest.members | Where-Object {
     [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
 })
 $activeCoreIdentityCount = @($activeCoreMembers.expectedTestIdentities).Count
+$ciWorkflowSource = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
+$hostedMemberListMatch = [regex]::Match(
+    $ciWorkflowSource,
+    '(?s)- name: Run governed PostgreSQL profile members.*?\$members = @\((?<members>.*?)\).*?\./scripts/run-postgres-test-lane\.ps1')
+Assert-True $hostedMemberListMatch.Success 'Hosted PostgreSQL workflow member selection could not be resolved.'
+$hostedMemberIds = @(
+    [regex]::Matches($hostedMemberListMatch.Groups['members'].Value, "'(?<id>[^']+)'") |
+        ForEach-Object { $_.Groups['id'].Value }
+)
+Assert-Equal $hostedMemberIds.Count @($hostedMemberIds | Select-Object -Unique).Count 'Hosted PostgreSQL workflow member ids must be unique.'
+$hostedMembers = @(
+    foreach ($memberId in $hostedMemberIds) {
+        $matches = @($activeCoreMembers | Where-Object { [string]::Equals([string]$_.id, $memberId, [StringComparison]::Ordinal) })
+        Assert-Equal 1 $matches.Count "Hosted PostgreSQL workflow member '$memberId' must resolve to one active core manifest member."
+        $matches[0]
+    }
+)
+$hostedIdentityCount = @($hostedMembers.expectedTestIdentities).Count
 Assert-True ($governanceDoc.Contains("当前全部 $selectorCount 个选择器", [StringComparison]::Ordinal)) 'Governance document selector count must match the canonical backend shard manifest.'
 Assert-True ($governanceDoc.Contains("当前 active core manifest 为 $($activeCoreMembers.Count) 个成员、$activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document active/core totals must match the canonical PostgreSQL manifest.'
-Assert-True ($governanceDoc.Contains("顺序执行 $($activeCoreMembers.Count) 个 active core manifest member，共 $activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document hosted PostgreSQL execution totals must match the canonical manifest.'
+Assert-True ($governanceDoc.Contains("顺序执行 workflow 明确选择的 $($hostedMembers.Count) 个 active core manifest member，共 $hostedIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document hosted PostgreSQL execution totals must match the workflow selection.'
 $documentedServiceLabels = [ordered]@{
     Inventory = 'Inventory 的 '; MasterData = 'MasterData 的 '; Scheduling = 'Scheduling 的 '; AppHub = 'AppHub '
     BarcodeLabel = 'BarcodeLabel/FileStorage/Maintenance 各 '; FileStorage = 'BarcodeLabel/FileStorage/Maintenance 各 '; Maintenance = 'BarcodeLabel/FileStorage/Maintenance 各 '
     IndustrialTelemetry = 'IndustrialTelemetry '; Quality = 'Quality '; Mes = 'MES '; Wms = 'WMS '; Erp = 'ERP '; DemandPlanning = 'DemandPlanning '; Acceptance = '跨业务 Acceptance '
 }
 foreach ($service in $documentedServiceLabels.Keys) {
-    $serviceIdentityCount = @($activeCoreMembers | Where-Object { [string]::Equals([string]$_.service, $service, [StringComparison]::Ordinal) } | ForEach-Object { @($_.expectedTestIdentities) }).Count
+    $serviceIdentityCount = @($hostedMembers | Where-Object { [string]::Equals([string]$_.service, $service, [StringComparison]::Ordinal) } | ForEach-Object { @($_.expectedTestIdentities) }).Count
     Assert-True ($governanceDoc.Contains("$($documentedServiceLabels[$service])$serviceIdentityCount 个", [StringComparison]::Ordinal)) "Governance document $service identity count must match the canonical PostgreSQL manifest."
 }
 foreach ($requiredText in @(

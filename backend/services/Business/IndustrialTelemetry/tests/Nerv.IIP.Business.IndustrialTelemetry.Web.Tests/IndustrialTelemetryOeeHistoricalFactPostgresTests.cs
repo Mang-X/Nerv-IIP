@@ -48,16 +48,51 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(PreviousMigration);
 
+        const string organizationId = "org-001";
+        const string environmentId = "env-dev";
+        const string reportNo = "PRPT-OEE-LEGACY-001";
         var reportedAtUtc = DateTimeOffset.Parse("2026-08-14T17:30:45.123456Z");
         await using var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString);
         await connection.OpenAsync();
-        await InsertPriorSchemaFactAsync(connection, reportedAtUtc);
-        var priorRow = await ReadCoreFactJsonAsync(connection, "PRPT-OEE-LEGACY-001", subtractHistoricalColumns: false);
+        await InsertPriorSchemaFactAsync(
+            connection,
+            Guid.Parse("019c9cf4-45a2-7e2b-a102-0123456789aa"),
+            "org-other",
+            environmentId,
+            reportNo,
+            reportedAtUtc.AddMinutes(-1));
+        await InsertPriorSchemaFactAsync(
+            connection,
+            Guid.Parse("019c9cf4-45a2-7e2b-a102-0123456789ac"),
+            organizationId,
+            "env-other",
+            reportNo,
+            reportedAtUtc.AddMinutes(1));
+        await InsertPriorSchemaFactAsync(
+            connection,
+            Guid.Parse("019c9cf4-45a2-7e2b-a102-0123456789ab"),
+            organizationId,
+            environmentId,
+            reportNo,
+            reportedAtUtc);
+        var priorRow = await ReadCoreFactJsonAsync(
+            connection,
+            organizationId,
+            environmentId,
+            reportNo,
+            subtractHistoricalColumns: false);
 
         await migrator.MigrateAsync(TargetMigration);
-        Assert.Equal(priorRow, await ReadCoreFactJsonAsync(connection, "PRPT-OEE-LEGACY-001", subtractHistoricalColumns: true));
+        Assert.Equal(
+            priorRow,
+            await ReadCoreFactJsonAsync(
+                connection,
+                organizationId,
+                environmentId,
+                reportNo,
+                subtractHistoricalColumns: true));
         await AssertHistoricalColumnContractAsync(connection);
-        await AssertLegacyFactBackfillAsync(connection, "PRPT-OEE-LEGACY-001", reportedAtUtc);
+        await AssertLegacyFactBackfillAsync(connection, organizationId, environmentId, reportNo, reportedAtUtc);
 
         context.ChangeTracker.Clear();
         var resolvedAtUtc = DateTimeOffset.Parse("2026-08-15T01:00:00Z");
@@ -107,15 +142,34 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         await context.SaveChangesAsync();
 
         await migrator.MigrateAsync(PreviousMigration);
-        Assert.Equal(priorRow, await ReadCoreFactJsonAsync(connection, "PRPT-OEE-LEGACY-001", subtractHistoricalColumns: false));
+        Assert.Equal(
+            priorRow,
+            await ReadCoreFactJsonAsync(
+                connection,
+                organizationId,
+                environmentId,
+                reportNo,
+                subtractHistoricalColumns: false));
         Assert.Equal(
             ["PRPT-OEE-LEGACY-001", "PRPT-OEE-RESOLVED-001"],
-            await ReadReportNumbersAsync(connection));
+            await ReadReportNumbersAsync(connection, organizationId, environmentId));
 
         await migrator.MigrateAsync(TargetMigration);
-        Assert.Equal(priorRow, await ReadCoreFactJsonAsync(connection, "PRPT-OEE-LEGACY-001", subtractHistoricalColumns: true));
-        await AssertLegacyFactBackfillAsync(connection, "PRPT-OEE-LEGACY-001", reportedAtUtc);
-        await AssertLegacyFactBackfillAsync(connection, "PRPT-OEE-RESOLVED-001", resolvedAtUtc);
+        Assert.Equal(
+            priorRow,
+            await ReadCoreFactJsonAsync(
+                connection,
+                organizationId,
+                environmentId,
+                reportNo,
+                subtractHistoricalColumns: true));
+        await AssertLegacyFactBackfillAsync(connection, organizationId, environmentId, reportNo, reportedAtUtc);
+        await AssertLegacyFactBackfillAsync(
+            connection,
+            organizationId,
+            environmentId,
+            "PRPT-OEE-RESOLVED-001",
+            resolvedAtUtc);
     }
 
     // Contract: ProviderBehavior + DomainInvariant. Authority: Issue #2604 idempotency and scope acceptance.
@@ -234,7 +288,13 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
                 ShiftBreakMinutes: 30));
     }
 
-    private static async Task InsertPriorSchemaFactAsync(NpgsqlConnection connection, DateTimeOffset reportedAtUtc)
+    private static async Task InsertPriorSchemaFactAsync(
+        NpgsqlConnection connection,
+        Guid id,
+        string organizationId,
+        string environmentId,
+        string reportNo,
+        DateTimeOffset reportedAtUtc)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -242,30 +302,41 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
                 (id, organization_id, environment_id, source_report_no, work_center_id, device_asset_id,
                  good_quantity, scrap_quantity, rework_quantity, uom_code, theoretical_rate_per_hour, reported_at_utc)
             VALUES
-                (@id, 'org-001', 'env-dev', 'PRPT-OEE-LEGACY-001', 'WC-LEGACY-01', 'DEV-LEGACY-01',
+                (@id, @organization_id, @environment_id, @report_no, 'WC-LEGACY-01', 'DEV-LEGACY-01',
                  12.345678, 1.250000, 0.500000, 'PCS', 42.125000, @reported_at_utc);
             """;
-        command.Parameters.AddWithValue("id", Guid.Parse("019c9cf4-45a2-7e2b-a102-0123456789ab"));
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("environment_id", environmentId);
+        command.Parameters.AddWithValue("report_no", reportNo);
         command.Parameters.AddWithValue("reported_at_utc", reportedAtUtc);
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task<string> ReadCoreFactJsonAsync(
         NpgsqlConnection connection,
+        string organizationId,
+        string environmentId,
         string reportNo,
         bool subtractHistoricalColumns)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = subtractHistoricalColumns
-            ? "SELECT (to_jsonb(fact) - @columns)::text FROM industrial_telemetry.oee_production_facts AS fact WHERE source_report_no = @report_no"
-            : "SELECT to_jsonb(fact)::text FROM industrial_telemetry.oee_production_facts AS fact WHERE source_report_no = @report_no";
+            ? "SELECT (to_jsonb(fact) - @columns)::text FROM industrial_telemetry.oee_production_facts AS fact WHERE organization_id = @organization_id AND environment_id = @environment_id AND source_report_no = @report_no"
+            : "SELECT to_jsonb(fact)::text FROM industrial_telemetry.oee_production_facts AS fact WHERE organization_id = @organization_id AND environment_id = @environment_id AND source_report_no = @report_no";
         if (subtractHistoricalColumns)
         {
             command.Parameters.AddWithValue("columns", HistoricalColumns);
         }
 
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("environment_id", environmentId);
         command.Parameters.AddWithValue("report_no", reportNo);
-        return (string)(await command.ExecuteScalarAsync())!;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var json = reader.GetString(0);
+        Assert.False(await reader.ReadAsync(), "Expected the OEE fact identity to resolve to exactly one organization/environment/report tuple.");
+        return json;
     }
 
     private static async Task AssertHistoricalColumnContractAsync(NpgsqlConnection connection)
@@ -305,6 +376,8 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
 
     private static async Task AssertLegacyFactBackfillAsync(
         NpgsqlConnection connection,
+        string organizationId,
+        string environmentId,
         string reportNo,
         DateTimeOffset reportedAtUtc)
     {
@@ -315,8 +388,12 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
                    shift_bucket_end_utc, shift_bucket_start_utc, shift_code, shift_crosses_midnight,
                    shift_ends_at, shift_paid_minutes, shift_starts_at, site_code, site_timezone, workshop_code
             FROM industrial_telemetry.oee_production_facts
-            WHERE source_report_no = @report_no
+            WHERE organization_id = @organization_id
+              AND environment_id = @environment_id
+              AND source_report_no = @report_no
             """;
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("environment_id", environmentId);
         command.Parameters.AddWithValue("report_no", reportNo);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -326,12 +403,19 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         {
             Assert.True(reader.IsDBNull(index), $"Expected {reader.GetName(index)} to remain null for a prior-schema fact.");
         }
+
+        Assert.False(await reader.ReadAsync(), "Expected the legacy OEE backfill identity to resolve to exactly one organization/environment/report tuple.");
     }
 
-    private static async Task<string[]> ReadReportNumbersAsync(NpgsqlConnection connection)
+    private static async Task<string[]> ReadReportNumbersAsync(
+        NpgsqlConnection connection,
+        string organizationId,
+        string environmentId)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT source_report_no FROM industrial_telemetry.oee_production_facts ORDER BY source_report_no";
+        command.CommandText = "SELECT source_report_no FROM industrial_telemetry.oee_production_facts WHERE organization_id = @organization_id AND environment_id = @environment_id ORDER BY source_report_no";
+        command.Parameters.AddWithValue("organization_id", organizationId);
+        command.Parameters.AddWithValue("environment_id", environmentId);
         await using var reader = await command.ExecuteReaderAsync();
         var reportNumbers = new List<string>();
         while (await reader.ReadAsync())
