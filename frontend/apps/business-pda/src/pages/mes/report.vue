@@ -129,6 +129,7 @@ const telemetryWorkOrderId = ref('')
 const telemetryOperationTaskId = ref('')
 const telemetryDismissReason = ref('')
 const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
 const scanGuarded = scanGate.guarded
 const validatedDeviceAssetId = ref('')
 const validatedPersonnelId = ref('')
@@ -148,7 +149,7 @@ async function promoteTelemetryCandidate(candidate: {
   workOrderId?: string | null
   operationTaskId?: string | null
 }) {
-  if (scanGuarded.value) return
+  if (scanPending.value) return
   if (!candidate.candidateId) return
   const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
   const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
@@ -158,7 +159,7 @@ async function promoteTelemetryCandidate(candidate: {
   resetTelemetryAction()
 }
 async function dismissTelemetryCandidate(candidateId?: string) {
-  if (scanGuarded.value) return
+  if (scanPending.value) return
   if (!candidateId || !telemetryDismissReason.value.trim()) return
   await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
   telemetryCandidateId.value = null
@@ -350,10 +351,12 @@ const operationTaskEmptyExplanation = computed(
 
 // --- 步骤操作 ---
 function chooseWorkOrder(wo: WorkOrder) {
+  scanGate.clear('list')
   void bindWorkOrder(wo)
 }
 
 function chooseTask(task: Task) {
+  scanGate.clear('list')
   void bindTask(task)
 }
 
@@ -650,11 +653,11 @@ async function onScanAccepted(value: MesScanAccepted) {
               <NvMobileButton
                 variant="primary"
                 @click="promoteTelemetryCandidate(candidate)"
-                :disabled="scanGuarded"
+                :disabled="scanPending"
                 >确认转正</NvMobileButton
               ><NvMobileButton
                 variant="outline"
-                :disabled="!telemetryDismissReason.trim() || scanGuarded"
+                :disabled="!telemetryDismissReason.trim() || scanPending"
                 @click="dismissTelemetryCandidate(candidate.candidateId)"
                 >忽略</NvMobileButton
               >

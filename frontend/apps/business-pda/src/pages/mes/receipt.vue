@@ -137,6 +137,7 @@ const submitting = ref(false)
 // 开始新完工入库（重新打开新建、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
 const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
 const scanGuarded = scanGate.guarded
 const scannedWorkOrderId = ref('')
 const scannedOperationTaskId = ref('')
@@ -162,6 +163,7 @@ function resetForm() {
 }
 
 function openCreate() {
+  scanGate.clear('list')
   result.value = null
   resetForm()
   creating.value = true
@@ -275,7 +277,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           data-testid="new-receipt"
-          :disabled="scanGuarded"
+          :disabled="scanPending"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >

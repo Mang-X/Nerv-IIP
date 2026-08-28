@@ -139,6 +139,7 @@ const submitting = ref(false)
 const operationKey = ref('')
 const returnOperationKey = ref('')
 const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
 const scanGuarded = scanGate.guarded
 const scannedWorkOrderId = ref('')
 const scannedOperationTaskId = ref('')
@@ -166,6 +167,7 @@ const createSheetOpen = computed({
 })
 
 function openCreate() {
+  scanGate.clear('list')
   result.value = null
   selectedWorkOrder.value = null
   issueMaterialId.value = ''
@@ -254,6 +256,7 @@ function canReceive(req: IssueRequest) {
 
 function openReceive(req: IssueRequest) {
   if (!canReceive(req)) return
+  scanGate.clear('list')
   result.value = null
   // 新一轮线边接收 → 作废上一个幂等键
   operationKey.value = ''
@@ -271,6 +274,7 @@ function canReturn(req: IssueRequest) {
 
 function openReturn(req: IssueRequest) {
   if (!canReturn(req)) return
+  scanGate.clear('list')
   result.value = null
   returnOperationKey.value = makeIdempotencyKey()
   returning.value = req
@@ -458,7 +462,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           data-testid="new-issue"
-          :disabled="scanGuarded"
+          :disabled="scanPending"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -586,7 +590,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
               v-if="canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
-              :disabled="scanGuarded"
+              :disabled="scanPending"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReceive(req)"
             >
@@ -596,7 +600,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
               v-if="canReturn(req)"
               type="button"
               :data-testid="`return-${req.requestId}`"
-              :disabled="scanGuarded"
+              :disabled="scanPending"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReturn(req)"
             >

@@ -288,6 +288,7 @@ function restoreTaskListState(state: { filters: Record<string, unknown> }) {
 
 function openSheet(task: Task) {
   if (operationResultUnknown.value) return
+  scanGate.clear('list')
   const selectionIdentity = `${task.workOrderId ?? ''}\u0000${task.operationTaskId ?? ''}`
   if (operationSelectionIdentity.value !== selectionIdentity) {
     operationSelectionIdentity.value = selectionIdentity

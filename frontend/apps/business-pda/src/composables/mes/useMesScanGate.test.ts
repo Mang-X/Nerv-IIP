@@ -27,4 +27,14 @@ describe('useMesScanGate', () => {
     gate.set('context', 'resolved')
     expect(gate.guarded.value).toBe(false)
   })
+
+  it('drops an abandoned scanner intent from the page gate', () => {
+    const gate = useMesScanGate()
+
+    gate.set('list', 'unknown')
+    expect(gate.guarded.value).toBe(true)
+
+    gate.clear('list')
+    expect(gate.guarded.value).toBe(false)
+  })
 })

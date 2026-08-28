@@ -15,7 +15,15 @@ export function useMesScanGate() {
   const statuses = shallowReactive(new Map<string, MesScanPrevalidationStatus>())
 
   function set(source: string, status: MesScanPrevalidationStatus) {
+    if (status === 'idle') {
+      statuses.delete(source)
+      return
+    }
     statuses.set(source, status)
+  }
+
+  function clear(source: string) {
+    statuses.delete(source)
   }
 
   const pending = computed(() => [...statuses.values()].some((status) => status === 'pending'))
@@ -23,5 +31,5 @@ export function useMesScanGate() {
     () => pending.value || [...statuses.values()].some((status) => blockingStatuses.has(status)),
   )
 
-  return { set, pending, guarded }
+  return { set, clear, pending, guarded }
 }

@@ -145,4 +145,19 @@ describe('MesScanPrevalidation', () => {
 
     expect(state.reset).toHaveBeenCalledOnce()
   })
+
+  it('abandons the scanner intent when its page context becomes inactive', async () => {
+    const wrapper = mount(MesScanPrevalidation, {
+      props: {
+        organizationId: 'org-1',
+        environmentId: 'env-1',
+        acceptedKinds: ['work-order'],
+        active: true,
+      },
+    })
+
+    await wrapper.setProps({ active: false })
+
+    expect(state.reset).toHaveBeenCalledOnce()
+  })
 })

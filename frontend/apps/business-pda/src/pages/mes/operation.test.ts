@@ -341,6 +341,25 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
+  it('does not carry an abandoned list scan failure into a manually selected task', async () => {
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    const listScanner = wrapper.getComponent({ name: 'MesScanPrevalidation' })
+    await listScanner.vm.$emit('statusChange', 'unknown')
+
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const contextScanner = wrapper
+      .findAllComponents({ name: 'MesScanPrevalidation' })
+      .find((scanner) => (scanner.props('acceptedKinds') as string[]).includes('device'))!
+    await contextScanner.vm.$emit('statusChange', 'resolved')
+    await nextTick()
+
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="action-pause"]')!.disabled,
+    ).toBe(false)
+    wrapper.unmount()
+  })
+
   it('keeps concurrent scanners aggregated and records validated device and personnel context', async () => {
     const wrapper = mount(OperationPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')

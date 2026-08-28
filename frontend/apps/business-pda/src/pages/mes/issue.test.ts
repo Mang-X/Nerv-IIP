@@ -326,6 +326,16 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.get('[data-testid="issue-scanned-material"]').text()).toContain('已核验')
   })
 
+  it('allows a new manual issue intent after a failed list scan', async () => {
+    const wrapper = mount(IssuePage)
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('statusChange', 'unknown')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="new-issue"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="new-issue"]').trigger('click')
+    expect(wrapper.text()).toContain('新建领料')
+  })
+
   it('creates an issue with the bound fields and a page-supplied idempotencyKey', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 

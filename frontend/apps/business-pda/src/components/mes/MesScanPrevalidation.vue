@@ -45,6 +45,13 @@ const scanner = useMesScanPrevalidation({
 
 watch(scanner.pending, (pending) => emit('pendingChange', pending), { flush: 'sync' })
 watch(scanner.status, (status) => emit('statusChange', status), { flush: 'sync' })
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) scanner.reset()
+  },
+  { flush: 'sync' },
+)
 onBeforeUnmount(scanner.reset)
 
 const alert = computed(() =>
