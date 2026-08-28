@@ -442,10 +442,11 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       'business.mes.operations.read',
     ])
     expect(button(withoutPermission, '登记缺陷').attributes('disabled')).toBeDefined()
-    // 该夹具只缺 quality.write：operations.read 仍在，故 eligibleOperationTasks 内部的权限判空
-    // 不是本用例要抓的那条。若删掉 defectEntryBlocker 里 `!canWriteQuality.value` 那一条早返回，
-    // blocker 会落到 eligibleOperationTasks.length === 0 分支，给出另一句文案——精确文案断言能
-    // 抓住这条差异，仅凭 disabled 状态抓不住（下一条守卫仍会让按钮保持禁用）。
+    // 此刻组织/环境/写入范围/工序全部就绪，唯独缺 quality.write：eligibleOperationTasks
+    // 内部同样判空这条权限，故仅凭 disabled 状态抓不住 defectEntryBlocker 里
+    // `!canWriteQuality.value` 这第一条早返回——删掉它后 blocker 会落到
+    // eligibleOperationTasks.length === 0 分支，给出另一句文案，disabled 依旧为真。
+    // 精确文案断言能抓住这条差异。
     expect(button(withoutPermission, '登记缺陷').attributes('title')).toBe('没有缺陷登记权限')
 
     coversWorkOrder.mockImplementation(({ operationTasks }) =>
