@@ -1,0 +1,554 @@
+using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
+using Nerv.IIP.Contracts.EquipmentRuntime;
+
+namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+
+public static class OeeAggregateDimensions
+{
+    public const string Device = "device";
+    public const string WorkCenter = "workCenter";
+    public const string Line = "line";
+    public const string Workshop = "workshop";
+    public const string Shift = "shift";
+    public const string Day = "day";
+    public static readonly TimeSpan MaximumWindow = TimeSpan.FromDays(31);
+
+    public static bool IsSupported(string value) =>
+        value is Device or WorkCenter or Line or Workshop or Shift or Day;
+}
+
+public static class OeeAggregateMaterializationLimits
+{
+    public const int MaximumProductionFactCount = 10_000;
+    public const int MaximumStateSampleCount = 10_000;
+}
+
+internal static class OeeAggregateQueryPlan
+{
+    internal static IQueryable<OeeProductionFact> BuildFacts(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request) =>
+        dbContext.OeeProductionFacts
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.AggregationOccurredAtUtc >= request.WindowStartUtc)
+            .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc)
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => request.WorkCenterId == null || x.WorkCenterId == request.WorkCenterId)
+            .Where(x => request.ShiftCode == null || x.ShiftCode == request.ShiftCode)
+            .Where(x => request.LineCode == null || x.LineCode == request.LineCode)
+            .Where(x => request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode)
+            .Where(x => request.BusinessDate == null || x.BusinessDate == request.BusinessDate)
+            .OrderBy(x => x.AggregationOccurredAtUtc)
+            .ThenBy(x => x.SourceReportNo)
+            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1);
+
+    internal static IQueryable<DeviceStateSnapshot> BuildInWindowStates(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request,
+        IReadOnlyCollection<string> deviceIds,
+        DateTimeOffset earliestStart,
+        DateTimeOffset latestEnd,
+        int maximumRows) =>
+        dbContext.DeviceStateSnapshots
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => deviceIds.Contains(x.DeviceAssetId))
+            .Where(x => x.OccurredAtUtc >= earliestStart)
+            .Where(x => x.OccurredAtUtc < latestEnd)
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.RecordedAtUtc)
+            .ThenBy(x => x.SourceSequence)
+            .Take(maximumRows + 1);
+
+    internal static IQueryable<DeviceStateSnapshot> BuildCarryInStates(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request,
+        IReadOnlyCollection<string> deviceIds,
+        DateTimeOffset earliestStart) =>
+        dbContext.DeviceStateSnapshots
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => deviceIds.Contains(x.DeviceAssetId))
+            .Where(x => x.OccurredAtUtc < earliestStart)
+            .GroupBy(x => x.DeviceAssetId)
+            .Select(group => group
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .ThenByDescending(x => x.RecordedAtUtc)
+                .ThenByDescending(x => x.SourceSequence)
+                .First())
+            .Take(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1);
+}
+
+public sealed record QueryOeeAggregateBucketsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetId = null,
+    string? WorkCenterId = null,
+    string? ShiftCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    DateOnly? BusinessDate = null) : IQuery<OeeAggregateBucketsResponse>;
+
+public sealed record OeeAggregateBucketsResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    IReadOnlyCollection<OeeAggregateBucket> Buckets);
+
+public sealed record OeeAggregateBucket(
+    string Dimension,
+    string? DimensionValue,
+    string? SiteCode,
+    string? WorkshopCode,
+    string? LineCode,
+    string? WorkCenterId,
+    string? DeviceAssetId,
+    string? ShiftCode,
+    DateOnly? BusinessDate,
+    DateTimeOffset BucketStartUtc,
+    DateTimeOffset BucketEndUtc,
+    int DeviceCount,
+    int StateSampleCount,
+    int ProductionFactCount,
+    decimal? AvailabilityRate,
+    decimal? PerformanceRate,
+    decimal? QualityRate,
+    decimal? OeeRate,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    string? OutputUomCode,
+    decimal? ExpectedOutputQuantity,
+    bool IsDegraded,
+    IReadOnlyCollection<string> DegradedReasons);
+
+public sealed class QueryOeeAggregateBucketsQueryValidator : AbstractValidator<QueryOeeAggregateBucketsQuery>
+{
+    public QueryOeeAggregateBucketsQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Dimension).Must(OeeAggregateDimensions.IsSupported);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+        RuleFor(x => x.WindowEndUtc)
+            .Must((query, endUtc) => endUtc - query.WindowStartUtc <= OeeAggregateDimensions.MaximumWindow)
+            .WithMessage("OEE aggregate window cannot exceed 31 days.");
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.LineCode).MaximumLength(100);
+        RuleFor(x => x.WorkshopCode).MaximumLength(100);
+    }
+}
+
+public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryOeeAggregateBucketsQuery, OeeAggregateBucketsResponse>
+{
+    public async Task<OeeAggregateBucketsResponse> Handle(
+        QueryOeeAggregateBucketsQuery request,
+        CancellationToken cancellationToken)
+    {
+        var facts = await OeeAggregateQueryPlan.BuildFacts(dbContext, request).ToArrayAsync(cancellationToken);
+        if (facts.Length > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
+        }
+        if (facts.Length == 0)
+        {
+            return Response(request, []);
+        }
+
+        var groups = facts
+            .GroupBy(x => BucketKey.From(x, request))
+            .Select(group => new FactBucket(
+                group.Key,
+                group.ToArray(),
+                group.Key.StartUtc < request.WindowStartUtc ? request.WindowStartUtc : group.Key.StartUtc,
+                group.Key.EndUtc > request.WindowEndUtc ? request.WindowEndUtc : group.Key.EndUtc))
+            .Where(x => x.EndUtc > x.StartUtc)
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.Key.DimensionValue, StringComparer.Ordinal)
+            .ThenBy(x => x.Key.SiteCode, StringComparer.Ordinal)
+            .ThenBy(x => x.Key.WorkshopCode, StringComparer.Ordinal)
+            .ThenBy(x => x.Key.LineCode, StringComparer.Ordinal)
+            .ThenBy(x => x.Key.BusinessDate)
+            .ToArray();
+        if (groups.Length == 0)
+        {
+            return Response(request, []);
+        }
+
+        var deviceIds = facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
+        var earliestStart = groups.Min(x => x.StartUtc);
+        var latestEnd = groups.Max(x => x.EndUtc);
+        var carryIns = await OeeAggregateQueryPlan
+            .BuildCarryInStates(dbContext, request, deviceIds, earliestStart)
+            .ToArrayAsync(cancellationToken);
+        EnsureStateMaterializationLimit(carryIns.Length);
+        var remainingStateCapacity = OeeAggregateMaterializationLimits.MaximumStateSampleCount - carryIns.Length;
+        var inWindowStates = await OeeAggregateQueryPlan
+            .BuildInWindowStates(dbContext, request, deviceIds, earliestStart, latestEnd, remainingStateCapacity)
+            .ToArrayAsync(cancellationToken);
+        EnsureStateMaterializationLimit(carryIns.Length + inWindowStates.Length);
+        var statesByDevice = carryIns
+            .Concat(inWindowStates)
+            .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
+            .ToDictionary(
+                x => x.Key,
+                x => (IReadOnlyList<DeviceStateSnapshot>)x
+                    .OrderBy(y => y.OccurredAtUtc)
+                    .ThenBy(y => y.RecordedAtUtc)
+                    .ThenBy(y => y.SourceSequence, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
+        var devicesWithAmbiguousHistoricalDimension = FindDevicesWithAmbiguousHistoricalDimension(
+            facts,
+            request.Dimension);
+
+        var buckets = groups
+            .Select(group => CalculateBucket(
+                request.Dimension,
+                group,
+                statesByDevice,
+                devicesWithAmbiguousHistoricalDimension))
+            .ToArray();
+        return Response(request, buckets);
+    }
+
+    private static IReadOnlySet<string> FindDevicesWithAmbiguousHistoricalDimension(
+        IReadOnlyCollection<OeeProductionFact> facts,
+        string dimension)
+    {
+        if (dimension is not (OeeAggregateDimensions.WorkCenter or OeeAggregateDimensions.Line or OeeAggregateDimensions.Workshop or OeeAggregateDimensions.Day))
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        return facts
+            .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
+            .Where(group => group
+                .Select(x => BucketKey.EffectiveDimensionSignature(x, dimension))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static OeeAggregateBucket CalculateBucket(
+        string dimension,
+        FactBucket group,
+        IReadOnlyDictionary<string, IReadOnlyList<DeviceStateSnapshot>> statesByDevice,
+        IReadOnlySet<string> devicesWithAmbiguousHistoricalDimension)
+    {
+        var degradedReasons = new HashSet<string>(StringComparer.Ordinal);
+        var hasCompleteRuntimeCoverage = true;
+        var deviceIds = group.Facts.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).ToArray();
+        long loadingTicks = 0;
+        long productiveTicks = 0;
+        var stateSampleCount = 0;
+        var productiveHoursByDevice = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var deviceId in deviceIds)
+        {
+            if (devicesWithAmbiguousHistoricalDimension.Contains(deviceId))
+            {
+                hasCompleteRuntimeCoverage = false;
+                degradedReasons.Add("historical-dimension-effective-range-ambiguous");
+                continue;
+            }
+
+            statesByDevice.TryGetValue(deviceId, out var deviceStates);
+            var runtime = CalculateRuntime(deviceStates ?? [], group.StartUtc, group.EndUtc);
+            loadingTicks += runtime.LoadingTicks;
+            productiveTicks += runtime.ProductiveTicks;
+            stateSampleCount += runtime.StateSampleCount;
+            productiveHoursByDevice[deviceId] = decimal.Divide(runtime.ProductiveTicks, TimeSpan.TicksPerHour);
+            if (!runtime.HasCompleteCoverage)
+            {
+                hasCompleteRuntimeCoverage = false;
+                degradedReasons.Add(runtime.StateSampleCount == 0
+                    ? "runtime-state-facts-missing"
+                    : "runtime-state-coverage-incomplete");
+            }
+        }
+
+        var goodQuantity = group.Facts.Sum(x => x.GoodQuantity);
+        var scrapQuantity = group.Facts.Sum(x => x.ScrapQuantity);
+        var reworkQuantity = group.Facts.Sum(x => x.ReworkQuantity);
+        var totalOutputQuantity = goodQuantity + scrapQuantity + reworkQuantity;
+        var uomCodes = group.Facts.Select(x => x.UomCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var outputUomCode = uomCodes.Length == 1 ? uomCodes[0] : null;
+        if (outputUomCode is null)
+        {
+            degradedReasons.Add("production-uom-ambiguous");
+        }
+
+        decimal? qualityRate = outputUomCode is not null && totalOutputQuantity > 0m
+            ? decimal.Divide(goodQuantity, totalOutputQuantity)
+            : null;
+        if (qualityRate is null)
+        {
+            degradedReasons.Add("production-output-missing");
+        }
+
+        decimal expectedOutputQuantity = 0m;
+        var hasUsableTheory = true;
+        foreach (var deviceGroup in group.Facts.GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal))
+        {
+            if (!productiveHoursByDevice.TryGetValue(deviceGroup.Key, out var productiveHours))
+            {
+                hasUsableTheory = false;
+                break;
+            }
+
+            var rates = deviceGroup.Select(x => x.TheoreticalRatePerHour).Where(x => x is > 0m).Select(x => x!.Value).Distinct().ToArray();
+            if (rates.Length != 1 || deviceGroup.Any(x => x.TheoreticalRatePerHour is not > 0m))
+            {
+                hasUsableTheory = false;
+                break;
+            }
+
+            expectedOutputQuantity += productiveHours * rates[0];
+        }
+
+        decimal? performanceRate = hasUsableTheory && outputUomCode is not null && expectedOutputQuantity > 0m && totalOutputQuantity > 0m
+            ? decimal.Divide(totalOutputQuantity, expectedOutputQuantity)
+            : null;
+        if (!hasUsableTheory)
+        {
+            degradedReasons.Add("theoretical-rate-missing-or-ambiguous");
+        }
+        if (productiveTicks <= 0)
+        {
+            degradedReasons.Add("productive-runtime-missing");
+        }
+
+        decimal? availabilityRate = loadingTicks > 0
+            ? decimal.Divide(productiveTicks, loadingTicks)
+            : null;
+        if (availabilityRate is null)
+        {
+            degradedReasons.Add("loading-runtime-missing");
+        }
+
+        if (!hasCompleteRuntimeCoverage)
+        {
+            availabilityRate = null;
+            performanceRate = null;
+            qualityRate = null;
+        }
+
+        AddHistoricalDimensionDegradation(group.Facts, dimension, degradedReasons);
+        if (group.Facts.Any(x => x.HistoricalDimensionStatus != OeeHistoricalDimensionStatus.Resolved))
+        {
+            availabilityRate = null;
+            performanceRate = null;
+            qualityRate = null;
+        }
+
+        var siteCode = SingleValue(group.Facts.Select(x => x.SiteCode));
+        var workshopCode = SingleValue(group.Facts.Select(x => x.WorkshopCode));
+        var lineCode = SingleValue(group.Facts.Select(x => x.LineCode));
+        var workCenterId = SingleValue(group.Facts.Select(x => x.WorkCenterId));
+        var deviceAssetId = dimension == OeeAggregateDimensions.Device
+            ? group.Key.DimensionValue
+            : SingleValue(group.Facts.Select(x => x.DeviceAssetId));
+        var shiftCode = SingleValue(group.Facts.Select(x => x.ShiftCode));
+        decimal? oeeRate = availabilityRate is not null && performanceRate is not null && qualityRate is not null
+            ? availabilityRate.Value * performanceRate.Value * qualityRate.Value
+            : null;
+        return new OeeAggregateBucket(
+            dimension,
+            group.Key.DimensionValue,
+            siteCode,
+            workshopCode,
+            lineCode,
+            workCenterId,
+            deviceAssetId,
+            shiftCode,
+            group.Key.BusinessDate,
+            group.StartUtc,
+            group.EndUtc,
+            deviceIds.Length,
+            stateSampleCount,
+            group.Facts.Length,
+            Round(availabilityRate),
+            Round(performanceRate),
+            Round(qualityRate),
+            Round(oeeRate),
+            Math.Round(goodQuantity, 6),
+            Math.Round(scrapQuantity, 6),
+            Math.Round(reworkQuantity, 6),
+            outputUomCode,
+            performanceRate is null ? null : Math.Round(expectedOutputQuantity, 6),
+            degradedReasons.Count > 0,
+            degradedReasons.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+    }
+
+    private static void EnsureStateMaterializationLimit(int materializedStateCount)
+    {
+        if (materializedStateCount > OeeAggregateMaterializationLimits.MaximumStateSampleCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumStateSampleCount} device-state materialization limit; narrow the window or add dimension filters.");
+        }
+    }
+
+    private static RuntimeTotals CalculateRuntime(
+        IReadOnlyList<DeviceStateSnapshot> states,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc)
+    {
+        var carryIn = states.LastOrDefault(x => x.OccurredAtUtc < startUtc);
+        var inWindow = states.Where(x => x.OccurredAtUtc >= startUtc && x.OccurredAtUtc < endUtc).ToArray();
+        var points = carryIn is null
+            ? inWindow.Select(x => new StatePoint(x.OccurredAtUtc, x.State)).ToArray()
+            : new[] { new StatePoint(startUtc, carryIn.State) }
+                .Concat(inWindow.Select(x => new StatePoint(x.OccurredAtUtc, x.State)))
+                .ToArray();
+        long loadingTicks = 0;
+        long productiveTicks = 0;
+        for (var index = 0; index < points.Length; index++)
+        {
+            var segmentStart = points[index].OccurredAtUtc < startUtc ? startUtc : points[index].OccurredAtUtc;
+            var segmentEnd = index + 1 < points.Length ? points[index + 1].OccurredAtUtc : endUtc;
+            if (segmentEnd <= segmentStart || EquipmentRuntimeDeviceStates.IsPlannedDownState(points[index].State))
+            {
+                continue;
+            }
+
+            var ticks = segmentEnd.UtcTicks - segmentStart.UtcTicks;
+            loadingTicks += ticks;
+            if (EquipmentRuntimeDeviceStates.IsProductiveRuntime(points[index].State))
+            {
+                productiveTicks += ticks;
+            }
+        }
+
+        var hasCompleteCoverage = carryIn is not null ||
+            inWindow.FirstOrDefault()?.OccurredAtUtc == startUtc;
+        return new RuntimeTotals(loadingTicks, productiveTicks, points.Length, hasCompleteCoverage);
+    }
+
+    private static void AddHistoricalDimensionDegradation(
+        IReadOnlyCollection<OeeProductionFact> facts,
+        string dimension,
+        ISet<string> reasons)
+    {
+        foreach (var status in facts
+            .Select(x => x.HistoricalDimensionStatus)
+            .Where(x => x != OeeHistoricalDimensionStatus.Resolved)
+            .Distinct())
+        {
+            reasons.Add(status switch
+            {
+                OeeHistoricalDimensionStatus.LegacyUnresolved => "historical-dimension-legacy-unresolved",
+                OeeHistoricalDimensionStatus.MissingHierarchy => "historical-hierarchy-missing",
+                OeeHistoricalDimensionStatus.MissingTimezone => "historical-timezone-missing",
+                OeeHistoricalDimensionStatus.InvalidTimezone => "historical-timezone-invalid",
+                OeeHistoricalDimensionStatus.MissingShiftDefinition => "historical-shift-definition-missing",
+                OeeHistoricalDimensionStatus.InvalidShiftDefinition => "historical-shift-definition-invalid",
+                OeeHistoricalDimensionStatus.ReportOutsideShiftWindow => "historical-report-outside-shift-window",
+                OeeHistoricalDimensionStatus.InvalidLocalTime => "historical-local-time-invalid",
+                OeeHistoricalDimensionStatus.AmbiguousLocalTime => "historical-local-time-ambiguous",
+                _ => throw new UnreachableException(),
+            });
+        }
+
+        if (facts.Any(x => string.IsNullOrWhiteSpace(x.SiteCode))) reasons.Add("site-dimension-missing");
+        if (facts.Any(x => string.IsNullOrWhiteSpace(x.WorkshopCode))) reasons.Add("workshop-dimension-missing");
+        if (facts.Any(x => string.IsNullOrWhiteSpace(x.LineCode))) reasons.Add("line-dimension-missing");
+        if (HasMultipleValues(facts.Select(x => x.SiteCode))) reasons.Add("site-dimension-ambiguous");
+        if (HasMultipleValues(facts.Select(x => x.WorkshopCode))) reasons.Add("workshop-dimension-ambiguous");
+        if (HasMultipleValues(facts.Select(x => x.LineCode))) reasons.Add("line-dimension-ambiguous");
+        if (dimension == OeeAggregateDimensions.Day && facts.Any(x => x.BusinessDate is null || string.IsNullOrWhiteSpace(x.SiteTimezone)))
+        {
+            reasons.Add("site-timezone-or-day-boundary-missing");
+        }
+        if (dimension == OeeAggregateDimensions.Shift && facts.Any(x => x.BusinessDate is null || x.ShiftBucketStartUtc is null || x.ShiftBucketEndUtc is null))
+        {
+            reasons.Add("shift-definition-or-boundary-missing");
+        }
+    }
+
+    private static string? SingleValue(IEnumerable<string?> values)
+    {
+        var distinct = values.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToArray();
+        return distinct.Length == 1 ? distinct[0] : null;
+    }
+
+    private static bool HasMultipleValues(IEnumerable<string?> values) =>
+        values.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).Take(2).Count() > 1;
+
+    private static decimal? Round(decimal? value) => value is null ? null : Math.Round(value.Value, 6);
+
+    private static OeeAggregateBucketsResponse Response(
+        QueryOeeAggregateBucketsQuery request,
+        IReadOnlyCollection<OeeAggregateBucket> buckets) =>
+        new(request.OrganizationId, request.EnvironmentId, request.Dimension, request.WindowStartUtc, request.WindowEndUtc, buckets);
+
+    private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, int StateSampleCount, bool HasCompleteCoverage);
+    private sealed record StatePoint(DateTimeOffset OccurredAtUtc, string State);
+    private sealed record FactBucket(BucketKey Key, OeeProductionFact[] Facts, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
+
+    private sealed record BucketKey(
+        string? DimensionValue,
+        string? SiteCode,
+        string? WorkshopCode,
+        string? LineCode,
+        DateOnly? BusinessDate,
+        DateTimeOffset StartUtc,
+        DateTimeOffset EndUtc)
+    {
+        internal static string? DimensionValueFor(OeeProductionFact fact, string dimension) =>
+            dimension switch
+            {
+                OeeAggregateDimensions.Device => fact.DeviceAssetId,
+                OeeAggregateDimensions.WorkCenter => fact.WorkCenterId,
+                OeeAggregateDimensions.Line => fact.LineCode,
+                OeeAggregateDimensions.Workshop => fact.WorkshopCode,
+                OeeAggregateDimensions.Shift => fact.ShiftCode,
+                OeeAggregateDimensions.Day => fact.SiteCode,
+                _ => throw new UnreachableException(),
+            };
+
+        internal static string? EffectiveDimensionSignature(OeeProductionFact fact, string dimension) =>
+            dimension switch
+            {
+                OeeAggregateDimensions.WorkCenter => $"{fact.SiteCode}\u001f{fact.WorkshopCode}\u001f{fact.LineCode}\u001f{fact.WorkCenterId}",
+                OeeAggregateDimensions.Line => $"{fact.SiteCode}\u001f{fact.WorkshopCode}\u001f{fact.LineCode}",
+                OeeAggregateDimensions.Workshop => $"{fact.SiteCode}\u001f{fact.WorkshopCode}",
+                OeeAggregateDimensions.Day => $"{fact.SiteCode}\u001f{fact.BusinessDate:yyyy-MM-dd}",
+                _ => throw new UnreachableException(),
+            };
+
+        public static BucketKey From(OeeProductionFact fact, QueryOeeAggregateBucketsQuery request) =>
+            request.Dimension switch
+            {
+                OeeAggregateDimensions.Device => new(fact.DeviceAssetId, null, null, null, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimensions.WorkCenter => new(fact.WorkCenterId, fact.SiteCode, fact.WorkshopCode, fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimensions.Line => new(fact.LineCode, fact.SiteCode, fact.WorkshopCode, fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimensions.Workshop => new(fact.WorkshopCode, fact.SiteCode, fact.WorkshopCode, null, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimensions.Shift when fact.BusinessDate is not null && fact.ShiftBucketStartUtc is not null && fact.ShiftBucketEndUtc is not null =>
+                    new(fact.ShiftCode, fact.SiteCode, fact.WorkshopCode, fact.LineCode, fact.BusinessDate, fact.ShiftBucketStartUtc.Value, fact.ShiftBucketEndUtc.Value),
+                OeeAggregateDimensions.Day when fact.BusinessDate is not null && !string.IsNullOrWhiteSpace(fact.SiteTimezone) =>
+                    new(fact.SiteCode, fact.SiteCode, null, null, fact.BusinessDate, request.WindowStartUtc, request.WindowEndUtc),
+                _ => new(null, null, null, null, null, request.WindowStartUtc, request.WindowEndUtc),
+            };
+    }
+}
