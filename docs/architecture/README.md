@@ -1,6 +1,6 @@
 # Architecture 文档入口
 
-本页路由系统的**当前架构**。`docs/architecture/` 仍处于分类迁移期；文件位于本目录不等于它就是当前 Architecture。M2 会按类型分批迁移，当前任务先按下表选择必要文档。
+本页路由系统的**当前架构**。`docs/architecture/` 仍处于 M2 分类迁移期；文件位于本目录不等于它就是当前 Architecture。普通任务只读取与目标范围直接相关的当前架构页。
 
 ## 基础边界
 
@@ -26,21 +26,22 @@
 | 文档语言与决策分层 | [document-language-governance.md](document-language-governance.md)、[decision-record-governance.md](decision-record-governance.md) |
 | 可观测性 | [observability-baseline.md](observability-baseline.md) |
 
-## 状态不属于 Architecture
+## 不属于 Architecture 的内容
 
 - 当前全仓级状态位于 [`../status/current.md`](../status/current.md)。
-- [`implementation-readiness.md`](implementation-readiness.md) 只保留旧路径兼容导航。
-- readiness 历史全文与 2026 年 5 月非实时看板已归档到 [`../status/archive/`](../status/archive/)。
+- 历史阶段与状态快照位于 [`../status/archive/`](../status/archive/)。
+- 调查、实验、审计和修复记录位于 [`../reports/README.md`](../reports/README.md)。
 - 当前任务进度、负责人和验收证据位于 GitHub/Linear。
+
+M2-B 已把纵切历史与明确报告的完整正文迁出本目录。原文件名暂时只保留短兼容入口，不能再作为当前架构或报告正文读取；兼容入口的删除条件由 M2-M 汇总后交给 M4。
 
 ## 迁移期类型提示
 
-以下内容目前仍在本目录，但不要全部当作当前 Architecture 读取：
+以下内容目前仍可能位于本目录，但不要全部当作当前 Architecture 读取：
 
 - `*-module-product-design.md` 属 Product，按所改业务域加载。
 - `*-runbook.md`、`*-troubleshooting.md` 与操作型 deployment 文档属 Runbook。
-- `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 属 Reference 或生成伴随物。
-- `*-investigation.md`、`*-spike.md`、`*-remediation.md` 属 Report，完成后应冻结。
-- `first-vertical-slice.md`、`second-vertical-slice-ops.md`、`third-vertical-slice-console.md` 与 `fourth-vertical-slice-real-infra.md` 是阶段记录，不构成当前执行入口。
+- `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 属 Reference、Report 或生成伴随物，必须按正文生命周期判断。
+- `*-investigation.md`、`*-spike.md`、`*-remediation.md` 的完整正文已由 M2-B 开始迁往 Reports；留在本目录的同名短页只可能是兼容入口。
 
 物理迁移与混合大文件拆分由 [GitHub #2290](https://github.com/Mang-X/Nerv-IIP/issues/2290) 跟踪；本阶段不建立永久分类 manifest。
