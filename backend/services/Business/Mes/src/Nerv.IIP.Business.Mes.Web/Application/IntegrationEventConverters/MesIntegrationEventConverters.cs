@@ -259,7 +259,6 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
 
 public sealed class OperationActualTimeSettledV1IntegrationEventConverter(
     IMesIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<OperationActualTimeSettledDomainEvent, MesOperationActualTimeSettledIntegrationEvent>
 {
     public MesOperationActualTimeSettledIntegrationEvent Convert(OperationActualTimeSettledDomainEvent domainEvent)
     {
@@ -297,7 +296,6 @@ public sealed class OperationActualTimeSettledV1IntegrationEventConverter(
 
 public sealed class OperationActualTimeSettledIntegrationEventConverter(
     IMesIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<OperationActualTimeSettledDomainEvent, MesOperationActualTimeSettledV2IntegrationEvent>
 {
     public MesOperationActualTimeSettledV2IntegrationEvent Convert(OperationActualTimeSettledDomainEvent domainEvent)
     {
@@ -347,7 +345,6 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
 
 public sealed class OperationActualTimeSettlementVoidedV1IntegrationEventConverter(
     IMesIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<OperationActualTimeSettlementVoidedDomainEvent, MesOperationActualTimeSettlementVoidedIntegrationEvent>
 {
     public MesOperationActualTimeSettlementVoidedIntegrationEvent Convert(
         OperationActualTimeSettlementVoidedDomainEvent domainEvent)
@@ -387,7 +384,6 @@ public sealed class OperationActualTimeSettlementVoidedV1IntegrationEventConvert
 
 public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter(
     IMesIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<OperationActualTimeSettlementVoidedDomainEvent, MesOperationActualTimeSettlementVoidedV2IntegrationEvent>
 {
     public MesOperationActualTimeSettlementVoidedV2IntegrationEvent Convert(
         OperationActualTimeSettlementVoidedDomainEvent domainEvent)

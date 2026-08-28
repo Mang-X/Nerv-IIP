@@ -87,7 +87,6 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | MES | V1 `MesOperationActualTimeSettledIntegrationEvent`；V2 `MesOperationActualTimeSettledV2IntegrationEvent` | MES | ERP 仅消费 V1；V2 当前无仓库内消费者 | `consumed-internally`（V1）/ `producer-only-until-feature`（V2） |
 | MES | V1 `MesOperationActualTimeSettlementVoidedIntegrationEvent`；V2 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` | MES | ERP 仅消费 V1；V2 当前无仓库内消费者 | `consumed-internally`（V1）/ `producer-only-until-feature`（V2） |
 
-MES 工序工时结算事件按 ADR 0011 并行发布：上述 V1 契约继续供当前 ERP 消费，且禁止携带机器事实；独立的 `MesOperationActualTimeSettledV2IntegrationEvent` 与 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` topic 携带满足状态组合约束的完整冻结机器工时事实，当前无仓库内消费者。V2 的 `available` 可携带真实零值，且当前唯一 basis 为 `single-device-active-minus-explicit-pause-v1`；无设备或执行中设备变化为 `unavailable` 且不写零，`notApplicable` 仅来自显式业务判定，未知状态字符串失败关闭。V1 在 ERP 完成升级且 replay/DLQ 处置完成前不得退役；本项不扩展 ERP 费率或机器成本。
 | MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `MesOperationTaskManualDispatchClearedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `ProductionReportRecordedIntegrationEvent` | MES | IndustrialTelemetry、ERP、Quality | `consumed-internally` |
@@ -109,6 +108,8 @@ MES 工序工时结算事件按 ADR 0011 并行发布：上述 V1 契约继续�
 | WMS | `WcsTaskRetryExhausted` / `WmsIntegrationEvent` | WMS | Notification | `consumed-internally` |
 | WMS | `WcsTaskCompleted` / `WmsIntegrationEvent` | WMS | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | WMS | `WcsTaskCancelled` / `WmsIntegrationEvent` | WMS | WMS WCS adapter 边界 | `consumed-internally` |
+
+MES 工序工时结算事件按 ADR 0011 并行发布：V1 使用 `nerv-iip.<deployment-env>.business-mes.mes.operation-actual-time-settled.v1` 与 `nerv-iip.<deployment-env>.business-mes.mes.operation-actual-time-settlement-voided.v1`，继续供当前 ERP 消费且禁止携带机器事实；V2 使用相同事件名的 `.v2` 路由并携带满足状态组合约束的完整冻结机器工时事实，当前无仓库内消费者。V2 的 `available` 可携带真实零值，且当前唯一 basis 为 `single-device-active-minus-explicit-pause-v1`；无设备或执行中设备变化为 `unavailable` 且不写零，`notApplicable` 仅来自显式业务判定，未知状态字符串失败关闭。只有所有已登记及外部消费者均完成升级、旧版回放窗口结束且所有相关 DLQ 清理完成后才可退役 V1；当前 ERP 消费者不是退役门的唯一判据。本项不扩展 ERP 费率或机器成本。
 
 ## 业务服务本地事件
 

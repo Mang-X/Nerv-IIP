@@ -352,7 +352,17 @@ internal static class MesActualTimeWireContract
     private static readonly string[] MachineFactPropertyNames =
         ["deviceAssetId", "machineTimeStatus", "billableMachineTicks", "machineTimeBasisCode"];
 
-    public static T Read<T>(ref Utf8JsonReader reader, JsonSerializerOptions options, int expectedVersion, bool allowMachineFacts)
+    public static T ReadV1<T>(ref Utf8JsonReader reader, JsonSerializerOptions options)
+        => Read<T>(ref reader, options, MesIntegrationEventVersions.V1, MachineFactShape.Forbidden);
+
+    public static T ReadV2<T>(ref Utf8JsonReader reader, JsonSerializerOptions options)
+        => Read<T>(ref reader, options, MesIntegrationEventVersions.V2, MachineFactShape.Required);
+
+    private static T Read<T>(
+        ref Utf8JsonReader reader,
+        JsonSerializerOptions options,
+        int expectedVersion,
+        MachineFactShape machineFactShape)
     {
         using var document = JsonDocument.ParseValue(ref reader);
         var root = document.RootElement;
@@ -362,7 +372,7 @@ internal static class MesActualTimeWireContract
             throw new JsonException($"MES actual-time envelope requires eventVersion {expectedVersion}.");
         if (!TryGetProperty(root, "payload", "Payload", out var payload) || payload.ValueKind != JsonValueKind.Object)
             throw new JsonException("MES actual-time payload is required.");
-        if (!allowMachineFacts)
+        if (machineFactShape == MachineFactShape.Forbidden)
         {
             if (MachineFactPropertyNames.Any(name =>
                     payload.TryGetProperty(name, out _)
@@ -377,6 +387,12 @@ internal static class MesActualTimeWireContract
         }
         return JsonSerializer.Deserialize<T>(root.GetRawText(), options)
             ?? throw new JsonException("MES actual-time envelope is required.");
+    }
+
+    private enum MachineFactShape
+    {
+        Forbidden,
+        Required,
     }
 
     public static void RequireVersion(int actualVersion, int expectedVersion)
@@ -398,7 +414,7 @@ public sealed class MesOperationActualTimeSettledV1IntegrationEventJsonConverter
 {
     public override MesOperationActualTimeSettledIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dto = MesActualTimeWireContract.Read<SettledV1Dto>(ref reader, options, MesIntegrationEventVersions.V1, false);
+        var dto = MesActualTimeWireContract.ReadV1<SettledV1Dto>(ref reader, options);
         return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
             dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
             dto.IdempotencyKey, dto.Payload);
@@ -423,7 +439,7 @@ public sealed class MesOperationActualTimeSettledV2IntegrationEventJsonConverter
 {
     public override MesOperationActualTimeSettledV2IntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dto = MesActualTimeWireContract.Read<SettledV2Dto>(ref reader, options, MesIntegrationEventVersions.V2, true);
+        var dto = MesActualTimeWireContract.ReadV2<SettledV2Dto>(ref reader, options);
         MesActualTimeContractInvariant.Validate(dto.Payload.DeviceAssetId, dto.Payload.MachineTimeStatus,
             dto.Payload.BillableMachineTicks, dto.Payload.MachineTimeBasisCode);
         return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
@@ -452,7 +468,7 @@ public sealed class MesOperationActualTimeSettlementVoidedV1IntegrationEventJson
 {
     public override MesOperationActualTimeSettlementVoidedIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dto = MesActualTimeWireContract.Read<VoidedV1Dto>(ref reader, options, MesIntegrationEventVersions.V1, false);
+        var dto = MesActualTimeWireContract.ReadV1<VoidedV1Dto>(ref reader, options);
         return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
             dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
             dto.IdempotencyKey, dto.Payload);
@@ -477,7 +493,7 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventJson
 {
     public override MesOperationActualTimeSettlementVoidedV2IntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dto = MesActualTimeWireContract.Read<VoidedV2Dto>(ref reader, options, MesIntegrationEventVersions.V2, true);
+        var dto = MesActualTimeWireContract.ReadV2<VoidedV2Dto>(ref reader, options);
         MesActualTimeContractInvariant.Validate(dto.Payload.DeviceAssetId, dto.Payload.MachineTimeStatus,
             dto.Payload.BillableMachineTicks, dto.Payload.MachineTimeBasisCode);
         return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,

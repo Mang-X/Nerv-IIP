@@ -454,6 +454,8 @@ public sealed class ManualDispatchConcurrencyTests
         services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
         services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
         services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
+        services.AddSingleton<IMesActualTimeOutboxPublisher, RecordingMesActualTimeOutboxPublisher>();
+        services.AddSingleton(new MesActualTimeTopicOptions("Testing"));
         services.AddSingleton<RecordingIntegrationEventPublisher>();
         services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
             serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
@@ -482,6 +484,11 @@ public sealed class ManualDispatchConcurrencyTests
             Published.Add(integrationEvent!);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingMesActualTimeOutboxPublisher : IMesActualTimeOutboxPublisher
+    {
+        public Task PublishAsync<T>(string topic, T integrationEvent) => Task.CompletedTask;
     }
 
     private sealed class StubMesIntegrationEventContextAccessor : IMesIntegrationEventContextAccessor

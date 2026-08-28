@@ -21,6 +21,11 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class OperationActualTimeSettlementPostgresTests
 {
+    private const string SettledV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v1";
+    private const string SettledV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2";
+    private const string VoidedV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v1";
+    private const string VoidedV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2";
+
     [MesRealPostgresFact]
     public async Task Completion_state_and_settlement_outbox_are_committed_together_on_postgres()
     {
@@ -50,9 +55,9 @@ public sealed class OperationActualTimeSettlementPostgresTests
             .ToArray();
         Assert.Equal(2, settlementOutboxes.Length);
         var settlementOutbox = Assert.Single(settlementOutboxes,
-            content => content.StartsWith(nameof(MesOperationActualTimeSettledV2IntegrationEvent), StringComparison.Ordinal));
+            content => content.StartsWith(SettledV2Topic, StringComparison.Ordinal));
         Assert.Contains(settlementOutboxes,
-            content => content.StartsWith(nameof(MesOperationActualTimeSettledIntegrationEvent), StringComparison.Ordinal)
+            content => content.StartsWith(SettledV1Topic, StringComparison.Ordinal)
                 && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(1, task.ActualTimeSettlementRevision);
@@ -103,9 +108,9 @@ public sealed class OperationActualTimeSettlementPostgresTests
             .ToArray();
         Assert.Equal(2, voidOutboxes.Length);
         var voidOutbox = Assert.Single(voidOutboxes,
-            content => content.StartsWith(nameof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent), StringComparison.Ordinal));
+            content => content.StartsWith(VoidedV2Topic, StringComparison.Ordinal));
         Assert.Contains(voidOutboxes,
-            content => content.StartsWith(nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent), StringComparison.Ordinal)
+            content => content.StartsWith(VoidedV1Topic, StringComparison.Ordinal)
                 && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
@@ -140,7 +145,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-001", "OP-001", 10m, 0m, true,
                     At(60), "report-complete-postgres-atomic-failure-001")));
-            Assert.Contains("injected settlement outbox failure", exception.ToString(), StringComparison.Ordinal);
+            Assert.Contains("injected second-version settlement outbox failure after V1", exception.ToString(), StringComparison.Ordinal);
         }
 
         using var assertionScope = factory.Services.CreateScope();
@@ -180,7 +185,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
                 new ReverseProductionReportCommand(
                     "org-001", "env-dev", completedReportNo, "故障注入", At(70),
                     "user:operator-001", "report-reverse-postgres-void-failure-001")));
-            Assert.Contains("injected void outbox failure", exception.ToString(), StringComparison.Ordinal);
+            Assert.Contains("injected second-version void outbox failure after V1", exception.ToString(), StringComparison.Ordinal);
         }
 
         using var assertionScope = factory.Services.CreateScope();
@@ -528,8 +533,11 @@ public sealed class OperationActualTimeSettlementPostgresTests
             CREATE OR REPLACE FUNCTION cap.reject_actual_time_settlement_outbox()
             RETURNS trigger AS $$
             BEGIN
-                IF NEW."Content" LIKE '%mes.OperationActualTimeSettled%' THEN
-                    RAISE EXCEPTION 'injected settlement outbox failure';
+                IF NEW."Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2'
+                   AND EXISTS (
+                       SELECT 1 FROM cap.published
+                       WHERE "Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settled.v1') THEN
+                    RAISE EXCEPTION 'injected second-version settlement outbox failure after V1';
                 END IF;
                 RETURN NEW;
             END;
@@ -550,8 +558,11 @@ public sealed class OperationActualTimeSettlementPostgresTests
             CREATE OR REPLACE FUNCTION cap.reject_actual_time_settlement_void_outbox()
             RETURNS trigger AS $$
             BEGIN
-                IF NEW."Content" LIKE '%mes.OperationActualTimeSettlementVoided%' THEN
-                    RAISE EXCEPTION 'injected void outbox failure';
+                IF NEW."Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2'
+                   AND EXISTS (
+                       SELECT 1 FROM cap.published
+                       WHERE "Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v1') THEN
+                    RAISE EXCEPTION 'injected second-version void outbox failure after V1';
                 END IF;
                 RETURN NEW;
             END;
