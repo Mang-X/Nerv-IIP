@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
@@ -19,10 +20,13 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection(ErpPostgresLaneDatabase.CollectionName)]
 public sealed class OperationLaborSettlementRedisCapTransportTests
 {
+    private const string DeploymentProfile = "Issue2382Acceptance";
+
     [ErpCostPostgresRedisFact]
     public async Task Redis_cap_transport_converges_settle_void_redelivery_and_out_of_order_revisions_in_postgres()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await ErpPostgresLaneDatabase.ResetCapSchemaAsync();
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
         await InitializeAsync(factory);
@@ -37,7 +41,7 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         {
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionTwo);
             await publisher.PublishAsync(
-                MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.DevelopmentCanonicalTopic,
+                MesActualTimeIntegrationEventTopics.Settled(DeploymentProfile, MesIntegrationEventVersions.V2),
                 machineRevisionTwo);
         });
         await AssertEventuallyAsync(factory, async (db, token) =>
@@ -67,7 +71,7 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 Voided("transport-void-r1", revisionOne, completedAtUtc.AddHours(2)));
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionOne);
             await publisher.PublishAsync(
-                MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.DevelopmentCanonicalTopic,
+                MesActualTimeIntegrationEventTopics.Voided(DeploymentProfile, MesIntegrationEventVersions.V2),
                 MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2)));
         });
 
@@ -81,12 +85,12 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         });
 
         await PublishAsync(factory, async publisher => await publisher.PublishAsync(
-            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.DevelopmentCanonicalTopic,
+            MesActualTimeIntegrationEventTopics.Settled(DeploymentProfile, MesIntegrationEventVersions.V2),
             machineRevisionOne));
         await AssertEventuallyAsync(factory, async (db, token) =>
             Assert.Equal(2, await db.OperationMachineOverheadSettlements.CountAsync(token)));
         await PublishAsync(factory, async publisher => await publisher.PublishAsync(
-            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.DevelopmentCanonicalTopic,
+            MesActualTimeIntegrationEventTopics.Voided(DeploymentProfile, MesIntegrationEventVersions.V2),
             MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2))));
 
         await AssertEventuallyAsync(factory, async (db, token) =>
@@ -148,10 +152,13 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             ["Cap:Version"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_VERSION"),
             ["Cap:TopicNamePrefix"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_TOPIC_PREFIX"),
             ["InternalService:BearerToken"] = "test-internal-token",
+            ["Approval:BaseUrl"] = "https://approval.test",
+            ["MasterData:BaseUrl"] = "https://master-data.test",
+            ["Wms:BaseUrl"] = "https://wms.test",
         };
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Development");
+            builder.UseEnvironment(DeploymentProfile);
             foreach (var (key, value) in settings) builder.UseSetting(key, value);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
             builder.ConfigureServices(services => services.PostConfigure<CapOptions>(options =>
@@ -183,6 +190,38 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         await db.SaveChangesAsync();
         await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
         await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
+        AssertCanonicalSubscription<MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead,
+            MesOperationActualTimeSettledV2IntegrationEvent>(
+            scope.ServiceProvider,
+            MesActualTimeIntegrationEventTopics.SettledV2Template,
+            MesActualTimeIntegrationEventTopics.Settled(DeploymentProfile, MesIntegrationEventVersions.V2));
+        AssertCanonicalSubscription<MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead,
+            MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(
+            scope.ServiceProvider,
+            MesActualTimeIntegrationEventTopics.VoidedV2Template,
+            MesActualTimeIntegrationEventTopics.Voided(DeploymentProfile, MesIntegrationEventVersions.V2));
+    }
+
+    private static void AssertCanonicalSubscription<THandler, TEvent>(
+        IServiceProvider services,
+        string authoritativeTemplate,
+        string resolvedTopic)
+    {
+        var method = typeof(THandler).GetMethod("HandleCapAsync")!;
+        var declaredSubscriptions = method.GetCustomAttributes(typeof(CapSubscribeAttribute), inherit: true)
+            .Cast<CapSubscribeAttribute>()
+            .ToArray();
+        var declared = Assert.Single(declaredSubscriptions);
+        Assert.Equal(authoritativeTemplate, declared.Name);
+        Assert.Equal(authoritativeTemplate, MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(typeof(TEvent)));
+
+        var candidates = services.GetRequiredService<IConsumerServiceSelector>().SelectCandidates()
+            .Where(x => x.ImplTypeInfo.AsType() == typeof(THandler) && x.MethodInfo == method)
+            .ToArray();
+        var candidate = Assert.Single(candidates);
+        var prefix = services.GetRequiredService<IOptions<CapOptions>>().Value.TopicNamePrefix;
+        var expectedTopic = string.IsNullOrWhiteSpace(prefix) ? resolvedTopic : $"{prefix}.{resolvedTopic}";
+        Assert.Equal(expectedTopic, candidate.TopicName);
     }
 
     private static async Task PublishAsync(WebApplicationFactory<Program> factory, Func<ICapPublisher, Task> publish)

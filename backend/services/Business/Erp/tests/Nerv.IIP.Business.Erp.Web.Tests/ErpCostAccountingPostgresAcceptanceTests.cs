@@ -311,6 +311,28 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             Assert.Equal("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.", metadata.GetString(2));
         }
 
+        await using (var costDetailMetadataCommand = new NpgsqlCommand("""
+            SELECT
+                obj_description('erp.work_order_cost_details'::regclass),
+                col_description('erp.work_order_cost_details'::regclass, (
+                    SELECT attnum FROM pg_attribute
+                    WHERE attrelid = 'erp.work_order_cost_details'::regclass AND attname = 'cost_type')),
+                col_description('erp.work_order_cost_details'::regclass, (
+                    SELECT attnum FROM pg_attribute
+                    WHERE attrelid = 'erp.work_order_cost_details'::regclass AND attname = 'quantity')),
+                col_description('erp.work_order_cost_details'::regclass, (
+                    SELECT attnum FROM pg_attribute
+                    WHERE attrelid = 'erp.work_order_cost_details'::regclass AND attname = 'rate'))
+            """, (NpgsqlConnection)db.Database.GetDbConnection()))
+        await using (var metadata = await costDetailMetadataCommand.ExecuteReaderAsync())
+        {
+            Assert.True(await metadata.ReadAsync());
+            Assert.Equal("ERP auditable labor, material, or machine-overhead cost detail.", metadata.GetString(0));
+            Assert.Equal("Labor, material, or machine-overhead cost type.", metadata.GetString(1));
+            Assert.Equal("Labor or machine hours, or material quantity.", metadata.GetString(2));
+            Assert.Equal("Labor or machine-overhead hourly rate, or moving-average material unit cost.", metadata.GetString(3));
+        }
+
         db.WorkCenterCostRates.AddRange(
             WorkCenterCostRate.Define("org-legacy", "env-legacy", "WC-LEGACY", 40m, "CNY", DateTimeOffset.UnixEpoch, null, 2, "system:test", "first concurrent candidate", DateTimeOffset.UtcNow),
             WorkCenterCostRate.Define("org-legacy", "env-legacy", "WC-LEGACY", 41m, "CNY", DateTimeOffset.UnixEpoch, null, 2, "system:test", "second concurrent candidate", DateTimeOffset.UtcNow));

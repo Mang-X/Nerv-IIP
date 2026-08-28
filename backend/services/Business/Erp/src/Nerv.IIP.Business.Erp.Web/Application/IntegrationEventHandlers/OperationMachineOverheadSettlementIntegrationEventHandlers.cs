@@ -24,10 +24,6 @@ public sealed class MesOperationActualTimeSettledV2IntegrationEventHandlerForAcc
     : IIntegrationEventHandler<MesOperationActualTimeSettledV2IntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.operation-machine-overhead";
-    public const string DevelopmentCanonicalTopic =
-        "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2";
-    public const string ProductionCanonicalTopic =
-        "nerv-iip.production.business-mes.mes.operation-actual-time-settled.v2";
 
     public Task HandleAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
@@ -50,8 +46,7 @@ public sealed class MesOperationActualTimeSettledV2IntegrationEventHandlerForAcc
             cancellationToken);
     }
 
-    [CapSubscribe(DevelopmentCanonicalTopic, Group = ConsumerName)]
-    [CapSubscribe(ProductionCanonicalTopic, Group = ConsumerName)]
+    [CapSubscribe(MesActualTimeIntegrationEventTopics.SettledV2Template, Group = ConsumerName)]
     public Task HandleCapAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -67,10 +62,6 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventHand
     : IIntegrationEventHandler<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.operation-machine-overhead-void";
-    public const string DevelopmentCanonicalTopic =
-        "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2";
-    public const string ProductionCanonicalTopic =
-        "nerv-iip.production.business-mes.mes.operation-actual-time-settlement-voided.v2";
 
     public Task HandleAsync(
         MesOperationActualTimeSettlementVoidedV2IntegrationEvent integrationEvent,
@@ -93,8 +84,7 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventHand
             cancellationToken);
     }
 
-    [CapSubscribe(DevelopmentCanonicalTopic, Group = ConsumerName)]
-    [CapSubscribe(ProductionCanonicalTopic, Group = ConsumerName)]
+    [CapSubscribe(MesActualTimeIntegrationEventTopics.VoidedV2Template, Group = ConsumerName)]
     public Task HandleCapAsync(
         MesOperationActualTimeSettlementVoidedV2IntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
