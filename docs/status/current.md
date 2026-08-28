@@ -26,8 +26,9 @@
 - 项目定位与快速开始：[`/README.md`](../../README.md)。
 - 文档任务路由：[`/docs/README.md`](../README.md)。
 - 当前架构：[`/docs/architecture/README.md`](../architecture/README.md)。
+- 当前 Runbook：[`/docs/runbooks/README.md`](../runbooks/README.md)。
 - 长期决策：[`/docs/adr/README.md`](../adr/README.md)。
-- 本地开发与排障：[`local-dev-troubleshooting.md`](../architecture/local-dev-troubleshooting.md)。
+- 本地开发与排障：[`local-development.md`](../runbooks/local-development.md)。
 
 ## 跨域注意事项
 
