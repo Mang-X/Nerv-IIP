@@ -292,9 +292,9 @@ export async function selectWmsPageWindow(
   await page.keyboard.press('Escape')
   await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
 
-  const currentPage = page.getByLabel('当前页', { exact: true })
+  const currentPage = page.locator('[aria-current="page"][aria-label^="第 "]')
   await expect(currentPage).toHaveCount(1, { timeout: timeoutMs })
-  await expect(currentPage).toHaveText(/^1\s*\/\s*\d+$/, { timeout: timeoutMs })
+  await expect(currentPage).toHaveAttribute('aria-label', '第 1 页', { timeout: timeoutMs })
   return { skip: 0, take: expectedWindow.take }
 }
 

@@ -10,7 +10,10 @@ import {
   assertWmsPageProofOptions,
   fillWmsKeywordAndConfirm,
   proveWmsListPage,
+  refreshWmsListAndConfirm,
+  selectWmsPageWindow,
 } from './issue1912-wms-walkthrough-facts'
+import { mountWmsProductionFixture } from './issue1912-wms-production-fixture'
 
 const inboundPath = '/api/business-console/v1/wms/inbound-orders'
 const outboundPath = '/api/business-console/v1/wms/outbound-orders'
@@ -220,104 +223,13 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     }
   })
 
-  test('显式作业范围和页窗口选择后，刷新只接受当前租户与已选分页的列表响应', async ({ page }) => {
-    // This fixture exercises the WMS proof wiring only. It does not provide real identity,
-    // provider, HTTP service, persistence, or cleanup evidence for FullStack/FullChain.
-    const listPath = '/api/business-console/v1/wms/outbound-orders'
+  test('生产 WMS 页面通过真实分页动作绑定刷新请求', async ({ page }) => {
+    const listPath = outboundPath
     const expectedQuery = NERV_1571_WMS_OUTBOUND_QUERY_FACTS
-    const requests: string[] = []
-
-    await page.route(`**${listPath}*`, async (route) => {
-      const url = route.request().url()
-      requests.push(url)
-      if (new URL(url).searchParams.get('environmentId') === 'env-stale') {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [] }),
-      })
+    const { targetRequests } = await mountWmsProductionFixture(page, {
+      kind: 'outbound',
+      targetPath: listPath,
     })
-    await page.setContent(`
-      <base href="http://walkthrough.fixture/">
-      <button type="button" aria-label="作业范围" aria-expanded="false">自动首项</button>
-      <div role="listbox" hidden><input role="combobox" aria-label="搜索作业范围"></div>
-      <button type="button" aria-label="每页条数" aria-expanded="false">10</button>
-      <div id="page-size-menu" role="listbox" hidden>
-        <button type="button" role="option" aria-selected="true" data-value="10">10</button>
-        <button type="button" role="option" aria-selected="false" data-value="20">20</button>
-      </div>
-      <span aria-label="当前页">1 / 1</span>
-      <button id="refresh" type="button">刷新</button>
-      <script>
-        const scope = document.querySelector('[aria-label="作业范围"]')
-        const menu = document.querySelector('[role="listbox"]')
-        const search = menu.querySelector('input')
-        const pageSizeTrigger = document.querySelector('[aria-label="每页条数"]')
-        const pageSizeMenu = document.querySelector('#page-size-menu')
-        const scenario = ${JSON.stringify(expectedQuery)}
-        let selectedScopeId = ''
-        let selectedPageSize = 10
-        let refreshCount = 0
-        const syncScopeOption = () => {
-          const option = menu.querySelector('[role="option"]')
-          if (option) option.hidden = search.value.trim() !== option.dataset.scopeValue
-        }
-        search.addEventListener('input', syncScopeOption)
-        scope.addEventListener('click', () => {
-          menu.hidden = false
-          scope.setAttribute('aria-expanded', 'true')
-          if (!menu.querySelector('[role="option"]')) {
-            setTimeout(() => {
-              const option = document.createElement('button')
-              option.type = 'button'
-              option.setAttribute('role', 'option')
-              option.setAttribute('aria-selected', 'false')
-              option.textContent = '发货作业池'
-              option.dataset.scopeId = scenario.scopeId
-              option.dataset.scopeValue = scenario.scopeKind + ':' + scenario.scopeId
-              option.hidden = search.value.trim() !== option.dataset.scopeValue
-              option.addEventListener('click', () => {
-                selectedScopeId = option.dataset.scopeId || ''
-                option.setAttribute('aria-selected', 'true')
-                menu.hidden = true
-                scope.textContent = option.textContent
-                scope.dataset.scopeId = selectedScopeId
-                scope.setAttribute('aria-expanded', 'false')
-              })
-              menu.append(option)
-            }, 60)
-          }
-        })
-        pageSizeTrigger.addEventListener('click', () => {
-          pageSizeMenu.hidden = false
-          pageSizeTrigger.setAttribute('aria-expanded', 'true')
-        })
-        pageSizeMenu.querySelectorAll('[role="option"]').forEach(option => option.addEventListener('click', () => {
-          pageSizeMenu.querySelectorAll('[role="option"]').forEach(item => item.setAttribute('aria-selected', String(item === option)))
-          selectedPageSize = Number(option.dataset.value)
-          pageSizeTrigger.textContent = option.dataset.value
-          pageSizeMenu.hidden = true
-          pageSizeTrigger.setAttribute('aria-expanded', 'false')
-        }))
-        document.querySelector('#refresh').addEventListener('click', () => {
-          refreshCount += 1
-          const query = new URLSearchParams({
-            organizationId: scenario.organizationId,
-            environmentId: scenario.environmentId,
-            scopeKind: scenario.scopeKind,
-            scopeId: selectedScopeId,
-            skip: String(scenario.skip),
-            take: String(refreshCount === 2 ? 999 : selectedPageSize),
-          })
-          if (refreshCount === 3) query.set('siteCode', 'SITE-001')
-          if (refreshCount === 4) query.set('environmentId', 'env-stale')
-          if (refreshCount === 5) query.set('scopeId', 'pool-other-001')
-          void fetch('${listPath}?' + query.toString())
-        })
-      </script>
-    `)
 
     const response = await proveWmsListPage({
       kind: 'outbound',
@@ -334,75 +246,17 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     })
 
     expect(response.status()).toBe(200)
-    expect(new URL(response.url()).searchParams.get('take')).toBe('20')
-    await expect(page.getByLabel('作业范围', { exact: true })).toHaveAttribute(
-      'data-scope-id',
-      expectedQuery.scopeId,
+    expect(new URL(response.url()).searchParams.get('take')).toBe(String(expectedQuery.take))
+    await expect(page.getByLabel('作业范围', { exact: true })).toContainText('发货作业池')
+    const markedRefreshRequests = targetRequests.filter((entry) => entry.marked)
+    expect(markedRefreshRequests).toHaveLength(1)
+    expect(new URL(markedRefreshRequests[0]!.request.url()).searchParams.get('take')).toBe(
+      String(expectedQuery.take),
     )
-    expect(requests).toHaveLength(1)
 
+    await selectWmsPageWindow(page, { skip: 0, take: 10 }, 2_000)
     await expect(
-      proveWmsListPage({
-        kind: 'outbound',
-        page,
-        selection: {
-          scope: {
-            label: '作业范围',
-            option: '发货作业池',
-            scopeKind: expectedQuery.scopeKind,
-            scopeId: expectedQuery.scopeId,
-          },
-        },
-        query: outboundProof(expectedQuery),
-      }),
-    ).rejects.toThrow('query facts')
-
-    await expect(
-      proveWmsListPage({
-        kind: 'outbound',
-        page,
-        selection: {
-          scope: {
-            label: '作业范围',
-            option: '发货作业池',
-            scopeKind: expectedQuery.scopeKind,
-            scopeId: expectedQuery.scopeId,
-          },
-        },
-        query: outboundProof(expectedQuery),
-      }),
-    ).rejects.toThrow('must not send query field siteCode')
-
-    await expect(
-      proveWmsListPage({
-        kind: 'outbound',
-        page,
-        selection: {
-          scope: {
-            label: '作业范围',
-            option: '发货作业池',
-            scopeKind: expectedQuery.scopeKind,
-            scopeId: expectedQuery.scopeId,
-          },
-        },
-        query: outboundProof(expectedQuery),
-      }),
-    ).rejects.toThrow('query facts')
-
-    await expect(
-      proveWmsListPage({
-        kind: 'outbound',
-        page,
-        selection: {
-          scope: {
-            label: '作业范围',
-            option: '发货作业池',
-            scopeKind: expectedQuery.scopeKind,
-            scopeId: expectedQuery.scopeId,
-          },
-        },
-        query: outboundProof(expectedQuery),
-      }),
+      refreshWmsListAndConfirm(page, outboundProof(expectedQuery), 2_000),
     ).rejects.toThrow('query facts')
   })
 

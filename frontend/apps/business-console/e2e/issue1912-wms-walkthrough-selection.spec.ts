@@ -1,14 +1,19 @@
 import { expect, test } from '@playwright/test'
 
-import { NERV_1571_WMS_INBOUND_QUERY_FACTS } from './issue1912-wms-walkthrough-authority'
+import {
+  NERV_1571_WMS_INBOUND_QUERY_FACTS,
+  NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
+} from './issue1912-wms-walkthrough-authority'
 import {
   proveWmsListPage,
   selectWmsPageOption,
   selectWmsPageWindow,
   selectWmsScopeOption,
 } from './issue1912-wms-walkthrough-facts'
+import { mountWmsProductionFixture } from './issue1912-wms-production-fixture'
 
 const inboundPath = '/api/business-console/v1/wms/inbound-orders'
+const outboundPath = '/api/business-console/v1/wms/outbound-orders'
 
 function inboundProof(expectedQuery = NERV_1571_WMS_INBOUND_QUERY_FACTS) {
   const { keyword: _keyword, ...selectionQuery } = expectedQuery
@@ -21,7 +26,7 @@ function inboundProof(expectedQuery = NERV_1571_WMS_INBOUND_QUERY_FACTS) {
   }
 }
 
-test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)', () => {
+test.describe('NERV-1571 / #1912 WMS selection facts (production page fixture)', () => {
   test.beforeEach(() => {
     test.skip(
       test.info().project.name !== 'desktop',
@@ -29,125 +34,12 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
     )
   })
 
-  test('入库必须显式选择范围和已加载工厂，公开请求带有所选 siteCode', async ({ page }) => {
-    // 该 mock route 不是 FullStack 证据，只用于把两个页面选择绑定到一个可观察请求，
-    // 并确保移除任一选择都会失败关闭。
-    const listPath = '/api/business-console/v1/wms/inbound-orders'
+  test('生产入库页面必须显式选择范围、工厂和页窗口，公开请求带有所选事实', async ({ page }) => {
     const expectedQuery = NERV_1571_WMS_INBOUND_QUERY_FACTS
-    const requests: string[] = []
-
-    await page.route(`**${listPath}*`, async (route) => {
-      const url = route.request().url()
-      requests.push(url)
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [] }),
-      })
+    const { targetRequests } = await mountWmsProductionFixture(page, {
+      kind: 'inbound',
+      targetPath: inboundPath,
     })
-    await page.setContent(`
-      <base href="http://walkthrough.fixture/">
-      <button type="button" aria-label="作业范围" aria-expanded="false">未选择范围</button>
-      <div id="scope-menu" role="listbox" hidden>
-        <input role="combobox" aria-label="搜索作业范围">
-      </div>
-      <button type="button" aria-label="工厂" aria-expanded="false">未选择工厂</button>
-      <div id="site-menu" role="listbox" hidden></div>
-      <button type="button" aria-label="每页条数" aria-expanded="false">10</button>
-      <div id="page-size-menu" role="listbox" hidden>
-        <button type="button" role="option" aria-selected="true" data-value="10">10</button>
-        <button type="button" role="option" aria-selected="false" data-value="20">20</button>
-      </div>
-      <span aria-label="当前页">1 / 1</span>
-      <button id="refresh" type="button">刷新</button>
-      <script>
-        const scope = document.querySelector('[aria-label="作业范围"]')
-        const scopeMenu = document.querySelector('#scope-menu')
-        const scopeSearch = scopeMenu.querySelector('input')
-        const site = document.querySelector('[aria-label="工厂"]')
-        const siteMenu = document.querySelector('#site-menu')
-        const pageSizeTrigger = document.querySelector('[aria-label="每页条数"]')
-        const pageSizeMenu = document.querySelector('#page-size-menu')
-        const scenario = ${JSON.stringify(expectedQuery)}
-        let selectedScopeId = ''
-        let selectedSiteCode = ''
-        let selectedPageSize = 10
-        const syncScopeOption = () => {
-          const option = scopeMenu.querySelector('[role="option"]')
-          if (option) option.hidden = scopeSearch.value.trim() !== option.dataset.scopeValue
-        }
-        scopeSearch.addEventListener('input', syncScopeOption)
-        scope.addEventListener('click', () => {
-          scopeMenu.hidden = false
-          scope.setAttribute('aria-expanded', 'true')
-          if (!scopeMenu.querySelector('[role="option"]')) {
-            setTimeout(() => {
-              const option = document.createElement('button')
-              option.type = 'button'
-              option.setAttribute('role', 'option')
-              option.setAttribute('aria-selected', 'false')
-              option.textContent = '收货作业池'
-              option.dataset.scopeId = scenario.scopeId
-              option.dataset.scopeValue = scenario.scopeKind + ':' + scenario.scopeId
-              option.hidden = scopeSearch.value.trim() !== option.dataset.scopeValue
-              option.addEventListener('click', () => {
-                selectedScopeId = option.dataset.scopeId || ''
-                option.setAttribute('aria-selected', 'true')
-                scopeMenu.hidden = true
-                scope.textContent = option.textContent
-                scope.dataset.scopeId = selectedScopeId
-                scope.setAttribute('aria-expanded', 'false')
-              })
-              scopeMenu.append(option)
-            }, 40)
-          }
-        })
-        site.addEventListener('click', () => {
-          siteMenu.hidden = false
-          site.setAttribute('aria-expanded', 'true')
-          if (!siteMenu.querySelector('[role="option"]')) {
-            setTimeout(() => {
-              const option = document.createElement('button')
-              option.type = 'button'
-              option.setAttribute('role', 'option')
-              option.innerHTML = '<span>一号工厂</span><span>SITE-001</span>'
-              option.dataset.siteCode = scenario.siteCode
-              option.addEventListener('click', () => {
-                selectedSiteCode = option.dataset.siteCode || ''
-                siteMenu.hidden = true
-                site.textContent = '一号工厂（' + selectedSiteCode + '）'
-                site.setAttribute('aria-expanded', 'false')
-              })
-              siteMenu.append(option)
-            }, 80)
-          }
-        })
-        pageSizeTrigger.addEventListener('click', () => {
-          pageSizeMenu.hidden = false
-          pageSizeTrigger.setAttribute('aria-expanded', 'true')
-        })
-        pageSizeMenu.querySelectorAll('[role="option"]').forEach(option => option.addEventListener('click', () => {
-          pageSizeMenu.querySelectorAll('[role="option"]').forEach(item => item.setAttribute('aria-selected', String(item === option)))
-          selectedPageSize = Number(option.dataset.value)
-          pageSizeTrigger.textContent = option.dataset.value
-          pageSizeMenu.hidden = true
-          pageSizeTrigger.setAttribute('aria-expanded', 'false')
-        }))
-        document.querySelector('#refresh').addEventListener('click', () => {
-          const query = new URLSearchParams({
-            organizationId: scenario.organizationId,
-            environmentId: scenario.environmentId,
-            scopeKind: scenario.scopeKind,
-            scopeId: selectedScopeId,
-            skip: String(scenario.skip),
-            take: String(selectedPageSize),
-            siteCode: selectedSiteCode,
-          })
-          void fetch('${listPath}?' + query.toString())
-        })
-      </script>
-    `)
-
     const response = await proveWmsListPage({
       kind: 'inbound',
       page,
@@ -164,12 +56,13 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
     })
 
     expect(response.status()).toBe(200)
-    expect(new URL(response.url()).searchParams.get('siteCode')).toBe('SITE-001')
-    await expect(page.getByLabel('作业范围', { exact: true })).toHaveAttribute(
-      'data-scope-id',
-      expectedQuery.scopeId,
-    )
-    expect(requests).toHaveLength(1)
+    const responseUrl = new URL(response.url())
+    expect(responseUrl.searchParams.get('siteCode')).toBe(expectedQuery.siteCode)
+    expect(responseUrl.searchParams.get('take')).toBe(String(expectedQuery.take))
+    await expect(page.getByLabel('作业范围', { exact: true })).toContainText('收货作业池')
+    const markedRefreshRequests = targetRequests.filter((entry) => entry.marked)
+    expect(markedRefreshRequests).toHaveLength(1)
+    expect(new URL(markedRefreshRequests[0]!.request.url()).search).toBe(responseUrl.search)
   })
 
   test('作业范围 option 的底层 value 未回读为已选时失败关闭', async ({ page }) => {
@@ -357,35 +250,43 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
     ).rejects.toThrow('expected one catalog option, found 2')
   })
 
-  test('分页窗口必须由每页控件显式选择并通过已选值回读', async ({ page }) => {
-    await page.setContent(`
-      <base href="http://walkthrough.fixture/">
-      <button type="button" aria-label="每页条数" aria-expanded="false">10</button>
-      <div role="listbox" hidden>
-        <button type="button" role="option" aria-selected="true" data-value="10">10</button>
-        <button type="button" role="option" aria-selected="false" data-value="20">20</button>
-      </div>
-      <span aria-label="当前页">1 / 1</span>
-      <script>
-        const trigger = document.querySelector('[aria-label="每页条数"]')
-        const menu = document.querySelector('[role="listbox"]')
-        trigger.addEventListener('click', () => {
-          menu.hidden = false
-          trigger.setAttribute('aria-expanded', 'true')
-        })
-        menu.querySelectorAll('[role="option"]').forEach(option => option.addEventListener('click', () => {
-          menu.querySelectorAll('[role="option"]').forEach(item => item.setAttribute('aria-selected', String(item === option)))
-          trigger.textContent = option.dataset.value
-          menu.hidden = true
-          trigger.setAttribute('aria-expanded', 'false')
-        }))
-      </script>
-    `)
-
-    await expect(selectWmsPageWindow(page, { skip: 0, take: 20 }, 2_000)).resolves.toEqual({
-      skip: 0,
-      take: 20,
+  test('生产 NvPagination 的分页窗口必须通过公开 DOM 回读并产生对应请求', async ({ page }) => {
+    const expectedQuery = NERV_1571_WMS_OUTBOUND_QUERY_FACTS
+    const { targetRequests } = await mountWmsProductionFixture(page, {
+      kind: 'outbound',
+      targetPath: outboundPath,
     })
-    await expect(page.getByLabel('每页条数', { exact: true })).toContainText('20')
+    await selectWmsScopeOption(page, {
+      label: '作业范围',
+      option: '发货作业池',
+      scopeKind: expectedQuery.scopeKind,
+      scopeId: expectedQuery.scopeId,
+    })
+    const pageSizeRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url())
+      return (
+        request.method() === 'GET' &&
+        request.frame() === page.mainFrame() &&
+        url.pathname === outboundPath &&
+        !request.headers()['x-nerv-walkthrough-action'] &&
+        url.searchParams.get('take') === String(expectedQuery.take)
+      )
+    }, 120_000)
+    await expect(selectWmsPageWindow(page, { skip: 0, take: expectedQuery.take })).resolves.toEqual(
+      {
+        skip: 0,
+        take: expectedQuery.take,
+      },
+    )
+    await pageSizeRequest
+    const pageSizeTargetRequest = targetRequests.find((entry) => {
+      const url = new URL(entry.request.url())
+      return !entry.marked && url.searchParams.get('take') === String(expectedQuery.take)
+    })
+    expect(pageSizeTargetRequest).toBeDefined()
+    await expect(page.locator('[aria-current="page"][aria-label^="第 "]')).toHaveAttribute(
+      'aria-label',
+      '第 1 页',
+    )
   })
 })
