@@ -112,7 +112,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
         }
         else
             cost.RecordUncostedReport(integrationEvent.Payload.ReportNo, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
-        if (cost.CapitalizationPublished && integrationEvent.Payload.IsReversal)
+        if (cost.IsFullyCapitalized && integrationEvent.Payload.IsReversal)
             await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorTotal, integrationEvent.Payload.ReportNo, integrationEvent.Payload.ReportedAtUtc, cancellationToken);
         var pending = await dbContext.PendingMaterialCosts.Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.ReportNo == integrationEvent.Payload.ReportNo).ToListAsync(cancellationToken);
         foreach (var item in pending)

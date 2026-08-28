@@ -7,6 +7,63 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed partial class OperationLaborSettlementHandlerTests
 {
     [Fact]
+    public async Task Partial_finished_goods_then_theoretical_labor_reversal_defers_variance_until_final_receipt()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        db.WorkCenterCostRates.Add(Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
+        await db.SaveChangesAsync();
+        var report = Report("evt-report-reversal-source", "RPT-REVERSAL-SOURCE", AugustCompletedAtUtc.AddMinutes(-10));
+        var reportConsumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+            db, deadLetters, db, TestWorkOrderCostMutationLock.Instance);
+        await reportConsumer.HandleAsync(report, CancellationToken.None);
+        var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
+        await db.SaveChangesAsync();
+        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
+        await receiptConsumer.HandleAsync(
+            FinishedGoodsReceipt("evt-fg-reversal-partial", "MOVE-FG-REVERSAL-PARTIAL", "FGR-REVERSAL-PARTIAL", 5m),
+            CancellationToken.None);
+
+        var reversal = report with
+        {
+            EventId = "evt-report-reversal",
+            IdempotencyKey = "report:RPT-REVERSAL",
+            Payload = report.Payload with
+            {
+                ReportNo = "RPT-REVERSAL",
+                IsReversal = true,
+                ReversedReportNo = report.Payload.ReportNo,
+            },
+        };
+        await reportConsumer.HandleAsync(reversal, CancellationToken.None);
+
+        Assert.False(cost.IsFullyCapitalized);
+        Assert.Equal(0m, cost.TotalAccumulatedCost);
+        var vouchersBeforeFinalReceipt = await db.JournalVouchers.Include(x => x.Lines).ToListAsync();
+        Assert.Single(vouchersBeforeFinalReceipt);
+        Assert.DoesNotContain(
+            vouchersBeforeFinalReceipt.SelectMany(x => x.Lines),
+            line => line.AccountCode == "5101-PRODUCTION-VARIANCE");
+
+        await receiptConsumer.HandleAsync(
+            FinishedGoodsReceipt("evt-fg-reversal-final", "MOVE-FG-REVERSAL-FINAL", "FGR-REVERSAL-FINAL", 5m),
+            CancellationToken.None);
+
+        Assert.True(cost.IsFullyCapitalized);
+        Assert.Equal(0m, cost.WipClearedCost);
+        var vouchers = await db.JournalVouchers.Include(x => x.Lines).ToListAsync();
+        Assert.Equal(2, vouchers.Count);
+        var lines = vouchers.SelectMany(x => x.Lines).ToList();
+        Assert.Single(lines, line => line.AccountCode == "5101-PRODUCTION-VARIANCE");
+        Assert.Equal(160m, lines.Where(x => x.AccountCode == "1406-FINISHED-GOODS").Sum(x => x.DebitAmount - x.CreditAmount));
+        Assert.Equal(0m, lines.Where(x => x.AccountCode == "1405-WIP").Sum(x => x.DebitAmount - x.CreditAmount));
+        Assert.Equal(-160m, lines.Where(x => x.AccountCode == "5101-PRODUCTION-VARIANCE").Sum(x => x.DebitAmount - x.CreditAmount));
+        Assert.All(vouchers, voucher =>
+            Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount)));
+    }
+
+    [Fact]
     public async Task Settlement_after_capitalization_posts_one_balanced_delta_without_revaluing_capitalized_cost()
     {
         await using var db = CreateDb();
