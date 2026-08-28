@@ -301,6 +301,29 @@ describe('MES downtime record entry', () => {
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
   })
 
+  it('does not populate the record form when the entry guard trips between render and click (isolated stale-DOM interleave)', async () => {
+    // 以确定性交错模拟 stale-DOM 时序（同族手法见上一条用例）：按钮渲染时守卫未拦截，业务上下文
+    // 在同一 tick 内失效——DOM 的 disabled 属性还没来得及重渲染，trigger() 读到的仍是旧值，
+    // 点击得以派发，从而真正跑进 openRecordDialog 内部的 `if (recordEntryBlocker.value) return`。
+    // 不能证明项：本用例只证明「blocker 为真时该行会早返回」，不证明真实浏览器点击与 Vue
+    // microtask flush 之间确有这个时序窗口——那属于 ProviderBehavior，本 lane（jsdom +
+    // vue-test-utils）证不到。
+    // 断言取「开始时间」输入框——它只在守卫放行后由 openRecordDialog 写入当前时间，是
+    // 不依赖 NvDialog 开合状态的业务信号（本文件 NvDialog stub 键仍是失效的旧键，见跟进项；
+    // 若修正该键，此断言的可达性会随之改变，须同步换成对话框开合信号）。删掉那一行，
+    // 此用例必须变红。
+    const wrapper = mountPage()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(button).toBeDefined()
+    expect(button!.attributes('disabled')).toBeUndefined()
+
+    filters.organizationId = ''
+    await button!.trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('[aria-label="停机开始时间"]').element.value).toBe('')
+    expect(recordDowntimeEvent).not.toHaveBeenCalled()
+  })
+
   it('fails closed without an operation target, configured reason or valid time', async () => {
     vi.setSystemTime(fakeNow)
     const wrapper = mountPage()
