@@ -53,11 +53,14 @@ public sealed class OperationActualTimeSettlementPostgresTests
         var settlementOutboxes = (await ReadCapOutboxContentAsync())
             .Where(content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal))
             .ToArray();
-        Assert.Equal(2, settlementOutboxes.Length);
+        Assert.Equal(3, settlementOutboxes.Length);
         var settlementOutbox = Assert.Single(settlementOutboxes,
             content => content.StartsWith(SettledV2Topic, StringComparison.Ordinal));
         Assert.Contains(settlementOutboxes,
             content => content.StartsWith(SettledV1Topic, StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
+        Assert.Contains(settlementOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettledIntegrationEvent), StringComparison.Ordinal)
                 && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(1, task.ActualTimeSettlementRevision);
@@ -106,11 +109,14 @@ public sealed class OperationActualTimeSettlementPostgresTests
         var voidOutboxes = (await ReadCapOutboxContentAsync())
             .Where(content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal))
             .ToArray();
-        Assert.Equal(2, voidOutboxes.Length);
+        Assert.Equal(3, voidOutboxes.Length);
         var voidOutbox = Assert.Single(voidOutboxes,
             content => content.StartsWith(VoidedV2Topic, StringComparison.Ordinal));
         Assert.Contains(voidOutboxes,
             content => content.StartsWith(VoidedV1Topic, StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
+        Assert.Contains(voidOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent), StringComparison.Ordinal)
                 && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);

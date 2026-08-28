@@ -1,11 +1,15 @@
 using DotNetCore.CAP;
 using MediatR;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
 internal static class MesActualTimeIntegrationEventTopics
 {
+    public const string SettledV1LegacyAlias = nameof(MesOperationActualTimeSettledIntegrationEvent);
+    public const string VoidedV1LegacyAlias = nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent);
+
     public static string Settled(string deploymentEnvironment, int version) =>
         Build(deploymentEnvironment, "operation-actual-time-settled", version);
 
@@ -41,6 +45,7 @@ internal sealed class OperationActualTimeSettledIntegrationEventPublisher(
     public async Task Handle(OperationActualTimeSettledDomainEvent notification, CancellationToken cancellationToken)
     {
         var v1 = v1Converter.Convert(notification);
+        await publisher.PublishAsync(MesActualTimeIntegrationEventTopics.SettledV1LegacyAlias, v1);
         await publisher.PublishAsync(
             MesActualTimeIntegrationEventTopics.Settled(topicOptions.DeploymentEnvironment, v1.EventVersion),
             v1);
@@ -61,6 +66,7 @@ internal sealed class OperationActualTimeSettlementVoidedIntegrationEventPublish
     public async Task Handle(OperationActualTimeSettlementVoidedDomainEvent notification, CancellationToken cancellationToken)
     {
         var v1 = v1Converter.Convert(notification);
+        await publisher.PublishAsync(MesActualTimeIntegrationEventTopics.VoidedV1LegacyAlias, v1);
         await publisher.PublishAsync(
             MesActualTimeIntegrationEventTopics.Voided(topicOptions.DeploymentEnvironment, v1.EventVersion),
             v1);

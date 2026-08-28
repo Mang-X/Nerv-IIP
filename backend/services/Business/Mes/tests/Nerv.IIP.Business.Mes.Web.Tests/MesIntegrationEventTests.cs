@@ -127,6 +127,12 @@ public sealed class MesIntegrationEventTests
     public void Actual_time_topics_encode_deployment_source_context_event_and_envelope_version()
     {
         Assert.Equal(
+            nameof(MesOperationActualTimeSettledIntegrationEvent),
+            MesActualTimeIntegrationEventTopics.SettledV1LegacyAlias);
+        Assert.Equal(
+            nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent),
+            MesActualTimeIntegrationEventTopics.VoidedV1LegacyAlias);
+        Assert.Equal(
             "nerv-iip.production.business-mes.mes.operation-actual-time-settled.v1",
             MesActualTimeIntegrationEventTopics.Settled("Production", MesIntegrationEventVersions.V1));
         Assert.Equal(
