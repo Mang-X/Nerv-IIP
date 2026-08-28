@@ -2900,6 +2900,19 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/context-scan-prevalidation",
+      "operationId": "prevalidateBusinessMesContextScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "prevalidateBusinessConsoleMesContextScan"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts",
       "operationId": "confirmBusinessMesLineSideMaterialReceipt",
       "classification": "exposed",
