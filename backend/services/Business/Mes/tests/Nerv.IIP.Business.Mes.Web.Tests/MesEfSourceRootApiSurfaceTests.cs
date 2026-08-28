@@ -52,19 +52,84 @@ public sealed class MesEfSourceRootApiSurfaceTests
         });
     }
 
+    public static TheoryData<string> RootRuleSignatures
+    {
+        get
+        {
+            var rows = new TheoryData<string>();
+            foreach (var signature in Partition
+                         .Where(row => row.Value.Category == ApiCategory.Root)
+                         .Select(row => row.Key)
+                         .Order(StringComparer.Ordinal))
+            {
+                rows.Add(signature);
+            }
+
+            return rows;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RootRuleSignatures))]
+    public void Every_root_evidence_policy_matches_its_exact_method_shape(string signature)
+    {
+        var binding = RulesByIdentity.Values.Single(row => NormalizeManifestSignature(row.Method) == signature);
+
+        Assert.True(
+            EvidenceMatchesMethod(binding.Method, binding.Rule.Evidence),
+            $"Evidence {binding.Rule.Evidence} does not match '{binding.Method}'.");
+    }
+
+    internal static bool EvidenceMatchesMethod(MethodInfo method, EntityEvidencePolicy evidence)
+    {
+        return evidence.Kind switch
+        {
+            EntityEvidenceKind.ClosedGenericTypeArgument =>
+                evidence.Position >= 0
+                && evidence.Position < method.GetGenericArguments().Length
+                && !evidence.UnknownFailClosed,
+            EntityEvidenceKind.RuntimeTypeArgument =>
+                evidence.Position >= 0
+                && evidence.Position < method.GetParameters().Length
+                && method.GetParameters()[evidence.Position].ParameterType == typeof(Type)
+                && evidence.UnknownFailClosed,
+            EntityEvidenceKind.AllTrackedEntities => evidence.Position == -1 && !evidence.UnknownFailClosed,
+            _ => false,
+        };
+    }
+
     internal static IReadOnlyDictionary<string, ApiRule> Partition { get; } = ParseManifest()
         .ToDictionary(row => row.Signature, row => row.Rule, StringComparer.Ordinal);
 
-    private static IReadOnlyDictionary<EfApiIdentity, ApiRule> RulesByIdentity { get; } = SelectedOwners
-        .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-        .ToDictionary(CreateIdentity, method => Partition[NormalizeManifestSignature(method)]);
+    private static IReadOnlyDictionary<EfApiIdentity, ApiRuleBinding> RulesByIdentity { get; } = CreateRuleBindings();
+
+    private static IReadOnlyDictionary<EfApiIdentity, ApiRuleBinding> CreateRuleBindings()
+    {
+        var bindings = SelectedOwners
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            .Select(method => new ApiRuleBinding(method, Partition[NormalizeManifestSignature(method)]))
+            .ToArray();
+        foreach (var binding in bindings)
+        {
+            var compatible = binding.Rule.Category == ApiCategory.Root
+                ? EvidenceMatchesMethod(binding.Method, binding.Rule.Evidence)
+                : binding.Rule.Evidence == new EntityEvidencePolicy(EntityEvidenceKind.NoEntitySource, -1, false);
+            if (!compatible)
+            {
+                throw new InvalidOperationException(
+                    $"EF API rule {binding.Rule} does not match '{binding.Method}'.");
+            }
+        }
+
+        return bindings.ToDictionary(binding => CreateIdentity(binding.Method));
+    }
 
     internal static bool TryGetRule(IMethodSymbol method, out ApiRule rule)
     {
         var definition = method.ReducedFrom ?? method.OriginalDefinition;
         if (RulesByIdentity.TryGetValue(CreateIdentity(definition), out var found))
         {
-            rule = found;
+            rule = found.Rule;
             return true;
         }
 
@@ -84,19 +149,34 @@ public sealed class MesEfSourceRootApiSurfaceTests
                 && pair.Key.MetadataName == metadataName
                 && pair.Key.GenericArity == genericArity
                 && pair.Key.ParameterTypes.Length == argumentCount
-                && pair.Value.Category == ApiCategory.Root)
-            .Select(pair => pair.Value)
+                && pair.Value.Rule.Category == ApiCategory.Root)
+            .Select(pair => pair.Value.Rule)
             .Distinct()
             .ToArray();
         rule = candidates.Length == 1 ? candidates[0] : null!;
         return candidates.Length == 1;
     }
 
-    internal static bool HasReflectedGenericRoot(string owner, string metadataName, int genericArity) =>
-        RulesByIdentity.Any(pair => pair.Key.Owner == owner
-            && pair.Key.MetadataName == metadataName
-            && pair.Key.GenericArity == genericArity
-            && pair.Value is { Category: ApiCategory.Root, Evidence.Kind: EntityEvidenceKind.ClosedGenericTypeArgument });
+    internal static string? ResolveInstanceRootOwner(INamedTypeSymbol? receiverType)
+    {
+        var instanceRootOwners = RulesByIdentity
+            .Where(pair => !pair.Key.IsStatic && pair.Value.Rule.Category == ApiCategory.Root)
+            .Select(pair => (pair.Key.Assembly, pair.Key.Owner))
+            .Distinct()
+            .ToArray();
+
+        for (var current = receiverType; current is not null; current = current.BaseType)
+        {
+            var currentAssembly = current.ContainingAssembly.Name;
+            var currentOwner = current.ToDisplayString();
+            if (instanceRootOwners.Any(owner => owner.Assembly == currentAssembly && owner.Owner == currentOwner))
+            {
+                return currentOwner;
+            }
+        }
+
+        return null;
+    }
 
     private static IEnumerable<(string Signature, ApiRule Rule)> ParseManifest()
     {
@@ -356,6 +436,7 @@ Root|ClosedGenericTypeArgument:0|Microsoft.EntityFrameworkCore.Relational|Micros
 
     internal sealed record EntityEvidencePolicy(EntityEvidenceKind Kind, int Position, bool UnknownFailClosed);
     internal sealed record ApiRule(ApiCategory Category, EntityEvidencePolicy Evidence);
+    private sealed record ApiRuleBinding(MethodInfo Method, ApiRule Rule);
     private record EfApiIdentity(
         string Assembly,
         string Owner,

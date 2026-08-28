@@ -495,8 +495,6 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             "DbSetProperty",
         IInvocationOperation invocation when IsMaterialRequirementEfRoot(invocation.TargetMethod, invocation) =>
             $"Invocation:{invocation.TargetMethod.Name}",
-        IInvocationOperation invocation when IsMaterialRequirementEfReflectionRoot(invocation) =>
-            "Reflection:Root",
         IMethodReferenceOperation methodReference when IsMaterialRequirementEfRoot(methodReference.Method, null) =>
             $"MethodReference:{methodReference.Method.Name}",
         IDynamicInvocationOperation dynamicInvocation when IsDynamicMaterialRequirementEfInvocation(dynamicInvocation, operation.SemanticModel!) =>
@@ -515,42 +513,37 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         return EvaluateEvidence(
             rule.Evidence,
             method.TypeArguments,
-            invocation?.Arguments,
-            invocation?.SemanticModel);
+            position =>
+            {
+                var argument = invocation?.Arguments.FirstOrDefault(item => item.Parameter?.Ordinal == position);
+                return ResolveRuntimeType(argument?.Value, invocation?.SemanticModel, allowLocal: true);
+            });
     }
 
     private static bool EvaluateEvidence(
         MesEfSourceRootApiSurfaceTests.EntityEvidencePolicy evidence,
-        IReadOnlyList<ITypeSymbol> typeArguments,
-        IReadOnlyList<IArgumentOperation>? arguments,
-        SemanticModel? semanticModel)
+        IReadOnlyList<ITypeSymbol?> typeArguments,
+        Func<int, RuntimeTypeEvidence> resolveRuntimeType)
     {
-        if (evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.AllTrackedEntities)
+        return evidence.Kind switch
         {
-            return true;
-        }
-
-        if (evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.ClosedGenericTypeArgument)
-        {
-            return evidence.Position >= 0
+            MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.AllTrackedEntities => true,
+            MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.ClosedGenericTypeArgument =>
+                evidence.Position >= 0
                 && evidence.Position < typeArguments.Count
-                && IsMaterialRequirement(typeArguments[evidence.Position]);
-        }
-
-        if (evidence.Kind != MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.RuntimeTypeArgument
-            || arguments is null)
-        {
-            return evidence.UnknownFailClosed;
-        }
-
-        var argument = arguments.FirstOrDefault(item => item.Parameter?.Ordinal == evidence.Position);
-        return ResolveRuntimeType(argument?.Value, semanticModel, allowLocal: true) switch
-        {
-            RuntimeTypeEvidence.MaterialRequirement => true,
-            RuntimeTypeEvidence.Other => false,
-            _ => evidence.UnknownFailClosed,
+                && IsMaterialRequirement(typeArguments[evidence.Position]),
+            MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.RuntimeTypeArgument =>
+                ResolveRuntimeEvidence(resolveRuntimeType(evidence.Position), evidence.UnknownFailClosed),
+            _ => false,
         };
     }
+
+    private static bool ResolveRuntimeEvidence(RuntimeTypeEvidence evidence, bool unknownFailClosed) => evidence switch
+    {
+        RuntimeTypeEvidence.MaterialRequirement => true,
+        RuntimeTypeEvidence.Other => false,
+        _ => unknownFailClosed,
+    };
 
     private static bool IsDynamicMaterialRequirementEfInvocation(
         IDynamicInvocationOperation invocation,
@@ -575,56 +568,16 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             return false;
         }
 
-        if (rule.Evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.AllTrackedEntities)
-        {
-            return true;
-        }
-
-        if (rule.Evidence.Kind == MesEfSourceRootApiSurfaceTests.EntityEvidenceKind.ClosedGenericTypeArgument)
-        {
-            return rule.Evidence.Position < genericArguments.Length
-                && IsMaterialRequirement(genericArguments[rule.Evidence.Position]);
-        }
-
-        var argument = rule.Evidence.Position < syntax.ArgumentList.Arguments.Count
-            ? semanticModel.GetOperation(syntax.ArgumentList.Arguments[rule.Evidence.Position].Expression)
-            : null;
-        return ResolveRuntimeType(argument, semanticModel, allowLocal: true) switch
-        {
-            RuntimeTypeEvidence.MaterialRequirement => true,
-            RuntimeTypeEvidence.Other => false,
-            _ => rule.Evidence.UnknownFailClosed,
-        };
-    }
-
-    private static bool IsMaterialRequirementEfReflectionRoot(IInvocationOperation invocation)
-    {
-        if (invocation.TargetMethod.Name != nameof(System.Reflection.MethodInfo.MakeGenericMethod)
-            || invocation.TargetMethod.ContainingType.ToDisplayString() != "System.Reflection.MethodInfo")
-        {
-            return false;
-        }
-
-        var closesOverMaterialRequirement = invocation.Arguments
-            .SelectMany(argument => argument.Value.DescendantsAndSelf())
-            .OfType<ITypeOfOperation>()
-            .Any(typeOf => IsMaterialRequirement(typeOf.TypeOperand));
-        if (!closesOverMaterialRequirement)
-        {
-            return false;
-        }
-
-        return invocation.Instance?.DescendantsAndSelf()
-            .OfType<IInvocationOperation>()
-            .Any(getMethod =>
-                getMethod.TargetMethod.Name == nameof(Type.GetMethod)
-                && getMethod.TargetMethod.ContainingType.ToDisplayString() == typeof(Type).FullName
-                && getMethod.Instance?.DescendantsAndSelf().OfType<ITypeOfOperation>().FirstOrDefault() is { } ownerType
-                && getMethod.Arguments.FirstOrDefault()?.Value.ConstantValue is { HasValue: true, Value: string methodName }
-                && MesEfSourceRootApiSurfaceTests.HasReflectedGenericRoot(
-                    MapOwner(ownerType.TypeOperand as INamedTypeSymbol) ?? string.Empty,
-                    methodName,
-                    1)) == true;
+        return EvaluateEvidence(
+            rule.Evidence,
+            genericArguments,
+            position =>
+            {
+                var argument = position < syntax.ArgumentList.Arguments.Count
+                    ? semanticModel.GetOperation(syntax.ArgumentList.Arguments[position].Expression)
+                    : null;
+                return ResolveRuntimeType(argument, semanticModel, allowLocal: true);
+            });
     }
 
     private static string? ResolveDynamicOwner(ExpressionSyntax expression, SemanticModel semanticModel, bool allowLocal)
@@ -640,7 +593,8 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             };
         }
 
-        if (MapOwner(semanticModel.GetTypeInfo(expression).Type as INamedTypeSymbol) is { } direct)
+        if (MesEfSourceRootApiSurfaceTests.ResolveInstanceRootOwner(
+                semanticModel.GetTypeInfo(expression).Type as INamedTypeSymbol) is { } direct)
         {
             return direct;
         }
@@ -655,18 +609,6 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
         }
 
         return ResolveDynamicOwner(initializer, semanticModel, allowLocal: false);
-    }
-
-    private static string? MapOwner(INamedTypeSymbol? type)
-    {
-        if (IsOrInheritsFrom(type, typeof(DbContext).FullName!))
-        {
-            return typeof(DbContext).FullName;
-        }
-
-        return type?.ToDisplayString() == "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker"
-            ? type.ToDisplayString()
-            : null;
     }
 
     private static RuntimeTypeEvidence ResolveRuntimeType(IOperation? operation, SemanticModel? semanticModel, bool allowLocal)
