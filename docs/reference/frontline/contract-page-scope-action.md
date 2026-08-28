@@ -2,7 +2,7 @@
 
 本页索引 Business Console / Business PDA 现场作业的**当前公开契约、页面消费、主体范围与动作事实来源**。它不维护 P0/P1 缺口标签、Issue 完成状态、路线图 owner 或日期化审计。
 
-精确 operation、DTO、错误码和响应字段必须回到 BusinessGateway OpenAPI、Gateway 实现、generated client、业务服务和当前页面代码核实。M2 拆分前的逐行盘点保留在 [`../../reports/audits/frontline-contract-page-scope-action-matrix-2026-08-28.md`](../../reports/audits/frontline-contract-page-scope-action-matrix-2026-08-28.md)。真实验收证据口径见 [`acceptance-evidence.md`](acceptance-evidence.md)。
+精确 operation、DTO、错误码和响应字段必须回到 BusinessGateway OpenAPI、Gateway 实现、generated client、业务服务和当前页面代码核实。M2 拆分前的逐行盘点保留在 [`../../reports/frontline-contract-page-scope-action-matrix-2026-08-28.md`](../../reports/frontline-contract-page-scope-action-matrix-2026-08-28.md)，放在 `docs/reports/` 根部是为了保持原 `../../backend` / `../../frontend` 历史链接深度。真实验收证据口径见 [`acceptance-evidence.md`](acceptance-evidence.md)。
 
 ## 事实优先级
 

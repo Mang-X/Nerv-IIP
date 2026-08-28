@@ -2,7 +2,7 @@
 
 本页是 ReferenceData / CodeSet 的**当前人工查询目录**，记录稳定 CodeSet、标准码值和受控字段映射。它不是独立运行时事实源：当前可用值、启停状态与写入校验最终以 MasterData seed、ReferenceData/独立目录 API、领域校验器和实际前端消费代码为准。
 
-稳定维护规则见 [`../../governance/data/reference-data.md`](../../governance/data/reference-data.md)。历史形成与阶段性落地记录保留在 [`../../reports/audits/master-data-dictionary-rules-2026-08-28.md`](../../reports/audits/master-data-dictionary-rules-2026-08-28.md)。
+稳定维护规则见 [`../../governance/data/reference-data.md`](../../governance/data/reference-data.md)。M2 拆分前的阶段性落地叙事通过 Git 历史追溯，不复制到当前 Reference。
 
 ## Producer 与消费边界
 
