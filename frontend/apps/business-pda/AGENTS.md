@@ -28,8 +28,8 @@ pnpm -C frontend --filter @nerv-iip/business-pda cap:sync   # 构建 + 同步 Ca
    e2e，不能声称"真机验证"。
 
 分层定义、spec 清单、冒烟命令：`docs/architecture/mobile-pda-testing-and-smoke.md`。
-Capacitor 架构与打包部署：`docs/architecture/mobile-pda-capacitor-architecture.md`、
-`mobile-pda-deployment.md`。
+Capacitor 架构：`docs/architecture/mobile-pda-capacitor-architecture.md`；
+打包部署：`docs/runbooks/mobile-pda-deployment.md`。
 
 ## 硬性规则
 

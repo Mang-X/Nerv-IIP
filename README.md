@@ -68,7 +68,7 @@ Nerv-IIP 是面向数字工厂的工业应用平台。仓库以通用平台控�
 .\nerv.ps1 ports
 ```
 
-完整的前置条件、密钥、数据库、worktree、端口和故障处理见 [本地开发与排障](docs/architecture/local-dev-troubleshooting.md) 与 [Aspire 基础设施说明](infra/aspire/README.md)。
+完整的前置条件、密钥、数据库、worktree、端口和故障处理见 [本地开发与排障](docs/runbooks/local-development.md) 与 [Aspire 基础设施说明](infra/aspire/README.md)。
 
 ## 技术与运行基线
 
@@ -91,7 +91,7 @@ Nerv-IIP/
   connector-hosts/  Connector Host 与连接器实现
   infra/            Aspire、部署与环境适配
   scripts/          受治理的开发、验证、发布与维护入口
-  docs/             ADR、架构、产品、治理、状态与历史记录
+  docs/             ADR、架构、产品、治理、运行手册、状态与历史记录
   artifacts/        可复现的本地或 CI 诊断产物
 ```
 
@@ -102,6 +102,7 @@ Nerv-IIP/
 - [文档总入口](docs/README.md)：按任务选择 Architecture、ADR、Runbook、Governance、Reference、Status、Report 或 Product 文档。
 - [当前项目状态](docs/status/current.md)：只维护全仓级重点、阻塞、统一入口和少量跨域注意事项。
 - [当前架构入口](docs/architecture/README.md)：系统当前组件、边界、事实所有权与交互。
+- [当前 Runbook 入口](docs/runbooks/README.md)：启动、部署、迁移、恢复与排障操作。
 - [ADR 导航](docs/adr/README.md)：长期决策、选择理由及其后继关系。
 - [产品定位](PRODUCT.md) 与 [设计原则](DESIGN.md)。
 - [上下文地图](docs/architecture/context-map.md)、[仓库布局](docs/architecture/repo-layout.md) 与 [API 契约及代码生成](docs/architecture/api-contract-and-codegen.md)。
@@ -112,6 +113,7 @@ Nerv-IIP/
 - 当前项目进度、负责人、依赖和验收证据：GitHub / Linear。
 - 当前全仓级状态摘要：[`docs/status/current.md`](docs/status/current.md)。
 - 当前架构：[`docs/architecture/`](docs/architecture/) 中由架构入口路由的现态文档。
+- 当前操作手册：[`docs/runbooks/`](docs/runbooks/) 中由 Runbook 入口路由的现态操作文档。
 - 长期决策及理由：[`docs/adr/`](docs/adr/)。
 - 历史时点记录：[`docs/status/archive/`](docs/status/archive/)；历史快照不构成当前实现或交付裁决。
 
