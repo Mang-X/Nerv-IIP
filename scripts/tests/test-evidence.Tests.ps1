@@ -3090,7 +3090,8 @@ $hostedMemberIds = @(
     [regex]::Matches($hostedMemberListMatch.Groups['members'].Value, "'(?<id>[^']+)'") |
         ForEach-Object { $_.Groups['id'].Value }
 )
-Assert-Equal $hostedMemberIds.Count @($hostedMemberIds | Select-Object -Unique).Count 'Hosted PostgreSQL workflow member ids must be unique.'
+$hostedMemberIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+Assert-True (@($hostedMemberIds | Where-Object { -not $hostedMemberIdSet.Add($_) }).Count -eq 0) 'Hosted PostgreSQL workflow member ids must be unique.'
 $hostedMembers = @(
     foreach ($memberId in $hostedMemberIds) {
         $matches = @($activeCoreMembers | Where-Object { [string]::Equals([string]$_.id, $memberId, [StringComparison]::Ordinal) })
