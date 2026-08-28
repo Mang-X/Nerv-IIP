@@ -12,6 +12,7 @@
 ## 按任务加载
 
 - 服务边界、目录、数据所有权、跨域调用或公开契约调整：先读 `docs/architecture/README.md`，再读其中路由到的当前架构文档；仓库级基础边界至少核对 `docs/architecture/repo-layout.md` 与 `docs/architecture/context-map.md`。
+- 查询当前 Schema 目录、码表、事件消费关系、术语、页面/契约矩阵或技术资料：从 `docs/reference/README.md` 路由；Reference 是人工索引，精确实现事实仍回到其 producer。
 - 用户、角色、业务流程、IA 或 UX 变更：先从 `docs/product/README.md` 读取对应当前 Product，再按 `docs/adr/0021-product-docs-information-architecture.md` 评估产品文档影响。
 - 引入、推翻或复评会在当前任务结束后继续约束实现的长期决策：先读 `docs/adr/README.md`、相关 ADR 和 `docs/architecture/decision-record-governance.md`。
 - 本地启动、Aspire/fullstack 运行或排障：读取 `docs/runbooks/local-development.md`；其它操作型任务从 `docs/runbooks/README.md` 路由。

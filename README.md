@@ -80,7 +80,7 @@ Nerv-IIP 是面向数字工厂的工业应用平台。仓库以通用平台控�
 | 编排与交付 | Aspire AppHost 为统一拓扑，Compose、安装包和发布脚本为交付适配 | `infra/aspire/`、`infra/deploy/` 与受治理脚本 |
 | AI | Microsoft.Extensions.AI、DataIngestion 与 VectorData；复杂自治框架按真实闭环引入 | 代码引用、ADR 与相关 Architecture |
 
-不在 README 手工复制易漂移的依赖版本、固定端口或能力完成状态；精确值从上述权威生产者读取。
+不在 README 手工复制易漂移的依赖版本、固定端口或能力完成状态；精确值从上述权威生产者读取。长期技术资料和官方链接从 [技术栈 Reference](docs/reference/technology-stack.md) 查询。
 
 ## 仓库结构
 
@@ -91,7 +91,7 @@ Nerv-IIP/
   connector-hosts/  Connector Host 与连接器实现
   infra/            Aspire、部署与环境适配
   scripts/          受治理的开发、验证、发布与维护入口
-  docs/             ADR、架构、产品、治理、运行手册、状态与历史记录
+  docs/             ADR、架构、产品、治理、运行手册、参考资料、状态与历史记录
   artifacts/        可复现的本地或 CI 诊断产物
 ```
 
@@ -103,6 +103,7 @@ Nerv-IIP/
 - [当前项目状态](docs/status/current.md)：只维护全仓级重点、阻塞、统一入口和少量跨域注意事项。
 - [当前架构入口](docs/architecture/README.md)：系统当前组件、边界、事实所有权与交互。
 - [当前 Runbook 入口](docs/runbooks/README.md)：启动、部署、迁移、恢复与排障操作。
+- [当前 Reference 入口](docs/reference/README.md)：Schema、码表、矩阵、术语与技术资料的人工查询索引。
 - [ADR 导航](docs/adr/README.md)：长期决策、选择理由及其后继关系。
 - [产品定位](PRODUCT.md) 与 [设计原则](DESIGN.md)。
 - [上下文地图](docs/architecture/context-map.md)、[仓库布局](docs/architecture/repo-layout.md) 与 [API 契约及代码生成](docs/architecture/api-contract-and-codegen.md)。
@@ -114,6 +115,7 @@ Nerv-IIP/
 - 当前全仓级状态摘要：[`docs/status/current.md`](docs/status/current.md)。
 - 当前架构：[`docs/architecture/`](docs/architecture/) 中由架构入口路由的现态文档。
 - 当前操作手册：[`docs/runbooks/`](docs/runbooks/) 中由 Runbook 入口路由的现态操作文档。
+- 当前人工查询索引：[`docs/reference/`](docs/reference/)；其中内容必须回到各自 producer 核实。
 - 长期决策及理由：[`docs/adr/`](docs/adr/)。
 - 历史时点记录：[`docs/status/archive/`](docs/status/archive/)；历史快照不构成当前实现或交付裁决。
 
