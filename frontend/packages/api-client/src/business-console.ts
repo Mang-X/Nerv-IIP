@@ -25,6 +25,7 @@ export {
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   prevalidateBusinessConsoleMesMaterialScanMutationOptions,
+  prevalidateBusinessConsoleMesContextScanMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
@@ -527,6 +528,7 @@ export {
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesMaterialIssueRequests,
   prevalidateBusinessConsoleMesMaterialScan,
+  prevalidateBusinessConsoleMesContextScan,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesReportableOperationTasks,
   listBusinessConsoleMesProductionPlans,
@@ -989,6 +991,8 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipContractsMesMesMaterialScanPrevalidationRequest,
   NervIipContractsMesMesMaterialScanPrevalidationResponse,
+  NervIipContractsMesMesContextScanPrevalidationRequest,
+  NervIipContractsMesMesContextScanPrevalidationResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateShiftHandoverRequest,
@@ -1970,6 +1974,10 @@ export type BusinessConsoleMesMaterialScanPrevalidationRequest =
   NervIipContractsMesMesMaterialScanPrevalidationRequest
 export type BusinessConsoleMesMaterialScanPrevalidationResponse =
   NervIipContractsMesMesMaterialScanPrevalidationResponse
+export type BusinessConsoleMesContextScanPrevalidationRequest =
+  NervIipContractsMesMesContextScanPrevalidationRequest
+export type BusinessConsoleMesContextScanPrevalidationResponse =
+  NervIipContractsMesMesContextScanPrevalidationResponse
 export type BusinessConsoleMesCreateReceiptRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest
 export type BusinessConsoleMesCreateReceiptResponse =

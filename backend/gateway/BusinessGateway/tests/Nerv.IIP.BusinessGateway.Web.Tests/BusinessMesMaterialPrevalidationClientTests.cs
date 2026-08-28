@@ -9,6 +9,91 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessMesMaterialPrevalidationClientTests
 {
     [Fact]
+    public async Task Context_client_posts_only_resolved_strong_identifiers_with_internal_context()
+    {
+        var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new MesContextScanPrevalidationResponse(
+                MesContextScanDecision.Accepted,
+                "device-asset-scan-accepted",
+                "WO-001",
+                "OP-10",
+                MesContextScanObjectType.DeviceAsset,
+                "device-001",
+                DateTimeOffset.Parse("2026-08-28T01:00:00Z"))),
+        });
+        var client = new HttpBusinessMesContextPrevalidationClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+        var response = await client.PrevalidateAsync(
+            "internal-token",
+            "corr-context-001",
+            new MesContextScanPrevalidationRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                MesContextScanObjectType.DeviceAsset,
+                "device-001"),
+            CancellationToken.None);
+
+        Assert.Equal(MesContextScanDecision.Accepted, response.Decision);
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.Equal("/api/business/v1/mes/context-scan-prevalidation", handler.Path);
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.Equal("internal-token", handler.AuthorizationParameter);
+        Assert.Equal("corr-context-001", handler.CorrelationId);
+        using var body = JsonDocument.Parse(handler.Body);
+        Assert.Equal("WO-001", body.RootElement.GetProperty("workOrderId").GetString());
+        Assert.Equal("OP-10", body.RootElement.GetProperty("operationTaskId").GetString());
+        Assert.Equal("deviceAsset", body.RootElement.GetProperty("objectType").GetString());
+        Assert.Equal("device-001", body.RootElement.GetProperty("scannedObjectId").GetString());
+        Assert.False(body.RootElement.TryGetProperty("barcode", out _));
+    }
+
+    [Theory]
+    [InlineData("WO-OTHER", "OP-10", MesContextScanObjectType.DeviceAsset, "device-001")]
+    [InlineData("WO-001", "OP-OTHER", MesContextScanObjectType.DeviceAsset, "device-001")]
+    [InlineData("WO-001", "OP-10", MesContextScanObjectType.Personnel, "device-001")]
+    [InlineData("WO-001", "OP-10", MesContextScanObjectType.DeviceAsset, "device-other")]
+    public async Task Context_client_rejects_each_response_fact_that_does_not_echo_the_request(
+        string workOrderId,
+        string operationTaskId,
+        MesContextScanObjectType objectType,
+        string scannedObjectId)
+    {
+        var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new MesContextScanPrevalidationResponse(
+                MesContextScanDecision.Accepted,
+                "device-asset-scan-accepted",
+                workOrderId,
+                operationTaskId,
+                objectType,
+                scannedObjectId,
+                DateTimeOffset.Parse("2026-08-28T01:00:00Z"))),
+        });
+        var client = new HttpBusinessMesContextPrevalidationClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://mes"),
+        });
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.PrevalidateAsync(
+            "internal-token",
+            "corr-context-001",
+            new MesContextScanPrevalidationRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                MesContextScanObjectType.DeviceAsset,
+                "device-001"),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Client_posts_exact_strong_identifier_contract_with_internal_bearer()
     {
         var handler = new RecordingHandler();
