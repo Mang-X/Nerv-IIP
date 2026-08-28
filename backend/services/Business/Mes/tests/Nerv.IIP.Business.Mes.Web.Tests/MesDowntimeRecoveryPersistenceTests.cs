@@ -13,6 +13,9 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// <summary>
 /// #1323：停机恢复查询必须在真实关系 provider 上可翻译（InMemory 会把
 /// x.Id.Id.ToString() 之类不可翻译谓词跑成假绿），因此全部用 SQLite 实跑。
+/// #1947：停机读面（列表行投影 + 按原因聚合）改由 <see cref="MesDowntimeReadFacePostgresTests"/>
+/// 在真实 PostgreSQL 上证明——按原因聚合把时长差值下推成 <c>date_part('epoch', ...)</c>，
+/// SQLite 连同本文件的 DateTimeOffset→long 值转换器都翻译不了，留在这里只会变成翻译不了的假红。
 /// </summary>
 public sealed class MesDowntimeRecoveryPersistenceTests
 {
@@ -111,30 +114,6 @@ public sealed class MesDowntimeRecoveryPersistenceTests
         var blockingAfter = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
             dbContext, Org, Env, "WC-03", null, effectiveAt, CancellationToken.None);
         Assert.Empty(blockingAfter);
-    }
-
-    [Fact]
-    public async Task Downtime_list_rows_keep_work_center_code_out_of_work_order_field()
-    {
-        await using var connection = await CreateOpenSqliteConnectionAsync();
-        await using var dbContext = CreateSqliteDbContext(connection);
-        await dbContext.Database.EnsureCreatedAsync();
-        dbContext.WorkCenterUnavailabilities.Add(WorkCenterUnavailability.Open(
-            Org, Env, "DT-0004", "WC-04",
-            DateTimeOffset.Parse("2026-07-30T00:00:00Z"), null, "equipment-fault", "EQ-004"));
-        await dbContext.SaveChangesAsync();
-        dbContext.ChangeTracker.Clear();
-
-        var handler = new ListDowntimeEventsQueryHandler(dbContext);
-        var response = await handler.Handle(
-            new ListDowntimeEventsQuery(Org, Env, null, null),
-            CancellationToken.None);
-
-        var row = Assert.Single(response.Items);
-        Assert.Equal("DT-0004", row.DowntimeEventId);
-        Assert.Null(row.WorkOrderId);
-        Assert.Equal("WC-04", row.WorkCenterId);
-        Assert.Equal("equipment-fault", row.ReasonCode);
     }
 
     private static async Task<SqliteConnection> CreateOpenSqliteConnectionAsync()

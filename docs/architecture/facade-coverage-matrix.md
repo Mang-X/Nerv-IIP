@@ -79,16 +79,16 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      50 |      41 |        5 |        4 |
-| Mes                 |      60 |      59 |        0 |        1 |
+| Mes                 |      61 |      60 |        0 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **427** | **355** |   **46** |   **26** |
+| **Total**           | **428** | **356** |   **46** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（355）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（356）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和
@@ -133,6 +133,14 @@ BusinessGateway `listBusinessConsoleMesOperationTasks`、`listBusinessConsoleMes
 `getBusinessConsoleMesProductionReport` 暴露。facade 保留工序的 `actualLaborHours` / `actualMachineHours`
 以及报工列表和详情的 `operationActualLaborHours` / `operationActualMachineHours`；尚无冻结
 实绩时字段必须存在且值为 `null`，不得以序列化省略替代。
+
+对于 #1948 报工人身份与追溯执行上下文，MES `POST /api/business/v1/mes/production-reports` 继续分类为
+`exposed`，由 BusinessGateway `recordBusinessConsoleMesProductionReport` 暴露；下游 `reportedBy` 由 Gateway 从
+已认证 principal 注入，**公开请求 DTO 不暴露该字段**，调用方无法自报报工人。报工列表与详情 facade 透传
+`reportedBy`，历史报工为 `null`。MES 三个追溯读面（`getBusinessMesWorkOrderTraceability`、
+`getBusinessMesBatchTraceability`、`getBusinessMesMaterialLotTraceability`）继续分类为 `exposed`，节点新增
+`occurredAtUtc`；其中 `InspectionResult` 节点及其 `inspected-as` 边由 Gateway 按 `business.mes.quality.read`
+分层，未持该权限的主体拿到的图不含这两者（见 authorization-matrix）。
 
 ### 延后 endpoint（facade 已跟踪，尚未暴露）
 

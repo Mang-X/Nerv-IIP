@@ -84,6 +84,12 @@ const handoverContextReady = computed(() =>
   Boolean(filters.organizationId.trim() && filters.environmentId.trim()),
 )
 
+const createEntryBlocker = computed(() => {
+  if (!canManageHandovers.value) return '没有交接单管理权限'
+  if (!handoverContextReady.value) return '请先完成业务上下文选择'
+  return ''
+})
+
 const shiftCatalog = useBusinessMasterDataResources('shift')
 const teamCatalog = useBusinessMasterDataResources('team')
 shiftCatalog.filters.take = CATALOG_TAKE
@@ -198,7 +204,7 @@ function resetCreateForm() {
 }
 
 function openCreateDialog() {
-  if (!canManageHandovers.value || !handoverContextReady.value) return
+  if (createEntryBlocker.value) return
   resetCreateForm()
   createIdempotencyKey.value = makeIdempotencyKey('mes-handover-create')
   createDialogOpen.value = true
@@ -392,12 +398,11 @@ function formatError(error: unknown) {
     >
       <template #actions>
         <NvButton
-          v-if="canManageHandovers"
           aria-label="新建班次交接"
           size="sm"
           type="button"
-          :disabled="!handoverContextReady"
-          :title="handoverContextReady ? undefined : '请先完成业务上下文选择'"
+          :disabled="Boolean(createEntryBlocker)"
+          :title="createEntryBlocker || '新建班次交接单'"
           @click="openCreateDialog"
         >
           <PlusIcon aria-hidden="true" />
@@ -482,7 +487,7 @@ function formatError(error: unknown) {
       :loading="handoversPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无班次交接。先在班次结束时创建交接单登记未完成事项，再由接班人在这里确认接收。"
+      empty-message="暂无班次交接。点击上方「新建交接」登记未完成事项，接班人可在这里确认接收。"
     >
       <template #cell-handoverStatus="{ row }">
         <NvStatusBadge

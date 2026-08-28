@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
@@ -114,7 +115,9 @@ public sealed record RecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
+    string? ReportedBy = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -430,7 +433,8 @@ public sealed record ListDowntimeEventsRequest(
     int Take = 100,
     string? Keyword = null,
     string? ShiftId = null,
-    string? Status = null);
+    string? Status = null,
+    string? ReasonCode = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -999,6 +1003,23 @@ public sealed class GetMaterialIssueRequestEndpoint(ISender sender)
     }
 }
 
+public sealed class PrevalidateMaterialScanEndpoint(ISender sender)
+    : MesEndpoint<MesMaterialScanPrevalidationRequest, MesMaterialScanPrevalidationResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<PrevalidateMaterialScanEndpoint>());
+
+    public override async Task HandleAsync(MesMaterialScanPrevalidationRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new PrevalidateMaterialScanQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.MaterialIssueRequestId,
+            req.WorkOrderId,
+            req.OperationTaskId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ConfirmLineSideMaterialReceiptEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<LineSideMaterialReceiptRequest, MesAcceptedResponse>
 {
@@ -1286,7 +1307,8 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
                 req.ScrapReasonCode,
                 req.DefectRecordNo,
                 req.ProducedLotNo,
-                req.SerialNo)
+                req.SerialNo,
+                ReportedBy: req.ReportedBy)
             : new RecordProductionReportCommand(
                 req.OrganizationId,
                 req.EnvironmentId,
@@ -1302,7 +1324,8 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
                 req.ScrapReasonCode,
                 req.DefectRecordNo,
                 req.ProducedLotNo,
-                req.SerialNo);
+                req.SerialNo,
+                ReportedBy: req.ReportedBy);
         var result = await sender.Send(command, ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
@@ -1537,7 +1560,8 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Take,
             req.Keyword,
             req.ShiftId,
-            req.Status), ct);
+            req.Status,
+            req.ReasonCode), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1745,6 +1769,7 @@ public static class MesEndpointContracts
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),
         new(typeof(GetMaterialIssueRequestEndpoint), "GET", "/api/business/v1/mes/material-issue-requests/{requestId}", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialIssueRequest"),
+        new(typeof(PrevalidateMaterialScanEndpoint), "POST", "/api/business/v1/mes/material-scan-prevalidation", MesPermissionCodes.MaterialsRead, "prevalidateBusinessMesMaterialScan"),
         new(typeof(ConfirmLineSideMaterialReceiptEndpoint), "POST", "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts", MesPermissionCodes.MaterialsManage, "confirmBusinessMesLineSideMaterialReceipt"),
         new(typeof(ReturnLineSideMaterialEndpoint), "POST", "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns", MesPermissionCodes.MaterialsManage, "returnBusinessMesLineSideMaterial"),
         new(typeof(ListDispatchTasksEndpoint), "GET", "/api/business/v1/mes/dispatch-tasks", MesPermissionCodes.DispatchRead, "listBusinessMesDispatchTasks"),

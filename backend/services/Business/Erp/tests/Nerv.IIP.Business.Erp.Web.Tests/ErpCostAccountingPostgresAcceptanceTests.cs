@@ -51,8 +51,10 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
 
         await using var gateDb = new ApplicationDbContext(options, new NoopMediator());
         await using var gateTransaction = await gateDb.Database.BeginTransactionAsync();
-        await new PostgreSqlWorkCenterCostRateRevisionLock(gateDb)
-            .AcquireAsync("org-concurrent", "env-concurrent", "WC-CONCURRENT", CancellationToken.None);
+        await new PostgreSqlErpAdvisoryLockAllocator(gateDb)
+            .AcquireAsync(
+                ErpAdvisoryLockDomain.WorkCenterLaborCostRate,
+                "org-concurrent", "env-concurrent", "WC-CONCURRENT", CancellationToken.None);
 
         var effectiveFromUtc = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
         var changedAtUtc = new DateTimeOffset(2026, 7, 23, 8, 0, 0, TimeSpan.Zero);

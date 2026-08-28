@@ -16038,6 +16038,91 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/material-scan-prevalidation": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "prevalidateBusinessConsoleMesMaterialScan",
+        "requestBody": {
+          "x-name": "MesMaterialScanPrevalidationRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPContractsMesMesMaterialScanPrevalidationRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts": {
       "post": {
         "tags": [
@@ -18598,6 +18683,14 @@
             }
           },
           {
+            "name": "reasonCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -20192,6 +20285,14 @@
           },
           {
             "name": "workshopCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "deviceAssetId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -45882,6 +45983,122 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsMesMesMaterialScanPrevalidationResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsMesMesMaterialScanPrevalidationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision",
+          "reasonCode",
+          "materialIssueRequestId",
+          "workOrderId",
+          "operationTaskId",
+          "evaluatedAtUtc"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/NervIIPContractsMesMesMaterialScanDecision"
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "materialIssueRequestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operationTaskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "materialId": {
+            "type": "string",
+            "nullable": true
+          },
+          "materialLotId": {
+            "type": "string",
+            "nullable": true
+          },
+          "materialQualification": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          }
+        }
+      },
+      "NervIIPContractsMesMesMaterialScanDecision": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Accepted",
+          "Rejected"
+        ],
+        "enum": [
+          "accepted",
+          "rejected"
+        ]
+      },
+      "NervIIPContractsMesMesMaterialScanPrevalidationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "materialIssueRequestId",
+          "workOrderId",
+          "operationTaskId"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "environmentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "materialIssueRequestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operationTaskId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -46477,6 +46694,11 @@
             "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
             "format": "decimal",
             "nullable": true
+          },
+          "reportedBy": {
+            "type": "string",
+            "description": "提交本条报工的操作人引用；升级前的历史报工为 null。",
+            "nullable": true
           }
         }
       },
@@ -46621,6 +46843,11 @@
             "type": "number",
             "description": "对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
             "format": "decimal",
+            "nullable": true
+          },
+          "reportedBy": {
+            "type": "string",
+            "description": "提交本条报工的操作人引用；升级前的历史报工为 null。",
             "nullable": true
           }
         }
@@ -47692,6 +47919,12 @@
           "total": {
             "type": "integer",
             "format": "int32"
+          },
+          "reasonSummary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow"
+            }
           }
         }
       },
@@ -47780,8 +48013,37 @@
           "reasonCode": {
             "type": "string",
             "nullable": true
+          },
+          "reasonName": {
+            "type": "string",
+            "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reasonCode": {
+            "type": "string"
+          },
+          "openCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "durationMinutes": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reasonName": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest": {
         "type": "object",
@@ -48157,6 +48419,12 @@
           },
           "status": {
             "type": "string"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "description": "该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },

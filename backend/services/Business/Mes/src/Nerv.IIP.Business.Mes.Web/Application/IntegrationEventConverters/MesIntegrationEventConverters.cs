@@ -18,6 +18,7 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
     {
         var report = domainEvent.ProductionReport;
         var projection = domainEvent.OeeProjection;
+        var dimensionSnapshot = report.GetOeeDimensionSnapshot();
         var idempotencyKey = EventIds.Idempotency(
             "production-report-recorded",
             report.OrganizationId,
@@ -51,7 +52,17 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
                 // retain correction lineage for audit and downstream projections that need it.
                 report.IsReversal,
                 report.ReversedReportNo,
-                report.MaterialMovementCount));
+                report.MaterialMovementCount,
+                SiteCode: dimensionSnapshot?.SiteCode,
+                WorkshopCode: dimensionSnapshot?.WorkshopCode,
+                LineCode: dimensionSnapshot?.LineCode,
+                ShiftCode: dimensionSnapshot?.ShiftCode,
+                SiteTimezone: dimensionSnapshot?.SiteTimezone,
+                ShiftStartsAt: dimensionSnapshot?.ShiftStartsAt,
+                ShiftEndsAt: dimensionSnapshot?.ShiftEndsAt,
+                ShiftCrossesMidnight: dimensionSnapshot?.ShiftCrossesMidnight,
+                ShiftPaidMinutes: dimensionSnapshot?.ShiftPaidMinutes,
+                ShiftBreakMinutes: dimensionSnapshot?.ShiftBreakMinutes));
     }
 }
 

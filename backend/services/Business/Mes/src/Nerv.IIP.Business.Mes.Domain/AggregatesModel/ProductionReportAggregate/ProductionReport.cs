@@ -9,6 +9,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public const string ManualSource = "manual";
     public const string TelemetrySource = "telemetry";
     public const int ReversedByMaxLength = 100;
+    public const int ReportedByMaxLength = 100;
 
     private ProductionReport()
     {
@@ -32,7 +33,9 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? reversedReportNo,
         string? reversalReason,
         string? reversedBy,
+        string? reportedBy,
         ProductionReportOeeProjection? oeeProjection,
+        ProductionReportOeeDimensionSnapshot? oeeDimensionSnapshot,
         string source,
         int materialMovementCount)
     {
@@ -58,10 +61,23 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         ReversedReportNo = string.IsNullOrWhiteSpace(reversedReportNo) ? null : reversedReportNo.Trim();
         ReversalReason = string.IsNullOrWhiteSpace(reversalReason) ? null : reversalReason.Trim();
         ReversedBy = string.IsNullOrWhiteSpace(reversedBy) ? null : reversedBy.Trim();
-        OeeWorkCenterId = string.IsNullOrWhiteSpace(oeeProjection?.WorkCenterId) ? null : oeeProjection.WorkCenterId.Trim();
-        OeeDeviceAssetId = string.IsNullOrWhiteSpace(oeeProjection?.DeviceAssetId) ? null : oeeProjection.DeviceAssetId.Trim();
+        ReportedBy = string.IsNullOrWhiteSpace(reportedBy) ? null : reportedBy.Trim();
+        OeeWorkCenterId = NormalizeOptional(oeeDimensionSnapshot?.WorkCenterId ?? oeeProjection?.WorkCenterId);
+        OeeDeviceAssetId = NormalizeOptional(oeeDimensionSnapshot?.DeviceAssetId ?? oeeProjection?.DeviceAssetId);
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
         OeeTheoreticalRatePerHour = oeeProjection?.TheoreticalRatePerHour;
+        OeeDimensionResolutionStatus = NormalizeOptional(oeeDimensionSnapshot?.ResolutionStatus);
+        OeeDimensionDegradedReason = NormalizeOptional(oeeDimensionSnapshot?.DegradedReason);
+        OeeSiteCode = NormalizeOptional(oeeDimensionSnapshot?.SiteCode);
+        OeeWorkshopCode = NormalizeOptional(oeeDimensionSnapshot?.WorkshopCode);
+        OeeLineCode = NormalizeOptional(oeeDimensionSnapshot?.LineCode);
+        OeeSiteTimezone = NormalizeOptional(oeeDimensionSnapshot?.SiteTimezone);
+        OeeShiftCode = NormalizeOptional(oeeDimensionSnapshot?.ShiftCode);
+        OeeShiftStartsAt = oeeDimensionSnapshot?.ShiftStartsAt;
+        OeeShiftEndsAt = oeeDimensionSnapshot?.ShiftEndsAt;
+        OeeShiftCrossesMidnight = oeeDimensionSnapshot?.ShiftCrossesMidnight;
+        OeeShiftPaidMinutes = oeeDimensionSnapshot?.ShiftPaidMinutes;
+        OeeShiftBreakMinutes = oeeDimensionSnapshot?.ShiftBreakMinutes;
         Source = NormalizeSource(source);
         MaterialMovementCount = materialMovementCount >= 0 ? materialMovementCount : throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
     }
@@ -81,10 +97,28 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? ReversedReportNo { get; private set; }
     public string? ReversalReason { get; private set; }
     public string? ReversedBy { get; private set; }
+
+    /// <summary>
+    /// 提交本条报工的操作人引用（经认证的 principal actor）。遥测自动候选在人工确认晋升前没有操作人，
+    /// 升级前的历史报工同样为 <c>null</c>；这两条是仅有的可空来源。
+    /// </summary>
+    public string? ReportedBy { get; private set; }
     public string? OeeWorkCenterId { get; private set; }
     public string? OeeDeviceAssetId { get; private set; }
     public string? OeeUomCode { get; private set; }
     public decimal? OeeTheoreticalRatePerHour { get; private set; }
+    public string? OeeDimensionResolutionStatus { get; private set; }
+    public string? OeeDimensionDegradedReason { get; private set; }
+    public string? OeeSiteCode { get; private set; }
+    public string? OeeWorkshopCode { get; private set; }
+    public string? OeeLineCode { get; private set; }
+    public string? OeeSiteTimezone { get; private set; }
+    public string? OeeShiftCode { get; private set; }
+    public TimeOnly? OeeShiftStartsAt { get; private set; }
+    public TimeOnly? OeeShiftEndsAt { get; private set; }
+    public bool? OeeShiftCrossesMidnight { get; private set; }
+    public int? OeeShiftPaidMinutes { get; private set; }
+    public int? OeeShiftBreakMinutes { get; private set; }
     public string Source { get; private set; } = ManualSource;
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
@@ -97,6 +131,27 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         return string.IsNullOrWhiteSpace(OeeWorkCenterId) || string.IsNullOrWhiteSpace(OeeUomCode)
             ? null
             : new ProductionReportOeeProjection(OeeWorkCenterId, OeeDeviceAssetId, OeeUomCode, OeeTheoreticalRatePerHour);
+    }
+
+    public ProductionReportOeeDimensionSnapshot? GetOeeDimensionSnapshot()
+    {
+        return OeeDimensionResolutionStatus is null || OeeWorkCenterId is null
+            ? null
+            : new ProductionReportOeeDimensionSnapshot(
+                OeeDimensionResolutionStatus,
+                OeeDimensionDegradedReason,
+                OeeDeviceAssetId,
+                OeeWorkCenterId,
+                OeeSiteCode,
+                OeeWorkshopCode,
+                OeeLineCode,
+                OeeSiteTimezone,
+                OeeShiftCode,
+                OeeShiftStartsAt,
+                OeeShiftEndsAt,
+                OeeShiftCrossesMidnight,
+                OeeShiftPaidMinutes,
+                OeeShiftBreakMinutes);
     }
 
     public static ProductionReport Record(
@@ -116,7 +171,9 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? serialNo = null,
         ProductionReportOeeProjection? oeeProjection = null,
         string source = ManualSource,
-        int materialMovementCount = 0)
+        int materialMovementCount = 0,
+        string? reportedBy = null,
+        ProductionReportOeeDimensionSnapshot? oeeDimensionSnapshot = null)
     {
         DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
         DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
@@ -144,7 +201,9 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             null,
             null,
             null,
+            reportedBy,
             oeeProjection,
+            oeeDimensionSnapshot,
             source,
             materialMovementCount);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
@@ -189,7 +248,10 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             original.ReportNo,
             reason,
             normalizedActorRef,
+            // 冲销行也是一条报工事实，提交它的人就是执行冲销的操作人。
+            normalizedActorRef,
             originalOeeProjection,
+            original.GetOeeDimensionSnapshot(),
             original.Source,
             original.MaterialMovementCount);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
@@ -210,4 +272,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
 
         return normalized;
     }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
