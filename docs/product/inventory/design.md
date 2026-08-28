@@ -1,7 +1,7 @@
 # 库存与仓储模块 · 产品业务设计
 
 > 业务域：库存（Inventory）+ 仓储作业（WMS）。本文件是该域产品 / IA / UX / 分期 / 验收的依据，
-> 与 `docs/architecture/master-data-module-product-design.md` 同级。
+> 与 `../master-data/design.md` 同属 Product 文档。
 > 改本域页面前先读本文件；发现后端缺口在 §4 回填。
 
 ## 1. 这个域给谁用、主操作是什么
