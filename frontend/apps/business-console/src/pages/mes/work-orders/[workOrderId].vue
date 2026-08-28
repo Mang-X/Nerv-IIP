@@ -677,6 +677,13 @@ const scheduleDisabledReason = computed(() => {
   if (!canScheduleSingleOrder.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
   return ''
 })
+// 空态复用同一份 scheduleDisabledReason：禁用原因只有一处真实来源，避免空态文案与
+// tooltip（:947）各写各的、漏分支或说反原因（#2707）。
+const operationTasksEmptyMessage = computed(() =>
+  scheduleDisabledReason.value
+    ? `暂无工序任务。${scheduleDisabledReason.value}`
+    : '暂无工序任务。点击上方「对该单排产」生成方案，在「排产工作台」发布后可在这里派工与报工。',
+)
 const canCancel = computed(
   () =>
     workOrderManageScopeReady.value &&
@@ -1144,7 +1151,7 @@ function formatError(error: unknown) {
         :rows="operationTasks"
         row-key="operationTaskId"
         :loading="detailPending"
-        empty-message="暂无工序任务。上方「对该单排产」按钮可点击时，点击生成方案，在「排产工作台」发布后可在这里派工与报工；按钮为灰色时，本单当前不可排产（工单已处于终态，或没有排产权限），无需点击。"
+        :empty-message="operationTasksEmptyMessage"
         :searchable="false"
         :column-settings="false"
       >
@@ -1199,7 +1206,7 @@ function formatError(error: unknown) {
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
         :loading="materialReadinessPending"
-        empty-message="暂无用料行。用料行需要工单已下达/排产、有生效生产版本、且「制造 BOM」物料清单已发布，三者缺一不可；请先到「制造 BOM」发布物料清单，若已发布仍为空，请确认工单是否已下达/排产。"
+        empty-message="暂无用料行。先到「制造 BOM」发布物料清单；还需工单已下达/排产、且有生效生产版本，三者缺一不可。"
         :searchable="false"
         :column-settings="false"
       >
