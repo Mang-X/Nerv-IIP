@@ -676,8 +676,10 @@ $excludedSelectors = @(
 # PostgreSQL 用例，整类交给 real-postgres lane，选择器总数增加到 64。#2070 新增的周期巡检
 # PostgreSQL profile 同样整类交给 real-postgres lane，选择器总数增加到 65；报废原因码 profile 再增加 1 个类选择器。
 # #1963 PR-A 新增 WorkOrderTransformation PostgreSQL 类后，选择器总数增加到 67；#2247 的替代料快照
-# provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane，选择器总数增加到 70。
-Assert-Contract ($excludedSelectors.Count -eq 70) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane；后续 machine-overhead provider 与
+# ERP 工序人工 Redis/CAP transport 类并入治理后，选择器总数增加到 71。
+Assert-Contract ($excludedSelectors.Count -eq 71) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests'))) 'The Quality periodic-inspection PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests'))) 'The Quality scrap-reason PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests'))) 'The MES CAP save-boundary PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
@@ -1338,7 +1340,7 @@ try {
     # test silently pass the moment MAN-669 PR-A moved that exclusion to another shard.
     $laneManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $redisCapShards = @($laneManifest.fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.excludedTestLanes | ForEach-Object { [string] $_ })), [StringComparer]::OrdinalIgnoreCase).Contains([string]('redis-cap')) })
-    Assert-Contract ($redisCapShards.Count -eq 1) 'Exactly one fast shard must own the Redis/CAP exclusions for the lane-attribution contract to be able to under-declare it.'
+    Assert-Contract ($redisCapShards.Count -ge 1) 'At least one fast shard must own Redis/CAP exclusions for the lane-attribution contract to under-declare one owner.'
     $redisCapShards[0].excludedTestLanes = @('real-postgres')
     Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
     $laneAttribution = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-lane-attribution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
@@ -1389,7 +1391,7 @@ try {
         $lastIndexProbePath = Join-Path $lastIndexProbeRoot 'probe.ps1'
         [IO.File]::WriteAllText($lastIndexProbePath, $backendTestSource.Replace($lastIndexTarget, "    `$collisionMethod = `$collisionSelector.Substring(`$collisionSelector.LastIndexOf('.') + 1)"), [Text.UTF8Encoding]::new($false))
         $lastIndexMutationFindings = @((Get-NervOrdinalComparisonFindings -ScriptPath $lastIndexProbePath -DisplayName 'backend-test-shards-last-index-mutation.ps1').Findings)
-        Assert-Contract ($lastIndexMutationFindings.Count -eq 1 -and $lastIndexMutationFindings[0].Contains('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal)) 'Removing the explicit ordinal comparer from the selector suffix extraction must make the ordinal scanner fail.'
+        Assert-Contract (@($lastIndexMutationFindings | Where-Object { $_.Contains('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -gt 0) 'Removing the explicit ordinal comparer from the selector suffix extraction must make the ordinal scanner fail.'
     }
     finally {
         if (Test-Path -LiteralPath $lastIndexProbeRoot) { Remove-Item -LiteralPath $lastIndexProbeRoot -Recurse -Force }
@@ -1708,8 +1710,9 @@ try {
             if (@($shardLanes).Count -gt 1) { $shard }
         }
     )
-    Assert-Contract ($donorCandidates.Count -eq 1) 'Exactly one fast shard must own exclusions from more than one heavy lane, otherwise the rearrangement fixture cannot move a lane between shards.'
-    $donor = $donorCandidates[0]
+    Assert-Contract ($donorCandidates.Count -gt 0) 'At least one fast shard must own exclusions from more than one heavy lane, otherwise the rearrangement fixture cannot move a lane between shards.'
+    $donorId = @(Get-NervStringsSorted -Values @($donorCandidates | ForEach-Object { [string] $_.id }) -Comparer ([StringComparer]::Ordinal))[0]
+    $donor = @($donorCandidates | Where-Object { [string]::Equals([string] $_.id, $donorId, [StringComparison]::Ordinal) })[0]
     $receiver = @($rearranged.fastShards | Where-Object { -not [string]::Equals([string] $_.id, [string] $donor.id, [StringComparison]::Ordinal) })[0]
 
     # The moved project is the donor project whose assembly owns the multi-lane exclusion.

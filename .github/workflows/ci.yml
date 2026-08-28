@@ -942,13 +942,13 @@ jobs:
           "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
           Write-Host "tested-sha=$testedSha"
 
-      - name: Run DemandPlanning Redis/CAP transport profiles
+      - name: Run governed Redis/CAP transport profiles
         timeout-minutes: 20
         id: redis-cap-tests
         shell: pwsh
         run: |
           ./scripts/run-redis-cap-test-lane.ps1 `
-            -MemberId demandplanning-sales-order-redis-cap `
+            -MemberId demandplanning-sales-order-redis-cap,erp-operation-labor-redis-cap `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
             -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json

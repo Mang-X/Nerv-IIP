@@ -23,6 +23,7 @@
       "excludedTestClasses": [
         "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests",
+        "Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests",
         "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests",
         "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests",
@@ -38,7 +39,8 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests"
       ],
       "excludedTestLanes": [
-        "real-postgres"
+        "real-postgres",
+        "redis-cap"
       ],
       "excludedTests": [
         "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres",

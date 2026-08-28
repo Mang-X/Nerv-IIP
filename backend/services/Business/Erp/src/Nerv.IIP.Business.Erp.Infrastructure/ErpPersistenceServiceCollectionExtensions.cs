@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
@@ -31,6 +32,7 @@ public static class ErpPersistenceServiceCollectionExtensions
         });
         services.AddScoped<IErpAdvisoryLockAllocator, PostgreSqlErpAdvisoryLockAllocator>();
         services.AddScoped<IWorkCenterRateRevisionAllocator, WorkCenterRateRevisionAllocator>();
+        services.AddScoped<IWorkOrderCostMutationLock, PostgreSqlWorkOrderCostMutationLock>();
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
         return services;

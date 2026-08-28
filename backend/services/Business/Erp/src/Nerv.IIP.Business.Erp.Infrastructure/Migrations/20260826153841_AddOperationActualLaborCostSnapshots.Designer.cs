@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826153841_AddOperationActualLaborCostSnapshots")]
+    partial class AddOperationActualLaborCostSnapshots
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3047,133 +3050,6 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate.WorkCenterMachineOverheadRate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasComment("Work-center machine-overhead rate revision id.");
-
-                    b.Property<string>("AccountingPeriodCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("accounting_period_code")
-                        .HasComment("ERP accounting period code for this monthly rate revision.");
-
-                    b.Property<string>("Applicability")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("applicability")
-                        .HasComment("Explicit Applicable or NotApplicable status for machine-overhead allocation.");
-
-                    b.Property<DateTimeOffset>("ChangedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("changed_at_utc")
-                        .HasComment("UTC audit instant at which this revision was configured.");
-
-                    b.Property<string>("ChangedBy")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("changed_by")
-                        .HasComment("Canonical authenticated actor that configured this immutable revision.");
-
-                    b.Property<string>("CurrencyCode")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character(3)")
-                        .HasColumnName("currency_code")
-                        .IsFixedLength()
-                        .HasComment("Normalized three-letter uppercase currency code fixed within the work-center scope.");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("environment_id")
-                        .HasComment("Environment boundary.");
-
-                    b.Property<decimal>("FixedHourlyRate")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("fixed_hourly_rate")
-                        .HasComment("System-derived fixed overhead budget divided by normal-capacity machine hours.");
-
-                    b.Property<decimal>("FixedOverheadBudget")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("fixed_overhead_budget")
-                        .HasComment("Monthly fixed manufacturing-overhead budget for the work center.");
-
-                    b.Property<decimal>("NormalCapacityMachineHours")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("normal_capacity_machine_hours")
-                        .HasComment("Normal-capacity machine hours excluding planned maintenance; never actual low-load hours.");
-
-                    b.Property<string>("OrganizationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("organization_id")
-                        .HasComment("Organization boundary.");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("reason")
-                        .HasComment("Auditable business reason for this immutable revision.");
-
-                    b.Property<int>("Revision")
-                        .HasColumnType("integer")
-                        .HasColumnName("revision")
-                        .HasComment("Monotonically increasing append-only revision within scope, work center, and accounting period.");
-
-                    b.Property<decimal>("TotalHourlyRate")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("total_hourly_rate")
-                        .HasComment("System-derived sum of fixed and variable machine-overhead hourly rates.");
-
-                    b.Property<decimal>("VariableHourlyRate")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("variable_hourly_rate")
-                        .HasComment("System-derived variable overhead budget divided by normal-capacity machine hours.");
-
-                    b.Property<decimal>("VariableOverheadBudget")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("variable_overhead_budget")
-                        .HasComment("Monthly variable manufacturing-overhead budget for the work center.");
-
-                    b.Property<string>("WorkCenterId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("work_center_id")
-                        .HasComment("Work-center public identifier that owns the monthly machine-overhead pool.");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
-                        .IsUnique()
-                        .IsDescending(false, false, false, false, true)
-                        .HasDatabaseName("ux_wc_machine_overhead_rates_scope_period_revision");
-
-                    b.ToTable("work_center_machine_overhead_rates", "erp", t =>
-                        {
-                            t.HasComment("ERP append-only monthly predetermined machine-overhead rate revisions by work center.");
-
-                            t.HasCheckConstraint("ck_wc_machine_overhead_rates_cost_basis", "(applicability = 'Applicable'\n AND fixed_overhead_budget >= 0\n AND variable_overhead_budget >= 0\n AND fixed_overhead_budget + variable_overhead_budget > 0\n AND normal_capacity_machine_hours > 0\n AND fixed_hourly_rate =\n     trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6)\n     + CASE\n         WHEN fixed_overhead_budget / normal_capacity_machine_hours\n                  - trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6) > 0.0000005\n           OR (fixed_overhead_budget / normal_capacity_machine_hours\n                  - trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6) = 0.0000005\n               AND mod(trunc(fixed_overhead_budget / normal_capacity_machine_hours, 6) * 1000000, 2) = 1)\n         THEN 0.000001 ELSE 0\n       END\n AND variable_hourly_rate =\n     trunc(variable_overhead_budget / normal_capacity_machine_hours, 6)\n     + CASE\n         WHEN variable_overhead_budget / normal_capacity_machine_hours\n                  - trunc(variable_overhead_budget / normal_capacity_machine_hours, 6) > 0.0000005\n           OR (variable_overhead_budget / normal_capacity_machine_hours\n                  - trunc(variable_overhead_budget / normal_capacity_machine_hours, 6) = 0.0000005\n               AND mod(trunc(variable_overhead_budget / normal_capacity_machine_hours, 6) * 1000000, 2) = 1)\n         THEN 0.000001 ELSE 0\n       END\n AND total_hourly_rate = fixed_hourly_rate + variable_hourly_rate)\nOR\n(applicability = 'NotApplicable'\n AND fixed_overhead_budget = 0\n AND variable_overhead_budget = 0\n AND normal_capacity_machine_hours = 0\n AND fixed_hourly_rate = 0\n AND variable_hourly_rate = 0\n AND total_hourly_rate = 0)");
-
-                            t.HasCheckConstraint("ck_wc_machine_overhead_rates_currency_revision", "currency_code ~ '^[A-Z]{3}$' AND revision > 0");
-                        });
-                });
-
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationLaborCoveredReport", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3777,19 +3653,19 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("expected_report_count")
                         .HasComment("MES completion count of cost-bearing reports.");
 
-                    b.Property<string>("LaborCurrencyCode")
-                        .HasMaxLength(3)
-                        .HasColumnType("character(3)")
-                        .HasColumnName("labor_currency_code")
-                        .IsFixedLength()
-                        .HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
-
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization boundary.");
+
+                    b.Property<string>("LaborCurrencyCode")
+                        .IsFixedLength()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("labor_currency_code")
+                        .HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
 
                     b.Property<int>("ReceivedMaterialMovementCount")
                         .HasColumnType("integer")

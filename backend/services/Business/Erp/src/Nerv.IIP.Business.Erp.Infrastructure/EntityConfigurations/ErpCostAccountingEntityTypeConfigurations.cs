@@ -37,6 +37,7 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         GLAccountEntityTypeConfiguration.AddTenant(builder);
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Finished-good SKU code.");
+        builder.Property(x => x.LaborCurrencyCode).HasColumnName("labor_currency_code").HasMaxLength(3).IsFixedLength().HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).HasComment("MES good quantity at completion.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("MES completion timestamp.");
         builder.Property(x => x.CapitalizedCost).HasColumnName("capitalized_cost").HasPrecision(18, 6).HasComment("Finished-goods inventory value posted for this work order.");
@@ -82,6 +83,8 @@ public sealed class WorkOrderCostDetailEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Public source event document id.");
         builder.Property(x => x.DimensionCode).HasColumnName("dimension_code").IsRequired().HasMaxLength(100).HasComment("Work center or material SKU dimension.");
         builder.Property(x => x.ReportNo).HasColumnName("report_no").HasMaxLength(100).HasComment("MES report number for material-to-work-order correlation.");
+        builder.Property(x => x.LaborBasis).HasColumnName("labor_basis").HasConversion<string>().HasMaxLength(50).HasComment("Labor costing basis: theoretical report, actual operation, or append-only reversal/replacement.");
+        builder.Property(x => x.LaborLineageId).HasColumnName("labor_lineage_id").HasMaxLength(200).HasComment("Stable MES report or operation-settlement lineage for auditable labor replacement and reversal.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Labor hours or material quantity.");
         builder.Property(x => x.Rate).HasColumnName("rate").HasPrecision(18, 6).HasComment("Hourly rate or moving-average unit cost.");
         builder.Property(x => x.Amount).HasColumnName("amount").HasPrecision(18, 6).HasComment("Signed actual cost amount.");
@@ -90,14 +93,116 @@ public sealed class WorkOrderCostDetailEntityTypeConfiguration : IEntityTypeConf
     }
 }
 
+public sealed class OperationLaborSettlementEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborSettlement>
+{
+    public void Configure(EntityTypeBuilder<OperationLaborSettlement> builder)
+    {
+        builder.ToTable("operation_labor_settlements", table => table.HasComment("Immutable ERP actual-operation labor snapshot priced at a frozen standard work-center rate."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Operation labor settlement snapshot id.");
+        GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation-task public identifier.");
+        builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MES work-center public identifier used for rate selection.");
+        builder.Property(x => x.SettlementRevision).HasColumnName("settlement_revision").HasComment("Monotonic MES actual-time settlement revision.");
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("MES operation completion instant used as the rate basis.");
+        builder.Property(x => x.ActualLaborTicks).HasColumnName("actual_labor_ticks").HasComment("Lossless MES actual labor duration in TimeSpan ticks.");
+        builder.Property(x => x.ActualLaborHours).HasColumnName("actual_labor_hours").HasPrecision(24, 12).HasComment("Actual labor hours derived from the frozen tick value.");
+        builder.Property(x => x.WorkCenterCostRateId).HasColumnName("work_center_cost_rate_id").HasComment("Frozen work-center standard labor-rate revision id.");
+        builder.Property(x => x.RateRevision).HasColumnName("rate_revision").HasComment("Frozen work-center standard labor-rate revision number.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(3).IsFixedLength().HasComment("Frozen three-letter currency code; no implicit conversion is allowed.");
+        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Frozen standard labor hourly rate.");
+        builder.Property(x => x.RateBasisAtUtc).HasColumnName("rate_basis_at_utc").HasComment("UTC rate basis equal to the MES completion instant.");
+        builder.Property(x => x.RateBasis).HasColumnName("rate_basis").IsRequired().HasMaxLength(30).HasComment("Frozen rate basis; currently standard.");
+        builder.Property(x => x.Amount).HasColumnName("amount").HasPrecision(18, 6).HasComment("Actual labor hours multiplied by the frozen standard rate.");
+        builder.Property(x => x.SourceEventId).HasColumnName("source_event_id").IsRequired().HasMaxLength(256).HasComment("First MES event id that established the immutable snapshot.");
+        builder.Property(x => x.PayloadHash).HasColumnName("payload_hash").IsRequired().HasMaxLength(64).IsFixedLength().HasComment("SHA-256 of canonical business payload fields for conflict detection.");
+        builder.HasOne<WorkCenterCostRate>().WithMany().HasForeignKey(x => x.WorkCenterCostRateId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskId, x.SettlementRevision })
+            .IsUnique()
+            .HasDatabaseName("ux_operation_labor_settlements_business_identity");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
+            .HasDatabaseName("ix_operation_labor_settlements_work_order");
+    }
+}
+
+public sealed class OperationLaborSettlementVoidEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborSettlementVoid>
+{
+    public void Configure(EntityTypeBuilder<OperationLaborSettlementVoid> builder)
+    {
+        builder.ToTable("operation_labor_settlement_voids", table => table.HasComment("Append-only exact reversal of an immutable operation labor settlement snapshot."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Operation labor settlement void id.");
+        GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation-task public identifier.");
+        builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("Frozen MES work-center public identifier.");
+        builder.Property(x => x.SettlementRevision).HasColumnName("settlement_revision").HasComment("Voided MES settlement revision.");
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("Original MES completion instant.");
+        builder.Property(x => x.VoidedAtUtc).HasColumnName("voided_at_utc").HasComment("MES void occurrence instant.");
+        builder.Property(x => x.ActualLaborTicks).HasColumnName("actual_labor_ticks").HasComment("Exact copy of original actual labor ticks.");
+        builder.Property(x => x.ActualLaborHours).HasColumnName("actual_labor_hours").HasPrecision(24, 12).HasComment("Exact copy of original actual labor hours.");
+        builder.Property(x => x.WorkCenterCostRateId).HasColumnName("work_center_cost_rate_id").HasComment("Exact copy of original frozen rate id.");
+        builder.Property(x => x.RateRevision).HasColumnName("rate_revision").HasComment("Exact copy of original frozen rate revision.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(3).IsFixedLength().HasComment("Exact copy of original frozen currency.");
+        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Exact copy of original frozen hourly rate.");
+        builder.Property(x => x.RateBasisAtUtc).HasColumnName("rate_basis_at_utc").HasComment("Exact copy of original rate basis instant.");
+        builder.Property(x => x.RateBasis).HasColumnName("rate_basis").IsRequired().HasMaxLength(30).HasComment("Exact copy of original rate basis.");
+        builder.Property(x => x.Amount).HasColumnName("amount").HasPrecision(18, 6).HasComment("Strictly opposite amount of the original settlement.");
+        builder.Property(x => x.SourceEventId).HasColumnName("source_event_id").IsRequired().HasMaxLength(256).HasComment("MES settlement-void event id.");
+        builder.Property(x => x.PayloadHash).HasColumnName("payload_hash").IsRequired().HasMaxLength(64).IsFixedLength().HasComment("SHA-256 of canonical void business payload fields.");
+        builder.HasOne<WorkCenterCostRate>().WithMany().HasForeignKey(x => x.WorkCenterCostRateId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskId, x.SettlementRevision })
+            .IsUnique()
+            .HasDatabaseName("ux_operation_labor_settlement_voids_business_identity");
+    }
+}
+
+public sealed class OperationLaborSettlementStateEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborSettlementState>
+{
+    public void Configure(EntityTypeBuilder<OperationLaborSettlementState> builder)
+    {
+        builder.ToTable("operation_labor_settlement_states", table => table.HasComment("Monotonic ERP processing watermark and active revision for one MES operation task."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Operation labor settlement state id.");
+        GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation-task public identifier.");
+        builder.Property(x => x.HighestRevision).HasColumnName("highest_revision").HasComment("Highest settlement or void revision observed for this operation.");
+        builder.Property(x => x.ActiveRevision).HasColumnName("active_revision").HasComment("Currently active settlement revision, or null after a void.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskId })
+            .IsUnique()
+            .HasDatabaseName("ux_operation_labor_settlement_states_operation");
+    }
+}
+
+public sealed class OperationLaborCoveredReportEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborCoveredReport>
+{
+    public void Configure(EntityTypeBuilder<OperationLaborCoveredReport> builder)
+    {
+        builder.ToTable("operation_labor_covered_reports", table => table.HasComment("Permanent MES report lineage covered by one operation-level actual labor settlement."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Covered production-report lineage id.");
+        GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation-task public identifier.");
+        builder.Property(x => x.SettlementRevision).HasColumnName("settlement_revision").HasComment("MES settlement revision that covered the report.");
+        builder.Property(x => x.ReportNo).HasColumnName("report_no").IsRequired().HasMaxLength(100).HasComment("MES production report number permanently suppressed from theoretical labor costing.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
+            .IsUnique()
+            .HasDatabaseName("ux_operation_labor_covered_reports_report");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskId, x.SettlementRevision })
+            .HasDatabaseName("ix_operation_labor_covered_reports_settlement");
+    }
+}
+
 public sealed class WorkCenterCostRateEntityTypeConfiguration : IEntityTypeConfiguration<WorkCenterCostRate>
 {
     public void Configure(EntityTypeBuilder<WorkCenterCostRate> builder)
     {
-        builder.ToTable("work_center_cost_rates", table => table.HasComment("ERP append-only, effective-dated labor hourly-rate revision history by work center.")); builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work-center cost-rate id."); GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.ToTable("work_center_cost_rates", table => table.HasComment("ERP append-only, effective-dated standard labor hourly-rate revision history by work center.")); builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work-center standard labor-rate id."); GLAccountEntityTypeConfiguration.AddTenant(builder);
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MES work-center public identifier.");
-        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Positive actual labor rate per hour.");
+        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Positive standard labor hourly rate.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(3).IsFixedLength().HasComment("Normalized ISO-style three-letter uppercase currency code.");
         builder.Property(x => x.EffectiveFromUtc).HasColumnName("effective_from_utc").HasComment("Inclusive UTC instant from which this revision may apply.");
         builder.Property(x => x.EffectiveToUtc).HasColumnName("effective_to_utc").HasComment("Optional exclusive UTC instant after which this revision no longer applies.");
