@@ -26,7 +26,10 @@ const issueFilters = reactive({
   status: undefined as string | undefined,
 })
 const workOrderFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
+  workOrderId: undefined as string | undefined,
 })
 
 const requests = [
@@ -161,9 +164,11 @@ describe('PDA MES material issue page', () => {
     returnLineSideMaterial.mockResolvedValue(undefined)
     push.mockClear()
     issueFilters.keyword = undefined
+    issueFilters.workOrderId = undefined
     issueFilters.organizationId = 'org-001'
     issueFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     issuePending.value = false
     issueError.value = null
     issueRequests.value = requests
@@ -293,12 +298,15 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).not.toContain('MAT-A')
   })
 
-  it('scanning sets the issue keyword filter', async () => {
+  it('uses the resolved work-order strong id as an exact issue filter', async () => {
     const wrapper = mount(IssuePage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(issueFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    expect(issueFilters.workOrderId).toBe('WO-2026-0002')
+    expect(issueFilters.keyword).toBeUndefined()
   })
 
   it('creates an issue with the bound fields and a page-supplied idempotencyKey', async () => {

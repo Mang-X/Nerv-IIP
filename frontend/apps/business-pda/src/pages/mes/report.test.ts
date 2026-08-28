@@ -334,6 +334,7 @@ describe('PDA MES production reporting page', () => {
     scrapReasonCodesErrorRef.value = null
     operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     taskFilters.workOrderId = undefined
     route.query = {}
   })
@@ -451,12 +452,20 @@ describe('PDA MES production reporting page', () => {
     expect(refreshWorkOrderDetail).toHaveBeenCalledTimes(1)
   })
 
-  it('scanning sets the work-order keyword filter', async () => {
+  it('uses the resolved work-order strong id as the exact report route', async () => {
     const wrapper = mount(ReportPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(workOrderFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    await flushPromises()
+    expect(workOrderFilters.workOrderId).toBe('WO-2026-0002')
+    expect(workOrderFilters.keyword).toBeUndefined()
+    expect(replace).toHaveBeenCalledWith({
+      path: '/mes/report',
+      query: { workOrderId: 'WO-2026-0002' },
+    })
   })
 
   it('shows detail operations after a work order is selected without list discovery', async () => {

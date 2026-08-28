@@ -10,19 +10,15 @@ import {
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
-import {
-  NvAppShellMobile,
-  NvBottomSheet,
-  NvListRow,
-  NvMobileResult,
-  NvScanBar,
-} from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvBottomSheet, NvListRow, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 
 definePage({
   meta: {
@@ -139,6 +135,9 @@ const submitting = ref(false)
 // 稳定的逐操作幂等键：提交时铸造一次，重试复用同键；
 // 开始新完工入库（重新打开新建、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
+const scanPending = ref(false)
+const scannedWorkOrderId = ref('')
+const scannedOperationTaskId = ref('')
 
 const createSheetOpen = computed({
   get: () => creating.value && result.value === null,
@@ -185,6 +184,7 @@ function changeWorkOrder() {
 }
 
 async function submitCreate() {
+  if (scanPending.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const sku = skuId.value.trim()
   const uom = uomCode.value.trim()
@@ -237,14 +237,23 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
-// ScanBar 仅在列表态活跃；新建/结果展开时不抢焦点
+// 扫码仅在列表态活跃；新建/结果展开时不抢焦点。
 const scanActive = computed(() => result.value === null && !creating.value)
 
-function onScan(value: string) {
-  filters.keyword = value
+function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
+  scannedWorkOrderId.value = value.workOrderId
+  scannedOperationTaskId.value = value.kind === 'operation-task' ? value.operationTaskId : ''
+  filters.keyword = undefined
+  filters.workOrderId = value.workOrderId
 }
-function onScanWorkOrder(value: string) {
-  workOrderFilters.keyword = value
+
+function onCreateScanAccepted(value: MesScanAccepted) {
+  if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
+  scannedWorkOrderId.value = value.workOrderId
+  scannedOperationTaskId.value = value.kind === 'operation-task' ? value.operationTaskId : ''
+  workOrderFilters.keyword = undefined
+  workOrderFilters.workOrderId = value.workOrderId
 }
 </script>
 
@@ -264,6 +273,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="new-receipt"
+          :disabled="scanPending"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -309,7 +319,16 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描工单号 / 入库单" :active="scanActive" @scan="onScan" />
+      <MesScanPrevalidation
+        :organization-id="filters.organizationId"
+        :environment-id="filters.environmentId"
+        :work-order-id="scannedWorkOrderId"
+        :operation-task-id="scannedOperationTaskId"
+        placeholder="扫描工单或工序"
+        :active="scanActive"
+        @accepted="onScanAccepted"
+        @pending-change="scanPending = $event"
+      />
 
       <ListScopeMeta
         :scope="listScope"
@@ -375,7 +394,15 @@ function onScanWorkOrder(value: string) {
 
         <!-- 步骤 1：选工单 -->
         <div v-if="currentStep === 'selectWorkOrder' || !selectedWorkOrder" class="space-y-2">
-          <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
+          <MesScanPrevalidation
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :work-order-id="scannedWorkOrderId"
+            :operation-task-id="scannedOperationTaskId"
+            placeholder="扫描工单或工序"
+            @accepted="onCreateScanAccepted"
+            @pending-change="scanPending = $event"
+          />
           <p class="text-sm text-muted-foreground">
             选择完工入库的工单（共 {{ workOrderTotal }} 张）
           </p>
@@ -471,7 +498,7 @@ function onScanWorkOrder(value: string) {
           <button
             type="button"
             data-testid="submit-receipt"
-            :disabled="!createValid || submitting"
+            :disabled="!createValid || submitting || scanPending"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="submitCreate"
           >

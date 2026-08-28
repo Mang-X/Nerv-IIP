@@ -8,6 +8,7 @@ import {
   REQUEST_TIMEOUT_MS,
 } from '@/api/request-timeout'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import {
   type OperationActionContext,
@@ -27,7 +28,6 @@ import {
   NvMobileDropdownMenu,
   NvMobileDropdownMenuItem,
   NvMobileToast,
-  NvScanBar,
   type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
@@ -42,6 +42,7 @@ import {
   type OperationActionKind as ActionKind,
   type OperationResultState as ResultState,
 } from './components/operationPresentation'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 
 definePage({
   meta: {
@@ -216,6 +217,8 @@ const toast = reactive({ show: false, message: '', type: 'error' as const })
 const availableActions = computed(() => actionsFor(selected.value))
 
 const scanActive = computed(() => selected.value === null && result.value === null)
+const scanPending = shallowRef(false)
+const actionOrScanPending = computed(() => actionPending.value || scanPending.value)
 const statusOptions: DropdownOption[] = [
   { label: '全部状态', value: '' },
   { label: '待开始', value: 'queued' },
@@ -431,6 +434,7 @@ async function openSopFile(sop: CurrentSop) {
 }
 
 async function runAction(action: ActionKind) {
+  if (scanPending.value) return
   if (!operationScopeReady.value) {
     toast.message = operationScopeMessage.value
     toast.show = true
@@ -602,8 +606,20 @@ function backToList() {
   router.push('/').catch(() => {})
 }
 
-function onScan(value: string) {
-  filters.keyword = value
+async function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind === 'work-order') {
+    await router.replace({ path: '/mes/operation', query: {} })
+    filters.keyword = undefined
+    filters.workOrderId = value.workOrderId
+    filters.operationTaskId = undefined
+    return
+  }
+  if (value.kind === 'operation-task') {
+    await router.replace({
+      path: '/mes/operation',
+      query: { workOrderId: value.workOrderId, operationTaskId: value.operationTaskId },
+    })
+  }
 }
 </script>
 
@@ -630,7 +646,7 @@ function onScan(value: string) {
       :result="result"
       :selected="selected"
       :open="sheetOpen"
-      :action-pending="actionPending"
+      :action-pending="actionOrScanPending"
       :operation-scope-ready="operationScopeReady"
       :confirming-complete="confirmingComplete"
       :current-sops="currentSops"
@@ -647,7 +663,20 @@ function onScan(value: string) {
       @cancel-complete="confirmingComplete = false"
       @refresh-sops="() => refreshSops()"
       @open-sop="openSopFile"
-    />
+    >
+      <template #context-scan>
+        <MesScanPrevalidation
+          :organization-id="filters.organizationId"
+          :environment-id="filters.environmentId"
+          :work-order-id="selected?.workOrderId"
+          :operation-task-id="selected?.operationTaskId"
+          placeholder="扫描当前工序 / 设备 / 工牌"
+          :active="selected !== null && !result"
+          @accepted="onScanAccepted"
+          @pending-change="scanPending = $event"
+        />
+      </template>
+    </MesOperationExecutionPanel>
 
     <TaskListShell
       v-if="!result"
@@ -674,7 +703,16 @@ function onScan(value: string) {
     >
       <template #filters>
         <div class="space-y-3 px-4 py-3">
-          <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
+          <MesScanPrevalidation
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :work-order-id="requestedWorkOrderId"
+            :operation-task-id="requestedOperationTaskId"
+            placeholder="扫描工单或工序"
+            :active="scanActive"
+            @accepted="onScanAccepted"
+            @pending-change="scanPending = $event"
+          />
           <MesWorkScopeFilter permission-code="business.mes.operations.read" />
           <NvMobileDropdownMenu>
             <NvMobileDropdownMenuItem

@@ -108,6 +108,7 @@ const blockReasonDisplays = computed(() =>
       <p class="text-sm text-muted-foreground">
         当前状态：{{ operationTaskStatusLabel(selected.status) }}
       </p>
+      <slot name="context-scan" />
       <dl
         class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-lg border border-border px-3 py-3 text-sm"
       >

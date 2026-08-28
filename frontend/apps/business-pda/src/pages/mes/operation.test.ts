@@ -7,6 +7,7 @@ import { computed, defineComponent, h, nextTick, reactive, ref, shallowRef } fro
 type OperationTaskFixture = Omit<BusinessConsoleMesOperationTaskRow, 'status'> & { status?: string }
 
 const push = vi.fn()
+const replace = vi.fn()
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -37,7 +38,7 @@ vi.mock('vue-router', async () => {
       routeGuardState.guard = guard
     }),
     useRoute: () => route,
-    useRouter: () => ({ push }),
+    useRouter: () => ({ push, replace }),
   }
 })
 
@@ -237,6 +238,9 @@ describe('PDA MES operation execution page', () => {
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
     push.mockReset().mockResolvedValue(undefined)
+    replace.mockReset().mockImplementation(async (to: { query?: Record<string, string> }) => {
+      routeState.replaceQuery?.(to.query ?? {})
+    })
     routeGuardState.guard = undefined
     filters.keyword = undefined
     filters.organizationId = 'org-001'
@@ -314,12 +318,17 @@ describe('PDA MES operation execution page', () => {
     expect(wrapper.text()).toContain('工序 10')
   })
 
-  it('sets filters.keyword when scanning', async () => {
+  it('uses the resolved work-order strong id as an exact task filter', async () => {
     const wrapper = mount(OperationPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(filters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    await flushPromises()
+    expect(filters.workOrderId).toBe('WO-2026-0002')
+    expect(filters.operationTaskId).toBeUndefined()
+    expect(filters.keyword).toBeUndefined()
   })
 
   it('opens the action BottomSheet when a row is tapped', async () => {
