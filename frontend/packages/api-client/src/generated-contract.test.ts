@@ -7,6 +7,7 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
+  PrevalidateBusinessConsoleMesMaterialScanErrors,
   RecordBusinessConsoleMesDowntimeEventErrors,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
@@ -112,6 +113,7 @@ import type {
   GetBusinessConsolePrincipalWorkContextData,
   GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsoleMasterDataResourcesData,
   ListBusinessConsoleMesOperationTasksData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
@@ -273,6 +275,12 @@ describe('generated API client contract', () => {
     expectTypeOf<HasV1DowntimeBadRequest>().toEqualTypeOf<true>()
   })
 
+  it('keeps every documented material-scan transport failure in the generated error union', () => {
+    expectTypeOf<keyof PrevalidateBusinessConsoleMesMaterialScanErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502 | 503 | 504
+    >()
+  })
+
   it('requires a non-null change reason for code-rule versions through the stable boundary', () => {
     expectTypeOf<
       Pick<BusinessConsoleCreateCodeRuleVersionRequest, 'changeReason'>
@@ -408,6 +416,16 @@ describe('generated API client contract', () => {
     >().toEqualTypeOf<502 | 503>()
     expectTypeOf(businessConsoleClient.getBusinessConsolePrincipalWorkContext).toBeFunction()
     expectTypeOf(getBusinessConsolePrincipalWorkContextQueryOptions).toBeFunction()
+  })
+
+  it('exports exact MasterData device and shift filters through the stable boundary', () => {
+    expectTypeOf<
+      Pick<ListBusinessConsoleMasterDataResourcesData['query'], 'deviceAssetId' | 'shiftCode'>
+    >().toEqualTypeOf<{
+      deviceAssetId?: string | null
+      shiftCode?: string | null
+    }>()
+    expectTypeOf(businessConsoleClient.listBusinessConsoleMasterDataResources).toBeFunction()
   })
 
   it('exports MES work-order transformation operations through the stable boundary', () => {

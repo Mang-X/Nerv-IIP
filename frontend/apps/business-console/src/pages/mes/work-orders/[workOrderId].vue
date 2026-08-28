@@ -1144,7 +1144,7 @@ function formatError(error: unknown) {
         :rows="operationTasks"
         row-key="operationTaskId"
         :loading="detailPending"
-        empty-message="暂无工序任务。先确认工艺路线已发布并完成排程，再回到这里派工与报工。"
+        empty-message="暂无工序任务。点击上方「对该单排产」生成方案，在「排产工作台」发布后可在这里派工与报工。"
         :searchable="false"
         :column-settings="false"
       >
@@ -1199,7 +1199,7 @@ function formatError(error: unknown) {
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
         :loading="materialReadinessPending"
-        empty-message="暂无用料行。先确认物料清单已发布，再回到这里查看齐套与领料进度。"
+        empty-message="暂无用料行。先在「制造 BOM」发布物料清单，再回到这里查看齐套与领料进度。"
         :searchable="false"
         :column-settings="false"
       >

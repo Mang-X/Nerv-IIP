@@ -676,4 +676,5 @@ public sealed class FastEndpointsArchitectureTests
 
         throw new DirectoryNotFoundException("Repository root was not found.");
     }
+
 }

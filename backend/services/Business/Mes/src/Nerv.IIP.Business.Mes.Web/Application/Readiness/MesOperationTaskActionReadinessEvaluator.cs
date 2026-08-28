@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -73,7 +74,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 workOrderIds.Contains(x.WorkOrderId) &&
                 x.Status == MesEngineeringChangeImpactStatuses.AutoRebound &&
                 x.WorkOrderStatusAtDetection == WorkOrder.ReleasedStatus)
-            .Select(x => new AutomaticRebindFact(
+            .Select(x => new MaterialReadinessGuards.AutomaticRebindEdge(
                 x.WorkOrderId,
                 x.ArchivedProductionVersionId,
                 x.SupersededByProductionVersionId))
@@ -100,43 +101,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 (x.ToUtc == null || x.ToUtc > evaluatedAtUtc))
             .Select(x => new UnavailabilityFact(x.WorkCenterId, x.Reason))
             .ToArrayAsync(cancellationToken);
-        var persistedRequirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new MaterialRequirementFact(
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc))
-            .ToArrayAsync(cancellationToken);
-        var localRequirements = dbContext.MaterialRequirements.Local
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new MaterialRequirementFact(
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc));
-        var requirements = persistedRequirements
-            .Concat(localRequirements)
-            .GroupBy(
-                x => $"{x.WorkOrderId.ToUpperInvariant()}|{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
-                StringComparer.Ordinal)
-            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
-            .ToArray();
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderIds,
+            cancellationToken);
         var receipts = await dbContext.MaterialIssueRequests
             .AsNoTracking()
             .Where(x =>
@@ -175,10 +145,10 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         DateTimeOffset evaluatedAtUtc,
         IReadOnlyCollection<OperationFact> allOperations,
         IReadOnlyDictionary<string, WorkOrderFact> workOrders,
-        IReadOnlyCollection<AutomaticRebindFact> automaticRebinds,
+        IReadOnlyCollection<MaterialReadinessGuards.AutomaticRebindEdge> automaticRebinds,
         IReadOnlyCollection<QualityHoldFact> activeQualityHolds,
         IReadOnlyCollection<UnavailabilityFact> activeUnavailabilities,
-        IReadOnlyCollection<MaterialRequirementFact> requirements,
+        IReadOnlyCollection<MaterialRequirementSnapshot> requirements,
         IReadOnlyCollection<ReceiptFact> receipts)
     {
         if (task.Status == OperationTaskLifecycleStatus.InProgress)
@@ -236,12 +206,14 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             blockReasons.Add($"{classification.Code}: {classification.Message}");
         }
 
-        var scopedRequirements = requirements
+        var workOrderRequirements = requirements
+            .Where(x => x.WorkOrderId == task.WorkOrderId)
+            .ToArray();
+        var scopedRequirements = workOrderRequirements
             .Where(x =>
-                x.WorkOrderId == task.WorkOrderId &&
                 (x.OperationTaskId == null || x.OperationTaskId == task.OperationTaskIdValue))
             .ToArray();
-        var expectedSnapshotStatus = scopedRequirements.Length == 0
+        var expectedSnapshotStatus = workOrderRequirements.Length == 0
             ? WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus
             : WorkOrder.MaterialRequirementSnapshotCapturedStatus;
         var materialSnapshotProven = false;
@@ -251,16 +223,11 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 expectedSnapshotStatus,
                 StringComparison.Ordinal))
         {
-            var snapshotVersionMatchesCurrent = string.Equals(
-                materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
-                materialWorkOrder.ProductionVersionId,
-                StringComparison.Ordinal);
-            var snapshotVersionMatchesReleasedRebind = HasAutomaticRebindPath(
+            materialSnapshotProven = MaterialReadinessGuards.IsSnapshotVersionCompatible(
                 task.WorkOrderId,
                 materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
                 materialWorkOrder.ProductionVersionId,
                 automaticRebinds);
-            materialSnapshotProven = snapshotVersionMatchesCurrent || snapshotVersionMatchesReleasedRebind;
         }
         if (!materialSnapshotProven)
         {
@@ -302,65 +269,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             evaluatedAtUtc);
     }
 
-    private static bool HasAutomaticRebindPath(
-        string workOrderId,
-        string? snapshotProductionVersionId,
-        string? currentProductionVersionId,
-        IReadOnlyCollection<AutomaticRebindFact> automaticRebinds)
-    {
-        if (string.IsNullOrWhiteSpace(snapshotProductionVersionId)
-            || string.IsNullOrWhiteSpace(currentProductionVersionId))
-        {
-            return false;
-        }
-
-        var successorsByArchivedVersion = automaticRebinds
-            .Where(x => x.WorkOrderId == workOrderId && !string.IsNullOrWhiteSpace(x.SupersededByProductionVersionId))
-            .GroupBy(x => x.ArchivedProductionVersionId, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .Select(x => x.SupersededByProductionVersionId!)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray(),
-                StringComparer.Ordinal);
-        var visited = new HashSet<string>(StringComparer.Ordinal) { snapshotProductionVersionId };
-        var pending = new Queue<string>();
-        pending.Enqueue(snapshotProductionVersionId);
-        while (pending.TryDequeue(out var archivedVersionId))
-        {
-            if (!successorsByArchivedVersion.TryGetValue(archivedVersionId, out var successors))
-            {
-                continue;
-            }
-
-            foreach (var successor in successors)
-            {
-                if (string.Equals(successor, currentProductionVersionId, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                if (visited.Add(successor))
-                {
-                    pending.Enqueue(successor);
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private sealed record MaterialRequirementFact(
-        string WorkOrderId,
-        string? OperationTaskId,
-        string MaterialId,
-        string? MaterialLotId,
-        decimal RequiredQuantity,
-        decimal AvailableQuantity,
-        decimal StagedQuantity,
-        DateTimeOffset CapturedAtUtc);
-
     private sealed record OperationFact(
         string WorkOrderId,
         int OperationSequence,
@@ -371,11 +279,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         string? ProductionVersionId,
         string? MaterialRequirementSnapshotStatus,
         string? MaterialRequirementSnapshotProductionVersionId);
-
-    private sealed record AutomaticRebindFact(
-        string WorkOrderId,
-        string ArchivedProductionVersionId,
-        string? SupersededByProductionVersionId);
 
     private sealed record QualityHoldFact(
         string WorkOrderId,

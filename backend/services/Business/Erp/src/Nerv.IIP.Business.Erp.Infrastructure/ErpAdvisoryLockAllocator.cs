@@ -7,23 +7,39 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
 
-public interface IWorkCenterCostRateRevisionLock
+public enum ErpAdvisoryLockDomain
 {
-    long GetLockKey(string organizationId, string environmentId, string workCenterId);
+    WorkCenterLaborCostRate,
+    WorkCenterMachineOverheadRate,
+}
+
+public interface IErpAdvisoryLockAllocator
+{
+    long GetLockKey(
+        ErpAdvisoryLockDomain domain,
+        string organizationId,
+        string environmentId,
+        string workCenterId);
 
     Task AcquireAsync(
+        ErpAdvisoryLockDomain domain,
         string organizationId,
         string environmentId,
         string workCenterId,
         CancellationToken cancellationToken);
 }
 
-public sealed class PostgreSqlWorkCenterCostRateRevisionLock(ApplicationDbContext dbContext)
-    : IWorkCenterCostRateRevisionLock
+public sealed class PostgreSqlErpAdvisoryLockAllocator(ApplicationDbContext dbContext)
+    : IErpAdvisoryLockAllocator
 {
-    public long GetLockKey(string organizationId, string environmentId, string workCenterId)
+    public long GetLockKey(
+        ErpAdvisoryLockDomain domain,
+        string organizationId,
+        string environmentId,
+        string workCenterId)
     {
         var canonicalScope = new StringBuilder();
+        AppendScopePart(canonicalScope, GetDomainKey(domain));
         AppendScopePart(canonicalScope, organizationId);
         AppendScopePart(canonicalScope, environmentId);
         AppendScopePart(canonicalScope, workCenterId);
@@ -32,6 +48,7 @@ public sealed class PostgreSqlWorkCenterCostRateRevisionLock(ApplicationDbContex
     }
 
     public async Task AcquireAsync(
+        ErpAdvisoryLockDomain domain,
         string organizationId,
         string environmentId,
         string workCenterId,
@@ -39,10 +56,10 @@ public sealed class PostgreSqlWorkCenterCostRateRevisionLock(ApplicationDbContex
     {
         if (!dbContext.Database.IsRelational()) return;
         if (!string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
-            throw new NotSupportedException("Work-center cost-rate revision allocation requires PostgreSQL advisory locks.");
+            throw new NotSupportedException("ERP advisory-lock allocation requires PostgreSQL.");
 
         var currentTransaction = dbContext.Database.CurrentTransaction
-            ?? throw new InvalidOperationException("Work-center cost-rate revision allocation requires a current EF transaction.");
+            ?? throw new InvalidOperationException("ERP advisory-lock allocation requires a current EF transaction.");
         var connection = dbContext.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
         command.Transaction = currentTransaction.GetDbTransaction();
@@ -50,10 +67,17 @@ public sealed class PostgreSqlWorkCenterCostRateRevisionLock(ApplicationDbContex
         var parameter = command.CreateParameter();
         parameter.ParameterName = "key";
         parameter.DbType = DbType.Int64;
-        parameter.Value = GetLockKey(organizationId, environmentId, workCenterId);
+        parameter.Value = GetLockKey(domain, organizationId, environmentId, workCenterId);
         command.Parameters.Add(parameter);
         _ = await command.ExecuteScalarAsync(cancellationToken);
     }
+
+    private static string GetDomainKey(ErpAdvisoryLockDomain domain) => domain switch
+    {
+        ErpAdvisoryLockDomain.WorkCenterLaborCostRate => "work-center-labor-cost-rate",
+        ErpAdvisoryLockDomain.WorkCenterMachineOverheadRate => "work-center-machine-overhead-rate",
+        _ => throw new ArgumentOutOfRangeException(nameof(domain), domain, "Unknown ERP advisory-lock domain."),
+    };
 
     private static void AppendScopePart(StringBuilder builder, string value)
     {
