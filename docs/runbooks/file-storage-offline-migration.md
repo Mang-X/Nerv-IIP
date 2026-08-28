@@ -2,7 +2,7 @@
 
 ## 用途与适用范围
 
-本文件是目标技术规格/operator runbook；执行资格与当前交付状态以 GitHub Issue 树和 `implementation-readiness.md` 为准。
+本文件是目标技术规格/operator runbook；它定义目标接口、人工决策与证据契约，不代表这些目标接口已经实现。是否允许实际执行，以当前代码/公开接口能力、Issue #1644 / #1013 的明确状态和本次变更授权为准。
 
 本手册把 [ADR 0027](../adr/0027-filestorage-offline-migration-cutover-and-rollback.md) 的稳定决策展开为 FileStorage 单 active provider 停服离线迁移的目标接口、人工决策和证据契约。通用文件与 `VersionedArchive` 分轨清点、复制、验证和清源，只共享全局 admission fence、operator 决策与 evidence pack 汇总。`VersionedArchive` 保持 MinIO-only，不并入通用 provider。
 
@@ -10,7 +10,7 @@ provider 搬迁只保持已经 canonical 的 v1 `ObjectKey`；legacy/non-canonic
 
 ## 执行资格与状态权威
 
-执行资格与状态权威只指向 [Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 和 [implementation-readiness.md](implementation-readiness.md)。本手册不承载实施状态或 readiness 同步记录，也不复制动态责任、进度或日期信息。
+本手册不承载项目状态或 readiness 同步记录。当前实现与执行资格以代码、公开契约、测试、[Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 以及具体变更授权为准；动态进度、负责人和验收证据留在 GitHub/Linear。旧 `implementation-readiness.md` 仅是迁移兼容入口，不再构成状态权威。
 
 ## 角色与决策分离
 
