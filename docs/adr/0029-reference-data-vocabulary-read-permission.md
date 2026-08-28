@@ -5,9 +5,9 @@
 
 ## 背景
 
-统一可搜索目录 facade（`listBusinessConsoleSearchableDirectory`，MAN-632）为每种目录类型映射恰好一个权威 owner 和 permission（`docs/architecture/facade-coverage-matrix.md`、`docs/architecture/api-contract-and-codegen.md` §31）。参考数据词表沿用一条未成文惯例：借用 owner 域的业务读权限——`defect-code`/`scrap-reason` 借 `business.quality.inspection-records.read`，`location`/`batch`/`serial` 借 `business.inventory.ledger.read`，`downtime-reason` 及其权威别名 `maintenance-reason` 借 `business.maintenance.work-orders.read`。在本决策之前，全部 `business.*` 权限码中没有任何参考数据专用码。
+统一可搜索目录 facade（`listBusinessConsoleSearchableDirectory`，MAN-632）为每种目录类型映射恰好一个权威 owner 和 permission（`docs/architecture/facade-coverage-matrix.md`、`docs/architecture/api-contract-and-codegen.md` §31）。参考数据词表沿用一条未成文惯例：借用 owner 域的业务读权限——`defect-code`/`scrap-reason` 借 `business.quality.inspection-records.read`，`location`/`batch`/`serial` 借 `business.inventory.ledger.read`，`downtime-reason` 及其权威别名 `maintenance-reason` 借 `business.maintenance.work-orders.read`。在本决策之前，`business.*` 中没有任何参考数据专用的**读**权限码；写面已存在同型专用码——`business.inventory.locations.manage` 管理的正是上述词表之一 `location` 的权威数据。
 
-这条惯例在 #2696 首次显形为缺陷：MES 停机读面（原因筛选、原因列显示）与写面（登记停机时选择原因）把停机原因词表作为必需依赖，但只持 `business.mes.downtime.read` 的主体读不到词表——词表钉在维修工单的读权限上，而维修工单是另一域的事务事实。此前的一次实现（PR #2787）尝试用内部令牌把整份词表随 MES 读面响应带出，被判违反 `docs/governance/security/authorization.md` 的两条规则：内部 token 不提升最终主体权限；facade 权限由当前公开契约与目标服务所有权决定，不从历史矩阵或旧 Issue 推断。
+这条惯例在 #2696 首次显形为缺陷：MES 停机读面（原因筛选、原因列显示）与写面（登记停机时选择原因）把停机原因词表作为必需依赖，但只持 `business.mes.downtime.read` 的主体读不到词表——词表钉在维修工单的读权限上，而维修工单是另一域的事务事实。此前的一次实现（PR #2787）尝试用内部令牌把整份词表随 MES 读面响应带出，被判违反 `docs/governance/security/authorization.md` 的两条规则：内部 token 不提升最终主体权限；某个 facade 是否还需邻接域权限，应由当前公开契约与目标服务所有权决定，不从历史矩阵或旧 Issue 推断。
 
 owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读权限码并换绑词表。本记录裁定该方向引出的三个问题：是否开创参考数据专用权限码的先例、裁决适用于单个词表还是全仓参考数据、以及权限码的命名形态。
 
@@ -21,7 +21,7 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 一个参考数据词表应当拥有独立读权限码，当且仅当同时满足三个条件：
 
-1. **词表性**：它是 owner 域权威拥有的受控参考数据（独立聚合或受治理码表），不是事务事实的投影或查询结果集；
+1. **词表性**：它是 owner 域权威拥有的受控参考数据（受治理的独立聚合或码表），不是事务事实的投影或查询结果集；
 2. **跨域必需消费**：存在 owner 域之外的公开读面或写面，把该词表作为完成其合法操作的必需依赖——缺了词表该面就残缺（筛选无选项、登记无法选值）；
 3. **借用即过度授权**：该词表现绑定的 owner 域权限同时覆盖事务事实（工单、检验记录、台账等），使消费方角色为了读词表被迫获得对另一域事务事实的读取权。
 
@@ -29,7 +29,7 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 ### 决策 3：不做预防性拆分
 
-既有其它词表绑定（Quality、Inventory、MasterData 各目录类型）维持现状，直到决策 2 的条件 2 被真实消费场景触发。「可能将来有跨域消费」不构成拆分理由；先例受判据约束，不是放开新增权限码的口子。
+既有其它词表绑定（Quality、Inventory、MasterData 各目录类型）维持现状，直到决策 2 的条件 2 被真实消费场景触发。「可能将来有跨域消费」不构成拆分理由；先例受判据约束，不是放开新增权限码的口子。触发责任落在触发方：使条件 2 成立的那次变更（新增跨域必需消费面）必须在同一变更中完成换绑，不得留下「已触发但未拆分、消费方角色靠恰好持有 owner 码静默过度授权」的窗口。
 
 ### 决策 4：结构不变量保持不变
 
@@ -45,7 +45,7 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 **对 `docs/governance/security/authorization.md`「只有真实授权边界不同才新增权限码，不能为页面按钮或单个客户端制造同义权限」的正面回应。** 两个权限码是否同义，判据是应然持有者集合是否相同：凡应持其一者必应持另一，才是同义。「读停机原因词表」与「读全部维修工单」的应然持有者集合明显不同——登记停机的 MES 操作角色应当能选原因，但没有任何理由因此看到另一域的故障、停机、维修结果等事务事实。所以这里的授权边界是**真实不同**的，该条款的前半句（只有真实授权边界不同才新增）恰恰是本决策的许可条件而非障碍；后半句的打击对象是按钮级、客户端级的权限复制，本决策的驱动是跨域消费下的边界分离，且效果是**收窄**消费方的授权面（从「事务事实+词表」收到「仅词表」），与制造同义权限方向相反。
 
-**对「全仓无先例」的回应。** 此前没有参考数据专用码是描述性现状，不是规范论据：在 #2696 之前，词表的消费方与 owner 域读面持有者恰好重合，真实边界差异从未显形，借用惯例的代价一直是零。第一次显形（消费域核心读写面必需依赖词表、而 owner 域业务读权限与该面无关）就是本决策的触发场景。用「无先例」反对开先例，等于规定惯例只能靠继续过度授权或绕权限（PR #2787 的路线，已被治理判违）来维持。
+**对「全仓无先例」的回应。** 该论据在写面上不成立：`business.inventory.locations.manage` 已是参考数据专用码，形态与决策 4 一致，说明本仓已经接受词表专用权限码这种拆分。本决策不开创新形态，只是把写面已被接受的形态扩到读面。读面此前无专用码，是因为词表消费方与 owner 域读面持有者恰好重合、真实边界差异从未显形；#2696 是它第一次显形（消费域核心读写面必需依赖词表，而 owner 域业务读权限与该面无关）。
 
 **通则而非窄裁。** 本决策的核心理由——受控词表与事务事实是两个不同的授权边界——对 `defect-code`、`location` 等同型词表逐字成立。若只裁 `downtime-reason`，理由证得比裁决多，下一个同型场景必然重开一轮同样的裁决；且「其余参考数据维持现状」的窄表述会在第一个跟进场景出现时变成过期描述。写成触发式判据后，后续同型场景是本判据的实例化而非新裁决，本记录不会因实现推进而过期；决策 3 同时挡住「既有三类参考数据要不要立即跟进」的欠账——不触发不拆分。
 
@@ -53,10 +53,9 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 ## 实施说明
 
-1. 权限码落点按 `docs/governance/security/authorization.md` 变更与验收规则执行：先改 IAM 与 Gateway 的真实 producer 及测试（seed 权限全集、权限描述目录、Gateway 权限常量），再同步 `docs/reference/security/authorization-catalog.md`。
+1. 权限码落点按 `docs/governance/security/authorization.md` 变更与验收规则执行：先改 IAM 与 Gateway 的真实 producer 及测试（seed 权限全集、权限描述目录、Gateway 权限常量），再同步 `docs/reference/security/authorization-catalog.md`。新码必须在 IAM 与 Gateway 两处 producer 同时落地，不得单边新增。
 2. 换绑落点是可搜索目录 policy 中 `downtime-reason`/`maintenance-reason` 两条登记及钉住映射的测试期望；facade 机制（路由、单一权限校验、分页契约）不变，不新增公开端点。
 3. 决策 5 要求实施前枚举旧码 `business.maintenance.work-orders.read` 的默认角色持有者，并在同一变更的角色 seed 中补授新码。
-4. 本 ADR 的判据以一句现态规则同步进 `docs/governance/security/authorization.md` 权限命名空间小节并回链本记录；规则住 Governance，理由住本记录。
 
 ## 已考虑的替代方案
 
@@ -69,7 +68,7 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 ## 后果
 
-1. `business.*` 出现第一个参考数据专用权限码，先例受决策 2 的三条件约束：不满足条件的词表不得援引本记录新设权限码。
+1. `business.*` 出现第一个参考数据专用**读**权限码，与既有写面专用码（`business.inventory.locations.manage`）同形态；读面拆分受决策 2 的三条件约束，不满足条件的词表不得援引本记录新设权限码。
 2. 消费域读面的完整能力（含原因筛选与显示）需要角色同时持有消费域读权限与本词表读权限；只持其一的角色各自只能到达自己那一半。
 3. 角色配置粒度变细：可以配置「能选停机原因但不可读维修工单」的角色，这在借用惯例下不可表达。
 4. Quality、Inventory、MasterData 的词表将来命中判据时按同一规则换绑，无需新裁决；未命中则维持借用。
