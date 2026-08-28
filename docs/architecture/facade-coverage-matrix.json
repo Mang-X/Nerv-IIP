@@ -4255,6 +4255,14 @@
     {
       "service": "Quality",
       "method": "GET",
+      "route": "/api/business/v1/quality/first-article-confirmation",
+      "operationId": "getBusinessQualityFirstArticleConfirmation",
+      "classification": "internal",
+      "rationale": "Service-to-service first-article confirmation read contract consumed by the MES report gate (#2779, wave 2 of #1949); the Business Console reads first-article tasks and records through the existing inspection-task/record facades."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
       "route": "/api/business/v1/quality/inspection-tasks",
       "operationId": "listBusinessQualityInspectionTasks",
       "classification": "exposed",

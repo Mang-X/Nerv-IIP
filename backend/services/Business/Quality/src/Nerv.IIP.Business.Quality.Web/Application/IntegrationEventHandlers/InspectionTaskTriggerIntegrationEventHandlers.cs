@@ -233,6 +233,93 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
     }
 }
 
+/// <summary>
+/// 首件触发点（#2779）：工单工序开工／换型后的第一件报工开出 <c>first-article</c> 检验任务。
+/// 幂等键按「工单 + 工序」构成而不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务。
+/// </summary>
+[IntegrationEventConsumer(nameof(ProductionReportRecordedIntegrationEvent), ConsumerName)]
+public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateFirstArticleInspectionTask(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-quality.mes-production-report-first-article-inspection";
+
+    private readonly IntegrationEventConsumerGuard<ProductionReportRecordedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1));
+
+    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+
+    [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        HandleAsync(integrationEvent, cancellationToken);
+
+    private async Task HandleValidEventAsync(
+        ProductionReportRecordedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        if (payload.IsReversal)
+        {
+            return;
+        }
+
+        // 首件检验档按「SKU + 工序工作中心」配置，而报工事件不带 SKU；
+        // 工单发布事实（mes.WorkOrderReleased）在 Quality 内已按工单工序落成档案，SKU 从那里取。
+        // 报工先于发布到达时该 SKU 尚未落库，此处放过，由该工序后续报工重新触发。
+        var skuCode = await dbContext.PeriodicInspectionOperations
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.WorkOrderId == payload.WorkOrderId
+                && x.OperationId == payload.OperationTaskId)
+            .Select(x => x.SkuCode)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(skuCode))
+        {
+            return;
+        }
+
+        await InspectionTaskGeneration.TryAddTaskAsync(
+            dbContext,
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            sourceType: "first-article",
+            sourceService: "mes",
+            sourceDocumentId: payload.WorkOrderId,
+            sourceDocumentLineId: payload.OperationTaskId,
+            skuCode: skuCode,
+            quantity: payload.GoodQuantity,
+            uomCode: payload.UomCode,
+            batchNo: null,
+            serialNo: null,
+            workCenterId: payload.WorkCenterId,
+            sourceDocumentType: null,
+            occurredAtUtc: integrationEvent.OccurredAtUtc,
+            triggerIdempotencyKey: FirstArticleTriggerIdempotencyKey(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.WorkOrderId,
+                payload.OperationTaskId),
+            cancellationToken);
+        await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
+    }
+
+    public static string FirstArticleTriggerIdempotencyKey(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string operationId) =>
+        $"quality:first-article:{organizationId}:{environmentId}:{workOrderId}:{operationId}";
+}
+
 internal static class InspectionTaskGeneration
 {
     public static bool ShouldSkipInspection(string? qualityStatus)
