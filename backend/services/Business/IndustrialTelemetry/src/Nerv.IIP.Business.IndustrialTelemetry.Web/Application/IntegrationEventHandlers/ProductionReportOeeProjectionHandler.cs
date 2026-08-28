@@ -35,7 +35,8 @@ public sealed class ProductionReportOeeProjectionHandler(
     private async Task HandleValidEventAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        if (string.IsNullOrWhiteSpace(payload.DeviceAssetId) || string.IsNullOrWhiteSpace(payload.WorkCenterId))
+        if (!payload.IsReversal &&
+            (string.IsNullOrWhiteSpace(payload.DeviceAssetId) || string.IsNullOrWhiteSpace(payload.WorkCenterId)))
         {
             // A device-level OEE fact requires the MES assignment snapshot; skipping incomplete input
             // leaves the read model explicitly degraded instead of turning a malformed event into poison.
@@ -55,18 +56,50 @@ public sealed class ProductionReportOeeProjectionHandler(
             return;
         }
 
-        dbContext.OeeProductionFacts.Add(OeeProductionFact.Project(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            payload.ReportNo,
-            payload.WorkCenterId,
-            payload.DeviceAssetId,
-            payload.GoodQuantity,
-            payload.ScrapQuantity,
-            payload.ReworkQuantity,
-            payload.UomCode,
-            payload.TheoreticalRatePerHour,
-            payload.ReportedAtUtc));
+        OeeProductionFact fact;
+        if (payload.IsReversal)
+        {
+            if (string.IsNullOrWhiteSpace(payload.ReversedReportNo))
+            {
+                throw new InvalidOperationException($"MES reversal report {payload.ReportNo} does not identify its reversed report.");
+            }
+
+            var original = await dbContext.OeeProductionFacts.SingleOrDefaultAsync(
+                x => x.OrganizationId == integrationEvent.OrganizationId &&
+                    x.EnvironmentId == integrationEvent.EnvironmentId &&
+                    x.SourceReportNo == payload.ReversedReportNo,
+                cancellationToken);
+            if (original == null)
+            {
+                throw new InvalidOperationException(
+                    $"MES reversal report {payload.ReportNo} is waiting for source report {payload.ReversedReportNo} in its organization and environment scope.");
+            }
+
+            fact = original.ProjectReversal(
+                payload.ReportNo,
+                payload.GoodQuantity,
+                payload.ScrapQuantity,
+                payload.ReworkQuantity,
+                payload.ReportedAtUtc);
+        }
+        else
+        {
+            fact = OeeProductionFact.Project(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.ReportNo,
+                payload.WorkCenterId,
+                payload.DeviceAssetId!,
+                payload.GoodQuantity,
+                payload.ScrapQuantity,
+                payload.ReworkQuantity,
+                payload.UomCode,
+                payload.TheoreticalRatePerHour,
+                payload.ReportedAtUtc,
+                OeeHistoricalDimensionResolver.Resolve(payload));
+        }
+
+        dbContext.OeeProductionFacts.Add(fact);
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
