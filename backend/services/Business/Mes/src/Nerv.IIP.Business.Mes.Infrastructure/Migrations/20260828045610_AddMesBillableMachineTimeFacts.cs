@@ -49,7 +49,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
             migrationBuilder.AddCheckConstraint(
                 name: "ck_operation_actual_time_settlements_machine_fact", schema: "mes",
                 table: "operation_actual_time_settlements",
-                sql: "(machine_time_status = 'Available' AND device_asset_id IS NOT NULL AND billable_machine_ticks IS NOT NULL AND billable_machine_ticks >= 0 AND machine_time_basis_code = 'single-device-active-minus-explicit-pause-v1') OR (machine_time_status IN ('NotApplicable', 'Unavailable') AND device_asset_id IS NULL AND billable_machine_ticks IS NULL AND machine_time_basis_code IS NULL)");
+                sql: "(machine_time_status = 'Available' AND device_asset_id IS NOT NULL AND billable_machine_ticks IS NOT NULL AND billable_machine_ticks >= 0 AND machine_time_basis_code IS NOT NULL AND machine_time_basis_code = 'single-device-active-minus-explicit-pause-v1') OR (machine_time_status IN ('NotApplicable', 'Unavailable') AND device_asset_id IS NULL AND billable_machine_ticks IS NULL AND machine_time_basis_code IS NULL)");
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
