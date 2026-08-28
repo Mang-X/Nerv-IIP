@@ -2439,6 +2439,17 @@ public sealed class MesEndpointContractTests
                 "handover-bad-severity",
                 OpenIssues: [new ShiftHandoverOpenIssueInput("Quality", "Critical", "描述")]),
             CancellationToken.None));
+        // Enum.TryParse 单独用会把数字串当成合法枚举值放进来，这条必须也被拒。
+        var numericCategory = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001",
+                "env-dev",
+                "EARLY",
+                "TEAM-A",
+                now,
+                "handover-numeric-category",
+                OpenIssues: [new ShiftHandoverOpenIssueInput("7", "High", "描述")]),
+            CancellationToken.None));
         var finishedWorkOrder = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateShiftHandoverCommand(
                 "org-001",
@@ -2451,6 +2462,7 @@ public sealed class MesEndpointContractTests
             CancellationToken.None));
 
         Assert.Contains("Safety", unknownCategory.Message, StringComparison.Ordinal);
+        Assert.Contains("未知的遗留问题类别", numericCategory.Message, StringComparison.Ordinal);
         Assert.Contains("Critical", unknownSeverity.Message, StringComparison.Ordinal);
         Assert.Contains("未完工单", finishedWorkOrder.Message, StringComparison.Ordinal);
     }

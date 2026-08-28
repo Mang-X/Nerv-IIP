@@ -2524,20 +2524,24 @@ public sealed record ShiftHandoverOpenIssueInput(
 /// </summary>
 public static class ShiftHandoverVocabulary
 {
-    public static ShiftHandoverIssueCategory ParseCategory(string? value) => value?.Trim().ToLowerInvariant() switch
-    {
-        "equipment" => ShiftHandoverIssueCategory.Equipment,
-        "quality" => ShiftHandoverIssueCategory.Quality,
-        _ => throw new KnownException($"未知的遗留问题类别：{value}，仅支持 Equipment 或 Quality。"),
-    };
+    public static ShiftHandoverIssueCategory ParseCategory(string? value) =>
+        TryParseClosed<ShiftHandoverIssueCategory>(value, out var category)
+            ? category
+            : throw new KnownException($"未知的遗留问题类别：{value}，仅支持 Equipment 或 Quality。");
 
-    public static ShiftHandoverIssueSeverity ParseSeverity(string? value) => value?.Trim().ToLowerInvariant() switch
-    {
-        "low" => ShiftHandoverIssueSeverity.Low,
-        "medium" => ShiftHandoverIssueSeverity.Medium,
-        "high" => ShiftHandoverIssueSeverity.High,
-        _ => throw new KnownException($"未知的遗留问题严重度：{value}，仅支持 Low、Medium 或 High。"),
-    };
+    public static ShiftHandoverIssueSeverity ParseSeverity(string? value) =>
+        TryParseClosed<ShiftHandoverIssueSeverity>(value, out var severity)
+            ? severity
+            : throw new KnownException($"未知的遗留问题严重度：{value}，仅支持 Low、Medium 或 High。");
+
+    /// <summary>
+    /// 词表取自枚举本身，写面不再各自抄一份小写字面量。
+    /// <c>Enum.TryParse</c> 会把 <c>"7"</c> 这类数字串解析成未定义的枚举值，公开写面收到的又是客户端
+    /// 给的任意字符串，因此必须再过一道 <c>IsDefined</c>——这条分支是真实可达的。
+    /// </summary>
+    private static bool TryParseClosed<TEnum>(string? value, out TEnum parsed)
+        where TEnum : struct, Enum =>
+        Enum.TryParse(value?.Trim(), ignoreCase: true, out parsed) && Enum.IsDefined(parsed);
 }
 
 public sealed record CreateShiftHandoverCommand(
