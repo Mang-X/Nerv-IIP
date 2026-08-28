@@ -450,7 +450,9 @@ public sealed class ManualDispatchConcurrencyTests
         services.AddScoped<OperationTaskManuallyDispatchedIntegrationEventConverter>();
         services.AddScoped<OperationTaskManualDispatchClearedIntegrationEventConverter>();
         services.AddScoped<OperationTaskCompletedIntegrationEventConverter>();
+        services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter>();
         services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
+        services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
         services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
         services.AddSingleton<RecordingIntegrationEventPublisher>();
         services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>

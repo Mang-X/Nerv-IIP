@@ -257,7 +257,7 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
     }
 }
 
-public sealed class OperationActualTimeSettledIntegrationEventConverter(
+public sealed class OperationActualTimeSettledV1IntegrationEventConverter(
     IMesIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<OperationActualTimeSettledDomainEvent, MesOperationActualTimeSettledIntegrationEvent>
 {
@@ -274,7 +274,7 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
         return new MesOperationActualTimeSettledIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationActualTimeSettled,
-            MesIntegrationEventVersions.V2,
+            MesIntegrationEventVersions.V1,
             settlement.CompletedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             context.CorrelationId,
@@ -284,6 +284,44 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
             "system:mes",
             idempotencyKey,
             new OperationActualTimeSettledPayload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos));
+    }
+}
+
+public sealed class OperationActualTimeSettledIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<OperationActualTimeSettledDomainEvent, MesOperationActualTimeSettledV2IntegrationEvent>
+{
+    public MesOperationActualTimeSettledV2IntegrationEvent Convert(OperationActualTimeSettledDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settled",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettledV2IntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V2,
+            settlement.CompletedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettledV2Payload(
                 settlement.WorkOrderId,
                 settlement.OperationTaskId,
                 settlement.WorkCenterId,
@@ -307,7 +345,7 @@ public sealed class OperationActualTimeSettledIntegrationEventConverter(
     };
 }
 
-public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter(
+public sealed class OperationActualTimeSettlementVoidedV1IntegrationEventConverter(
     IMesIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<OperationActualTimeSettlementVoidedDomainEvent, MesOperationActualTimeSettlementVoidedIntegrationEvent>
 {
@@ -325,7 +363,7 @@ public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter
         return new MesOperationActualTimeSettlementVoidedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
-            MesIntegrationEventVersions.V2,
+            MesIntegrationEventVersions.V1,
             domainEvent.VoidedAtUtc,
             MesIntegrationEventSources.BusinessMes,
             context.CorrelationId,
@@ -335,6 +373,46 @@ public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter
             "system:mes",
             idempotencyKey,
             new OperationActualTimeSettlementVoidedPayload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                domainEvent.VoidedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos));
+    }
+}
+
+public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<OperationActualTimeSettlementVoidedDomainEvent, MesOperationActualTimeSettlementVoidedV2IntegrationEvent>
+{
+    public MesOperationActualTimeSettlementVoidedV2IntegrationEvent Convert(
+        OperationActualTimeSettlementVoidedDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settlement-voided",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettlementVoidedV2IntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V2,
+            domainEvent.VoidedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettlementVoidedV2Payload(
                 settlement.WorkOrderId,
                 settlement.OperationTaskId,
                 settlement.WorkCenterId,

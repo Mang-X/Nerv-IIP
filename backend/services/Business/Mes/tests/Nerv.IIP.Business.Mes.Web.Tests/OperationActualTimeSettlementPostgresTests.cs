@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Contracts.Mes;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -44,9 +45,15 @@ public sealed class OperationActualTimeSettlementPostgresTests
             .AsNoTracking()
             .Include(x => x.CoveredReports)
             .SingleAsync();
-        var settlementOutbox = Assert.Single(
-            await ReadCapOutboxContentAsync(),
-            content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal));
+        var settlementOutboxes = (await ReadCapOutboxContentAsync())
+            .Where(content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(2, settlementOutboxes.Length);
+        var settlementOutbox = Assert.Single(settlementOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettledV2IntegrationEvent), StringComparison.Ordinal));
+        Assert.Contains(settlementOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettledIntegrationEvent), StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(1, task.ActualTimeSettlementRevision);
         Assert.Equal("DEVICE-001", settlement.DeviceAssetId);
@@ -91,9 +98,15 @@ public sealed class OperationActualTimeSettlementPostgresTests
             .AsNoTracking()
             .Include(x => x.CoveredReports)
             .SingleAsync();
-        var voidOutbox = Assert.Single(
-            await ReadCapOutboxContentAsync(),
-            content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal));
+        var voidOutboxes = (await ReadCapOutboxContentAsync())
+            .Where(content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(2, voidOutboxes.Length);
+        var voidOutbox = Assert.Single(voidOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent), StringComparison.Ordinal));
+        Assert.Contains(voidOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent), StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
         Assert.Equal(1, task.ActualTimeSettlementRevision);
@@ -397,6 +410,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
             ("Available", null, 0, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
             ("Available", "DEVICE-001", null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
             ("Available", "DEVICE-001", 0, null),
+            ("Available", "DEVICE-001", -1, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Available", "DEVICE-001", 0, "non-canonical-basis"),
             ("Unavailable", "DEVICE-001", null, null),
             ("Unavailable", null, 0, null),
             ("Unavailable", null, null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
@@ -493,12 +508,12 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT \"Content\" FROM cap.published";
+        command.CommandText = "SELECT \"Name\", \"Content\" FROM cap.published";
         await using var reader = await command.ExecuteReaderAsync();
         var content = new List<string>();
         while (await reader.ReadAsync())
         {
-            content.Add(reader.GetString(0));
+            content.Add($"{reader.GetString(0)}\n{reader.GetString(1)}");
         }
 
         return content.ToArray();

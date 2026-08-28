@@ -36,7 +36,13 @@ public sealed class MesIntegrationEventTests
                 new StubMesIntegrationEventContextAccessor(
                     new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
             .Convert(new OperationActualTimeSettledDomainEvent(settlement));
+        var legacyEvent = new OperationActualTimeSettledV1IntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
+            .Convert(new OperationActualTimeSettledDomainEvent(settlement));
 
+        Assert.Equal(MesIntegrationEventVersions.V1, legacyEvent.EventVersion);
+        Assert.NotEqual(legacyEvent.GetType(), integrationEvent.GetType());
         Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettled, integrationEvent.EventType);
         Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
         Assert.Equal("corr-settled", integrationEvent.CorrelationId);
@@ -67,7 +73,13 @@ public sealed class MesIntegrationEventTests
                 new StubMesIntegrationEventContextAccessor(
                     new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
             .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
+        var legacyEvent = new OperationActualTimeSettlementVoidedV1IntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
+            .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
 
+        Assert.Equal(MesIntegrationEventVersions.V1, legacyEvent.EventVersion);
+        Assert.NotEqual(legacyEvent.GetType(), integrationEvent.GetType());
         Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettlementVoided, integrationEvent.EventType);
         Assert.Equal("corr-voided", integrationEvent.CorrelationId);
         Assert.Equal("cause-report-reversed", integrationEvent.CausationId);
