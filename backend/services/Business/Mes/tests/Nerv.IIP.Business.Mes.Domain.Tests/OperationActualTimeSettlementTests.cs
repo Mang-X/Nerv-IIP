@@ -71,6 +71,39 @@ public sealed class OperationActualTimeSettlementTests
     }
 
     [Fact]
+    public void Device_added_after_execution_started_makes_machine_time_unavailable()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Start(startedAtUtc);
+
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(30));
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Unavailable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+    }
+
+    [Fact]
+    public void Device_cleared_after_execution_started_makes_machine_time_unavailable()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
+        task.Start(startedAtUtc);
+
+        task.Assign("operator-1", null, "SHIFT-1", startedAtUtc.AddMinutes(30));
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Unavailable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+    }
+
+    [Fact]
     public void Explicit_pause_is_excluded_from_billable_machine_ticks()
     {
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");

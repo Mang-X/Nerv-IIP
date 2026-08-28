@@ -201,6 +201,7 @@ public sealed record OperationTaskCompletedPayload(
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
 
+[JsonConverter(typeof(MesOperationActualTimeSettledIntegrationEventJsonConverter))]
 public sealed record MesOperationActualTimeSettledIntegrationEvent(
     string EventId,
     string EventType,
@@ -233,6 +234,7 @@ public sealed record OperationActualTimeSettledPayload(
     long? BillableMachineTicks = null,
     string? MachineTimeBasisCode = null);
 
+[JsonConverter(typeof(MesOperationActualTimeSettlementVoidedIntegrationEventJsonConverter))]
 public sealed record MesOperationActualTimeSettlementVoidedIntegrationEvent(
     string EventId,
     string EventType,
@@ -265,6 +267,97 @@ public sealed record OperationActualTimeSettlementVoidedPayload(
     MesMachineTimeFactStatus? MachineTimeStatus = null,
     long? BillableMachineTicks = null,
     string? MachineTimeBasisCode = null);
+
+internal static class MesActualTimeContractInvariant
+{
+    public static void Validate(
+        int eventVersion,
+        string? deviceAssetId,
+        MesMachineTimeFactStatus? status,
+        long? billableMachineTicks,
+        string? basisCode)
+    {
+        if (eventVersion == MesIntegrationEventVersions.V1)
+        {
+            if (deviceAssetId is not null || status is not null || billableMachineTicks is not null || basisCode is not null)
+                throw new JsonException("MES actual-time V1 must not contain V2 machine-time facts.");
+            return;
+        }
+
+        if (eventVersion != MesIntegrationEventVersions.V2 || status is null)
+            throw new JsonException("MES actual-time V2 requires a complete machine-time fact.");
+
+        if (status == MesMachineTimeFactStatus.Available)
+        {
+            if (string.IsNullOrWhiteSpace(deviceAssetId)
+                || billableMachineTicks is null or < 0
+                || basisCode != MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1)
+                throw new JsonException("Available machine time requires device, non-negative ticks, and the canonical basis.");
+            return;
+        }
+
+        if (deviceAssetId is not null || billableMachineTicks is not null || basisCode is not null)
+            throw new JsonException("Unavailable or not-applicable machine time must not contain evidence values.");
+    }
+}
+
+public sealed class MesOperationActualTimeSettledIntegrationEventJsonConverter
+    : JsonConverter<MesOperationActualTimeSettledIntegrationEvent>
+{
+    public override MesOperationActualTimeSettledIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var dto = JsonSerializer.Deserialize<SettledDto>(ref reader, options)
+            ?? throw new JsonException("MES actual-time settled envelope is required.");
+        MesActualTimeContractInvariant.Validate(dto.EventVersion, dto.Payload.DeviceAssetId,
+            dto.Payload.MachineTimeStatus, dto.Payload.BillableMachineTicks, dto.Payload.MachineTimeBasisCode);
+        return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
+            dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
+            dto.IdempotencyKey, dto.Payload);
+    }
+
+    public override void Write(Utf8JsonWriter writer, MesOperationActualTimeSettledIntegrationEvent value, JsonSerializerOptions options)
+    {
+        MesActualTimeContractInvariant.Validate(value.EventVersion, value.Payload.DeviceAssetId,
+            value.Payload.MachineTimeStatus, value.Payload.BillableMachineTicks, value.Payload.MachineTimeBasisCode);
+        JsonSerializer.Serialize(writer, new SettledDto(value.EventId, value.EventType, value.EventVersion,
+            value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId,
+            value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private sealed record SettledDto(string EventId, string EventType, int EventVersion,
+        DateTimeOffset OccurredAtUtc, string SourceService, string CorrelationId, string CausationId,
+        string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+        OperationActualTimeSettledPayload Payload);
+}
+
+public sealed class MesOperationActualTimeSettlementVoidedIntegrationEventJsonConverter
+    : JsonConverter<MesOperationActualTimeSettlementVoidedIntegrationEvent>
+{
+    public override MesOperationActualTimeSettlementVoidedIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var dto = JsonSerializer.Deserialize<VoidedDto>(ref reader, options)
+            ?? throw new JsonException("MES actual-time voided envelope is required.");
+        MesActualTimeContractInvariant.Validate(dto.EventVersion, dto.Payload.DeviceAssetId,
+            dto.Payload.MachineTimeStatus, dto.Payload.BillableMachineTicks, dto.Payload.MachineTimeBasisCode);
+        return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
+            dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
+            dto.IdempotencyKey, dto.Payload);
+    }
+
+    public override void Write(Utf8JsonWriter writer, MesOperationActualTimeSettlementVoidedIntegrationEvent value, JsonSerializerOptions options)
+    {
+        MesActualTimeContractInvariant.Validate(value.EventVersion, value.Payload.DeviceAssetId,
+            value.Payload.MachineTimeStatus, value.Payload.BillableMachineTicks, value.Payload.MachineTimeBasisCode);
+        JsonSerializer.Serialize(writer, new VoidedDto(value.EventId, value.EventType, value.EventVersion,
+            value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId,
+            value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private sealed record VoidedDto(string EventId, string EventType, int EventVersion,
+        DateTimeOffset OccurredAtUtc, string SourceService, string CorrelationId, string CausationId,
+        string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+        OperationActualTimeSettlementVoidedPayload Payload);
+}
 
 public sealed record MesOperationTaskManuallyDispatchedIntegrationEvent(
     string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,

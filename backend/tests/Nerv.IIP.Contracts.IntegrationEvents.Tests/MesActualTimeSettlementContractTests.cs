@@ -127,6 +127,59 @@ public sealed class MesActualTimeSettlementContractTests
     }
 
     [Fact]
+    public void Settlement_v2_rejects_unknown_machine_time_status_string()
+    {
+        const string json = """
+            {"eventId":"evt-v2","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],"machineTimeStatus":"futureStatus"}}
+            """;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Void_v2_rejects_missing_machine_fact()
+    {
+        const string json = """
+            {"eventId":"evt-void-v2","eventType":"mes.OperationActualTimeSettlementVoided","eventVersion":2,"occurredAtUtc":"2026-08-26T03:10:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","voidedAtUtc":"2026-08-26T03:10:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[]}}
+            """;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedIntegrationEvent>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("\"machineTimeStatus\":\"available\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("\"deviceAssetId\":\"DEVICE-001\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"billableMachineTicks\":0")]
+    [InlineData("\"machineTimeStatus\":\"unavailable\",\"billableMachineTicks\":0")]
+    [InlineData("\"machineTimeStatus\":\"notApplicable\",\"deviceAssetId\":\"DEVICE-001\"")]
+    public void Settlement_v2_rejects_incomplete_or_contradictory_machine_fact(string machineFactJson)
+    {
+        var json = """
+            {"eventId":"evt-v2-invalid","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],__MACHINE_FACT__}}
+            """.Replace("__MACHINE_FACT__", machineFactJson, StringComparison.Ordinal);
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Settlement_v2_requires_machine_fact_while_v1_rejects_v2_machine_fact()
+    {
+        const string v2WithoutFact = """
+            {"eventId":"evt-v2-missing","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[]}}
+            """;
+        const string v1WithFact = """
+            {"eventId":"evt-v1-extra","eventType":"mes.OperationActualTimeSettled","eventVersion":1,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v1","causationId":"cause-v1","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v1","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],"machineTimeStatus":"unavailable"}}
+            """;
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(v2WithoutFact, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(v1WithFact, JsonOptions));
+    }
+
+    [Fact]
     public void Settlement_v1_json_preserves_revision_ticks_and_covered_report_numbers()
     {
         var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");

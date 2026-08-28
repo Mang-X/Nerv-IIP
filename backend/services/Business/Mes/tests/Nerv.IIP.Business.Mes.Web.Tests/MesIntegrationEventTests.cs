@@ -29,7 +29,7 @@ public sealed class MesIntegrationEventTests
         var settlement = new OperationActualTimeSettlementSnapshot(
             "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
             completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"],
-            "DEVICE-001", MachineTimeFactStatus.Available, 36_000_000_000,
+            "DEVICE-001", MachineTimeFactStatus.Available, 24_000_000_000,
             MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
         var integrationEvent = new OperationActualTimeSettledIntegrationEventConverter(
@@ -47,7 +47,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
         Assert.Equal("DEVICE-001", integrationEvent.Payload.DeviceAssetId);
         Assert.Equal(MesMachineTimeFactStatus.Available, integrationEvent.Payload.MachineTimeStatus);
-        Assert.Equal(36_000_000_000, integrationEvent.Payload.BillableMachineTicks);
+        Assert.Equal(24_000_000_000, integrationEvent.Payload.BillableMachineTicks);
         Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, integrationEvent.Payload.MachineTimeBasisCode);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }
@@ -60,7 +60,7 @@ public sealed class MesIntegrationEventTests
         var settlement = new OperationActualTimeSettlementSnapshot(
             "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
             completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"],
-            "DEVICE-001", MachineTimeFactStatus.Available, 36_000_000_000,
+            "DEVICE-SETTLED", MachineTimeFactStatus.Available, 24_000_000_000,
             MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
         var integrationEvent = new OperationActualTimeSettlementVoidedIntegrationEventConverter(
@@ -78,9 +78,9 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
         Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
         Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
-        Assert.Equal("DEVICE-001", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal("DEVICE-SETTLED", integrationEvent.Payload.DeviceAssetId);
         Assert.Equal(MesMachineTimeFactStatus.Available, integrationEvent.Payload.MachineTimeStatus);
-        Assert.Equal(36_000_000_000, integrationEvent.Payload.BillableMachineTicks);
+        Assert.Equal(24_000_000_000, integrationEvent.Payload.BillableMachineTicks);
         Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, integrationEvent.Payload.MachineTimeBasisCode);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }

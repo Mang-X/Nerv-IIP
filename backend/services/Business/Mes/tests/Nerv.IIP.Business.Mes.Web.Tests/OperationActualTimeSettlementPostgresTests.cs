@@ -64,7 +64,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Contains("\"BillableMachineTicks\":36000000000", settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(staged.ReportNo, settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, settlementOutbox, StringComparison.Ordinal);
-        await AssertMachineFactCheckRejectsIncompleteAvailableRowAsync(settlement.Id.Id);
+        await AssertMachineFactCheckRejectsIllegalRowsAsync(settlement.Id.Id);
     }
 
     [MesRealPostgresFact]
@@ -388,21 +388,45 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal(expectedConstraintName, exception.ConstraintName);
     }
 
-    private static async Task AssertMachineFactCheckRejectsIncompleteAvailableRowAsync(Guid settlementId)
+    private static async Task AssertMachineFactCheckRejectsIllegalRowsAsync(Guid settlementId)
     {
         await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
         await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE mes.operation_actual_time_settlements
-            SET billable_machine_ticks = NULL
-            WHERE id = @id
-            """;
-        command.Parameters.AddWithValue("id", settlementId);
+        var illegalFacts = new (string Status, string? Device, long? Ticks, string? Basis)[]
+        {
+            ("Available", null, 0, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Available", "DEVICE-001", null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Available", "DEVICE-001", 0, null),
+            ("Unavailable", "DEVICE-001", null, null),
+            ("Unavailable", null, 0, null),
+            ("Unavailable", null, null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("NotApplicable", "DEVICE-001", null, null),
+            ("NotApplicable", null, 0, null),
+            ("NotApplicable", null, null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Unknown", null, null, null),
+        };
 
-        var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
-        Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
-        Assert.Equal("ck_operation_actual_time_settlements_machine_fact", exception.ConstraintName);
+        foreach (var fact in illegalFacts)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE mes.operation_actual_time_settlements
+                SET machine_time_status = @status,
+                    device_asset_id = @device,
+                    billable_machine_ticks = @ticks,
+                    machine_time_basis_code = @basis
+                WHERE id = @id
+                """;
+            command.Parameters.AddWithValue("id", settlementId);
+            command.Parameters.AddWithValue("status", fact.Status);
+            command.Parameters.AddWithValue("device", (object?)fact.Device ?? DBNull.Value);
+            command.Parameters.AddWithValue("ticks", (object?)fact.Ticks ?? DBNull.Value);
+            command.Parameters.AddWithValue("basis", (object?)fact.Basis ?? DBNull.Value);
+
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+            Assert.Equal("ck_operation_actual_time_settlements_machine_fact", exception.ConstraintName);
+        }
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
