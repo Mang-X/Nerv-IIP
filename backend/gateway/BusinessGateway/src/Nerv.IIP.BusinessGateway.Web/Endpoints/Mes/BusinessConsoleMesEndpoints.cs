@@ -2010,6 +2010,9 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
 /// api-contract-and-codegen §17「列表行必须随业务标识返回可显示的 *Name」在门面层补中文名，
 /// 与 <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 同一姿势（读面跨域取名走门面，不让页面自己拼）。
 /// 目录里没有的码（历史自由文本停机原因）不编名字：<c>ReasonName</c> 留空，页面照实显示原值。
+/// #2696：同一次目录调用的结果还整份回给读面（<c>ReasonCatalog</c>），让「按原因筛选」的词表也走这条
+/// 内部令牌通道——否则页面只能自己去查钉在 <c>MaintenanceWorkOrdersRead</c> 上的目录端点，
+/// 只授 <c>business.mes.downtime.read</c> 的角色会拿到空下拉。不新增路由、权限和下游调用次数。
 /// </summary>
 internal static class MesDowntimeReasonNameEnricher
 {
@@ -2027,8 +2030,9 @@ internal static class MesDowntimeReasonNameEnricher
         string environmentId,
         CancellationToken cancellationToken)
     {
-        var names = await LoadReasonNamesAsync(
+        var catalog = await LoadReasonCatalogAsync(
             maintenance, internalBearerToken, organizationId, environmentId, cancellationToken);
+        var names = catalog.ToDictionary(entry => entry.ReasonCode, entry => entry.ReasonName, StringComparer.Ordinal);
 
         string? Resolve(string? reasonCode) =>
             reasonCode is not null && names.TryGetValue(reasonCode, out var name) ? name : null;
@@ -2037,6 +2041,7 @@ internal static class MesDowntimeReasonNameEnricher
         {
             Items = [.. response.Items.Select(item => item with { ReasonName = Resolve(item.ReasonCode) })],
             ReasonSummary = [.. response.ReasonSummary.Select(row => row with { ReasonName = Resolve(row.ReasonCode) })],
+            ReasonCatalog = catalog,
         };
     }
 
@@ -2046,8 +2051,10 @@ internal static class MesDowntimeReasonNameEnricher
     /// <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 已判定可达的同一组失败降级为「解不出名字」，
     /// 与「目录里没有这个码」走同一条路径（页面照实显示原值），不新增前端分支。
     /// 调用方自己取消不在此列：那不是下游故障，必须原样抛回。
+    /// 降级时目录为空，读面的原因筛选下拉也随之为空——与本次改动之前「目录端点取不到」的观感一致，
+    /// 停机事实本身仍完整可读。
     /// </summary>
-    private static async Task<Dictionary<string, string>> LoadReasonNamesAsync(
+    private static async Task<IReadOnlyCollection<BusinessConsoleMesDowntimeReasonCatalogEntry>> LoadReasonCatalogAsync(
         IBusinessMaintenanceClient maintenance,
         string internalBearerToken,
         string organizationId,
@@ -2060,9 +2067,12 @@ internal static class MesDowntimeReasonNameEnricher
                 internalBearerToken,
                 new BusinessConsoleMaintenanceReasonDirectoryRequest(organizationId, environmentId, Take: CatalogPageSize),
                 cancellationToken);
-            return catalog.Items
-                .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
-                .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
+            return
+            [
+                .. catalog.Items
+                    .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
+                    .Select(x => new BusinessConsoleMesDowntimeReasonCatalogEntry(x.ReasonCode, x.Description)),
+            ];
         }
         catch (BusinessServiceProxyException exception) when (IsUnavailableReasonDirectory(exception.StatusCode))
         {

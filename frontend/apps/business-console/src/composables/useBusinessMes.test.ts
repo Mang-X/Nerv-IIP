@@ -1370,7 +1370,57 @@ describe('business MES composables', () => {
     ])
   })
 
-  // 原因中文名是读面要素：没有停机登记范围（只读用户）也必须能取到字典。
+  // #2696 判据 1/2：读面按原因筛选的词表随停机列表回来，不再借写面那个钉在
+  // MaintenanceWorkOrdersRead 上的目录端点——只授 business.mes.downtime.read 的角色也有选项。
+  it('builds the read-face reason filter options from the downtime list envelope', () => {
+    // 写面目录整个不可用（只读角色的真实处境），读面词表照样成立。
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: { status: 'unavailable', reasonCode: 'directory-authority-unconfigured', items: [] },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesDowntimeEvents', {
+      success: true,
+      data: {
+        items: [],
+        total: 0,
+        reasonSummary: [],
+        reasonCatalog: [
+          { reasonCode: 'DT-MECH', reasonName: '机械故障（轴承/传动/密封）' },
+          // 目录维护到一半、还没填名字的条目：回落成码，不编名字。
+          { reasonCode: 'DT-PM', reasonName: '   ' },
+          // 空原因码选不中也筛不出东西（Select 的 value 也不接受空串），不能进下拉。
+          { reasonCode: '   ', reasonName: '尚未维护原因码的条目' },
+        ],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    // 只回纯名称：读面不把原因码打在界面上。
+    expect(downtime.downtimeReasonCatalog.value).toEqual([
+      { value: 'DT-MECH', label: '机械故障（轴承/传动/密封）' },
+      { value: 'DT-PM', label: 'DT-PM' },
+    ])
+  })
+
+  it('keeps the read-face reason filter empty when the downtime list carries no catalog', () => {
+    // 门面取目录失败时降级成空词表；页面照实回空，不拿汇总里出现过的原因冒充权威字典。
+    coladaState.queryDataById.set('listBusinessConsoleMesDowntimeEvents', {
+      success: true,
+      data: {
+        items: [],
+        total: 1,
+        reasonSummary: [
+          { reasonCode: 'DT-MECH', reasonName: null, openCount: 1, durationMinutes: 90 },
+        ],
+      },
+    })
+
+    expect(useMesDowntimeEvents().downtimeReasonCatalog.value).toEqual([])
+  })
+
+  // 登记弹窗的原因词表不依赖停机登记范围先算出来：范围未就绪时下拉也得先备好。
   it('reads the downtime-reason directory without waiting for a write scope', () => {
     coladaState.queryDataById.delete(
       'getBusinessConsolePrincipalWorkContext:business.mes.downtime.manage',
@@ -1419,9 +1469,10 @@ describe('business MES composables', () => {
 
     const downtime = useMesDowntimeEvents()
 
-    // label 是登记弹窗既有的「名称（码）」口径；name 是只读面用的纯名称。
+    // label 是登记弹窗既有的「名称（码）」口径；#2696 之后读面不再消费这份词表，
+    // 写面口径保持不变。
     expect(downtime.downtimeReasonOptions.value).toEqual([
-      { value: 'equipment-fault', label: '设备故障（equipment-fault）', name: '设备故障' },
+      { value: 'equipment-fault', label: '设备故障（equipment-fault）' },
     ])
     expect(downtime.downtimeReasonsError.value).toBeUndefined()
   })

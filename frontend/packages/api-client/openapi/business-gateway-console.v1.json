@@ -47925,6 +47925,13 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow"
             }
+          },
+          "reasonCatalog": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonCatalogEntry"
+            }
           }
         }
       },
@@ -48038,6 +48045,18 @@
           "reasonName": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonCatalogEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reasonCode": {
+            "type": "string"
+          },
+          "reasonName": {
+            "type": "string"
           }
         }
       },

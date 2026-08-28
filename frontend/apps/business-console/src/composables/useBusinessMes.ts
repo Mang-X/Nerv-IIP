@@ -76,6 +76,7 @@ import {
   type BusinessConsoleMesDispatchTaskRow,
   type BusinessConsoleMesDowntimeEventListEnvelope,
   type BusinessConsoleMesDowntimeEventRow,
+  type BusinessConsoleMesDowntimeReasonCatalogEntry,
   type BusinessConsoleMesDowntimeReasonSummaryRow,
   type BusinessConsoleMesFoundationReadinessEnvelope,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
@@ -3027,9 +3028,23 @@ export function useMesDowntimeEvents() {
       if (envelope?.success !== true) return []
       return envelope.data?.reasonSummary ?? []
     }),
-    // `label` 是登记弹窗既有的「名称（码）」口径；`name` 是同一条目的纯名称，供只读面用
-    // （读面不把工程码打在界面上，见 business-console AGENTS「UI 不暴露工程语言」）。
-    // 没有名称时两者都回落成码——那是「字典没给名字」的实情，不编名字。
+    // #2696：读面按原因筛选的词表随停机列表一起回来（门面用内部令牌取的同一份目录），
+    // 因此只授 `business.mes.downtime.read` 的角色也有筛选项，不必再持 Maintenance 目录权限。
+    // 只回纯名称：读面不把工程码打在界面上（见 business-console AGENTS「UI 不暴露工程语言」）；
+    // 目录没给名字时回落成码，那是「字典没维护」的实情，不编名字。
+    downtimeReasonCatalog: computed(() => {
+      const envelope = downtimeQuery.data.value
+      if (envelope?.success !== true) return []
+      return (envelope.data?.reasonCatalog ?? [])
+        .map((entry: BusinessConsoleMesDowntimeReasonCatalogEntry) => {
+          const value = entry.reasonCode?.trim()
+          if (!value) return undefined
+          return { value, label: entry.reasonName?.trim() || value }
+        })
+        .filter((option): option is { value: string; label: string } => option !== undefined)
+    }),
+    // 登记弹窗（写面）的原因下拉：`label` 是既有的「名称（码）」口径，口径不变。
+    // 没有名称时回落成码——那是「字典没给名字」的实情，不编名字。
     downtimeReasonOptions: computed(() => {
       const envelope = downtimeReasonsQuery.data.value
       if (envelope?.success !== true || envelope.data?.status === 'unavailable') return []
@@ -3038,11 +3053,9 @@ export function useMesDowntimeEvents() {
           const value = item.code?.trim()
           if (!value) return undefined
           const name = item.displayName?.trim()
-          return { value, label: name ? `${name}（${value}）` : value, name: name || value }
+          return { value, label: name ? `${name}（${value}）` : value }
         })
-        .filter(
-          (item): item is { value: string; label: string; name: string } => item !== undefined,
-        )
+        .filter((item): item is { value: string; label: string } => item !== undefined)
     }),
     downtimeReasonsError: downtimeReasonsQuery.error,
     downtimeReasonsPending: downtimeReasonsQuery.isLoading,

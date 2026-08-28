@@ -4723,6 +4723,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow>;
     total?: number;
     reasonSummary?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow>;
+    reasonCatalog?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonCatalogEntry> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
@@ -4747,6 +4748,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     openCount?: number;
     durationMinutes?: number;
     reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonCatalogEntry = {
+    reasonCode?: string;
+    reasonName?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest = {

@@ -5232,7 +5232,17 @@ public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGood
 public sealed record BusinessConsoleMesDowntimeEventListResponse(
     IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items,
     int Total,
-    IReadOnlyCollection<BusinessConsoleMesDowntimeReasonSummaryRow> ReasonSummary);
+    IReadOnlyCollection<BusinessConsoleMesDowntimeReasonSummaryRow> ReasonSummary,
+    IReadOnlyCollection<BusinessConsoleMesDowntimeReasonCatalogEntry>? ReasonCatalog = null);
+
+/// <summary>
+/// 停机原因受控词表，供读面按原因筛选。MES 不产出该字段（下游响应反序列化时为 <c>null</c>），
+/// 由门面的 <c>MesDowntimeReasonNameEnricher</c> 用取名那一次目录调用的结果无条件填充，
+/// 因此持 <c>business.mes.downtime.read</c> 的角色不必再另有 Maintenance 目录权限才能拿到筛选项。
+/// </summary>
+public sealed record BusinessConsoleMesDowntimeReasonCatalogEntry(
+    string ReasonCode,
+    string ReasonName);
 
 /// <summary>停机时长按原因分类汇总；不受 reasonCode 过滤影响，供停机读面做原因构成。</summary>
 public sealed record BusinessConsoleMesDowntimeReasonSummaryRow(

@@ -3086,6 +3086,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public BusinessConsoleMaintenanceReasonDirectoryRequest? LastDowntimeReasonDirectoryRequest { get; private set; }
 
+    /// <summary>#2696：读面的原因名和筛选词表必须共用同一次目录调用，不得因为多回一个字段就多发一次。</summary>
+    public int DowntimeReasonDirectoryCallCount { get; private set; }
+
     /// <summary>设置后目录调用改为抛出该异常，用来覆盖 Maintenance 不可用时读面的降级路径。</summary>
     public Exception? DowntimeReasonDirectoryFailure { get; init; }
 
@@ -3096,6 +3099,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     {
         LastInternalToken = internalBearerToken;
         LastDowntimeReasonDirectoryRequest = request;
+        DowntimeReasonDirectoryCallCount++;
         if (DowntimeReasonDirectoryFailure is not null)
         {
             return Task.FromException<BusinessConsoleMaintenanceReasonDirectoryResponse>(DowntimeReasonDirectoryFailure);

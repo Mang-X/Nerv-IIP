@@ -3052,6 +3052,104 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(summary[1].GetProperty("reasonName").GetString());
     }
 
+    // #2696：按原因筛选的词表也随读面回来。此前页面自己去查 `downtime-reason` 目录端点，那个端点钉在
+    // MaintenanceWorkOrdersRead 上，只授 business.mes.downtime.read 的角色拿到空下拉。现在与取名共用
+    // 同一次内部令牌目录调用：既不新增权限，也不新增下游调用次数。
+    [Fact]
+    public async Task Mes_downtime_list_returns_the_reason_catalog_from_the_same_internal_directory_call()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var mes = new RecordingMesClient
+        {
+            DowntimeEventListResponse = new(
+                [
+                    new BusinessConsoleMesDowntimeEventRow(
+                        "DT-0001", null, null, "EQ-001", "Open",
+                        DateTimeOffset.Parse("2026-07-30T08:00:00Z"), null,
+                        WorkCenterId: "WC-01", ReasonCode: "DT-MECH"),
+                ],
+                1,
+                [new BusinessConsoleMesDowntimeReasonSummaryRow("DT-MECH", 1, 90m)]),
+        };
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 取名与词表共用一次调用：多回一个字段不得把下游读放大成两次。
+        Assert.Equal(1, maintenance.DowntimeReasonDirectoryCallCount);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var catalog = document.RootElement.GetProperty("data").GetProperty("reasonCatalog");
+        // 词表是整份目录，不是「本次数据里出现过的原因」：DT-PM 这次一条停机都没有，仍必须能筛。
+        Assert.Equal(
+            ["DT-MECH", "DT-PM"],
+            catalog.EnumerateArray().Select(entry => entry.GetProperty("reasonCode").GetString()!).ToArray());
+        // 只回纯名称，界面上不出现原因码；与行、汇总用的是同一串文字。
+        Assert.Equal(
+            ["机械故障（轴承/传动/密封）", "计划保养"],
+            catalog.EnumerateArray().Select(entry => entry.GetProperty("reasonName").GetString()!).ToArray());
+        Assert.Equal(
+            document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("reasonName").GetString(),
+            catalog[0].GetProperty("reasonName").GetString());
+    }
+
+    // 目录里的空白原因码进不了词表：它会变成一个选不中、也筛不出任何东西的下拉项（前端 Select 的
+    // value 也不接受空串）。对照行除了原因码之外与正常条目完全同形，删掉那道过滤即会被这条用例抓到。
+    [Fact]
+    public async Task Mes_downtime_list_reason_catalog_skips_directory_entries_without_a_reason_code()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var mes = new RecordingMesClient
+        {
+            DowntimeEventListResponse = new(
+                [
+                    new BusinessConsoleMesDowntimeEventRow(
+                        "DT-0001", null, null, "EQ-001", "Open",
+                        DateTimeOffset.Parse("2026-07-30T08:00:00Z"), null,
+                        WorkCenterId: "WC-01", ReasonCode: "DT-MECH"),
+                ],
+                1,
+                [new BusinessConsoleMesDowntimeReasonSummaryRow("DT-MECH", 1, 90m)]),
+        };
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            DowntimeReasonDirectory =
+            [
+                new("downtime-reason-1", "DT-MECH", "机械故障（轴承/传动/密封）", "breakdown", "availability"),
+                new("downtime-reason-blank", "   ", "尚未维护原因码的条目", "breakdown", "availability"),
+            ],
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var catalog = document.RootElement.GetProperty("data").GetProperty("reasonCatalog");
+        Assert.Equal(
+            ["DT-MECH"],
+            catalog.EnumerateArray().Select(entry => entry.GetProperty("reasonCode").GetString()!).ToArray());
+    }
+
     // 取名是增补而不是事实来源：Maintenance 不可用时停机数据本身完好，整页 502 等于拿一个
     // 可降级的依赖否决一个能正常回答的读面。降级口径与「目录里没有这个码」一致（照实回原值）。
     [Theory]
@@ -3098,6 +3196,10 @@ public sealed class BusinessGatewayProxyTests
         var summary = data.GetProperty("reasonSummary")[0];
         Assert.Equal("DT-MECH", summary.GetProperty("reasonCode").GetString());
         Assert.Null(summary.GetProperty("reasonName").GetString());
+        // #2696：词表与取名同源，目录不可用时一起降级成空——是空数组而不是 null，页面不必再多一条分支。
+        var catalog = data.GetProperty("reasonCatalog");
+        Assert.Equal(JsonValueKind.Array, catalog.ValueKind);
+        Assert.Equal(0, catalog.GetArrayLength());
     }
 
     /// <summary>与 canonical <c>MaintenanceDeviceAssetWarrantyEnricher</c> 判定可达的失败集合同口径。</summary>

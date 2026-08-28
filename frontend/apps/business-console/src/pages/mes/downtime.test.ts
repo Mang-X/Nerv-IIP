@@ -46,6 +46,20 @@ const unreasonedRow = {
 }
 const downtimeRows = ref<Array<typeof openRow | typeof recoveredRow | typeof unreasonedRow>>([])
 
+// #2696：读面（原因筛选）的词表随停机列表从自己的门面回来，是纯名称口径。
+const readFaceReasonCatalog = [
+  { value: 'DT-MECH', label: '机械故障（轴承/传动/密封）' },
+  { value: 'DT-PM', label: '计划保养' },
+]
+// 写面（登记弹窗）的词表仍来自 `downtime-reason` 目录，仍是「名称（码）」口径——两份不同源、
+// 文案也不同，读面若退回去用写面这份，下拉里就会重新出现原因码。
+const writeFaceReasonOptions = [
+  { value: 'DT-MECH', label: '机械故障（轴承/传动/密封）（DT-MECH）' },
+  { value: 'DT-PM', label: '计划保养（DT-PM）' },
+]
+const reasonCatalog = ref<Array<{ value: string; label: string }>>([])
+const reasonOptions = ref<Array<{ value: string; label: string }>>([])
+
 const recordDowntimeEvent = vi.fn()
 const recoverDowntimeEvent = vi.fn().mockResolvedValue(undefined)
 const refreshDowntimeEvents = vi.fn().mockResolvedValue(undefined)
@@ -92,14 +106,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     downtimeEventsError: ref(undefined),
     downtimeEventsPending: ref(false),
     downtimeEventsTotal: computed(() => 2),
-    downtimeReasonOptions: computed(() => [
-      {
-        value: 'DT-MECH',
-        label: '机械故障（轴承/传动/密封）（DT-MECH）',
-        name: '机械故障（轴承/传动/密封）',
-      },
-      { value: 'DT-PM', label: '计划保养（DT-PM）', name: '计划保养' },
-    ]),
+    downtimeReasonCatalog: computed(() => reasonCatalog.value),
+    downtimeReasonOptions: computed(() => reasonOptions.value),
     downtimeReasonSummary: computed(() => [
       {
         reasonCode: 'DT-MECH',
@@ -236,6 +244,8 @@ beforeEach(() => {
   filters.environmentId = 'dev'
   filters.reasonCode = undefined
   downtimeRows.value = [openRow, recoveredRow]
+  reasonCatalog.value = readFaceReasonCatalog.map((option) => ({ ...option }))
+  reasonOptions.value = writeFaceReasonOptions.map((option) => ({ ...option }))
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
   permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
@@ -451,6 +461,45 @@ describe('MES downtime reason read face', () => {
 
     await select!.setValue('all')
     expect(filters.reasonCode).toBeUndefined()
+  })
+
+  // #2696 判据 1/2：只授 business.mes.downtime.read 的角色拿不到写面那个目录（它钉在
+  // MaintenanceWorkOrdersRead 上），写面词表为空。读面筛选必须照样有选项——它读的是随停机
+  // 列表回来的那份词表。
+  it('keeps the reason filter usable when the write-side directory yields no options', () => {
+    reasonOptions.value = []
+    const wrapper = mountPage()
+
+    const select = wrapper.findAll('select').find((item) => item.text().includes('全部原因'))
+    expect(select!.findAll('option').map((option) => option.text())).toEqual([
+      '全部原因',
+      '机械故障（轴承/传动/密封）',
+      '计划保养',
+    ])
+  })
+
+  // #2696 判据 3：读面三处（原因列、时长构成卡分段、筛选下拉）对同一原因必须是同一串纯名称。
+  it('shows one and the same plain reason name across the column, the breakdown card and the filter', () => {
+    const wrapper = mountPage({
+      NvDataTable: cellRenderingTable,
+      NvMetricCard: segmentRenderingMetricCard,
+    })
+
+    const columnText = wrapper.findAll('[data-cell="reasonCode"]')[0]!.text()
+    const segmentText = wrapper
+      .get('[data-metric="停机时长按原因"]')
+      .get('[data-segment="DT-MECH"]')
+      .text()
+    const filterText = wrapper
+      .findAll('select')
+      .find((item) => item.text().includes('全部原因'))!
+      .findAll('option')[1]!
+      .text()
+
+    expect(columnText).toBe('机械故障（轴承/传动/密封）')
+    expect(segmentText).toBe(`${columnText}=1.5`)
+    expect(filterText).toBe(columnText)
+    expect(filterText).not.toContain('DT-MECH')
   })
 
   it('breaks total downtime hours down by reason', () => {
