@@ -11,7 +11,7 @@
 | 服务边界、目录、数据所有权、跨域调用或公开契约 | [`architecture/README.md`](architecture/README.md) | 再按主题读取相关当前架构文档 |
 | 引入、推翻或复评长期决策 | [`adr/README.md`](adr/README.md) | ADR 解释为什么选择；当前实现回到 Architecture / Governance / Runbook |
 | 本地启动、部署、迁移、恢复或排障 | 当前位于 `architecture/` 的对应 runbook | M2 迁移前以架构入口路由为准 |
-| 产品、角色、IA 或 UX 设计 | 对应 `*-module-product-design.md` 与产品文档 | 不从项目状态页推断产品语义 |
+| 产品、角色、IA 或 UX 设计 | [`product/README.md`](product/README.md) | Product 只维护当前产品语义，不从状态页推断产品事实 |
 | 测试、脚本或协作治理 | 对应 governance 文档 | 只加载与任务直接相关的规则 |
 | 调查、实验、审计或修复历史 | [`reports/README.md`](reports/README.md) | 报告只证明声明的时点与范围，不构成当前规则 |
 | 历史阶段、计划或规格核对 | `superpowers/`、[`status/archive/`](status/archive/) | 历史记录不自动构成当前执行入口 |
@@ -29,9 +29,10 @@
 | Report | 某次调查、实验、审计或修复发现了什么？ | 完成后冻结；当前事实回到代码与现态文档 |
 | Product | 给谁使用、解决什么问题、业务与 UX 如何工作？ | 随产品裁决更新 |
 
-## 状态、报告与历史
+## 状态、产品、报告与历史
 
 - 当前全仓级状态：[`status/current.md`](status/current.md)。
+- 当前 Product 入口：[`product/README.md`](product/README.md)。
 - 冻结报告入口：[`reports/README.md`](reports/README.md)。
 - 阶段与状态快照：[`status/archive/README.md`](status/archive/README.md)。
 - `architecture/implementation-readiness.md`：旧链接兼容入口，不再承载状态或裁决。

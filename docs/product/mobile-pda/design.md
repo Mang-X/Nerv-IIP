@@ -1,0 +1,76 @@
+# 移动端（PDA）模块产品业务文档
+
+> 事实源：`docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。后端能力以 `backend/gateway/BusinessGateway` facade 代码事实为准。
+> 关联文档：`docs/architecture/frontend-navigation-map.md`（导航范式与角色入口）、`docs/architecture/frontend-structure.md`（apps/packages 边界）、`docs/architecture/implementation-readiness.md`（实施轨与端口）。
+> 定位：PDA 域的产品/信息架构/角色权限/分期/验收口径文档，遵循 `frontend/apps/business-console/AGENTS.md`「新域开工先立此文档」与「先文档后代码」铁律。
+
+## 1. 用户与场景
+
+目标用户是车间一线操作员，手持工业 PDA（键盘楔入扫码，非相机扫码），在仓储与制造现场完成高频、窄流程的作业任务，而不是坐在 PC 前做管理与配置。核心场景覆盖两大业务域加一项轻量补充：
+
+- **WMS 仓储作业**：收货入库、上架、拣货、复核发货、盘点。作业页内就地展示库存可用量、批次、库位等上下文（与 PC 端 WMS/Inventory 融合口径一致）。
+- **MES 制造执行**：生产报工、领料/齐套、完工入库、工序执行（开工/暂停/恢复/完工）。
+- **设备（轻量）**：故障报修（创建维修工单）、点检/巡检（创建点检记录）、设备报警查看。
+
+一线操作员的诉求是「扫一下就进入正确的活、扫一步确认一步、做完有明确成功反馈」，因此 PDA 不复用 PC 的复杂菜单树，而以任务与扫码为中心组织界面（详见 §2）。
+
+PDA `/mes/issue` 在领料申请清单上方提供只读线边库存摘要，消费与 Console 相同的
+BusinessGateway 公开契约。每行以窄屏密度展示物料、站点/线边库、在手/预留/可用、单位、
+批次数与账龄完整性；刷新入口保持至少 44px 触控目标。生产日期不完整时明确显示「部分可知」
+或「未知」，不以 0 天冒充事实；加载、失败与真实空结果必须分别呈现。列表按服务端每页
+200 条提供上一页/下一页，明确显示当前页与总覆盖数，超过 200 条时不静默截断。
+
+## 2. 信息架构（任务范式，非菜单树）
+
+PDA 首页采用任务范式而非菜单树，由三部分构成：
+
+- **常驻扫码条（ScanBar）**：顶部固定、自动聚焦并在失焦后自动重聚焦，捕获键盘楔入扫码序列，是 PDA 的命脉入口。
+- **可信任务入口**：只对服务端 principal-bound 的任务使用“我的”语义；其余入口明确按当前主体授权作业范围进入。
+- **快捷应用墙（AppWall）**：收货/上架/拣货/复核发货/盘点/报工/领料/完工入库/工序执行/巡检点检/报修 等作业入口，以九宫格形式呈现。
+
+扫码结果由首页与 `/scan` 共用的解析器分流：唯一且目标页可按当前权限重核验的生产工单/工序强 ID 才直达；导航在途时暂停新的扫码与候选选择，路由被阻止、取消或加载失败时显示可恢复错误而不伪装已跳转。歧义结果等待人工选择，未知结果只能查看授权服务端返回的未验证候选，过期或越权 ID 由目标页再次拒绝。已识别但目标页尚无强 ID 重核验能力的类型明确显示暂不支持，不做空跳转。
+
+对象详情、动作表单、页内 Tabs **不作为常驻菜单项**（与 PC 导航硬约束一致）：它们由扫码结果、任务卡或列表行进入，属于页面布局而非导航树。
+
+## 3. 角色与权限
+
+PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务入口、扫码直达、应用墙**，不暴露 PC 能力目录与完整菜单树。
+
+权限以 **BusinessGateway per-request enforcement 为唯一权威**：Gateway 按当前 bearer token、组织/环境上下文与 operation permission 做每请求授权。前端按 permission catalog / `me` 上下文 / feature flag 对应用墙与任务入口做裁剪，但这只是 UX 优化，不是授权边界；客户端不得因为入口已隐藏或已显示而跳过 401/403 处理。「我的任务」必须逐领域由 Gateway 绑定当前 principal，并由拥有 assignment 的领域服务做 Self/Team 行级裁决；Quality 检验任务已完成该链路，其余没有 assignee/owner 事实的对象仍不得伪称个人任务。
+
+**作业范围（MES 工序执行 / 报工）**：这两页的读写都由「主体已核验作业范围」把门。后端 `GET /api/business-console/v1/me/work-context` 按设计不替用户选范围——不带 `scopeKind`/`scopeId` 时只回 `authorizedScopes` 候选清单，`selectedScope` 恒空。PDA 因此走三跳闭环：取授权清单 → 选择（记住的选择仍被授权时优先，否则清单第一项）→ 带 `scopeKind`/`scopeId` 重新核验，`selectedScope` 只认服务端回填，越权选择由 Gateway 403 兜底。范围未就绪时 fail closed：不发业务查询，页面直说是「还没选」还是「一个已授权范围都没有（请管理员在 IAM 配数据范围）」，绝不反复发失败请求，也不渲染假空态。页面顶部的「作业范围」整宽下拉筛选条是唯一切换入口（44px 触发行 / 48px 选项行，单手拇指可达）；显式切换按 principal+组织+环境 记住（localStorage），并在工序执行与报工之间共享同一份选择。
+
+**当前工序门禁（MAN-637）**：工序任务的 URL、标题、详情、动作与结果使用同一 `workOrderId + operationTaskId`。详情展示工单、工序任务、设备、SOP、服务端门禁评估时间和阻塞原因；前序未完成按 `operationSequence` 显示“工序 N / 等 N 道”，物料未齐套、设备不可用和质量保留也分别以现场可读说明呈现，不把当前或前序任务 raw ID 当显示编号。按钮只消费 MES 当前返回的 `allowedActions`，不按页面缓存中的状态猜测；服务端没有返回 `start` 时不能开始，完成态空动作保持只读，所有启用控件（包括页头返回）保持至少 44 px。提交前再次按同一 pair 和授权范围回读，409 后关闭旧动作并刷新；只有 confirmed 回执或完成权威回读才显示成功，accepted/未确认结果提示核实且沿用原幂等意图。重试前若 principal、组织、环境或 manage scope 已变化，不发 mutation，而是保留旧结果、context 与幂等键并给出可读的“上下文已变化”冲突；身份恢复且 watcher 与工序链接自动打开逻辑更新完成后仍保留安全重试与返回入口。未知结果若来自完整工序链接，当前链接必须仍是同一 `workOrderId + operationTaskId`；换到其它 pair 或 query 不完整时页面拒绝旧 mutation 并保留原意图，恢复原 pair 后才能 same-key 重试。身份类冲突换到其它 pair 或返回后改选任务才清理；普通列表选择没有链接 pair 时继续按选择代际处理。首次动作或重试的请求调用期间若 route、principal、组织/环境或读写作业范围改变，页面才丢弃旧 success/error 并刷新当前上下文。若操作员不换 URL、直接从 A 改选 B，独立选择代际同样阻止 A 的旧结果覆盖或关闭 B。完整工序链接在任务数据先到时仍等待写作业范围解析完成，最终只打开当前 manage identity 下的精确 pair。
+
+## 4. 分期
+
+里程碑顺序（与 spec §11 一致）：
+
+- **M0 `ui-mobile` 地基**（先行）：`AppShellMobile`（含顶/底/左右三段安全区）+ ScanBar + ListRow + BottomSheet + Result 先跑通；建 `business-core` 骨架与设计 token 接入。
+- **M1 PDA 壳**：`business-pda` app + Capacitor APK 基线 + 首页（可信任务入口/应用墙/扫码分流）+ 登录/会话复用。
+- **M2 WMS 一线闭环（已建 · 5 页）**：收货入库/复核发货/盘点（写闭环 + 幂等）+ 拣货/上架（只读任务清单）五页全量落地。#374 已补 WMS 拣货、上架、盘点独立 list facade，curated barrel 已接出（`@nerv-iip/api-client`），首页 WMS 入口五项已点亮；拣货/上架无逐任务 complete 端点，做只读清单（写闭环经父单 complete），盘点写经 count-executions complete（幂等键注入）。
+- **M3 MES 一线闭环（已建）**：报工/领料/完工入库/工序执行 —— MES 工序执行/报工/领料/完工入库 已建 (Plan 3)；当前工序已补齐服务端 `allowedActions` / `blockReasons` / `evaluatedAtUtc` 门禁旅程（MES facade 全就绪，无后端阻塞）。
+- **M4 设备轻量（已建）**：设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已落地设备字典点亮（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true）、设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。维修人员队列使用独立 `/equipment/work-orders` 路由，固定由服务端 `scopeKind=self` 绑定当前 principal，支持服务端状态/设备/关键字筛选和每页 20 条分页；每页响应的 `skip/take` 必须是安全整数并与请求精确相等，错页响应 fail closed，不写入分页缓存。HTTP 200 但 `success:false` 的读响应进入明确可重试错误态，不冒充空队列或继续展示旧行。公开工单/设备 GUID 在路由、请求与响应边界统一归一化为小写，业务编码保留 Ordinal 大小写语义；列表/详情每次 scope、筛选或路由 identity 变化都开启新的实时请求 generation，A→B→A 时拒绝 Pinia 旧 A 缓存和迟到旧请求，且设备/身份补充资料只能绑定当前 fresh 权威详情。详情以强 `workOrderId` 重新读取同一 Self 范围，仅在 `deviceAssetId`、优先级、状态、开单时间、有效版本、动作/阻塞原因/生命周期数组及生命周期关键字段均满足权威响应 shape 时展示；不完整响应清空旧详情并进入失败态，不以版本 0 或空数组补造事实。详情在生命周期写命令交付前保持只读。工单中的设备引用按 MasterData 公开契约可为设备公开 ID 或设备编码；PDA 用该引用查询有界设备详情，并只接受当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用精确相等、且 `active` 与非空 `snapshotVersion` 均存在的事实，不接纳切换工单前的迟到响应。任务入口、列表、详情和设备选择器同时要求 `business.maintenance.work-orders.read` 与 `business.masterdata.resources.read`；缺少 principal、组织/环境或任一权限时 fail closed，维修队列与设备目录均不发请求，也不使用“我的维修工单”表述。列表主体姓名与详情指派/生命周期姓名只来自精确有界身份查询；502 后的列表或详情刷新会先重验权威工单事实，再重取当前 scope/key 的身份资料。报警详情进入报修时，同一页面实例随 route 同步替换 `deviceAssetId + sourceAlarmId` 二元组；用户显式更换设备会清除旧 `sourceAlarmId`，结果未知的幂等重试则冻结原二元组。保留来源时，Gateway 在创建前按当前组织/环境精确重读唯一报警，并通过 MasterData 把报警设备和请求设备解析到同一 `DeviceAssetId`，不一致或缺失时 fail closed；canonical D GUID 报警 ID 统一小写，legacy opaque ID 仅 trim 且保留 Ordinal 大小写。创建成功还必须同时返回合法且一致的 canonical `workOrderId` 与 `operationReceipt.resourceId`；它只证明工单已创建，默认尚未指派、当前 Self 详情返回 403。成功态明确显示等待派工且不提供详情链接；外部权威派工给当前 principal 后，用户需点击“重新核验指派状态”触发同一 Self GET，核验成功才显示强 `workOrderId` 详情入口并保留报警来源上下文；不复用创建响应冒充详情，也不自动指派。
+- **M5 扫码解析增强（已建）**：首页与 `/scan` 已接入 barcode resolve；双强 ID 工序、唯一/歧义/未知/无权限/过期 ID 的只读导航闭环已交付。相机、离线解析及更多对象目标页重核验仍后置。
+
+路线图保留（v1 不实现，仅预留目录与边界）：工位机/平板触摸操作台 `business-workstation`、大屏看板 `business-board`、审批移动端。
+
+## 5. 后端缺口
+
+PDA v1 闭环依赖若干 BusinessGateway facade 能力，当前存在缺口（详见 spec §9 的逐项审计证据）。关键缺口：
+
+- **WMS 拣货/上架/盘点独立 list 已补齐（#374）**：BusinessGateway 暴露 `GET /api/business-console/v1/wms/picking-tasks`、`GET /api/business-console/v1/wms/putaway-tasks`、`GET /api/business-console/v1/wms/count-executions`，均保留服务端分页 `skip/take/total` 与状态/库位过滤；操作员过滤参数已进入 facade，但当前 WMS 聚合尚无 assigned operator 字段，传入时返回空集，不伪造“我的任务”。
+- **「我的任务」个人过滤缺失**：WMS list facade 已接收 `operatorUserId` 参数但缺少 WMS assigned operator 持久字段，`workbench/summary` 仍只提供 KPI/待办/通知。
+- **更多扫码目标仍后置**：`POST barcode/resolve` 与 PDA 首批 MES 强 ID 直达已交付；库存批次/库位、WMS、ERP、设备等类型须先在目标页具备当前权限下的强 ID 实时重核验，之后才可加入直达映射。
+
+处置口径：#374 已收口 WMS P0 list facade（拣货/上架/盘点 list 已交付）；更多扫码目标、真实个人任务收件箱和全局搜索库存批次/设备类型仍需后续下游事实支撑。缺口落地前，对应 PDA 作业页保持 disabled / feature-flag hidden 或以父单进入，不做半截入口或空跳转；不再以客户端 `assignedUserId` 或工作中心聚合伪造“我的任务”，只有服务端 principal-bound 读面可使用 Self 口径。
+
+## 6. 验收
+
+PDA 每个页面遵循 PC「金标准」治理级别，过「产品 · 业务 · UX」三关：
+
+- **产品关**：页面服务真实一线任务，不是诊断或演示壳；任务范式与扫码直达落地，不退回菜单树。
+- **业务关**：写操作绑定真实 BusinessGateway facade 命令/事件；缺口未落地处保持 disabled/hidden，不做假数据、假分页、空跳转或半截入口。
+- **UX 关**：界面无工程语言（operationId/sourceSystem/code/policy/demo/seed/mock/issue 号不进界面）；满足安全区、触控尺寸、扫码即焦点、强反馈闭环、误操作防护与离线/弱网降级等 PDA 硬标准。
+
+门禁三连按 touched 范围执行：`pnpm -C frontend --filter <pkg> typecheck`、`pnpm -C frontend --filter <pkg> test`、`pnpm -C frontend --filter <pkg> build`；触及跨域穿透/缺口降级的页面补 smoke 测试。

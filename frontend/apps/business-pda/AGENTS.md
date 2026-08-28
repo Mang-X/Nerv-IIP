@@ -3,7 +3,7 @@
 > 根 `AGENTS.md` 仍然适用；本文件只补充 PDA 子树的差异。
 > business-pda = 车间手持 PDA（Android WebView / Capacitor 8），扫码优先的
 > WMS / MES / 质量 / 设备作业端。交互范式与页面矩阵：
-> `docs/architecture/mobile-pda-module-product-design.md`。
+> `docs/product/mobile-pda/design.md`。
 
 ## 命令
 
