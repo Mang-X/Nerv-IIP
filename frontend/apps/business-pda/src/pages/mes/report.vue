@@ -42,6 +42,7 @@ import { useProductionReportScrapReason } from '@/composables/mes/useProductionR
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -127,7 +128,10 @@ const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
 const telemetryOperationTaskId = ref('')
 const telemetryDismissReason = ref('')
-const scanPending = ref(false)
+const scanGate = useMesScanGate()
+const scanGuarded = scanGate.guarded
+const validatedDeviceAssetId = ref('')
+const validatedPersonnelId = ref('')
 function resetTelemetryAction() {
   telemetryWorkOrderId.value = ''
   telemetryOperationTaskId.value = ''
@@ -144,7 +148,7 @@ async function promoteTelemetryCandidate(candidate: {
   workOrderId?: string | null
   operationTaskId?: string | null
 }) {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   if (!candidate.candidateId) return
   const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
   const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
@@ -154,7 +158,7 @@ async function promoteTelemetryCandidate(candidate: {
   resetTelemetryAction()
 }
 async function dismissTelemetryCandidate(candidateId?: string) {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   if (!candidateId || !telemetryDismissReason.value.trim()) return
   await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
   telemetryCandidateId.value = null
@@ -273,6 +277,8 @@ watch(
       scrapReasonCode.value = ''
       completesOperation.value = false
       resetMaterialSelections()
+      validatedDeviceAssetId.value = ''
+      validatedPersonnelId.value = ''
       ctx.quantityEntered = false
       ctx.recorded = currentIntent.value?.status === 'success'
     }
@@ -380,7 +386,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function submit() {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   if (!reportScopeReady.value) return
   const identity = pair.value
   const task = selectedTask.value
@@ -491,6 +497,14 @@ async function onScanAccepted(value: MesScanAccepted) {
   }
   if (value.kind === 'material') {
     setMaterialSelected(value.materialIssueRequestId, true)
+    return
+  }
+  if (value.kind === 'device') {
+    validatedDeviceAssetId.value = value.scannedObjectId
+    return
+  }
+  if (value.kind === 'personnel') {
+    validatedPersonnelId.value = value.scannedObjectId
   }
 }
 </script>
@@ -636,11 +650,11 @@ async function onScanAccepted(value: MesScanAccepted) {
               <NvMobileButton
                 variant="primary"
                 @click="promoteTelemetryCandidate(candidate)"
-                :disabled="scanPending"
+                :disabled="scanGuarded"
                 >确认转正</NvMobileButton
               ><NvMobileButton
                 variant="outline"
-                :disabled="!telemetryDismissReason.trim() || scanPending"
+                :disabled="!telemetryDismissReason.trim() || scanGuarded"
                 @click="dismissTelemetryCandidate(candidate.candidateId)"
                 >忽略</NvMobileButton
               >
@@ -657,8 +671,9 @@ async function onScanAccepted(value: MesScanAccepted) {
           :operation-task-id="pair?.operationTaskId"
           placeholder="扫描工单或工序"
           :active="scanActive"
+          :accepted-kinds="['work-order', 'operation-task']"
           @accepted="onScanAccepted"
-          @pending-change="scanPending = $event"
+          @status-change="scanGate.set('list', $event)"
         />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
         <ListScopeMeta
@@ -787,9 +802,24 @@ async function onScanAccepted(value: MesScanAccepted) {
           :operation-task-id="pair?.operationTaskId"
           placeholder="扫描物料批次 / 工序 / 设备 / 工牌"
           :active="!submitting"
+          :accepted-kinds="['operation-task', 'device', 'personnel', 'material']"
           @accepted="onScanAccepted"
-          @pending-change="scanPending = $event"
+          @status-change="scanGate.set('context', $event)"
         />
+        <p
+          v-if="validatedDeviceAssetId"
+          data-testid="report-validated-device"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序设备
+        </p>
+        <p
+          v-if="validatedPersonnelId"
+          data-testid="report-validated-personnel"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序人员
+        </p>
 
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">良品数</span>
@@ -823,7 +853,7 @@ async function onScanAccepted(value: MesScanAccepted) {
           :scrap-reason-codes-error="scrapReasonCodesError"
           :scrap-reason-codes="scrapReasonCodes"
           :scrap-reason-validation-message="scrapReasonValidationMessage"
-          :submitting="submitting || scanPending"
+          :submitting="submitting || scanGuarded"
           :report-scope-ready="reportScopeReady"
           :refresh-scrap-reason-codes="refreshScrapReasonCodes"
         />
@@ -862,7 +892,7 @@ async function onScanAccepted(value: MesScanAccepted) {
           :available-material-lots="availableMaterialLots"
           :material-lots-pending="materialLotsPending"
           :material-lots-error="materialLotsError"
-          :submitting="submitting || scanPending"
+          :submitting="submitting || scanGuarded"
           :material-validation-message="materialValidationMessage"
           :refresh-material-lots="refreshMaterialLots"
           :material-selected="materialSelected"
@@ -890,7 +920,7 @@ async function onScanAccepted(value: MesScanAccepted) {
             invalidMaterialLots ||
             invalidScrapReasonCode ||
             submitting ||
-            scanPending ||
+            scanGuarded ||
             reportScopePending ||
             !reportScopeReady
           "

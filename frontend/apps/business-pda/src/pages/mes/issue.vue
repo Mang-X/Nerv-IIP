@@ -31,6 +31,7 @@ import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { describeRequestError } from '@/api/request-timeout'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -137,9 +138,11 @@ const submitting = ref(false)
 // 开始新操作（重新打开新建/接收表单、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
 const returnOperationKey = ref('')
-const scanPending = ref(false)
+const scanGate = useMesScanGate()
+const scanGuarded = scanGate.guarded
 const scannedWorkOrderId = ref('')
 const scannedOperationTaskId = ref('')
+const scannedMaterialIssueRequestId = ref('')
 
 // --- 新建领料表单 ---
 const creating = ref(false)
@@ -180,7 +183,7 @@ function chooseWorkOrder(wo: WorkOrder) {
 }
 
 async function submitCreate() {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const materialId = issueMaterialId.value.trim()
   if (!workOrderId || materialId === '') return
@@ -295,7 +298,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function submitReceive() {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   const req = receiving.value
   const requestId = req?.requestId
   if (!requestId) return
@@ -339,7 +342,7 @@ async function submitReceive() {
 }
 
 async function submitReturn() {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   const req = returning.value
   const requestId = req?.requestId
   const quantity = returnedQuantity.value
@@ -408,17 +411,25 @@ function onScanAccepted(value: MesScanAccepted) {
   if (value.kind === 'work-order') {
     scannedWorkOrderId.value = value.workOrderId
     scannedOperationTaskId.value = ''
+    scannedMaterialIssueRequestId.value = ''
     filters.keyword = undefined
     filters.workOrderId = value.workOrderId
-    filters.operationTaskId = undefined
     return
   }
   if (value.kind === 'operation-task') {
     scannedWorkOrderId.value = value.workOrderId
     scannedOperationTaskId.value = value.operationTaskId
+    scannedMaterialIssueRequestId.value = ''
     filters.keyword = undefined
     filters.workOrderId = value.workOrderId
-    filters.operationTaskId = value.operationTaskId
+    return
+  }
+  if (value.kind === 'material') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = value.operationTaskId
+    scannedMaterialIssueRequestId.value = value.materialIssueRequestId
+    filters.workOrderId = value.workOrderId
+    filters.keyword = value.materialId ?? value.materialIssueRequestId
   }
 }
 
@@ -447,7 +458,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           data-testid="new-issue"
-          :disabled="scanPending"
+          :disabled="scanGuarded"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -499,9 +510,17 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         :operation-task-id="scannedOperationTaskId"
         placeholder="扫描工单 / 工序 / 物料批次"
         :active="scanActive"
+        :accepted-kinds="['work-order', 'operation-task', 'material']"
         @accepted="onScanAccepted"
-        @pending-change="scanPending = $event"
+        @status-change="scanGate.set('list', $event)"
       />
+      <p
+        v-if="scannedMaterialIssueRequestId"
+        data-testid="issue-scanned-material"
+        class="text-sm text-muted-foreground"
+      >
+        已核验当前工单工序的物料批次
+      </p>
 
       <LineSideInventoryBalancesPanel
         :items="lineSideInventoryBalances"
@@ -567,7 +586,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
               v-if="canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
-              :disabled="scanPending"
+              :disabled="scanGuarded"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReceive(req)"
             >
@@ -577,7 +596,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
               v-if="canReturn(req)"
               type="button"
               :data-testid="`return-${req.requestId}`"
-              :disabled="scanPending"
+              :disabled="scanGuarded"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReturn(req)"
             >
@@ -631,7 +650,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
             returnedQuantity <= 0 ||
             (returning !== null && returnedQuantity > returnableQuantity(returning)) ||
             submitting ||
-            scanPending
+            scanGuarded
           "
           @click="submitReturn"
         >
@@ -651,8 +670,9 @@ function onCreateScanAccepted(value: MesScanAccepted) {
             :work-order-id="scannedWorkOrderId"
             :operation-task-id="scannedOperationTaskId"
             placeholder="扫描工单或工序"
+            :accepted-kinds="['work-order', 'operation-task']"
             @accepted="onCreateScanAccepted"
-            @pending-change="scanPending = $event"
+            @status-change="scanGate.set('create', $event)"
           />
           <p class="text-sm text-muted-foreground">选择领料的工单（共 {{ workOrderTotal }} 张）</p>
           <RetryableListError
@@ -734,7 +754,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           <button
             type="button"
             data-testid="submit-issue"
-            :disabled="!createValid || submitting || scanPending"
+            :disabled="!createValid || submitting || scanGuarded"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="submitCreate"
           >
@@ -777,7 +797,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           data-testid="submit-receive"
-          :disabled="!receiveValid || submitting || scanPending"
+          :disabled="!receiveValid || submitting || scanGuarded"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submitReceive"
         >

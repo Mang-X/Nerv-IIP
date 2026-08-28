@@ -22,12 +22,16 @@ const state = {
   selectCandidate: vi.fn(),
   reset: vi.fn(),
 }
+const useOptions = vi.fn()
 
 vi.mock('@/composables/mes/useMesScanPrevalidation', () => ({
-  useMesScanPrevalidation: () => ({
-    ...state,
-    pending: computed(() => state.status.value === 'pending'),
-  }),
+  useMesScanPrevalidation: (options: unknown) => {
+    useOptions(options)
+    return {
+      ...state,
+      pending: computed(() => state.status.value === 'pending'),
+    }
+  },
 }))
 
 import MesScanPrevalidation from './MesScanPrevalidation.vue'
@@ -41,6 +45,7 @@ describe('MesScanPrevalidation', () => {
     state.scan.mockReset()
     state.selectCandidate.mockReset()
     state.reset.mockReset()
+    useOptions.mockReset()
   })
 
   it('emits the accepted strong-ID context and reports pending state', async () => {
@@ -57,6 +62,7 @@ describe('MesScanPrevalidation', () => {
       props: {
         organizationId: 'org-1',
         environmentId: 'env-1',
+        acceptedKinds: ['work-order'],
         placeholder: '扫描工单 / 工序 / 物料 / 设备 / 工牌',
       },
     })
@@ -78,7 +84,10 @@ describe('MesScanPrevalidation', () => {
     } satisfies BusinessConsoleBarcodeResolveCandidate
     state.status.value = 'ambiguous'
     state.message.value = '找到多个候选，请手动选择；系统不会猜测。'
-    state.candidates.value = [candidate]
+    state.candidates.value = [
+      candidate,
+      { objectType: 'personnel', strongIds: { userId: 'USER-2' } },
+    ]
     state.selectCandidate.mockResolvedValue({
       kind: 'personnel',
       candidate,
@@ -87,8 +96,15 @@ describe('MesScanPrevalidation', () => {
       scannedObjectId: 'USER-1',
     })
     const wrapper = mount(MesScanPrevalidation, {
-      props: { organizationId: 'org-1', environmentId: 'env-1' },
+      props: {
+        organizationId: 'org-1',
+        environmentId: 'env-1',
+        acceptedKinds: ['personnel'],
+      },
     })
+
+    expect(wrapper.get('[data-testid="mes-scan-candidate-0"]').text()).toContain('USER-1')
+    expect(wrapper.get('[data-testid="mes-scan-candidate-1"]').text()).toContain('USER-2')
 
     await wrapper.get('[data-testid="mes-scan-candidate-0"]').trigger('click')
 
@@ -100,7 +116,11 @@ describe('MesScanPrevalidation', () => {
     state.status.value = 'rejected'
     state.message.value = '工牌与当前工序指派人员不匹配。'
     const wrapper = mount(MesScanPrevalidation, {
-      props: { organizationId: 'org-1', environmentId: 'env-1' },
+      props: {
+        organizationId: 'org-1',
+        environmentId: 'env-1',
+        acceptedKinds: ['personnel'],
+      },
     })
 
     expect(wrapper.get('[data-testid="mes-scan-status"]').attributes('role')).toBe('alert')
@@ -114,7 +134,11 @@ describe('MesScanPrevalidation', () => {
 
   it('invalidates pending scan state when the page leaves', () => {
     const wrapper = mount(MesScanPrevalidation, {
-      props: { organizationId: 'org-1', environmentId: 'env-1' },
+      props: {
+        organizationId: 'org-1',
+        environmentId: 'env-1',
+        acceptedKinds: ['work-order'],
+      },
     })
 
     wrapper.unmount()

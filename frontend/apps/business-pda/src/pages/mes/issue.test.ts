@@ -309,6 +309,23 @@ describe('PDA MES material issue page', () => {
     expect(issueFilters.keyword).toBeUndefined()
   })
 
+  it('uses an accepted material scan to update the exact issue context', async () => {
+    const wrapper = mount(IssuePage)
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'material',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-20',
+      materialIssueRequestId: 'MIR-20',
+      materialId: 'MAT-20',
+    })
+    await flushPromises()
+
+    expect(issueFilters.workOrderId).toBe('WO-2026-0002')
+    expect(issueFilters.keyword).toBe('MAT-20')
+    expect(wrapper.get('[data-testid="issue-scanned-material"]').text()).toContain('已核验')
+  })
+
   it('creates an issue with the bound fields and a page-supplied idempotencyKey', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 

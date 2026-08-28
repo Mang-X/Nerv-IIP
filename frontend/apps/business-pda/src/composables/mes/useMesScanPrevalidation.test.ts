@@ -136,6 +136,27 @@ describe('useMesScanPrevalidation', () => {
     },
   )
 
+  it('rejects a resolved object that the current page cannot consume', async () => {
+    const prevalidateContext = vi.fn()
+    const scanner = useMesScanPrevalidation({
+      ...scope,
+      context: { workOrderId: 'WO-1', operationTaskId: 'OP-1' },
+      acceptedKinds: ['work-order', 'operation-task'],
+      resolveBarcode: vi
+        .fn()
+        .mockResolvedValue(
+          barcodeEnvelope('resolved', [
+            { objectType: 'personnel', strongIds: { userId: 'USER-1' } },
+          ]),
+        ),
+      prevalidateContext,
+    })
+
+    await expect(scanner.scan('BADGE')).resolves.toBeNull()
+    expect(scanner.status.value).toBe('unsupported')
+    expect(prevalidateContext).not.toHaveBeenCalled()
+  })
+
   it('shows the server rejection reason and does not produce an accepted context', async () => {
     const scanner = useMesScanPrevalidation({
       ...scope,
@@ -212,7 +233,7 @@ describe('useMesScanPrevalidation', () => {
     })
 
     const first = scanner.scan('DEV-1')
-    await nextTick()
+    await vi.waitUntil(() => prevalidateContext.mock.calls.length === 1)
     const second = scanner.scan('DEV-2')
     await expect(second).resolves.toMatchObject({ kind: 'device', scannedObjectId: 'DEV-2' })
     settleFirst(contextAccepted('deviceAsset', 'DEV-1'))
@@ -225,6 +246,12 @@ describe('useMesScanPrevalidation', () => {
   it('invalidates a pending result when the work-order context changes', async () => {
     const context = shallowRef({ workOrderId: 'WO-1', operationTaskId: 'OP-1' })
     let settle!: (value: BusinessConsoleMesMaterialScanPrevalidationResponse) => void
+    const prevalidateMaterial = vi.fn(
+      () =>
+        new Promise<BusinessConsoleMesMaterialScanPrevalidationResponse>((resolve) => {
+          settle = resolve
+        }),
+    )
     const scanner = useMesScanPrevalidation({
       ...scope,
       context,
@@ -236,16 +263,11 @@ describe('useMesScanPrevalidation', () => {
           },
         ]),
       ),
-      prevalidateMaterial: vi.fn(
-        () =>
-          new Promise<BusinessConsoleMesMaterialScanPrevalidationResponse>((resolve) => {
-            settle = resolve
-          }),
-      ),
+      prevalidateMaterial,
     })
 
     const pending = scanner.scan('MAT')
-    await nextTick()
+    await vi.waitUntil(() => prevalidateMaterial.mock.calls.length === 1)
     expect(scanner.pending.value).toBe(true)
     context.value = { workOrderId: 'WO-2', operationTaskId: 'OP-2' }
     await nextTick()

@@ -341,6 +341,54 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
+  it('keeps concurrent scanners aggregated and records validated device and personnel context', async () => {
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const scanners = wrapper.findAllComponents({ name: 'MesScanPrevalidation' })
+    const contextScanner = scanners.find((scanner) =>
+      (scanner.props('acceptedKinds') as string[]).includes('device'),
+    )!
+    const listScanner = scanners.find(
+      (scanner) => !(scanner.props('acceptedKinds') as string[]).includes('device'),
+    )!
+
+    await contextScanner.vm.$emit('accepted', {
+      kind: 'device',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'DEVICE-1',
+    })
+    await contextScanner.vm.$emit('accepted', {
+      kind: 'personnel',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'USER-1',
+    })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="operation-validated-device"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('[data-testid="operation-validated-personnel"]'),
+    ).not.toBeNull()
+
+    await listScanner.vm.$emit('statusChange', 'pending')
+    await contextScanner.vm.$emit('statusChange', 'pending')
+    await contextScanner.vm.$emit('statusChange', 'resolved')
+    await nextTick()
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="action-pause"]')!.disabled,
+    ).toBe(true)
+
+    await listScanner.vm.$emit('statusChange', 'resolved')
+    await nextTick()
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="action-pause"]')!.disabled,
+    ).toBe(false)
+    wrapper.unmount()
+  })
+
   it('renders a non-null readable operationTaskNo with server-evaluated blocker details', async () => {
     operationTasksRef.value = [
       {

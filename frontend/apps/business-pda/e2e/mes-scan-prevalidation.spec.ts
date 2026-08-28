@@ -57,6 +57,49 @@ test('MES 四个现场页面在 375×812 明确呈现歧义、未知、不支持
 })
 
 test('报工扫码只采用当前 pair 的服务端预校验，并显示过期、错配与来源失败', async ({ page }) => {
+  let productionReportWrites = 0
+  let productionReportBody: Record<string, unknown> | undefined
+  await page.route('**/api/business-console/v1/mes/material-issue-requests*', (route) =>
+    fulfillJson(route, {
+      success: true,
+      data: {
+        items: [
+          {
+            requestId: 'ISS-GOOD',
+            workOrderId: 'WO-1',
+            operationTaskId: 'OP-1',
+            materialId: 'MAT-1',
+            uomCode: 'kg',
+            materialLotId: 'LOT-1',
+            requestedQuantity: 5,
+            receivedQuantity: 5,
+            consumedQuantity: 0,
+            status: 'received',
+          },
+        ],
+        total: 1,
+      },
+    }),
+  )
+  await page.route('**/api/business-console/v1/mes/production-reports', async (route) => {
+    productionReportWrites += 1
+    productionReportBody = route.request().postDataJSON() as Record<string, unknown>
+    await fulfillJson(route, {
+      success: true,
+      data: {
+        productionReportId: 'RPT-1',
+        reportNo: 'RPT-E2E-1',
+        operationReceipt: {
+          operationId: 'OPERATION-1',
+          operationType: 'mes.production-report.record',
+          aggregateId: 'RPT-1',
+          idempotencyKey: String(productionReportBody.idempotencyKey ?? ''),
+          recordedAtUtc: '2026-08-28T10:00:00Z',
+          replayed: false,
+        },
+      },
+    })
+  })
   await page.route('**/api/business-console/v1/barcode/resolve', async (route) => {
     const { scannedValue } = route.request().postDataJSON() as { scannedValue: string }
     if (scannedValue === 'QUALIFICATION') {
@@ -114,17 +157,42 @@ test('报工扫码只采用当前 pair 的服务端预校验，并显示过期�
 
   await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
   await expect(page.getByTestId('good-quantity')).toBeVisible()
+  await page.waitForLoadState('networkidle')
 
-  await scan(page, 'GOOD')
-  await expect(page.getByTestId('mes-scan-status')).toContainText('已通过当前工单工序预校验')
-  await scan(page, 'EXPIRED')
-  await expect(page.getByTestId('mes-scan-status')).toContainText('物料批次已过期')
+  await page.getByTestId('good-quantity').fill('1')
   await scan(page, 'WRONG')
   await expect(page.getByTestId('mes-scan-status')).toContainText('不属于当前工单')
+  await expect(page.getByTestId('good-quantity')).toHaveValue('1')
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  expect(productionReportWrites).toBe(0)
+
+  await scan(page, 'EXPIRED')
+  await expect(page.getByTestId('mes-scan-status')).toContainText('物料批次已过期')
   await scan(page, 'QUALIFICATION')
   await expect(page.getByTestId('mes-scan-status')).toContainText('人员技能资格已过期')
   await scan(page, 'SOURCE')
   await expect(page.getByTestId('mes-scan-status')).toContainText('预校验来源暂不可用')
+
+  await scan(page, 'GOOD')
+  await expect(page.getByTestId('mes-scan-status')).toContainText('已通过当前工单工序预校验')
+  await expect(page.getByTestId('material-lot-ISS-GOOD')).toBeChecked()
+  await page.getByTestId('good-quantity').fill('1')
+  await page.getByTestId('material-quantity-ISS-GOOD').fill('1')
+  await expect(page.getByTestId('submit-report')).toBeEnabled()
+  await page.getByTestId('submit-report').click()
+  await expect.poll(() => productionReportWrites).toBe(1)
+  expect(productionReportBody).toMatchObject({
+    workOrderId: 'WO-1',
+    operationTaskId: 'OP-1',
+    consumedMaterialLots: [
+      {
+        materialId: 'MAT-1',
+        materialLotId: 'LOT-1',
+        consumedQuantity: 1,
+        materialIssueRequestNo: 'ISS-GOOD',
+      },
+    ],
+  })
 })
 
 test('领料快速连续扫码丢弃迟到结果，且 pending 期间阻断相关写入口', async ({ page }) => {
@@ -143,6 +211,14 @@ test('领料快速连续扫码丢弃迟到结果，且 pending 期间阻断相�
         ]),
       )
     }
+    if (scannedValue === 'VALID') {
+      return fulfillJson(
+        route,
+        resolveEnvelope('resolved', [
+          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-1' } },
+        ]),
+      )
+    }
     return fulfillJson(route, resolveEnvelope('unknown'))
   })
 
@@ -153,5 +229,7 @@ test('领料快速连续扫码丢弃迟到结果，且 pending 期间阻断相�
   await expect(page.getByTestId('mes-scan-status')).toContainText('无法确认该扫码内容')
   releaseSlow()
   await expect(page.getByTestId('mes-scan-status')).toContainText('无法确认该扫码内容')
+  await expect(page.getByTestId('new-issue')).toBeDisabled()
+  await scan(page, 'VALID')
   await expect(page.getByTestId('new-issue')).toBeEnabled()
 })

@@ -1,7 +1,6 @@
 import {
   prevalidateBusinessConsoleMesContextScan,
   prevalidateBusinessConsoleMesMaterialScan,
-  resolveBusinessConsoleBarcode,
   type BusinessConsoleBarcodeResolveCandidate,
   type BusinessConsoleBarcodeResolveEnvelope,
   type BusinessConsoleBarcodeResolveRequest,
@@ -13,6 +12,7 @@ import {
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { describeRequestError } from '@/api/request-timeout'
+import { isForbiddenRequestError, usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
 
 export type MesScanPrevalidationStatus =
   | 'idle'
@@ -54,10 +54,13 @@ export type MesScanAccepted =
       materialQualification?: string | null
     }
 
+export type MesScanAcceptedKind = MesScanAccepted['kind']
+
 interface MesScanPrevalidationOptions {
   organizationId: MaybeRefOrGetter<string>
   environmentId: MaybeRefOrGetter<string>
   context: MaybeRefOrGetter<MesScanContext>
+  acceptedKinds?: MaybeRefOrGetter<readonly MesScanAcceptedKind[]>
   resolveBarcode?: (
     request: BusinessConsoleBarcodeResolveRequest,
   ) => Promise<BusinessConsoleBarcodeResolveEnvelope>
@@ -91,12 +94,6 @@ function strongId(candidate: BusinessConsoleBarcodeResolveCandidate, name: strin
   return normalized(candidate.strongIds?.[name])
 }
 
-function isForbidden(error: unknown) {
-  if (!error || typeof error !== 'object') return false
-  const value = error as { status?: number; response?: { status?: number } }
-  return value.status === 403 || value.response?.status === 403
-}
-
 function errorText(error: unknown) {
   if (typeof error === 'string') return error
   if (
@@ -115,11 +112,6 @@ function prevalidationFailureMessage(error: unknown) {
     return '扫码预校验来源暂不可用，已阻止当前操作，请稍后重试。'
   }
   return describeRequestError(error, '扫码预校验失败，已阻止当前操作，请稍后重试。').message
-}
-
-async function defaultResolveBarcode(request: BusinessConsoleBarcodeResolveRequest) {
-  const response = await resolveBusinessConsoleBarcode({ body: request, throwOnError: true })
-  return response.data
 }
 
 async function defaultPrevalidateMaterial(
@@ -149,17 +141,23 @@ async function defaultPrevalidateContext(
 }
 
 export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
-  const status = shallowRef<MesScanPrevalidationStatus>('idle')
-  const scannedValue = shallowRef('')
-  const reasonCode = shallowRef<string | null>(null)
+  const prevalidationStatus = shallowRef<MesScanPrevalidationStatus>('idle')
+  const prevalidationReasonCode = shallowRef<string | null>(null)
   const failureMessage = shallowRef('')
-  const candidates = shallowRef<BusinessConsoleBarcodeResolveCandidate[]>([])
   const accepted = shallowRef<MesScanAccepted | null>(null)
   let generation = 0
 
-  const resolveBarcode = options.resolveBarcode ?? defaultResolveBarcode
+  const resolver = usePdaBarcodeResolver({
+    organizationId: options.organizationId,
+    environmentId: options.environmentId,
+    resolveBarcode: options.resolveBarcode,
+  })
   const prevalidateMaterial = options.prevalidateMaterial ?? defaultPrevalidateMaterial
   const prevalidateContext = options.prevalidateContext ?? defaultPrevalidateContext
+  const acceptedKinds = () =>
+    toValue(
+      options.acceptedKinds ?? ['work-order', 'operation-task', 'device', 'personnel', 'material'],
+    )
 
   function scope() {
     return {
@@ -176,32 +174,58 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
     }
   }
 
-  function reset() {
+  function resetPrevalidation() {
     generation += 1
-    status.value = 'idle'
-    scannedValue.value = ''
-    reasonCode.value = null
+    prevalidationStatus.value = 'idle'
+    prevalidationReasonCode.value = null
     failureMessage.value = ''
-    candidates.value = []
     accepted.value = null
+  }
+
+  function reset() {
+    resetPrevalidation()
+    resolver.cancel()
   }
 
   watch(
     [
-      () => normalized(toValue(options.organizationId)),
-      () => normalized(toValue(options.environmentId)),
       () => normalized(toValue(options.context).workOrderId),
       () => normalized(toValue(options.context).operationTaskId),
     ],
     reset,
     { flush: 'sync' },
   )
+  watch(
+    resolver.status,
+    (value) => {
+      if (value === 'idle' && prevalidationStatus.value !== 'idle') resetPrevalidation()
+    },
+    { flush: 'sync' },
+  )
+
+  const status = computed<MesScanPrevalidationStatus>(() =>
+    prevalidationStatus.value === 'idle'
+      ? (resolver.status.value as MesScanPrevalidationStatus)
+      : prevalidationStatus.value,
+  )
+  const reasonCode = computed(() => prevalidationReasonCode.value ?? resolver.reasonCode.value)
 
   function reject(code: string, fallback: string) {
-    reasonCode.value = code
+    prevalidationReasonCode.value = code
     failureMessage.value = REASON_MESSAGES[code] ?? fallback
-    status.value = 'rejected'
+    prevalidationStatus.value = 'rejected'
     accepted.value = null
+    return null
+  }
+
+  function candidateKind(
+    candidate: BusinessConsoleBarcodeResolveCandidate,
+  ): MesScanAcceptedKind | null {
+    if (candidate.objectType === 'mes-work-order') return 'work-order'
+    if (candidate.objectType === 'mes-operation') return 'operation-task'
+    if (candidate.objectType === 'equipment-device') return 'device'
+    if (candidate.objectType === 'personnel') return 'personnel'
+    if (candidate.objectType === 'mes-material-issue-request') return 'material'
     return null
   }
 
@@ -209,13 +233,18 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
     candidate: BusinessConsoleBarcodeResolveCandidate,
     currentGeneration: number,
   ): Promise<MesScanAccepted | null> {
+    const kind = candidateKind(candidate)
+    if (!kind || !acceptedKinds().includes(kind)) {
+      prevalidationStatus.value = 'unsupported'
+      return null
+    }
     const currentScope = scope()
     const currentContext = context()
 
     if (candidate.objectType === 'mes-work-order') {
       const workOrderId = strongId(candidate, 'workOrderId')
       if (!workOrderId) {
-        status.value = 'unsupported'
+        prevalidationStatus.value = 'unsupported'
         return null
       }
       return { kind: 'work-order', candidate, workOrderId }
@@ -227,7 +256,7 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
       const workOrderId = currentContext.workOrderId || candidateWorkOrderId
       const operationTaskId = currentContext.operationTaskId || candidateOperationTaskId
       if (!candidateWorkOrderId || !candidateOperationTaskId || !workOrderId || !operationTaskId) {
-        status.value = 'unsupported'
+        prevalidationStatus.value = 'unsupported'
         return null
       }
       const response = await prevalidateContext({
@@ -257,7 +286,7 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
       const isDevice = candidate.objectType === 'equipment-device'
       const scannedObjectId = strongId(candidate, isDevice ? 'deviceAssetId' : 'userId')
       if (!scannedObjectId) {
-        status.value = 'unsupported'
+        prevalidationStatus.value = 'unsupported'
         return null
       }
       const response = await prevalidateContext({
@@ -285,7 +314,7 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
       }
       const materialIssueRequestId = strongId(candidate, 'materialIssueRequestId')
       if (!materialIssueRequestId) {
-        status.value = 'unsupported'
+        prevalidationStatus.value = 'unsupported'
         return null
       }
       const response = await prevalidateMaterial({
@@ -309,100 +338,49 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
       }
     }
 
-    status.value = 'unsupported'
+    prevalidationStatus.value = 'unsupported'
     return null
   }
 
-  async function selectCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
-    const currentGeneration = ++generation
-    reasonCode.value = null
+  async function validateCandidate(
+    candidate: BusinessConsoleBarcodeResolveCandidate,
+    currentGeneration = ++generation,
+  ) {
+    prevalidationReasonCode.value = null
     failureMessage.value = ''
     accepted.value = null
-    status.value = 'pending'
+    prevalidationStatus.value = 'pending'
     try {
       const result = await prevalidateCandidate(candidate, currentGeneration)
       if (currentGeneration !== generation) return null
       if (result) {
         accepted.value = result
-        status.value = 'resolved'
+        prevalidationStatus.value = 'resolved'
       }
       return result
     } catch (error) {
       if (currentGeneration !== generation) return null
       failureMessage.value = prevalidationFailureMessage(error)
-      status.value = isForbidden(error) ? 'forbidden' : 'error'
+      prevalidationStatus.value = isForbiddenRequestError(error) ? 'forbidden' : 'error'
       return null
     }
   }
 
+  async function selectCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
+    return validateCandidate(resolver.chooseCandidate(candidate))
+  }
+
   async function scan(value: string) {
-    const currentGeneration = ++generation
-    const currentScope = scope()
-    const scanned = value.trim()
-    scannedValue.value = scanned
-    reasonCode.value = null
-    failureMessage.value = ''
-    candidates.value = []
-    accepted.value = null
-
-    if (!scanned || !currentScope.organizationId || !currentScope.environmentId) {
-      status.value = 'error'
-      failureMessage.value = '缺少扫码内容、组织或环境，已阻止当前操作。'
+    resetPrevalidation()
+    const currentGeneration = generation
+    prevalidationStatus.value = 'pending'
+    const candidate = await resolver.resolveCandidate(value)
+    if (currentGeneration !== generation) return null
+    if (!candidate) {
+      prevalidationStatus.value = 'idle'
       return null
     }
-
-    status.value = 'pending'
-    try {
-      const envelope = await resolveBarcode({
-        ...currentScope,
-        scannedValue: scanned,
-        pageIndex: 1,
-        pageSize: 20,
-      })
-      if (currentGeneration !== generation) return null
-      if (!envelope.success || !envelope.data) {
-        status.value = 'error'
-        failureMessage.value = envelope.message?.trim() || '扫码解析未返回有效结果。'
-        return null
-      }
-
-      reasonCode.value = envelope.data.reasonCode ?? null
-      const resolvedCandidates = envelope.data.candidates ?? []
-      if (envelope.data.status === 'ambiguous') {
-        candidates.value = resolvedCandidates
-        status.value = 'ambiguous'
-        return null
-      }
-      if (envelope.data.status === 'unknown') {
-        status.value = 'unknown'
-        return null
-      }
-      if (envelope.data.status === 'unsupported') {
-        status.value = 'unsupported'
-        return null
-      }
-      if (envelope.data.status === 'forbidden') {
-        status.value = 'forbidden'
-        return null
-      }
-      if (envelope.data.status !== 'resolved' || resolvedCandidates.length !== 1) {
-        status.value = 'unsupported'
-        return null
-      }
-
-      const result = await prevalidateCandidate(resolvedCandidates[0]!, currentGeneration)
-      if (currentGeneration !== generation) return null
-      if (result) {
-        accepted.value = result
-        status.value = 'resolved'
-      }
-      return result
-    } catch (error) {
-      if (currentGeneration !== generation) return null
-      failureMessage.value = prevalidationFailureMessage(error)
-      status.value = isForbidden(error) ? 'forbidden' : 'error'
-      return null
-    }
+    return validateCandidate(candidate, currentGeneration)
   }
 
   const pending = computed(() => status.value === 'pending')
@@ -435,10 +413,10 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
   return {
     status,
     pending,
-    scannedValue,
+    scannedValue: resolver.scannedValue,
     reasonCode,
     message,
-    candidates,
+    candidates: resolver.candidates,
     accepted,
     scan,
     selectCandidate,

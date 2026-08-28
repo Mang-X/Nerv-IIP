@@ -19,6 +19,7 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -135,7 +136,8 @@ const submitting = ref(false)
 // 稳定的逐操作幂等键：提交时铸造一次，重试复用同键；
 // 开始新完工入库（重新打开新建、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
-const scanPending = ref(false)
+const scanGate = useMesScanGate()
+const scanGuarded = scanGate.guarded
 const scannedWorkOrderId = ref('')
 const scannedOperationTaskId = ref('')
 
@@ -184,7 +186,7 @@ function changeWorkOrder() {
 }
 
 async function submitCreate() {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const sku = skuId.value.trim()
   const uom = uomCode.value.trim()
@@ -273,7 +275,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           data-testid="new-receipt"
-          :disabled="scanPending"
+          :disabled="scanGuarded"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -326,8 +328,9 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         :operation-task-id="scannedOperationTaskId"
         placeholder="扫描工单或工序"
         :active="scanActive"
+        :accepted-kinds="['work-order', 'operation-task']"
         @accepted="onScanAccepted"
-        @pending-change="scanPending = $event"
+        @status-change="scanGate.set('list', $event)"
       />
 
       <ListScopeMeta
@@ -400,8 +403,9 @@ function onCreateScanAccepted(value: MesScanAccepted) {
             :work-order-id="scannedWorkOrderId"
             :operation-task-id="scannedOperationTaskId"
             placeholder="扫描工单或工序"
+            :accepted-kinds="['work-order', 'operation-task']"
             @accepted="onCreateScanAccepted"
-            @pending-change="scanPending = $event"
+            @status-change="scanGate.set('create', $event)"
           />
           <p class="text-sm text-muted-foreground">
             选择完工入库的工单（共 {{ workOrderTotal }} 张）
@@ -498,7 +502,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           <button
             type="button"
             data-testid="submit-receipt"
-            :disabled="!createValid || submitting || scanPending"
+            :disabled="!createValid || submitting || scanGuarded"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="submitCreate"
           >

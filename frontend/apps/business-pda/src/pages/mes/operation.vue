@@ -43,6 +43,7 @@ import {
   type OperationResultState as ResultState,
 } from './components/operationPresentation'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -217,8 +218,18 @@ const toast = reactive({ show: false, message: '', type: 'error' as const })
 const availableActions = computed(() => actionsFor(selected.value))
 
 const scanActive = computed(() => selected.value === null && result.value === null)
-const scanPending = shallowRef(false)
-const actionOrScanPending = computed(() => actionPending.value || scanPending.value)
+const scanGate = useMesScanGate()
+const scanGuarded = scanGate.guarded
+const actionOrScanPending = computed(() => actionPending.value || scanGuarded.value)
+const validatedDeviceAssetId = ref('')
+const validatedPersonnelId = ref('')
+watch(
+  () => `${selected.value?.workOrderId ?? ''}\u0000${selected.value?.operationTaskId ?? ''}`,
+  () => {
+    validatedDeviceAssetId.value = ''
+    validatedPersonnelId.value = ''
+  },
+)
 const statusOptions: DropdownOption[] = [
   { label: '全部状态', value: '' },
   { label: '待开始', value: 'queued' },
@@ -434,7 +445,7 @@ async function openSopFile(sop: CurrentSop) {
 }
 
 async function runAction(action: ActionKind) {
-  if (scanPending.value) return
+  if (scanGuarded.value) return
   if (!operationScopeReady.value) {
     toast.message = operationScopeMessage.value
     toast.show = true
@@ -619,6 +630,14 @@ async function onScanAccepted(value: MesScanAccepted) {
       path: '/mes/operation',
       query: { workOrderId: value.workOrderId, operationTaskId: value.operationTaskId },
     })
+    return
+  }
+  if (value.kind === 'device') {
+    validatedDeviceAssetId.value = value.scannedObjectId
+    return
+  }
+  if (value.kind === 'personnel') {
+    validatedPersonnelId.value = value.scannedObjectId
   }
 }
 </script>
@@ -672,9 +691,24 @@ async function onScanAccepted(value: MesScanAccepted) {
           :operation-task-id="selected?.operationTaskId"
           placeholder="扫描当前工序 / 设备 / 工牌"
           :active="selected !== null && !result"
+          :accepted-kinds="['operation-task', 'device', 'personnel']"
           @accepted="onScanAccepted"
-          @pending-change="scanPending = $event"
+          @status-change="scanGate.set('context', $event)"
         />
+        <p
+          v-if="validatedDeviceAssetId"
+          data-testid="operation-validated-device"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序设备
+        </p>
+        <p
+          v-if="validatedPersonnelId"
+          data-testid="operation-validated-personnel"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序人员
+        </p>
       </template>
     </MesOperationExecutionPanel>
 
@@ -710,8 +744,9 @@ async function onScanAccepted(value: MesScanAccepted) {
             :operation-task-id="requestedOperationTaskId"
             placeholder="扫描工单或工序"
             :active="scanActive"
+            :accepted-kinds="['work-order', 'operation-task']"
             @accepted="onScanAccepted"
-            @pending-change="scanPending = $event"
+            @status-change="scanGate.set('list', $event)"
           />
           <MesWorkScopeFilter permission-code="business.mes.operations.read" />
           <NvMobileDropdownMenu>

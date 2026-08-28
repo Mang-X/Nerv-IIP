@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, watch } from 'vue'
 import {
   useMesScanPrevalidation,
   type MesScanAccepted,
+  type MesScanAcceptedKind,
 } from '@/composables/mes/useMesScanPrevalidation'
 
 const props = withDefaults(
@@ -14,6 +15,7 @@ const props = withDefaults(
     environmentId: string
     workOrderId?: string
     operationTaskId?: string
+    acceptedKinds: readonly MesScanAcceptedKind[]
     active?: boolean
     placeholder?: string
   }>(),
@@ -38,6 +40,7 @@ const scanner = useMesScanPrevalidation({
     workOrderId: props.workOrderId,
     operationTaskId: props.operationTaskId,
   }),
+  acceptedKinds: () => props.acceptedKinds,
 })
 
 watch(scanner.pending, (pending) => emit('pendingChange', pending), { flush: 'sync' })
@@ -57,7 +60,11 @@ const candidateLabels: Record<string, string> = {
 }
 
 function candidateLabel(candidate: BusinessConsoleBarcodeResolveCandidate, index: number) {
-  return `${candidateLabels[candidate.objectType ?? ''] ?? '业务对象'}候选 ${index + 1}`
+  const strongIds = Object.values(candidate.strongIds ?? {})
+    .filter(Boolean)
+    .join(' · ')
+  const suffix = strongIds || `候选 ${index + 1}`
+  return `${candidateLabels[candidate.objectType ?? ''] ?? '业务对象'}：${suffix}`
 }
 
 async function onScan(value: string) {
