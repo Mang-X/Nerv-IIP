@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.Mes;
 using ScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
+using WorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -507,7 +508,8 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
     /// <summary>
     /// 「已下达未开工」工单里按最新齐套快照仍缺料的数量。口径与放行门禁
     /// <see cref="MaterialReadinessGuards.GetShortageReasonsAsync"/> 一致：
-    /// 同 (工序, 物料, 批次) 取最新快照，缺口 = 需求 − 可用 − 备料 − 已线边接收。
+    /// 每个工单先选择一次完整最新 capture，再按 (物料, 批次) 聚合；
+    /// 缺口 = 需求 − 可用 − 备料 − 已线边接收。
     /// released 工单集合有限（历史形状约 3%），加载后在内存完成快照去重。
     /// </summary>
     private async Task<int> CountReleasedWorkOrdersWithMaterialShortageAsync(
@@ -525,22 +527,12 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             return 0;
         }
 
-        var requirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
-                releasedWorkOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new
-            {
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-            })
-            .ToArrayAsync(cancellationToken);
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            releasedWorkOrderIds,
+            cancellationToken);
         if (requirements.Length == 0)
         {
             return 0;
@@ -561,8 +553,6 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             .ToArrayAsync(cancellationToken);
 
         return requirements
-            .GroupBy(x => new { x.WorkOrderId, x.OperationTaskId, x.MaterialId, x.MaterialLotId })
-            .Select(group => group.OrderByDescending(x => x.CapturedAtUtc).First())
             .GroupBy(x => new { x.WorkOrderId, x.MaterialId, x.MaterialLotId })
             .Select(group =>
             {
@@ -1469,36 +1459,12 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        var persistedRequirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new
-            {
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-                x.SubstituteMaterialIdsJson,
-            })
-            .ToArrayAsync(cancellationToken);
-        var requirements = persistedRequirements
-            .Select(x => new MaterialReadinessGuards.MaterialRequirementSnapshot(
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-                System.Text.Json.JsonSerializer.Deserialize<string[]>(x.SubstituteMaterialIdsJson) ?? []))
-            .ToArray();
-        requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(requirements);
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            [request.WorkOrderId],
+            cancellationToken);
 
         if (requirements.Length == 0)
         {
@@ -1789,11 +1755,22 @@ public sealed record ListDowntimeEventsQuery(
     int Take = 100,
     string? Keyword = null,
     string? ShiftId = null,
-    string? Status = null) : IQuery<MesDowntimeEventListResponse>;
+    string? Status = null,
+    string? ReasonCode = null) : IQuery<MesDowntimeEventListResponse>;
 
 public sealed record MesDowntimeEventListResponse(
     IReadOnlyCollection<MesDowntimeEventRow> Items,
-    int Total);
+    int Total,
+    IReadOnlyCollection<MesDowntimeReasonSummaryRow> ReasonSummary);
+
+/// <summary>
+/// 停机时长按原因分类汇总（#1947）。与列表共用同一组过滤条件，但**不受 ReasonCode 过滤影响**——
+/// 否则按某个原因筛选后汇总只剩那一行，就没法再换原因了。未恢复事件按查询时刻计入进行中时长。
+/// </summary>
+public sealed record MesDowntimeReasonSummaryRow(
+    string ReasonCode,
+    int OpenCount,
+    decimal DurationMinutes);
 
 public sealed record MesDowntimeEventRow(
     string DowntimeEventId,
@@ -1810,7 +1787,7 @@ public sealed record MesDowntimeEventRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null);
 
-public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContext)
+public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContext, TimeProvider timeProvider)
     : IQueryHandler<ListDowntimeEventsQuery, MesDowntimeEventListResponse>
 {
     public async Task<MesDowntimeEventListResponse> Handle(ListDowntimeEventsQuery request, CancellationToken cancellationToken)
@@ -1861,6 +1838,14 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 (x.DeviceAssetId == null || task.DeviceAssetId == x.DeviceAssetId)));
         }
 
+        var reasonSummary = await SummarizeByReasonAsync(query, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(request.ReasonCode))
+        {
+            var reasonCode = request.ReasonCode.Trim();
+            query = query.Where(x => x.Reason == reasonCode);
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.FromUtc)
@@ -1882,7 +1867,38 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.DeviceAssetId,
                 null))
             .ToArrayAsync(cancellationToken);
-        return new MesDowntimeEventListResponse(items, total);
+        return new MesDowntimeEventListResponse(items, total, reasonSummary);
+    }
+
+    /// <summary>
+    /// 按原因分组聚合，整条聚合下推数据库：读面每次翻页/改筛选都要重算，绝不能把过滤后的全部
+    /// 停机行拉回进程（那是一次无界全表投影）。Npgsql 把它翻成单条
+    /// <c>GROUP BY reason</c> + <c>sum(date_part('epoch', COALESCE(to_utc, @asOf) - from_utc)/60)</c>，
+    /// 回程行数等于原因个数。未恢复事件按查询时刻仍在累计，否则一场正在进行的停机会显示成 0。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesDowntimeReasonSummaryRow>> SummarizeByReasonAsync(
+        IQueryable<WorkCenterUnavailability> query,
+        CancellationToken cancellationToken)
+    {
+        var asOfUtc = timeProvider.GetUtcNow();
+        var grouped = await query
+            .GroupBy(x => x.Reason)
+            .Select(group => new
+            {
+                ReasonCode = group.Key,
+                OpenCount = group.Count(x => x.ToUtc == null),
+                DurationMinutes = group.Sum(x => ((x.ToUtc ?? asOfUtc) - x.FromUtc).TotalMinutes),
+            })
+            .ToArrayAsync(cancellationToken);
+        // 名次在进程内定：回程只有「原因个数」行，且 GROUP BY 之上没有定序来源，
+        // 名次留在 SQL 里就等于把「同时长怎么排」交给未定义的行序。
+        return [.. grouped
+            .Select(x => new MesDowntimeReasonSummaryRow(
+                x.ReasonCode,
+                x.OpenCount,
+                Math.Round((decimal)x.DurationMinutes, 2)))
+            .OrderByDescending(x => x.DurationMinutes)
+            .ThenBy(x => x.ReasonCode, StringComparer.Ordinal)];
     }
 }
 

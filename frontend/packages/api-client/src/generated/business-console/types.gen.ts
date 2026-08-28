@@ -4196,6 +4196,32 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesMaterialScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesMaterialScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesMaterialScanDecision;
+    reasonCode: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    materialId?: string | null;
+    materialLotId?: string | null;
+    materialQualification?: string | null;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesMaterialScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesMaterialScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
     materialLotId?: string | null;
     receivedQuantity?: number | null;
@@ -4696,6 +4722,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEvent
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow>;
     total?: number;
+    reasonSummary?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
@@ -4712,6 +4739,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
     workCenterId?: string | null;
     reasonCode?: string | null;
+    reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow = {
+    reasonCode?: string;
+    openCount?: number;
+    durationMinutes?: number;
+    reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {
@@ -15143,6 +15182,42 @@ export type GetBusinessConsoleMesMaterialIssueRequestResponses = {
 
 export type GetBusinessConsoleMesMaterialIssueRequestResponse = GetBusinessConsoleMesMaterialIssueRequestResponses[keyof GetBusinessConsoleMesMaterialIssueRequestResponses];
 
+export type PrevalidateBusinessConsoleMesMaterialScanData = {
+    body: NervIipContractsMesMesMaterialScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/material-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanError = PrevalidateBusinessConsoleMesMaterialScanErrors[keyof PrevalidateBusinessConsoleMesMaterialScanErrors];
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponse = PrevalidateBusinessConsoleMesMaterialScanResponses[keyof PrevalidateBusinessConsoleMesMaterialScanResponses];
+
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest;
     path: {
@@ -16080,6 +16155,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         shiftId?: string | null;
         deviceAssetId?: string | null;
         workOrderId?: string | null;
+        reasonCode?: string | null;
         skip?: number;
         take?: number;
     };
@@ -16690,6 +16766,7 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         userId?: string | null;
         skillCode?: string | null;
         workshopCode?: string | null;
+        deviceAssetId?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };

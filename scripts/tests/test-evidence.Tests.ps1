@@ -1254,8 +1254,9 @@ Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineWithoutIssue
 
 $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #1561 把 InventoryDirectoryPostgresTests 的两条目录用例拆成两个 skip 理由（Docker 夹具 / external），
-# #2228 再把线边库存 provider proof 从目录 external identity 中拆出，因此已登记的 source 从 42 增至 43。
-Assert-Equal 43 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
+# #2228 再把线边库存 provider proof 从目录 external identity 中拆出，因此已登记的 source 从 42 增至 43；
+# #2275 注册 ERP 工序实绩人工成本真实 PostgreSQL + Redis/CAP transport proof，增至 44。
+Assert-Equal 44 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
@@ -1283,7 +1284,10 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 25 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its twenty-five governed PostgreSQL identities.'
+Assert-Equal 29 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its twenty-nine governed PostgreSQL identities.'
+$mesDowntimeReadFaceIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code'
+Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesDowntimeReadFaceIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime read-face summary identity exactly once.'
+Assert-True ($mesDowntimeReadFaceIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime read-face identity.'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesMaterialSubstituteIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the material-substitute snapshot identity exactly once.'
 Assert-True ($mesMaterialSubstituteIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the material-substitute snapshot identity.'
 $mesCapPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-cap-postgres', [StringComparison]::Ordinal) })
@@ -3058,6 +3062,31 @@ Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleane
 $governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
 Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
 $governanceDoc = Get-Content $governanceDocPath -Raw
+$backendShardManifest = Get-Content (Join-Path $repoRoot 'scripts/backend-test-shards.json') -Raw | ConvertFrom-Json
+$selectorCount = @(
+    foreach ($shard in @($backendShardManifest.fastShards)) {
+        @($shard.excludedTestClasses)
+        @($shard.excludedTests)
+    }
+).Count
+$postgresManifest = Get-Content (Join-Path $repoRoot 'scripts/postgres-test-lane.json') -Raw | ConvertFrom-Json
+$activeCoreMembers = @($postgresManifest.members | Where-Object {
+    [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and
+    [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
+})
+$activeCoreIdentityCount = @($activeCoreMembers.expectedTestIdentities).Count
+Assert-True ($governanceDoc.Contains("当前全部 $selectorCount 个选择器", [StringComparison]::Ordinal)) 'Governance document selector count must match the canonical backend shard manifest.'
+Assert-True ($governanceDoc.Contains("当前 active core manifest 为 $($activeCoreMembers.Count) 个成员、$activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document active/core totals must match the canonical PostgreSQL manifest.'
+Assert-True ($governanceDoc.Contains("顺序执行 $($activeCoreMembers.Count) 个 active core manifest member，共 $activeCoreIdentityCount 个冻结身份", [StringComparison]::Ordinal)) 'Governance document hosted PostgreSQL execution totals must match the canonical manifest.'
+$documentedServiceLabels = [ordered]@{
+    Inventory = 'Inventory 的 '; MasterData = 'MasterData 的 '; Scheduling = 'Scheduling 的 '; AppHub = 'AppHub '
+    BarcodeLabel = 'BarcodeLabel/FileStorage/Maintenance 各 '; FileStorage = 'BarcodeLabel/FileStorage/Maintenance 各 '; Maintenance = 'BarcodeLabel/FileStorage/Maintenance 各 '
+    IndustrialTelemetry = 'IndustrialTelemetry '; Quality = 'Quality '; Mes = 'MES '; Wms = 'WMS '; Erp = 'ERP '; DemandPlanning = 'DemandPlanning '; Acceptance = '跨业务 Acceptance '
+}
+foreach ($service in $documentedServiceLabels.Keys) {
+    $serviceIdentityCount = @($activeCoreMembers | Where-Object { [string]::Equals([string]$_.service, $service, [StringComparison]::Ordinal) } | ForEach-Object { @($_.expectedTestIdentities) }).Count
+    Assert-True ($governanceDoc.Contains("$($documentedServiceLabels[$service])$serviceIdentityCount 个", [StringComparison]::Ordinal)) "Governance document $service identity count must match the canonical PostgreSQL manifest."
+}
 foreach ($requiredText in @(
     'optional', 'environment-gated', 'quarantined',
     'unregistered-skip', 'illegal-quarantine', 'zero-execution',

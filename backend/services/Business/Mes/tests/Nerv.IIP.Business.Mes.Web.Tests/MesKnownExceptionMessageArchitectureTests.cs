@@ -63,6 +63,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialReadinessQueryHandler", "Handle", 1, "dynamic readiness message 透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialIssueRequestQueryHandler", "Handle", 1, "领料详情在当前组织与环境 scope 内不存在的统一中文拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMesWorkOrderDetailQueryHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/PrevalidateMaterialScanQuery.cs", "MaterialScanPrevalidationErrors", "SourceUnavailable", 1, "固定中文外层消息；provider、异常与 HTTP reason 仅进入受控日志"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesAuthenticatedActor", "Resolve", 3, "MesEndpoints internal/header 分支排除"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesQualityHoldRequestContext", "Resolve", 1, "MesEndpoints internal/header 分支排除"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/WorkOrderTransformationEndpoints.cs", "GetWorkOrderTransformationEndpoint", "HandleAsync", 1, "同步公开工单转换读回路由参数校验"),
@@ -74,8 +75,8 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(60, discovered.Count);
-        Assert.Equal(143, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(61, discovered.Count);
+        Assert.Equal(144, discovered.Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(140, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 

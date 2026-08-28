@@ -116,7 +116,7 @@ public sealed class WorkOrderCostEventClosureTests
         {
             reportUnitOfWork = new RecordingUnitOfWork(reportDb);
             await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-                    reportDb, new InMemoryIntegrationEventDeadLetterStore(), reportUnitOfWork)
+                    reportDb, new InMemoryIntegrationEventDeadLetterStore(), reportUnitOfWork, TestWorkOrderCostMutationLock.Instance)
                 .HandleAsync(report, CancellationToken.None);
         }
 
@@ -161,7 +161,7 @@ public sealed class WorkOrderCostEventClosureTests
                 10m, 0m, 0m, "ea", 5m, occurredAtUtc, false, MaterialMovementCount: 0));
         await using (var reportDb = new ApplicationDbContext(options, new NoopMediator()))
         {
-            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(reportDb, deadLetters, reportDb)
+            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(reportDb, deadLetters, reportDb, TestWorkOrderCostMutationLock.Instance)
                 .HandleAsync(report, CancellationToken.None);
         }
 
@@ -253,7 +253,7 @@ public sealed class WorkOrderCostEventClosureTests
         await db.SaveChangesAsync();
         Assert.Single(db.PendingMaterialCosts);
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db).HandleAsync(report, CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance).HandleAsync(report, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Empty(db.PendingMaterialCosts);
 
@@ -263,7 +263,7 @@ public sealed class WorkOrderCostEventClosureTests
             IdempotencyKey = "report-uncosted-001",
             Payload = report.Payload with { ReportNo = "RPT-UNCOSTED", WorkCenterId = string.Empty, TheoreticalRatePerHour = null, GoodQuantity = 1m, ScrapQuantity = 0m, MaterialMovementCount = 0 },
         };
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db).HandleAsync(uncostedReport, CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance).HandleAsync(uncostedReport, CancellationToken.None);
         await db.SaveChangesAsync();
 
         var completed = new WorkOrderCompletedIntegrationEvent("evt-completed", MesIntegrationEventTypes.WorkOrderCompleted, 1, DateTimeOffset.Parse("2026-07-11T03:00:00Z"), MesIntegrationEventSources.BusinessMes, "WO-001", "WO-001", "org-001", "env-dev", "mes", "completed-001",
@@ -336,7 +336,7 @@ public sealed class WorkOrderCostEventClosureTests
             IdempotencyKey = "report-reversal-001",
             Payload = report.Payload with { ReportNo = "RPT-REV-001", IsReversal = true, ReversedReportNo = "RPT-001", MaterialMovementCount = 0 },
         };
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db).HandleAsync(reportReversal, CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance).HandleAsync(reportReversal, CancellationToken.None);
         await db.SaveChangesAsync();
 
         Assert.Equal(1, cost.ReceivedMaterialMovementCount);
