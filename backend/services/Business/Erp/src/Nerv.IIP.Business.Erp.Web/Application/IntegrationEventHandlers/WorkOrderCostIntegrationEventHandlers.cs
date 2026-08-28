@@ -165,7 +165,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             completedCost.Capitalize(payload.InventoryMovementId, payload.Quantity, unitCost.Value, payload.PostedAtUtc);
             await EnsureCapitalizationAccountsAsync(dbContext, integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken);
             var movementAmount = completedCost.CapitalizedCost - priorCapitalized;
-            var isFinalReceipt = completedCost.CapitalizedQuantity >= completedCost.CompletedQuantity - 0.000001m;
+            var isFinalReceipt = completedCost.IsFullyCapitalized;
             var variance = isFinalReceipt ? completedCost.TotalAccumulatedCost - completedCost.CapitalizedCost : 0m;
             var wipClearance = isFinalReceipt ? completedCost.TotalAccumulatedCost - priorWipCleared : movementAmount;
             var lines = new List<JournalVoucherLineDraft>
@@ -224,7 +224,7 @@ internal static class CostVariancePosting
         var lines = costDelta < 0m
             ? new[] { new JournalVoucherLineDraft("1405-WIP", amount, 0m, $"Late cost reversal {sourceId}"), new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", 0m, amount, $"Favorable variance {sourceId}") }
             : new[] { new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", amount, 0m, $"Unfavorable variance {sourceId}"), new JournalVoucherLineDraft("1405-WIP", 0m, amount, $"Late cost input {sourceId}") };
-        if (cost.CapitalizedQuantity >= cost.CompletedQuantity - 0.000001m)
+        if (cost.IsFullyCapitalized)
             cost.RecordWipClearance(costDelta);
         dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, $"JV-WOC-ADJ-{cost.WorkOrderId}-{sourceId}", DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines));
     }

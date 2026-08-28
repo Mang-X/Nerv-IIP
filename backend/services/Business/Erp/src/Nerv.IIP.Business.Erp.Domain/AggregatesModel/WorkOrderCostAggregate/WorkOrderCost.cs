@@ -42,6 +42,8 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     public int ReceivedMaterialMovementCount { get; private set; }
     public bool CapitalizationPublished { get; private set; }
     public decimal CapitalizedQuantity { get; private set; }
+    public bool IsFullyCapitalized => CompletedQuantity > 0m
+        && CapitalizedQuantity >= CompletedQuantity - 0.000001m;
     public decimal WipClearedCost { get; private set; }
     public decimal CapitalizedCost { get; private set; }
     public decimal VarianceCost => TotalAccumulatedCost - CapitalizedCost;

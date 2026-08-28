@@ -53,9 +53,12 @@ public sealed partial class OperationLaborSettlementHandlerTests
             .HandleAsync(Report("evt-report-partial", "RPT-PARTIAL", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
+        Assert.False(cost.IsFullyCapitalized);
         await db.SaveChangesAsync();
         var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
         await receiptConsumer.HandleAsync(FinishedGoodsReceipt("evt-fg-partial", "MOVE-FG-PARTIAL", "FGR-PARTIAL", 5m), CancellationToken.None);
+        cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.False(cost.IsFullyCapitalized);
 
         var settled = Settled("evt-settle-partial", 1, AugustCompletedAtUtc, 90 * TimeSpan.TicksPerMinute, ["RPT-PARTIAL"]);
         await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
@@ -79,6 +82,7 @@ public sealed partial class OperationLaborSettlementHandlerTests
         cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         Assert.Equal(expectedLaborCost, cost.LaborCost);
         Assert.Equal(10m, cost.CapitalizedQuantity);
+        Assert.True(cost.IsFullyCapitalized);
         Assert.Equal(expectedLaborCost, cost.WipClearedCost);
         var vouchers = await db.JournalVouchers.Include(x => x.Lines).ToListAsync();
         Assert.Equal(2, vouchers.Count);

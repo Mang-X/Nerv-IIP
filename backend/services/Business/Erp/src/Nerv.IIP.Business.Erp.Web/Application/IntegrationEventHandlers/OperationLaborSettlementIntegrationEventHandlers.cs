@@ -332,8 +332,7 @@ public sealed partial class OperationLaborSettlementOrchestrator
         DateTimeOffset postedAtUtc,
         CancellationToken cancellationToken)
     {
-        if (cost.CompletedQuantity > 0m
-            && cost.CapitalizedQuantity >= cost.CompletedQuantity - 0.000001m)
+        if (cost.IsFullyCapitalized)
             await CostVariancePosting.PostLateAdjustmentAsync(
                 dbContext,
                 cost,
