@@ -4245,9 +4245,8 @@ export type NervIipContractsMesMesContextScanPrevalidationRequest = {
     environmentId: string;
     workOrderId: string;
     operationTaskId: string;
-    scannedOperationTaskId?: string | null;
-    deviceAssetId?: string | null;
-    userId?: string | null;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {

@@ -1032,9 +1032,8 @@ public sealed class PrevalidateContextScanEndpoint(ISender sender)
             req.EnvironmentId,
             req.WorkOrderId,
             req.OperationTaskId,
-            req.ScannedOperationTaskId,
-            req.DeviceAssetId,
-            req.UserId), ct);
+            req.ObjectType,
+            req.ScannedObjectId), ct);
         await Send.OkAsync(response, ct);
     }
 }

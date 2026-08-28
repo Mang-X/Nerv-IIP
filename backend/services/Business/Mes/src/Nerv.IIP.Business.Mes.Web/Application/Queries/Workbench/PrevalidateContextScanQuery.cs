@@ -11,9 +11,8 @@ public sealed record PrevalidateContextScanQuery(
     string EnvironmentId,
     string WorkOrderId,
     string OperationTaskId,
-    string? ScannedOperationTaskId,
-    string? DeviceAssetId,
-    string? UserId) : IQuery<MesContextScanPrevalidationResponse>;
+    MesContextScanObjectType ObjectType,
+    string ScannedObjectId) : IQuery<MesContextScanPrevalidationResponse>;
 
 public sealed class PrevalidateContextScanQueryValidator : AbstractValidator<PrevalidateContextScanQuery>
 {
@@ -23,16 +22,8 @@ public sealed class PrevalidateContextScanQueryValidator : AbstractValidator<Pre
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x).Must(x => new[]
-            {
-                x.ScannedOperationTaskId,
-                x.DeviceAssetId,
-                x.UserId,
-            }.Count(value => !string.IsNullOrWhiteSpace(value)) == 1)
-            .WithMessage("工序、设备和工牌强 ID 必须且只能提供一个。");
-        RuleFor(x => x.ScannedOperationTaskId).MaximumLength(100);
-        RuleFor(x => x.DeviceAssetId).MaximumLength(100);
-        RuleFor(x => x.UserId).MaximumLength(100);
+        RuleFor(x => x.ObjectType).IsInEnum();
+        RuleFor(x => x.ScannedObjectId).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -47,12 +38,6 @@ public sealed class PrevalidateContextScanQueryHandler(
         CancellationToken cancellationToken)
     {
         var evaluatedAtUtc = timeProvider.GetUtcNow();
-        var (objectType, scannedObjectId) = request switch
-        {
-            { ScannedOperationTaskId: { } id } => (MesContextScanObjectType.OperationTask, id),
-            { DeviceAssetId: { } id } => (MesContextScanObjectType.DeviceAsset, id),
-            _ => (MesContextScanObjectType.Personnel, request.UserId!),
-        };
         var task = await dbContext.OperationTasks.AsNoTracking().SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId &&
@@ -65,37 +50,37 @@ public sealed class PrevalidateContextScanQueryHandler(
                 request,
                 MesContextScanDecision.Rejected,
                 "mes-context-not-found",
-                objectType,
-                scannedObjectId,
+                request.ObjectType,
+                request.ScannedObjectId,
                 evaluatedAtUtc);
         }
 
-        var accepted = objectType switch
+        var accepted = request.ObjectType switch
         {
             MesContextScanObjectType.OperationTask => string.Equals(
                 task.OperationTaskIdValue,
-                scannedObjectId,
+                request.ScannedObjectId,
                 StringComparison.Ordinal),
             MesContextScanObjectType.DeviceAsset => string.Equals(
                 task.DeviceAssetId,
-                scannedObjectId,
+                request.ScannedObjectId,
                 StringComparison.Ordinal),
             MesContextScanObjectType.Personnel => string.Equals(
                 task.AssignedUserId,
-                scannedObjectId,
+                request.ScannedObjectId,
                 StringComparison.Ordinal),
-            _ => throw new ArgumentOutOfRangeException(nameof(objectType), objectType, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(request.ObjectType), request.ObjectType, null),
         };
-        if (objectType == MesContextScanObjectType.Personnel && accepted)
+        if (request.ObjectType == MesContextScanObjectType.Personnel && accepted)
         {
             await workerSkillQualificationGate.EnsureQualifiedAsync(
                 task.OrganizationId,
                 task.EnvironmentId,
-                scannedObjectId,
+                request.ScannedObjectId,
                 task.RequiredSkillCode,
                 cancellationToken);
         }
-        var objectName = objectType switch
+        var objectName = request.ObjectType switch
         {
             MesContextScanObjectType.OperationTask => "operation-task",
             MesContextScanObjectType.DeviceAsset => "device-asset",
@@ -105,8 +90,8 @@ public sealed class PrevalidateContextScanQueryHandler(
             request,
             accepted ? MesContextScanDecision.Accepted : MesContextScanDecision.Rejected,
             accepted ? $"{objectName}-scan-accepted" : $"{objectName}-mismatch",
-            objectType,
-            scannedObjectId,
+            request.ObjectType,
+            request.ScannedObjectId,
             evaluatedAtUtc);
     }
 

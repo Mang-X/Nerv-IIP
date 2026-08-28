@@ -46280,7 +46280,9 @@
           "organizationId",
           "environmentId",
           "workOrderId",
-          "operationTaskId"
+          "operationTaskId",
+          "objectType",
+          "scannedObjectId"
         ],
         "properties": {
           "organizationId": {
@@ -46299,17 +46301,12 @@
             "type": "string",
             "minLength": 1
           },
-          "scannedOperationTaskId": {
-            "type": "string",
-            "nullable": true
+          "objectType": {
+            "$ref": "#/components/schemas/NervIIPContractsMesMesContextScanObjectType"
           },
-          "deviceAssetId": {
+          "scannedObjectId": {
             "type": "string",
-            "nullable": true
-          },
-          "userId": {
-            "type": "string",
-            "nullable": true
+            "minLength": 1
           }
         }
       },

@@ -31,7 +31,12 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             "internal-token",
             "corr-context-001",
             new MesContextScanPrevalidationRequest(
-                "org-001", "env-dev", "WO-001", "OP-10", null, "device-001", null),
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                MesContextScanObjectType.DeviceAsset,
+                "device-001"),
             CancellationToken.None);
 
         Assert.Equal(MesContextScanDecision.Accepted, response.Decision);
@@ -43,22 +48,31 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         using var body = JsonDocument.Parse(handler.Body);
         Assert.Equal("WO-001", body.RootElement.GetProperty("workOrderId").GetString());
         Assert.Equal("OP-10", body.RootElement.GetProperty("operationTaskId").GetString());
-        Assert.Equal("device-001", body.RootElement.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("deviceAsset", body.RootElement.GetProperty("objectType").GetString());
+        Assert.Equal("device-001", body.RootElement.GetProperty("scannedObjectId").GetString());
         Assert.False(body.RootElement.TryGetProperty("barcode", out _));
     }
 
-    [Fact]
-    public async Task Context_client_rejects_a_response_that_does_not_echo_the_requested_context()
+    [Theory]
+    [InlineData("WO-OTHER", "OP-10", MesContextScanObjectType.DeviceAsset, "device-001")]
+    [InlineData("WO-001", "OP-OTHER", MesContextScanObjectType.DeviceAsset, "device-001")]
+    [InlineData("WO-001", "OP-10", MesContextScanObjectType.Personnel, "device-001")]
+    [InlineData("WO-001", "OP-10", MesContextScanObjectType.DeviceAsset, "device-other")]
+    public async Task Context_client_rejects_each_response_fact_that_does_not_echo_the_request(
+        string workOrderId,
+        string operationTaskId,
+        MesContextScanObjectType objectType,
+        string scannedObjectId)
     {
         var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = JsonContent.Create(new MesContextScanPrevalidationResponse(
                 MesContextScanDecision.Accepted,
                 "device-asset-scan-accepted",
-                "WO-OTHER",
-                "OP-10",
-                MesContextScanObjectType.DeviceAsset,
-                "device-001",
+                workOrderId,
+                operationTaskId,
+                objectType,
+                scannedObjectId,
                 DateTimeOffset.Parse("2026-08-28T01:00:00Z"))),
         });
         var client = new HttpBusinessMesContextPrevalidationClient(new HttpClient(handler)
@@ -70,7 +84,12 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
             "internal-token",
             "corr-context-001",
             new MesContextScanPrevalidationRequest(
-                "org-001", "env-dev", "WO-001", "OP-10", null, "device-001", null),
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                MesContextScanObjectType.DeviceAsset,
+                "device-001"),
             CancellationToken.None));
     }
 

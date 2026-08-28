@@ -27,10 +27,10 @@ public sealed class MesContextScanPrevalidationTests
             new FakeTimeProvider(Now));
 
         var accepted = await handler.Handle(
-            Request(scannedOperationTaskId: "OP-10"),
+            Request(MesContextScanObjectType.OperationTask, "OP-10"),
             CancellationToken.None);
         var rejected = await handler.Handle(
-            Request(scannedOperationTaskId: "OP-20"),
+            Request(MesContextScanObjectType.OperationTask, "OP-20"),
             CancellationToken.None);
 
         Assert.Equal(MesContextScanDecision.Accepted, accepted.Decision);
@@ -52,8 +52,12 @@ public sealed class MesContextScanPrevalidationTests
             AcceptingQualificationGate.Instance,
             new FakeTimeProvider(Now));
 
-        var accepted = await handler.Handle(Request(deviceAssetId: "device-001"), CancellationToken.None);
-        var rejected = await handler.Handle(Request(deviceAssetId: "device-002"), CancellationToken.None);
+        var accepted = await handler.Handle(
+            Request(MesContextScanObjectType.DeviceAsset, "device-001"),
+            CancellationToken.None);
+        var rejected = await handler.Handle(
+            Request(MesContextScanObjectType.DeviceAsset, "device-002"),
+            CancellationToken.None);
 
         Assert.Equal(MesContextScanDecision.Accepted, accepted.Decision);
         Assert.Equal("device-asset-scan-accepted", accepted.ReasonCode);
@@ -76,7 +80,9 @@ public sealed class MesContextScanPrevalidationTests
             qualificationGate,
             new FakeTimeProvider(Now));
 
-        var response = await handler.Handle(Request(userId: "worker-001"), CancellationToken.None);
+        var response = await handler.Handle(
+            Request(MesContextScanObjectType.Personnel, "worker-001"),
+            CancellationToken.None);
 
         Assert.Equal(MesContextScanDecision.Accepted, response.Decision);
         Assert.Equal("personnel-scan-accepted", response.ReasonCode);
@@ -99,7 +105,9 @@ public sealed class MesContextScanPrevalidationTests
             qualificationGate,
             new FakeTimeProvider(Now));
 
-        var response = await handler.Handle(Request(userId: "worker-002"), CancellationToken.None);
+        var response = await handler.Handle(
+            Request(MesContextScanObjectType.Personnel, "worker-002"),
+            CancellationToken.None);
 
         Assert.Equal(MesContextScanDecision.Rejected, response.Decision);
         Assert.Equal("personnel-mismatch", response.ReasonCode);
@@ -122,7 +130,9 @@ public sealed class MesContextScanPrevalidationTests
             new FakeTimeProvider(Now));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(Request(userId: "worker-001"), CancellationToken.None));
+            handler.Handle(
+                Request(MesContextScanObjectType.Personnel, "worker-001"),
+                CancellationToken.None));
 
         Assert.Equal(message, exception.Message);
     }
@@ -143,14 +153,24 @@ public sealed class MesContextScanPrevalidationTests
         using var cancellationTokenSource = new CancellationTokenSource();
 
         var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            handler.Handle(Request(userId: "worker-001"), cancellationTokenSource.Token));
+            handler.Handle(
+                Request(MesContextScanObjectType.Personnel, "worker-001"),
+                cancellationTokenSource.Token));
 
         Assert.Equal(cancellationTokenSource.Token, exception.CancellationToken);
         Assert.Equal(cancellationTokenSource.Token, qualificationGate.CancellationToken);
     }
 
-    [Fact]
-    public async Task Context_lookup_is_isolated_by_organization_and_environment()
+    [Theory]
+    [InlineData("org-other", "env-dev", "WO-001", "OP-10")]
+    [InlineData("org-001", "env-other", "WO-001", "OP-10")]
+    [InlineData("org-001", "env-dev", "WO-OTHER", "OP-10")]
+    [InlineData("org-001", "env-dev", "WO-001", "OP-OTHER")]
+    public async Task Context_lookup_rejects_each_mismatched_scope_or_task_fact(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string operationTaskId)
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -163,7 +183,13 @@ public sealed class MesContextScanPrevalidationTests
             new FakeTimeProvider(Now));
 
         var response = await handler.Handle(
-            Request(deviceAssetId: "device-001") with { OrganizationId = "org-other" },
+            Request(MesContextScanObjectType.DeviceAsset, "device-001") with
+            {
+                OrganizationId = organizationId,
+                EnvironmentId = environmentId,
+                WorkOrderId = workOrderId,
+                OperationTaskId = operationTaskId,
+            },
             CancellationToken.None);
 
         Assert.Equal(MesContextScanDecision.Rejected, response.Decision);
@@ -171,42 +197,20 @@ public sealed class MesContextScanPrevalidationTests
     }
 
     [Theory]
-    [InlineData(null, null, null)]
-    [InlineData("OP-10", "device-001", null)]
-    [InlineData("OP-10", null, "worker-001")]
-    [InlineData(null, "device-001", "worker-001")]
-    public void Request_requires_exactly_one_resolved_strong_identifier(
-        string? scannedOperationTaskId,
-        string? deviceAssetId,
-        string? userId)
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Request_requires_a_resolved_strong_identifier(string scannedObjectId)
     {
         var result = new PrevalidateContextScanQueryValidator().Validate(
-            Request(scannedOperationTaskId, deviceAssetId, userId));
+            Request(MesContextScanObjectType.DeviceAsset, scannedObjectId));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.ErrorMessage == "工序、设备和工牌强 ID 必须且只能提供一个。");
-    }
-
-    [Theory]
-    [InlineData("OP-10", null, null)]
-    [InlineData(null, "device-001", null)]
-    [InlineData(null, null, "worker-001")]
-    public void Request_accepts_each_single_resolved_strong_identifier(
-        string? scannedOperationTaskId,
-        string? deviceAssetId,
-        string? userId)
-    {
-        var result = new PrevalidateContextScanQueryValidator().Validate(
-            Request(scannedOperationTaskId, deviceAssetId, userId));
-
-        Assert.True(result.IsValid);
     }
 
     private static PrevalidateContextScanQuery Request(
-        string? scannedOperationTaskId = null,
-        string? deviceAssetId = null,
-        string? userId = null) =>
-        new("org-001", "env-dev", "WO-001", "OP-10", scannedOperationTaskId, deviceAssetId, userId);
+        MesContextScanObjectType objectType,
+        string scannedObjectId) =>
+        new("org-001", "env-dev", "WO-001", "OP-10", objectType, scannedObjectId);
 
     private static OperationTask NewTask()
     {

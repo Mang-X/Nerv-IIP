@@ -9,9 +9,8 @@ public sealed record MesContextScanPrevalidationRequest(
     [property: JsonRequired, Required] string EnvironmentId,
     [property: JsonRequired, Required] string WorkOrderId,
     [property: JsonRequired, Required] string OperationTaskId,
-    string? ScannedOperationTaskId,
-    string? DeviceAssetId,
-    string? UserId);
+    [property: JsonRequired, Required] MesContextScanObjectType ObjectType,
+    [property: JsonRequired, Required] string ScannedObjectId);
 
 public sealed record MesContextScanPrevalidationResponse(
     [property: JsonRequired, Required] MesContextScanDecision Decision,

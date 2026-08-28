@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -37,14 +38,50 @@ public sealed class BusinessMesMaterialPrevalidationEndpointTests
                 environmentId = "env-dev",
                 workOrderId = "WO-001",
                 operationTaskId = "OP-10",
-                userId = "worker-001",
+                objectType = "personnel",
+                scannedObjectId = "worker-001",
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(mes.LastRequest);
-        Assert.Equal("worker-001", mes.LastRequest.UserId);
+        Assert.Equal(MesContextScanObjectType.Personnel, mes.LastRequest.ObjectType);
+        Assert.Equal("worker-001", mes.LastRequest.ScannedObjectId);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
         Assert.False(string.IsNullOrWhiteSpace(mes.LastCorrelationId));
+    }
+
+    [Fact]
+    public async Task Context_prevalidation_facade_distinguishes_personnel_mismatch_from_qualification_source_unavailable()
+    {
+        await using var lease = BusinessGatewayTestHost.Lease(
+            FakeBusinessGatewayAuthorizationClient.Allowed(),
+            services =>
+            {
+                services.RemoveAll<IBusinessMesContextPrevalidationClient>();
+                services.AddSingleton<IBusinessMesContextPrevalidationClient, DistinguishingContextMesClient>();
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(
+                    new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var mismatch = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/context-scan-prevalidation",
+            ContextRequest("worker-other"));
+        var sourceUnavailable = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/context-scan-prevalidation",
+            ContextRequest("worker-001"));
+
+        Assert.Equal(HttpStatusCode.OK, mismatch.StatusCode);
+        using var mismatchBody = JsonDocument.Parse(await mismatch.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "personnel-mismatch",
+            mismatchBody.RootElement.GetProperty("data").GetProperty("reasonCode").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, sourceUnavailable.StatusCode);
+        var sourceUnavailableBody = await sourceUnavailable.Content.ReadAsStringAsync();
+        Assert.Contains("WORKER_SKILL_SOURCE_UNAVAILABLE", sourceUnavailableBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("personnel-mismatch", sourceUnavailableBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,11 +178,50 @@ public sealed class BusinessMesMaterialPrevalidationEndpointTests
                 "personnel-scan-accepted",
                 request.WorkOrderId,
                 request.OperationTaskId,
-                MesContextScanObjectType.Personnel,
-                request.UserId!,
+                request.ObjectType,
+                request.ScannedObjectId,
                 DateTimeOffset.Parse("2026-08-28T01:00:00Z")));
         }
     }
+
+    private sealed class DistinguishingContextMesClient : IBusinessMesContextPrevalidationClient
+    {
+        public Task<MesContextScanPrevalidationResponse> PrevalidateAsync(
+            string internalBearerToken,
+            string correlationId,
+            MesContextScanPrevalidationRequest request,
+            CancellationToken cancellationToken)
+        {
+            _ = internalBearerToken;
+            _ = correlationId;
+            _ = cancellationToken;
+            if (request.ScannedObjectId == "worker-001")
+            {
+                throw BusinessServiceProxyException.FromDownstreamBusinessMessage(
+                    "WORKER_SKILL_SOURCE_UNAVAILABLE: MasterData 人员资格来源暂不可用。");
+            }
+
+            return Task.FromResult(new MesContextScanPrevalidationResponse(
+                MesContextScanDecision.Rejected,
+                "personnel-mismatch",
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.ObjectType,
+                request.ScannedObjectId,
+                DateTimeOffset.Parse("2026-08-28T01:00:00Z")));
+        }
+    }
+
+    private static object ContextRequest(string scannedObjectId) =>
+        new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-001",
+            operationTaskId = "OP-10",
+            objectType = "personnel",
+            scannedObjectId,
+        };
 
     private sealed class ScopeRecordingLoggerProvider : ILoggerProvider, ISupportExternalScope
     {
