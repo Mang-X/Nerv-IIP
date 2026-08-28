@@ -225,13 +225,7 @@ function mountPageWithAuth(
   return { wrapper, auth }
 }
 
-function mountPage(
-  permissionCodes = [
-    'business.mes.quality.read',
-    'business.mes.quality.write',
-    'business.mes.operations.read',
-  ],
-) {
+function mountPage(permissionCodes?: string[]) {
   return mountPageWithAuth(permissionCodes).wrapper
 }
 

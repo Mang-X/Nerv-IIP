@@ -337,7 +337,7 @@ describe('MES handovers read-face guard', () => {
     expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，服务端已受理。')
   })
 
-  it('does not repeat an uncertain accept after the refreshed list confirms the state change', async () => {
+  it('closes the accept dialog and disables the row entry once the refreshed list confirms an uncertain accept', async () => {
     mutations.acceptShiftHandover.mockRejectedValueOnce(new Error('request timed out'))
     mutations.refreshHandovers.mockImplementationOnce(async () => {
       state.row.handoverStatus = 'accepted'
