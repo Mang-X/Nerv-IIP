@@ -20,6 +20,11 @@ using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.Aggregates
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord;
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
+using ShiftHandoverIssueCategory = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverIssueCategory;
+using ShiftHandoverIssueSeverity = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverIssueSeverity;
+using ShiftHandoverWipItemSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverWipItemSnapshot;
+using ShiftHandoverUnfinishedWorkOrderSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrderSnapshot;
+using ShiftHandoverOpenIssueSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssueSnapshot;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
@@ -2491,6 +2496,50 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
     }
 }
 
+/// <summary>交班时点的在制清点行。</summary>
+public sealed record ShiftHandoverWipItemInput(
+    string WorkOrderId,
+    string? OperationTaskId,
+    decimal Quantity);
+
+/// <summary>交班时点的未完工单进度快照。</summary>
+public sealed record ShiftHandoverUnfinishedWorkOrderInput(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary>交班时点的遗留问题；<c>Category</c>/<c>Severity</c> 走字符串词表，见 <see cref="ShiftHandoverVocabulary"/>。</summary>
+public sealed record ShiftHandoverOpenIssueInput(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId = null);
+
+/// <summary>
+/// 遗留问题类别与严重度的字符串词表。
+///
+/// MES 服务端没有注册 <c>JsonStringEnumConverter</c>，域枚举直接进公开契约会被序列化成整数，
+/// 因此写面与读面一律用字符串，只在域内保持闭合枚举。
+/// </summary>
+public static class ShiftHandoverVocabulary
+{
+    public static ShiftHandoverIssueCategory ParseCategory(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "equipment" => ShiftHandoverIssueCategory.Equipment,
+        "quality" => ShiftHandoverIssueCategory.Quality,
+        _ => throw new KnownException($"未知的遗留问题类别：{value}，仅支持 Equipment 或 Quality。"),
+    };
+
+    public static ShiftHandoverIssueSeverity ParseSeverity(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "low" => ShiftHandoverIssueSeverity.Low,
+        "medium" => ShiftHandoverIssueSeverity.Medium,
+        "high" => ShiftHandoverIssueSeverity.High,
+        _ => throw new KnownException($"未知的遗留问题严重度：{value}，仅支持 Low、Medium 或 High。"),
+    };
+}
+
 public sealed record CreateShiftHandoverCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -2498,7 +2547,12 @@ public sealed record CreateShiftHandoverCommand(
     string TeamId,
     DateTimeOffset HandoverAtUtc,
     string? IdempotencyKey = null,
-    string? TeamName = null) : ICommand<MesAcceptedResponse>;
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
+    IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
@@ -2524,15 +2578,40 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
             request.EnvironmentId,
             request.HandoverAtUtc,
             cancellationToken);
-        var handover = DomainShiftHandover.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            allocation.Code,
-            request.ShiftId,
-            request.TeamId,
-            openIssueCount,
-            request.HandoverAtUtc,
-            request.TeamName);
+        DomainShiftHandover handover;
+        try
+        {
+            handover = DomainShiftHandover.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                request.ShiftId,
+                request.TeamId,
+                openIssueCount,
+                request.HandoverAtUtc,
+                request.TeamName,
+                request.OutgoingUserId,
+                request.OutgoingUserName,
+                [.. (request.WipItems ?? []).Select(x => new ShiftHandoverWipItemSnapshot(
+                    x.WorkOrderId,
+                    x.OperationTaskId,
+                    x.Quantity))],
+                [.. (request.UnfinishedWorkOrders ?? []).Select(x => new ShiftHandoverUnfinishedWorkOrderSnapshot(
+                    x.WorkOrderId,
+                    x.PlannedQuantity,
+                    x.CompletedQuantity,
+                    x.WorkOrderStatus))],
+                [.. (request.OpenIssues ?? []).Select(x => new ShiftHandoverOpenIssueSnapshot(
+                    ShiftHandoverVocabulary.ParseCategory(x.Category),
+                    ShiftHandoverVocabulary.ParseSeverity(x.Severity),
+                    x.Description,
+                    x.ReferenceId))]);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
         dbContext.ShiftHandovers.Add(handover);
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);
     }
@@ -2568,7 +2647,9 @@ public sealed record AcceptShiftHandoverCommand(
     string OrganizationId,
     string EnvironmentId,
     string HandoverId,
-    DateTimeOffset AcceptedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset AcceptedAtUtc,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AcceptShiftHandoverCommand, MesAcceptedResponse>
@@ -2584,7 +2665,7 @@ public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbCon
 
         try
         {
-            handover.Accept(request.AcceptedAtUtc);
+            handover.Accept(request.AcceptedAtUtc, request.IncomingUserId, request.IncomingUserName);
         }
         catch (InvalidOperationException exception)
         {

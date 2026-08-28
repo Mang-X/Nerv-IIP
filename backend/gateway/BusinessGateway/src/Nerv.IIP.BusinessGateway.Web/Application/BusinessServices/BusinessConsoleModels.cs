@@ -5332,7 +5332,57 @@ public sealed record BusinessConsoleMesShiftHandoverRow(
     string HandoverStatus,
     int OpenIssueCount,
     DateTimeOffset CreatedAtUtc,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null,
+    DateTimeOffset? AcceptedAtUtc = null,
+    int WipItemCount = 0,
+    int UnfinishedWorkOrderCount = 0,
+    int OpenIssueDetailCount = 0);
+
+/// <summary>交班时点的在制清点行。</summary>
+public sealed record BusinessConsoleMesShiftHandoverWipItem(
+    string WorkOrderId,
+    string? OperationTaskId,
+    decimal Quantity);
+
+/// <summary>交班时点的未完工单进度快照。</summary>
+public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary>交班时点的遗留问题；<c>Category</c> 取 Equipment/Quality，<c>Severity</c> 取 Low/Medium/High。</summary>
+public sealed record BusinessConsoleMesShiftHandoverOpenIssue(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId = null);
+
+public sealed record BusinessConsoleMesShiftHandoverDetail(
+    string HandoverId,
+    string ShiftId,
+    string TeamId,
+    string HandoverStatus,
+    int OpenIssueCount,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AcceptedAtUtc,
+    string? TeamName,
+    string? OutgoingUserId,
+    string? OutgoingUserName,
+    string? IncomingUserId,
+    string? IncomingUserName,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem> WipItems,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder> UnfinishedWorkOrders,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue> OpenIssues);
+
+public sealed record BusinessConsoleMesShiftHandoverDetailRequest(
+    [property: RouteParam] string HandoverId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string OrganizationId,
@@ -5341,13 +5391,20 @@ public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string TeamId,
     IReadOnlyCollection<string>? OpenIssueIds,
     string IdempotencyKey,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues = null);
 
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null);
 
 public sealed record BusinessConsoleMesTraceabilityByWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,

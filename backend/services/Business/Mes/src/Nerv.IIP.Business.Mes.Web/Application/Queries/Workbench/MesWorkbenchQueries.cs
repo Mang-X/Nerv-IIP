@@ -1923,7 +1923,15 @@ public sealed record MesShiftHandoverRow(
     string HandoverStatus,
     int OpenIssueCount,
     DateTimeOffset CreatedAtUtc,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null,
+    DateTimeOffset? AcceptedAtUtc = null,
+    int WipItemCount = 0,
+    int UnfinishedWorkOrderCount = 0,
+    int OpenIssueDetailCount = 0);
 
 public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListShiftHandoversQuery, MesShiftHandoverListResponse>
@@ -1981,9 +1989,140 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
                 x.HandoverStatus,
                 x.OpenIssueCount,
                 x.CreatedAtUtc,
-                x.TeamName))
+                x.TeamName,
+                x.OutgoingUserId,
+                x.OutgoingUserName,
+                x.IncomingUserId,
+                x.IncomingUserName,
+                x.AcceptedAtUtc,
+                x.WipItems.Count,
+                x.UnfinishedWorkOrders.Count,
+                x.OpenIssues.Count))
             .ToArrayAsync(cancellationToken);
         return new MesShiftHandoverListResponse(items, total);
+    }
+}
+
+/// <summary>交接班明细读面：一条交接班记录的三类交班时点快照全量。</summary>
+public sealed record GetShiftHandoverQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string HandoverId) : IQuery<MesShiftHandoverDetail>;
+
+public sealed record MesShiftHandoverWipItemRow(
+    string WorkOrderId,
+    string? OperationTaskId,
+    decimal Quantity);
+
+public sealed record MesShiftHandoverUnfinishedWorkOrderRow(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary><c>Category</c> 与 <c>Severity</c> 用字符串回显域枚举名，避免服务端未注册枚举转换器时被序列化成整数。</summary>
+public sealed record MesShiftHandoverOpenIssueRow(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId);
+
+public sealed record MesShiftHandoverDetail(
+    string HandoverId,
+    string ShiftId,
+    string TeamId,
+    string HandoverStatus,
+    int OpenIssueCount,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AcceptedAtUtc,
+    string? TeamName,
+    string? OutgoingUserId,
+    string? OutgoingUserName,
+    string? IncomingUserId,
+    string? IncomingUserName,
+    IReadOnlyCollection<MesShiftHandoverWipItemRow> WipItems,
+    IReadOnlyCollection<MesShiftHandoverUnfinishedWorkOrderRow> UnfinishedWorkOrders,
+    IReadOnlyCollection<MesShiftHandoverOpenIssueRow> OpenIssues);
+
+public sealed class GetShiftHandoverQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetShiftHandoverQuery, MesShiftHandoverDetail>
+{
+    public async Task<MesShiftHandoverDetail> Handle(GetShiftHandoverQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.ShiftHandovers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+        query = Guid.TryParse(request.HandoverId, out var handoverGuid)
+            ? query.Where(x => x.Id.Id == handoverGuid)
+            : query.Where(x => x.HandoverNo == request.HandoverId);
+
+        // 三类明细一律来自本聚合的子表，不回 join 工单表重算：读面回吐的就是交班时点写下的数值。
+        var handover = await query
+            .Select(x => new
+            {
+                x.HandoverNo,
+                x.ShiftId,
+                x.TeamId,
+                x.HandoverStatus,
+                x.OpenIssueCount,
+                x.CreatedAtUtc,
+                x.AcceptedAtUtc,
+                x.TeamName,
+                x.OutgoingUserId,
+                x.OutgoingUserName,
+                x.IncomingUserId,
+                x.IncomingUserName,
+                WipItems = x.WipItems
+                    .Select(item => new MesShiftHandoverWipItemRow(item.WorkOrderId, item.OperationTaskId, item.Quantity))
+                    .ToArray(),
+                UnfinishedWorkOrders = x.UnfinishedWorkOrders
+                    .Select(workOrder => new MesShiftHandoverUnfinishedWorkOrderRow(
+                        workOrder.WorkOrderId,
+                        workOrder.PlannedQuantity,
+                        workOrder.CompletedQuantity,
+                        workOrder.WorkOrderStatus))
+                    .ToArray(),
+                OpenIssues = x.OpenIssues
+                    .Select(issue => new
+                    {
+                        issue.Category,
+                        issue.Severity,
+                        issue.Description,
+                        issue.ReferenceId,
+                    })
+                    .ToArray(),
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
+
+        return new MesShiftHandoverDetail(
+            handover.HandoverNo,
+            handover.ShiftId,
+            handover.TeamId,
+            handover.HandoverStatus,
+            handover.OpenIssueCount,
+            handover.CreatedAtUtc,
+            handover.AcceptedAtUtc,
+            handover.TeamName,
+            handover.OutgoingUserId,
+            handover.OutgoingUserName,
+            handover.IncomingUserId,
+            handover.IncomingUserName,
+            [.. handover.WipItems
+                .OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationTaskId, StringComparer.Ordinal)],
+            [.. handover.UnfinishedWorkOrders.OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)],
+            // 严重度排序必须留在内存里：Severity 以字符串列持久化，交给数据库排会按
+            // High < Low < Medium 的字典序排，而不是按严重度。
+            [.. handover.OpenIssues
+                .OrderBy(x => x.Category)
+                .ThenByDescending(x => x.Severity)
+                .ThenBy(x => x.Description, StringComparer.Ordinal)
+                .Select(x => new MesShiftHandoverOpenIssueRow(
+                    x.Category.ToString(),
+                    x.Severity.ToString(),
+                    x.Description,
+                    x.ReferenceId))]);
     }
 }
 

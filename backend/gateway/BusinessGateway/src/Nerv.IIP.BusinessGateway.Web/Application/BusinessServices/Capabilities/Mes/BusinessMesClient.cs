@@ -292,6 +292,12 @@ public interface IBusinessMesClient
         BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
         BusinessConsoleMesCreateShiftHandoverRequest request,
@@ -1079,6 +1085,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/mes/shift-handovers?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesShiftHandoverDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/shift-handovers/{Uri.EscapeDataString(handoverId)}?" +
+            ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 

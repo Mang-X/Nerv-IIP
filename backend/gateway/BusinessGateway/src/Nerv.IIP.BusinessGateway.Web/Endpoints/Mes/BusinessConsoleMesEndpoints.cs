@@ -2250,6 +2250,28 @@ public sealed class ListBusinessConsoleMesShiftHandoversEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/shift-handovers/{handoverId}")]
+[BusinessGatewayOperationId("getBusinessConsoleMesShiftHandover")]
+public sealed class GetBusinessConsoleMesShiftHandoverEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesShiftHandoverDetailRequest, BusinessConsoleMesShiftHandoverDetail>(
+        auth,
+        BusinessGatewayPermissions.MesHandoversRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesShiftHandoverDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesShiftHandoverDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesShiftHandoverDetail> ForwardAsync(
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetShiftHandoverAsync(tokenProvider.BearerToken, request.HandoverId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/shift-handovers")]
 [BusinessGatewayOperationId("createBusinessConsoleMesShiftHandover")]
 public sealed class CreateBusinessConsoleMesShiftHandoverEndpoint(
