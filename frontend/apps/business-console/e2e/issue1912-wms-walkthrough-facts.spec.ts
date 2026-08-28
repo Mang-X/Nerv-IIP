@@ -220,7 +220,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     }
   })
 
-  test('显式作业范围选择后，刷新只接受当前租户和默认分页的列表响应', async ({ page }) => {
+  test('显式作业范围和页窗口选择后，刷新只接受当前租户与已选分页的列表响应', async ({ page }) => {
     // This fixture exercises the WMS proof wiring only. It does not provide real identity,
     // provider, HTTP service, persistence, or cleanup evidence for FullStack/FullChain.
     const listPath = '/api/business-console/v1/wms/outbound-orders'
@@ -243,13 +243,22 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       <base href="http://walkthrough.fixture/">
       <button type="button" aria-label="作业范围" aria-expanded="false">自动首项</button>
       <div role="listbox" hidden><input role="combobox" aria-label="搜索作业范围"></div>
+      <button type="button" aria-label="每页条数" aria-expanded="false">10</button>
+      <div id="page-size-menu" role="listbox" hidden>
+        <button type="button" role="option" aria-selected="true" data-value="10">10</button>
+        <button type="button" role="option" aria-selected="false" data-value="20">20</button>
+      </div>
+      <span aria-label="当前页">1 / 1</span>
       <button id="refresh" type="button">刷新</button>
       <script>
         const scope = document.querySelector('[aria-label="作业范围"]')
         const menu = document.querySelector('[role="listbox"]')
         const search = menu.querySelector('input')
+        const pageSizeTrigger = document.querySelector('[aria-label="每页条数"]')
+        const pageSizeMenu = document.querySelector('#page-size-menu')
         const scenario = ${JSON.stringify(expectedQuery)}
         let selectedScopeId = ''
+        let selectedPageSize = 10
         let refreshCount = 0
         const syncScopeOption = () => {
           const option = menu.querySelector('[role="option"]')
@@ -281,6 +290,17 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             }, 60)
           }
         })
+        pageSizeTrigger.addEventListener('click', () => {
+          pageSizeMenu.hidden = false
+          pageSizeTrigger.setAttribute('aria-expanded', 'true')
+        })
+        pageSizeMenu.querySelectorAll('[role="option"]').forEach(option => option.addEventListener('click', () => {
+          pageSizeMenu.querySelectorAll('[role="option"]').forEach(item => item.setAttribute('aria-selected', String(item === option)))
+          selectedPageSize = Number(option.dataset.value)
+          pageSizeTrigger.textContent = option.dataset.value
+          pageSizeMenu.hidden = true
+          pageSizeTrigger.setAttribute('aria-expanded', 'false')
+        }))
         document.querySelector('#refresh').addEventListener('click', () => {
           refreshCount += 1
           const query = new URLSearchParams({
@@ -289,7 +309,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             scopeKind: scenario.scopeKind,
             scopeId: selectedScopeId,
             skip: String(scenario.skip),
-            take: String(refreshCount === 2 ? 999 : scenario.take),
+            take: String(refreshCount === 2 ? 999 : selectedPageSize),
           })
           if (refreshCount === 3) query.set('siteCode', 'SITE-001')
           if (refreshCount === 4) query.set('environmentId', 'env-stale')
@@ -314,7 +334,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
     })
 
     expect(response.status()).toBe(200)
-    expect(new URL(response.url()).searchParams.get('take')).toBe('10')
+    expect(new URL(response.url()).searchParams.get('take')).toBe('20')
     await expect(page.getByLabel('作业范围', { exact: true })).toHaveAttribute(
       'data-scope-id',
       expectedQuery.scopeId,

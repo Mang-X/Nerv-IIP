@@ -81,7 +81,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
       scopeKind: 'work-pool',
       scopeId: 'pool-receiving-001',
       skip: 0,
-      take: 10,
+      take: 20,
       siteCode: 'SITE-001',
     })
     expect(buildWmsOutboundSelectionQueryFacts(NERV_1571_WMS_OUTBOUND_FACTS)).toEqual({
@@ -90,7 +90,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
       scopeKind: 'work-pool',
       scopeId: 'pool-shipping-001',
       skip: 0,
-      take: 10,
+      take: 20,
     })
   })
 

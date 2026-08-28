@@ -15,14 +15,14 @@
 
 范围 proof 会用页面搜索控件检索已选的规范值 `scopeKind:scopeId`，等待唯一可见 option，再点击并重新打开目录验证该 option 的底层 value 已被选中；入库工厂 proof 等待异步目录稳定为唯一 option，点击后验证触发器回显 `siteCode`。因此页面 option/readback 与随后公开请求中的 `scopeKind`、`scopeId`、`siteCode` 是同一次显式选择的绑定，不能由响应 URL 反推。
 
-完成页面选择后纳入精确证明的 WMS 列表请求，其必需查询字段为：当前登录租户 `organizationId`、环境 `environmentId`、已选择的 `scopeKind=work-pool`、已选择的 `scopeId`，以及由本次走查场景显式提供的 `pageWindow.skip=0` 和正整数 `pageWindow.take`。本文的 mock vector 选择 `take=10` 仅是一个可审的场景输入，不是页面默认值或公共合同；真实走查必须在证明前提供该场景输入，若输入缺失或页面发出其他值则失败关闭。走查关键字是同一场景输入 `IN-WALK-001` 或 `DO-WALK-001`；在关键字过滤请求中还必须按原值出现一次，不能用响应 URL 回填预期。选择绑定的刷新请求为空关键字是有意的两阶段边界，随后过滤请求由通用输入 proof 单独绑定关键字。
+完成页面选择后纳入精确证明的 WMS 列表请求，其必需查询字段为：当前登录租户 `organizationId`、环境 `environmentId`、已选择的 `scopeKind=work-pool`、已选择的 `scopeId`，以及由本次走查场景显式提供的 `pageWindow.skip=0` 和正整数 `pageWindow.take`。真实走查在证明前必须通过页面公开的「每页条数」控件选择该窗口，并回读控件的已选项与当前页为第一页；expected query 只接受这次独立场景输入。本文的 mock vector 选择 `take=20` 是一个可审的场景动作输入，不是页面默认值或公共合同；若控件缺失、目标选项缺失/重复、已选值或第一页回读不匹配，或页面发出其他值，则失败关闭。走查关键字是同一场景输入 `IN-WALK-001` 或 `DO-WALK-001`；在关键字过滤请求中还必须按原值出现一次，不能用响应 URL 回填预期。选择绑定的刷新请求为空关键字是有意的两阶段边界，随后过滤请求由通用输入 proof 单独绑定关键字。
 
 | 页面 | 独立场景输入 | 查询约束 |
 | --- | --- | --- |
 | 入库 | `作业范围` 的授权作业池；工厂目录中的明确编码 `SITE-001`；关键字 `IN-WALK-001` | 选择绑定的刷新列表请求必须包含所选 `siteCode=SITE-001`；过滤请求还必须包含同一关键字 |
 | 出库 | `作业范围` 的授权作业池；关键字 `DO-WALK-001` | 选择绑定的刷新列表请求不得包含 `siteCode`；过滤请求还必须包含同一关键字 |
 
-以下确定性 vector 只供前端合同和 mock fixture 使用，不是 seed、权限或 FullChain 事实：`org-live/env-live`、`pool-receiving-001`、`pool-shipping-001`、`SITE-001`，以及场景输入 `pageWindow={skip:0,take:10}`。真实走查必须以登录返回的租户/环境、场景页窗口输入和页面公开目录选择结果填充同一类型的查询事实；不得从首个响应回填页窗口。
+以下确定性 vector 只供前端合同和 mock fixture 使用，不是 seed、权限或 FullChain 事实：`org-live/env-live`、`pool-receiving-001`、`pool-shipping-001`、`SITE-001`，以及场景动作输入 `pageWindow={skip:0,take:20}`。真实走查必须以登录返回的租户/环境、页面「每页条数」控件的明确选择与回读、以及页面公开目录选择结果填充同一类型的查询事实；不得从首个响应或实现默认值回填页窗口。
 
 ## 首次 WMS 请求边界
 

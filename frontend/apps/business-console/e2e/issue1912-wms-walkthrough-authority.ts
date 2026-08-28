@@ -52,7 +52,7 @@ export type WmsInboundWalkthroughQueryFacts = Omit<
 /** The fixture vector's explicit page-window input; it is not the page's implicit default. */
 export const NERV_1571_WMS_PAGE_WINDOW_INPUT: WmsWalkthroughPageWindowInput = {
   skip: 0,
-  take: 10,
+  take: 20,
 }
 
 export const NERV_1571_WMS_INBOUND_FACTS: WmsInboundWalkthroughScenarioFacts = {

@@ -4,6 +4,7 @@ import { NERV_1571_WMS_INBOUND_QUERY_FACTS } from './issue1912-wms-walkthrough-a
 import {
   proveWmsListPage,
   selectWmsPageOption,
+  selectWmsPageWindow,
   selectWmsScopeOption,
 } from './issue1912-wms-walkthrough-facts'
 
@@ -52,6 +53,12 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
       </div>
       <button type="button" aria-label="工厂" aria-expanded="false">未选择工厂</button>
       <div id="site-menu" role="listbox" hidden></div>
+      <button type="button" aria-label="每页条数" aria-expanded="false">10</button>
+      <div id="page-size-menu" role="listbox" hidden>
+        <button type="button" role="option" aria-selected="true" data-value="10">10</button>
+        <button type="button" role="option" aria-selected="false" data-value="20">20</button>
+      </div>
+      <span aria-label="当前页">1 / 1</span>
       <button id="refresh" type="button">刷新</button>
       <script>
         const scope = document.querySelector('[aria-label="作业范围"]')
@@ -59,9 +66,12 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
         const scopeSearch = scopeMenu.querySelector('input')
         const site = document.querySelector('[aria-label="工厂"]')
         const siteMenu = document.querySelector('#site-menu')
+        const pageSizeTrigger = document.querySelector('[aria-label="每页条数"]')
+        const pageSizeMenu = document.querySelector('#page-size-menu')
         const scenario = ${JSON.stringify(expectedQuery)}
         let selectedScopeId = ''
         let selectedSiteCode = ''
+        let selectedPageSize = 10
         const syncScopeOption = () => {
           const option = scopeMenu.querySelector('[role="option"]')
           if (option) option.hidden = scopeSearch.value.trim() !== option.dataset.scopeValue
@@ -112,6 +122,17 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
             }, 80)
           }
         })
+        pageSizeTrigger.addEventListener('click', () => {
+          pageSizeMenu.hidden = false
+          pageSizeTrigger.setAttribute('aria-expanded', 'true')
+        })
+        pageSizeMenu.querySelectorAll('[role="option"]').forEach(option => option.addEventListener('click', () => {
+          pageSizeMenu.querySelectorAll('[role="option"]').forEach(item => item.setAttribute('aria-selected', String(item === option)))
+          selectedPageSize = Number(option.dataset.value)
+          pageSizeTrigger.textContent = option.dataset.value
+          pageSizeMenu.hidden = true
+          pageSizeTrigger.setAttribute('aria-expanded', 'false')
+        }))
         document.querySelector('#refresh').addEventListener('click', () => {
           const query = new URLSearchParams({
             organizationId: scenario.organizationId,
@@ -119,7 +140,7 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
             scopeKind: scenario.scopeKind,
             scopeId: selectedScopeId,
             skip: String(scenario.skip),
-            take: String(scenario.take),
+            take: String(selectedPageSize),
             siteCode: selectedSiteCode,
           })
           void fetch('${listPath}?' + query.toString())
@@ -334,5 +355,37 @@ test.describe('NERV-1571 / #1912 WMS selection facts (Playwright mock fixture)',
     await expect(
       selectWmsPageOption(page, { label: '工厂', optionCode: 'SITE-001' }, 2_000),
     ).rejects.toThrow('expected one catalog option, found 2')
+  })
+
+  test('分页窗口必须由每页控件显式选择并通过已选值回读', async ({ page }) => {
+    await page.setContent(`
+      <base href="http://walkthrough.fixture/">
+      <button type="button" aria-label="每页条数" aria-expanded="false">10</button>
+      <div role="listbox" hidden>
+        <button type="button" role="option" aria-selected="true" data-value="10">10</button>
+        <button type="button" role="option" aria-selected="false" data-value="20">20</button>
+      </div>
+      <span aria-label="当前页">1 / 1</span>
+      <script>
+        const trigger = document.querySelector('[aria-label="每页条数"]')
+        const menu = document.querySelector('[role="listbox"]')
+        trigger.addEventListener('click', () => {
+          menu.hidden = false
+          trigger.setAttribute('aria-expanded', 'true')
+        })
+        menu.querySelectorAll('[role="option"]').forEach(option => option.addEventListener('click', () => {
+          menu.querySelectorAll('[role="option"]').forEach(item => item.setAttribute('aria-selected', String(item === option)))
+          trigger.textContent = option.dataset.value
+          menu.hidden = true
+          trigger.setAttribute('aria-expanded', 'false')
+        }))
+      </script>
+    `)
+
+    await expect(selectWmsPageWindow(page, { skip: 0, take: 20 }, 2_000)).resolves.toEqual({
+      skip: 0,
+      take: 20,
+    })
+    await expect(page.getByLabel('每页条数', { exact: true })).toContainText('20')
   })
 })

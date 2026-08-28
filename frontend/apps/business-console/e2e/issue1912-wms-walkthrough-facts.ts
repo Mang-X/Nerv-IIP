@@ -240,6 +240,64 @@ export function assertWmsPageSelection(selection: WmsPageSelection): void {
   }
 }
 
+export function assertWmsPageWindow(window: WmsWalkthroughPageWindowInput): void {
+  if (!window || window.skip !== 0 || !Number.isInteger(window.take) || window.take <= 0) {
+    throw new Error(
+      `WMS page window selection must start at skip=0 with a positive integer take, received skip=${window?.skip}/take=${window?.take}`,
+    )
+  }
+}
+
+/**
+ * Selects the page size through the mounted table's public pagination control. The expected
+ * window is an explicit scenario action: the helper does not infer it from a request or accept
+ * the table's initial/default value. The selected option and the reset-to-first-page state are
+ * read back before the caller can use the value as query authority.
+ */
+export async function selectWmsPageWindow(
+  page: Page,
+  expectedWindow: WmsWalkthroughPageWindowInput,
+  timeoutMs = 120_000,
+): Promise<WmsWalkthroughPageWindowInput> {
+  assertWmsPageWindow(expectedWindow)
+  const trigger = page.getByLabel('每页条数', { exact: true })
+  await expect(trigger).toHaveCount(1, { timeout: timeoutMs })
+  await expect(trigger).toBeVisible({ timeout: timeoutMs })
+
+  const openOptions = () =>
+    page.locator('[role="listbox"]:visible').getByRole('option', {
+      name: String(expectedWindow.take),
+      exact: true,
+    })
+  await trigger.click({ timeout: timeoutMs })
+  await expect(page.locator('[role="listbox"]:visible')).toHaveCount(1, { timeout: timeoutMs })
+  const option = openOptions()
+  await waitForUniqueVisibleOption(option, `每页条数 ${expectedWindow.take}`, timeoutMs)
+  await option.click({ timeout: timeoutMs })
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
+
+  // The trigger text is the first public projection of the selected model value.
+  await expect(trigger).toContainText(String(expectedWindow.take), { timeout: timeoutMs })
+
+  // Re-open the control and require the option's selected state as an independent readback.
+  await trigger.click({ timeout: timeoutMs })
+  await expect(page.locator('[role="listbox"]:visible')).toHaveCount(1, { timeout: timeoutMs })
+  const selectedOption = openOptions()
+  await waitForUniqueVisibleOption(
+    selectedOption,
+    `每页条数 ${expectedWindow.take} 的已选项`,
+    timeoutMs,
+  )
+  await expect(selectedOption).toHaveAttribute('aria-selected', 'true', { timeout: timeoutMs })
+  await page.keyboard.press('Escape')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false', { timeout: timeoutMs })
+
+  const currentPage = page.getByLabel('当前页', { exact: true })
+  await expect(currentPage).toHaveCount(1, { timeout: timeoutMs })
+  await expect(currentPage).toHaveText(/^1\s*\/\s*\d+$/, { timeout: timeoutMs })
+  return { skip: 0, take: expectedWindow.take }
+}
+
 export function assertWmsInboundPageSelection(selection: WmsInboundPageSelection): void {
   if (!selection?.scope || !selection.site) {
     throw new Error('WMS inbound proof requires exactly one scope and one site selection')
@@ -789,6 +847,17 @@ export async function proveWmsListPage(options: WmsListPageProofOptions): Promis
   } else {
     assertWmsOutboundSelectionMatchesQuery(options.selection, options.query.selectionQuery)
     await selectWmsScopeOption(options.page, options.selection.scope)
+  }
+
+  const selectedPageWindow = await selectWmsPageWindow(options.page, {
+    skip: options.query.selectionQuery.skip,
+    take: options.query.selectionQuery.take,
+  })
+  if (
+    selectedPageWindow.skip !== options.query.selectionQuery.skip ||
+    selectedPageWindow.take !== options.query.selectionQuery.take
+  ) {
+    throw new Error('WMS page window readback did not match the selection query facts')
   }
 
   return refreshWmsListAndConfirm(options.page, options.query)
