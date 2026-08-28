@@ -29,7 +29,8 @@ public static class ErpPersistenceServiceCollectionExtensions
 
             options.EnableDetailedErrors();
         });
-        services.AddScoped<IWorkCenterCostRateRevisionLock, PostgreSqlWorkCenterCostRateRevisionLock>();
+        services.AddScoped<IErpAdvisoryLockAllocator, PostgreSqlErpAdvisoryLockAllocator>();
+        services.AddScoped<IWorkCenterRateRevisionAllocator, WorkCenterRateRevisionAllocator>();
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
         return services;

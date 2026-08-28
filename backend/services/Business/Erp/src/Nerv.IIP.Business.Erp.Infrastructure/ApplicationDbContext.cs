@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
@@ -58,6 +59,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<GLAccount> GLAccounts => Set<GLAccount>();
     public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
     public DbSet<WorkCenterCostRate> WorkCenterCostRates => Set<WorkCenterCostRate>();
+    public DbSet<WorkCenterMachineOverheadRate> WorkCenterMachineOverheadRates => Set<WorkCenterMachineOverheadRate>();
     public DbSet<PendingMaterialCost> PendingMaterialCosts => Set<PendingMaterialCost>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
