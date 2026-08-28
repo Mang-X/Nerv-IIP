@@ -21,6 +21,10 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class OperationLaborSettlementRedisCapTransportTests
 {
     private const string DeploymentProfile = "Issue2382Acceptance";
+    private const string SettledV2Topic =
+        "nerv-iip.issue2382acceptance.business-mes.mes.operation-actual-time-settled.v2";
+    private const string VoidedV2Topic =
+        "nerv-iip.issue2382acceptance.business-mes.mes.operation-actual-time-settlement-voided.v2";
 
     [ErpCostPostgresRedisFact]
     public async Task Redis_cap_transport_converges_settle_void_redelivery_and_out_of_order_revisions_in_postgres()
@@ -41,7 +45,7 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         {
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionTwo);
             await publisher.PublishAsync(
-                MesActualTimeIntegrationEventTopics.Settled(DeploymentProfile, MesIntegrationEventVersions.V2),
+                SettledV2Topic,
                 machineRevisionTwo);
         });
         await AssertEventuallyAsync(factory, async (db, token) =>
@@ -71,7 +75,7 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 Voided("transport-void-r1", revisionOne, completedAtUtc.AddHours(2)));
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionOne);
             await publisher.PublishAsync(
-                MesActualTimeIntegrationEventTopics.Voided(DeploymentProfile, MesIntegrationEventVersions.V2),
+                VoidedV2Topic,
                 MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2)));
         });
 
@@ -85,12 +89,12 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         });
 
         await PublishAsync(factory, async publisher => await publisher.PublishAsync(
-            MesActualTimeIntegrationEventTopics.Settled(DeploymentProfile, MesIntegrationEventVersions.V2),
+            SettledV2Topic,
             machineRevisionOne));
         await AssertEventuallyAsync(factory, async (db, token) =>
             Assert.Equal(2, await db.OperationMachineOverheadSettlements.CountAsync(token)));
         await PublishAsync(factory, async publisher => await publisher.PublishAsync(
-            MesActualTimeIntegrationEventTopics.Voided(DeploymentProfile, MesIntegrationEventVersions.V2),
+            VoidedV2Topic,
             MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2))));
 
         await AssertEventuallyAsync(factory, async (db, token) =>
@@ -194,12 +198,12 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             MesOperationActualTimeSettledV2IntegrationEvent>(
             scope.ServiceProvider,
             MesActualTimeIntegrationEventTopics.SettledV2Template,
-            MesActualTimeIntegrationEventTopics.Settled(DeploymentProfile, MesIntegrationEventVersions.V2));
+            SettledV2Topic);
         AssertCanonicalSubscription<MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead,
             MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(
             scope.ServiceProvider,
             MesActualTimeIntegrationEventTopics.VoidedV2Template,
-            MesActualTimeIntegrationEventTopics.Voided(DeploymentProfile, MesIntegrationEventVersions.V2));
+            VoidedV2Topic);
     }
 
     private static void AssertCanonicalSubscription<THandler, TEvent>(
