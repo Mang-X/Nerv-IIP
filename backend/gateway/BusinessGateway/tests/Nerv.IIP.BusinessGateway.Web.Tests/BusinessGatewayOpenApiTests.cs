@@ -971,6 +971,45 @@ public sealed class BusinessGatewayOpenApiTests
             "decision",
             "accepted",
             "rejected");
+        AssertOperationId(paths, "/api/business-console/v1/mes/context-scan-prevalidation", "post", "prevalidateBusinessConsoleMesContextScan");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/mes/context-scan-prevalidation",
+            "post",
+            "400",
+            "502",
+            "503",
+            "504");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesContextScanPrevalidationRequest",
+            "organizationId",
+            "environmentId",
+            "workOrderId",
+            "operationTaskId");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "decision",
+            "reasonCode",
+            "workOrderId",
+            "operationTaskId",
+            "objectType",
+            "scannedObjectId",
+            "evaluatedAtUtc");
+        AssertStringEnumProperty(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "decision",
+            "accepted",
+            "rejected");
+        AssertStringEnumProperty(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "objectType",
+            "operationTask",
+            "deviceAsset",
+            "personnel");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts", "post", "confirmBusinessConsoleMesLineSideMaterialReceipt");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns", "post", "returnBusinessConsoleMesLineSideMaterial");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");

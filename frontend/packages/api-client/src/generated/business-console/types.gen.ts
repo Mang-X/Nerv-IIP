@@ -4222,6 +4222,33 @@ export type NervIipContractsMesMesMaterialScanPrevalidationRequest = {
     operationTaskId: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesContextScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesContextScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesContextScanDecision;
+    reasonCode: string;
+    workOrderId: string;
+    operationTaskId: string;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesContextScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesContextScanObjectType = 'operationTask' | 'deviceAsset' | 'personnel';
+
+export type NervIipContractsMesMesContextScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
     materialLotId?: string | null;
     receivedQuantity?: number | null;
@@ -15274,6 +15301,42 @@ export type PrevalidateBusinessConsoleMesMaterialScanResponses = {
 };
 
 export type PrevalidateBusinessConsoleMesMaterialScanResponse = PrevalidateBusinessConsoleMesMaterialScanResponses[keyof PrevalidateBusinessConsoleMesMaterialScanResponses];
+
+export type PrevalidateBusinessConsoleMesContextScanData = {
+    body: NervIipContractsMesMesContextScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/context-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesContextScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesContextScanError = PrevalidateBusinessConsoleMesContextScanErrors[keyof PrevalidateBusinessConsoleMesContextScanErrors];
+
+export type PrevalidateBusinessConsoleMesContextScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesContextScanResponse = PrevalidateBusinessConsoleMesContextScanResponses[keyof PrevalidateBusinessConsoleMesContextScanResponses];
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest;
