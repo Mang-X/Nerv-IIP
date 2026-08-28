@@ -4888,8 +4888,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     openIssueIds?: Array<string> | null;
     idempotencyKey?: string;
     teamName?: string | null;
-    outgoingUserId?: string | null;
-    outgoingUserName?: string | null;
     wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem> | null;
     unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder> | null;
     openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue> | null;
@@ -4897,8 +4895,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest = {
     idempotencyKey?: string;
-    incomingUserId?: string | null;
-    incomingUserName?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTraceabilityResponse = NetCorePalExtensionsDtoResponseData & {

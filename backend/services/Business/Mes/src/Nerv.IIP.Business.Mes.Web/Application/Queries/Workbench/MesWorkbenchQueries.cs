@@ -2049,12 +2049,13 @@ public sealed class GetShiftHandoverQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<MesShiftHandoverDetail> Handle(GetShiftHandoverQuery request, CancellationToken cancellationToken)
     {
+        // 只按 HandoverNo 解析：列表行、详情和两个写面回执一律回吐 HandoverNo，
+        // 聚合 Guid 从不离开本服务，客户端拿不到也就无从用它来查。
         var query = dbContext.ShiftHandovers
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
-        query = Guid.TryParse(request.HandoverId, out var handoverGuid)
-            ? query.Where(x => x.Id.Id == handoverGuid)
-            : query.Where(x => x.HandoverNo == request.HandoverId);
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.HandoverNo == request.HandoverId);
 
         // 三类明细一律来自本聚合的子表，不回 join 工单表重算：读面回吐的就是交班时点写下的数值。
         var handover = await query

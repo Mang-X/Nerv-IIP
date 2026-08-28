@@ -48595,14 +48595,6 @@
             "type": "string",
             "nullable": true
           },
-          "outgoingUserId": {
-            "type": "string",
-            "nullable": true
-          },
-          "outgoingUserName": {
-            "type": "string",
-            "nullable": true
-          },
           "wipItems": {
             "type": "array",
             "nullable": true,
@@ -48632,14 +48624,6 @@
         "properties": {
           "idempotencyKey": {
             "type": "string"
-          },
-          "incomingUserId": {
-            "type": "string",
-            "nullable": true
-          },
-          "incomingUserName": {
-            "type": "string",
-            "nullable": true
           }
         }
       },

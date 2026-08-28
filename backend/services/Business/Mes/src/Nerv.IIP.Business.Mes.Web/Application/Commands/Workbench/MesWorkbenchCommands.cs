@@ -2582,9 +2582,8 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
             request.EnvironmentId,
             request.HandoverAtUtc,
             cancellationToken);
-        DomainShiftHandover handover;
-        try
-        {
+        DomainShiftHandover handover = null!;
+        MesDomainRuleGuard.Enforce(() =>
             handover = DomainShiftHandover.Create(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -2609,12 +2608,7 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
                     ShiftHandoverVocabulary.ParseCategory(x.Category),
                     ShiftHandoverVocabulary.ParseSeverity(x.Severity),
                     x.Description,
-                    x.ReferenceId))]);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message);
-        }
+                    x.ReferenceId))]));
 
         dbContext.ShiftHandovers.Add(handover);
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);

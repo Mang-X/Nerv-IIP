@@ -300,13 +300,13 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
@@ -1103,7 +1103,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
@@ -1115,7 +1115,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,

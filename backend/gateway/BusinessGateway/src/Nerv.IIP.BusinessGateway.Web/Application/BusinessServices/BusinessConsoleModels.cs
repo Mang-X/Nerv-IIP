@@ -5392,19 +5392,43 @@ public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     IReadOnlyCollection<string>? OpenIssueIds,
     string IdempotencyKey,
     string? TeamName = null,
-    string? OutgoingUserId = null,
-    string? OutgoingUserName = null,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems = null,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders = null,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues = null);
+
+/// <summary>
+/// 转发给 MES 的建单载荷：交班人身份由 Gateway 从认证 principal 注入，显示名从 MasterData 员工目录解析，
+/// 都不出现在公开请求体里。
+/// </summary>
+public sealed record BusinessConsoleMesCreateShiftHandoverForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ShiftId,
+    string TeamId,
+    IReadOnlyCollection<string>? OpenIssueIds,
+    string IdempotencyKey,
+    string? TeamName,
+    string? OutgoingUserId,
+    string? OutgoingUserName,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues);
 
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey);
+
+/// <summary>
+/// 转发给 MES 的接班载荷：接班人身份同样由 Gateway 从认证 principal 注入。
+/// </summary>
+public sealed record BusinessConsoleMesAcceptShiftHandoverForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
     string IdempotencyKey,
-    string? IncomingUserId = null,
-    string? IncomingUserName = null);
+    string? IncomingUserId,
+    string? IncomingUserName);
 
 public sealed record BusinessConsoleMesTraceabilityByWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,
