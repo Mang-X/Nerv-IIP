@@ -53,7 +53,7 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 ## 实施说明
 
-1. 权限码落点按 `docs/governance/security/authorization.md` 变更与验收规则执行：先改 IAM 与 Gateway 的真实 producer 及测试（seed 权限全集、权限描述目录、Gateway 权限常量），再同步 `docs/reference/security/authorization-catalog.md`。新码必须在 IAM 与 Gateway 两处 producer 同时落地，不得单边新增。
+1. 权限码落点按 `docs/governance/security/authorization.md` 变更与验收规则执行：先改 IAM 与 Gateway 的真实 producer 及测试（seed 权限全集、权限描述目录、Gateway 权限常量），再同步 `docs/reference/security/authorization-catalog.md`。凡经 Gateway facade 暴露的新码，必须在 IAM 与 Gateway 两处 producer 同时落地，不得单边新增；仅经 internal service policy 使用的码不在此列。
 2. 换绑落点是可搜索目录 policy 中 `downtime-reason`/`maintenance-reason` 两条登记及钉住映射的测试期望；facade 机制（路由、单一权限校验、分页契约）不变，不新增公开端点。
 3. 决策 5 要求实施前枚举旧码 `business.maintenance.work-orders.read` 的默认角色持有者，并在同一变更的角色 seed 中补授新码。
 
