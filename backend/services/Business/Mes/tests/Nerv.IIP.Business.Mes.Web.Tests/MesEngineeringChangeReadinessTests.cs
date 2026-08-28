@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
@@ -15,6 +16,19 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesEngineeringChangeReadinessTests
 {
+    [Fact]
+    public void Snapshot_version_accepts_duplicate_facts_for_the_same_linear_edge()
+    {
+        var edges = new[]
+        {
+            new MaterialReadinessGuards.AutomaticRebindEdge("WO-CHAIN", "PV-1", "PV-2"),
+            new MaterialReadinessGuards.AutomaticRebindEdge("WO-CHAIN", "PV-1", "PV-2"),
+            new MaterialReadinessGuards.AutomaticRebindEdge("WO-CHAIN", "PV-2", "PV-3"),
+        };
+
+        Assert.True(MaterialReadinessGuards.IsSnapshotVersionCompatible("WO-CHAIN", "PV-1", "PV-3", edges));
+    }
+
     // Contract: DomainInvariant + Regression. Authority: Issue #2246 acceptance 2, Issue #2222 scope,
     // and PR #2238 review 5024591869, which confirmed the consecutive AutoRebind reachability regression.
     [Fact]
@@ -96,6 +110,7 @@ public sealed class MesEngineeringChangeReadinessTests
     [InlineData("wrong-environment")]
     [InlineData("non-released-impact")]
     [InlineData("unreachable-cycle")]
+    [InlineData("branched-chain")]
     public async Task MaterialReadiness_RejectsInvalidAutomaticRebindChains(string invalidChain)
     {
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -187,6 +202,11 @@ public sealed class MesEngineeringChangeReadinessTests
         [
             new("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
             new("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-2", "PV-1"),
+        ],
+        "branched-chain" =>
+        [
+            new("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-2"),
+            new("org-001", "env-dev", "WO-CHAIN", WorkOrder.ReleasedStatus, "PV-1", "PV-3"),
         ],
         _ => throw new ArgumentOutOfRangeException(nameof(invalidChain), invalidChain, null),
     };

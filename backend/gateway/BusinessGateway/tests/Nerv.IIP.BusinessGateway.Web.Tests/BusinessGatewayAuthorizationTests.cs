@@ -526,6 +526,14 @@ public sealed class BusinessGatewayAuthorizationTests
 
         return path switch
         {
+        "/api/business-console/v1/mes/material-scan-prevalidation" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            materialIssueRequestId = "MIR-001",
+            workOrderId = "WO-001",
+            operationTaskId = "OP-10",
+        },
         "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
         "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
         {
@@ -1190,6 +1198,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/line-side-inventory-balances", BusinessGatewayPermissions.MesMaterialsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/material-scan-prevalidation", BusinessGatewayPermissions.MesMaterialsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);

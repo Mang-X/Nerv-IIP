@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
@@ -941,6 +942,36 @@ public sealed class GetBusinessConsoleMesMaterialIssueRequestEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetMaterialIssueRequestAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/material-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesMaterialScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesMaterialPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<MesMaterialScanPrevalidationRequest, MesMaterialScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsRead)
+{
+    protected override string OrganizationId(MesMaterialScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(MesMaterialScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<MesMaterialScanPrevalidationResponse> ForwardAsync(
+        MesMaterialScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]

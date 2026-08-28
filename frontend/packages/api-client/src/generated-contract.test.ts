@@ -7,6 +7,7 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
+  PrevalidateBusinessConsoleMesMaterialScanErrors,
   RecordBusinessConsoleMesDowntimeEventErrors,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
@@ -272,6 +273,12 @@ describe('generated API client contract', () => {
       : false
 
     expectTypeOf<HasV1DowntimeBadRequest>().toEqualTypeOf<true>()
+  })
+
+  it('keeps every documented material-scan transport failure in the generated error union', () => {
+    expectTypeOf<keyof PrevalidateBusinessConsoleMesMaterialScanErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502 | 503 | 504
+    >()
   })
 
   it('requires a non-null change reason for code-rule versions through the stable boundary', () => {
