@@ -16,7 +16,7 @@ import {
  * 这样的英文码，而两边都绿。能让「后端新增一类节点」当场变红的权威来源，只有那个封闭类型本身。
  *
  * **「后端会不会绕开这张表另发一种类型」不在本文件的职责里**——那由编译器管：
- * `MesTraceabilityNodeType` 构造函数私有、字符串无隐式转换，调用点写不出表外的值。
+ * `MesTraceabilityNodeType` 构造函数私有、字符串无到本类型的隐式转换，调用点写不出表外的**字面量**。
  * 本文件只管两件事：表里的每一项都有中文说法；词表里没有表外的死键。
  * 加上第三条，看住那个封闭性上仅剩的口子。
  */
@@ -91,19 +91,25 @@ describe('追溯节点类型词表契约', () => {
 
   it('自由文本通道只有一个入口、一个调用点', () => {
     // 封闭性靠编译器：构造函数私有、字符串无到本类型的隐式转换，`default` / `new()` / `null`
-    // 在 Nullable + TreatWarningsAsErrors 下都是编译错误。**唯一**绕得过它的是本类型上收 string
-    // 的公开入口——再加一个 `FromCode(string)` 之类的工厂就等于把护栏拆了，而那既编译得过、
-    // 调用点数也还是一个。所以先数入口，再数调用点，两头都得是一。
+    // 在 Nullable + TreatWarningsAsErrors 下都是编译错误。绕得过它的办法是在本类型上再开一个
+    // 收外部值的入口——静态工厂、公开构造，或者一个 `string → 本类型` 的隐式转换。三种都编译得过，
+    // 也都不会改变调用点数，所以先数入口，再数调用点，两头都得是一。
+    //
+    // 这条断言认的是**声明的写法**，因此拦得住什么要说清楚：下面三条正则覆盖 public/internal、
+    // 跨行、任意形参类型，以及到本类型的转换运算符；拦不住的是 private/protected 入口
+    // （那出不了这个类型，无害）与非上述形态的写法。它不是全称封闭，是把已知的拆护栏姿势钉住。
+    // 真正的结构性正解是把自由文本通道整个拆掉、让节点类型降成 enum——见 issue 登记项。
     const body = nodeTypeBody()
     const entryPoints = [
-      ...(body.match(/public static MesTraceabilityNodeType \w+\(string/g) ?? []),
-      ...(body.match(/public MesTraceabilityNodeType\(string/g) ?? []),
-    ]
+      ...(body.match(/(?:public|internal)\s+static\s+MesTraceabilityNodeType\s+\w+\s*\(/g) ?? []),
+      ...(body.match(/(?:public|internal)\s+MesTraceabilityNodeType\s*\(/g) ?? []),
+      ...(body.match(/operator\s+MesTraceabilityNodeType\s*\(/g) ?? []),
+    ].map((entry) => entry.replace(/\s+/g, ' '))
     expect(
       entryPoints,
-      `MesTraceabilityNodeType 上收 string 的公开入口应当只有 FromSourceDocumentType 一个，` +
+      `MesTraceabilityNodeType 上收外部值的入口应当只有 FromSourceDocumentType 一个，` +
         `实际：${entryPoints.join('、')}。多一个入口，节点类型就又能被任意字符串扩大。`,
-    ).toEqual(['public static MesTraceabilityNodeType FromSourceDocumentType(string'])
+    ).toEqual(['public static MesTraceabilityNodeType FromSourceDocumentType('])
 
     const callSites: string[] = []
     for (const file of csharpFiles(MES_WEB_SRC)) {

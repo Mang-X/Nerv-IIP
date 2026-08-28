@@ -2121,7 +2121,8 @@ public sealed record MesTraceabilityEdge(string FromNodeId, string ToNodeId, str
 /// 值类型有隐式公共无参构造，<c>default</c> 与 <c>new MesTraceabilityNodeType()</c> 都绕得过私有构造，
 /// 拿到 <c>Value == null</c> 的实例，编译还是绿的，界面上那一行的「类型」列直接空白。
 /// 换成引用类型后，这两种写法在 <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> +
-/// <c>TreatWarningsAsErrors</c> 下都是编译错误。
+/// <c>TreatWarningsAsErrors</c> 下都是编译错误；仅剩的例外是 <c>null!</c> / <c>default!</c>
+/// 这种显式抑制 NRT 的写法（实测编译零诊断），那是编写者主动缴械，不在护栏射程内。
 /// </para>
 /// <para>
 /// 前端追溯词表按本表做完备性契约（<c>frontend/apps/business-console/src/data/traceNodeType.contract.test.ts</c>）：
@@ -2158,8 +2159,10 @@ public sealed record MesTraceabilityNodeType
     /// <c>SourceDocumentType</c>，由外部写入方经公开端点给（<c>MaximumLength(100)</c> 的自由文本，
     /// 无取值校验），是开放集合，登记不进上面的表。
     /// <para>
-    /// 这是本类型封闭性上仅剩的口子。前端契约测试盯两件事：本类型上**收 string 的公开入口**只能有
-    /// 这一个（再加一个 <c>FromCode(string)</c> 之类的工厂，就等于把护栏拆了），且它只能有一个调用点。
+    /// 这是本类型封闭性上仅剩的口子。前端契约测试盯两件事：本类型上**收外部值的入口**只能有这一个
+    /// （再加一个 <c>FromCode(string)</c> 之类的工厂、一个公开构造，或者一个 <c>string</c> 到本类型的
+    /// 隐式转换，都等于把护栏拆了），且它只能有一个调用点。那条断言认的是声明的写法，覆盖
+    /// public/internal、跨行、任意形参类型与转换运算符；它钉的是已知的拆护栏姿势，不是全称封闭。
     /// 要发新的**受控**节点类型，加静态字段，不要走这里。
     /// </para>
     /// </summary>
