@@ -45,6 +45,7 @@ import {
   type WmsInboundListPageProofInput,
   type WmsOutboundListPageProofInput,
 } from './issue1912-wms-walkthrough-facts'
+import { NERV_1571_WMS_PAGE_WINDOW_INPUT } from './issue1912-wms-walkthrough-authority'
 import { queryPath as canonicalQueryPath } from './issue1912-walkthrough-query'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
@@ -1838,6 +1839,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       scopeId: receiptScopeId,
       siteCode: receiptReadSiteCode,
       keyword: INBOUND_ORDER_NO,
+      pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
     }
     const inboundKeywordQuery = buildWmsInboundListQueryFacts(inboundQueryFacts)
     const inboundListQuery = buildWmsInboundSelectionQueryFacts(inboundQueryFacts)
@@ -2533,6 +2535,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       scopeKind: shipmentScopeKind,
       scopeId: shipmentScopeId,
       keyword: DELIVERY_ORDER_NO,
+      pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
     }
     const outboundKeywordQuery = buildWmsOutboundListQueryFacts(outboundQueryFacts)
     const outboundListQuery = buildWmsOutboundSelectionQueryFacts(outboundQueryFacts)

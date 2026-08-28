@@ -9,6 +9,7 @@ import {
 import { queryPath } from './issue1912-walkthrough-query'
 import type {
   WmsInboundWalkthroughScenarioFacts,
+  WmsWalkthroughPageWindowInput,
   WmsWalkthroughScenarioFacts,
 } from './issue1912-wms-walkthrough-authority'
 
@@ -61,7 +62,7 @@ export type WmsListQueryFacts = Readonly<
     organizationId: string
     environmentId: string
     skip: 0
-    take: 10
+    take: number
   }
 >
 
@@ -158,15 +159,25 @@ function workPoolScopeFacts(facts: WmsScenarioFacts): WmsWorkPoolScopeFacts {
   }
 }
 
+function pageWindowFacts(facts: WmsScenarioFacts): WmsWalkthroughPageWindowInput {
+  const { skip, take } = facts.pageWindow
+  if (skip !== 0 || !Number.isInteger(take) || take <= 0) {
+    throw new Error(
+      `WMS scenario page window must be skip=0 and a positive integer take, received skip=${skip}/take=${take}`,
+    )
+  }
+  return { skip: 0, take }
+}
+
 function listQueryFacts(facts: WmsScenarioFacts): WmsListQueryFacts {
   const scope = workPoolScopeFacts(facts)
+  const pageWindow = pageWindowFacts(facts)
   requiredText('keyword', facts.keyword)
   return {
     organizationId: requiredText('organizationId', facts.organizationId),
     environmentId: requiredText('environmentId', facts.environmentId),
     ...scope,
-    skip: 0,
-    take: 10,
+    ...pageWindow,
   }
 }
 
@@ -335,9 +346,9 @@ function assertQueryFacts(
   if (expected.scopeKind !== 'work-pool') {
     throw new Error(`WMS scenario fact scopeKind must be work-pool, received ${expected.scopeKind}`)
   }
-  if (expected.skip !== 0 || expected.take !== 10) {
+  if (expected.skip !== 0 || !Number.isInteger(expected.take) || expected.take <= 0) {
     throw new Error(
-      `WMS scenario fact pagination must be skip=0/take=10, received skip=${expected.skip}/take=${expected.take}`,
+      `WMS scenario fact pagination must be skip=0 and a positive integer take, received skip=${expected.skip}/take=${expected.take}`,
     )
   }
   if (kind === 'inbound') {
