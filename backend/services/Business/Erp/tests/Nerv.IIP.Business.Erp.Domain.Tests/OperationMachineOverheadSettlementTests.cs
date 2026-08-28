@@ -32,11 +32,11 @@ public sealed class OperationMachineOverheadSettlementTests
             "DEVICE-001", 1,
             "single-device-active-minus-explicit-pause-v1",
             new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()),
-            "2026-08", 1, "CNY", 18_000m, 0m,
+            "2026-08", 1, "CNY", 54_000m, 0m,
             "evt-settled-r1", "payload-hash");
 
-        Assert.Equal(0m, settlement.FixedAmount);
-        Assert.Equal(0m, settlement.Amount);
+        Assert.Equal(0.000002m, settlement.FixedAmount);
+        Assert.Equal(0.000002m, settlement.Amount);
     }
 
     [Fact]

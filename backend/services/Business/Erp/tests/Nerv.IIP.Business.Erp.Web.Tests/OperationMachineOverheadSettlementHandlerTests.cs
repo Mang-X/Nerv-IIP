@@ -41,7 +41,7 @@ public sealed class OperationMachineOverheadSettlementHandlerTests
     }
 
     [Fact]
-    public async Task Duplicate_void_and_reopen_use_frozen_negative_then_select_the_new_period_rate()
+    public async Task Duplicate_void_after_rate_change_uses_frozen_negative_then_reopen_selects_the_new_period_rate()
     {
         await using var db = CreateDb();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
@@ -54,6 +54,8 @@ public sealed class OperationMachineOverheadSettlementHandlerTests
 
         await settledConsumer.HandleAsync(revisionOne, CancellationToken.None);
         await settledConsumer.HandleAsync(revisionOne, CancellationToken.None);
+        AddRate(db, "2026-08", new(2026, 8, 1), 8, 90m, 10m);
+        await db.SaveChangesAsync();
         await voidConsumer.HandleAsync(
             Voided("evt-machine-r1-void", revisionOne, DateTimeOffset.Parse("2026-09-01T00:10:00Z")),
             CancellationToken.None);
@@ -75,6 +77,42 @@ public sealed class OperationMachineOverheadSettlementHandlerTests
         Assert.Equal(2, (await db.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
         Assert.Single(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperation
             && x.SourceDocumentId.Contains("r2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Void_without_original_snapshot_stays_replayable_then_exactly_reverses_after_settlement_arrives()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        AddPeriodAndRate(db, "2026-08", new(2026, 8, 1), new(2026, 8, 31), 7, 30m, 10m);
+        await db.SaveChangesAsync();
+        var settlement = Settled("evt-machine-r1", 1, AugustCompletedAtUtc, 2 * TimeSpan.TicksPerHour);
+        var settlementVoid = Voided("evt-machine-r1-void", settlement, AugustCompletedAtUtc.AddHours(1));
+        var voidConsumer = VoidConsumer(db, deadLetters);
+
+        await voidConsumer.HandleAsync(settlementVoid, CancellationToken.None);
+
+        Assert.Empty(await db.OperationMachineOverheadSettlements.ToListAsync());
+        Assert.Empty(await db.OperationMachineOverheadSettlementVoids.ToListAsync());
+        Assert.Empty(await db.OperationMachineOverheadSettlementStates.ToListAsync());
+        Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal("missing-machine-overhead-settlement", Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None)).FailureCode);
+
+        await Consumer(db, deadLetters).HandleAsync(settlement, CancellationToken.None);
+        var frozen = await db.OperationMachineOverheadSettlements.SingleAsync();
+        AddRate(db, "2026-08", new(2026, 8, 1), 8, 90m, 10m);
+        await db.SaveChangesAsync();
+        await voidConsumer.HandleAsync(settlementVoid, CancellationToken.None);
+
+        var reversal = await db.OperationMachineOverheadSettlementVoids.SingleAsync();
+        Assert.Equal(-frozen.FixedAmount, reversal.FixedAmount);
+        Assert.Equal(-frozen.VariableAmount, reversal.VariableAmount);
+        Assert.Equal(-frozen.Amount, reversal.Amount);
+        Assert.Null((await db.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
+        Assert.Equal(0m, (await db.WorkOrderCosts.Include(x => x.Details).SingleAsync()).MachineOverheadCost);
     }
 
     [Fact]
@@ -134,6 +172,27 @@ public sealed class OperationMachineOverheadSettlementHandlerTests
         Assert.Null(snapshot.ActualMachineTicks);
         Assert.Equal(0m, snapshot.Amount);
         Assert.Equal(0m, (await db.WorkOrderCosts.Include(x => x.Details).SingleAsync()).MachineOverheadCost);
+    }
+
+    [Fact]
+    public async Task Unavailable_fact_never_becomes_zero_even_when_the_work_center_rate_is_applicable()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        AddPeriodAndRate(db, "2026-08", new(2026, 8, 1), new(2026, 8, 31), 7, 30m, 10m);
+        await db.SaveChangesAsync();
+
+        await Consumer(db, deadLetters).HandleAsync(
+            Settled("evt-unavailable-applicable", 1, AugustCompletedAtUtc, 0, MesMachineTimeFactStatus.Unavailable),
+            CancellationToken.None);
+
+        Assert.Empty(await db.OperationMachineOverheadSettlements.ToListAsync());
+        Assert.Empty(await db.WorkOrderCosts.ToListAsync());
+        Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal("unavailable-machine-time-fact", Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None)).FailureCode);
     }
 
     [Fact]
@@ -203,10 +262,21 @@ public sealed class OperationMachineOverheadSettlementHandlerTests
         decimal variableRate)
     {
         db.AccountingPeriods.Add(AccountingPeriod.Open("org-001", "env-prod", periodCode, start, end));
+        AddRate(db, periodCode, start, revision, fixedRate, variableRate);
+    }
+
+    private static void AddRate(
+        ApplicationDbContext db,
+        string periodCode,
+        DateOnly effectiveFrom,
+        int revision,
+        decimal fixedRate,
+        decimal variableRate)
+    {
         db.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
             "org-001", "env-prod", "WC-01", periodCode,
             fixedRate * 1_000m, variableRate * 1_000m, 1_000m,
-            "CNY", revision, "system:test", "approved machine overhead rate", start.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+            "CNY", revision, "system:test", "approved machine overhead rate", effectiveFrom.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
     }
 
     private static MesOperationActualTimeSettledV2IntegrationEvent Settled(

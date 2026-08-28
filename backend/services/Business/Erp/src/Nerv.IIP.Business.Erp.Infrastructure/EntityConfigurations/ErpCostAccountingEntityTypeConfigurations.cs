@@ -77,10 +77,10 @@ public sealed class WorkOrderCostDetailEntityTypeConfiguration : IEntityTypeConf
 {
     public void Configure(EntityTypeBuilder<WorkOrderCostDetail> builder)
     {
-        builder.ToTable("work_order_cost_details", table => table.HasComment("ERP auditable labor or material cost detail.")); builder.HasKey(x => x.Id);
+        builder.ToTable("work_order_cost_details", table => table.HasComment("ERP auditable labor, material, or machine-overhead cost detail.")); builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Cost detail id.");
         builder.Property<WorkOrderCostId>("WorkOrderCostId").HasColumnName("work_order_cost_id").IsRequired().HasComment("Owning work-order cost id.");
-        builder.Property(x => x.Type).HasColumnName("cost_type").HasConversion<string>().IsRequired().HasMaxLength(30).HasComment("Labor or material cost type.");
+        builder.Property(x => x.Type).HasColumnName("cost_type").HasConversion<string>().IsRequired().HasMaxLength(30).HasComment("Labor, material, or machine-overhead cost type.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Public source event document id.");
         builder.Property(x => x.DimensionCode).HasColumnName("dimension_code").IsRequired().HasMaxLength(100).HasComment("Work center or material SKU dimension.");
         builder.Property(x => x.ReportNo).HasColumnName("report_no").HasMaxLength(100).HasComment("MES report number for material-to-work-order correlation.");
@@ -88,8 +88,8 @@ public sealed class WorkOrderCostDetailEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.LaborLineageId).HasColumnName("labor_lineage_id").HasMaxLength(200).HasComment("Stable MES report or operation-settlement lineage for auditable labor replacement and reversal.");
         builder.Property(x => x.MachineOverheadBasis).HasColumnName("machine_overhead_basis").HasConversion<string>().HasMaxLength(50).HasComment("Machine-overhead basis: actual operation, explicit not-applicable, or append-only reversal/supersession.");
         builder.Property(x => x.MachineOverheadLineageId).HasColumnName("machine_overhead_lineage_id").HasMaxLength(200).HasComment("Stable MES operation-settlement lineage for machine-overhead audit.");
-        builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Labor hours or material quantity.");
-        builder.Property(x => x.Rate).HasColumnName("rate").HasPrecision(18, 6).HasComment("Hourly rate or moving-average unit cost.");
+        builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Labor or machine hours, or material quantity.");
+        builder.Property(x => x.Rate).HasColumnName("rate").HasPrecision(18, 6).HasComment("Labor or machine-overhead hourly rate, or moving-average material unit cost.");
         builder.Property(x => x.Amount).HasColumnName("amount").HasPrecision(18, 6).HasComment("Signed actual cost amount.");
         builder.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc").HasComment("Source fact occurrence timestamp.");
         builder.HasIndex("WorkOrderCostId", nameof(WorkOrderCostDetail.SourceDocumentId)).IsUnique();

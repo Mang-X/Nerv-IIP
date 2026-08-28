@@ -24,6 +24,10 @@ public sealed class MesOperationActualTimeSettledV2IntegrationEventHandlerForAcc
     : IIntegrationEventHandler<MesOperationActualTimeSettledV2IntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.operation-machine-overhead";
+    public const string DevelopmentCanonicalTopic =
+        "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2";
+    public const string ProductionCanonicalTopic =
+        "nerv-iip.production.business-mes.mes.operation-actual-time-settled.v2";
 
     public Task HandleAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
@@ -46,7 +50,8 @@ public sealed class MesOperationActualTimeSettledV2IntegrationEventHandlerForAcc
             cancellationToken);
     }
 
-    [CapSubscribe(nameof(MesOperationActualTimeSettledV2IntegrationEvent), Group = ConsumerName)]
+    [CapSubscribe(DevelopmentCanonicalTopic, Group = ConsumerName)]
+    [CapSubscribe(ProductionCanonicalTopic, Group = ConsumerName)]
     public Task HandleCapAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -62,6 +67,10 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventHand
     : IIntegrationEventHandler<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.operation-machine-overhead-void";
+    public const string DevelopmentCanonicalTopic =
+        "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2";
+    public const string ProductionCanonicalTopic =
+        "nerv-iip.production.business-mes.mes.operation-actual-time-settlement-voided.v2";
 
     public Task HandleAsync(
         MesOperationActualTimeSettlementVoidedV2IntegrationEvent integrationEvent,
@@ -84,7 +93,8 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventHand
             cancellationToken);
     }
 
-    [CapSubscribe(nameof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent), Group = ConsumerName)]
+    [CapSubscribe(DevelopmentCanonicalTopic, Group = ConsumerName)]
+    [CapSubscribe(ProductionCanonicalTopic, Group = ConsumerName)]
     public Task HandleCapAsync(
         MesOperationActualTimeSettlementVoidedV2IntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -258,14 +268,14 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             return;
         }
 
-        var createsSettlement = settlement is null;
-        settlement ??= await TryCreateSettlementAsync(
-            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
-            integrationEvent,
-            settlementPayloadHash,
-            cancellationToken);
         if (settlement is null)
+        {
+            await AddMissingSettlementDeadLetterAsync(
+                MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+                integrationEvent,
+                cancellationToken);
             return;
+        }
 
         var cost = await GetWorkOrderCostAsync(
             integrationEvent.OrganizationId,
@@ -287,8 +297,6 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
                 cancellationToken))
             return;
 
-        if (createsSettlement)
-            dbContext.OperationMachineOverheadSettlements.Add(settlement);
         var settlementVoid = OperationMachineOverheadSettlementVoid.Create(
             settlement,
             payload.VoidedAtUtc,
@@ -516,6 +524,18 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
                 integrationEvent,
                 "missing-machine-overhead-rate",
                 detail),
+            cancellationToken);
+
+    private Task AddMissingSettlementDeadLetterAsync(
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+        => deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                consumerName,
+                integrationEvent,
+                "missing-machine-overhead-settlement",
+                "The original frozen machine-overhead settlement is not available; replay the void after that snapshot arrives."),
             cancellationToken);
 
     private Task AddApplicabilityDeadLetterAsync(

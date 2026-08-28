@@ -39,6 +39,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 nullable: true,
                 comment: "Stable MES operation-settlement lineage for machine-overhead audit.");
 
+            migrationBuilder.Sql("""
+                COMMENT ON TABLE erp.work_order_cost_details IS 'ERP auditable labor, material, or machine-overhead cost detail.';
+                COMMENT ON COLUMN erp.work_order_cost_details.cost_type IS 'Labor, material, or machine-overhead cost type.';
+                COMMENT ON COLUMN erp.work_order_cost_details.quantity IS 'Labor or machine hours, or material quantity.';
+                COMMENT ON COLUMN erp.work_order_cost_details.rate IS 'Labor or machine-overhead hourly rate, or moving-average material unit cost.';
+                """);
+
             migrationBuilder.CreateTable(
                 name: "operation_machine_overhead_settlement_states",
                 schema: "erp",
@@ -188,6 +195,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""
+                COMMENT ON TABLE erp.work_order_cost_details IS 'ERP auditable labor or material cost detail.';
+                COMMENT ON COLUMN erp.work_order_cost_details.cost_type IS 'Labor or material cost type.';
+                COMMENT ON COLUMN erp.work_order_cost_details.quantity IS 'Labor hours or material quantity.';
+                COMMENT ON COLUMN erp.work_order_cost_details.rate IS 'Hourly rate or moving-average unit cost.';
+                """);
+
             migrationBuilder.DropTable(
                 name: "operation_machine_overhead_settlement_states",
                 schema: "erp");

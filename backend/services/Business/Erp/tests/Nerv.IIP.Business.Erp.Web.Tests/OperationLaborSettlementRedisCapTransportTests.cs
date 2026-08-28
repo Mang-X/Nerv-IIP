@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Testing;
 
@@ -35,7 +36,9 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         await PublishAsync(factory, async publisher =>
         {
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionTwo);
-            await publisher.PublishAsync(nameof(MesOperationActualTimeSettledV2IntegrationEvent), machineRevisionTwo);
+            await publisher.PublishAsync(
+                MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.DevelopmentCanonicalTopic,
+                machineRevisionTwo);
         });
         await AssertEventuallyAsync(factory, async (db, token) =>
         {
@@ -64,10 +67,27 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 Voided("transport-void-r1", revisionOne, completedAtUtc.AddHours(2)));
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionOne);
             await publisher.PublishAsync(
-                nameof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent),
+                MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.DevelopmentCanonicalTopic,
                 MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2)));
-            await publisher.PublishAsync(nameof(MesOperationActualTimeSettledV2IntegrationEvent), machineRevisionOne);
         });
+
+        await AssertEventuallyAsync(factory, async (db, token) =>
+        {
+            Assert.Single(await db.OperationMachineOverheadSettlements.AsNoTracking().ToListAsync(token));
+            Assert.Empty(await db.OperationMachineOverheadSettlementVoids.AsNoTracking().ToListAsync(token));
+            Assert.Empty(await db.ProcessedIntegrationEvents
+                .Where(x => x.EventId == "transport-machine-void-r1")
+                .AsNoTracking().ToListAsync(token));
+        });
+
+        await PublishAsync(factory, async publisher => await publisher.PublishAsync(
+            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.DevelopmentCanonicalTopic,
+            machineRevisionOne));
+        await AssertEventuallyAsync(factory, async (db, token) =>
+            Assert.Equal(2, await db.OperationMachineOverheadSettlements.CountAsync(token)));
+        await PublishAsync(factory, async publisher => await publisher.PublishAsync(
+            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.DevelopmentCanonicalTopic,
+            MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2))));
 
         await AssertEventuallyAsync(factory, async (db, token) =>
         {
@@ -92,8 +112,8 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             Assert.Single(await db.ProcessedIntegrationEvents.Where(x => x.EventId == machineRevisionTwo.EventId).ToListAsync(token));
             var receivedCount = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.received").SingleAsync(token);
             var publishedCount = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync(token);
-            Assert.Equal(6, receivedCount);
-            Assert.Equal(6, publishedCount);
+            Assert.Equal(7, receivedCount);
+            Assert.Equal(7, publishedCount);
             var redelivered = await db.Database.SqlQuery<long>($"SELECT \"Id\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
             Assert.Equal(redeliveredCapMessageId, redelivered);
             var redeliveredStatus = await db.Database.SqlQuery<string>($"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);

@@ -4287,13 +4287,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("quantity")
-                        .HasComment("Labor hours or material quantity.");
+                        .HasComment("Labor or machine hours, or material quantity.");
 
                     b.Property<decimal>("Rate")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("rate")
-                        .HasComment("Hourly rate or moving-average unit cost.");
+                        .HasComment("Labor or machine-overhead hourly rate, or moving-average material unit cost.");
 
                     b.Property<string>("ReportNo")
                         .HasMaxLength(100)
@@ -4313,7 +4313,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("cost_type")
-                        .HasComment("Labor or material cost type.");
+                        .HasComment("Labor, material, or machine-overhead cost type.");
 
                     b.Property<Guid>("WorkOrderCostId")
                         .HasColumnType("uuid")
@@ -4327,7 +4327,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.ToTable("work_order_cost_details", "erp", t =>
                         {
-                            t.HasComment("ERP auditable labor or material cost detail.");
+                            t.HasComment("ERP auditable labor, material, or machine-overhead cost detail.");
                         });
                 });
 
