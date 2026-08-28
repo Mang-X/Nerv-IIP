@@ -294,6 +294,12 @@ describe('MES downtime record entry', () => {
     const wrapper = mountPage()
     const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
     expect(button?.attributes('disabled')).toBeDefined()
+    // 此刻组织/环境/写入范围/工序/原因目录全部就绪，唯独缺 downtime.manage：
+    // eligibleDowntimeTargets 内部同样判空这条权限，故仅凭 disabled 状态抓不住
+    // recordEntryBlocker 里 `!canManageDowntime.value` 这第一条早返回——删掉它后
+    // blocker 会落到"当前授权范围内暂无…工序"分支，disabled 依旧为真。精确文案断言
+    // 能抓住这条差异。
+    expect(button?.attributes('title')).toBe('没有停机登记权限')
 
     permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
     filters.organizationId = ''
