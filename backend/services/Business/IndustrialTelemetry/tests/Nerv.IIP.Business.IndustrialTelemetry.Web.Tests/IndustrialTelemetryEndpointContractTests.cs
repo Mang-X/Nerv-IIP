@@ -630,6 +630,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
 
         await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
             "MISSING-HIERARCHY",
             new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
             "Asia/Shanghai",
@@ -638,6 +640,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             true,
             workshopCode: null), CancellationToken.None);
         await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
             "MISSING-TIMEZONE",
             new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
             null,
@@ -645,6 +649,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             new TimeOnly(6, 0),
             true), CancellationToken.None);
         await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
             "MISSING-SHIFT",
             new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
             "Asia/Shanghai",
@@ -652,6 +658,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             null,
             null), CancellationToken.None);
         await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
             "INVALID-TIMEZONE",
             new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
             "Factory/Unknown",
@@ -659,6 +667,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             new TimeOnly(6, 0),
             true), CancellationToken.None);
         await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
             "DST-GAP",
             new DateTimeOffset(2026, 3, 8, 7, 30, 0, TimeSpan.Zero),
             "America/New_York",
@@ -666,6 +676,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             new TimeOnly(4, 0),
             false), CancellationToken.None);
         await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
             "DST-AMBIGUOUS",
             new DateTimeOffset(2026, 11, 1, 7, 0, 0, TimeSpan.Zero),
             "America/New_York",
@@ -699,17 +711,14 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
         var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
         var original = CreateOeeHistoryEvent(
+            originalOrganizationId,
+            originalEnvironmentId,
             "SCOPED-ORIGINAL",
             new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
             "Asia/Shanghai",
             new TimeOnly(22, 0),
             new TimeOnly(6, 0),
-            true) with
-        {
-            OrganizationId = originalOrganizationId,
-            EnvironmentId = originalEnvironmentId,
-            IdempotencyKey = $"production-report-recorded:{originalOrganizationId}:{originalEnvironmentId}:PRPT-OEE-SCOPED-ORIGINAL"
-        };
+            true);
         var reversalAtUtc = new DateTimeOffset(2026, 8, 16, 1, 0, 0, TimeSpan.Zero);
         var reversal = new ProductionReportRecordedIntegrationEvent(
             "evt-prpt-oee-scoped-reversal",
@@ -1797,6 +1806,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     private static ProductionReportRecordedIntegrationEvent CreateOeeHistoryEvent(
+        string organizationId,
+        string environmentId,
         string suffix,
         DateTimeOffset reportedAtUtc,
         string? siteTimezone,
@@ -1814,10 +1825,10 @@ public sealed class IndustrialTelemetryEndpointContractTests
             MesIntegrationEventSources.BusinessMes,
             reportNo,
             reportNo,
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             "system:mes",
-            $"production-report-recorded:org-001:env-dev:{reportNo}",
+            $"production-report-recorded:{organizationId}:{environmentId}:{reportNo}",
             new ProductionReportRecordedPayload(
                 reportNo,
                 "WO-001",

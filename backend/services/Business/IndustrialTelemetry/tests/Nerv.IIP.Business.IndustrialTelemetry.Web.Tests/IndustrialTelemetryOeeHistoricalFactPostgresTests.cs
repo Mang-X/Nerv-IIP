@@ -132,7 +132,7 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         var barrier = new TwoPartySaveBarrierInterceptor();
         await using var firstContext = CreateLaneDbContext(barrier);
         await using var secondContext = CreateLaneDbContext(barrier);
-        var integrationEvent = CreateHistoricalEvent("env-dev");
+        var integrationEvent = CreateHistoricalEvent("org-001", "env-dev");
         var firstHandler = new ProductionReportOeeProjectionHandler(firstContext, new InMemoryIntegrationEventDeadLetterStore());
         var secondHandler = new ProductionReportOeeProjectionHandler(secondContext, new InMemoryIntegrationEventDeadLetterStore());
         var first = firstHandler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -149,9 +149,9 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
 
         await using var otherScopeContext = CreateLaneDbContext();
         await new ProductionReportOeeProjectionHandler(otherScopeContext, new InMemoryIntegrationEventDeadLetterStore())
-            .HandleAsync(CreateHistoricalEvent("env-other"), CancellationToken.None);
+            .HandleAsync(CreateHistoricalEvent("org-001", "env-other"), CancellationToken.None);
         await new ProductionReportOeeProjectionHandler(otherScopeContext, new InMemoryIntegrationEventDeadLetterStore())
-            .HandleAsync(CreateHistoricalEvent("env-dev", "org-other"), CancellationToken.None);
+            .HandleAsync(CreateHistoricalEvent("org-other", "env-dev"), CancellationToken.None);
 
         await using var assertionContext = CreateLaneDbContext();
         var facts = await assertionContext.OeeProductionFacts
@@ -193,8 +193,8 @@ public sealed class IndustrialTelemetryOeeHistoricalFactPostgresTests
         OeeHistoricalDimensionStatus.Resolved);
 
     private static ProductionReportRecordedIntegrationEvent CreateHistoricalEvent(
-        string environmentId,
-        string organizationId = "org-001")
+        string organizationId,
+        string environmentId)
     {
         var reportedAtUtc = DateTimeOffset.Parse("2026-08-14T17:30:00Z");
         return new ProductionReportRecordedIntegrationEvent(
