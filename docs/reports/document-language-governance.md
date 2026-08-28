@@ -2,4 +2,4 @@
 
 本文件只为冻结报告中的原相对链接保留，不是报告正文或第二份治理文档。
 
-当前文档：[`../architecture/document-language-governance.md`](../architecture/document-language-governance.md)
+当前规则：[`../governance/docs/language.md`](../governance/docs/language.md)
