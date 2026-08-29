@@ -1952,6 +1952,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     quantityInterval?: number | null;
     assignedInspectorUserId?: string | null;
     assignedTeamId?: string | null;
+    reworkWorkOrderCreationStatus?: string | null;
+    reworkWorkOrderId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanListRequest = {
@@ -2197,6 +2199,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     dispositionType?: string | null;
     dispositionApprovalChainId?: string | null;
     closeReason?: string | null;
+    reworkWorkOrderCreationStatus?: string | null;
+    reworkWorkOrderId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {
@@ -2551,6 +2555,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest = {
+    /**
+     * @deprecated
+     */
     reworkWorkOrderId?: string | null;
     scrapMovementId?: string | null;
     returnDocumentId?: string | null;

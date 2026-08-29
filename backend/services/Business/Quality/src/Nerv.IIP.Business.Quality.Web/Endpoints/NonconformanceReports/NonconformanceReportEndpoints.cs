@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
@@ -125,9 +126,24 @@ public sealed record SubmitNonconformanceReportDispositionRequest(
 
 public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
+    [property: Obsolete("由 MES 返工工单创建回执绑定；客户端提交会被拒绝。")]
+    string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
     [property: Required, MaxLength(500)] string Reason);
+
+public sealed class CloseNonconformanceReportRequestValidator
+    : Validator<CloseNonconformanceReportRequest>
+{
+    public CloseNonconformanceReportRequestValidator()
+    {
+#pragma warning disable CS0618
+        RuleFor(x => x.ReworkWorkOrderId)
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage("ReworkWorkOrderId is bound only from the MES rework-work-order-created receipt.");
+#pragma warning restore CS0618
+    }
+}
 
 public sealed record AcceptedResponse(bool Accepted);
 

@@ -38372,6 +38372,14 @@
           "assignedTeamId": {
             "type": "string",
             "nullable": true
+          },
+          "reworkWorkOrderCreationStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "reworkWorkOrderId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -39245,6 +39253,14 @@
             "nullable": true
           },
           "closeReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "reworkWorkOrderCreationStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "reworkWorkOrderId": {
             "type": "string",
             "nullable": true
           }
@@ -40423,6 +40439,8 @@
         "properties": {
           "reworkWorkOrderId": {
             "type": "string",
+            "deprecated": true,
+            "x-deprecatedMessage": "由 MES 返工工单创建回执绑定；客户端提交会被拒绝。",
             "nullable": true
           },
           "scrapMovementId": {

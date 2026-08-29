@@ -1480,7 +1480,9 @@ public sealed record BusinessConsoleQualityItem(
     decimal? TimeIntervalHours = null,
     decimal? QuantityInterval = null,
     string? AssignedInspectorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedTeamId = null,
+    string? ReworkWorkOrderCreationStatus = null,
+    string? ReworkWorkOrderId = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
@@ -2075,7 +2077,9 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? SourceInspectionRecordId,
     string? DispositionType = null,
     string? DispositionApprovalChainId = null,
-    string? CloseReason = null);
+    string? CloseReason = null,
+    string? ReworkWorkOrderCreationStatus = null,
+    string? ReworkWorkOrderId = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
@@ -2159,6 +2163,7 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: RouteParam] string NcrId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    [property: Obsolete("由 MES 返工工单创建回执绑定；客户端提交会被拒绝。")]
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,

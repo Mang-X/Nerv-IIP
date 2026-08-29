@@ -20,7 +20,7 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
         db.NonconformanceReports.Add(ncr);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(db, deadLetters);
+        var handler = CreateHandler(db, deadLetters);
         var requested = await new GetNonconformanceReportQueryHandler(db).Handle(
             new GetNonconformanceReportQuery(ncr.Id, ncr.OrganizationId, ncr.EnvironmentId),
             CancellationToken.None);
@@ -51,7 +51,7 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
         db.NonconformanceReports.Add(ncr);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(db, deadLetters);
+        var handler = CreateHandler(db, deadLetters);
 
         await handler.HandleAsync(Created(ncr, "RW-EARLY"), CancellationToken.None);
 
@@ -68,7 +68,7 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
         db.NonconformanceReports.Add(ncr);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(db, deadLetters);
+        var handler = CreateHandler(db, deadLetters);
 
         await handler.HandleAsync(Created(ncr, "RW-CROSS") with { OrganizationId = "org-other" }, CancellationToken.None);
 
@@ -85,7 +85,7 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
         db.NonconformanceReports.Add(ncr);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(db, deadLetters);
+        var handler = CreateHandler(db, deadLetters);
 
         await handler.HandleAsync(Created(ncr, "RW-UNTRUSTED") with { SourceService = "business-gateway" }, CancellationToken.None);
 
@@ -102,7 +102,7 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
         db.NonconformanceReports.Add(ncr);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(db, deadLetters);
+        var handler = CreateHandler(db, deadLetters);
         var receipt = Created(ncr, "RW-MISMATCH");
 
         await handler.HandleAsync(
@@ -122,7 +122,7 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
         db.NonconformanceReports.Add(ncr);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(db, deadLetters);
+        var handler = CreateHandler(db, deadLetters);
         await handler.HandleAsync(Created(ncr, "RW-0001"), CancellationToken.None);
 
         await handler.HandleAsync(Created(ncr, "RW-FORGED") with { EventId = "evt-rework-created-conflict" }, CancellationToken.None);
@@ -189,6 +189,24 @@ public sealed class ReworkWorkOrderCreatedConsumerTests
             .UseInMemoryDatabase($"quality-rework-receipt-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr CreateHandler(
+        ApplicationDbContext db,
+        IIntegrationEventDeadLetterStore deadLetters) =>
+        new(
+            new ReworkWorkOrderBindingStore(db, new SaveChangesBindingWriter(db)),
+            deadLetters);
+
+    private sealed class SaveChangesBindingWriter(ApplicationDbContext db) : IReworkWorkOrderBindingWriter
+    {
+        public async Task<bool> TryWriteAsync(
+            NonconformanceReport candidate,
+            CancellationToken cancellationToken)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
     }
 
     private sealed class NoopMediator : IMediator

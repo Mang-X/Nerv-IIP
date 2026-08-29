@@ -542,7 +542,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.SourceInspectionRecordId,
             response.DispositionType,
             response.DispositionApprovalChainId,
-            response.CloseReason);
+            response.CloseReason,
+            response.ReworkWorkOrderCreationStatus,
+            response.ReworkWorkOrderId);
     }
 
     public async Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
@@ -812,7 +814,6 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             $"/api/business/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}/close",
             new DownstreamCloseNcrRequest(
                 ncrId,
-                request.ReworkWorkOrderId,
                 request.ScrapMovementId,
                 request.ReturnDocumentId,
                 request.Reason),
@@ -858,7 +859,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             item.DefectReason,
             item.BatchNo,
             item.SerialNo,
-            CloseReason: item.CloseReason);
+            CloseReason: item.CloseReason,
+            ReworkWorkOrderCreationStatus: item.ReworkWorkOrderCreationStatus,
+            ReworkWorkOrderId: item.ReworkWorkOrderId);
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionRecordItem item) =>
         new(
@@ -1144,7 +1147,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? SourceInspectionRecordId = null,
         string? DispositionType = null,
         string? DispositionApprovalChainId = null,
-        string? CloseReason = null);
+        string? CloseReason = null,
+        string? ReworkWorkOrderCreationStatus = null,
+        string? ReworkWorkOrderId = null);
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,
@@ -1161,7 +1166,6 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     private sealed record DownstreamCloseNcrRequest(
         string NcrId,
-        string? ReworkWorkOrderId,
         string? ScrapMovementId,
         string? ReturnDocumentId,
         string Reason);

@@ -1,9 +1,12 @@
+using System.Data.Common;
 using DotNetCore.CAP;
 using DotNetCore.CAP.Internal;
 using DotNetCore.CAP.Persistence;
+using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -44,6 +47,7 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
         });
 
         await SubmitReworkDispositionAsync(factory, ncrId);
+        await AssertConcurrentReceiptsCannotOverwriteAsync(factory);
         await PublishAsync(factory, receipt with { EventId = "receipt-replayed" });
         await PublishAsync(factory, receipt with { EventId = "receipt-duplicate" });
         await PublishAsync(factory, receipt with
@@ -59,7 +63,7 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
 
         await AssertEventuallyAsync(factory, async (db, deadLetters, token) =>
         {
-            var ncr = await db.NonconformanceReports.AsNoTracking().SingleAsync(token);
+            var ncr = await db.NonconformanceReports.AsNoTracking().SingleAsync(x => x.Id == ncrId, token);
             Assert.Equal("RW-TRANSPORT-001", ncr.ReworkWorkOrderId);
             Assert.Equal("created", ncr.ReworkWorkOrderCreationStatus);
 
@@ -126,14 +130,16 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
         Assert.Equal(expectedTopic, candidate.TopicName);
     }
 
-    private static async Task<NonconformanceReportId> AddOpenNcrAsync(WebApplicationFactory<Program> factory)
+    private static async Task<NonconformanceReportId> AddOpenNcrAsync(
+        WebApplicationFactory<Program> factory,
+        string codeSuffix = "001")
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var ncr = NonconformanceReport.Open(
             "org-transport",
             "env-transport",
-            "NCR-TRANSPORT-001",
+            $"NCR-TRANSPORT-{codeSuffix}",
             "in-process",
             "DEF-TRANSPORT-001",
             "SKU-TRANSPORT-001",
@@ -196,6 +202,49 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
                 DateTimeOffset.Parse("2026-08-29T12:00:00Z")));
     }
 
+    private static async Task AssertConcurrentReceiptsCannotOverwriteAsync(
+        WebApplicationFactory<Program> factory)
+    {
+        var ncrId = await AddOpenNcrAsync(factory, "CONCURRENT");
+        await SubmitReworkDispositionAsync(factory, ncrId);
+        var first = await BuildReceiptAsync(factory, ncrId, "RW-CONCURRENT-A", "receipt-concurrent-a");
+        var second = first with
+        {
+            EventId = "receipt-concurrent-b",
+            Payload = first.Payload with { ReworkWorkOrderId = "RW-CONCURRENT-B" },
+        };
+        var barrier = new BindingUpdateBarrier();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                QualityPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
+            .AddInterceptors(barrier)
+            .Options;
+        await using var firstDb = new ApplicationDbContext(options, new NoopMediator());
+        await using var secondDb = new ApplicationDbContext(options, new NoopMediator());
+        var firstStore = new ReworkWorkOrderBindingStore(
+            firstDb,
+            new PostgresReworkWorkOrderBindingWriter(firstDb));
+        var secondStore = new ReworkWorkOrderBindingStore(
+            secondDb,
+            new PostgresReworkWorkOrderBindingWriter(secondDb));
+
+        var outcomes = await Task.WhenAll(
+            firstStore.BindAsync(first, ncrId, CancellationToken.None),
+            secondStore.BindAsync(second, ncrId, CancellationToken.None));
+
+        Assert.Contains(ReworkWorkOrderBindingOutcome.Bound, outcomes);
+        Assert.Contains(ReworkWorkOrderBindingOutcome.BindingConflict, outcomes);
+        Assert.Equal(2, barrier.Arrivals);
+        using var verificationScope = factory.Services.CreateScope();
+        var winner = await verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .NonconformanceReports.AsNoTracking()
+            .Where(x => x.Id == ncrId)
+            .Select(x => x.ReworkWorkOrderId)
+            .SingleAsync();
+        Assert.Contains(winner, new[] { "RW-CONCURRENT-A", "RW-CONCURRENT-B" });
+    }
+
     private static async Task PublishAsync(
         WebApplicationFactory<Program> factory,
         ReworkWorkOrderCreatedIntegrationEvent integrationEvent)
@@ -219,6 +268,61 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
                     token);
             },
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
+
+    private sealed class BindingUpdateBarrier : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int arrivals;
+
+        public int Arrivals => Volatile.Read(ref arrivals);
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!command.CommandText.Contains("UPDATE", StringComparison.Ordinal)
+                || !command.CommandText.Contains("nonconformance_reports", StringComparison.Ordinal)
+                || !command.CommandText.Contains("rework_work_order_id", StringComparison.Ordinal))
+            {
+                return result;
+            }
+
+            if (Interlocked.Increment(ref arrivals) == 2)
+            {
+                release.SetResult();
+            }
+
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            return result;
+        }
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 }
 
 [AttributeUsage(AttributeTargets.Method)]

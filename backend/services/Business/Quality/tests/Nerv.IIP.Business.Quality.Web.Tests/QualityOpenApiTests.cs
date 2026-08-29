@@ -68,7 +68,7 @@ public sealed class QualityOpenApiTests
         AssertQueryParameter(scrapReasonOperation, "take", required: false);
 
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
-        AssertRequestSchemaOmitsProperty(
+        AssertRequestSchemaDeprecatedProperty(
             document,
             "/api/business/v1/quality/ncrs/{ncrId}/close",
             "post",
@@ -116,7 +116,7 @@ public sealed class QualityOpenApiTests
         Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
     }
 
-    private static void AssertRequestSchemaOmitsProperty(
+    private static void AssertRequestSchemaDeprecatedProperty(
         JsonDocument document,
         string route,
         string method,
@@ -125,12 +125,10 @@ public sealed class QualityOpenApiTests
         var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty(method);
         var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
             .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
-        var properties = document.RootElement.GetProperty("components").GetProperty("schemas")
-            .GetProperty(schemaRef.Split('/')[^1]).GetProperty("properties");
+        var property = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaRef.Split('/')[^1]).GetProperty("properties").GetProperty(propertyName);
 
-        Assert.False(
-            properties.TryGetProperty(propertyName, out _),
-            $"Request schema for '{method.ToUpperInvariant()} {route}' must not expose '{propertyName}'.");
+        Assert.True(property.GetProperty("deprecated").GetBoolean());
     }
 
     private static void AssertQueryParameter(JsonElement operation, string name, bool required)
