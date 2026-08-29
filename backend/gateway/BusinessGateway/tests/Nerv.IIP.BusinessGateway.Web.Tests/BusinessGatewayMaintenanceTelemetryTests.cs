@@ -3688,6 +3688,12 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             ["production-facts-missing"]));
     }
 
+    public Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        BusinessOeeAggregateRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAvailabilityRequest request,

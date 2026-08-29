@@ -16395,6 +16395,12 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             []));
     }
 
+    public Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        BusinessOeeAggregateRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAvailabilityRequest request,
@@ -17825,4 +17831,3 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([], 0));
     }
 }
-
