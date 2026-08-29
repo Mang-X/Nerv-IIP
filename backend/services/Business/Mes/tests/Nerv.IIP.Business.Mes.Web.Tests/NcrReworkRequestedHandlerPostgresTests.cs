@@ -24,6 +24,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
+        var integrationEvent = CreateEvent(
+            requestedAtUtc: DateTimeOffset.Parse("2026-08-29T08:00:00Z").AddTicks(1));
 
         ReworkWorkOrderCreatedDomainEvent createdDomainEvent;
         await using (var creationScope = provider.CreateAsyncScope())
@@ -33,10 +35,10 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 creationScope.ServiceProvider.GetRequiredService<IMesReworkWorkOrderScopeCoordinator>(),
                 creationDb);
             await CreateHandler(creationScope.ServiceProvider, coordinator)
-                .HandleAsync(CreateEvent(), CancellationToken.None);
+                .HandleAsync(integrationEvent, CancellationToken.None);
             createdDomainEvent = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(coordinator.Captured);
         }
-        await HandleAsync(provider, CreateEvent(eventId: "evt-replay-002"));
+        await HandleAsync(provider, integrationEvent);
 
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -53,6 +55,11 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         Assert.Single(await db.ProcessedIntegrationEvents
             .Where(x => x.ConsumerName == NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName)
             .ToArrayAsync());
+        Assert.Empty(await new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db)
+            .ListAsync(
+                NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None));
         var numbering = await db.CodeIdempotencyKeys.SingleAsync(x => x.IdempotencyKey == CreateEvent().IdempotencyKey);
         Assert.Equal(workOrder.WorkOrderIdValue, numbering.Code);
         var receipt = new ReworkWorkOrderCreatedIntegrationEventConverter().Convert(createdDomainEvent);

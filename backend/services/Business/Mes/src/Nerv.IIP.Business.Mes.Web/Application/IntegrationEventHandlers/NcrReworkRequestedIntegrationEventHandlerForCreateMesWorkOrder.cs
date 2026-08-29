@@ -53,7 +53,10 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
         NcrReworkRequestedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload;
+        var payload = integrationEvent.Payload with
+        {
+            RequestedAtUtc = NormalizeToPostgresTimestamp(integrationEvent.Payload.RequestedAtUtc),
+        };
         var existing = await dbContext.WorkOrders.SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
@@ -192,6 +195,14 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
         workOrder.SourceLotNo == payload.LotNo &&
         workOrder.SourceSerialNo == payload.SerialNo &&
         workOrder.SourceReworkRequestedAtUtc == payload.RequestedAtUtc;
+
+    private static DateTimeOffset NormalizeToPostgresTimestamp(DateTimeOffset value)
+    {
+        var utcTicks = value.UtcTicks;
+        return new DateTimeOffset(
+            utcTicks - (utcTicks % TimeSpan.TicksPerMicrosecond),
+            TimeSpan.Zero);
+    }
 
     private Task DeadLetterAsync(
         NcrReworkRequestedIntegrationEvent integrationEvent,
