@@ -17,6 +17,7 @@ public sealed class WorkCenterMachineOverheadReconciliationTests
             appliedTotal: 24_000m);
 
         Assert.Equal(600m, reconciliation.AppliedMachineHours);
+        Assert.Equal(18_000m, reconciliation.AppliedFixedAmount);
         Assert.Equal(12_000m, reconciliation.UnderOverAppliedFixedAmount);
         Assert.Equal(2_000m, reconciliation.UnderOverAppliedVariableAmount);
         Assert.Equal(14_000m, reconciliation.UnderOverAppliedTotalAmount);
