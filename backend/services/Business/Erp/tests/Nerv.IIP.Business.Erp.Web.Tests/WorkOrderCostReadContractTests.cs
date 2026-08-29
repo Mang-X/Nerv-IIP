@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
@@ -21,6 +22,105 @@ public sealed class WorkOrderCostReadContractTests
 {
     private static readonly DateTimeOffset CompletedAtUtc =
         DateTimeOffset.Parse("2026-08-31T15:00:00Z");
+
+    [Fact]
+    public async Task Machine_overhead_read_returns_applied_amounts_three_states_and_frozen_settlement_lineage()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var applicableRateId = new WorkCenterMachineOverheadRateId(Guid.CreateVersion7());
+        var notApplicableRateId = new WorkCenterMachineOverheadRateId(Guid.CreateVersion7());
+        var applicable = OperationMachineOverheadSettlement.CreateApplied(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-APPLIED", "WC-APPLIED", 2,
+            CompletedAtUtc, "DEVICE-001", 2 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", applicableRateId,
+            "2026-08", 7, "CNY", 30m, 10m, "evt-machine-applied", new string('a', 64));
+        var explicitZero = OperationMachineOverheadSettlement.CreateApplied(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-ZERO", "WC-ZERO", 1,
+            CompletedAtUtc, "DEVICE-ZERO", 0,
+            "single-device-active-minus-explicit-pause-v1", applicableRateId,
+            "2026-08", 7, "CNY", 30m, 10m, "evt-machine-zero", new string('b', 64));
+        var notApplicable = OperationMachineOverheadSettlement.CreateNotApplicable(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-NOT-APPLICABLE", "WC-MANUAL", 1,
+            CompletedAtUtc, notApplicableRateId, "2026-08", 3, "CNY",
+            "evt-machine-not-applicable", new string('c', 64));
+        var inactive = OperationMachineOverheadSettlement.CreateApplied(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-APPLIED", "WC-APPLIED", 1,
+            CompletedAtUtc.AddHours(-1), "DEVICE-OLD", 9 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", applicableRateId,
+            "2026-07", 6, "CNY", 30m, 10m, "evt-machine-old", new string('d', 64));
+        var appliedState = OperationMachineOverheadSettlementState.Open("org-machine", "env-machine", "OP-APPLIED");
+        appliedState.ApplySettlement(1);
+        appliedState.ApplySettlement(2);
+        var zeroState = OperationMachineOverheadSettlementState.Open("org-machine", "env-machine", "OP-ZERO");
+        zeroState.ApplySettlement(1);
+        var notApplicableState = OperationMachineOverheadSettlementState.Open(
+            "org-machine", "env-machine", "OP-NOT-APPLICABLE");
+        notApplicableState.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-machine", "env-machine", "WO-MACHINE", "FG-MACHINE");
+        cost.RecordMachineOverhead(applicable);
+        cost.RecordMachineOverhead(explicitZero);
+        cost.RecordMachineOverhead(notApplicable);
+        db.AddRange(cost, applicable, explicitZero, notApplicable, inactive,
+            appliedState, zeroState, notApplicableState);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-machine", "env-machine", "WO-MACHINE"), CancellationToken.None);
+
+        Assert.Equal("available", response.MachineCostStatus);
+        Assert.Null(response.MachineCostUnavailableReason);
+        Assert.Equal(2.000000m, response.ActualMachineHours);
+        Assert.Equal(60.000000m, response.AppliedFixedMachineOverhead);
+        Assert.Equal(20.000000m, response.AppliedVariableMachineOverhead);
+        Assert.Equal(80.000000m, response.AppliedMachineOverheadTotal);
+        Assert.Equal(3, response.MachineOverheadOperations.Count);
+        var operations = response.MachineOverheadOperations.ToDictionary(x => x.OperationTaskId, StringComparer.Ordinal);
+        var applied = operations["OP-APPLIED"];
+        Assert.Equal(applicable.Id.ToString(), applied.SettlementId);
+        Assert.Equal(2, applied.SettlementRevision);
+        Assert.Equal("2026-08", applied.AccountingPeriodCode);
+        Assert.Equal("CNY", applied.CurrencyCode);
+        Assert.Equal(applicableRateId.ToString(), applied.WorkCenterMachineOverheadRateId);
+        Assert.Equal(7, applied.RateRevision);
+        Assert.Equal("evt-machine-applied", applied.SourceEventId);
+        Assert.Equal(CompletedAtUtc, applied.CompletedAtUtc);
+        Assert.Equal(0m, operations["OP-ZERO"].AppliedMachineOverheadTotal);
+        Assert.Equal("available", operations["OP-ZERO"].Status);
+        Assert.Equal("notApplicable", operations["OP-NOT-APPLICABLE"].Status);
+        Assert.Equal("machine_overhead_not_applicable", operations["OP-NOT-APPLICABLE"].UnavailableReason);
+        Assert.Null(operations["OP-NOT-APPLICABLE"].ActualMachineHours);
+        Assert.Null(operations["OP-NOT-APPLICABLE"].AppliedMachineOverheadTotal);
+    }
+
+    [Fact]
+    public async Task Work_order_with_only_not_applicable_machine_settlement_does_not_map_to_zero()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var settlement = OperationMachineOverheadSettlement.CreateNotApplicable(
+            "org-na", "env-na", "WO-NA", "OP-NA", "WC-MANUAL", 1, CompletedAtUtc,
+            new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), "2026-08", 1, "CNY",
+            "evt-na", new string('e', 64));
+        var state = OperationMachineOverheadSettlementState.Open("org-na", "env-na", "OP-NA");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-na", "env-na", "WO-NA", "FG-NA");
+        cost.RecordMachineOverhead(settlement);
+        db.AddRange(cost, settlement, state);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-na", "env-na", "WO-NA"), CancellationToken.None);
+
+        Assert.Equal("notApplicable", response.MachineCostStatus);
+        Assert.Equal("machine_overhead_not_applicable", response.MachineCostUnavailableReason);
+        Assert.Null(response.ActualMachineHours);
+        Assert.Null(response.AppliedFixedMachineOverhead);
+        Assert.Null(response.AppliedVariableMachineOverhead);
+        Assert.Null(response.AppliedMachineOverheadTotal);
+    }
 
     [Fact]
     public async Task Work_order_cost_read_uses_net_good_quantity_and_keeps_capitalization_variance_separate()
@@ -69,6 +169,9 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal(30.000000m, response.CapitalizationVarianceAmount);
         Assert.Equal("notApplicable", response.LaborRateVarianceStatus);
         Assert.Equal("actual_payroll_rate_not_modeled", response.LaborRateVarianceReason);
+        Assert.Equal("unavailable", response.MachineCostStatus);
+        Assert.Equal("operation_not_settled", response.MachineCostUnavailableReason);
+        Assert.Null(response.AppliedMachineOverheadTotal);
         var operation = Assert.Single(response.Operations);
         Assert.Equal(7, operation.RateRevision);
         Assert.Equal("standard", operation.RateBasis);
@@ -632,8 +735,12 @@ public sealed class WorkOrderCostReadContractTests
         var data = json.RootElement.GetProperty("data");
         Assert.Equal("available", data.GetProperty("laborVarianceStatus").GetString());
         Assert.Equal(0m, data.GetProperty("actualLaborHours").GetDecimal());
-        Assert.Equal(JsonValueKind.Null, data.GetProperty("actualMachineHours").ValueKind);
-        Assert.Equal("unavailable", data.GetProperty("machineCostStatus").GetString());
+        Assert.Equal(0m, data.GetProperty("actualMachineHours").GetDecimal());
+        Assert.Equal("available", data.GetProperty("machineCostStatus").GetString());
+        Assert.Equal(0m, data.GetProperty("appliedFixedMachineOverhead").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("appliedVariableMachineOverhead").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("appliedMachineOverheadTotal").GetDecimal());
+        Assert.Equal(JsonValueKind.Array, data.GetProperty("machineOverheadOperations").ValueKind);
     }
 
     [Fact]
@@ -656,6 +763,45 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal("getErpWorkOrderCostVariance", operation.GetProperty("operationId").GetString());
         var serialized = operation.GetRawText();
         Assert.Contains("WorkOrderCostVarianceResponse", serialized, StringComparison.Ordinal);
+        var schema = json.RootElement.GetProperty("components").GetProperty("schemas")
+            .EnumerateObject()
+            .Single(x => x.Name.EndsWith("WorkOrderCostVarianceResponse", StringComparison.Ordinal)
+                && x.Value.TryGetProperty("properties", out var candidateProperties)
+                && candidateProperties.TryGetProperty("workOrderId", out _));
+        var properties = schema.Value.GetProperty("properties");
+        Assert.True(properties.TryGetProperty("appliedFixedMachineOverhead", out _));
+        Assert.True(properties.TryGetProperty("appliedVariableMachineOverhead", out _));
+        Assert.True(properties.TryGetProperty("appliedMachineOverheadTotal", out _));
+        Assert.True(properties.TryGetProperty("machineOverheadOperations", out _));
+        Assert.False(properties.TryGetProperty("actualFixedMachineOverhead", out _));
+        var machineOperationSchema = json.RootElement.GetProperty("components").GetProperty("schemas")
+            .EnumerateObject()
+            .Single(x => x.Name.EndsWith("OperationMachineOverheadItem", StringComparison.Ordinal)
+                && x.Value.TryGetProperty("properties", out var candidateProperties)
+                && candidateProperties.TryGetProperty("operationTaskId", out _));
+        var machineOperationProperties = machineOperationSchema.Value.GetProperty("properties");
+        foreach (var propertyName in new[]
+        {
+            "settlementId", "settlementRevision", "status", "unavailableReason", "actualMachineHours",
+            "appliedFixedMachineOverhead", "appliedVariableMachineOverhead", "appliedMachineOverheadTotal",
+            "accountingPeriodCode", "currencyCode", "deviceAssetId", "machineTimeBasisCode",
+            "workCenterMachineOverheadRateId", "rateRevision", "completedAtUtc", "sourceEventId"
+        })
+            Assert.True(machineOperationProperties.TryGetProperty(propertyName, out _), propertyName);
+
+        var periodOperation = json.RootElement.GetProperty("paths")
+            .GetProperty("/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations")
+            .GetProperty("get");
+        Assert.Equal("listErpWorkCenterMachineOverheadReconciliations", periodOperation.GetProperty("operationId").GetString());
+        var periodSchema = json.RootElement.GetProperty("components").GetProperty("schemas")
+            .EnumerateObject()
+            .Single(x => x.Name.EndsWith("ListWorkCenterMachineOverheadReconciliationsResponse", StringComparison.Ordinal)
+                && x.Value.TryGetProperty("properties", out var candidateProperties)
+                && candidateProperties.TryGetProperty("accountingPeriodCode", out _));
+        var periodProperties = periodSchema.Value.GetProperty("properties");
+        Assert.True(periodProperties.TryGetProperty("accountingPeriodStatus", out _));
+        Assert.True(periodProperties.TryGetProperty("reconciliationStatus", out _));
+        Assert.True(periodProperties.TryGetProperty("reconciliationUnavailableReason", out _));
     }
 
     private sealed class CapturingSender : ISender
@@ -670,8 +816,8 @@ public sealed class WorkOrderCostReadContractTests
                 query.OrganizationId, query.EnvironmentId, query.WorkOrderId, "CNY", "actualOperation",
                 "available", null, 0m, 0m, 0m, 0m, 0m, 0m, "neutral",
                 "notApplicable", "actual_payroll_rate_not_modeled",
-                0m, 0m, 0m, 0m, null, "unavailable", "machine_cost_read_contract_deferred",
-                query.PageNumber, query.PageSize, 0, []));
+                0m, 0m, 0m, 0m, 0m, "available", null,
+                query.PageNumber, query.PageSize, 0, [], 0m, 0m, 0m, []));
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)

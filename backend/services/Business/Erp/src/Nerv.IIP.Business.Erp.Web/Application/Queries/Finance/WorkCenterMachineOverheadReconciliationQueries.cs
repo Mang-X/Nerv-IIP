@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 
@@ -35,7 +38,10 @@ public sealed record ListWorkCenterMachineOverheadReconciliationsResponse(
     int PageNumber,
     int PageSize,
     int TotalCount,
-    IReadOnlyList<WorkCenterMachineOverheadReconciliationItem> Items);
+    IReadOnlyList<WorkCenterMachineOverheadReconciliationItem> Items,
+    string? AccountingPeriodStatus,
+    string ReconciliationStatus,
+    string? ReconciliationUnavailableReason);
 
 public sealed record WorkCenterMachineOverheadReconciliationItem(
     string Id,
@@ -62,6 +68,8 @@ public sealed record WorkCenterMachineOverheadReconciliationItem(
     decimal AbnormalDowntimeHours,
     string AbnormalDowntimeDisposition,
     bool IsReadyForClose,
+    string ReconciliationStatus,
+    string? UnavailableReason,
     string RecordedBy,
     string SourceReference,
     string Reason,
@@ -78,6 +86,10 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
         var environmentId = request.EnvironmentId.Trim();
         var periodCode = request.AccountingPeriodCode.Trim();
         var workCenterId = request.WorkCenterId?.Trim();
+        var period = await dbContext.AccountingPeriods.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PeriodCode == periodCode, cancellationToken);
         var query = dbContext.WorkCenterMachineOverheadReconciliations.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
@@ -102,11 +114,88 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
                 x.OverAppliedFixedOverheadAmount, x.AbnormalDowntimeTicks, x.AbnormalDowntimeHours,
                 x.AbnormalDowntimeDisposition.ToString(),
                 x.AbnormalDowntimeDisposition != Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending,
+                x.AbnormalDowntimeDisposition == Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending
+                    ? "unavailable"
+                    : "available",
+                x.AbnormalDowntimeDisposition == Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending
+                    ? "abnormal_downtime_pending"
+                    : null,
                 x.RecordedBy, x.SourceReference, x.Reason, x.RecordedAtUtc))
             .ToListAsync(cancellationToken);
 
+        var status = await ResolveReconciliationStatusAsync(
+            organizationId, environmentId, periodCode, workCenterId, period, cancellationToken);
+
         return new(
             organizationId, environmentId, periodCode, workCenterId,
-            request.PageNumber, request.PageSize, totalCount, items);
+            request.PageNumber, request.PageSize, totalCount, items,
+            period?.Status == AccountingPeriodStatus.Closed ? "closed" : period is null ? null : "open",
+            status.Status,
+            status.UnavailableReason);
     }
+
+    private async Task<ReconciliationReadStatus> ResolveReconciliationStatusAsync(
+        string organizationId,
+        string environmentId,
+        string periodCode,
+        string? workCenterId,
+        AccountingPeriod? period,
+        CancellationToken cancellationToken)
+    {
+        if (period is null)
+            return new("unavailable", "accounting_period_not_found");
+
+        var latestRates = dbContext.WorkCenterMachineOverheadRates.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.AccountingPeriodCode == periodCode
+                && !dbContext.WorkCenterMachineOverheadRates.Any(newer =>
+                    newer.OrganizationId == x.OrganizationId
+                    && newer.EnvironmentId == x.EnvironmentId
+                    && newer.AccountingPeriodCode == x.AccountingPeriodCode
+                    && newer.WorkCenterId == x.WorkCenterId
+                    && newer.Revision > x.Revision));
+        if (workCenterId is not null)
+            latestRates = latestRates.Where(x => x.WorkCenterId == workCenterId);
+        var rates = await latestRates.ToListAsync(cancellationToken);
+
+        IReadOnlyDictionary<string, MachineOverheadAppliedSnapshot> applied = workCenterId is null
+            ? await MachineOverheadAppliedSnapshotReader.ReadForPeriodAsync(
+                dbContext, organizationId, environmentId, periodCode, cancellationToken)
+            : await MachineOverheadAppliedSnapshotReader.ReadForWorkCentersAsync(
+                dbContext, organizationId, environmentId, periodCode, [workCenterId], cancellationToken);
+        var requiredWorkCenters = rates
+            .Where(x => x.Applicability == MachineOverheadApplicability.Applicable)
+            .Select(x => x.WorkCenterId)
+            .Concat(applied.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (requiredWorkCenters.Length == 0)
+        {
+            return rates.Count > 0 && rates.All(x => x.Applicability == MachineOverheadApplicability.NotApplicable)
+                ? new("notApplicable", "machine_overhead_not_applicable")
+                : new("unavailable", "machine_overhead_rate_not_configured");
+        }
+
+        var latestReconciliations = await dbContext.WorkCenterMachineOverheadReconciliations.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.AccountingPeriodCode == periodCode
+                && requiredWorkCenters.Contains(x.WorkCenterId)
+                && !dbContext.WorkCenterMachineOverheadReconciliations.Any(newer =>
+                    newer.OrganizationId == x.OrganizationId
+                    && newer.EnvironmentId == x.EnvironmentId
+                    && newer.AccountingPeriodCode == x.AccountingPeriodCode
+                    && newer.WorkCenterId == x.WorkCenterId
+                    && newer.Revision > x.Revision))
+            .ToListAsync(cancellationToken);
+        if (latestReconciliations.Count != requiredWorkCenters.Length)
+            return new("unavailable", "reconciliation_not_recorded");
+        if (latestReconciliations.Any(x => !x.IsReadyForClose))
+            return new("unavailable", "abnormal_downtime_pending");
+        return new("available", null);
+    }
+
+    private sealed record ReconciliationReadStatus(string Status, string? UnavailableReason);
 }
