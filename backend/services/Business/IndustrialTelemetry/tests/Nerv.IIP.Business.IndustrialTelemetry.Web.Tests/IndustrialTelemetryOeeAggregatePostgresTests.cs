@@ -117,10 +117,10 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Equal(1, bucket.ProductionFactCount);
         Assert.Equal(1m, bucket.GoodQuantity);
         Assert.Equal(1m, bucket.AvailabilityRate);
-        Assert.Equal(0.95m, bucket.ExpectedOutputQuantity);
-        Assert.Equal(1.052632m, bucket.PerformanceRate);
+        Assert.Equal(0.05m, bucket.ExpectedOutputQuantity);
+        Assert.Equal(20m, bucket.PerformanceRate);
         Assert.Equal(1m, bucket.QualityRate);
-        Assert.Equal(1.052632m, bucket.OeeRate);
+        Assert.Equal(20m, bucket.OeeRate);
     }
 
     [RealPostgresFact]
@@ -201,6 +201,29 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
                 Assert.Empty(filteredBucket.DegradedReasons);
             }
         }
+
+        db.DeviceStateSnapshots.Add(State("org-001", "DEV-TEMPORAL", "running", start, "temporal-1"));
+        db.OeeProductionFacts.AddRange(
+            Fact("TEMPORAL-A", start.AddHours(1), "DEV-TEMPORAL", "WC-TEMPORAL", 10m, 0m, 0m, "PCS", 10m, new(2026, 7, 10)),
+            Fact("TEMPORAL-B", start.AddDays(1).AddHours(1), "DEV-TEMPORAL", "WC-TEMPORAL", 10m, 0m, 0m, "PCS", 10m, new(2026, 7, 11)));
+        await db.SaveChangesAsync();
+
+        var businessDayFilteredBucket = Assert.Single((await handler.Handle(new(
+            "org-001", "env-dev", OeeAggregateDimension.WorkCenter, start, start.AddDays(2),
+            DeviceAssetId: "DEV-TEMPORAL",
+            BusinessDate: new(2026, 7, 10)), CancellationToken.None)).Buckets);
+        Assert.Equal(1, businessDayFilteredBucket.ProductionFactCount);
+        Assert.Equal(160m, businessDayFilteredBucket.ExpectedOutputQuantity);
+        Assert.Equal(0.0625m, businessDayFilteredBucket.PerformanceRate);
+
+        var shiftFilteredBuckets = (await handler.Handle(new(
+            "org-001", "env-dev", OeeAggregateDimension.WorkCenter, start, start.AddDays(2),
+            DeviceAssetId: "DEV-TEMPORAL",
+            ShiftCode: "SHIFT-01"), CancellationToken.None)).Buckets;
+        Assert.Single(shiftFilteredBuckets);
+        Assert.Equal(2, shiftFilteredBuckets.Sum(x => x.ProductionFactCount));
+        Assert.Equal(160m, shiftFilteredBuckets.Sum(x => x.ExpectedOutputQuantity));
+        Assert.All(shiftFilteredBuckets, bucket => Assert.Equal(0.125m, bucket.PerformanceRate));
     }
 
     [RealPostgresFact]

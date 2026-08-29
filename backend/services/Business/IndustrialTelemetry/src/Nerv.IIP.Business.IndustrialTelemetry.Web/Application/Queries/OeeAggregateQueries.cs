@@ -338,13 +338,13 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
             .ToDictionary(
                 x => x.Key,
-                x => BuildHierarchySegments(x, request),
+                x => BuildRuntimeOwnership(x, request),
                 StringComparer.Ordinal);
         foreach (var group in groups)
         {
             foreach (var deviceId in group.Facts.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal))
             {
-                foreach (var segment in segmentsByDevice[deviceId])
+                foreach (var segment in segmentsByDevice[deviceId].Hierarchy)
                 {
                     if (!MatchesHierarchyFilters(segment.Fact, request) ||
                         !SegmentBelongsToBucket(segment.Fact, group.Key, request))
@@ -352,7 +352,23 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                         continue;
                     }
 
-                    AddWindow(deviceId, group.Key, segment.StartUtc, segment.EndUtc, group.StartUtc, group.EndUtc);
+                    var eligibleWindows = new[] { new RuntimeWindow(segment.StartUtc, segment.EndUtc) };
+                    if (request.ShiftCode is not null)
+                    {
+                        eligibleWindows = IntersectWindows(eligibleWindows, segmentsByDevice[deviceId].Shifts
+                            .Where(x => x.Fact.ShiftCode == request.ShiftCode)
+                            .Select(x => new RuntimeWindow(x.StartUtc, x.EndUtc)));
+                    }
+                    if (request.BusinessDate is not null)
+                    {
+                        eligibleWindows = IntersectWindows(eligibleWindows, segmentsByDevice[deviceId].BusinessDays
+                            .Where(x => x.Fact.BusinessDate == request.BusinessDate)
+                            .Select(x => new RuntimeWindow(x.StartUtc, x.EndUtc)));
+                    }
+                    foreach (var eligibleWindow in eligibleWindows)
+                    {
+                        AddWindow(deviceId, group.Key, eligibleWindow.StartUtc, eligibleWindow.EndUtc, group.StartUtc, group.EndUtc);
+                    }
                 }
             }
         }
@@ -362,7 +378,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             x => (IReadOnlyList<RuntimeWindow>)x.Value,
             EqualityComparer<DeviceBucketKey>.Default);
 
-        static IReadOnlyList<HierarchySegment> BuildHierarchySegments(
+        static RuntimeOwnership BuildRuntimeOwnership(
             IEnumerable<OeeProductionFact> deviceFacts,
             QueryOeeAggregateBucketsQuery request)
         {
@@ -370,36 +386,74 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                 .OrderBy(x => x.AggregationOccurredAtUtc)
                 .ThenBy(x => x.SourceReportNo, StringComparer.Ordinal)
                 .ToArray();
-            var segments = new List<HierarchySegment>();
-            var currentFact = orderedFacts[0];
-            var currentHierarchy = HierarchyKey.From(currentFact);
-            var currentStart = request.WindowStartUtc;
-            foreach (var fact in orderedFacts.Skip(1))
+            return new(
+                BuildSegments(HierarchyKey.From, static _ => null),
+                BuildSegments(ShiftKey.From, static fact =>
+                    fact.ShiftBucketStartUtc is not null && fact.ShiftBucketEndUtc is not null
+                        ? new RuntimeWindow(fact.ShiftBucketStartUtc.Value, fact.ShiftBucketEndUtc.Value)
+                        : null),
+                BuildSegments(BusinessDayKey.From, static fact =>
+                    BucketKey.TryGetBusinessDayBounds(fact, out var startUtc, out var endUtc)
+                        ? new RuntimeWindow(startUtc, endUtc)
+                        : null));
+
+            IReadOnlyList<RuntimeOwnershipSegment> BuildSegments<TKey>(
+                Func<OeeProductionFact, TKey> keySelector,
+                Func<OeeProductionFact, RuntimeWindow?> authoritativeWindow)
+                where TKey : notnull
             {
-                var nextHierarchy = HierarchyKey.From(fact);
-                if (nextHierarchy == currentHierarchy)
+                var segments = new List<RuntimeOwnershipSegment>();
+                var currentFact = orderedFacts[0];
+                var currentKey = keySelector(currentFact);
+                var currentStart = request.WindowStartUtc;
+                foreach (var fact in orderedFacts.Skip(1))
                 {
-                    continue;
+                    var nextKey = keySelector(fact);
+                    if (EqualityComparer<TKey>.Default.Equals(nextKey, currentKey))
+                    {
+                        continue;
+                    }
+
+                    AddSegment(currentFact, currentStart, fact.AggregationOccurredAtUtc);
+                    var currentWindow = authoritativeWindow(currentFact);
+                    var nextWindow = authoritativeWindow(fact);
+                    currentStart = currentWindow is not null && nextWindow is not null &&
+                                   currentWindow.EndUtc <= nextWindow.StartUtc
+                        ? nextWindow.StartUtc
+                        : fact.AggregationOccurredAtUtc;
+                    currentFact = fact;
+                    currentKey = nextKey;
                 }
+                AddSegment(currentFact, currentStart, request.WindowEndUtc);
+                return segments;
 
-                AddSegment(currentFact, currentStart, fact.AggregationOccurredAtUtc);
-                currentFact = fact;
-                currentHierarchy = nextHierarchy;
-                currentStart = fact.AggregationOccurredAtUtc;
-            }
-            AddSegment(currentFact, currentStart, request.WindowEndUtc);
-            return segments;
-
-            void AddSegment(OeeProductionFact fact, DateTimeOffset startUtc, DateTimeOffset endUtc)
-            {
-                var clippedStart = startUtc < request.WindowStartUtc ? request.WindowStartUtc : startUtc;
-                var clippedEnd = endUtc > request.WindowEndUtc ? request.WindowEndUtc : endUtc;
-                if (clippedEnd > clippedStart)
+                void AddSegment(OeeProductionFact fact, DateTimeOffset startUtc, DateTimeOffset endUtc)
                 {
-                    segments.Add(new HierarchySegment(fact, clippedStart, clippedEnd));
+                    var window = authoritativeWindow(fact);
+                    var clippedStart = startUtc < request.WindowStartUtc ? request.WindowStartUtc : startUtc;
+                    var clippedEnd = endUtc > request.WindowEndUtc ? request.WindowEndUtc : endUtc;
+                    if (window is not null)
+                    {
+                        clippedStart = clippedStart < window.StartUtc ? window.StartUtc : clippedStart;
+                        clippedEnd = clippedEnd > window.EndUtc ? window.EndUtc : clippedEnd;
+                    }
+                    if (clippedEnd > clippedStart)
+                    {
+                        segments.Add(new RuntimeOwnershipSegment(fact, clippedStart, clippedEnd));
+                    }
                 }
             }
         }
+
+        static RuntimeWindow[] IntersectWindows(
+            IEnumerable<RuntimeWindow> left,
+            IEnumerable<RuntimeWindow> right) =>
+            (from leftWindow in left
+             from rightWindow in right
+             let startUtc = leftWindow.StartUtc > rightWindow.StartUtc ? leftWindow.StartUtc : rightWindow.StartUtc
+             let endUtc = leftWindow.EndUtc < rightWindow.EndUtc ? leftWindow.EndUtc : rightWindow.EndUtc
+             where endUtc > startUtc
+             select new RuntimeWindow(startUtc, endUtc)).ToArray();
 
         void AddWindow(
             string deviceId,
@@ -718,11 +772,24 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
     private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, int StateSampleCount, bool HasCompleteCoverage);
     private sealed record StatePoint(DateTimeOffset OccurredAtUtc, string State);
     private sealed record RuntimeWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
-    private sealed record HierarchySegment(OeeProductionFact Fact, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
+    private sealed record RuntimeOwnership(
+        IReadOnlyList<RuntimeOwnershipSegment> Hierarchy,
+        IReadOnlyList<RuntimeOwnershipSegment> Shifts,
+        IReadOnlyList<RuntimeOwnershipSegment> BusinessDays);
+    private sealed record RuntimeOwnershipSegment(OeeProductionFact Fact, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
     private sealed record HierarchyKey(string WorkCenterId, string? SiteCode, string? WorkshopCode, string? LineCode)
     {
         internal static HierarchyKey From(OeeProductionFact fact) =>
             new(fact.WorkCenterId, fact.SiteCode, fact.WorkshopCode, fact.LineCode);
+    }
+    private sealed record ShiftKey(string? ShiftCode, DateTimeOffset? StartUtc, DateTimeOffset? EndUtc)
+    {
+        internal static ShiftKey From(OeeProductionFact fact) =>
+            new(fact.ShiftCode, fact.ShiftBucketStartUtc, fact.ShiftBucketEndUtc);
+    }
+    private sealed record BusinessDayKey(DateOnly? BusinessDate, string? SiteTimezone)
+    {
+        internal static BusinessDayKey From(OeeProductionFact fact) => new(fact.BusinessDate, fact.SiteTimezone);
     }
     private sealed record FactBucket(BucketKey Key, OeeProductionFact[] Facts, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
     private sealed record DeviceBucketKey(string DeviceId, BucketKey Bucket);
@@ -762,7 +829,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                 _ => new(null, null, null, null, null, request.WindowStartUtc, request.WindowEndUtc),
             };
 
-        private static bool TryGetBusinessDayBounds(
+        internal static bool TryGetBusinessDayBounds(
             OeeProductionFact fact,
             out DateTimeOffset startUtc,
             out DateTimeOffset endUtc)
