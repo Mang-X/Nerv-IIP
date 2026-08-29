@@ -489,6 +489,8 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                 PrincipalId,
                 "user",
                 "admin",
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
                 scopeGrants:
                 [
                     new AuthorizationScopeGrant(
