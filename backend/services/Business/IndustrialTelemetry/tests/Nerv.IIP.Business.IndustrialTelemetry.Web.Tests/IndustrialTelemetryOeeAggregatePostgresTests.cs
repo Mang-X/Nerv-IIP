@@ -7,6 +7,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSn
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 

@@ -2,6 +2,10 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using BusinessOeeAggregateBucket = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucket;
+using BusinessOeeAggregateDimension = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDimension;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -148,14 +152,6 @@ public interface IBusinessIndustrialTelemetryClient
 public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessIndustrialTelemetryClient
 {
-    private static readonly JsonSerializerOptions OeeAggregateJsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        Converters =
-        {
-            new BusinessOeeAggregateDimensionJsonConverter(),
-            new BusinessOeeAggregateDegradedReasonJsonConverter(),
-        },
-    };
     private static readonly HashSet<string> EquipmentHealthRuleCodes = new(StringComparer.Ordinal)
     {
         "threshold-proximity",
@@ -541,7 +537,6 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("take", request.Take)),
             null,
             cancellationToken,
-            OeeAggregateJsonOptions,
             failClosedOnFailureEnvelope: true);
         if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
@@ -575,12 +570,12 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     private static bool BucketMatchesRequest(
         BusinessOeeAggregateBucket bucket,
         BusinessOeeAggregateRequest request) =>
-        MatchesWhenPresent(bucket.DeviceAssetId, request.DeviceAssetId)
-        && MatchesWhenPresent(bucket.WorkCenterId, request.WorkCenterId)
-        && MatchesWhenPresent(bucket.ShiftCode, request.ShiftCode)
-        && MatchesWhenPresent(bucket.LineCode, request.LineCode)
-        && MatchesWhenPresent(bucket.WorkshopCode, request.WorkshopCode)
-        && (bucket.BusinessDate is null || request.BusinessDate is null || bucket.BusinessDate == request.BusinessDate)
+        MatchesRequested(bucket.DeviceAssetId, request.DeviceAssetId)
+        && MatchesRequested(bucket.WorkCenterId, request.WorkCenterId)
+        && MatchesRequested(bucket.ShiftCode, request.ShiftCode)
+        && MatchesRequested(bucket.LineCode, request.LineCode)
+        && MatchesRequested(bucket.WorkshopCode, request.WorkshopCode)
+        && (request.BusinessDate is null || bucket.BusinessDate == request.BusinessDate)
         && (request.Dimension != BusinessOeeAggregateDimension.Device
             || request.DeviceAssetId is null
             || string.Equals(bucket.DeviceAssetId, request.DeviceAssetId, StringComparison.Ordinal))
@@ -600,8 +595,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             || request.BusinessDate is null
             || bucket.BusinessDate == request.BusinessDate);
 
-    private static bool MatchesWhenPresent(string? actual, string? requested) =>
-        actual is null || requested is null || string.Equals(actual, requested, StringComparison.Ordinal);
+    private static bool MatchesRequested(string? actual, string? requested) =>
+        requested is null || string.Equals(actual, requested, StringComparison.Ordinal);
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,

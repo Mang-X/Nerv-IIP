@@ -3,6 +3,9 @@ using System.Text;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Contracts.Iam;
+using BusinessOeeAggregateDegradedReason = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDegradedReason;
+using BusinessOeeAggregateDimension = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDimension;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -46,7 +49,22 @@ public sealed class BusinessOeeAggregateCapabilityTests
 
         var response = await capability.QueryAsync(OrganizationAuthorization(), request, CancellationToken.None);
 
-        Assert.Equal(canonicalDeviceId, Assert.Single(response.Buckets).DeviceAssetId);
+        var bucket = Assert.Single(response.Buckets);
+        Assert.Equal(canonicalDeviceId, bucket.DeviceAssetId);
+        Assert.Equal(1, bucket.DeviceCount);
+        Assert.Equal(2, bucket.StateSampleCount);
+        Assert.Equal(3, bucket.ProductionFactCount);
+        Assert.Equal(0.9m, bucket.AvailabilityRate);
+        Assert.Equal(0.8m, bucket.PerformanceRate);
+        Assert.Equal(0.95m, bucket.QualityRate);
+        Assert.Equal(0.684m, bucket.OeeRate);
+        Assert.Equal(10m, bucket.GoodQuantity);
+        Assert.Equal(1m, bucket.ScrapQuantity);
+        Assert.Equal(0m, bucket.ReworkQuantity);
+        Assert.Equal("PCS", bucket.OutputUomCode);
+        Assert.Equal(12m, bucket.ExpectedOutputQuantity);
+        Assert.True(bucket.IsDegraded);
+        Assert.Equal([BusinessOeeAggregateDegradedReason.RuntimeStateCoverageIncomplete], bucket.DegradedReasons);
         var query = telemetry.LastRequest!.RequestUri!.Query;
         Assert.Contains("dimension=device", query, StringComparison.Ordinal);
         Assert.Contains($"deviceAssetId={canonicalDeviceId}", query, StringComparison.Ordinal);
@@ -189,6 +207,69 @@ public sealed class BusinessOeeAggregateCapabilityTests
     }
 
     [Fact]
+    public async Task Query_ignores_an_unrelated_permission_grant_when_a_valid_telemetry_grant_exists()
+    {
+        var masterData = new RoutingHandler(request => ResourceResponse(request,
+            """{"resourceType":"work-center","code":"WC-01","displayName":"WC","active":true,"snapshotVersion":"v1","plantCode":"SITE-01","lineCode":"LINE-01","workshopCode":"WS-01"}"""));
+        var telemetry = new RoutingHandler(request => OeeResponse(request));
+        var capability = Capability(masterData, telemetry);
+        var valid = Assert.Single(OrganizationAuthorization().ScopeGrants!);
+        var authorization = OrganizationAuthorization() with
+        {
+            ScopeGrants =
+            [
+                valid,
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-inventory",
+                    "work-center",
+                    "WC-9",
+                    [BusinessGatewayPermissions.InventoryLedgerRead]),
+            ],
+        };
+
+        await capability.QueryAsync(
+            authorization,
+            new BusinessOeeAggregateRequest(
+                "org-001",
+                "env-dev",
+                BusinessOeeAggregateDimension.WorkCenter,
+                WindowStart,
+                WindowEnd,
+                WorkCenterId: "WC-01"),
+            CancellationToken.None);
+
+        Assert.NotNull(telemetry.LastRequest);
+    }
+
+    [Fact]
+    public async Task Query_rejects_an_authorization_result_bound_to_another_tenant_before_calling_downstream_services()
+    {
+        var masterData = new RoutingHandler(_ => throw new InvalidOperationException("MasterData must not be called."));
+        var telemetry = new RoutingHandler(_ => throw new InvalidOperationException("Telemetry must not be called."));
+        var capability = Capability(masterData, telemetry);
+        var authorization = OrganizationAuthorization() with
+        {
+            AuthorizedOrganizationId = "org-other",
+            AuthorizedEnvironmentId = "env-prod",
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => capability.QueryAsync(
+            authorization,
+            new BusinessOeeAggregateRequest(
+                "org-001",
+                "env-dev",
+                BusinessOeeAggregateDimension.Day,
+                WindowStart,
+                WindowEnd),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Null(masterData.LastRequest);
+        Assert.Null(telemetry.LastRequest);
+    }
+
+    [Fact]
     public async Task Industrial_telemetry_adapter_rejects_a_cross_organization_success_response()
     {
         var telemetry = new RoutingHandler(request => OeeResponse(request, organizationId: "org-other"));
@@ -201,6 +282,76 @@ public sealed class BusinessOeeAggregateCapabilityTests
                 "org-001",
                 "env-dev",
                 BusinessOeeAggregateDimension.Line,
+                WindowStart,
+                WindowEnd),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Industrial_telemetry_adapter_rejects_a_bucket_missing_a_requested_filter_identity()
+    {
+        var telemetry = new RoutingHandler(request => OeeResponse(request, omitWorkCenterId: true));
+        using var http = new HttpClient(telemetry) { BaseAddress = new Uri("https://telemetry.test") };
+        var client = new HttpBusinessIndustrialTelemetryClient(http);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.QueryOeeAggregatesAsync(
+            "internal-token",
+            new BusinessOeeAggregateRequest(
+                "org-001",
+                "env-dev",
+                BusinessOeeAggregateDimension.Day,
+                WindowStart,
+                WindowEnd,
+                WorkCenterId: "WC-01"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("master-data")]
+    [InlineData("industrial-telemetry")]
+    public async Task Query_maps_an_unavailable_downstream_to_service_unavailable(string downstream)
+    {
+        var masterData = downstream == "master-data"
+            ? new RoutingHandler(_ => throw new HttpRequestException("connection refused"))
+            : new RoutingHandler(request => ResourceResponse(request,
+                """{"resourceType":"work-center","code":"WC-01","displayName":"WC","active":true,"snapshotVersion":"v1","plantCode":"SITE-01","lineCode":"LINE-01","workshopCode":"WS-01"}"""));
+        var telemetry = new RoutingHandler(_ => throw new HttpRequestException("connection refused"));
+        var capability = Capability(masterData, telemetry);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => capability.QueryAsync(
+            OrganizationAuthorization(),
+            new BusinessOeeAggregateRequest(
+                "org-001",
+                "env-dev",
+                BusinessOeeAggregateDimension.WorkCenter,
+                WindowStart,
+                WindowEnd,
+                WorkCenterId: "WC-01"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal("downstream-unavailable", exception.Message);
+    }
+
+    [Fact]
+    public async Task Industrial_telemetry_adapter_fails_closed_on_a_failure_envelope()
+    {
+        var telemetry = new RoutingHandler(_ => Json("""{"success":false,"message":"broken","code":200}"""));
+        using var http = new HttpClient(telemetry) { BaseAddress = new Uri("https://telemetry.test") };
+        var client = new HttpBusinessIndustrialTelemetryClient(http);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.QueryOeeAggregatesAsync(
+            "internal-token",
+            new BusinessOeeAggregateRequest(
+                "org-001",
+                "env-dev",
+                BusinessOeeAggregateDimension.Day,
                 WindowStart,
                 WindowEnd),
             CancellationToken.None));
@@ -236,7 +387,9 @@ public sealed class BusinessOeeAggregateCapabilityTests
                     "org-001",
                     [BusinessGatewayPermissions.IiotTelemetryRead],
                     OrganizationWide: true),
-            ]);
+            ],
+            authorizedOrganizationId: "org-001",
+            authorizedEnvironmentId: "env-dev");
 
     private static BusinessGatewayAuthorizationResult ScopedAuthorization(string kind, string id) =>
         BusinessGatewayAuthorizationResult.Allowed(
@@ -248,7 +401,9 @@ public sealed class BusinessOeeAggregateCapabilityTests
                 kind == "workshop" ? [id] : [],
                 kind == "production-line" ? [id] : [],
                 WorkCenterCodes: kind == "work-center" ? [id] : []),
-            [new AuthorizationScopeGrant("role", "role-engineer", kind, id, [BusinessGatewayPermissions.IiotTelemetryRead])]);
+            [new AuthorizationScopeGrant("role", "role-engineer", kind, id, [BusinessGatewayPermissions.IiotTelemetryRead])],
+            authorizedOrganizationId: "org-001",
+            authorizedEnvironmentId: "env-dev");
 
     private static HttpResponseMessage ResourceResponse(HttpRequestMessage request, string resource)
     {
@@ -262,7 +417,8 @@ public sealed class BusinessOeeAggregateCapabilityTests
     private static HttpResponseMessage OeeResponse(
         HttpRequestMessage request,
         string? deviceAssetId = null,
-        string organizationId = "org-001")
+        string organizationId = "org-001",
+        bool omitWorkCenterId = false)
     {
         var query = request.RequestUri!.Query;
         var dimension = QueryValue(query, "dimension") ?? "device";
@@ -270,7 +426,7 @@ public sealed class BusinessOeeAggregateCapabilityTests
         var take = int.Parse(QueryValue(query, "take") ?? "100", System.Globalization.CultureInfo.InvariantCulture);
         var device = deviceAssetId ?? QueryValue(query, "deviceAssetId");
         return Json($$"""
-            {"success":true,"data":{"organizationId":"{{organizationId}}","environmentId":"env-dev","dimension":"{{dimension}}","windowStartUtc":"2026-08-01T00:00:00+00:00","windowEndUtc":"2026-08-02T00:00:00+00:00","buckets":[{"dimension":"{{dimension}}","dimensionValue":"bucket-1","siteCode":"SITE-01","workshopCode":"WS-01","lineCode":"LINE-01","workCenterId":"WC-01","deviceAssetId":{{(device is null ? "null" : $"\"{device}\"")}},"shiftCode":"SHIFT-A","businessDate":"2026-08-01","bucketStartUtc":"2026-08-01T00:00:00+00:00","bucketEndUtc":"2026-08-02T00:00:00+00:00","deviceCount":1,"stateSampleCount":2,"productionFactCount":3,"availabilityRate":0.9,"performanceRate":0.8,"qualityRate":0.95,"oeeRate":0.684,"goodQuantity":10,"scrapQuantity":1,"reworkQuantity":0,"outputUomCode":"PCS","expectedOutputQuantity":12,"isDegraded":true,"degradedReasons":["runtimeStateCoverageIncomplete"]}],"totalCount":1,"skip":{{skip}},"take":{{take}}},"message":"","code":0}
+            {"success":true,"data":{"organizationId":"{{organizationId}}","environmentId":"env-dev","dimension":"{{dimension}}","windowStartUtc":"2026-08-01T00:00:00+00:00","windowEndUtc":"2026-08-02T00:00:00+00:00","buckets":[{"dimension":"{{dimension}}","dimensionValue":"bucket-1","siteCode":"SITE-01","workshopCode":"WS-01","lineCode":"LINE-01","workCenterId":{{(omitWorkCenterId ? "null" : "\"WC-01\"")}},"deviceAssetId":{{(device is null ? "null" : $"\"{device}\"")}},"shiftCode":"SHIFT-A","businessDate":"2026-08-01","bucketStartUtc":"2026-08-01T00:00:00+00:00","bucketEndUtc":"2026-08-02T00:00:00+00:00","deviceCount":1,"stateSampleCount":2,"productionFactCount":3,"availabilityRate":0.9,"performanceRate":0.8,"qualityRate":0.95,"oeeRate":0.684,"goodQuantity":10,"scrapQuantity":1,"reworkQuantity":0,"outputUomCode":"PCS","expectedOutputQuantity":12,"isDegraded":true,"degradedReasons":["runtimeStateCoverageIncomplete"]}],"totalCount":1,"skip":{{skip}},"take":{{take}}},"message":"","code":0}
             """);
     }
 

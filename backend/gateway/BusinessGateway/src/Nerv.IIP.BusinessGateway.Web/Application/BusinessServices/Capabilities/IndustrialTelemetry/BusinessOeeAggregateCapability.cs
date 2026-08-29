@@ -1,117 +1,12 @@
 using System.Net;
-using System.Runtime.Serialization;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
+using BusinessOeeAggregateDimension = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDimension;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-
-[JsonConverter(typeof(BusinessOeeAggregateDimensionJsonConverter))]
-public enum BusinessOeeAggregateDimension
-{
-    [EnumMember(Value = "device")]
-    Device,
-    [EnumMember(Value = "workCenter")]
-    WorkCenter,
-    [EnumMember(Value = "line")]
-    Line,
-    [EnumMember(Value = "workshop")]
-    Workshop,
-    [EnumMember(Value = "shift")]
-    Shift,
-    [EnumMember(Value = "day")]
-    Day,
-}
-
-public sealed class BusinessOeeAggregateDimensionJsonConverter()
-    : JsonStringEnumConverter<BusinessOeeAggregateDimension>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
-
-[JsonConverter(typeof(BusinessOeeAggregateDegradedReasonJsonConverter))]
-public enum BusinessOeeAggregateDegradedReason
-{
-    RuntimeStateFactsMissing,
-    RuntimeStateCoverageIncomplete,
-    ProductionUomAmbiguous,
-    ProductionOutputMissing,
-    TheoreticalRateMissingOrAmbiguous,
-    ProductiveRuntimeMissing,
-    LoadingRuntimeMissing,
-    HistoricalDimensionLegacyUnresolved,
-    HistoricalHierarchyMissing,
-    HistoricalTimezoneMissing,
-    HistoricalTimezoneInvalid,
-    HistoricalShiftDefinitionMissing,
-    HistoricalShiftDefinitionInvalid,
-    HistoricalReportOutsideShiftWindow,
-    HistoricalLocalTimeInvalid,
-    HistoricalLocalTimeAmbiguous,
-    SiteDimensionMissing,
-    WorkshopDimensionMissing,
-    LineDimensionMissing,
-    SiteDimensionAmbiguous,
-    WorkshopDimensionAmbiguous,
-    LineDimensionAmbiguous,
-    SiteTimezoneOrDayBoundaryMissing,
-    ShiftDefinitionOrBoundaryMissing,
-}
-
-public sealed class BusinessOeeAggregateDegradedReasonJsonConverter()
-    : JsonStringEnumConverter<BusinessOeeAggregateDegradedReason>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
-
-public sealed record BusinessOeeAggregateRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    BusinessOeeAggregateDimension Dimension,
-    DateTimeOffset WindowStartUtc,
-    DateTimeOffset WindowEndUtc,
-    string? DeviceAssetId = null,
-    string? WorkCenterId = null,
-    string? ShiftCode = null,
-    string? LineCode = null,
-    string? WorkshopCode = null,
-    DateOnly? BusinessDate = null,
-    int Skip = 0,
-    int Take = 100);
-
-public sealed record BusinessOeeAggregateResponse(
-    string OrganizationId,
-    string EnvironmentId,
-    BusinessOeeAggregateDimension Dimension,
-    DateTimeOffset WindowStartUtc,
-    DateTimeOffset WindowEndUtc,
-    IReadOnlyCollection<BusinessOeeAggregateBucket> Buckets,
-    int TotalCount,
-    int Skip,
-    int Take);
-
-public sealed record BusinessOeeAggregateBucket(
-    BusinessOeeAggregateDimension Dimension,
-    string? DimensionValue,
-    string? SiteCode,
-    string? WorkshopCode,
-    string? LineCode,
-    string? WorkCenterId,
-    string? DeviceAssetId,
-    string? ShiftCode,
-    DateOnly? BusinessDate,
-    DateTimeOffset BucketStartUtc,
-    DateTimeOffset BucketEndUtc,
-    int DeviceCount,
-    int StateSampleCount,
-    int ProductionFactCount,
-    decimal? AvailabilityRate,
-    decimal? PerformanceRate,
-    decimal? QualityRate,
-    decimal? OeeRate,
-    decimal GoodQuantity,
-    decimal ScrapQuantity,
-    decimal ReworkQuantity,
-    string? OutputUomCode,
-    decimal? ExpectedOutputQuantity,
-    bool IsDegraded,
-    IReadOnlyCollection<BusinessOeeAggregateDegradedReason> DegradedReasons);
 
 public interface IBusinessOeeAggregateCapability
 {
@@ -135,7 +30,28 @@ public sealed class BusinessOeeAggregateCapability(
         CancellationToken cancellationToken)
     {
         ValidateRequest(request);
-        var grants = TrustedGrants(authorization, request.OrganizationId);
+        if (!authorization.IsAllowed
+            || string.IsNullOrWhiteSpace(authorization.PrincipalId)
+            || authorization.DataScope?.DenyAll == true
+            || !string.Equals(
+                authorization.AuthorizedOrganizationId,
+                request.OrganizationId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                authorization.AuthorizedEnvironmentId,
+                request.EnvironmentId,
+                StringComparison.Ordinal))
+        {
+            throw Forbidden();
+        }
+
+        var grants = PrincipalWorkContextAuthorizationResolver.TrustedGrantsForPermission(
+            authorization,
+            BusinessGatewayPermissions.IiotTelemetryRead);
+        if (grants.Length == 0)
+        {
+            throw Forbidden();
+        }
         var organizationWide = grants.Any(grant =>
             grant.OrganizationWide
             && Kind(grant) == "organization"
@@ -327,35 +243,6 @@ public sealed class BusinessOeeAggregateCapability(
                 return resources;
             }
         }
-    }
-
-    private static AuthorizationScopeGrant[] TrustedGrants(
-        BusinessGatewayAuthorizationResult authorization,
-        string organizationId)
-    {
-        if (!authorization.IsAllowed
-            || string.IsNullOrWhiteSpace(authorization.PrincipalId)
-            || authorization.DataScope?.DenyAll == true
-            || authorization.ScopeGrants is not { Count: > 0 })
-        {
-            throw Forbidden();
-        }
-
-        var grants = authorization.ScopeGrants.ToArray();
-        if (grants.Any(grant =>
-                grant is null
-                || grant.SourceKind.Trim().ToLowerInvariant() is not ("role" or "membership")
-                || string.IsNullOrWhiteSpace(grant.SourceId)
-                || string.IsNullOrWhiteSpace(grant.ScopeId)
-                || Kind(grant) is not ("organization" or "site" or "workshop" or "production-line" or "work-center")
-                || grant.ApplicablePermissionCodes?.Contains(BusinessGatewayPermissions.IiotTelemetryRead, StringComparer.Ordinal) != true
-                || Kind(grant) == "organization"
-                    && (!grant.OrganizationWide || !string.Equals(grant.ScopeId, organizationId, StringComparison.Ordinal))))
-        {
-            throw Forbidden();
-        }
-
-        return grants;
     }
 
     private static bool Authorizes(AuthorizationScopeGrant grant, SpatialSelection selection) => Kind(grant) switch
