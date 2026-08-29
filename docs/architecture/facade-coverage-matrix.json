@@ -720,6 +720,22 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
+      "operationId": "listErpWorkCenterMachineOverheadReconciliations",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
+      "operationId": "reconcileErpWorkCenterMachineOverhead",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/month-end-checklist",
       "operationId": "getErpMonthEndChecklist",
       "classification": "exposed",
