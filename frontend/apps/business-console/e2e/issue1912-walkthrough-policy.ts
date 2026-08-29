@@ -204,7 +204,7 @@ function isListRequest(request: Request, listPath: string): boolean {
   return request.method() === 'GET' && new URL(request.url()).pathname === listPath
 }
 export function listQueryFingerprint(url: string): string {
-  const entries = [...new URL(url).searchParams.entries()]
+  const entries = [...new URL(url, 'http://walkthrough.expected').searchParams.entries()]
     .filter(([key]) => key !== 'keyword')
     .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
       `${leftKey}\u0000${leftValue}`.localeCompare(`${rightKey}\u0000${rightValue}`),

@@ -18,6 +18,7 @@ import {
 } from '../e2e/issue1912-walkthrough-runtime'
 import {
   classifyRequestFailure,
+  listQueryFingerprint,
   type RequestCancellationEvidence,
   RequestFailureEvidenceTracker,
 } from '../e2e/issue1912-walkthrough-policy'
@@ -236,6 +237,15 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     })
 
     await expect(tracker.headers()).resolves.toBeUndefined()
+  })
+
+  it('uses the same query fingerprint for canonical relative and absolute list paths', () => {
+    const relativeListPath =
+      '/api/business-console/v1/erp/procurement/rfqs?warehouseId=WH-001&keyword=RFQ-WALK-001'
+
+    expect(listQueryFingerprint(relativeListPath)).toBe(
+      listQueryFingerprint(`https://console.fixture${relativeListPath}`),
+    )
   })
 
   it('starts only from the reserved walkthrough facts and keeps downstream numbers stable', () => {
