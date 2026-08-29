@@ -4,11 +4,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -22,7 +25,17 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
 
-        await HandleAsync(provider, CreateEvent());
+        ReworkWorkOrderCreatedDomainEvent createdDomainEvent;
+        await using (var creationScope = provider.CreateAsyncScope())
+        {
+            var creationDb = creationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var coordinator = new CapturingReworkScopeCoordinator(
+                creationScope.ServiceProvider.GetRequiredService<IMesReworkWorkOrderScopeCoordinator>(),
+                creationDb);
+            await CreateHandler(creationScope.ServiceProvider, coordinator)
+                .HandleAsync(CreateEvent(), CancellationToken.None);
+            createdDomainEvent = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(coordinator.Captured);
+        }
         await HandleAsync(provider, CreateEvent(eventId: "evt-replay-002"));
 
         await using var assertionScope = provider.CreateAsyncScope();
@@ -36,11 +49,59 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         Assert.Equal(3m, workOrder.Quantity);
         Assert.Equal("LOT-001", workOrder.SourceLotNo);
         Assert.Equal("SN-001", workOrder.SourceSerialNo);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-29T08:00:00Z"), workOrder.SourceReworkRequestedAtUtc);
         Assert.Single(await db.ProcessedIntegrationEvents
             .Where(x => x.ConsumerName == NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName)
             .ToArrayAsync());
         var numbering = await db.CodeIdempotencyKeys.SingleAsync(x => x.IdempotencyKey == CreateEvent().IdempotencyKey);
         Assert.Equal(workOrder.WorkOrderIdValue, numbering.Code);
+        var receipt = new ReworkWorkOrderCreatedIntegrationEventConverter().Convert(createdDomainEvent);
+        Assert.Equal("corr-001", receipt.CorrelationId);
+        Assert.Equal("evt-rework-001", receipt.CausationId);
+        Assert.Equal("NCR-2026-0001", receipt.Payload.SourceNcrCode);
+        Assert.Equal("SKU-001", receipt.Payload.SkuCode);
+        Assert.Equal("LOT-001", receipt.Payload.SourceLotNo);
+        Assert.Equal("SN-001", receipt.Payload.SourceSerialNo);
+
+        db.WorkOrders.Add(WorkOrder.CreateRework(
+            "org-001",
+            "env-dev",
+            "WO-RW-DUPLICATE",
+            "SKU-001",
+            "PV-001",
+            "PCS",
+            3m,
+            100,
+            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+            "WO-SOURCE-001",
+            "OP-SOURCE-10",
+            "DEF-001",
+            "ncr-001",
+            "NCR-2026-0001",
+            "LOT-001",
+            "SN-001",
+            DateTimeOffset.Parse("2026-08-29T08:00:00Z"),
+            "corr-duplicate",
+            "evt-duplicate"));
+        var duplicate = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        var uniqueViolation = Assert.IsType<PostgresException>(duplicate.InnerException);
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, uniqueViolation.SqlState);
+        Assert.Equal("ux_work_orders_scope_source_ncr", uniqueViolation.ConstraintName);
+        db.ChangeTracker.Clear();
+
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE mes.work_orders
+            SET work_order_type = 'rework'
+            WHERE organization_id = 'org-001'
+              AND environment_id = 'env-dev'
+              AND work_order_id = 'WO-SOURCE-001'
+            """;
+        var invalidSource = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(PostgresErrorCodes.CheckViolation, invalidSource.SqlState);
+        Assert.Equal("ck_work_orders_rework_source", invalidSource.ConstraintName);
     }
 
     [MesRealPostgresFact]
@@ -51,7 +112,9 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await SeedSourceAsync(provider, "org-001", "env-dev");
         await HandleAsync(provider, CreateEvent());
 
-        await HandleAsync(provider, CreateEvent(eventId: "evt-conflict", quantity: 2m));
+        await HandleAsync(provider, CreateEvent(
+            eventId: "evt-conflict",
+            requestedAtUtc: DateTimeOffset.Parse("2026-08-29T08:01:00Z")));
 
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -71,8 +134,13 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await using var provider = await CreateMigratedProviderAsync();
         await HandleAsync(provider, CreateEvent(eventId: "evt-missing-defect"));
         await SeedSourceAsync(provider, "org-001", "env-dev");
+        await SeedDefectAsync(provider, "org-001", "env-dev", "DEF-OP-MISMATCH", "OP-OTHER");
         await HandleAsync(provider, CreateEvent(eventId: "evt-sku-mismatch", skuCode: "SKU-WRONG", idempotencyKey: "quality:rework:sku-wrong"));
         await HandleAsync(provider, CreateEvent(eventId: "evt-quantity-mismatch", quantity: 2m, idempotencyKey: "quality:rework:quantity-wrong"));
+        await HandleAsync(provider, CreateEvent(
+            eventId: "evt-operation-mismatch",
+            sourceDefectNo: "DEF-OP-MISMATCH",
+            idempotencyKey: "quality:rework:operation-wrong"));
 
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -87,6 +155,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 "mes.ncrReworkRequested.sourceDefectMissing",
                 "mes.ncrReworkRequested.skuMismatch",
                 "mes.ncrReworkRequested.quantityMismatch",
+                "mes.ncrReworkRequested.sourceOperationMismatch",
             ],
             deadLetters.Select(x => x.FailureCode).ToArray());
     }
@@ -211,6 +280,27 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await CreateHandler(scope.ServiceProvider).HandleAsync(integrationEvent, CancellationToken.None);
     }
 
+    private static async Task SeedDefectAsync(
+        IServiceProvider provider,
+        string organizationId,
+        string environmentId,
+        string defectNo,
+        string operationTaskId)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.DefectRecords.Add(DefectRecord.Create(
+            organizationId,
+            environmentId,
+            defectNo,
+            "WO-SOURCE-001",
+            operationTaskId,
+            "surface-defect",
+            3m,
+            DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
+        await db.SaveChangesAsync();
+    }
+
     private static NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder CreateHandler(
         IServiceProvider provider,
         IMesReworkWorkOrderScopeCoordinator? coordinator = null)
@@ -229,7 +319,9 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         string environmentId = "env-dev",
         string skuCode = "SKU-001",
         decimal quantity = 3m,
-        string idempotencyKey = "quality:rework:org-001:env-dev:ncr-001") => new(
+        string sourceDefectNo = "DEF-001",
+        string idempotencyKey = "quality:rework:org-001:env-dev:ncr-001",
+        DateTimeOffset? requestedAtUtc = null) => new(
             eventId,
             QualityIntegrationEventTypes.NcrReworkRequested,
             QualityIntegrationEventVersions.V1,
@@ -244,12 +336,12 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             new NcrReworkRequestedPayload(
                 "ncr-001",
                 "NCR-2026-0001",
-                "DEF-001",
+                sourceDefectNo,
                 skuCode,
                 quantity,
                 "LOT-001",
                 "SN-001",
-                DateTimeOffset.Parse("2026-08-29T08:00:00Z")));
+                requestedAtUtc ?? DateTimeOffset.Parse("2026-08-29T08:00:00Z")));
 
     private sealed class BlockingReworkScopeCoordinator(
         IMesReworkWorkOrderScopeCoordinator inner,
@@ -271,6 +363,33 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                     await action(token);
                     firstEntered.SetResult();
                     await releaseFirst.Task.WaitAsync(token);
+                },
+                cancellationToken);
+    }
+
+    private sealed class CapturingReworkScopeCoordinator(
+        IMesReworkWorkOrderScopeCoordinator inner,
+        ApplicationDbContext dbContext) : IMesReworkWorkOrderScopeCoordinator
+    {
+        public ReworkWorkOrderCreatedDomainEvent? Captured { get; private set; }
+
+        public Task ExecuteAsync(
+            string organizationId,
+            string environmentId,
+            string ncrId,
+            Func<CancellationToken, Task> action,
+            CancellationToken cancellationToken) =>
+            inner.ExecuteAsync(
+                organizationId,
+                environmentId,
+                ncrId,
+                async token =>
+                {
+                    await action(token);
+                    var workOrder = dbContext.ChangeTracker.Entries<WorkOrder>()
+                        .Single(x => x.State == EntityState.Added && x.Entity.WorkOrderType == WorkOrder.ReworkType)
+                        .Entity;
+                    Captured = Assert.Single(workOrder.GetDomainEvents().OfType<ReworkWorkOrderCreatedDomainEvent>());
                 },
                 cancellationToken);
     }

@@ -37,6 +37,10 @@ public sealed class QualityNcrIntegrationEventTests
 
         Assert.Equal(QualityIntegrationEventTypes.NcrReworkRequested, integrationEvent.EventType);
         Assert.Equal(QualityIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("corr-test-001", integrationEvent.CorrelationId);
+        Assert.Equal("cause-test-001", integrationEvent.CausationId);
+        Assert.Equal("org-001", integrationEvent.OrganizationId);
+        Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal(ncr.Id.ToString(), integrationEvent.Payload.NcrId);
         Assert.Equal("NCR-2026-0001", integrationEvent.Payload.NcrCode);
         Assert.Equal("DEF-001", integrationEvent.Payload.SourceDefectNo);

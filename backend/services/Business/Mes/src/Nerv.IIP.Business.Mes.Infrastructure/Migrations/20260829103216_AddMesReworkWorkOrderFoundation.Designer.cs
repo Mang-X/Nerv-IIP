@@ -2870,6 +2870,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("source_operation_task_id")
                         .HasComment("Optional MES source operation task business id for a rework work order.");
 
+                    b.Property<DateTimeOffset?>("SourceReworkRequestedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("source_rework_requested_at_utc")
+                        .HasComment("UTC time carried by the Quality NCR rework request.");
+
                     b.Property<string>("SourceSerialNo")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
@@ -2939,7 +2944,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         {
                             t.HasComment("MES durable work orders created from business demand and ProductEngineering production version references.");
 
-                            t.HasCheckConstraint("ck_work_orders_rework_source", "(work_order_type = 'standard' AND source_work_order_id IS NULL AND source_operation_task_id IS NULL AND source_defect_no IS NULL AND source_ncr_id IS NULL AND source_ncr_code IS NULL AND source_lot_no IS NULL AND source_serial_no IS NULL) OR (work_order_type = 'rework' AND source_work_order_id IS NOT NULL AND source_defect_no IS NOT NULL AND source_ncr_id IS NOT NULL AND source_ncr_code IS NOT NULL)");
+                            t.HasCheckConstraint("ck_work_orders_rework_source", "(work_order_type = 'standard' AND source_work_order_id IS NULL AND source_operation_task_id IS NULL AND source_defect_no IS NULL AND source_ncr_id IS NULL AND source_ncr_code IS NULL AND source_lot_no IS NULL AND source_serial_no IS NULL AND source_rework_requested_at_utc IS NULL) OR (work_order_type = 'rework' AND source_work_order_id IS NOT NULL AND source_defect_no IS NOT NULL AND source_ncr_id IS NOT NULL AND source_ncr_code IS NOT NULL AND source_rework_requested_at_utc IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_work_orders_version_positive", "version > 0");
                         });

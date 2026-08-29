@@ -64,6 +64,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 nullable: true,
                 comment: "Optional source serial from the Quality NCR rework request.");
 
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "source_rework_requested_at_utc",
+                schema: "mes",
+                table: "work_orders",
+                type: "timestamp with time zone",
+                nullable: true,
+                comment: "UTC time carried by the Quality NCR rework request.");
+
             migrationBuilder.AddColumn<string>(
                 name: "source_work_order_id",
                 schema: "mes",
@@ -95,7 +103,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 name: "ck_work_orders_rework_source",
                 schema: "mes",
                 table: "work_orders",
-                sql: "(work_order_type = 'standard' AND source_work_order_id IS NULL AND source_operation_task_id IS NULL AND source_defect_no IS NULL AND source_ncr_id IS NULL AND source_ncr_code IS NULL AND source_lot_no IS NULL AND source_serial_no IS NULL) OR (work_order_type = 'rework' AND source_work_order_id IS NOT NULL AND source_defect_no IS NOT NULL AND source_ncr_id IS NOT NULL AND source_ncr_code IS NOT NULL)");
+                sql: "(work_order_type = 'standard' AND source_work_order_id IS NULL AND source_operation_task_id IS NULL AND source_defect_no IS NULL AND source_ncr_id IS NULL AND source_ncr_code IS NULL AND source_lot_no IS NULL AND source_serial_no IS NULL AND source_rework_requested_at_utc IS NULL) OR (work_order_type = 'rework' AND source_work_order_id IS NOT NULL AND source_defect_no IS NOT NULL AND source_ncr_id IS NOT NULL AND source_ncr_code IS NOT NULL AND source_rework_requested_at_utc IS NOT NULL)");
         }
 
         /// <inheritdoc />
@@ -138,6 +146,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
             migrationBuilder.DropColumn(
                 name: "source_serial_no",
+                schema: "mes",
+                table: "work_orders");
+
+            migrationBuilder.DropColumn(
+                name: "source_rework_requested_at_utc",
                 schema: "mes",
                 table: "work_orders");
 

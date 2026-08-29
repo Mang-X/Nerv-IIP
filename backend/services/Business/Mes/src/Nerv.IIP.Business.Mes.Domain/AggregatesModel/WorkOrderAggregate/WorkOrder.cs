@@ -107,7 +107,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         string? sourceNcrId = null,
         string? sourceNcrCode = null,
         string? sourceLotNo = null,
-        string? sourceSerialNo = null)
+        string? sourceSerialNo = null,
+        DateTimeOffset? sourceReworkRequestedAtUtc = null)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -128,6 +129,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         SourceNcrCode = string.IsNullOrWhiteSpace(sourceNcrCode) ? null : sourceNcrCode.Trim();
         SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
         SourceSerialNo = string.IsNullOrWhiteSpace(sourceSerialNo) ? null : sourceSerialNo.Trim();
+        SourceReworkRequestedAtUtc = sourceReworkRequestedAtUtc;
         Status = CreatedStatus;
         Version = 1;
         CreatedAtUtc = DateTimeOffset.UtcNow;
@@ -166,6 +168,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? SourceNcrCode { get; private set; }
     public string? SourceLotNo { get; private set; }
     public string? SourceSerialNo { get; private set; }
+    public DateTimeOffset? SourceReworkRequestedAtUtc { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
 
@@ -216,7 +219,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         string sourceNcrCode,
         string? sourceLotNo,
         string? sourceSerialNo,
-        DateTimeOffset requestedAtUtc)
+        DateTimeOffset requestedAtUtc,
+        string correlationId,
+        string causationId)
     {
         var workOrder = new WorkOrder(
             organizationId,
@@ -237,8 +242,13 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             DomainGuard.Required(sourceNcrId, nameof(sourceNcrId)),
             DomainGuard.Required(sourceNcrCode, nameof(sourceNcrCode)),
             sourceLotNo,
-            sourceSerialNo);
-        workOrder.AddDomainEvent(new ReworkWorkOrderCreatedDomainEvent(workOrder, requestedAtUtc));
+            sourceSerialNo,
+            requestedAtUtc);
+        workOrder.AddDomainEvent(new ReworkWorkOrderCreatedDomainEvent(
+            workOrder,
+            requestedAtUtc,
+            DomainGuard.Required(correlationId, nameof(correlationId)),
+            DomainGuard.Required(causationId, nameof(causationId))));
         return workOrder;
     }
 

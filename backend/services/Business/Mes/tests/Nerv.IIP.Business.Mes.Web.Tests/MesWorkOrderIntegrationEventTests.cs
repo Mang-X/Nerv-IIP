@@ -29,7 +29,9 @@ public sealed class MesWorkOrderIntegrationEventTests
             "NCR-2026-0001",
             "LOT-001",
             "SN-001",
-            requestedAtUtc);
+            requestedAtUtc,
+            "corr-001",
+            "evt-rework-requested-001");
 
         var integrationEvent = new ReworkWorkOrderCreatedIntegrationEventConverter()
             .Convert(Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents())));
@@ -38,12 +40,17 @@ public sealed class MesWorkOrderIntegrationEventTests
         Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
-        Assert.Equal("ncr-001", integrationEvent.CausationId);
+        Assert.Equal("corr-001", integrationEvent.CorrelationId);
+        Assert.Equal("evt-rework-requested-001", integrationEvent.CausationId);
         Assert.Equal("WO-RW-001", integrationEvent.Payload.ReworkWorkOrderId);
         Assert.Equal("WO-SOURCE-001", integrationEvent.Payload.SourceWorkOrderId);
         Assert.Equal("OP-SOURCE-10", integrationEvent.Payload.SourceOperationTaskId);
         Assert.Equal("ncr-001", integrationEvent.Payload.SourceNcrId);
+        Assert.Equal("NCR-2026-0001", integrationEvent.Payload.SourceNcrCode);
+        Assert.Equal("SKU-001", integrationEvent.Payload.SkuCode);
         Assert.Equal(3m, integrationEvent.Payload.Quantity);
+        Assert.Equal("LOT-001", integrationEvent.Payload.SourceLotNo);
+        Assert.Equal("SN-001", integrationEvent.Payload.SourceSerialNo);
     }
 
     [Fact]

@@ -18,7 +18,9 @@ public sealed record WorkOrderCreatedDomainEvent(WorkOrder WorkOrder) : IDomainE
 
 public sealed record ReworkWorkOrderCreatedDomainEvent(
     WorkOrder WorkOrder,
-    DateTimeOffset RequestedAtUtc) : IDomainEvent;
+    DateTimeOffset RequestedAtUtc,
+    string CorrelationId,
+    string CausationId) : IDomainEvent;
 
 public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
 

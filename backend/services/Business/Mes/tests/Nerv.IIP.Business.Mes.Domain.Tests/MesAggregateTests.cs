@@ -34,7 +34,9 @@ public sealed class MesAggregateTests
             "NCR-2026-0001",
             "LOT-001",
             "SN-001",
-            requestedAtUtc);
+            requestedAtUtc,
+            "corr-001",
+            "evt-rework-requested-001");
 
         Assert.Equal(WorkOrder.ReworkType, workOrder.WorkOrderType);
         Assert.Equal("WO-SOURCE-001", workOrder.SourceWorkOrderId);
@@ -44,9 +46,12 @@ public sealed class MesAggregateTests
         Assert.Equal("NCR-2026-0001", workOrder.SourceNcrCode);
         Assert.Equal("LOT-001", workOrder.SourceLotNo);
         Assert.Equal("SN-001", workOrder.SourceSerialNo);
+        Assert.Equal(requestedAtUtc, workOrder.SourceReworkRequestedAtUtc);
         var created = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
         Assert.Same(workOrder, created.WorkOrder);
         Assert.Equal(requestedAtUtc, created.RequestedAtUtc);
+        Assert.Equal("corr-001", created.CorrelationId);
+        Assert.Equal("evt-rework-requested-001", created.CausationId);
     }
 
     [Fact]

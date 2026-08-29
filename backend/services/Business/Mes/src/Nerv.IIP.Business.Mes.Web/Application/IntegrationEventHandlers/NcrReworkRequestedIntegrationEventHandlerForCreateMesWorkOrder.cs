@@ -158,7 +158,8 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
                 payload.LotNo,
                 payload.SerialNo,
                 sourceWorkOrder.WorkOrderIdValue,
-                defect.OperationTaskId),
+                defect.OperationTaskId,
+                payload.RequestedAtUtc),
             cancellationToken);
         dbContext.WorkOrders.Add(WorkOrder.CreateRework(
             integrationEvent.OrganizationId,
@@ -177,7 +178,9 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
             payload.NcrCode,
             payload.LotNo,
             payload.SerialNo,
-            payload.RequestedAtUtc));
+            payload.RequestedAtUtc,
+            integrationEvent.CorrelationId,
+            integrationEvent.EventId));
     }
 
     private static bool Matches(WorkOrder workOrder, NcrReworkRequestedPayload payload) =>
@@ -187,7 +190,8 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
         workOrder.SkuId == payload.SkuCode &&
         workOrder.Quantity == payload.Quantity &&
         workOrder.SourceLotNo == payload.LotNo &&
-        workOrder.SourceSerialNo == payload.SerialNo;
+        workOrder.SourceSerialNo == payload.SerialNo &&
+        workOrder.SourceReworkRequestedAtUtc == payload.RequestedAtUtc;
 
     private Task DeadLetterAsync(
         NcrReworkRequestedIntegrationEvent integrationEvent,
