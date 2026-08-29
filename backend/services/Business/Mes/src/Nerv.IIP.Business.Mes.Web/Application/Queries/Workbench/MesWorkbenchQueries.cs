@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Contracts.Mes;
 using ScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 using WorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 
@@ -2111,7 +2112,6 @@ public static class MesTraceabilityProductionReportQueries
     public const string ProductionReportNodeType = "ProductionReport";
     public const string OperatorNodeType = "Operator";
     public const string DeviceAssetNodeType = "DeviceAsset";
-    public const string InspectionResultNodeType = "InspectionResult";
 
     public static IQueryable<ProductionReport> ActiveProductionReports(this ApplicationDbContext dbContext)
     {
@@ -2196,7 +2196,7 @@ public static class MesTraceabilityProductionReportQueries
             foreach (var defectRecord in defectRecords.Where(x =>
                 string.Equals(x.OperationTaskId, report.OperationTaskId, StringComparison.Ordinal)))
             {
-                AddNode(defectRecord.DefectNo, InspectionResultNodeType, defectRecord.DefectCode, defectRecord.Status, defectRecord.RecordedAtUtc);
+                AddNode(defectRecord.DefectNo, MesTraceabilityNodeTypes.InspectionResult, defectRecord.DefectCode, defectRecord.Status, defectRecord.RecordedAtUtc);
                 AddEdge(report.OperationTaskId, defectRecord.DefectNo, "inspected-as");
             }
         }
