@@ -1947,13 +1947,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     serialNo?: string | null;
     attemptNumber?: number | null;
     reinspectionOfInspectionRecordId?: string | null;
-    closeReason?: string | null;
     timeIntervalHours?: number | null;
     quantityInterval?: number | null;
     assignedInspectorUserId?: string | null;
     assignedTeamId?: string | null;
-    reworkWorkOrderCreationStatus?: string | null;
-    reworkWorkOrderId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanListRequest = {
@@ -2174,6 +2171,31 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem = {
+    id?: string;
+    code?: string;
+    status?: string;
+    sourceType?: string;
+    sourceDocumentId?: string;
+    skuCode?: string;
+    defectQuantity?: number;
+    defectReason?: string;
+    batchNo?: string | null;
+    serialNo?: string | null;
+    closeReason?: string | null;
+    reworkWorkOrderCreationStatus: string;
+    reworkWorkOrderId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
@@ -11700,7 +11722,7 @@ export type ListBusinessConsoleQualityNcrsResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse;
 };
 
 export type ListBusinessConsoleQualityNcrsResponse = ListBusinessConsoleQualityNcrsResponses[keyof ListBusinessConsoleQualityNcrsResponses];

@@ -18,14 +18,6 @@ public enum ReworkWorkOrderBindingOutcome
     BindingConflict,
 }
 
-public interface IReworkWorkOrderBindingStore
-{
-    Task<ReworkWorkOrderBindingOutcome> BindAsync(
-        ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
-        NonconformanceReportId ncrId,
-        CancellationToken cancellationToken);
-}
-
 public interface IReworkWorkOrderBindingWriter
 {
     Task<bool> TryWriteAsync(NonconformanceReport candidate, CancellationToken cancellationToken);
@@ -33,7 +25,7 @@ public interface IReworkWorkOrderBindingWriter
 
 public sealed class ReworkWorkOrderBindingStore(
     ApplicationDbContext dbContext,
-    IReworkWorkOrderBindingWriter bindingWriter) : IReworkWorkOrderBindingStore
+    IReworkWorkOrderBindingWriter bindingWriter)
 {
     public async Task<ReworkWorkOrderBindingOutcome> BindAsync(
         ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
@@ -117,7 +109,7 @@ public sealed class PostgresReworkWorkOrderBindingWriter(ApplicationDbContext db
 
 [IntegrationEventConsumer(nameof(ReworkWorkOrderCreatedIntegrationEvent), ConsumerName)]
 public sealed class ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr(
-    IReworkWorkOrderBindingStore bindingStore,
+    ReworkWorkOrderBindingStore bindingStore,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<ReworkWorkOrderCreatedIntegrationEvent>, ICapSubscribe
 {

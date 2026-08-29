@@ -195,9 +195,16 @@ public sealed class BusinessGatewayOpenApiTests
             "timeIntervalHours",
             "quantityInterval",
             "assignedInspectorUserId",
-            "assignedTeamId",
+            "assignedTeamId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleQualityNcrItem",
             "reworkWorkOrderCreationStatus",
             "reworkWorkOrderId");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleQualityNcrItem",
+            "reworkWorkOrderCreationStatus");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate", "post", "activateBusinessConsoleQualityInspectionPlan");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "get", "listBusinessConsoleQualityInspectionRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");

@@ -2,7 +2,7 @@
 import type {
   BusinessConsoleNcrCloseRequest,
   BusinessConsoleNcrDispositionRequest,
-  BusinessConsoleQualityItem,
+  BusinessConsoleQualityNcrItem,
 } from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
@@ -92,7 +92,7 @@ const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
 
-const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
+const selectedNcr = shallowRef<BusinessConsoleQualityNcrItem>()
 const detailOpen = shallowRef(false)
 /**
  * 关闭不合格品的二次确认框。原先是**非受控**（只靠 `NvAlertDialogTrigger` 开、
@@ -118,12 +118,11 @@ const dispositionForm = reactive({
 })
 const closeForm = reactive({
   reason: '',
-  reworkWorkOrderId: '',
   scrapMovementId: '',
   returnDocumentId: '',
 })
 
-// 上下文穿透：从工单带入时，关闭动作的返工工单默认填入来源工单。
+// 上下文穿透：从工单带入时提供返回入口；返工工单绑定只读取 MES 回执事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 // 从 MES 质量项点具体 NCR 带入时，定位并自动打开对应 NCR 处置抽屉。
 const targetNcrId = computed(() => firstQuery(route.query.ncrId))
@@ -151,7 +150,8 @@ const ncrContextItems = computed(() => {
     { label: '不合格原因', value: ncr.defectReason },
     { label: '批次', value: ncr.batchNo },
     { label: '序列号', value: ncr.serialNo },
-    { label: '返工工单', value: closeForm.reworkWorkOrderId },
+    { label: '返工工单创建状态', value: ncr.reworkWorkOrderCreationStatus },
+    { label: '返工工单', value: ncr.reworkWorkOrderId },
     // 关闭原因是必填的关单审计事实，已关闭的单必须回显，否则看起来像"关了但没写原因"。
     ...(ncr.closeReason ? [{ label: '关闭原因', value: ncr.closeReason }] : []),
   ]
@@ -223,7 +223,7 @@ const statusFilter = computed({
   },
 })
 
-type NcrRow = BusinessConsoleQualityItem
+type NcrRow = BusinessConsoleQualityNcrItem
 const columns: NvDataTableColumn<NcrRow>[] = [
   { key: 'code', header: 'NCR', cellClass: 'font-medium', accessor: (r) => r.code ?? r.id ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
@@ -238,14 +238,12 @@ function ncrStatusLabel(status?: string | null) {
   return labelFor(NCR_STATUS_LABELS, status) || '未知'
 }
 
-function openNcr(ncr: BusinessConsoleQualityItem) {
+function openNcr(ncr: BusinessConsoleQualityNcrItem) {
   selectedNcr.value = ncr
   dispositionForm.dispositionApprovalChainId = ''
   dispositionForm.mrbReviewApproved = false
   dispositionForm.mrbComment = ''
   closeForm.reason = ''
-  closeForm.reworkWorkOrderId =
-    contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
   closeConfirmOpen.value = false
   detailOpen.value = true
 }
@@ -303,7 +301,6 @@ async function submitCloseNcr() {
   if (!canCloseNcr.value) return
   const body: BusinessConsoleNcrCloseRequest = {
     reason: closeForm.reason.trim(),
-    reworkWorkOrderId: optionalText(closeForm.reworkWorkOrderId),
     scrapMovementId: optionalText(closeForm.scrapMovementId),
     returnDocumentId: optionalText(closeForm.returnDocumentId),
   }
@@ -345,7 +342,7 @@ function splitCsv(value: string) {
     .filter(Boolean)
   return values.length ? values : undefined
 }
-function qualityItemSummary(item: BusinessConsoleQualityItem) {
+function qualityItemSummary(item: BusinessConsoleQualityNcrItem) {
   const values = [
     labelFor(QUALITY_SOURCE_TYPE_LABELS, item.sourceType) || undefined,
     item.sourceDocumentId,

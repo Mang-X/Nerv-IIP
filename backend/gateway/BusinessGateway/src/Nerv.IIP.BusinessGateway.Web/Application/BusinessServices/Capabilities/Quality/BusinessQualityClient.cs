@@ -84,7 +84,7 @@ public interface IBusinessQualityClient
         BusinessConsoleOpenNcrFromInspectionRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
+    Task<BusinessConsoleQualityNcrListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken);
@@ -491,7 +491,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         return new BusinessConsoleOpenNcrFromInspectionResponse(FormatJsonScalar(response.NcrId));
     }
 
-    public async Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
+    public async Task<BusinessConsoleQualityNcrListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken)
@@ -508,8 +508,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("take", request.Take)),
             null,
             cancellationToken);
-        return new BusinessConsoleQualityListResponse(
-            response.Items.Select(ToQualityItem).ToArray(),
+        return new BusinessConsoleQualityNcrListResponse(
+            response.Items.Select(ToNcrItem).ToArray(),
             response.Total);
     }
 
@@ -842,26 +842,21 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             AssignedInspectorUserId: item.AssignedInspectorUserId,
             AssignedTeamId: item.AssignedTeamId);
 
-    private static BusinessConsoleQualityItem ToQualityItem(DownstreamNcrItem item) =>
+    private static BusinessConsoleQualityNcrItem ToNcrItem(DownstreamNcrItem item) =>
         new(
             item.NcrId,
             item.NcrCode,
             item.Status,
-            null,
-            item.SkuCode,
-            null,
-            null,
-            null,
-            null,
             item.SourceType,
             item.SourceDocumentId,
+            item.SkuCode,
             item.DefectQuantity,
             item.DefectReason,
             item.BatchNo,
             item.SerialNo,
-            CloseReason: item.CloseReason,
-            ReworkWorkOrderCreationStatus: item.ReworkWorkOrderCreationStatus,
-            ReworkWorkOrderId: item.ReworkWorkOrderId);
+            item.CloseReason,
+            item.ReworkWorkOrderCreationStatus,
+            item.ReworkWorkOrderId);
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionRecordItem item) =>
         new(
@@ -1144,11 +1139,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? BatchNo,
         string? SerialNo,
         string Status,
+        string ReworkWorkOrderCreationStatus,
         string? SourceInspectionRecordId = null,
         string? DispositionType = null,
         string? DispositionApprovalChainId = null,
         string? CloseReason = null,
-        string? ReworkWorkOrderCreationStatus = null,
         string? ReworkWorkOrderId = null);
 
     private sealed record DownstreamSubmitNcrDispositionRequest(

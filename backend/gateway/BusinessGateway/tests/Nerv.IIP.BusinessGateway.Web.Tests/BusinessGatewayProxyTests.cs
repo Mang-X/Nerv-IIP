@@ -9777,6 +9777,7 @@ public sealed class BusinessGatewayProxyTests
                         defectQuantity = 3,
                         defectReason = "dimension-out-of-spec",
                         status = "open",
+                        reworkWorkOrderCreationStatus = "not-requested",
                     },
                 },
             },
@@ -9802,6 +9803,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SKU-001", item.SkuCode);
         Assert.Equal(3, item.DefectQuantity);
         Assert.Equal("dimension-out-of-spec", item.DefectReason);
+        Assert.Equal("not-requested", item.ReworkWorkOrderCreationStatus);
     }
 
     [Fact]
@@ -14029,7 +14031,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
             ]));
     }
 
-    public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
+    public Task<BusinessConsoleQualityNcrListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken)
@@ -14037,23 +14039,21 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
         NcrListCallCount++;
         LastInternalToken = internalBearerToken;
         LastNcrListRequest = request;
-        return Task.FromResult(new BusinessConsoleQualityListResponse(
+        return Task.FromResult(new BusinessConsoleQualityNcrListResponse(
             [
-                new BusinessConsoleQualityItem(
+                new BusinessConsoleQualityNcrItem(
                     "ncr-001",
                     "NCR-001",
                     "open",
-                    null,
-                    "SKU-001",
-                    null,
-                    null,
-                    null,
-                    null,
                     "inspection",
                     "IR-001",
+                    "SKU-001",
                     1,
                     "Defect",
                     null,
+                    null,
+                    null,
+                    "not-requested",
                     null),
             ],
             NcrTotal ?? 1));

@@ -10,7 +10,7 @@ import NcrsPage from './ncrs.vue'
  * 这一处比其它清扫点更糟：确认框原先**完全非受控**——`NvAlertDialogTrigger` 开、
  * `NvAlertDialogAction` 关，关框时机整个落在组件里。而 `NvAlertDialogAction` 渲染成
  * reka `DialogClose`，`@click` 里 `onOpenChange(false)` 无条件执行、不看 `defaultPrevented`：
- * 关单失败时框立刻消失，用户填的关闭原因、返工工单、报废库存移动全都白填一遍
+ * 关单失败时框立刻消失，用户填的关闭原因、报废库存移动全都白填一遍
  * （confirm-destroy 规则 3、票面子项 d「注意失败后表单值保留」）。
  *
  * `quality-location.test.ts` 里这页的弹层被桩成 `<div><slot /></div>`，因此上面这件事在那
@@ -24,9 +24,11 @@ const ncrRow = {
   id: 'NCR-001',
   code: 'NCR-001',
   status: 'disposition-in-progress',
-  sourceDocumentId: 'WO-1001',
+  sourceDocumentId: 'IR-1001',
   sourceType: 'work-order',
   skuCode: 'SKU-001',
+  reworkWorkOrderCreationStatus: 'created',
+  reworkWorkOrderId: 'RW-1001',
 }
 
 const spies = vi.hoisted(() => ({
@@ -194,15 +196,16 @@ describe('不合格品关闭确认框在真弹层下的关闭时机', () => {
     expect(document.querySelector<HTMLInputElement>('#ncr-scrap')!.value).toBe('MOV-2026-0007')
   })
 
-  it('关单成功才关框，且原因与关联单据如实提交', async () => {
+  it('关单成功才关框，系统绑定只读展示且不作为客户端写入提交', async () => {
     await openCloseConfirm()
+
+    expect(document.body.textContent).toContain('RW-1001')
 
     documentButton('确认关闭')!.click()
     await flushPromises()
 
     expect(spies.closeNcr).toHaveBeenCalledWith('NCR-001', {
       reason: '返工后复检合格',
-      reworkWorkOrderId: 'WO-1001',
       scrapMovementId: 'MOV-2026-0007',
       returnDocumentId: undefined,
     })

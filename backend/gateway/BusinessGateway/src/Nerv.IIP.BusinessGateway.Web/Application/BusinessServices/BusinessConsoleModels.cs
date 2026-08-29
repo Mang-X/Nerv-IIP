@@ -1475,17 +1475,32 @@ public sealed record BusinessConsoleQualityItem(
     string? SerialNo,
     int? AttemptNumber = null,
     string? ReinspectionOfInspectionRecordId = null,
-    // NCR 关单审计事实：closed 行必有关闭原因（界面必填字段），非 NCR 行恒为 null。
-    string? CloseReason = null,
     decimal? TimeIntervalHours = null,
     decimal? QuantityInterval = null,
     string? AssignedInspectorUserId = null,
-    string? AssignedTeamId = null,
-    string? ReworkWorkOrderCreationStatus = null,
-    string? ReworkWorkOrderId = null);
+    string? AssignedTeamId = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleQualityNcrItem(
+    string Id,
+    string Code,
+    string Status,
+    string SourceType,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal DefectQuantity,
+    string DefectReason,
+    string? BatchNo,
+    string? SerialNo,
+    string? CloseReason,
+    [property: JsonRequired, Required] string ReworkWorkOrderCreationStatus,
+    string? ReworkWorkOrderId);
+
+public sealed record BusinessConsoleQualityNcrListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityNcrItem> Items,
     int Total);
 
 public sealed record BusinessConsoleCreateInspectionPlanRequest(

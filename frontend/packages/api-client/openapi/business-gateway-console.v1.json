@@ -8108,7 +8108,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse"
                 }
               }
             }
@@ -38351,10 +38351,6 @@
             "type": "string",
             "nullable": true
           },
-          "closeReason": {
-            "type": "string",
-            "nullable": true
-          },
           "timeIntervalHours": {
             "type": "number",
             "format": "decimal",
@@ -38370,14 +38366,6 @@
             "nullable": true
           },
           "assignedTeamId": {
-            "type": "string",
-            "nullable": true
-          },
-          "reworkWorkOrderCreationStatus": {
-            "type": "string",
-            "nullable": true
-          },
-          "reworkWorkOrderId": {
             "type": "string",
             "nullable": true
           }
@@ -39172,6 +39160,97 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reworkWorkOrderCreationStatus"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "defectQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "defectReason": {
+            "type": "string"
+          },
+          "batchNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "closeReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "reworkWorkOrderCreationStatus": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reworkWorkOrderId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest": {
         "type": "object",
