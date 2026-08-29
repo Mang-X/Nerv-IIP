@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
@@ -40,20 +41,17 @@ public sealed class ReconcileWorkCenterMachineOverheadEndpoint(
     public override async Task HandleAsync(ReconcileWorkCenterMachineOverheadRequest req, CancellationToken ct)
     {
         var authorization = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
-        if (authorization.MissingRequiredHeader)
+        if (authorization is ErpInternalServiceScopeAuthorization.MissingRequiredHeader)
         {
-            await Results.Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                detail: "X-Organization-Id and X-Environment-Id headers are required.")
-                .ExecuteAsync(HttpContext);
+            await ErpMachineOverheadEndpointResults.WriteMissingScopeHeadersAsync(HttpContext, ct);
             return;
         }
-        var scope = authorization.Scope;
-        if (scope is null)
+        if (authorization is ErpInternalServiceScopeAuthorization.Forbidden)
         {
             await Send.ForbiddenAsync(ct);
             return;
         }
+        var scope = ((ErpInternalServiceScopeAuthorization.Authorized)authorization).Scope;
         using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
             "reconcile-work-center-machine-overhead",
             scope.OrganizationId,
@@ -95,20 +93,17 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsEndpoint(
     public override async Task HandleAsync(ListWorkCenterMachineOverheadReconciliationsRequest req, CancellationToken ct)
     {
         var authorization = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
-        if (authorization.MissingRequiredHeader)
+        if (authorization is ErpInternalServiceScopeAuthorization.MissingRequiredHeader)
         {
-            await Results.Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                detail: "X-Organization-Id and X-Environment-Id headers are required.")
-                .ExecuteAsync(HttpContext);
+            await ErpMachineOverheadEndpointResults.WriteMissingScopeHeadersAsync(HttpContext, ct);
             return;
         }
-        var scope = authorization.Scope;
-        if (scope is null)
+        if (authorization is ErpInternalServiceScopeAuthorization.Forbidden)
         {
             await Send.ForbiddenAsync(ct);
             return;
         }
+        var scope = ((ErpInternalServiceScopeAuthorization.Authorized)authorization).Scope;
         var response = await sender.Send(new ListWorkCenterMachineOverheadReconciliationsQuery(
             scope.OrganizationId,
             scope.EnvironmentId,
@@ -121,9 +116,16 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsEndpoint(
 }
 
 public sealed record ErpInternalServiceScope(string OrganizationId, string EnvironmentId, string Actor);
-public sealed record ErpInternalServiceScopeAuthorization(
-    ErpInternalServiceScope? Scope,
-    bool MissingRequiredHeader);
+public abstract record ErpInternalServiceScopeAuthorization
+{
+    private ErpInternalServiceScopeAuthorization()
+    {
+    }
+
+    public sealed record Authorized(ErpInternalServiceScope Scope) : ErpInternalServiceScopeAuthorization;
+    public sealed record MissingRequiredHeader : ErpInternalServiceScopeAuthorization;
+    public sealed record Forbidden : ErpInternalServiceScopeAuthorization;
+}
 
 public interface IErpMachineOverheadInternalScopeAuthorizer
 {
@@ -138,7 +140,7 @@ public sealed class AuthenticatedErpMachineOverheadInternalScopeAuthorizer
         var requestedOrganizationId = OptionalHeader(context, "X-Organization-Id");
         var requestedEnvironmentId = OptionalHeader(context, "X-Environment-Id");
         if (requestedOrganizationId is null || requestedEnvironmentId is null)
-            return new(null, true);
+            return new ErpInternalServiceScopeAuthorization.MissingRequiredHeader();
 
         var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var authorizedOrganizationId = context.User.FindFirstValue(ScopedCallerClaimTypes.OrganizationId);
@@ -147,17 +149,36 @@ public sealed class AuthenticatedErpMachineOverheadInternalScopeAuthorizer
             || !string.Equals(requestedOrganizationId, authorizedOrganizationId, StringComparison.Ordinal)
             || !string.Equals(requestedEnvironmentId, authorizedEnvironmentId, StringComparison.Ordinal))
         {
-            return new(null, false);
+            return new ErpInternalServiceScopeAuthorization.Forbidden();
         }
 
-        return new(
-            new(requestedOrganizationId, requestedEnvironmentId, $"internal-service:{subject}"),
-            false);
+        return new ErpInternalServiceScopeAuthorization.Authorized(
+            new(requestedOrganizationId, requestedEnvironmentId, $"internal-service:{subject}"));
     }
 
     private static string? OptionalHeader(HttpContext context, string name)
     {
         var value = context.Request.Headers[name].ToString().Trim();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+}
+
+internal static class ErpMachineOverheadEndpointResults
+{
+    private const string MissingScopeHeadersMessage =
+        "X-Organization-Id and X-Environment-Id headers are required.";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public static async Task WriteMissingScopeHeadersAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await JsonSerializer.SerializeAsync(
+            context.Response.Body,
+            new ResponseData(false, MissingScopeHeadersMessage, StatusCodes.Status400BadRequest, []),
+            JsonOptions,
+            cancellationToken);
     }
 }

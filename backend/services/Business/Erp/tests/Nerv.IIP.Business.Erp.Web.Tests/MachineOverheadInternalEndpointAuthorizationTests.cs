@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -131,9 +133,27 @@ public sealed class MachineOverheadInternalEndpointAuthorizationTests
         using var client = factory.CreateClient();
         var token = method == "POST" ? "finance-manager-a-token" : "finance-reader-token";
         using var request = CreateRequest(method, token, organizationId, environmentId);
+        request.Headers.Add("X-Correlation-Id", "corr-missing-machine-overhead-scope");
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType?.CharSet);
+        Assert.Equal(
+            "corr-missing-machine-overhead-scope",
+            Assert.Single(response.Headers.GetValues("X-Correlation-Id")));
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var body = document.RootElement;
+        Assert.False(body.GetProperty("success").GetBoolean());
+        Assert.Equal(
+            "X-Organization-Id and X-Environment-Id headers are required.",
+            body.GetProperty("message").GetString());
+        Assert.Equal(StatusCodes.Status400BadRequest, body.GetProperty("code").GetInt32());
+        Assert.Empty(body.GetProperty("errorData").EnumerateArray());
+        Assert.False(body.TryGetProperty("type", out _));
+        Assert.False(body.TryGetProperty("title", out _));
+        Assert.False(body.TryGetProperty("status", out _));
+        Assert.False(body.TryGetProperty("detail", out _));
         sender.AssertNoRequests();
     }
 
