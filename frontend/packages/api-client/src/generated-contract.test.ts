@@ -1206,6 +1206,24 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleTelemetryOeeEnvelope>().toBeObject()
     expectTypeOf<BusinessConsoleTelemetryOeeAggregateEnvelope>().toBeObject()
     expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      dimension: 'device' | 'workCenter' | 'line' | 'workshop' | 'shift' | 'day'
+      windowStartUtc: string
+      windowEndUtc: string
+      deviceAssetId?: string | null
+      workCenterId?: string | null
+      shiftCode?: string | null
+      lineCode?: string | null
+      workshopCode?: string | null
+      businessDate?: string | null
+      skip?: number
+      take?: number
+    }>()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toEqualTypeOf<
+      QueryBusinessConsoleTelemetryOeeAggregatesData['query']
+    >()
     expectTypeOf<BusinessConsoleTelemetryOeeAggregateResponse>().toBeObject()
     expectTypeOf<BusinessConsoleTelemetryOeeAggregateBucket>().toBeObject()
     expectTypeOf<QueryBusinessConsoleTelemetryOeeAggregatesData>().toBeObject()
