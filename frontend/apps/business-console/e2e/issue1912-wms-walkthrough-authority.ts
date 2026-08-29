@@ -6,9 +6,9 @@ export type WmsWalkthroughPageWindowInput = Readonly<{
 /**
  * Independent NERV-1571 scenario vector.
  *
- * The semantic source is docs/architecture/nerv-1571-wms-walkthrough-facts.md §场景事实,
- * backed by Linear NERV-1571 and GitHub #1912. This module is fixture input only; it is not
- * derived from a page response or from the implementation under test.
+ * The semantic source is the NERV-1571 acceptance recorded in GitHub #1912 and its confirmed
+ * regression sample. This module is fixture input only; it is not derived from a page response or
+ * from the implementation under test.
  */
 export type WmsWalkthroughScenarioFacts = Readonly<{
   organizationId: string
