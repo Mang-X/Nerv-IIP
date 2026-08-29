@@ -1524,6 +1524,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
                 "user-admin",
                 "user",
                 "admin",
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
                 dataScope,
                 scopeGrants,
                 roles)

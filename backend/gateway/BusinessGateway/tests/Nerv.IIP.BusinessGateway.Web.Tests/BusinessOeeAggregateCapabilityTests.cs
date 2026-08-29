@@ -179,6 +179,8 @@ public sealed class BusinessOeeAggregateCapabilityTests
             "user-001",
             "user",
             "operator",
+            "org-001",
+            "env-dev",
             scopeGrants:
             [
                 new AuthorizationScopeGrant(
@@ -242,16 +244,20 @@ public sealed class BusinessOeeAggregateCapabilityTests
         Assert.NotNull(telemetry.LastRequest);
     }
 
-    [Fact]
-    public async Task Query_rejects_an_authorization_result_bound_to_another_tenant_before_calling_downstream_services()
+    [Theory]
+    [InlineData("org-other", "env-dev")]
+    [InlineData("org-001", "env-other")]
+    public async Task Query_rejects_each_mismatched_authorization_tenant_dimension_before_calling_downstream_services(
+        string authorizedOrganizationId,
+        string authorizedEnvironmentId)
     {
         var masterData = new RoutingHandler(_ => throw new InvalidOperationException("MasterData must not be called."));
         var telemetry = new RoutingHandler(_ => throw new InvalidOperationException("Telemetry must not be called."));
         var capability = Capability(masterData, telemetry);
         var authorization = OrganizationAuthorization() with
         {
-            AuthorizedOrganizationId = "org-other",
-            AuthorizedEnvironmentId = "env-prod",
+            AuthorizedOrganizationId = authorizedOrganizationId,
+            AuthorizedEnvironmentId = authorizedEnvironmentId,
         };
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => capability.QueryAsync(
@@ -378,6 +384,8 @@ public sealed class BusinessOeeAggregateCapabilityTests
             "user-001",
             "user",
             "operator",
+            "org-001",
+            "env-dev",
             scopeGrants:
             [
                 new AuthorizationScopeGrant(
@@ -387,23 +395,21 @@ public sealed class BusinessOeeAggregateCapabilityTests
                     "org-001",
                     [BusinessGatewayPermissions.IiotTelemetryRead],
                     OrganizationWide: true),
-            ],
-            authorizedOrganizationId: "org-001",
-            authorizedEnvironmentId: "env-dev");
+            ]);
 
     private static BusinessGatewayAuthorizationResult ScopedAuthorization(string kind, string id) =>
         BusinessGatewayAuthorizationResult.Allowed(
             "user-001",
             "user",
             "operator",
+            "org-001",
+            "env-dev",
             new AuthorizationDataScope(
                 kind == "site" ? [id] : [],
                 kind == "workshop" ? [id] : [],
                 kind == "production-line" ? [id] : [],
                 WorkCenterCodes: kind == "work-center" ? [id] : []),
-            [new AuthorizationScopeGrant("role", "role-engineer", kind, id, [BusinessGatewayPermissions.IiotTelemetryRead])],
-            authorizedOrganizationId: "org-001",
-            authorizedEnvironmentId: "env-dev");
+            [new AuthorizationScopeGrant("role", "role-engineer", kind, id, [BusinessGatewayPermissions.IiotTelemetryRead])]);
 
     private static HttpResponseMessage ResourceResponse(HttpRequestMessage request, string resource)
     {

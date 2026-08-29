@@ -36,11 +36,11 @@ public sealed record BusinessGatewayAuthorizationResult(
         string principalId,
         string principalType,
         string loginName,
+        string authorizedOrganizationId,
+        string authorizedEnvironmentId,
         AuthorizationDataScope? dataScope = null,
         IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
-        IReadOnlyCollection<AuthorizationRole>? roles = null,
-        string? authorizedOrganizationId = null,
-        string? authorizedEnvironmentId = null) =>
+        IReadOnlyCollection<AuthorizationRole>? roles = null) =>
         new(
             true,
             principalId,
@@ -262,11 +262,11 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
                     body.PrincipalId!,
                     body.PrincipalType!,
                     body.LoginName!,
+                    requirement.OrganizationId,
+                    requirement.EnvironmentId,
                     body.DataScope,
                     body.ScopeGrants,
-                    body.Roles,
-                    requirement.OrganizationId,
-                    requirement.EnvironmentId)
+                    body.Roles)
                 : BusinessGatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
         }
         catch (Exception ex) when (IsDownstreamFailure(ex, cancellationToken))
