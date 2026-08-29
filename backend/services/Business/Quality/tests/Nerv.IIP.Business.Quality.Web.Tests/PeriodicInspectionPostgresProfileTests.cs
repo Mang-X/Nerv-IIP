@@ -509,6 +509,9 @@ public sealed class PeriodicInspectionPostgresProfileTests
         Assert.Null(finalContext.QuantityGenerationAnchorAtUtc);
         Assert.Null(finalContext.QuantityContinuationNextAttemptAtUtc);
         Assert.Equal(257, await finalAssertion.InspectionTasks.CountAsync());
+        var terminalTask = await finalAssertion.InspectionTasks.AsNoTracking().SingleAsync(x => x.Quantity == 257m);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-24T01:30:00Z"), terminalTask.CreatedAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-25T01:30:00Z"), terminalTask.DueAtUtc);
     }
 
     [QualityPostgresFact]

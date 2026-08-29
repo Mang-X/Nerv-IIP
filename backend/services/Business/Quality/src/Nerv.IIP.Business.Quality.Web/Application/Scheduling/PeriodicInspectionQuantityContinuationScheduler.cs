@@ -12,6 +12,7 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
     private const int ContextBatchSize = 100;
+    private const int MaxConcurrentCandidates = 4;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -45,40 +46,47 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
             return;
         }
 
-        foreach (var candidate in candidates)
-        {
-            try
+        await Parallel.ForEachAsync(
+            candidates,
+            new ParallelOptions
             {
-                using var candidateScope = scopeFactory.CreateScope();
-                await candidateScope.ServiceProvider.GetRequiredService<ISender>().Send(
-                    new GeneratePeriodicInspectionQuantityTaskBatchForContextCommand(
+                MaxDegreeOfParallelism = MaxConcurrentCandidates,
+                CancellationToken = cancellationToken,
+            },
+            async (candidate, token) =>
+            {
+                try
+                {
+                    using var candidateScope = scopeFactory.CreateScope();
+                    await candidateScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                        new GeneratePeriodicInspectionQuantityTaskBatchForContextCommand(
+                            candidate.OrganizationId,
+                            candidate.EnvironmentId,
+                            candidate.WorkOrderId,
+                            candidate.OperationId,
+                            candidate.RuntimeContextId,
+                            candidate.ObservedNextAttemptAtUtc,
+                            nextAttemptAtUtc,
+                            PeriodicInspectionQuantityTaskGeneration.MaxWindowsPerTransaction),
+                        token);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(
+                        exception,
+                        "Periodic quantity continuation failed for {OrganizationId}/{EnvironmentId}/{WorkOrderId}/{OperationId}/{RuntimeContextId}; remaining candidates will continue.",
                         candidate.OrganizationId,
                         candidate.EnvironmentId,
                         candidate.WorkOrderId,
                         candidate.OperationId,
-                        candidate.RuntimeContextId,
-                        candidate.ObservedNextAttemptAtUtc,
-                        nextAttemptAtUtc,
-                        PeriodicInspectionQuantityTaskGeneration.MaxWindowsPerTransaction),
-                    cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(
-                    exception,
-                    "Periodic quantity continuation failed for {OrganizationId}/{EnvironmentId}/{WorkOrderId}/{OperationId}/{RuntimeContextId}; remaining candidates will continue.",
-                    candidate.OrganizationId,
-                    candidate.EnvironmentId,
-                    candidate.WorkOrderId,
-                    candidate.OperationId,
-                    candidate.RuntimeContextId);
-                await TryDeferFailedCandidateAsync(candidate, nextAttemptAtUtc, cancellationToken);
-            }
-        }
+                        candidate.RuntimeContextId);
+                    await TryDeferFailedCandidateAsync(candidate, nextAttemptAtUtc, token);
+                }
+            });
     }
 
     private async Task TryDeferFailedCandidateAsync(
