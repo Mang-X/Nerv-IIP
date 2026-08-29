@@ -2162,7 +2162,12 @@ public sealed record MesTraceabilityNodeType
     public static readonly MesTraceabilityNodeType ProductionReport = new("ProductionReport");
     public static readonly MesTraceabilityNodeType Operator = new("Operator");
     public static readonly MesTraceabilityNodeType DeviceAsset = new("DeviceAsset");
-    public static readonly MesTraceabilityNodeType InspectionResult = new("InspectionResult");
+    /// <summary>
+    /// 取值引 <see cref="MesTraceabilityNodeTypes.InspectionResult"/> 而不是写字面量：这个 wire 值被
+    /// BusinessGateway 的追溯门面用来按 <c>business.mes.quality.read</c> 裁剪检验结论节点，
+    /// 两边各写一份字面量则 MES 改名后门面静默失配、权限泄漏复发（#2686）。词表漂移门禁扫本文件。
+    /// </summary>
+    public static readonly MesTraceabilityNodeType InspectionResult = new(MesTraceabilityNodeTypes.InspectionResult);
     public static readonly MesTraceabilityNodeType ProducedLot = new("ProducedLot");
     public static readonly MesTraceabilityNodeType Serial = new("Serial");
     public static readonly MesTraceabilityNodeType Material = new("Material");

@@ -21,9 +21,18 @@ import {
  * 加上第三条，看住那个封闭性上仅剩的口子。
  */
 
-const MES_WEB_SRC = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../../../backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web',
+const BACKEND_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../backend')
+const MES_WEB_SRC = join(BACKEND_ROOT, 'services/Business/Mes/src/Nerv.IIP.Business.Mes.Web')
+
+/**
+ * 跨服务承重的节点类型词表。检验结论那个值被 BusinessGateway 的追溯门面用来按
+ * `business.mes.quality.read` 裁剪节点，故它下沉到了公共 Contracts，MES 侧只能引用不能写字面量
+ * （#2686 / PR #2693，后端词表漂移门禁扫 services 下的 Application 与 Seed 目录）。
+ * 于是封闭类型的字段取值有两种形态：字面量，和指向本文件的常量引用。
+ */
+const CONTRACTS_MES_VOCABULARY = join(
+  BACKEND_ROOT,
+  'common/Contracts/Nerv.IIP.Contracts.Mes/MesTraceability.cs',
 )
 const NODE_TYPE_DECLARATION = join(
   MES_WEB_SRC,
@@ -39,12 +48,24 @@ function nodeTypeBody(): string {
   return declarationSource.slice(start, declarationSource.indexOf('\n}', start))
 }
 
+/** `Contracts.Mes` 里公开的节点类型词表常量：符号名 → 取值。 */
+function contractsVocabulary(): Map<string, string> {
+  const source = readFileSync(CONTRACTS_MES_VOCABULARY, 'utf8')
+  const constants = [...source.matchAll(/public const string (\w+) = "([^"]+)";/g)]
+  expect(
+    constants.length,
+    `${relative(BACKEND_ROOT, CONTRACTS_MES_VOCABULARY)} 里一个词表常量都没解析出来，扫描已失效`,
+  ).toBeGreaterThan(0)
+  return new Map(constants.map((m) => [m[1]!, m[2]!]))
+}
+
 /** `MesTraceabilityNodeType` 上登记的受控节点类型取值。 */
 function declaredNodeTypes(): string[] {
   const body = nodeTypeBody()
 
+  // 字段取值有两种合法形态：wire 字面量，或指向 Contracts 词表常量的符号引用。
   const fields = [
-    ...body.matchAll(/public static readonly MesTraceabilityNodeType \w+ = new\("([^"]+)"\);/g),
+    ...body.matchAll(/public static readonly MesTraceabilityNodeType \w+ = new\(([^)]*)\);/g),
   ]
   // 只用取值正则会有一种假绿：字段写法一变，它一条都匹配不上，missing 恒为空。
   // 所以拿一条更宽松的声明正则做校准，两者数量必须一致。
@@ -55,7 +76,33 @@ function declaredNodeTypes(): string[] {
   ).toBe(declarations.length)
   expect(fields.length).toBeGreaterThan(0)
 
-  return fields.map((m) => m[1]!)
+  const vocabulary = contractsVocabulary()
+  const values: string[] = []
+  const unresolved: string[] = []
+  for (const field of fields) {
+    const initializer = field[1]!.trim()
+    const literal = /^"([^"]*)"$/.exec(initializer)
+    if (literal) {
+      values.push(literal[1]!)
+      continue
+    }
+    const symbol = /^(?:\w+\.)*(\w+)$/.exec(initializer)
+    const resolved = symbol ? vocabulary.get(symbol[1]!) : undefined
+    if (resolved !== undefined) {
+      values.push(resolved)
+      continue
+    }
+    // **不许在这里 continue 掉**：解析不出取值就等于这一类节点脱离守护，
+    // 必须红。给自己留「跳过」分支就是给自己开恒绿口子。
+    unresolved.push(initializer)
+  }
+  expect(
+    unresolved,
+    `这些字段的取值解析不出来，词表完备性无从判定（既不是字面量，也不是 ` +
+      `${relative(BACKEND_ROOT, CONTRACTS_MES_VOCABULARY)} 里的常量）：${unresolved.join('、')}`,
+  ).toEqual([])
+
+  return values
 }
 
 function csharpFiles(dir: string): string[] {
