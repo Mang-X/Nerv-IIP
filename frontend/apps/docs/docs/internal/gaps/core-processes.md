@@ -6,7 +6,8 @@
 
 - `/processes/`
 - `docs/architecture/frontend-structure.md`
-- `docs/architecture/implementation-readiness.md`
+- `docs/architecture/frontend-navigation-map.md`
+- `frontend/apps/business-console/src/navigation.ts`
 
 ## 建议 Issue 标题
 
@@ -32,4 +33,4 @@
 
 ### 反馈不足
 
-- 后续可从路由表和实施就绪事实生成页面入口矩阵，减少文档漂移，并在构建时提示入口缺失。
+- 后续可从路由事实、公开契约与对应产品文档生成页面入口矩阵，减少文档漂移，并在构建时提示入口缺失。

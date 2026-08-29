@@ -49,7 +49,9 @@ public sealed record ProductionReportFact(
     // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
     string? ReversalReportNo = null,
     // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
-    [property: JsonIgnore] MesActualHours? OperationActualHours = null)
+    [property: JsonIgnore] MesActualHours? OperationActualHours = null,
+    // 提交本条报工的操作人（经认证 principal）。升级前的历史报工与未确认的遥测报工为 null。
+    string? ReportedBy = null)
 {
     [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
@@ -147,7 +149,8 @@ internal static class ProductionReportFactProjection
                 .Select(task => new MesActualHours(
                     task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
                     task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
-                .FirstOrDefault()));
+                .FirstOrDefault(),
+            x.ReportedBy));
 }
 
 public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)

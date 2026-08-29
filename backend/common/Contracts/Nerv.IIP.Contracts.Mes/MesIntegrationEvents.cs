@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Contracts.Mes;
@@ -7,6 +9,7 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
+    public const string ReworkWorkOrderCreated = "mes.ReworkWorkOrderCreated";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
     public const string OperationActualTimeSettled = "mes.OperationActualTimeSettled";
@@ -27,6 +30,70 @@ public static class MesSourceDocumentTypes
 public static class MesIntegrationEventVersions
 {
     public const int V1 = 1;
+    public const int V2 = 2;
+}
+
+/// <summary>
+/// MES actual-time routing keys shared by the producer and its canonical-topic consumers.
+/// </summary>
+public static class MesActualTimeIntegrationEventTopics
+{
+    public const string DeploymentProfileToken = "{deployment-profile}";
+    public const string SettledV1LegacyAlias = nameof(MesOperationActualTimeSettledIntegrationEvent);
+    public const string VoidedV1LegacyAlias = nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent);
+    public const string SettledV2Template =
+        "nerv-iip.{deployment-profile}.business-mes.mes.operation-actual-time-settled.v2";
+    public const string VoidedV2Template =
+        "nerv-iip.{deployment-profile}.business-mes.mes.operation-actual-time-settlement-voided.v2";
+
+    public static string Settled(string deploymentProfile, int version) =>
+        Build(deploymentProfile, "operation-actual-time-settled", version);
+
+    public static string Voided(string deploymentProfile, int version) =>
+        Build(deploymentProfile, "operation-actual-time-settlement-voided", version);
+
+    public static string? CanonicalSubscriptionTemplate(Type integrationEventType)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEventType);
+        if (integrationEventType == typeof(MesOperationActualTimeSettledV2IntegrationEvent))
+            return SettledV2Template;
+        if (integrationEventType == typeof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent))
+            return VoidedV2Template;
+        return null;
+    }
+
+    public static string ResolveSubscriptionTemplate(string topic, string deploymentProfile)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentProfile);
+        return topic.Contains(DeploymentProfileToken, StringComparison.Ordinal)
+            ? topic.Replace(DeploymentProfileToken, NormalizeDeploymentProfile(deploymentProfile), StringComparison.Ordinal)
+            : topic;
+    }
+
+    private static string Build(string deploymentProfile, string eventName, int version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentProfile);
+        return $"nerv-iip.{NormalizeDeploymentProfile(deploymentProfile)}.business-mes.mes.{eventName}.v{version}";
+    }
+
+    private static string NormalizeDeploymentProfile(string deploymentProfile) =>
+        deploymentProfile.Trim().ToLowerInvariant();
+}
+
+public enum MesMachineTimeFactStatus
+{
+    Available,
+    NotApplicable,
+    Unavailable,
+}
+
+public sealed class MesMachineTimeFactStatusJsonConverter()
+    : JsonStringEnumConverter<MesMachineTimeFactStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+public static class MesMachineTimeBasisCodes
+{
+    public const string SingleDeviceActiveMinusExplicitPauseV1 = "single-device-active-minus-explicit-pause-v1";
 }
 
 public static class MesIntegrationEventSources
@@ -121,6 +188,35 @@ public sealed record WorkOrderClosedPayload(
     decimal ScrapQuantity,
     DateTimeOffset ClosedAtUtc);
 
+public sealed record ReworkWorkOrderCreatedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    ReworkWorkOrderCreatedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record ReworkWorkOrderCreatedPayload(
+    string SourceNcrId,
+    string SourceNcrCode,
+    string ReworkWorkOrderId,
+    string SourceWorkOrderId,
+    string? SourceOperationTaskId,
+    string SkuCode,
+    decimal Quantity,
+    string? SourceLotNo,
+    string? SourceSerialNo,
+    DateTimeOffset CreatedAtUtc);
+
 public static class MesEngineeringChangeImpactContractStatuses
 {
     public const string PendingDecision = "pending-decision";
@@ -183,6 +279,7 @@ public sealed record OperationTaskCompletedPayload(
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
 
+[JsonConverter(typeof(MesOperationActualTimeSettledV1IntegrationEventJsonConverter))]
 public sealed record MesOperationActualTimeSettledIntegrationEvent(
     string EventId,
     string EventType,
@@ -210,6 +307,40 @@ public sealed record OperationActualTimeSettledPayload(
     long ActualMachineTicks,
     IReadOnlyCollection<string> CoveredProductionReportNos);
 
+[JsonConverter(typeof(MesOperationActualTimeSettledV2IntegrationEventJsonConverter))]
+public sealed record MesOperationActualTimeSettledV2IntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationActualTimeSettledV2Payload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationActualTimeSettledV2Payload(
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    DateTimeOffset CompletedAtUtc,
+    long ActualLaborTicks,
+    long ActualMachineTicks,
+    IReadOnlyCollection<string> CoveredProductionReportNos,
+    string? DeviceAssetId,
+    [property: JsonConverter(typeof(MesMachineTimeFactStatusJsonConverter))]
+    MesMachineTimeFactStatus MachineTimeStatus,
+    long? BillableMachineTicks,
+    string? MachineTimeBasisCode);
+
+[JsonConverter(typeof(MesOperationActualTimeSettlementVoidedV1IntegrationEventJsonConverter))]
 public sealed record MesOperationActualTimeSettlementVoidedIntegrationEvent(
     string EventId,
     string EventType,
@@ -237,6 +368,232 @@ public sealed record OperationActualTimeSettlementVoidedPayload(
     long ActualLaborTicks,
     long ActualMachineTicks,
     IReadOnlyCollection<string> CoveredProductionReportNos);
+
+[JsonConverter(typeof(MesOperationActualTimeSettlementVoidedV2IntegrationEventJsonConverter))]
+public sealed record MesOperationActualTimeSettlementVoidedV2IntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationActualTimeSettlementVoidedV2Payload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationActualTimeSettlementVoidedV2Payload(
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    DateTimeOffset CompletedAtUtc,
+    DateTimeOffset VoidedAtUtc,
+    long ActualLaborTicks,
+    long ActualMachineTicks,
+    IReadOnlyCollection<string> CoveredProductionReportNos,
+    string? DeviceAssetId,
+    [property: JsonConverter(typeof(MesMachineTimeFactStatusJsonConverter))]
+    MesMachineTimeFactStatus MachineTimeStatus,
+    long? BillableMachineTicks,
+    string? MachineTimeBasisCode);
+
+internal static class MesActualTimeContractInvariant
+{
+    public static void Validate(
+        string? deviceAssetId,
+        MesMachineTimeFactStatus status,
+        long? billableMachineTicks,
+        string? basisCode)
+    {
+        if (status == MesMachineTimeFactStatus.Available)
+        {
+            if (string.IsNullOrWhiteSpace(deviceAssetId)
+                || billableMachineTicks is null or < 0
+                || basisCode != MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1)
+                throw new JsonException("Available machine time requires device, non-negative ticks, and the canonical basis.");
+            return;
+        }
+
+        if (deviceAssetId is not null || billableMachineTicks is not null || basisCode is not null)
+            throw new JsonException("Unavailable or not-applicable machine time must not contain evidence values.");
+    }
+}
+
+internal static class MesActualTimeWireContract
+{
+    private static readonly string[] MachineFactPropertyNames =
+        ["deviceAssetId", "machineTimeStatus", "billableMachineTicks", "machineTimeBasisCode"];
+
+    public static T ReadV1<T>(ref Utf8JsonReader reader, JsonSerializerOptions options)
+        => Read<T>(ref reader, options, MesIntegrationEventVersions.V1, MachineFactShape.Forbidden);
+
+    public static T ReadV2<T>(ref Utf8JsonReader reader, JsonSerializerOptions options)
+        => Read<T>(ref reader, options, MesIntegrationEventVersions.V2, MachineFactShape.Required);
+
+    private static T Read<T>(
+        ref Utf8JsonReader reader,
+        JsonSerializerOptions options,
+        int expectedVersion,
+        MachineFactShape machineFactShape)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        var root = document.RootElement;
+        if (!TryGetProperty(root, "eventVersion", "EventVersion", out var versionElement)
+            || versionElement.ValueKind != JsonValueKind.Number
+            || versionElement.GetInt32() != expectedVersion)
+            throw new JsonException($"MES actual-time envelope requires eventVersion {expectedVersion}.");
+        if (!TryGetProperty(root, "payload", "Payload", out var payload) || payload.ValueKind != JsonValueKind.Object)
+            throw new JsonException("MES actual-time payload is required.");
+        if (machineFactShape == MachineFactShape.Forbidden)
+        {
+            if (MachineFactPropertyNames.Any(name =>
+                    payload.TryGetProperty(name, out _)
+                    || payload.TryGetProperty(char.ToUpperInvariant(name[0]) + name[1..], out _)))
+                throw new JsonException("MES actual-time V1 payload must not contain V2 machine-time properties.");
+        }
+        else if (MachineFactPropertyNames.Any(name =>
+                     !payload.TryGetProperty(name, out _)
+                     && !payload.TryGetProperty(char.ToUpperInvariant(name[0]) + name[1..], out _)))
+        {
+            throw new JsonException("MES actual-time V2 payload requires every machine-time property.");
+        }
+        return JsonSerializer.Deserialize<T>(root.GetRawText(), options)
+            ?? throw new JsonException("MES actual-time envelope is required.");
+    }
+
+    private enum MachineFactShape
+    {
+        Forbidden,
+        Required,
+    }
+
+    public static void RequireVersion(int actualVersion, int expectedVersion)
+    {
+        if (actualVersion != expectedVersion)
+            throw new JsonException($"MES actual-time envelope requires eventVersion {expectedVersion}.");
+    }
+
+    private static bool TryGetProperty(
+        JsonElement element,
+        string camelName,
+        string pascalName,
+        out JsonElement value) =>
+        element.TryGetProperty(camelName, out value) || element.TryGetProperty(pascalName, out value);
+}
+
+public sealed class MesOperationActualTimeSettledV1IntegrationEventJsonConverter
+    : JsonConverter<MesOperationActualTimeSettledIntegrationEvent>
+{
+    public override MesOperationActualTimeSettledIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var dto = MesActualTimeWireContract.ReadV1<SettledV1Dto>(ref reader, options);
+        return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
+            dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
+            dto.IdempotencyKey, dto.Payload);
+    }
+
+    public override void Write(Utf8JsonWriter writer, MesOperationActualTimeSettledIntegrationEvent value, JsonSerializerOptions options)
+    {
+        MesActualTimeWireContract.RequireVersion(value.EventVersion, MesIntegrationEventVersions.V1);
+        JsonSerializer.Serialize(writer, new SettledV1Dto(value.EventId, value.EventType, value.EventVersion,
+            value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId,
+            value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private sealed record SettledV1Dto(string EventId, string EventType, int EventVersion,
+        DateTimeOffset OccurredAtUtc, string SourceService, string CorrelationId, string CausationId,
+        string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+        OperationActualTimeSettledPayload Payload);
+}
+
+public sealed class MesOperationActualTimeSettledV2IntegrationEventJsonConverter
+    : JsonConverter<MesOperationActualTimeSettledV2IntegrationEvent>
+{
+    public override MesOperationActualTimeSettledV2IntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var dto = MesActualTimeWireContract.ReadV2<SettledV2Dto>(ref reader, options);
+        MesActualTimeContractInvariant.Validate(dto.Payload.DeviceAssetId, dto.Payload.MachineTimeStatus,
+            dto.Payload.BillableMachineTicks, dto.Payload.MachineTimeBasisCode);
+        return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
+            dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
+            dto.IdempotencyKey, dto.Payload);
+    }
+
+    public override void Write(Utf8JsonWriter writer, MesOperationActualTimeSettledV2IntegrationEvent value, JsonSerializerOptions options)
+    {
+        MesActualTimeWireContract.RequireVersion(value.EventVersion, MesIntegrationEventVersions.V2);
+        MesActualTimeContractInvariant.Validate(value.Payload.DeviceAssetId, value.Payload.MachineTimeStatus,
+            value.Payload.BillableMachineTicks, value.Payload.MachineTimeBasisCode);
+        JsonSerializer.Serialize(writer, new SettledV2Dto(value.EventId, value.EventType, value.EventVersion,
+            value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId,
+            value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private sealed record SettledV2Dto(string EventId, string EventType, int EventVersion,
+        DateTimeOffset OccurredAtUtc, string SourceService, string CorrelationId, string CausationId,
+        string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+        OperationActualTimeSettledV2Payload Payload);
+}
+
+public sealed class MesOperationActualTimeSettlementVoidedV1IntegrationEventJsonConverter
+    : JsonConverter<MesOperationActualTimeSettlementVoidedIntegrationEvent>
+{
+    public override MesOperationActualTimeSettlementVoidedIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var dto = MesActualTimeWireContract.ReadV1<VoidedV1Dto>(ref reader, options);
+        return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
+            dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
+            dto.IdempotencyKey, dto.Payload);
+    }
+
+    public override void Write(Utf8JsonWriter writer, MesOperationActualTimeSettlementVoidedIntegrationEvent value, JsonSerializerOptions options)
+    {
+        MesActualTimeWireContract.RequireVersion(value.EventVersion, MesIntegrationEventVersions.V1);
+        JsonSerializer.Serialize(writer, new VoidedV1Dto(value.EventId, value.EventType, value.EventVersion,
+            value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId,
+            value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private sealed record VoidedV1Dto(string EventId, string EventType, int EventVersion,
+        DateTimeOffset OccurredAtUtc, string SourceService, string CorrelationId, string CausationId,
+        string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+        OperationActualTimeSettlementVoidedPayload Payload);
+}
+
+public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventJsonConverter
+    : JsonConverter<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>
+{
+    public override MesOperationActualTimeSettlementVoidedV2IntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var dto = MesActualTimeWireContract.ReadV2<VoidedV2Dto>(ref reader, options);
+        MesActualTimeContractInvariant.Validate(dto.Payload.DeviceAssetId, dto.Payload.MachineTimeStatus,
+            dto.Payload.BillableMachineTicks, dto.Payload.MachineTimeBasisCode);
+        return new(dto.EventId, dto.EventType, dto.EventVersion, dto.OccurredAtUtc, dto.SourceService,
+            dto.CorrelationId, dto.CausationId, dto.OrganizationId, dto.EnvironmentId, dto.Actor,
+            dto.IdempotencyKey, dto.Payload);
+    }
+
+    public override void Write(Utf8JsonWriter writer, MesOperationActualTimeSettlementVoidedV2IntegrationEvent value, JsonSerializerOptions options)
+    {
+        MesActualTimeWireContract.RequireVersion(value.EventVersion, MesIntegrationEventVersions.V2);
+        MesActualTimeContractInvariant.Validate(value.Payload.DeviceAssetId, value.Payload.MachineTimeStatus,
+            value.Payload.BillableMachineTicks, value.Payload.MachineTimeBasisCode);
+        JsonSerializer.Serialize(writer, new VoidedV2Dto(value.EventId, value.EventType, value.EventVersion,
+            value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId,
+            value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private sealed record VoidedV2Dto(string EventId, string EventType, int EventVersion,
+        DateTimeOffset OccurredAtUtc, string SourceService, string CorrelationId, string CausationId,
+        string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+        OperationActualTimeSettlementVoidedV2Payload Payload);
+}
 
 public sealed record MesOperationTaskManuallyDispatchedIntegrationEvent(
     string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
@@ -299,7 +656,17 @@ public sealed record ProductionReportRecordedPayload(
     DateTimeOffset ReportedAtUtc,
     bool IsReversal,
     string? ReversedReportNo = null,
-    int MaterialMovementCount = 0);
+    int MaterialMovementCount = 0,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? LineCode = null,
+    string? ShiftCode = null,
+    string? SiteTimezone = null,
+    TimeOnly? ShiftStartsAt = null,
+    TimeOnly? ShiftEndsAt = null,
+    bool? ShiftCrossesMidnight = null,
+    int? ShiftPaidMinutes = null,
+    int? ShiftBreakMinutes = null);
 
 public sealed record FinishedGoodsReceiptRequestedIntegrationEvent(
     string EventId,

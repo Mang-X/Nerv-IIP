@@ -69,6 +69,8 @@ public sealed class SourcePlanReference
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
+    public const string StandardType = "standard";
+    public const string ReworkType = "rework";
     public const string CreatedStatus = "created";
     public const string ReleasedStatus = "released";
     public const string StartedStatus = "started";
@@ -97,7 +99,16 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         int priority,
         DateTimeOffset dueUtc,
         SourcePlanReference? sourcePlanReference,
-        decimal overReceiptTolerancePercent)
+        decimal overReceiptTolerancePercent,
+        string workOrderType,
+        string? sourceWorkOrderId = null,
+        string? sourceOperationTaskId = null,
+        string? sourceDefectNo = null,
+        string? sourceNcrId = null,
+        string? sourceNcrCode = null,
+        string? sourceLotNo = null,
+        string? sourceSerialNo = null,
+        DateTimeOffset? sourceReworkRequestedAtUtc = null)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -110,6 +121,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         DueUtc = dueUtc;
         SourcePlanReference = sourcePlanReference;
         OverReceiptTolerancePercent = DomainGuard.NonNegative(overReceiptTolerancePercent, nameof(overReceiptTolerancePercent));
+        WorkOrderType = DomainGuard.Required(workOrderType, nameof(workOrderType));
+        SourceWorkOrderId = string.IsNullOrWhiteSpace(sourceWorkOrderId) ? null : sourceWorkOrderId.Trim();
+        SourceOperationTaskId = string.IsNullOrWhiteSpace(sourceOperationTaskId) ? null : sourceOperationTaskId.Trim();
+        SourceDefectNo = string.IsNullOrWhiteSpace(sourceDefectNo) ? null : sourceDefectNo.Trim();
+        SourceNcrId = string.IsNullOrWhiteSpace(sourceNcrId) ? null : sourceNcrId.Trim();
+        SourceNcrCode = string.IsNullOrWhiteSpace(sourceNcrCode) ? null : sourceNcrCode.Trim();
+        SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
+        SourceSerialNo = string.IsNullOrWhiteSpace(sourceSerialNo) ? null : sourceSerialNo.Trim();
+        SourceReworkRequestedAtUtc = sourceReworkRequestedAtUtc;
         Status = CreatedStatus;
         Version = 1;
         CreatedAtUtc = DateTimeOffset.UtcNow;
@@ -140,6 +160,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? MaterialRequirementSnapshotStatus { get; private set; }
     public DateTimeOffset? MaterialRequirementSnapshotEvaluatedAtUtc { get; private set; }
     public string? MaterialRequirementSnapshotProductionVersionId { get; private set; }
+    public string WorkOrderType { get; private set; } = StandardType;
+    public string? SourceWorkOrderId { get; private set; }
+    public string? SourceOperationTaskId { get; private set; }
+    public string? SourceDefectNo { get; private set; }
+    public string? SourceNcrId { get; private set; }
+    public string? SourceNcrCode { get; private set; }
+    public string? SourceLotNo { get; private set; }
+    public string? SourceSerialNo { get; private set; }
+    public DateTimeOffset? SourceReworkRequestedAtUtc { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
 
@@ -167,8 +196,59 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             priority,
             dueUtc,
             sourcePlanReference,
-            overReceiptTolerancePercent);
+            overReceiptTolerancePercent,
+            StandardType);
         workOrder.AddDomainEvent(new WorkOrderCreatedDomainEvent(workOrder));
+        return workOrder;
+    }
+
+    public static WorkOrder CreateRework(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string skuId,
+        string? productionVersionId,
+        string? uomCode,
+        decimal quantity,
+        int priority,
+        DateTimeOffset dueUtc,
+        string sourceWorkOrderId,
+        string? sourceOperationTaskId,
+        string sourceDefectNo,
+        string sourceNcrId,
+        string sourceNcrCode,
+        string? sourceLotNo,
+        string? sourceSerialNo,
+        DateTimeOffset requestedAtUtc,
+        string correlationId,
+        string causationId)
+    {
+        var workOrder = new WorkOrder(
+            organizationId,
+            environmentId,
+            workOrderId,
+            skuId,
+            productionVersionId,
+            uomCode,
+            quantity,
+            priority,
+            dueUtc,
+            null,
+            0m,
+            ReworkType,
+            DomainGuard.Required(sourceWorkOrderId, nameof(sourceWorkOrderId)),
+            sourceOperationTaskId,
+            DomainGuard.Required(sourceDefectNo, nameof(sourceDefectNo)),
+            DomainGuard.Required(sourceNcrId, nameof(sourceNcrId)),
+            DomainGuard.Required(sourceNcrCode, nameof(sourceNcrCode)),
+            sourceLotNo,
+            sourceSerialNo,
+            requestedAtUtc);
+        workOrder.AddDomainEvent(new ReworkWorkOrderCreatedDomainEvent(
+            workOrder,
+            requestedAtUtc,
+            DomainGuard.Required(correlationId, nameof(correlationId)),
+            DomainGuard.Required(causationId, nameof(causationId))));
         return workOrder;
     }
 

@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -204,7 +205,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -360,7 +361,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -452,7 +453,10 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb, mesCodingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(
+            mesDb,
+            SnapshotProvider.Instance,
+            mesCodingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -749,7 +753,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -1158,6 +1162,20 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             null);
         operationTask.Start(now);
         mesDb.OperationTasks.Add(operationTask);
+        mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            workOrderId,
+            "OP-10",
+            "MAT-OIL",
+            null,
+            10m,
+            10m,
+            0m,
+            "MBOM",
+            $"SNAP-{workOrderId}-MAT-OIL",
+            now,
+            []));
     }
 
     private static async Task RecordMesOutputLotAsync(
@@ -1167,7 +1185,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         decimal quantity,
         DateTimeOffset reportedAtUtc)
     {
-        await new RecordProductionReportCommandHandler(mesDb).Handle(
+        await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -1252,6 +1270,19 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Published.Add(integrationEvent!);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class SnapshotProvider : IProductionReportOeeDimensionSnapshotProvider
+    {
+        public static SnapshotProvider Instance { get; } = new();
+
+        public Task<ProductionReportOeeDimensionSnapshot> CaptureAsync(
+            ProductionReportOeeDimensionSnapshotRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(ProductionReportOeeDimensionSnapshot.Degraded(
+                request.DeviceAssetReference,
+                request.WorkCenterId,
+                "test:not-resolved"));
     }
 
     private sealed class NoopMediator : IMediator

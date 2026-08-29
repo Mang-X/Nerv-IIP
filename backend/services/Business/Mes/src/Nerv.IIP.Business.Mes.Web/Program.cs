@@ -1,4 +1,5 @@
-﻿using FastEndpoints;
+﻿using System.Reflection;
+using FastEndpoints;
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
@@ -31,7 +33,14 @@ var isTesting = builder.Environment.IsEnvironment("Testing");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-mes");
 
 builder.Services
-    .AddFastEndpoints()
+    .AddFastEndpoints(o =>
+    {
+        if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+        {
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        }
+    })
     .SwaggerDocument(o =>
     {
         o.DocumentSettings = s =>
@@ -44,6 +53,12 @@ builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrationEventContextAccessor>();
+builder.Services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
+builder.Services.AddScoped<IMesActualTimeOutboxPublisher, CapMesActualTimeOutboxPublisher>();
+builder.Services.AddSingleton(new MesActualTimeTopicOptions(builder.Environment.EnvironmentName));
 var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
@@ -71,10 +86,26 @@ builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
 });
-builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
-{
-    client.BaseAddress = inventoryBaseAddress;
-});
+builder.Services
+    .AddOptions<MesInventoryHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesInventoryHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesInventoryHttpClient>((services, client) =>
+    {
+        client.BaseAddress = inventoryBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.ConnectTimeout,
+    });
 builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
@@ -91,8 +122,10 @@ builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configurati
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialLotAvailabilityProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
+builder.Services.AddScoped<IProductionReportOeeDimensionSnapshotProvider, HttpProductionReportOeeDimensionSnapshotProvider>();
 builder.Services.AddScoped<MesQualityInspectionPlanClient>();
 builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
     sp.GetRequiredService<MesQualityInspectionPlanClient>());

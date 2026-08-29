@@ -29,7 +29,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
-      "sha256": "d2b428b10ef2de00bdad44d310a52472c3af6aa3f42010c139d530f246ce2ae4"
+      "sha256": "7406391672d8c426ebb671145af90c031361c3eb150d925de22fb80904df1620"
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
@@ -64,6 +64,10 @@
       "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
     },
     {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Mes/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
       "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
     },
@@ -89,7 +93,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
-      "sha256": "fe2e9ff7b5d882097e044deae9e8d807d72cf0084e8cff3797ab23a1105f968a"
+      "sha256": "da65368db20769da681c02419225f794ab252731abbea64aed39efc05d728e37"
     }
   ],
   "lock": {
@@ -102,6 +106,7 @@
       "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Mes/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/packages.lock.json",
       "backend/common/Localization/Nerv.IIP.Localization/packages.lock.json",

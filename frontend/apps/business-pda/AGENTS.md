@@ -3,7 +3,7 @@
 > 根 `AGENTS.md` 仍然适用；本文件只补充 PDA 子树的差异。
 > business-pda = 车间手持 PDA（Android WebView / Capacitor 8），扫码优先的
 > WMS / MES / 质量 / 设备作业端。交互范式与页面矩阵：
-> `docs/architecture/mobile-pda-module-product-design.md`。
+> `docs/product/mobile-pda/design.md`。
 
 ## 命令
 
@@ -28,8 +28,8 @@ pnpm -C frontend --filter @nerv-iip/business-pda cap:sync   # 构建 + 同步 Ca
    e2e，不能声称"真机验证"。
 
 分层定义、spec 清单、冒烟命令：`docs/architecture/mobile-pda-testing-and-smoke.md`。
-Capacitor 架构与打包部署：`docs/architecture/mobile-pda-capacitor-architecture.md`、
-`mobile-pda-deployment.md`。
+Capacitor 架构：`docs/architecture/mobile-pda-capacitor-architecture.md`；
+打包部署：`docs/runbooks/mobile-pda-deployment.md`。
 
 ## 硬性规则
 

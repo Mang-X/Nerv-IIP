@@ -19,19 +19,55 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork unitOfWork)
+    ITransactionUnitOfWork unitOfWork,
+    IWorkOrderCostMutationLock mutationLock)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
-    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
+    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(integrationEvent.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase))
+            return Task.CompletedTask;
+        return CostingIntegrationEventUnitOfWork.ExecuteAsync(
+            dbContext,
+            unitOfWork,
+            async () =>
+            {
+                await mutationLock.AcquireAsync(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    integrationEvent.Payload.WorkOrderId,
+                    cancellationToken);
+                await HandleValidAsync(integrationEvent, cancellationToken);
+            },
+            cancellationToken);
+    }
     [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
 
     private async Task HandleValidAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!string.Equals(integrationEvent.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase)) return;
         var outputQuantity = Math.Abs(integrationEvent.Payload.GoodQuantity + integrationEvent.Payload.ScrapQuantity + integrationEvent.Payload.ReworkQuantity);
-        var hasLaborBasis = !string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId) && integrationEvent.Payload.TheoreticalRatePerHour is > 0m && outputQuantity > 0m;
+        var isCoveredByActualSettlement = await dbContext.OperationLaborCoveredReports.AnyAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.ReportNo == integrationEvent.Payload.ReportNo,
+            cancellationToken);
+        var workOrderUsesActualLabor = await dbContext.OperationLaborSettlements.AnyAsync(
+            settlement => settlement.OrganizationId == integrationEvent.OrganizationId
+                && settlement.EnvironmentId == integrationEvent.EnvironmentId
+                && settlement.WorkOrderId == integrationEvent.Payload.WorkOrderId
+                && dbContext.OperationLaborSettlementStates.Any(
+                    state => state.OrganizationId == settlement.OrganizationId
+                        && state.EnvironmentId == settlement.EnvironmentId
+                        && state.OperationTaskId == settlement.OperationTaskId
+                        && state.ActiveRevision == settlement.SettlementRevision),
+            cancellationToken);
+        var hasLaborBasis = !isCoveredByActualSettlement
+            && !workOrderUsesActualLabor
+            && !string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId)
+            && integrationEvent.Payload.TheoreticalRatePerHour is > 0m
+            && outputQuantity > 0m;
         WorkCenterCostRate? rate = null;
         if (hasLaborBasis)
         {
@@ -49,19 +85,34 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
                 return;
             }
         }
-        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == integrationEvent.Payload.WorkOrderId, cancellationToken);
         if (cost is null)
         {
             cost = WorkOrderCost.Open(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, integrationEvent.Payload.WorkOrderId, integrationEvent.Payload.WorkOrderId);
             dbContext.WorkOrderCosts.Add(cost);
         }
+        if (hasLaborBasis)
+        {
+            var selectedRate = rate ?? throw new InvalidOperationException("A priced production report requires an applicable standard labor rate.");
+            if (!cost.TryFreezeLaborCurrency(selectedRate.CurrencyCode))
+            {
+                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "incompatible-work-order-labor-currency", $"Work order '{integrationEvent.Payload.WorkOrderId}' already contains priced labor in a currency incompatible with '{selectedRate.CurrencyCode}'."), cancellationToken);
+                return;
+            }
+        }
+        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var priorTotal = cost.TotalAccumulatedCost;
         if (hasLaborBasis)
-            cost.RecordLabor(integrationEvent.Payload.ReportNo, integrationEvent.Payload.WorkCenterId, outputQuantity / integrationEvent.Payload.TheoreticalRatePerHour!.Value, rate!.HourlyRate, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
+        {
+            var theoreticalRate = integrationEvent.Payload.TheoreticalRatePerHour
+                ?? throw new InvalidOperationException("A priced production report requires a theoretical output rate.");
+            var selectedRate = rate
+                ?? throw new InvalidOperationException("A priced production report requires an applicable standard labor rate.");
+            cost.RecordLabor(integrationEvent.Payload.ReportNo, integrationEvent.Payload.WorkCenterId, outputQuantity / theoreticalRate, selectedRate.HourlyRate, selectedRate.CurrencyCode, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
+        }
         else
             cost.RecordUncostedReport(integrationEvent.Payload.ReportNo, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
-        if (cost.CapitalizationPublished && integrationEvent.Payload.IsReversal)
+        if (cost.IsFullyCapitalized && integrationEvent.Payload.IsReversal)
             await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorTotal, integrationEvent.Payload.ReportNo, integrationEvent.Payload.ReportedAtUtc, cancellationToken);
         var pending = await dbContext.PendingMaterialCosts.Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.ReportNo == integrationEvent.Payload.ReportNo).ToListAsync(cancellationToken);
         foreach (var item in pending)
@@ -72,7 +123,6 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
                 await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorPendingTotal, item.MovementId, item.PostedAtUtc, cancellationToken);
             dbContext.PendingMaterialCosts.Remove(item);
         }
-        await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 }
 
@@ -115,13 +165,15 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             completedCost.Capitalize(payload.InventoryMovementId, payload.Quantity, unitCost.Value, payload.PostedAtUtc);
             await EnsureCapitalizationAccountsAsync(dbContext, integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken);
             var movementAmount = completedCost.CapitalizedCost - priorCapitalized;
-            var isFinalReceipt = completedCost.CapitalizedQuantity >= completedCost.CompletedQuantity - 0.000001m;
+            var isFinalReceipt = completedCost.IsFullyCapitalized;
             var variance = isFinalReceipt ? completedCost.TotalAccumulatedCost - completedCost.CapitalizedCost : 0m;
             var wipClearance = isFinalReceipt ? completedCost.TotalAccumulatedCost - priorWipCleared : movementAmount;
             var lines = new List<JournalVoucherLineDraft>
             {
                 new("1406-FINISHED-GOODS", movementAmount, 0m, $"Finished goods {completedCost.WorkOrderId}"),
-                new("1405-WIP", 0m, wipClearance, $"Clear WIP {completedCost.WorkOrderId}"),
+                wipClearance >= 0m
+                    ? new("1405-WIP", 0m, wipClearance, $"Clear WIP {completedCost.WorkOrderId}")
+                    : new("1405-WIP", -wipClearance, 0m, $"Restore WIP {completedCost.WorkOrderId}"),
             };
             if (variance > 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", variance, 0m, $"Uncapitalized variance {completedCost.WorkOrderId}"));
             else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
@@ -172,7 +224,8 @@ internal static class CostVariancePosting
         var lines = costDelta < 0m
             ? new[] { new JournalVoucherLineDraft("1405-WIP", amount, 0m, $"Late cost reversal {sourceId}"), new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", 0m, amount, $"Favorable variance {sourceId}") }
             : new[] { new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", amount, 0m, $"Unfavorable variance {sourceId}"), new JournalVoucherLineDraft("1405-WIP", 0m, amount, $"Late cost input {sourceId}") };
-        cost.RecordWipClearance(costDelta);
+        if (cost.IsFullyCapitalized)
+            cost.RecordWipClearance(costDelta);
         dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, $"JV-WOC-ADJ-{cost.WorkOrderId}-{sourceId}", DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines));
     }
 }
@@ -216,6 +269,38 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
 
 internal static class CostingIntegrationEventUnitOfWork
 {
+    public static async Task ExecuteAsync(
+        ApplicationDbContext dbContext,
+        ITransactionUnitOfWork unitOfWork,
+        Func<Task> action,
+        CancellationToken cancellationToken)
+    {
+        if (unitOfWork.CurrentTransaction is not null)
+        {
+            await action();
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        unitOfWork.CurrentTransaction = transaction;
+        try
+        {
+            await action();
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            await unitOfWork.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
+        }
+    }
+
     public static async Task SaveEntitiesAsync(
         ApplicationDbContext dbContext,
         ITransactionUnitOfWork unitOfWork,

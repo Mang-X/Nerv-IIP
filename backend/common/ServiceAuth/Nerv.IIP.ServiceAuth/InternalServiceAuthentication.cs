@@ -133,15 +133,12 @@ public sealed class InternalServiceAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.Fail("Internal service bearer token is not configured."));
         }
 
-        var authorization = Request.Headers.Authorization.ToString();
-        const string bearerPrefix = "Bearer ";
-        if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!InternalServiceBearerToken.TryParse(Request.Headers.Authorization.ToString(), out var token))
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var token = authorization[bearerPrefix.Length..].Trim();
-        if (!TimeConstantEquals(token, configuredToken))
+        if (!InternalServiceBearerToken.FixedTimeEquals(token, configuredToken))
         {
             return Task.FromResult(AuthenticateResult.Fail("Invalid internal service bearer token."));
         }
@@ -155,13 +152,6 @@ public sealed class InternalServiceAuthenticationHandler(
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
-    }
-
-    private static bool TimeConstantEquals(string value, string expected)
-    {
-        var valueBytes = System.Text.Encoding.UTF8.GetBytes(value);
-        var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expected);
-        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(valueBytes, expectedBytes);
     }
 }
 

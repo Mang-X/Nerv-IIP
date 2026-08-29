@@ -138,7 +138,8 @@ const columns: NvDataTableColumn<NodeRow>[] = [
     key: 'nodeType',
     header: '类型',
     width: 'w-32',
-    // 后端回 work-order / material-lot 这类码值，词表缺项时只显原码，不编造中文。
+    // 后端回 WorkOrder / MaterialLot 这类 PascalCase 码值（labelFor 会归一后查表）；
+    // 词表缺项时只显原码，不编造中文。
     accessor: (r) => labelFor(TRACE_NODE_TYPE_LABELS, r.nodeType) || '未标注',
   },
   { key: 'displayName', header: '名称' },

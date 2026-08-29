@@ -16,6 +16,12 @@ public enum OperationTaskManualDispatchClearReason
 
 public sealed record WorkOrderCreatedDomainEvent(WorkOrder WorkOrder) : IDomainEvent;
 
+public sealed record ReworkWorkOrderCreatedDomainEvent(
+    WorkOrder WorkOrder,
+    DateTimeOffset RequestedAtUtc,
+    string CorrelationId,
+    string CausationId) : IDomainEvent;
+
 public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
 
 public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTimeOffset CompletedAtUtc) : IDomainEvent;
@@ -25,6 +31,18 @@ public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOff
 public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesEngineeringChangeWorkOrderImpact Impact) : IDomainEvent;
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
+
+public enum MachineTimeFactStatus
+{
+    Available,
+    NotApplicable,
+    Unavailable,
+}
+
+public static class MachineTimeBasisCodes
+{
+    public const string SingleDeviceActiveMinusExplicitPauseV1 = "single-device-active-minus-explicit-pause-v1";
+}
 
 public sealed record OperationActualTimeSettlementSnapshot(
     string OrganizationId,
@@ -36,7 +54,11 @@ public sealed record OperationActualTimeSettlementSnapshot(
     DateTimeOffset CompletedAtUtc,
     long ActualLaborTicks,
     long ActualMachineTicks,
-    IReadOnlyCollection<string> CoveredProductionReportNos);
+    IReadOnlyCollection<string> CoveredProductionReportNos,
+    string? DeviceAssetId = null,
+    MachineTimeFactStatus MachineTimeStatus = MachineTimeFactStatus.Unavailable,
+    long? BillableMachineTicks = null,
+    string? MachineTimeBasisCode = null);
 
 public sealed record OperationActualTimeSettledDomainEvent(
     OperationActualTimeSettlementSnapshot Settlement) : IDomainEvent;

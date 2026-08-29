@@ -1,6 +1,6 @@
 # Architecture 文档入口
 
-本页是 M0 迁移期的当前架构路由。`docs/architecture/` 现阶段仍混合多种生命周期；文件位于本目录不等于它就是当前 Architecture。M2 会按类型分批迁移，当前任务先按下表选择必要文档。
+本页路由系统的**当前架构**。`docs/architecture/` 仍处于 M2 分类迁移期；文件位于本目录不等于它就是当前 Architecture。普通任务只读取与目标范围直接相关的当前架构页。
 
 ## 基础边界
 
@@ -15,31 +15,41 @@
 | 任务 | 当前文档 |
 | --- | --- |
 | 前端工作区、应用和包职责 | [frontend-structure.md](frontend-structure.md) |
-| 业务导航、页面 IA | [frontend-navigation-map.md](frontend-navigation-map.md) 与对应模块产品文档 |
+| 业务导航、页面 IA 与产品语义 | [frontend-navigation-map.md](frontend-navigation-map.md) + [`../product/README.md`](../product/README.md) |
 | API、OpenAPI 与生成客户端 | [api-contract-and-codegen.md](api-contract-and-codegen.md) |
 | Connector Host / 平台协议 | [connector-platform-protocol-v1.md](connector-platform-protocol-v1.md)、[connector-host-machine-auth.md](connector-host-machine-auth.md) |
-| 数据库命名与 Schema | [database-schema-conventions.md](database-schema-conventions.md)、[database-schema-catalog.md](database-schema-catalog.md) |
-| 本地开发与排障 | [local-dev-troubleshooting.md](local-dev-troubleshooting.md) |
-| 部署与发布 | [deployment-baseline.md](deployment-baseline.md)、[database-release-runbook.md](database-release-runbook.md) |
-| 脚本治理 | [script-automation-governance.md](script-automation-governance.md) |
-| 测试有效性、证据与真实依赖 | [test-validity-governance.md](test-validity-governance.md)、[test-evidence-governance.md](test-evidence-governance.md)、[real-dependency-test-lanes.md](real-dependency-test-lanes.md) |
-| 文档语言与决策分层 | [document-language-governance.md](document-language-governance.md)、[decision-record-governance.md](decision-record-governance.md) |
+| 数据库命名与 Schema 规则 | [`../governance/data/database-schema.md`](../governance/data/database-schema.md)；当前 Schema 人工目录见 [`../reference/data/database-schema-catalog.md`](../reference/data/database-schema-catalog.md) |
+| 当前工程 Governance | [`../governance/README.md`](../governance/README.md) |
+| 当前 Schema/码表/事件消费矩阵/权限导航/术语/技术资料 | [`../reference/README.md`](../reference/README.md) |
+| 本地开发与排障 | [`../runbooks/local-development.md`](../runbooks/local-development.md) |
+| 部署拓扑 | [deployment-baseline.md](deployment-baseline.md) |
+| 数据库发布、迁移与恢复 | [`../runbooks/database-release.md`](../runbooks/database-release.md) |
+| 脚本治理与操作排障 | [`../governance/script-automation.md`](../governance/script-automation.md) + [`../runbooks/script-automation.md`](../runbooks/script-automation.md) |
+| 测试有效性、证据与真实依赖 | M2-H 迁移完成前仍由 [test-validity-governance.md](test-validity-governance.md)、[test-evidence-governance.md](test-evidence-governance.md)、[real-dependency-test-lanes.md](real-dependency-test-lanes.md) 路由 |
+| 文档语言与决策分层 | [`../governance/docs/language.md`](../governance/docs/language.md)、[`../governance/decisions/records.md`](../governance/decisions/records.md) |
 | 可观测性 | [observability-baseline.md](observability-baseline.md) |
+
+## 不属于 Architecture 的内容
+
+- 当前全仓级状态位于 [`../status/current.md`](../status/current.md)。
+- 当前 Governance 位于 [`../governance/README.md`](../governance/README.md)。
+- 当前 Product 位于 [`../product/README.md`](../product/README.md)。
+- 当前 Runbook 位于 [`../runbooks/README.md`](../runbooks/README.md)。
+- 当前 Reference 位于 [`../reference/README.md`](../reference/README.md)。
+- 历史阶段与状态快照位于 [`../status/archive/`](../status/archive/)。
+- 调查、实验、审计和修复记录位于 [`../reports/README.md`](../reports/README.md)。
+- 当前任务进度、负责人和验收证据位于 GitHub/Linear。
+
+M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已把 `script-automation-governance.md` 拆成 Governance、Runbook 与冻结 Reports。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
 
 ## 迁移期类型提示
 
-以下内容目前仍在本目录，但不要把它们全部当作“当前架构”读取：
+- M2-D 的 `database-release-runbook.md`、`file-storage-offline-migration-runbook.md`、`local-dev-troubleshooting.md`、`mobile-pda-deployment.md` 仅为兼容入口。
+- M2-E 的 `database-schema-catalog.md`、`factory-world-bible.md`、`frontline-contract-page-scope-action-matrix.md`、`glossary.md`、`integration-event-consumption-matrix.md`、`master-data-dictionary-rules.md`、`technology-stack-references.md` 仅为兼容入口。
+- M2-F 的 `authorization-matrix.md`、`backend-cleanddd-netcorepal-guidelines.md`、`database-schema-conventions.md`、`decision-record-governance.md`、`document-language-governance.md`、`frontend-design-system-planning.md`、`known-exception-user-visibility.md`、`persistence-startup-governance.md` 仅为兼容入口。
+- M2-G 的 `script-automation-governance.md` 仅为兼容入口；当前规则与操作分别位于 `docs/governance/script-automation.md`、`docs/runbooks/script-automation.md`。
+- 其它 `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 仍可能属于 Reference、Report 或机器伴随物，按正文生命周期判断。
+- `*-investigation.md`、`*-spike.md`、`*-remediation.md` 的完整正文已由 M2-B 迁往 Reports；同名短页只可能是兼容入口。
+- `*-module-product-design.md` 与 `frontline-role-journey-acceptance-matrix.md` 的完整 Product 正文已由 M2-C 迁往 `docs/product/`。
 
-- `*-module-product-design.md` 属 Product，按所改业务域加载。
-- `*-runbook.md`、`*-troubleshooting.md` 与操作型 deployment 文档属 Runbook。
-- `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 属 Reference 或生成伴随物。
-- `*-investigation.md`、`*-spike.md`、`*-remediation.md` 属 Report，完成后应冻结。
-- `first-vertical-slice.md`、`second-vertical-slice-ops.md`、`third-vertical-slice-console.md`、`fourth-vertical-slice-real-infra.md` 与 `project-status-dashboard.html` 是阶段或时点记录，不构成当前执行入口。
-
-物理迁移与混合大文件拆分由 [GitHub #2290](https://github.com/Mang-X/Nerv-IIP/issues/2290) 跟踪；M0 不批量移动文件，也不建立永久分类 manifest。
-
-## implementation-readiness
-
-`implementation-readiness.md` 已停止接收新的功能完成日志、Issue/PR 级实施说明、事故过程和 focused gate 明细。它在 M1 完成前只用于发布、里程碑和跨域能力盘点；普通局部实现、修复、测试、重构和 UI 调整不读取它。
-
-当前任务进度与验收证据留在 GitHub/Linear；当前命令与行为仍以代码、配置、脚本、帮助输出和测试为准。
+物理迁移与混合大文件拆分由 [GitHub #2290](https://github.com/Mang-X/Nerv-IIP/issues/2290) 跟踪；本阶段不建立永久分类 manifest。

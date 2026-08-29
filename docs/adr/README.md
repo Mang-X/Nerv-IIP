@@ -2,7 +2,7 @@
 
 本目录记录会在当前任务结束后继续约束实现的长期决策，回答“为什么这样选择”。当前组件、命令、代码落点和实施状态分别由 Architecture、Governance、Runbook、Status 与 GitHub/Linear 承担。
 
-新增或修订 ADR 前，先读 [`../architecture/decision-record-governance.md`](../architecture/decision-record-governance.md)。本页在 M0 只建立完整导航，不宣称所有“已接受”记录都未经修订地完全有效；Area、整篇取代、部分修订、复评触发和当前实现映射由 [GitHub #2291](https://github.com/Mang-X/Nerv-IIP/issues/2291) 补齐。
+新增或修订 ADR 前，先读 [`../governance/decisions/records.md`](../governance/decisions/records.md)。本页在 M0 只建立完整导航，不宣称所有“已接受”记录都未经修订地完全有效；Area、整篇取代、部分修订、复评触发和当前实现映射由 [GitHub #2291](https://github.com/Mang-X/Nerv-IIP/issues/2291) 补齐。
 
 ## 当前记录
 
@@ -34,10 +34,11 @@
 - [ADR 0026](0026-industrial-telemetry-historian-storage.md) — `industrial-telemetry-historian-storage`
 - [ADR 0027](0027-filestorage-offline-migration-cutover-and-rollback.md) — `filestorage-offline-migration-cutover-and-rollback`
 - [ADR 0028](0028-retired-vertical-slice-script-entry-boundary.md) — `retired-vertical-slice-script-entry-boundary`
+- [ADR 0029](0029-reference-data-vocabulary-read-permission.md) — `reference-data-vocabulary-read-permission`
 
 ## 阅读规则
 
 1. 只读与当前任务相关的 ADR，不按编号从头通读。
-2. ADR 决定“为什么和必须保持什么”，不能替代当前代码、Runbook 或验证证据。
-3. 发现旧判断被推翻时，新建或修订关系，不在旧记录末尾追加进度日志。
+2. ADR 决定“为什么和必须保持什么”，不能替代当前代码、Governance、Runbook 或验证证据。
+3. 发现旧判断被推翻时，按决策记录 Governance 建立整篇/部分取代关系，不在旧记录末尾追加进度日志。
 4. 找不到备选、理由或取代关系时明确登记待核，不根据当前实现反向编造历史。

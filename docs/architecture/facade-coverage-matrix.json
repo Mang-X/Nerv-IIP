@@ -1487,6 +1487,14 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/oee/aggregates",
+      "operationId": "queryBusinessIiotOeeAggregates",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade、generated client 与 Business Console OEE 看板由 #2232 交付。"
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/runtime-availability",
       "operationId": "queryBusinessIiotRuntimeAvailability",
       "classification": "exposed",
@@ -2388,7 +2396,7 @@
       "route": "/api/business/v1/master-data/resources",
       "operationId": "listBusinessMasterDataResources",
       "classification": "exposed",
-      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；公开字段与既有分页默认值保持兼容。",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；#2603 补齐 deviceAssetId（GUID/Code）与 shiftCode 精确过滤，并返回 canonical 设备 Id；公开字段与既有分页默认值保持兼容。",
       "gateways": [
         "business"
       ],
@@ -2869,6 +2877,45 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesMaterialIssueRequests"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/material-issue-requests/{requestId}",
+      "operationId": "getBusinessMesMaterialIssueRequest",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesMaterialIssueRequest"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/material-scan-prevalidation",
+      "operationId": "prevalidateBusinessMesMaterialScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "prevalidateBusinessConsoleMesMaterialScan"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/context-scan-prevalidation",
+      "operationId": "prevalidateBusinessMesContextScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "prevalidateBusinessConsoleMesContextScan"
       ]
     },
     {
@@ -3438,7 +3485,8 @@
       ],
       "gatewayOperationIds": [
         "getBusinessConsoleMesMaterialReadiness"
-      ]
+      ],
+      "note": "#2223 在 material-readiness 响应中新增尾部可选兼容字段 SubstituteMaterialIds，表示创建齐套快照时冻结并去重的替代物料候选；BusinessGateway 保真转发该可选字段，旧消费者可继续忽略它，既有必填字段不变。齐套计算中 RequiredQuantity 只计一次，AvailableQuantity 按主料与冻结去重的替代候选池合计，ShortageQuantity 与 Status 基于该合计结果计算。"
     },
     {
       "service": "Mes",

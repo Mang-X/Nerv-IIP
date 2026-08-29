@@ -244,6 +244,10 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         Status = "disposition-in-progress";
         Touch();
         this.AddDomainEvent(new NonconformanceReportDispositionDecidedDomainEvent(this));
+        if (normalizedDisposition == "rework")
+        {
+            this.AddDomainEvent(new NonconformanceReportReworkRequestedDomainEvent(this, DateTimeOffset.UtcNow));
+        }
         if (RequiresInventoryDispositionRequest(normalizedDisposition) && HasInventoryStockLocator())
         {
             this.AddDomainEvent(new NonconformanceReportInventoryDispositionRequestedDomainEvent(this));

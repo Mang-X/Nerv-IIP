@@ -87,7 +87,15 @@ public sealed class NonconformanceReportAggregateTests
         Assert.Equal("approval-chain-001", ncr.DispositionApprovalChainId);
         Assert.Contains("file-plan-001", ncr.AttachmentFileIds);
         Assert.Equal("qa-manager-001", Assert.Single(ncr.MrbReviews).ReviewerId);
-        Assert.IsType<NonconformanceReportDispositionDecidedDomainEvent>(ncr.GetDomainEvents().Single());
+        Assert.Single(ncr.GetDomainEvents().OfType<NonconformanceReportDispositionDecidedDomainEvent>());
+        if (dispositionType == "rework")
+        {
+            Assert.Single(ncr.GetDomainEvents().OfType<NonconformanceReportReworkRequestedDomainEvent>());
+        }
+        else
+        {
+            Assert.Empty(ncr.GetDomainEvents().OfType<NonconformanceReportReworkRequestedDomainEvent>());
+        }
     }
 
     [Fact]

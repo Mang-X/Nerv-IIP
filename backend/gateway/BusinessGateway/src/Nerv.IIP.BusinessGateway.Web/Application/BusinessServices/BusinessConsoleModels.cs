@@ -310,7 +310,8 @@ public sealed record BusinessConsoleListResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null);
 
 public sealed record BusinessConsoleListDeviceAssetsRequest(
     string OrganizationId,
@@ -4258,6 +4259,20 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+/// <summary>停机事件列表请求：在通用 MES 列表过滤之上增加按停机原因码过滤（#1947）。</summary>
+public sealed record BusinessConsoleMesDowntimeEventListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    string? ReasonCode = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMesMaterialIssueRequestListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -4740,7 +4755,8 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal ShortageQuantity,
     string Status,
     // 缺口卡在哪个环节：none / awaitingPreparation（还没发起领料）/ awaitingDelivery（仓库在配）。
-    string? ShortageStage = null);
+    string? ShortageStage = null,
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
 
 // 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
 // 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read
@@ -4798,7 +4814,13 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string? OperationTaskNo = null,
     string? MaterialCode = null,
     bool IsSupplementary = false,
-    string? OriginalMaterialIssueRequestNo = null);
+    string? OriginalMaterialIssueRequestNo = null,
+    string? SubstitutedMaterialId = null);
+
+public sealed record BusinessConsoleMesMaterialIssueRequestDetailRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,
@@ -4979,7 +5001,9 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualLaborHours = null,
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
-    decimal? OperationActualMachineHours = null);
+    decimal? OperationActualMachineHours = null,
+    [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
+    string? ReportedBy = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5032,7 +5056,9 @@ public sealed record BusinessConsoleMesProductionReportRow(
     [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualLaborHours = null,
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
-    decimal? OperationActualMachineHours = null);
+    decimal? OperationActualMachineHours = null,
+    [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
+    string? ReportedBy = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -5205,7 +5231,15 @@ public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGood
 
 public sealed record BusinessConsoleMesDowntimeEventListResponse(
     IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items,
-    int Total);
+    int Total,
+    IReadOnlyCollection<BusinessConsoleMesDowntimeReasonSummaryRow> ReasonSummary);
+
+/// <summary>停机时长按原因分类汇总；不受 reasonCode 过滤影响，供停机读面做原因构成。</summary>
+public sealed record BusinessConsoleMesDowntimeReasonSummaryRow(
+    string ReasonCode,
+    int OpenCount,
+    decimal DurationMinutes,
+    string? ReasonName = null);
 
 public sealed record BusinessConsoleMesDowntimeEventRow(
     string DowntimeEventId,
@@ -5220,7 +5254,8 @@ public sealed record BusinessConsoleMesDowntimeEventRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     string? WorkCenterId = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    string? ReasonName = null);
 
 public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string OrganizationId,
@@ -5333,7 +5368,13 @@ public sealed record BusinessConsoleMesTraceabilityResponse(
     IReadOnlyCollection<BusinessConsoleMesTraceabilityNode> Nodes,
     IReadOnlyCollection<BusinessConsoleMesTraceabilityEdge> Edges);
 
-public sealed record BusinessConsoleMesTraceabilityNode(string NodeId, string NodeType, string DisplayName, string Status);
+public sealed record BusinessConsoleMesTraceabilityNode(
+    string NodeId,
+    string NodeType,
+    string DisplayName,
+    string Status,
+    [property: Description("该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。")]
+    DateTimeOffset? OccurredAtUtc = null);
 
 public sealed record BusinessConsoleMesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 
