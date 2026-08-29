@@ -32,6 +32,54 @@ public static class MesIntegrationEventVersions
     public const int V2 = 2;
 }
 
+/// <summary>
+/// MES actual-time routing keys shared by the producer and its canonical-topic consumers.
+/// </summary>
+public static class MesActualTimeIntegrationEventTopics
+{
+    public const string DeploymentProfileToken = "{deployment-profile}";
+    public const string SettledV1LegacyAlias = nameof(MesOperationActualTimeSettledIntegrationEvent);
+    public const string VoidedV1LegacyAlias = nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent);
+    public const string SettledV2Template =
+        "nerv-iip.{deployment-profile}.business-mes.mes.operation-actual-time-settled.v2";
+    public const string VoidedV2Template =
+        "nerv-iip.{deployment-profile}.business-mes.mes.operation-actual-time-settlement-voided.v2";
+
+    public static string Settled(string deploymentProfile, int version) =>
+        Build(deploymentProfile, "operation-actual-time-settled", version);
+
+    public static string Voided(string deploymentProfile, int version) =>
+        Build(deploymentProfile, "operation-actual-time-settlement-voided", version);
+
+    public static string? CanonicalSubscriptionTemplate(Type integrationEventType)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEventType);
+        if (integrationEventType == typeof(MesOperationActualTimeSettledV2IntegrationEvent))
+            return SettledV2Template;
+        if (integrationEventType == typeof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent))
+            return VoidedV2Template;
+        return null;
+    }
+
+    public static string ResolveSubscriptionTemplate(string topic, string deploymentProfile)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentProfile);
+        return topic.Contains(DeploymentProfileToken, StringComparison.Ordinal)
+            ? topic.Replace(DeploymentProfileToken, NormalizeDeploymentProfile(deploymentProfile), StringComparison.Ordinal)
+            : topic;
+    }
+
+    private static string Build(string deploymentProfile, string eventName, int version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentProfile);
+        return $"nerv-iip.{NormalizeDeploymentProfile(deploymentProfile)}.business-mes.mes.{eventName}.v{version}";
+    }
+
+    private static string NormalizeDeploymentProfile(string deploymentProfile) =>
+        deploymentProfile.Trim().ToLowerInvariant();
+}
+
 public enum MesMachineTimeFactStatus
 {
     Available,

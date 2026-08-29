@@ -4,7 +4,9 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using DotNetCore.CAP.Internal;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
@@ -83,6 +85,7 @@ try
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<OperationLaborSettlementOrchestrator>();
+    builder.Services.AddScoped<OperationMachineOverheadSettlementOrchestrator>();
     builder.Services.AddScoped<ErpCodingService>();
     builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
     builder.Services.AddScoped<WalkthroughSeedService>();
@@ -114,6 +117,7 @@ try
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
             x.UseDashboard();
         });
+        builder.Services.Replace(ServiceDescriptor.Singleton<IConsumerServiceSelector, DeploymentProfileConsumerServiceSelector>());
     }
 
     builder.Services.AddMediatR(cfg =>

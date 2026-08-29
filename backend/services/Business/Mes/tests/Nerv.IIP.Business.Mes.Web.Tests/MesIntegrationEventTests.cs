@@ -144,6 +144,15 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(
             "nerv-iip.production.business-mes.mes.operation-actual-time-settlement-voided.v2",
             MesActualTimeIntegrationEventTopics.Voided("Production", MesIntegrationEventVersions.V2));
+        Assert.Equal(
+            MesActualTimeIntegrationEventTopics.Settled("CustomerPilot", MesIntegrationEventVersions.V2),
+            MesActualTimeIntegrationEventTopics.ResolveSubscriptionTemplate(
+                MesActualTimeIntegrationEventTopics.SettledV2Template,
+                "CustomerPilot"));
+        Assert.Equal(
+            MesActualTimeIntegrationEventTopics.VoidedV2Template,
+            MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(
+                typeof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent)));
     }
 
     [Fact]

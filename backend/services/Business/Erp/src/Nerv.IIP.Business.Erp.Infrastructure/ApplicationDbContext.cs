@@ -65,6 +65,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<OperationLaborSettlementVoid> OperationLaborSettlementVoids => Set<OperationLaborSettlementVoid>();
     public DbSet<OperationLaborSettlementState> OperationLaborSettlementStates => Set<OperationLaborSettlementState>();
     public DbSet<OperationLaborCoveredReport> OperationLaborCoveredReports => Set<OperationLaborCoveredReport>();
+    public DbSet<OperationMachineOverheadSettlement> OperationMachineOverheadSettlements => Set<OperationMachineOverheadSettlement>();
+    public DbSet<OperationMachineOverheadSettlementVoid> OperationMachineOverheadSettlementVoids => Set<OperationMachineOverheadSettlementVoid>();
+    public DbSet<OperationMachineOverheadSettlementState> OperationMachineOverheadSettlementStates => Set<OperationMachineOverheadSettlementState>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();

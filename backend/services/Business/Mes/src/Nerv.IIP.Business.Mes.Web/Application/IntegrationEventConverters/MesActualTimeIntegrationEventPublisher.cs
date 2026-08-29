@@ -5,24 +5,6 @@ using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
-internal static class MesActualTimeIntegrationEventTopics
-{
-    public const string SettledV1LegacyAlias = nameof(MesOperationActualTimeSettledIntegrationEvent);
-    public const string VoidedV1LegacyAlias = nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent);
-
-    public static string Settled(string deploymentEnvironment, int version) =>
-        Build(deploymentEnvironment, "operation-actual-time-settled", version);
-
-    public static string Voided(string deploymentEnvironment, int version) =>
-        Build(deploymentEnvironment, "operation-actual-time-settlement-voided", version);
-
-    private static string Build(string deploymentEnvironment, string eventName, int version)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentEnvironment);
-        return $"nerv-iip.{deploymentEnvironment.ToLowerInvariant()}.business-mes.mes.{eventName}.v{version}";
-    }
-}
-
 internal interface IMesActualTimeOutboxPublisher
 {
     Task PublishAsync<T>(string topic, T integrationEvent);
