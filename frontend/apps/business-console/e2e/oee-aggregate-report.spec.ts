@@ -73,15 +73,17 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
   await page.route('**/api/business-console/v1/**', routeApi)
 
   await page.goto(
-    '/equipment/telemetry/oee?windowStartUtc=2026-08-24T00:00:00.000Z&windowEndUtc=2026-08-31T00:00:00.000Z',
+    '/equipment/telemetry/oee?deviceAssetId=DEV-CNC-01&windowStartUtc=2026-08-01T00:00:00.000Z&windowEndUtc=2026-09-01T00:00:00.000Z',
     { waitUntil: 'domcontentloaded' },
   )
   expect(pageErrors).toEqual([])
 
   await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText('2026-08-26 · SITE-SUZHOU')).toBeVisible()
+  await expect(page.getByText('完整窗口共 31 个业务日聚合桶。')).toBeVisible()
+  await expect(page.getByText('2026-08-07 · SITE-SUZHOU')).toBeVisible()
   await expect(page.getByText('缺少或存在冲突的工序标准速率')).toBeVisible()
   await expect(page.getByText('1 个桶缺少率值，未画成 0%')).toBeVisible()
+  await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
   await page.screenshot({
     path: testInfo.outputPath('issue-2819-oee-day-trend.png'),
     fullPage: true,
@@ -90,6 +92,7 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
   await page.getByRole('combobox', { name: '报表视角' }).click()
   await page.getByRole('option', { name: '工作中心横比' }).click()
   await page.keyboard.press('Escape')
+  await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('')
   await expect(page.getByText('WC-CNC-5AXIS')).toBeVisible()
   await expect(page.getByText('WC-ASSEMBLY-FINAL')).toBeVisible()
   await page.waitForTimeout(500)
@@ -99,9 +102,22 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
   })
 
   expect(aggregateRequests.some((url) => url.searchParams.get('dimension') === 'day')).toBe(true)
+  expect(
+    aggregateRequests.some(
+      (url) =>
+        url.searchParams.get('dimension') === 'day' &&
+        url.searchParams.get('take') === '100' &&
+        url.searchParams.get('deviceAssetId') === 'DEV-CNC-01',
+    ),
+  ).toBe(true)
   expect(aggregateRequests.some((url) => url.searchParams.get('dimension') === 'workCenter')).toBe(
     true,
   )
+  expect(
+    aggregateRequests
+      .filter((url) => url.searchParams.get('dimension') === 'workCenter')
+      .every((url) => !url.searchParams.has('deviceAssetId')),
+  ).toBe(true)
   expect(
     aggregateRequests.every(
       (url) =>
@@ -112,16 +128,20 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
 })
 
 function businessDayResponse(url: URL) {
-  return aggregateResponse(url, 'day', [
-    bucket('day', 'SITE-SUZHOU', '2026-08-24', 0.781, 0.86, 0.93, 0.625),
-    bucket('day', 'SITE-SUZHOU', '2026-08-25', 0.804, 0.88, 0.95, 0.672),
-    bucket('day', 'SITE-SUZHOU', '2026-08-26', 0.824, 0.91, 0.97, 0.728),
-    {
-      ...bucket('day', 'SITE-SUZHOU', '2026-08-27', 0.799, null, 0.96, null),
-      isDegraded: true,
-      degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
-    },
-  ])
+  const allBuckets = Array.from({ length: 31 }, (_, index) => {
+    const businessDate = `2026-08-${String(index + 1).padStart(2, '0')}`
+    if (index === 6) {
+      return {
+        ...bucket('day', 'SITE-SUZHOU', businessDate, 0.799, null, 0.96, null),
+        isDegraded: true,
+        degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+      }
+    }
+    return bucket('day', 'SITE-SUZHOU', businessDate, 0.781, 0.86, 0.93, 0.625)
+  })
+  const skip = Number(url.searchParams.get('skip') ?? 0)
+  const take = Number(url.searchParams.get('take') ?? 20)
+  return aggregateResponse(url, 'day', allBuckets.slice(skip, skip + take), allBuckets.length)
 }
 
 function workCenterResponse(url: URL) {
@@ -132,7 +152,12 @@ function workCenterResponse(url: URL) {
   ])
 }
 
-function aggregateResponse(url: URL, dimension: string, buckets: Array<Record<string, unknown>>) {
+function aggregateResponse(
+  url: URL,
+  dimension: string,
+  buckets: Array<Record<string, unknown>>,
+  totalCount = buckets.length,
+) {
   return {
     organizationId: 'org-001',
     environmentId: 'env-dev',
@@ -140,9 +165,9 @@ function aggregateResponse(url: URL, dimension: string, buckets: Array<Record<st
     windowStartUtc: url.searchParams.get('windowStartUtc'),
     windowEndUtc: url.searchParams.get('windowEndUtc'),
     buckets,
-    totalCount: buckets.length,
-    skip: 0,
-    take: 20,
+    totalCount,
+    skip: Number(url.searchParams.get('skip') ?? 0),
+    take: Number(url.searchParams.get('take') ?? 20),
   }
 }
 

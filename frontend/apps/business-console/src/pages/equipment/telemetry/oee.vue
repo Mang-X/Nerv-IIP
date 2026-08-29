@@ -8,7 +8,9 @@ import {
   describeTelemetryOeeDegradation,
   formatOeeRate,
   useBusinessTelemetryOeeAggregates,
+  useBusinessTelemetryOeeTrend,
 } from '@/composables/useBusinessTelemetry'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -77,16 +79,40 @@ const {
   windowEndUtc: routeQuery('windowEndUtc') || defaultWindow.endUtc,
   windowStartUtc: routeQuery('windowStartUtc') || defaultWindow.startUtc,
 })
+const { refreshTrend, trendBuckets, trendError, trendPending } =
+  useBusinessTelemetryOeeTrend(filters)
+
+const { page, pageSize } = usePagedList(filters, {
+  initialPageSize: '20',
+  resetOn: [
+    () => filters.dimension,
+    () => filters.windowStartUtc,
+    () => filters.windowEndUtc,
+    () => filters.deviceAssetId,
+    () => filters.workCenterId,
+    () => filters.shiftCode,
+    () => filters.lineCode,
+    () => filters.workshopCode,
+    () => filters.businessDate,
+  ],
+})
+watch(
+  () => filters.dimension,
+  (dimension) => {
+    if (dimension !== 'day') filters.deviceAssetId = ''
+  },
+)
 
 const dimensionLabel = computed(
   () => dimensions.find((item) => item.value === filters.dimension)?.label ?? 'OEE 聚合',
 )
 const errorMessage = computed(() => inlineErrorMessage(aggregateError.value))
+const trendErrorMessage = computed(() => inlineErrorMessage(trendError.value))
 const degradedCount = computed(
   () => aggregateBuckets.value.filter((bucket) => bucket.isDegraded).length,
 )
 const completeRateBuckets = computed(() =>
-  aggregateBuckets.value.filter(
+  trendBuckets.value.filter(
     (bucket) =>
       bucket.oeeRate != null &&
       bucket.availabilityRate != null &&
@@ -95,7 +121,7 @@ const completeRateBuckets = computed(() =>
   ),
 )
 const omittedTrendCount = computed(
-  () => aggregateBuckets.value.length - completeRateBuckets.value.length,
+  () => trendBuckets.value.length - completeRateBuckets.value.length,
 )
 const trendData = computed(() =>
   completeRateBuckets.value.map((bucket) => ({
@@ -148,36 +174,6 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryOeeAggregateBucket>[] =
   { key: 'deviceCount', header: '设备', accessor: (row) => `${row.deviceCount ?? 0} 台` },
   { key: 'isDegraded', header: '数据状态', accessor: degradationSummary },
 ]
-
-const page = computed({
-  get: () => Math.floor(filters.skip / filters.take) + 1,
-  set: (value: number) => {
-    filters.skip = Math.max(0, (value - 1) * filters.take)
-  },
-})
-const pageSize = computed({
-  get: () => filters.take,
-  set: (value: number) => {
-    filters.take = value
-    filters.skip = 0
-  },
-})
-watch(
-  () => [
-    filters.dimension,
-    filters.windowStartUtc,
-    filters.windowEndUtc,
-    filters.deviceAssetId,
-    filters.workCenterId,
-    filters.shiftCode,
-    filters.lineCode,
-    filters.workshopCode,
-    filters.businessDate,
-  ],
-  () => {
-    filters.skip = 0
-  },
-)
 
 const windowRange = computed<DateRange>({
   get: () => ({
@@ -252,6 +248,9 @@ function degradationSummary(row: BusinessConsoleTelemetryOeeAggregateBucket) {
 function rowKey(row: BusinessConsoleTelemetryOeeAggregateBucket) {
   return [row.dimension, row.dimensionValue, row.businessDate, row.bucketStartUtc].join(':')
 }
+function refreshReport() {
+  return Promise.all([refreshAggregates(), refreshTrend()])
+}
 </script>
 
 <template>
@@ -276,8 +275,8 @@ function rowKey(row: BusinessConsoleTelemetryOeeAggregateBucket) {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="aggregatePending"
-          @click="refreshAggregates"
+          :disabled="aggregatePending || trendPending"
+          @click="refreshReport"
         >
           <RefreshCwIcon aria-hidden="true" />刷新
         </NvButton>
@@ -311,7 +310,11 @@ function rowKey(row: BusinessConsoleTelemetryOeeAggregateBucket) {
           留空表示当前授权范围内全部；筛选值只交给服务端裁决。
         </p>
       </div>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <NvField>
+          <NvFieldLabel>设备资产</NvFieldLabel>
+          <NvInput v-model="filters.deviceAssetId" placeholder="设备资产编号" />
+        </NvField>
         <NvField>
           <NvFieldLabel>工作中心</NvFieldLabel>
           <NvInput v-model="filters.workCenterId" placeholder="工作中心编号" />
@@ -346,22 +349,31 @@ function rowKey(row: BusinessConsoleTelemetryOeeAggregateBucket) {
       <div>
         <h2 class="text-sm font-semibold text-foreground">OEE 与 A/P/Q 业务日趋势</h2>
         <p class="text-sm text-muted-foreground">
-          业务日按历史站点时区与日界线聚合；定义缺失或无效时，结果会标记为数据不完整。
+          业务日按历史站点时区与日界线聚合；趋势独立读取完整窗口，不随下方核查表翻页改变。
+        </p>
+        <p v-if="filters.deviceAssetId" class="text-sm text-muted-foreground">
+          当前设备范围：{{ filters.deviceAssetId }}；可在“设备资产”筛选框清除。
         </p>
       </div>
+      <p v-if="trendErrorMessage" class="text-sm text-destructive" role="alert">
+        {{ trendErrorMessage }}
+      </p>
       <div
-        v-if="aggregatePending && trendData.length === 0"
+        v-if="trendPending && trendData.length === 0"
         class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground"
       >
         正在加载趋势…
       </div>
       <div
-        v-else-if="trendData.length === 0"
+        v-else-if="!trendErrorMessage && trendData.length === 0"
         class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground"
       >
         当前窗口没有可绘制的完整率值；缺失事实仍会保留在下方核查表中。
       </div>
-      <template v-else>
+      <template v-else-if="!trendErrorMessage">
+        <p class="text-sm text-muted-foreground" role="status">
+          完整窗口共 {{ trendBuckets.length }} 个业务日聚合桶。
+        </p>
         <p v-if="omittedTrendCount > 0" class="text-sm text-warning" role="status">
           {{ omittedTrendCount }} 个桶缺少率值，未画成 0%；请在下方查看缺失原因。
         </p>

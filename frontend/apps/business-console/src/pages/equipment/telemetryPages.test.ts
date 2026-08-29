@@ -59,13 +59,18 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 const telemetryPageMocks = vi.hoisted(() => ({
   aggregateBuckets: [] as Array<Record<string, unknown>>,
   aggregateError: undefined as unknown,
+  aggregateFilters: undefined as Record<string, string | number> | undefined,
   aggregatePending: false,
+  aggregateTotal: 0,
   historyError: undefined as unknown,
   historyItems: [] as Array<Record<string, unknown>>,
   historyPending: false,
   replaceRoute: vi.fn(),
   route: undefined as unknown,
   saveAlarmRule: vi.fn(),
+  trendBuckets: [] as Array<Record<string, unknown>>,
+  trendError: undefined as unknown,
+  trendPending: false,
 }))
 
 vi.mock('@nerv-iip/ui', () => ({
@@ -354,19 +359,8 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     refreshOee: vi.fn(),
     runtimeAvailabilityError: shallowRef(),
   }),
-  useBusinessTelemetryOeeAggregates: () => ({
-    aggregateBuckets: computed(() => telemetryPageMocks.aggregateBuckets),
-    aggregateError: shallowRef(telemetryPageMocks.aggregateError),
-    aggregatePending: shallowRef(telemetryPageMocks.aggregatePending),
-    aggregateResponse: computed(() => ({
-      dimension: 'day',
-      buckets: telemetryPageMocks.aggregateBuckets,
-      totalCount: telemetryPageMocks.aggregateBuckets.length,
-      skip: 0,
-      take: 20,
-    })),
-    aggregateTotal: computed(() => telemetryPageMocks.aggregateBuckets.length),
-    filters: reactive({
+  useBusinessTelemetryOeeAggregates: (initial: Record<string, string>) => {
+    const filters = reactive({
       dimension: 'day',
       windowStartUtc: '2026-07-01T00:00:00.000Z',
       windowEndUtc: '2026-07-03T00:00:00.000Z',
@@ -378,8 +372,30 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
       businessDate: '',
       skip: 0,
       take: 20,
-    }),
-    refreshAggregates: vi.fn(),
+      ...initial,
+    })
+    telemetryPageMocks.aggregateFilters = filters
+    return {
+      aggregateBuckets: computed(() => telemetryPageMocks.aggregateBuckets),
+      aggregateError: shallowRef(telemetryPageMocks.aggregateError),
+      aggregatePending: shallowRef(telemetryPageMocks.aggregatePending),
+      aggregateResponse: computed(() => ({
+        dimension: filters.dimension,
+        buckets: telemetryPageMocks.aggregateBuckets,
+        totalCount: telemetryPageMocks.aggregateTotal,
+        skip: filters.skip,
+        take: filters.take,
+      })),
+      aggregateTotal: computed(() => telemetryPageMocks.aggregateTotal),
+      filters,
+      refreshAggregates: vi.fn(),
+    }
+  },
+  useBusinessTelemetryOeeTrend: () => ({
+    refreshTrend: vi.fn(),
+    trendBuckets: computed(() => telemetryPageMocks.trendBuckets),
+    trendError: shallowRef(telemetryPageMocks.trendError),
+    trendPending: shallowRef(telemetryPageMocks.trendPending),
   }),
   useBusinessTelemetryTags: () => ({
     filters: { deviceAssetId: '', isEnabled: 'all', skip: 0, take: 100 },
@@ -510,6 +526,10 @@ describe('equipment telemetry pages', () => {
     ]
     telemetryPageMocks.aggregateError = undefined
     telemetryPageMocks.aggregatePending = false
+    telemetryPageMocks.aggregateTotal = telemetryPageMocks.aggregateBuckets.length
+    telemetryPageMocks.trendBuckets = [...telemetryPageMocks.aggregateBuckets]
+    telemetryPageMocks.trendError = undefined
+    telemetryPageMocks.trendPending = false
     telemetryPageMocks.historyError = undefined
     telemetryPageMocks.historyPending = false
     telemetryPageMocks.historyItems = [
@@ -710,12 +730,46 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.get('[data-testid="line-chart"]').text()).not.toContain('76')
   })
 
+  it('renders the complete 31-day trend independently from the 20-row audit page', () => {
+    const template = telemetryPageMocks.aggregateBuckets[0]!
+    telemetryPageMocks.trendBuckets = Array.from({ length: 31 }, (_, index) => ({
+      ...template,
+      businessDate: `2026-07-${String(index + 1).padStart(2, '0')}`,
+      bucketStartUtc: `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+    }))
+    telemetryPageMocks.aggregateBuckets = telemetryPageMocks.trendBuckets.slice(0, 20)
+    telemetryPageMocks.aggregateTotal = 31
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('31 OEE')
+    expect(wrapper.text()).toContain('完整窗口共 31 个业务日聚合桶')
+  })
+
+  it('shows a deep-linked device scope and clears it when switching to an organization comparison', async () => {
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    const deviceInput = wrapper
+      .findAll('input')
+      .find((input) => input.element.value === 'DEV-CNC-01')
+    expect(deviceInput?.exists()).toBe(true)
+    expect(wrapper.text()).toContain('当前设备范围：DEV-CNC-01')
+
+    telemetryPageMocks.aggregateFilters!.dimension = 'workCenter'
+    await nextTick()
+
+    expect(telemetryPageMocks.aggregateFilters!.deviceAssetId).toBe('')
+  })
+
   it('renders loading, error, and empty aggregate states as distinct outcomes', () => {
     telemetryPageMocks.aggregateBuckets = []
     telemetryPageMocks.aggregatePending = true
+    telemetryPageMocks.trendBuckets = []
+    telemetryPageMocks.trendPending = true
     expect(mount(TelemetryOeePage, { global: { stubs } }).text()).toContain('正在加载趋势')
 
     telemetryPageMocks.aggregatePending = false
+    telemetryPageMocks.trendPending = false
     telemetryPageMocks.aggregateError = new Error('403 forbidden')
     expect(mount(TelemetryOeePage, { global: { stubs } }).text()).toContain('没有权限执行此操作。')
 

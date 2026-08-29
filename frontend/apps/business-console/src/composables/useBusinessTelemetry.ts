@@ -6,6 +6,7 @@ import {
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
+  queryBusinessConsoleTelemetryOeeAggregates,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
   queryBusinessConsoleTelemetryOeeAggregatesQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
@@ -249,6 +250,79 @@ export function useBusinessTelemetryOeeAggregates(
     aggregateTotal: computed(() => response.value?.totalCount ?? 0),
     filters,
     refreshAggregates: () => (queryEnabled.value ? aggregatesQuery.refetch() : Promise.resolve()),
+  }
+}
+
+export function useBusinessTelemetryOeeTrend(filters: TelemetryOeeAggregateFilters) {
+  const businessContext = useBusinessContextStore()
+  const queryEnabled = computed(
+    () =>
+      hasBusinessContext(businessContext) &&
+      filters.dimension === 'day' &&
+      filters.windowStartUtc.trim().length > 0 &&
+      filters.windowEndUtc.trim().length > 0,
+  )
+  const trendQuery = useQuery(() => ({
+    key: [
+      'business-telemetry-oee-complete-trend',
+      businessContext.organizationId,
+      businessContext.environmentId,
+      filters.windowStartUtc,
+      filters.windowEndUtc,
+      filters.deviceAssetId,
+      filters.workCenterId,
+      filters.shiftCode,
+      filters.lineCode,
+      filters.workshopCode,
+      filters.businessDate,
+    ],
+    query: async (context): Promise<BusinessConsoleTelemetryOeeAggregateBucket[]> => {
+      const buckets: BusinessConsoleTelemetryOeeAggregateBucket[] = []
+      const take = 100
+      let totalCount = 0
+
+      do {
+        const { data } = await queryBusinessConsoleTelemetryOeeAggregates({
+          query: {
+            ...toContextQuery(businessContext),
+            dimension: 'day',
+            windowStartUtc: filters.windowStartUtc,
+            windowEndUtc: filters.windowEndUtc,
+            deviceAssetId: trimOptional(filters.deviceAssetId),
+            workCenterId: trimOptional(filters.workCenterId),
+            shiftCode: trimOptional(filters.shiftCode),
+            lineCode: trimOptional(filters.lineCode),
+            workshopCode: trimOptional(filters.workshopCode),
+            businessDate: trimOptional(filters.businessDate),
+            skip: buckets.length,
+            take,
+          },
+          signal: context.signal,
+          throwOnError: true,
+        })
+        const page = unwrapData<BusinessConsoleTelemetryOeeAggregateResponse>(data)
+        if (!page) throw new Error('OEE 趋势查询未返回有效数据。')
+        const pageBuckets = page.buckets ?? []
+        const nextTotalCount = page.totalCount ?? 0
+        if (pageBuckets.length === 0 && buckets.length < nextTotalCount) {
+          throw new Error('OEE 趋势查询在完整窗口返回前意外结束。')
+        }
+        buckets.push(...pageBuckets)
+        totalCount = nextTotalCount
+      } while (buckets.length < totalCount)
+
+      return buckets
+    },
+    enabled: queryEnabled.value,
+  }))
+
+  return {
+    trendBuckets: computed<BusinessConsoleTelemetryOeeAggregateBucket[]>(
+      () => trendQuery.data.value ?? [],
+    ),
+    trendError: trendQuery.error,
+    trendPending: trendQuery.isLoading,
+    refreshTrend: () => (queryEnabled.value ? trendQuery.refetch() : Promise.resolve()),
   }
 }
 
