@@ -364,7 +364,8 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         {
             case WorldHistoryInspectionDisposition.Rework:
                 // 返工关单引用一期真实存在的补产工单 WO-2026-R####（挑选规则见 WorldHistoryQualitySpec）。
-                ncr.Close(fact.ReworkWorkOrderNo, null, null, "返工完成并复检合格", ClosureActor);
+                ncr.BindReworkWorkOrder(fact.ReworkWorkOrderNo!);
+                ncr.Close(null, null, "返工完成并复检合格", ClosureActor);
                 break;
 
             case WorldHistoryInspectionDisposition.Scrap:

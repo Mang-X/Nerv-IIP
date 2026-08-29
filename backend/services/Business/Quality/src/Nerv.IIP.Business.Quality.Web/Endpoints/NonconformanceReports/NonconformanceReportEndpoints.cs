@@ -30,6 +30,7 @@ internal static class NonconformanceReportEndpointMapping
             response.Status,
             response.DispositionType,
             response.DispositionApprovalChainId,
+            response.ReworkWorkOrderCreationStatus,
             response.ReworkWorkOrderId,
             response.ScrapMovementId,
             response.ReturnDocumentId,
@@ -124,7 +125,6 @@ public sealed record SubmitNonconformanceReportDispositionRequest(
 
 public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
-    string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
     [property: Required, MaxLength(500)] string Reason);
@@ -146,6 +146,7 @@ public sealed record NonconformanceReportDto(
     string Status,
     string? DispositionType,
     string? DispositionApprovalChainId,
+    string ReworkWorkOrderCreationStatus,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
@@ -261,7 +262,6 @@ public sealed class CloseNonconformanceReportEndpoint(ISender sender)
     {
         await sender.Send(new CloseNonconformanceReportCommand(
             req.NcrId,
-            req.ReworkWorkOrderId,
             req.ScrapMovementId,
             req.ReturnDocumentId,
             req.Reason), ct);

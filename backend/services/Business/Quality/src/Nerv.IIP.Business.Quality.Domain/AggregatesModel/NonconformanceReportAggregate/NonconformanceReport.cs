@@ -95,6 +95,11 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     public string? DispositionType { get; private set; }
     public string? DispositionApprovalChainId { get; private set; }
     public string? ReworkWorkOrderId { get; private set; }
+    public string ReworkWorkOrderCreationStatus => DispositionType != "rework"
+        ? "not-requested"
+        : string.IsNullOrWhiteSpace(ReworkWorkOrderId)
+            ? "requested"
+            : "created";
     public string? ScrapMovementId { get; private set; }
     public string? ReturnDocumentId { get; private set; }
     public string? CloseReason { get; private set; }
@@ -254,8 +259,29 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         }
     }
 
+    public void BindReworkWorkOrder(string reworkWorkOrderId)
+    {
+        var workOrderId = Required(reworkWorkOrderId);
+        if (DispositionType != "rework")
+        {
+            throw new InvalidOperationException("Only rework NCR dispositions can bind a MES rework work order.");
+        }
+
+        if (ReworkWorkOrderId == workOrderId)
+        {
+            return;
+        }
+
+        if (ReworkWorkOrderId is not null)
+        {
+            throw new InvalidOperationException("NCR rework disposition is already bound to a different MES work order.");
+        }
+
+        ReworkWorkOrderId = workOrderId;
+        Touch();
+    }
+
     public void Close(
-        string? reworkWorkOrderId,
         string? scrapMovementId,
         string? returnDocumentId,
         string reason,
@@ -269,7 +295,6 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("NCR cannot be closed before disposition is decided.");
         }
 
-        ReworkWorkOrderId = Optional(reworkWorkOrderId) ?? ReworkWorkOrderId;
         ScrapMovementId = Optional(scrapMovementId) ?? ScrapMovementId;
         ReturnDocumentId = Optional(returnDocumentId) ?? ReturnDocumentId;
         EnsureClosureReferences();
@@ -305,7 +330,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("Closed NCR cannot change scrap movement id.");
         }
 
-        Close(null, movementId, null, Optional(reason) ?? "Inventory scrap disposition completed", Optional(actor) ?? "system:business-quality-inventory-consumer");
+        Close(movementId, null, Optional(reason) ?? "Inventory scrap disposition completed", Optional(actor) ?? "system:business-quality-inventory-consumer");
     }
 
     public void RecordScrapDispositionMovement(string scrapMovementId, decimal quantity)
@@ -356,7 +381,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             return;
         }
 
-        Close(null, null, null, Optional(reason) ?? "Inventory conditional release completed", Optional(actor) ?? "system:business-quality-inventory-consumer");
+        Close(null, null, Optional(reason) ?? "Inventory conditional release completed", Optional(actor) ?? "system:business-quality-inventory-consumer");
     }
 
     private void EnsureClosureReferences()

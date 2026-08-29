@@ -68,6 +68,16 @@ public sealed class QualityOpenApiTests
         AssertQueryParameter(scrapReasonOperation, "take", required: false);
 
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
+        AssertRequestSchemaOmitsProperty(
+            document,
+            "/api/business/v1/quality/ncrs/{ncrId}/close",
+            "post",
+            "reworkWorkOrderId");
+        AssertSchemaProperties(
+            document,
+            "NervIIPBusinessQualityWebEndpointsNonconformanceReportsNonconformanceReportDto",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
         AssertSchemaProperties(
             document,
             "NervIIPBusinessQualityWebEndpointsInspectionPlansCreateInspectionPlanRequest",
@@ -104,6 +114,23 @@ public sealed class QualityOpenApiTests
             .GetProperty(schemaRef.Split('/')[^1]);
         Assert.Contains("reason", schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertRequestSchemaOmitsProperty(
+        JsonDocument document,
+        string route,
+        string method,
+        string propertyName)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var properties = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaRef.Split('/')[^1]).GetProperty("properties");
+
+        Assert.False(
+            properties.TryGetProperty(propertyName, out _),
+            $"Request schema for '{method.ToUpperInvariant()} {route}' must not expose '{propertyName}'.");
     }
 
     private static void AssertQueryParameter(JsonElement operation, string name, bool required)

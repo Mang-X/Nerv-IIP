@@ -266,7 +266,7 @@ WCS 不是首批业务服务。WMS 预留 adapter、任务号、回执和失败�
 | MES | `mes.WorkOrderReleased`、`mes.OperationReported`、`mes.FinishedGoodsReceiptRequested`、`mes.DowntimeRecorded` | WMS、Quality、ERP、Maintenance | 制造过程事实。 |
 | IndustrialTelemetry | `industrialTelemetry.DeviceStateChanged`、`industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` | Scheduling、Maintenance、Notification | 设备状态和报警事实；MES 当前消费标准化 availability/readiness 结果或维护可用性事件，不直接解释原始 `DeviceStateChanged`。 |
 | Maintenance | `maintenance.WorkOrderOpened`、`maintenance.WorkOrderCompleted`、`maintenance.AssetUnavailable`、`maintenance.AssetRestored` | MES、Planning、Notification | 维护和产能影响事实。 |
-| Quality | `quality.InspectionPassed`、`quality.InspectionConditionalReleased`、`quality.InspectionRejected`、`quality.NcrOpened`、`quality.DispositionDecided`、`quality.NcrClosed` | WMS、MES、ERP、Inventory、Notification | 质检与不合格处置结果；conditional-release 通过 Inventory consumer 转 `restricted`，reject 转 `blocked`；NCR 处置只发事件，不直接改库存、返工工单、退货或仓储任务。 |
+| Quality | `quality.InspectionPassed`、`quality.InspectionConditionalReleased`、`quality.InspectionRejected`、`quality.NcrOpened`、`quality.DispositionDecided`、`quality.NcrClosed` | WMS、MES、ERP、Inventory、Notification | 质检与不合格处置结果；conditional-release 通过 Inventory consumer 转 `restricted`，reject 转 `blocked`；NCR 处置只发事件，不直接改库存、返工工单、退货或仓储任务；返工工单由 MES 创建，Quality 仅消费 MES 回执绑定系统工单引用。 |
 | BusinessApproval | `businessApproval.ApprovalApproved`、`businessApproval.ApprovalRejected` | ERP、MES、Inventory、ProductEngineering、Maintenance | 业务审批结果。 |
 
 事件 payload 不携带 token、密码、完整附件内容、对象存储 key、PLC 控制指令或大体积时序数据。
