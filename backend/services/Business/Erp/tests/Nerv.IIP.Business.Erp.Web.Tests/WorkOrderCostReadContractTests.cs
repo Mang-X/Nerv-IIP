@@ -42,6 +42,7 @@ public sealed class WorkOrderCostReadContractTests
         cost.RecordActualLabor(settlement);
         cost.RecordMaterial("MOVE-001", "RPT-001", "RM-001", 2m, 25m, CompletedAtUtc);
         cost.Capitalize("FG-MOVE-001", 10m, 32m, CompletedAtUtc);
+        cost.Complete(10m, 1, 1, CompletedAtUtc.AddMinutes(1));
         db.AddRange(rate, settlement, state, cost,
             OperationLaborCoveredReport.Create("org-001", "env-prod", "WO-001", "OP-001", 1, "RPT-001"),
             OperationLaborReportSnapshot.Create(
@@ -92,6 +93,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(1);
         var cost = WorkOrderCost.Open("org-001", "env-prod", "WO-HIST", "FG-HIST");
         cost.RecordActualLabor(settlement);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
         db.AddRange(rate, settlement, state, cost,
             OperationLaborCoveredReport.Create("org-001", "env-prod", "WO-HIST", "OP-HIST", 1, "RPT-MISSING"));
         await db.SaveChangesAsync();
@@ -127,6 +129,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(2);
         var prodCost = WorkOrderCost.Open("org-001", "env-prod", "WO-REV", "FG-PROD");
         prodCost.RecordActualLabor(activeSettlement);
+        prodCost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
 
         var otherSettlement = OperationLaborSettlement.Create(
             "org-001", "env-test", "WO-REV", "OP-REV", "WC-01", 1,
@@ -136,6 +139,7 @@ public sealed class WorkOrderCostReadContractTests
         otherState.ApplySettlement(1);
         var otherCost = WorkOrderCost.Open("org-001", "env-test", "WO-REV", "FG-TEST");
         otherCost.RecordActualLabor(otherSettlement);
+        otherCost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
 
         db.AddRange(oldSettlement, activeSettlement, state, prodCost,
             OperationLaborCoveredReport.Create("org-001", "env-prod", "WO-REV", "OP-REV", 1, "RPT-OLD"),
@@ -207,6 +211,7 @@ public sealed class WorkOrderCostReadContractTests
         cost.RecordActualLabor(over);
         cost.RecordActualLabor(reversal);
         cost.RecordActualLabor(reopened);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
 
         db.AddRange(cost,
             zero, ActiveState("OP-ZERO", 1), Covered("OP-ZERO", 1, "RPT-ZERO"), Snapshot("OP-ZERO", "RPT-ZERO", 0m),
@@ -258,6 +263,65 @@ public sealed class WorkOrderCostReadContractTests
     }
 
     [Fact]
+    public async Task Stage_reports_do_not_publish_final_variance_until_work_order_completion()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var settlement = OperationLaborSettlement.Create(
+            "org-stage", "env-stage", "WO-STAGE", "OP-STAGE", "WC-STAGE", 1,
+            CompletedAtUtc, 2 * TimeSpan.TicksPerHour, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "CNY", 60m, "evt-stage-settlement", "hash-stage-settlement");
+        var state = OperationLaborSettlementState.Open("org-stage", "env-stage", "OP-STAGE");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-stage", "env-stage", "WO-STAGE", "FG-STAGE");
+        cost.RecordActualLabor(settlement);
+        cost.RecordMaterial("MOVE-STAGE", "RPT-STAGE", "RM-STAGE", 1m, 25m, CompletedAtUtc);
+        cost.Capitalize("FG-MOVE-STAGE", 1m, 20m, CompletedAtUtc);
+        db.AddRange(cost, settlement, state,
+            OperationLaborCoveredReport.Create(
+                "org-stage", "env-stage", "WO-STAGE", "OP-STAGE", 1, "RPT-STAGE"),
+            OperationLaborReportSnapshot.Create(
+                "org-stage", "env-stage", "WO-STAGE", "OP-STAGE", "WC-STAGE", "RPT-STAGE",
+                2m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-1), false, null, "evt-stage-report"));
+        await db.SaveChangesAsync();
+
+        var handler = new GetWorkOrderCostVarianceQueryHandler(db);
+        var beforeCompletion = await handler.Handle(
+            new GetWorkOrderCostVarianceQuery("org-stage", "env-stage", "WO-STAGE"),
+            CancellationToken.None);
+
+        Assert.Equal("unavailable", beforeCompletion.LaborVarianceStatus);
+        Assert.Equal("work_order_not_completed", beforeCompletion.UnavailableReason);
+        Assert.Equal(2.000000m, beforeCompletion.ActualLaborHours);
+        Assert.Equal(25.000000m, beforeCompletion.MaterialCost);
+        Assert.Equal(20.000000m, beforeCompletion.CapitalizedCost);
+        Assert.Null(beforeCompletion.StandardLaborHours);
+        Assert.Null(beforeCompletion.LaborEfficiencyVarianceAmount);
+        Assert.Null(beforeCompletion.CapitalizationVarianceAmount);
+        var provisionalOperation = Assert.Single(beforeCompletion.Operations);
+        Assert.Equal("unavailable", provisionalOperation.Status);
+        Assert.Equal("work_order_not_completed", provisionalOperation.UnavailableReason);
+        Assert.Null(provisionalOperation.StandardLaborHours);
+        Assert.Null(provisionalOperation.LaborEfficiencyVarianceAmount);
+
+        cost.Complete(2m, 1, 1, CompletedAtUtc.AddMinutes(1));
+        await db.SaveChangesAsync();
+
+        var afterCompletion = await handler.Handle(
+            new GetWorkOrderCostVarianceQuery("org-stage", "env-stage", "WO-STAGE"),
+            CancellationToken.None);
+
+        Assert.Equal("available", afterCompletion.LaborVarianceStatus);
+        Assert.Null(afterCompletion.UnavailableReason);
+        Assert.Equal(1.000000m, afterCompletion.StandardLaborHours);
+        Assert.Equal(1.000000m, afterCompletion.LaborEfficiencyVarianceHours);
+        Assert.Equal(60.000000m, afterCompletion.LaborEfficiencyVarianceAmount);
+        Assert.Equal(125.000000m, afterCompletion.CapitalizationVarianceAmount);
+        Assert.Equal("available", Assert.Single(afterCompletion.Operations).Status);
+    }
+
+    [Fact]
     public async Task Reversal_original_must_belong_to_the_current_settlement_membership()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -271,6 +335,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(1);
         var cost = WorkOrderCost.Open("org-lineage", "env-lineage", "WO-LINEAGE", "FG-LINEAGE");
         cost.RecordActualLabor(settlement);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
         db.AddRange(cost, settlement, state,
             OperationLaborCoveredReport.Create(
                 "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", 1, "RPT-CURRENT"),
@@ -310,6 +375,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(1);
         var cost = WorkOrderCost.Open("org-scope", "env-scope", "WO-SCOPE", "FG-SCOPE");
         cost.RecordActualLabor(settlement);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
         db.AddRange(cost, settlement, state,
             OperationLaborCoveredReport.Create(
                 "org-scope", "env-scope", "WO-SCOPE", "OP-CURRENT", 1, "RPT-ORIGINAL"),
@@ -359,6 +425,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(1);
         var cost = WorkOrderCost.Open("org-overflow", "env-overflow", workOrderId, "FG-OVERFLOW");
         cost.RecordActualLabor(settlement);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
         db.AddRange(cost, settlement, state);
         for (var index = 0; index < goodQuantities.Length; index++)
         {
@@ -391,6 +458,9 @@ public sealed class WorkOrderCostReadContractTests
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var cost = WorkOrderCost.Open("org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", "FG-OVERFLOW");
+        cost.RecordMaterial("MOVE-OVERFLOW", "RPT-MATERIAL", "RM-OVERFLOW", 1m, 50m, CompletedAtUtc);
+        cost.Capitalize("FG-MOVE-OVERFLOW", 1m, 30m, CompletedAtUtc);
+        cost.Complete(1m, 1, 1, CompletedAtUtc.AddMinutes(1));
 
         OperationLaborSettlement Settlement(string operationTaskId, string sourceEventId)
             => OperationLaborSettlement.Create(
@@ -407,7 +477,17 @@ public sealed class WorkOrderCostReadContractTests
         var secondState = OperationLaborSettlementState.Open(
             "org-aggregate-overflow", "env-aggregate-overflow", "OP-B");
         secondState.ApplySettlement(1);
-        db.AddRange(cost, first, second, firstState, secondState);
+        db.AddRange(cost, first, second, firstState, secondState,
+            OperationLaborCoveredReport.Create(
+                "org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", "OP-A", 1, "RPT-A"),
+            OperationLaborReportSnapshot.Create(
+                "org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", "OP-A", "WC-OP-A", "RPT-A",
+                1m, 0m, 0m, "ea", 1m, CompletedAtUtc, false, null, "evt-report-a"),
+            OperationLaborCoveredReport.Create(
+                "org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", "OP-B", 1, "RPT-B"),
+            OperationLaborReportSnapshot.Create(
+                "org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", "OP-B", "WC-OP-B", "RPT-B",
+                1m, 0m, 0m, "ea", 1m, CompletedAtUtc, false, null, "evt-report-b"));
         await db.SaveChangesAsync();
 
         var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
@@ -417,8 +497,16 @@ public sealed class WorkOrderCostReadContractTests
 
         Assert.Equal("unavailable", response.LaborVarianceStatus);
         Assert.Equal("numeric_overflow", response.UnavailableReason);
-        Assert.Null(response.ActualLaborHours);
+        Assert.Equal(2.000000m, response.ActualLaborHours);
         Assert.Null(response.ActualLaborCost);
+        Assert.Equal(2.000000m, response.StandardLaborHours);
+        Assert.Null(response.StandardLaborCost);
+        Assert.Equal(0.000000m, response.LaborEfficiencyVarianceHours);
+        Assert.Null(response.LaborEfficiencyVarianceAmount);
+        Assert.Equal(50.000000m, response.MaterialCost);
+        Assert.Equal(50.000000m, response.TotalAccumulatedCost);
+        Assert.Equal(30.000000m, response.CapitalizedCost);
+        Assert.Equal(20.000000m, response.CapitalizationVarianceAmount);
         Assert.Equal(2, response.TotalOperations);
         Assert.Equal(2, response.PageNumber);
         Assert.Equal(1, response.PageSize);
@@ -442,6 +530,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(1);
         var cost = WorkOrderCost.Open("org-round", "env-round", "WO-ROUND", "FG-ROUND");
         cost.RecordActualLabor(settlement);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
         db.AddRange(cost, settlement, state,
             OperationLaborCoveredReport.Create(
                 "org-round", "env-round", "WO-ROUND", "OP-ROUND", 1, "RPT-ROUND"),
@@ -475,6 +564,7 @@ public sealed class WorkOrderCostReadContractTests
         state.ApplySettlement(1);
         var cost = WorkOrderCost.Open("org-scale", "env-scale", "WO-SCALE", "FG-SCALE");
         cost.RecordActualLabor(settlement);
+        cost.Complete(1m, 1, 0, CompletedAtUtc.AddMinutes(1));
         db.AddRange(cost, settlement, state,
             OperationLaborCoveredReport.Create(
                 "org-scale", "env-scale", "WO-SCALE", "OP-SCALE", 1, "RPT-SCALE"),

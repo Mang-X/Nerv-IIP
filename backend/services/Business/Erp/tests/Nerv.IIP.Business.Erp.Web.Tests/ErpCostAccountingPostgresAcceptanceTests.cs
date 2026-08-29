@@ -469,6 +469,20 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Single(await assertDb.OperationMachineOverheadSettlements.ToListAsync());
         Assert.Equal(1, (await assertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
 
+        var stageRead = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
+            new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT"),
+            CancellationToken.None);
+        Assert.Equal("unavailable", stageRead.LaborVarianceStatus);
+        Assert.Equal("work_order_not_completed", stageRead.UnavailableReason);
+        Assert.Null(stageRead.StandardLaborHours);
+        Assert.Null(stageRead.LaborEfficiencyVarianceAmount);
+        Assert.Null(stageRead.CapitalizationVarianceAmount);
+        Assert.Equal("unavailable", Assert.Single(stageRead.Operations).Status);
+
+        cost.Complete(10m, 1, 0, completedAtUtc.AddMinutes(2));
+        await assertDb.SaveChangesAsync();
+        assertDb.ChangeTracker.Clear();
+
         var read = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
             new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT"),
             CancellationToken.None);

@@ -92,6 +92,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
 {
     private const string MachineCostUnavailableReason = "machine_cost_read_contract_deferred";
     private const string NumericOverflowReason = "numeric_overflow";
+    private const string WorkOrderNotCompletedReason = "work_order_not_completed";
 
     public async Task<WorkOrderCostVarianceResponse> Handle(
         GetWorkOrderCostVarianceQuery request,
@@ -133,71 +134,97 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
                 && x.WorkOrderId == workOrderId)
             .ToDictionaryAsync(x => x.ReportNo, StringComparer.Ordinal, cancellationToken);
 
+        var completionReason = cost.CompletedAtUtc.HasValue ? null : WorkOrderNotCompletedReason;
         var operationResults = settlements
-            .Select(settlement => BuildOperation(settlement, covered, snapshots))
+            .Select(settlement => BuildOperation(settlement, covered, snapshots, completionReason))
             .ToArray();
         var page = operationResults
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToArray();
         var currencies = settlements.Select(x => x.CurrencyCode).Distinct(StringComparer.Ordinal).ToArray();
+        var unavailableReason = completionReason ?? (settlements.Count == 0
+            ? "operation_not_settled"
+            : operationResults.FirstOrDefault(x => x.Status == "unavailable")?.UnavailableReason);
+        if (unavailableReason is null && currencies.Length > 1)
+            unavailableReason = "currency_conflict";
+
+        var hasNumericOverflow = false;
+        decimal? actualLaborHours = settlements.Count == 0
+            ? null
+            : TryCalculate(() => settlements.Sum(x => x.ActualLaborHours), ref hasNumericOverflow);
+        decimal? actualLaborCost = settlements.Count == 0
+            ? null
+            : TryCalculate(() => settlements.Sum(x => x.Amount), ref hasNumericOverflow);
+        decimal? standardLaborHours = unavailableReason is null
+            ? TryCalculate(() => operationResults.Sum(x => x.StandardLaborHours!.Value), ref hasNumericOverflow)
+            : null;
+        decimal? standardLaborCost = unavailableReason is null
+            ? TryCalculate(() => operationResults.Sum(x => x.StandardLaborCost!.Value), ref hasNumericOverflow)
+            : null;
+        decimal? varianceHours = unavailableReason is null && actualLaborHours.HasValue && standardLaborHours.HasValue
+            ? TryCalculate(() => actualLaborHours.Value - standardLaborHours.Value, ref hasNumericOverflow)
+            : null;
+        decimal? varianceAmount = unavailableReason is null && actualLaborCost.HasValue && standardLaborCost.HasValue
+            ? TryCalculate(() => actualLaborCost.Value - standardLaborCost.Value, ref hasNumericOverflow)
+            : null;
+        var materialCost = TryCalculate(() => cost.MaterialCost, ref hasNumericOverflow);
+        var totalAccumulatedCost = TryCalculate(() => cost.TotalAccumulatedCost, ref hasNumericOverflow);
+        var capitalizedCost = TryCalculate(() => cost.CapitalizedCost, ref hasNumericOverflow);
+        decimal? capitalizationVarianceAmount = completionReason is null
+            && totalAccumulatedCost.HasValue
+            && capitalizedCost.HasValue
+                ? TryCalculate(() => totalAccumulatedCost.Value - capitalizedCost.Value, ref hasNumericOverflow)
+                : null;
+        decimal? machineHours;
         try
         {
-            var unavailableReason = settlements.Count == 0
-                ? "operation_not_settled"
-                : operationResults.FirstOrDefault(x => x.Status == "unavailable")?.UnavailableReason;
-            if (unavailableReason is null
-                && settlements.Select(x => x.CurrencyCode).Distinct(StringComparer.Ordinal).Skip(1).Any())
-                unavailableReason = "currency_conflict";
-
-            decimal? actualLaborHours = settlements.Count == 0 ? null : Round(settlements.Sum(x => x.ActualLaborHours));
-            decimal? actualLaborCost = settlements.Count == 0 ? null : Round(settlements.Sum(x => x.Amount));
-            decimal? standardLaborHours = unavailableReason is null ? Round(operationResults.Sum(x => x.StandardLaborHours!.Value)) : null;
-            decimal? standardLaborCost = unavailableReason is null ? Round(operationResults.Sum(x => x.StandardLaborCost!.Value)) : null;
-            decimal? varianceHours = unavailableReason is null ? Round(actualLaborHours!.Value - standardLaborHours!.Value) : null;
-            decimal? varianceAmount = unavailableReason is null ? Round(actualLaborCost!.Value - standardLaborCost!.Value) : null;
-            var machineHours = await ActiveMachineHoursAsync(organizationId, environmentId, workOrderId, cancellationToken);
-            return new(
-                organizationId,
-                environmentId,
-                workOrderId,
-                currencies.Length == 1 ? currencies[0] : null,
-                "actualOperation",
-                unavailableReason is null ? "available" : "unavailable",
-                unavailableReason,
-                actualLaborHours,
-                actualLaborCost,
-                standardLaborHours,
-                standardLaborCost,
-                varianceHours,
-                varianceAmount,
-                varianceAmount is null ? null : Direction(varianceAmount.Value),
-                "notApplicable",
-                "actual_payroll_rate_not_modeled",
-                Round(cost.MaterialCost),
-                Round(cost.TotalAccumulatedCost),
-                Round(cost.CapitalizedCost),
-                Round(cost.TotalAccumulatedCost - cost.CapitalizedCost),
-                machineHours,
-                "unavailable",
-                MachineCostUnavailableReason,
-                request.PageNumber,
-                request.PageSize,
-                operationResults.Length,
-                page);
+            machineHours = await ActiveMachineHoursAsync(organizationId, environmentId, workOrderId, cancellationToken);
         }
         catch (OverflowException)
         {
-            return UnavailableWithOperations(
-                organizationId, environmentId, workOrderId, request, NumericOverflowReason,
-                currencies.Length == 1 ? currencies[0] : null, operationResults.Length, page);
+            hasNumericOverflow = true;
+            machineHours = null;
         }
+
+        if (hasNumericOverflow)
+            unavailableReason = NumericOverflowReason;
+
+        return new(
+            organizationId,
+            environmentId,
+            workOrderId,
+            currencies.Length == 1 ? currencies[0] : null,
+            "actualOperation",
+            unavailableReason is null ? "available" : "unavailable",
+            unavailableReason,
+            actualLaborHours,
+            actualLaborCost,
+            standardLaborHours,
+            standardLaborCost,
+            varianceHours,
+            varianceAmount,
+            varianceAmount is null ? null : Direction(varianceAmount.Value),
+            "notApplicable",
+            "actual_payroll_rate_not_modeled",
+            materialCost,
+            totalAccumulatedCost,
+            capitalizedCost,
+            capitalizationVarianceAmount,
+            machineHours,
+            "unavailable",
+            MachineCostUnavailableReason,
+            request.PageNumber,
+            request.PageSize,
+            operationResults.Length,
+            page);
     }
 
     private static OperationLaborVarianceItem BuildOperation(
         OperationLaborSettlement settlement,
         IReadOnlyCollection<OperationLaborCoveredReport> covered,
-        IReadOnlyDictionary<string, OperationLaborReportSnapshot> snapshots)
+        IReadOnlyDictionary<string, OperationLaborReportSnapshot> snapshots,
+        string? finalityReason)
     {
         var reportNos = covered
             .Where(x => x.OperationTaskId == settlement.OperationTaskId
@@ -209,7 +236,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             .Where(snapshots.ContainsKey)
             .Select(reportNo => snapshots[reportNo])
             .ToArray();
-        var reason = ValidateBasis(settlement, reportNos, reports, snapshots);
+        var reason = finalityReason ?? ValidateBasis(settlement, reportNos, reports, snapshots);
         decimal? standardHours = null;
         decimal? standardCost = null;
         decimal? varianceHours = null;
@@ -339,21 +366,18 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             null, null, null, null, null, "unavailable", MachineCostUnavailableReason,
             request.PageNumber, request.PageSize, 0, []);
 
-    private static WorkOrderCostVarianceResponse UnavailableWithOperations(
-        string organizationId,
-        string environmentId,
-        string workOrderId,
-        GetWorkOrderCostVarianceQuery request,
-        string reason,
-        string? currencyCode,
-        int totalOperations,
-        IReadOnlyList<OperationLaborVarianceItem> operations)
-        => new(
-            organizationId, environmentId, workOrderId, currencyCode, "actualOperation",
-            "unavailable", reason, null, null, null, null, null, null, null,
-            "notApplicable", "actual_payroll_rate_not_modeled",
-            null, null, null, null, null, "unavailable", MachineCostUnavailableReason,
-            request.PageNumber, request.PageSize, totalOperations, operations);
+    private static decimal? TryCalculate(Func<decimal> calculation, ref bool hasNumericOverflow)
+    {
+        try
+        {
+            return Round(calculation());
+        }
+        catch (OverflowException)
+        {
+            hasNumericOverflow = true;
+            return null;
+        }
+    }
 
     private static decimal Round(decimal value)
         => decimal.Round(value, 6, MidpointRounding.AwayFromZero);
