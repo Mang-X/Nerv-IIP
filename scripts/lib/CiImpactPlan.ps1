@@ -189,7 +189,7 @@ function Get-NervCiImpactPlan {
             continue
         }
 
-        if ([string]::Equals($path, 'docs/architecture/script-automation-governance.md', [StringComparison]::Ordinal)) {
+        if ([string]::Equals($path, 'docs/governance/script-automation.md', [StringComparison]::Ordinal)) {
             foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
