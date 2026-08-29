@@ -57,6 +57,9 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 })
 
 const telemetryPageMocks = vi.hoisted(() => ({
+  aggregateBuckets: [] as Array<Record<string, unknown>>,
+  aggregateError: undefined as unknown,
+  aggregatePending: false,
   historyError: undefined as unknown,
   historyItems: [] as Array<Record<string, unknown>>,
   historyPending: false,
@@ -82,9 +85,12 @@ vi.mock('@nerv-iip/ui', () => ({
     `,
   },
   NvDataTable: {
-    props: ['rows', 'columns'],
+    props: ['rows', 'columns', 'loading', 'error', 'errorMessage', 'emptyMessage'],
     template: `
       <div>
+        <span v-if="loading">加载中</span>
+        <span v-else-if="error">{{ errorMessage }}</span>
+        <span v-else-if="rows.length === 0">{{ emptyMessage }}</span>
         <div v-for="row in rows" :key="JSON.stringify(row)">
           <span v-for="col in columns" :key="col.key">
             {{ col.accessor ? col.accessor(row) : row[col.key] }}
@@ -121,7 +127,8 @@ vi.mock('@nerv-iip/ui', () => ({
   },
   NvLineChart: {
     props: ['data', 'series'],
-    template: '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}</div>',
+    template:
+      '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}<span v-for="row in data">{{ row.oee }}/{{ row.availability }}/{{ row.performance }}/{{ row.quality }}</span></div>',
   },
   NvPageHeader: {
     props: ['title', 'count'],
@@ -264,7 +271,8 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
 }))
 
 vi.mock('@/composables/useBusinessTelemetry', () => ({
-  describeTelemetryOeeDegradation: (reason: string) => reason,
+  describeTelemetryOeeDegradation: (reason: string) =>
+    reason === 'theoreticalRateMissingOrAmbiguous' ? '缺少或存在冲突的工序标准速率' : reason,
   describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
   formatOeeQuantity: (value?: number) => (value === undefined ? '无数据' : `${value}`),
   formatOeeRate: (value?: number) =>
@@ -346,6 +354,33 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     refreshOee: vi.fn(),
     runtimeAvailabilityError: shallowRef(),
   }),
+  useBusinessTelemetryOeeAggregates: () => ({
+    aggregateBuckets: computed(() => telemetryPageMocks.aggregateBuckets),
+    aggregateError: shallowRef(telemetryPageMocks.aggregateError),
+    aggregatePending: shallowRef(telemetryPageMocks.aggregatePending),
+    aggregateResponse: computed(() => ({
+      dimension: 'day',
+      buckets: telemetryPageMocks.aggregateBuckets,
+      totalCount: telemetryPageMocks.aggregateBuckets.length,
+      skip: 0,
+      take: 20,
+    })),
+    aggregateTotal: computed(() => telemetryPageMocks.aggregateBuckets.length),
+    filters: reactive({
+      dimension: 'day',
+      windowStartUtc: '2026-07-01T00:00:00.000Z',
+      windowEndUtc: '2026-07-03T00:00:00.000Z',
+      deviceAssetId: '',
+      workCenterId: '',
+      shiftCode: '',
+      lineCode: '',
+      workshopCode: '',
+      businessDate: '',
+      skip: 0,
+      take: 20,
+    }),
+    refreshAggregates: vi.fn(),
+  }),
   useBusinessTelemetryTags: () => ({
     filters: { deviceAssetId: '', isEnabled: 'all', skip: 0, take: 100 },
     refreshTags: vi.fn(),
@@ -370,9 +405,12 @@ const stubs = {
   NvBadge: { template: '<span><slot /></span>' },
   NvButton: { template: '<button><slot /></button>' },
   NvDataTable: {
-    props: ['rows', 'columns'],
+    props: ['rows', 'columns', 'loading', 'error', 'errorMessage', 'emptyMessage'],
     template: `
       <div>
+        <span v-if="loading">加载中</span>
+        <span v-else-if="error">{{ errorMessage }}</span>
+        <span v-else-if="rows.length === 0">{{ emptyMessage }}</span>
         <div v-for="row in rows" :key="JSON.stringify(row)">
           <span v-for="col in columns" :key="col.key">
             {{ col.accessor ? col.accessor(row) : row[col.key] }}
@@ -395,7 +433,8 @@ const stubs = {
   },
   NvLineChart: {
     props: ['data', 'series'],
-    template: '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}</div>',
+    template:
+      '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}<span v-for="row in data">{{ row.oee }}/{{ row.availability }}/{{ row.performance }}/{{ row.quality }}</span></div>',
   },
   PageHeader: {
     props: ['title', 'count'],
@@ -437,6 +476,40 @@ const stubs = {
 
 describe('equipment telemetry pages', () => {
   beforeEach(() => {
+    telemetryPageMocks.aggregateBuckets = [
+      {
+        dimension: 'day',
+        dimensionValue: 'SITE-SUZHOU',
+        siteCode: 'SITE-SUZHOU',
+        businessDate: '2026-07-01',
+        bucketStartUtc: '2026-06-30T16:00:00.000Z',
+        bucketEndUtc: '2026-07-01T16:00:00.000Z',
+        deviceCount: 4,
+        availabilityRate: 0.82,
+        performanceRate: 0.9,
+        qualityRate: 0.95,
+        oeeRate: 0.7,
+        isDegraded: false,
+        degradedReasons: [],
+      },
+      {
+        dimension: 'day',
+        dimensionValue: 'SITE-SUZHOU',
+        siteCode: 'SITE-SUZHOU',
+        businessDate: '2026-07-02',
+        bucketStartUtc: '2026-07-01T16:00:00.000Z',
+        bucketEndUtc: '2026-07-02T16:00:00.000Z',
+        deviceCount: 4,
+        availabilityRate: 0.76,
+        performanceRate: null,
+        qualityRate: 0.96,
+        oeeRate: null,
+        isDegraded: true,
+        degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+      },
+    ]
+    telemetryPageMocks.aggregateError = undefined
+    telemetryPageMocks.aggregatePending = false
     telemetryPageMocks.historyError = undefined
     telemetryPageMocks.historyPending = false
     telemetryPageMocks.historyItems = [
@@ -626,10 +699,30 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
   })
 
-  it('counts only unavailable runtime windows as unavailable windows', () => {
+  it('keeps missing aggregate rates out of the trend and explains the degraded bucket', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    expect(wrapper.text()).toMatch(/不可用窗口\s*1/)
+    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('1 OEE')
+    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
+    expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
+    expect(wrapper.text()).toContain('—')
+    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('70/82/90/95')
+    expect(wrapper.get('[data-testid="line-chart"]').text()).not.toContain('76')
+  })
+
+  it('renders loading, error, and empty aggregate states as distinct outcomes', () => {
+    telemetryPageMocks.aggregateBuckets = []
+    telemetryPageMocks.aggregatePending = true
+    expect(mount(TelemetryOeePage, { global: { stubs } }).text()).toContain('正在加载趋势')
+
+    telemetryPageMocks.aggregatePending = false
+    telemetryPageMocks.aggregateError = new Error('403 forbidden')
+    expect(mount(TelemetryOeePage, { global: { stubs } }).text()).toContain('没有权限执行此操作。')
+
+    telemetryPageMocks.aggregateError = undefined
+    const emptyText = mount(TelemetryOeePage, { global: { stubs } }).text()
+    expect(emptyText).toContain('当前窗口没有可绘制的完整率值')
+    expect(emptyText).toContain('当前窗口和筛选范围内没有 OEE 聚合事实')
   })
 
   it('requires a numeric threshold before saving an alarm rule', async () => {

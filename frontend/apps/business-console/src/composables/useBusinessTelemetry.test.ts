@@ -11,6 +11,7 @@ import {
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
+  queryBusinessConsoleTelemetryOeeAggregatesQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
 } from '@nerv-iip/api-client'
@@ -26,6 +27,7 @@ import {
   useBusinessTelemetryConnectorCoverage,
   useBusinessEquipmentHealth,
   useBusinessTelemetryHistory,
+  useBusinessTelemetryOeeAggregates,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
   useMaintenancePlanRuntimeRemaining,
@@ -87,6 +89,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   queryBusinessConsoleTelemetryOeeQueryOptions: vi.fn(() => ({
     key: [{ _id: 'queryBusinessConsoleTelemetryOee' }],
+    query: vi.fn(),
+  })),
+  queryBusinessConsoleTelemetryOeeAggregatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'queryBusinessConsoleTelemetryOeeAggregates' }],
     query: vi.fn(),
   })),
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions: vi.fn(() => ({
@@ -468,12 +474,73 @@ describe('business telemetry composables', () => {
     expect(oee.availabilityWindows.value).toHaveLength(1)
   })
 
+  it('queries the stable OEE aggregate client with server-owned scope and exposes paged buckets', () => {
+    coladaState.queryDataById.set('queryBusinessConsoleTelemetryOeeAggregates', {
+      success: true,
+      data: {
+        dimension: 'workCenter',
+        buckets: [
+          {
+            dimension: 'workCenter',
+            dimensionValue: 'WC-MACHINING',
+            oeeRate: 0.74,
+            isDegraded: false,
+          },
+        ],
+        totalCount: 26,
+        skip: 20,
+        take: 20,
+      },
+    })
+
+    const aggregates = useBusinessTelemetryOeeAggregates({
+      dimension: 'workCenter',
+      windowStartUtc: '2026-08-01T00:00:00.000Z',
+      windowEndUtc: '2026-08-08T00:00:00.000Z',
+      workCenterId: ' WC-MACHINING ',
+      lineCode: ' LINE-A ',
+      workshopCode: ' WORKSHOP-MACHINING ',
+      shiftCode: ' SHIFT-DAY ',
+      businessDate: '2026-08-06',
+      skip: 20,
+      take: 20,
+    })
+
+    expect(queryBusinessConsoleTelemetryOeeAggregatesQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        dimension: 'workCenter',
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-08T00:00:00.000Z',
+        deviceAssetId: undefined,
+        workCenterId: 'WC-MACHINING',
+        shiftCode: 'SHIFT-DAY',
+        lineCode: 'LINE-A',
+        workshopCode: 'WORKSHOP-MACHINING',
+        businessDate: '2026-08-06',
+        skip: 20,
+        take: 20,
+      },
+    })
+    expect(aggregates.aggregateBuckets.value).toEqual([
+      expect.objectContaining({ dimensionValue: 'WC-MACHINING', oeeRate: 0.74 }),
+    ])
+    expect(aggregates.aggregateTotal.value).toBe(26)
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOeeAggregates')?.enabled,
+    ).toBe(true)
+  })
+
   it('formats OEE measures and explains degraded inputs in business language', () => {
     expect(formatOeeRate(0.876)).toBe('87.6%')
     expect(formatOeeRate(undefined)).toBe('无数据')
     expect(formatOeeQuantity(12.5, 'PCS')).toBe('12.5 PCS')
     expect(describeTelemetryOeeLimitations()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少 MES 报工事实')
+    expect(describeTelemetryOeeDegradation('historicalTimezoneMissing')).toBe(
+      '历史事实缺少站点时区',
+    )
   })
 
   // Hand out deferred runtime-hours reads so overlapping rounds and out-of-order completion can be driven.
