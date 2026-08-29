@@ -4,15 +4,35 @@ using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Scheduling;
 
-public sealed class PeriodicInspectionQuantityContinuationScheduler(
-    IServiceScopeFactory scopeFactory,
-    ILogger<PeriodicInspectionQuantityContinuationScheduler> logger,
-    TimeProvider timeProvider)
-    : BackgroundService
+public sealed class PeriodicInspectionQuantityContinuationScheduler : BackgroundService
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
     private const int ContextBatchSize = 100;
     private const int MaxConcurrentCandidates = 4;
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly ILogger<PeriodicInspectionQuantityContinuationScheduler> logger;
+    private readonly TimeProvider timeProvider;
+    private readonly IPeriodicInspectionCandidateExecutor candidateExecutor;
+
+    public PeriodicInspectionQuantityContinuationScheduler(
+        IServiceScopeFactory scopeFactory,
+        ILogger<PeriodicInspectionQuantityContinuationScheduler> logger,
+        TimeProvider timeProvider)
+        : this(scopeFactory, logger, timeProvider, new ParallelPeriodicInspectionCandidateExecutor())
+    {
+    }
+
+    internal PeriodicInspectionQuantityContinuationScheduler(
+        IServiceScopeFactory scopeFactory,
+        ILogger<PeriodicInspectionQuantityContinuationScheduler> logger,
+        TimeProvider timeProvider,
+        IPeriodicInspectionCandidateExecutor candidateExecutor)
+    {
+        this.scopeFactory = scopeFactory;
+        this.logger = logger;
+        this.timeProvider = timeProvider;
+        this.candidateExecutor = candidateExecutor;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,7 +44,7 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
         }
     }
 
-    private async Task TryContinueAsync(CancellationToken cancellationToken)
+    internal async Task TryContinueAsync(CancellationToken cancellationToken)
     {
         var attemptedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         var nextAttemptAtUtc = attemptedAtUtc.Add(ScanInterval);
@@ -46,13 +66,9 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
             return;
         }
 
-        await Parallel.ForEachAsync(
+        await candidateExecutor.ExecuteAsync(
             candidates,
-            new ParallelOptions
-            {
-                MaxDegreeOfParallelism = MaxConcurrentCandidates,
-                CancellationToken = cancellationToken,
-            },
+            MaxConcurrentCandidates,
             async (candidate, token) =>
             {
                 try
@@ -86,7 +102,8 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
                         candidate.RuntimeContextId);
                     await TryDeferFailedCandidateAsync(candidate, nextAttemptAtUtc, token);
                 }
-            });
+            },
+            cancellationToken);
     }
 
     private async Task TryDeferFailedCandidateAsync(
@@ -120,4 +137,30 @@ public sealed class PeriodicInspectionQuantityContinuationScheduler(
                 candidate.RuntimeContextId);
         }
     }
+}
+
+internal interface IPeriodicInspectionCandidateExecutor
+{
+    Task ExecuteAsync<TCandidate>(
+        IReadOnlyList<TCandidate> candidates,
+        int maxConcurrency,
+        Func<TCandidate, CancellationToken, Task> executeCandidate,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class ParallelPeriodicInspectionCandidateExecutor : IPeriodicInspectionCandidateExecutor
+{
+    public Task ExecuteAsync<TCandidate>(
+        IReadOnlyList<TCandidate> candidates,
+        int maxConcurrency,
+        Func<TCandidate, CancellationToken, Task> executeCandidate,
+        CancellationToken cancellationToken) =>
+        Parallel.ForEachAsync(
+            candidates,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxConcurrency,
+                CancellationToken = cancellationToken,
+            },
+            (candidate, token) => new ValueTask(executeCandidate(candidate, token)));
 }

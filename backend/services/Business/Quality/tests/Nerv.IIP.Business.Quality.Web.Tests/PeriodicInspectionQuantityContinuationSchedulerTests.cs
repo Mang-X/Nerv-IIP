@@ -26,17 +26,10 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
             NullLogger<PeriodicInspectionQuantityContinuationScheduler>.Instance,
             clock);
 
-        await scheduler.StartAsync(CancellationToken.None);
-        try
-        {
-            await sender.FirstCandidateStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
-            await sender.SecondCandidateCompleted.Task.WaitAsync(TimeSpan.FromSeconds(1));
-        }
-        finally
-        {
-            sender.ReleaseFirstCandidate.TrySetResult();
-            await scheduler.StopAsync(CancellationToken.None);
-        }
+        await scheduler.TryContinueAsync(CancellationToken.None);
+
+        Assert.True(sender.FirstCandidateStarted.Task.IsCompletedSuccessfully);
+        Assert.True(sender.SecondCandidateCompleted.Task.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -44,33 +37,21 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
     {
         var start = DateTimeOffset.Parse("2026-08-25T01:00:00Z");
         var clock = new TimerRegistrationObservingTimeProvider(start);
-        var sender = new BlockingBatchSender();
+        var sender = new CapturingBatchSender();
+        var executor = new DeterministicCandidateExecutor();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
         var scheduler = new PeriodicInspectionQuantityContinuationScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<PeriodicInspectionQuantityContinuationScheduler>.Instance,
-            clock);
+            clock,
+            executor);
 
-        await scheduler.StartAsync(CancellationToken.None);
-        try
-        {
-            await Eventually.WaitAsync(
-                "quantity continuation scheduler starts the bounded candidate set",
-                _ => ValueTask.FromResult(sender.StartedCount),
-                count => count == 4,
-                count => $"started={count}",
-                new EventuallyOptions(TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), []));
-            await Assert.ThrowsAsync<TimeoutException>(
-                () => sender.FifthCandidateStarted.Task.WaitAsync(TimeSpan.FromMilliseconds(100)));
-            Assert.Equal(4, sender.StartedCount);
-        }
-        finally
-        {
-            sender.ReleaseCandidates.TrySetResult();
-            await scheduler.StopAsync(CancellationToken.None);
-        }
+        await scheduler.TryContinueAsync(CancellationToken.None);
+
+        Assert.Equal(4, executor.PeakConcurrency);
+        Assert.Equal(5, sender.GenerationCommands.Count);
     }
 
     [Fact]
@@ -87,14 +68,7 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
             NullLogger<PeriodicInspectionQuantityContinuationScheduler>.Instance,
             clock);
 
-        await scheduler.StartAsync(CancellationToken.None);
-        await Eventually.WaitAsync(
-            "quantity continuation scheduler defers the poison candidate and runs the sibling",
-            _ => ValueTask.FromResult((Generations: sender.GenerationCommands.Count, Deferrals: sender.DeferCommands.Count)),
-            counts => counts.Generations == 2 && counts.Deferrals == 1,
-            counts => $"generations={counts.Generations}; deferrals={counts.Deferrals}",
-            new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
-        await scheduler.StopAsync(CancellationToken.None);
+        await scheduler.TryContinueAsync(CancellationToken.None);
 
         Assert.Equal(
             ["OP-001", "OP-002"],
@@ -169,7 +143,6 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
     private sealed class FirstCandidateBlockingSender : ISender
     {
         public TaskCompletionSource FirstCandidateStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource ReleaseFirstCandidate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource SecondCandidateCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task<TResponse> Send<TResponse>(
@@ -191,7 +164,7 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
             if (command.OperationId == "OP-001")
             {
                 FirstCandidateStarted.TrySetResult();
-                await ReleaseFirstCandidate.Task.WaitAsync(cancellationToken);
+                await SecondCandidateCompleted.Task.WaitAsync(cancellationToken);
             }
             else
             {
@@ -227,13 +200,9 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
                 observedNextAttemptAtUtc);
     }
 
-    private sealed class BlockingBatchSender : ISender
+    private sealed class CapturingBatchSender : ISender
     {
-        private int startedCount;
-
-        public int StartedCount => Volatile.Read(ref startedCount);
-        public TaskCompletionSource ReleaseCandidates { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource FifthCandidateStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ConcurrentQueue<GeneratePeriodicInspectionQuantityTaskBatchForContextCommand> GenerationCommands { get; } = [];
 
         public async Task<TResponse> Send<TResponse>(
             IRequest<TResponse> request,
@@ -254,13 +223,7 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
                 return (TResponse)(object)candidates;
             }
 
-            Assert.IsType<GeneratePeriodicInspectionQuantityTaskBatchForContextCommand>(request);
-            if (Interlocked.Increment(ref startedCount) == 5)
-            {
-                FifthCandidateStarted.TrySetResult();
-            }
-
-            await ReleaseCandidates.Task.WaitAsync(cancellationToken);
+            GenerationCommands.Enqueue(Assert.IsType<GeneratePeriodicInspectionQuantityTaskBatchForContextCommand>(request));
             return (TResponse)(object)1;
         }
 
@@ -277,5 +240,24 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
         public IAsyncEnumerable<object?> CreateStream(
             object request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class DeterministicCandidateExecutor : IPeriodicInspectionCandidateExecutor
+    {
+        public int PeakConcurrency { get; private set; }
+
+        public async Task ExecuteAsync<TCandidate>(
+            IReadOnlyList<TCandidate> candidates,
+            int maxConcurrency,
+            Func<TCandidate, CancellationToken, Task> executeCandidate,
+            CancellationToken cancellationToken)
+        {
+            foreach (var batch in candidates.Chunk(maxConcurrency))
+            {
+                PeakConcurrency = Math.Max(PeakConcurrency, batch.Length);
+                var executions = batch.Select(candidate => executeCandidate(candidate, cancellationToken)).ToArray();
+                await Task.WhenAll(executions);
+            }
+        }
     }
 }
