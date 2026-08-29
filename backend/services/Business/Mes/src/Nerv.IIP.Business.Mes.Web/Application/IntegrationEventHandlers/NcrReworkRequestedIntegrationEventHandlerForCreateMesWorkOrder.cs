@@ -8,6 +8,7 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
@@ -212,15 +213,20 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
                 source.RequiresQualityInspection,
                 source.OperationCode))
             .ToArray();
-        var reworkOperationTasks = reworkWorkOrder.Release(payload.RequestedAtUtc, reworkRouting);
         dbContext.WorkOrders.Add(reworkWorkOrder);
-        dbContext.OperationTasks.AddRange(reworkOperationTasks);
-        await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
+        var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
             dbContext,
             materialSnapshotProvider,
             reworkWorkOrder,
             payload.RequestedAtUtc,
             cancellationToken);
+        if (materialCapture.IsMissing)
+        {
+            throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotReason);
+        }
+
+        var reworkOperationTasks = reworkWorkOrder.Release(payload.RequestedAtUtc, reworkRouting);
+        dbContext.OperationTasks.AddRange(reworkOperationTasks);
     }
 
     private static bool Matches(WorkOrder workOrder, NcrReworkRequestedPayload payload) =>

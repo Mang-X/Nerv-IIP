@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.Primitives;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -216,6 +217,23 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     [MesRealPostgresFact]
     public async Task Rework_release_captures_material_shortage_and_blocks_start()
     {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var missingProvider = await CreateMigratedProviderAsync(
+            new StaticMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult.Missing("product-engineering:mbom:missing"))))
+        {
+            await SeedSourceAsync(missingProvider, "org-001", "env-dev");
+            var exception = await Assert.ThrowsAsync<KnownException>(() =>
+                HandleAsync(missingProvider, CreateEvent()));
+            Assert.Equal(MaterialReadinessGuards.MissingRequirementSnapshotReason, exception.Message);
+
+            await using var missingAssertionScope = missingProvider.CreateAsyncScope();
+            var missingDb = missingAssertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await missingDb.WorkOrders.Where(x => x.WorkOrderType == WorkOrder.ReworkType).ToArrayAsync());
+            Assert.Empty(await missingDb.ProcessedIntegrationEvents
+                .Where(x => x.ConsumerName == NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName)
+                .ToArrayAsync());
+        }
+
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var materialSnapshotProvider = new StaticMaterialSnapshotProvider(
             MesMaterialRequirementSnapshotResult.Captured(
