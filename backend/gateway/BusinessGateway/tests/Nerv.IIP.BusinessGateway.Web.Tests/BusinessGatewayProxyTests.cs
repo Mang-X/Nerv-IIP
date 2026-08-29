@@ -14105,7 +14105,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
             "Defect",
             null,
             null,
-            "inspection-record-001"));
+            "inspection-record-001",
+            "not-requested"));
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(

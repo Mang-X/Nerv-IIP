@@ -200,6 +200,8 @@ describe('不合格品关闭确认框在真弹层下的关闭时机', () => {
     await openCloseConfirm()
 
     expect(document.body.textContent).toContain('RW-1001')
+    expect(document.body.textContent).toContain('已创建')
+    expect(document.body.textContent).not.toContain('created')
 
     documentButton('确认关闭')!.click()
     await flushPromises()

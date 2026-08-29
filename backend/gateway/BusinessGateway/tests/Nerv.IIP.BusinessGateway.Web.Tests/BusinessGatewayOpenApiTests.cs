@@ -189,6 +189,10 @@ public sealed class BusinessGatewayOpenApiTests
             "BusinessConsoleQualityNcrDetailResponse",
             "reworkWorkOrderCreationStatus",
             "reworkWorkOrderId");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleQualityNcrDetailResponse",
+            "reworkWorkOrderCreationStatus");
         AssertSchemaProperties(
             document,
             "BusinessConsoleQualityItem",

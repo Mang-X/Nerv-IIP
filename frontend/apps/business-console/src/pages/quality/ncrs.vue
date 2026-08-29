@@ -17,7 +17,12 @@ import {
   ncrDispositionRequiresCentralApproval,
   ncrDispositionRequiresEvidence,
 } from '@/data/qualityReference'
-import { labelFor, NCR_STATUS_LABELS, QUALITY_SOURCE_TYPE_LABELS } from '@/data/businessLabels'
+import {
+  labelFor,
+  NCR_STATUS_LABELS,
+  QUALITY_SOURCE_TYPE_LABELS,
+  REWORK_WORK_ORDER_CREATION_STATUS_LABELS,
+} from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -150,7 +155,14 @@ const ncrContextItems = computed(() => {
     { label: '不合格原因', value: ncr.defectReason },
     { label: '批次', value: ncr.batchNo },
     { label: '序列号', value: ncr.serialNo },
-    { label: '返工工单创建状态', value: ncr.reworkWorkOrderCreationStatus },
+    {
+      label: '返工工单创建状态',
+      value: labelFor(
+        REWORK_WORK_ORDER_CREATION_STATUS_LABELS,
+        ncr.reworkWorkOrderCreationStatus,
+        '未知状态',
+      ),
+    },
     { label: '返工工单', value: ncr.reworkWorkOrderId },
     // 关闭原因是必填的关单审计事实，已关闭的单必须回显，否则看起来像"关了但没写原因"。
     ...(ncr.closeReason ? [{ label: '关闭原因', value: ncr.closeReason }] : []),

@@ -540,10 +540,10 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.BatchNo,
             response.SerialNo,
             response.SourceInspectionRecordId,
+            response.ReworkWorkOrderCreationStatus,
             response.DispositionType,
             response.DispositionApprovalChainId,
             response.CloseReason,
-            response.ReworkWorkOrderCreationStatus,
             response.ReworkWorkOrderId);
     }
 

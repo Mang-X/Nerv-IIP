@@ -483,6 +483,13 @@ export const NCR_STATUS_LABELS: Readonly<Record<string, string>> = {
   'effectiveness-verified': '有效性已验证',
 }
 
+/** MES 返工工单回执在 NCR 上的创建状态。 */
+export const REWORK_WORK_ORDER_CREATION_STATUS_LABELS: Readonly<Record<string, string>> = {
+  'not-requested': '未请求',
+  requested: '已请求',
+  created: '已创建',
+}
+
 /** 规则排程给每条工序分配写的原因（后端 RuleScheduler 只产出这两种）。 */
 export const RULE_SCHEDULE_REASON_LABELS: Readonly<Record<string, string>> = {
   'in-progress-preserved': '在制工序保留原时段',

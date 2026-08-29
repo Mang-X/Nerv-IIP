@@ -39280,6 +39280,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailResponse": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "reworkWorkOrderCreationStatus"
+        ],
         "properties": {
           "id": {
             "type": "string"
@@ -39323,6 +39326,10 @@
             "type": "string",
             "nullable": true
           },
+          "reworkWorkOrderCreationStatus": {
+            "type": "string",
+            "minLength": 1
+          },
           "dispositionType": {
             "type": "string",
             "nullable": true
@@ -39332,10 +39339,6 @@
             "nullable": true
           },
           "closeReason": {
-            "type": "string",
-            "nullable": true
-          },
-          "reworkWorkOrderCreationStatus": {
             "type": "string",
             "nullable": true
           },

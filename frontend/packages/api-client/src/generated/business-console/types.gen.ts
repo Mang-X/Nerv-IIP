@@ -2218,10 +2218,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     batchNo?: string | null;
     serialNo?: string | null;
     sourceInspectionRecordId?: string | null;
+    reworkWorkOrderCreationStatus: string;
     dispositionType?: string | null;
     dispositionApprovalChainId?: string | null;
     closeReason?: string | null;
-    reworkWorkOrderCreationStatus?: string | null;
     reworkWorkOrderId?: string | null;
 };
 

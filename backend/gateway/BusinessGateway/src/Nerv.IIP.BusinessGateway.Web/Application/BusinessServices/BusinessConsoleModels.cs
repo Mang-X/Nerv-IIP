@@ -2090,10 +2090,10 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? BatchNo,
     string? SerialNo,
     string? SourceInspectionRecordId,
+    [property: JsonRequired, Required] string ReworkWorkOrderCreationStatus,
     string? DispositionType = null,
     string? DispositionApprovalChainId = null,
     string? CloseReason = null,
-    string? ReworkWorkOrderCreationStatus = null,
     string? ReworkWorkOrderId = null);
 
 /// <summary>
