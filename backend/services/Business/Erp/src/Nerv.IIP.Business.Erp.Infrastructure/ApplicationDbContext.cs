@@ -24,6 +24,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
@@ -60,6 +61,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
     public DbSet<WorkCenterCostRate> WorkCenterCostRates => Set<WorkCenterCostRate>();
     public DbSet<WorkCenterMachineOverheadRate> WorkCenterMachineOverheadRates => Set<WorkCenterMachineOverheadRate>();
+    public DbSet<WorkCenterMachineOverheadReconciliation> WorkCenterMachineOverheadReconciliations => Set<WorkCenterMachineOverheadReconciliation>();
     public DbSet<PendingMaterialCost> PendingMaterialCosts => Set<PendingMaterialCost>();
     public DbSet<OperationLaborSettlement> OperationLaborSettlements => Set<OperationLaborSettlement>();
     public DbSet<OperationLaborSettlementVoid> OperationLaborSettlementVoids => Set<OperationLaborSettlementVoid>();
