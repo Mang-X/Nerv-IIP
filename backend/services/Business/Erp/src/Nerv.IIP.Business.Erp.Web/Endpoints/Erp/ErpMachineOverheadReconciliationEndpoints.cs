@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
+using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
@@ -38,6 +40,11 @@ public sealed class ReconcileWorkCenterMachineOverheadEndpoint(
     public override async Task HandleAsync(ReconcileWorkCenterMachineOverheadRequest req, CancellationToken ct)
     {
         var scope = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        if (scope is null)
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
         using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
             "reconcile-work-center-machine-overhead",
             scope.OrganizationId,
@@ -61,7 +68,7 @@ public sealed class ReconcileWorkCenterMachineOverheadEndpoint(
             req.CurrencyCode,
             req.AbnormalDowntimeTicks,
             req.AbnormalDowntimeDisposition,
-            ConfigurationErpMachineOverheadInternalScopeAuthorizer.SystemActor,
+            scope.Actor,
             req.SourceReference,
             req.Reason,
             timeProvider.GetUtcNow()), ct);
@@ -79,6 +86,11 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsEndpoint(
     public override async Task HandleAsync(ListWorkCenterMachineOverheadReconciliationsRequest req, CancellationToken ct)
     {
         var scope = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        if (scope is null)
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
         var response = await sender.Send(new ListWorkCenterMachineOverheadReconciliationsQuery(
             scope.OrganizationId,
             scope.EnvironmentId,
@@ -90,35 +102,33 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsEndpoint(
     }
 }
 
-public sealed record ErpInternalServiceScope(string OrganizationId, string EnvironmentId);
+public sealed record ErpInternalServiceScope(string OrganizationId, string EnvironmentId, string Actor);
 
 public interface IErpMachineOverheadInternalScopeAuthorizer
 {
-    ErpInternalServiceScope ResolveAuthorizedScope(HttpContext context);
+    ErpInternalServiceScope? ResolveAuthorizedScope(HttpContext context);
 }
 
-public sealed class ConfigurationErpMachineOverheadInternalScopeAuthorizer(IConfiguration configuration)
+public sealed class AuthenticatedErpMachineOverheadInternalScopeAuthorizer
     : IErpMachineOverheadInternalScopeAuthorizer
 {
-    public const string SystemActor = "system:business-erp-finance-reconciliation";
-
-    private readonly HashSet<string> authorizedScopes = configuration
-        .GetSection("Erp:MachineOverheadReconciliation:AuthorizedScopes")
-        .GetChildren()
-        .Select(scope => ScopeKey(
-            scope["OrganizationId"] ?? string.Empty,
-            scope["EnvironmentId"] ?? string.Empty))
-        .Where(key => key.Length > 1)
-        .ToHashSet(StringComparer.Ordinal);
-
-    public ErpInternalServiceScope ResolveAuthorizedScope(HttpContext context)
+    public ErpInternalServiceScope? ResolveAuthorizedScope(HttpContext context)
     {
-        var scope = new ErpInternalServiceScope(
-            RequiredHeader(context, "X-Organization-Id"),
-            RequiredHeader(context, "X-Environment-Id"));
-        if (!authorizedScopes.Contains(ScopeKey(scope.OrganizationId, scope.EnvironmentId)))
-            throw new KnownException("Internal service is not authorized for the requested ERP machine-overhead reconciliation scope.");
-        return scope;
+        var requestedOrganizationId = RequiredHeader(context, "X-Organization-Id");
+        var requestedEnvironmentId = RequiredHeader(context, "X-Environment-Id");
+        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var authorizedOrganizationId = context.User.FindFirstValue(
+            MachineOverheadInternalCallerAuthentication.OrganizationClaim);
+        var authorizedEnvironmentId = context.User.FindFirstValue(
+            MachineOverheadInternalCallerAuthentication.EnvironmentClaim);
+        if (string.IsNullOrWhiteSpace(subject)
+            || !string.Equals(requestedOrganizationId, authorizedOrganizationId, StringComparison.Ordinal)
+            || !string.Equals(requestedEnvironmentId, authorizedEnvironmentId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return new(requestedOrganizationId, requestedEnvironmentId, $"internal-service:{subject}");
     }
 
     private static string RequiredHeader(HttpContext context, string name)
@@ -127,14 +137,5 @@ public sealed class ConfigurationErpMachineOverheadInternalScopeAuthorizer(IConf
         return string.IsNullOrWhiteSpace(value)
             ? throw new KnownException($"{name} header is required.")
             : value;
-    }
-
-    private static string ScopeKey(string organizationId, string environmentId)
-    {
-        var organization = organizationId.Trim();
-        var environment = environmentId.Trim();
-        return string.IsNullOrWhiteSpace(organization) || string.IsNullOrWhiteSpace(environment)
-            ? string.Empty
-            : $"{organization}\n{environment}";
     }
 }

@@ -53,8 +53,8 @@ public sealed class ErpSalesFinanceEndpointContractTests
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
         Assert.Equal(27, contracts.Length);
-        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
-        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthentication.PolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthentication.PolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/payment" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "registerErpAccountPayablePayment");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payment-executions" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.OperationId == "approveErpPaymentExecution");
@@ -81,34 +81,17 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
-    public void Machine_overhead_internal_endpoints_derive_scope_from_required_headers_and_use_system_actor()
+    public void Machine_overhead_internal_endpoints_use_scope_bound_caller_policy_without_body_scope()
     {
         Assert.Null(typeof(ReconcileWorkCenterMachineOverheadRequest).GetProperty("OrganizationId"));
         Assert.Null(typeof(ReconcileWorkCenterMachineOverheadRequest).GetProperty("EnvironmentId"));
         Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("OrganizationId"));
         Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("EnvironmentId"));
 
-        var context = new DefaultHttpContext();
-        context.Request.Headers["X-Organization-Id"] = " org-trusted ";
-        context.Request.Headers["X-Environment-Id"] = " env-trusted ";
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Erp:MachineOverheadReconciliation:AuthorizedScopes:0:OrganizationId"] = "org-trusted",
-            ["Erp:MachineOverheadReconciliation:AuthorizedScopes:0:EnvironmentId"] = "env-trusted",
-        }).Build();
-        var authorizer = new ConfigurationErpMachineOverheadInternalScopeAuthorizer(configuration);
-        var scope = authorizer.ResolveAuthorizedScope(context);
-
-        Assert.Equal("org-trusted", scope.OrganizationId);
-        Assert.Equal("env-trusted", scope.EnvironmentId);
-        Assert.Equal("system:business-erp-finance-reconciliation", ConfigurationErpMachineOverheadInternalScopeAuthorizer.SystemActor);
-
-        var missingScope = new DefaultHttpContext();
-        Assert.Throws<KnownException>(() => { _ = authorizer.ResolveAuthorizedScope(missingScope); });
-        var unauthorizedScope = new DefaultHttpContext();
-        unauthorizedScope.Request.Headers["X-Organization-Id"] = "org-other";
-        unauthorizedScope.Request.Headers["X-Environment-Id"] = "env-trusted";
-        Assert.Throws<KnownException>(() => { _ = authorizer.ResolveAuthorizedScope(unauthorizedScope); });
+        Assert.All(
+            ErpFinanceEndpointContracts.All.Where(contract => contract.EndpointType == typeof(ReconcileWorkCenterMachineOverheadEndpoint)
+                || contract.EndpointType == typeof(ListWorkCenterMachineOverheadReconciliationsEndpoint)),
+            contract => Assert.Equal(MachineOverheadInternalCallerAuthentication.PolicyName, contract.AuthorizationPolicy));
     }
 
     [Fact]
