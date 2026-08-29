@@ -35,6 +35,23 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests.Redis_cap_transport_converges_settle_void_redelivery_and_out_of_order_revisions_in_postgres"
       ]
+    },
+    {
+      "id": "quality-rework-receipt-redis-cap",
+      "service": "Quality",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres",
+      "databasePrefix": "nerv_iip_quality",
+      "capVersionPrefix": "n2809quality",
+      "diagnosticSchemas": [
+        "quality",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres"
+      ]
     }
   ]
 }

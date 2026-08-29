@@ -948,7 +948,7 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/run-redis-cap-test-lane.ps1 `
-            -MemberId demandplanning-sales-order-redis-cap,erp-operation-labor-redis-cap `
+            -MemberId demandplanning-sales-order-redis-cap,erp-operation-labor-redis-cap,quality-rework-receipt-redis-cap `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
             -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json

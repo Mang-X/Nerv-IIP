@@ -8,6 +8,18 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Quality;
 
+public sealed class BusinessConsoleNcrCloseRequestValidator : Validator<BusinessConsoleNcrCloseRequest>
+{
+    public BusinessConsoleNcrCloseRequestValidator()
+    {
+#pragma warning disable CS0618
+        RuleFor(x => x.ReworkWorkOrderId)
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage("ReworkWorkOrderId is bound only from the MES rework-work-order-created receipt.");
+#pragma warning restore CS0618
+    }
+}
+
 public sealed class BusinessConsoleQualityReasonListRequestValidator : Validator<BusinessConsoleQualityReasonListRequest>
 {
     public BusinessConsoleQualityReasonListRequestValidator()
@@ -1047,7 +1059,7 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityNcrListResponse>(
         auth,
         BusinessGatewayPermissions.QualityNcrRead)
 {
@@ -1055,7 +1067,7 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleQualityListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleQualityListResponse> ForwardAsync(
+    protected override Task<BusinessConsoleQualityNcrListResponse> ForwardAsync(
         BusinessConsoleQualityListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>

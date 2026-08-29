@@ -1475,8 +1475,6 @@ public sealed record BusinessConsoleQualityItem(
     string? SerialNo,
     int? AttemptNumber = null,
     string? ReinspectionOfInspectionRecordId = null,
-    // NCR 关单审计事实：closed 行必有关闭原因（界面必填字段），非 NCR 行恒为 null。
-    string? CloseReason = null,
     decimal? TimeIntervalHours = null,
     decimal? QuantityInterval = null,
     string? AssignedInspectorUserId = null,
@@ -1484,6 +1482,25 @@ public sealed record BusinessConsoleQualityItem(
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleQualityNcrItem(
+    string Id,
+    string Code,
+    string Status,
+    string SourceType,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal DefectQuantity,
+    string DefectReason,
+    string? BatchNo,
+    string? SerialNo,
+    string? CloseReason,
+    [property: JsonRequired, Required] string ReworkWorkOrderCreationStatus,
+    string? ReworkWorkOrderId);
+
+public sealed record BusinessConsoleQualityNcrListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityNcrItem> Items,
     int Total);
 
 public sealed record BusinessConsoleCreateInspectionPlanRequest(
@@ -2073,9 +2090,11 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? BatchNo,
     string? SerialNo,
     string? SourceInspectionRecordId,
+    [property: JsonRequired, Required] string ReworkWorkOrderCreationStatus,
     string? DispositionType = null,
     string? DispositionApprovalChainId = null,
-    string? CloseReason = null);
+    string? CloseReason = null,
+    string? ReworkWorkOrderId = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
@@ -2159,6 +2178,7 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: RouteParam] string NcrId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    [property: Obsolete("由 MES 返工工单创建回执绑定；客户端提交会被拒绝。")]
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,

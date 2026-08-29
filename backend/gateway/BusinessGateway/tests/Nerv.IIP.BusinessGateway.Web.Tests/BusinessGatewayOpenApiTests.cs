@@ -186,11 +186,29 @@ public sealed class BusinessGatewayOpenApiTests
             "assignedTeamId");
         AssertSchemaProperties(
             document,
+            "BusinessConsoleQualityNcrDetailResponse",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleQualityNcrDetailResponse",
+            "reworkWorkOrderCreationStatus");
+        AssertSchemaProperties(
+            document,
             "BusinessConsoleQualityItem",
             "timeIntervalHours",
             "quantityInterval",
             "assignedInspectorUserId",
             "assignedTeamId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleQualityNcrItem",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleQualityNcrItem",
+            "reworkWorkOrderCreationStatus");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate", "post", "activateBusinessConsoleQualityInspectionPlan");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "get", "listBusinessConsoleQualityInspectionRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");
@@ -245,6 +263,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "submitBusinessConsoleQualityNcrDisposition");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "closeBusinessConsoleQualityNcr");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "reason", 500);
+        AssertDeprecatedOptionalBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "reworkWorkOrderId");
         AssertOperationId(paths, "/api/business-console/v1/engineering/documents", "post", "registerBusinessConsoleEngineeringDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/publish", "post", "publishBusinessConsoleEngineeringSopDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
@@ -1422,6 +1441,23 @@ public sealed class BusinessGatewayOpenApiTests
         {
             Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(x => x.GetString()));
         }
+    }
+
+    private static void AssertDeprecatedOptionalBodyProperty(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string method,
+        string propertyName)
+    {
+        AssertOptionalBodyProperty(document, paths, path, method, propertyName);
+        var operation = paths.GetProperty(path).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schemaName = schemaRef.Split('/')[^1];
+        var property = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaName).GetProperty("properties").GetProperty(propertyName);
+        Assert.True(property.GetProperty("deprecated").GetBoolean());
     }
 
     [Fact]

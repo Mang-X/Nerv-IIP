@@ -1947,7 +1947,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     serialNo?: string | null;
     attemptNumber?: number | null;
     reinspectionOfInspectionRecordId?: string | null;
-    closeReason?: string | null;
     timeIntervalHours?: number | null;
     quantityInterval?: number | null;
     assignedInspectorUserId?: string | null;
@@ -2174,6 +2173,31 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem = {
+    id?: string;
+    code?: string;
+    status?: string;
+    sourceType?: string;
+    sourceDocumentId?: string;
+    skuCode?: string;
+    defectQuantity?: number;
+    defectReason?: string;
+    batchNo?: string | null;
+    serialNo?: string | null;
+    closeReason?: string | null;
+    reworkWorkOrderCreationStatus: string;
+    reworkWorkOrderId?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
     [key: string]: never;
 };
@@ -2194,9 +2218,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     batchNo?: string | null;
     serialNo?: string | null;
     sourceInspectionRecordId?: string | null;
+    reworkWorkOrderCreationStatus: string;
     dispositionType?: string | null;
     dispositionApprovalChainId?: string | null;
     closeReason?: string | null;
+    reworkWorkOrderId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {
@@ -2551,6 +2577,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest = {
+    /**
+     * @deprecated
+     */
     reworkWorkOrderId?: string | null;
     scrapMovementId?: string | null;
     returnDocumentId?: string | null;
@@ -11693,7 +11722,7 @@ export type ListBusinessConsoleQualityNcrsResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse;
 };
 
 export type ListBusinessConsoleQualityNcrsResponse = ListBusinessConsoleQualityNcrsResponses[keyof ListBusinessConsoleQualityNcrsResponses];
