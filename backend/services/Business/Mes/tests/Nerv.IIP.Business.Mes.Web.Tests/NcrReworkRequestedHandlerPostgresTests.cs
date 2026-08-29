@@ -495,6 +495,184 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         Assert.Equal([10, 20, 30], workOrderLevelTasks.Select(x => x.OperationSequence));
     }
 
+    [MesRealPostgresFact]
+    public async Task Rework_traceability_is_consistent_from_all_read_faces_and_keeps_audit_links_after_output_reversal_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
+        await SeedSourceAsync(provider, "org-001", "env-dev");
+        await HandleAsync(provider, CreateEvent());
+
+        string reworkWorkOrderId;
+        string reportNo;
+        await using (var executionScope = provider.CreateAsyncScope())
+        {
+            var db = executionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var reworkWorkOrder = await db.WorkOrders.SingleAsync(x => x.SourceNcrId == "ncr-001");
+            reworkWorkOrderId = reworkWorkOrder.WorkOrderIdValue;
+            var firstTask = await db.OperationTasks
+                .OrderBy(x => x.OperationSequence)
+                .FirstAsync(x => x.WorkOrderId == reworkWorkOrderId);
+            var reportedAtUtc = DateTimeOffset.Parse("2026-08-29T09:00:00Z");
+            await new ChangeOperationTaskStateCommandHandler(db).Handle(
+                new ChangeOperationTaskStateCommand(
+                    "org-001",
+                    "env-dev",
+                    firstTask.OperationTaskIdValue,
+                    "start",
+                    reportedAtUtc.AddMinutes(-1),
+                    "rework-trace:start"),
+                CancellationToken.None);
+            await db.SaveChangesAsync();
+            var report = await new RecordProductionReportCommandHandler(
+                    db,
+                    TestProductionReportOeeDimensionSnapshotProvider.Instance,
+                    executionScope.ServiceProvider.GetRequiredService<MesCodingService>())
+                .Handle(
+                    new RecordProductionReportCommand(
+                        "org-001",
+                        "env-dev",
+                        reworkWorkOrderId,
+                        firstTask.OperationTaskIdValue,
+                        1m,
+                        0m,
+                        false,
+                        reportedAtUtc,
+                        "rework-trace:report",
+                        ProducedLotNo: "LOT-REWORK-001",
+                        SerialNo: "SN-REWORK-001",
+                        ReportedBy: "operator-rework"),
+                    CancellationToken.None);
+            await db.SaveChangesAsync();
+            reportNo = report.ReportNo;
+
+            db.WorkOrders.Add(WorkOrder.CreateRework(
+                "org-foreign",
+                "env-dev",
+                "WO-REWORK-FOREIGN",
+                "SKU-001",
+                "PV-001",
+                "PCS",
+                3m,
+                100,
+                DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+                "WO-SOURCE-FOREIGN",
+                null,
+                "DEF-FOREIGN",
+                "ncr-foreign",
+                "NCR-FOREIGN",
+                "LOT-001",
+                "SN-001",
+                DateTimeOffset.Parse("2026-08-29T08:00:00Z"),
+                "corr-foreign",
+                "evt-foreign"));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var queryScope = provider.CreateAsyncScope())
+        {
+            var db = queryScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var graphs = new[]
+            {
+                await new GetWorkOrderTraceabilityQueryHandler(db).Handle(
+                    new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-SOURCE-001"),
+                    CancellationToken.None),
+                await new GetWorkOrderTraceabilityQueryHandler(db).Handle(
+                    new GetWorkOrderTraceabilityQuery("org-001", "env-dev", reworkWorkOrderId),
+                    CancellationToken.None),
+                await new GetBatchTraceabilityQueryHandler(db).Handle(
+                    new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
+                    CancellationToken.None),
+                await new GetBatchTraceabilityQueryHandler(db).Handle(
+                    new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-REWORK-001"),
+                    CancellationToken.None),
+                await new GetMaterialLotTraceabilityQueryHandler(db).Handle(
+                    new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-001"),
+                    CancellationToken.None),
+            };
+
+            Assert.All(graphs, graph => AssertReworkChain(graph, reworkWorkOrderId, reportNo, expectOutput: true));
+        }
+
+        await using (var reversalScope = provider.CreateAsyncScope())
+        {
+            var db = reversalScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new ReverseProductionReportCommandHandler(
+                    db,
+                    reversalScope.ServiceProvider.GetRequiredService<MesCodingService>())
+                .Handle(
+                    new ReverseProductionReportCommand(
+                        "org-001",
+                        "env-dev",
+                        reportNo,
+                        "返工产出数量有误",
+                        DateTimeOffset.Parse("2026-08-29T09:10:00Z"),
+                        "operator-rework",
+                        "rework-trace:reverse"),
+                    CancellationToken.None);
+            await db.SaveChangesAsync();
+        }
+
+        await using var assertionScope = provider.CreateAsyncScope();
+        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var afterReversal = await new GetBatchTraceabilityQueryHandler(assertionDb).Handle(
+            new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
+            CancellationToken.None);
+        AssertReworkChain(afterReversal, reworkWorkOrderId, reportNo, expectOutput: false);
+    }
+
+    private static void AssertReworkChain(
+        MesTraceabilityResponse graph,
+        string reworkWorkOrderId,
+        string reportNo,
+        bool expectOutput)
+    {
+        Assert.Contains(graph.Nodes, x =>
+            x.NodeId == "ncr-001" &&
+            x.DisplayName == "NCR-2026-0001" &&
+            x.NodeType == MesTraceabilityNodeType.NonconformanceReport);
+        Assert.Contains(graph.Edges, x =>
+            x.FromNodeId == "WO-SOURCE-001" &&
+            x.ToNodeId == "ncr-001" &&
+            x.RelationType == "raised-ncr");
+        Assert.Contains(graph.Edges, x =>
+            x.FromNodeId == "LOT-001" &&
+            x.ToNodeId == "ncr-001" &&
+            x.RelationType == "identified-in-ncr");
+        Assert.Contains(graph.Edges, x =>
+            x.FromNodeId == "SN-001" &&
+            x.ToNodeId == "ncr-001" &&
+            x.RelationType == "identified-in-ncr");
+        Assert.Contains(graph.Edges, x =>
+            x.FromNodeId == "ncr-001" &&
+            x.ToNodeId == reworkWorkOrderId &&
+            x.RelationType == "created-rework-work-order");
+        Assert.DoesNotContain(graph.Nodes, x => x.NodeId == "ncr-foreign");
+        Assert.Equal(
+            graph.Nodes.Count,
+            graph.Nodes.Select(x => new { x.NodeId, x.NodeType }).Distinct().Count());
+        Assert.Equal(
+            graph.Edges.Count,
+            graph.Edges.Select(x => new { x.FromNodeId, x.ToNodeId, x.RelationType }).Distinct().Count());
+        Assert.DoesNotContain(graph.Edges, x =>
+            graph.Edges.Any(reverse =>
+                reverse.FromNodeId == x.ToNodeId &&
+                reverse.ToNodeId == x.FromNodeId));
+
+        if (expectOutput)
+        {
+            Assert.Contains(graph.Edges, x =>
+                x.FromNodeId == reportNo &&
+                x.ToNodeId == "LOT-REWORK-001" &&
+                x.RelationType == "produced-lot");
+        }
+        else
+        {
+            Assert.DoesNotContain(graph.Nodes, x => x.NodeId is "LOT-REWORK-001" or "SN-REWORK-001");
+            Assert.DoesNotContain(graph.Nodes, x => x.NodeId == reportNo);
+        }
+    }
+
     private static Task<ServiceProvider> CreateMigratedProviderAsync() =>
         CreateMigratedProviderAsync(NoRequirementsSnapshotProvider.Instance);
 
