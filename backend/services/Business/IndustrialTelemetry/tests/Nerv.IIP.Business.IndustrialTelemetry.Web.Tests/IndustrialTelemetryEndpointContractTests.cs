@@ -46,7 +46,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(27, contracts.Length);
+        Assert.Equal(28, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/connector-tag-manifests" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "reportBusinessIiotConnectorTagManifest");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotConnectorTagCoverage");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
@@ -69,6 +69,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/escalations/run" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "runBusinessIiotAlarmEscalations");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/timeline" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotDeviceTimeline");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/oee" && x.PermissionCode == "business.iiot.telemetry.read" && x.OperationId == "queryBusinessIiotOee");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/oee/aggregates" && x.PermissionCode == "business.iiot.telemetry.read" && x.OperationId == "queryBusinessIiotOeeAggregates");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-hours" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeHours");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeAvailability");
@@ -426,6 +427,60 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
         Assert.Contains("production-uom-ambiguous", data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task Oee_aggregate_http_contract_enforces_31_days_and_transmits_filters_buckets_and_degradation()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var start = DateTimeOffset.Parse("2026-07-10T08:00:00Z");
+        var businessDate = new DateOnly(2026, 7, 10);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.DeviceStateSnapshots.AddRange(
+                DeviceStateSnapshot.Record("org-001", "env-dev", "DEV-HTTP", "running", start, "http-state", raiseChangedEvent: false),
+                DeviceStateSnapshot.Record("org-001", "env-dev", "DEV-DST-HTTP", "running", start, "dst-http-state", raiseChangedEvent: false));
+            var snapshot = new OeeHistoricalDimensionSnapshot(
+                "SITE-01", "WORKSHOP-01", "LINE-01", "SHIFT-01", "UTC",
+                new TimeOnly(8, 0), new TimeOnly(16, 0), false, 450, 30,
+                businessDate, start, start.AddHours(8), OeeHistoricalDimensionStatus.Resolved);
+            db.OeeProductionFacts.AddRange(
+                OeeProductionFact.Project("org-001", "env-dev", "HTTP-TARGET", "WC-01", "DEV-HTTP", 8m, 1m, 1m, "PCS", 10m, start.AddMinutes(10), snapshot),
+                OeeProductionFact.Project("org-001", "env-dev", "HTTP-INTERFERENCE", "WC-02", "DEV-HTTP", 900m, 0m, 0m, "PCS", 1m, start.AddMinutes(20), snapshot with { LineCode = "LINE-02" }),
+                OeeProductionFact.Project("org-001", "env-dev", "HTTP-DST", "WC-DST", "DEV-DST-HTTP", 5m, 0m, 0m, "PCS", 10m, start.AddMinutes(10),
+                    snapshot with { BusinessDate = null, ShiftBucketStartUtc = null, ShiftBucketEndUtc = null, Status = OeeHistoricalDimensionStatus.AmbiguousLocalTime }));
+            await db.SaveChangesAsync();
+        }
+
+        var exactWindow = "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=line&windowStartUtc=2026-07-10T08:00:00Z&windowEndUtc=2026-08-10T08:00:00Z&deviceAssetId=DEV-HTTP&workCenterId=WC-01&shiftCode=SHIFT-01&lineCode=LINE-01&workshopCode=WORKSHOP-01&businessDate=2026-07-10&skip=0&take=1";
+        using var response = await client.GetAsync(exactWindow);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("totalCount").GetInt32());
+        Assert.Equal(0, data.GetProperty("skip").GetInt32());
+        Assert.Equal(1, data.GetProperty("take").GetInt32());
+        var bucket = Assert.Single(data.GetProperty("buckets").EnumerateArray());
+        Assert.Equal("line", bucket.GetProperty("dimension").GetString());
+        Assert.Equal("LINE-01", bucket.GetProperty("dimensionValue").GetString());
+        Assert.Equal(8m, bucket.GetProperty("goodQuantity").GetDecimal());
+
+        using var tooLong = await client.GetAsync(exactWindow.Replace("2026-08-10T08:00:00Z", "2026-08-10T08:00:00.0000001Z", StringComparison.Ordinal));
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+
+        using var degradedResponse = await client.GetAsync(
+            "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=device&windowStartUtc=2026-07-10T08:00:00Z&windowEndUtc=2026-07-10T09:00:00Z&deviceAssetId=DEV-DST-HTTP");
+        Assert.Equal(HttpStatusCode.OK, degradedResponse.StatusCode);
+        using var degradedDocument = JsonDocument.Parse(await degradedResponse.Content.ReadAsStringAsync());
+        var degraded = Assert.Single(degradedDocument.RootElement.GetProperty("data").GetProperty("buckets").EnumerateArray());
+        Assert.True(degraded.GetProperty("isDegraded").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, degraded.GetProperty("availabilityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, degraded.GetProperty("performanceRate").ValueKind);
+        Assert.Contains("historicalLocalTimeAmbiguous", degraded.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
     }
 
     [Fact]
