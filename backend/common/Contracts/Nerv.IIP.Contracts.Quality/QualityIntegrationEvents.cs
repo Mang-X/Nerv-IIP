@@ -9,6 +9,7 @@ public static class QualityIntegrationEventTypes
     public const string InspectionRejected = "quality.InspectionRejected";
     public const string DefectRaised = "quality.DefectRaised";
     public const string NcrOpened = "quality.NcrOpened";
+    public const string NcrReworkRequested = "quality.NcrReworkRequested";
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
     public const string InspectionTaskOverdue = "quality.InspectionTaskOverdue";
@@ -123,6 +124,23 @@ public sealed record NcrDispositionDecidedIntegrationEvent(
     string Actor,
     string IdempotencyKey,
     NcrDispositionDecidedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record NcrReworkRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    NcrReworkRequestedPayload Payload) : IIntegrationEventEnvelope
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
@@ -356,6 +374,16 @@ public sealed record NcrDispositionDecidedPayload(
     public string? OwnerType { get; init; }
     public string? OwnerId { get; init; }
 }
+
+public sealed record NcrReworkRequestedPayload(
+    string NcrId,
+    string NcrCode,
+    string SourceDefectNo,
+    string SkuCode,
+    decimal Quantity,
+    string? LotNo,
+    string? SerialNo,
+    DateTimeOffset RequestedAtUtc);
 
 public sealed record MrbReviewPayload(
     string ReviewerId,

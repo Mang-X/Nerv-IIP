@@ -9,6 +9,44 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesWorkOrderIntegrationEventTests
 {
     [Fact]
+    public void Rework_work_order_created_converter_emits_versioned_source_receipt()
+    {
+        var requestedAtUtc = new DateTimeOffset(2026, 8, 29, 8, 0, 0, TimeSpan.Zero);
+        var workOrder = WorkOrder.CreateRework(
+            "org-001",
+            "env-dev",
+            "WO-RW-001",
+            "SKU-001",
+            "PV-001",
+            "PCS",
+            3m,
+            100,
+            requestedAtUtc.AddDays(1),
+            "WO-SOURCE-001",
+            "OP-SOURCE-10",
+            "DEF-001",
+            "ncr-001",
+            "NCR-2026-0001",
+            "LOT-001",
+            "SN-001",
+            requestedAtUtc);
+
+        var integrationEvent = new ReworkWorkOrderCreatedIntegrationEventConverter()
+            .Convert(Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents())));
+
+        Assert.Equal(MesIntegrationEventTypes.ReworkWorkOrderCreated, integrationEvent.EventType);
+        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("org-001", integrationEvent.OrganizationId);
+        Assert.Equal("env-dev", integrationEvent.EnvironmentId);
+        Assert.Equal("ncr-001", integrationEvent.CausationId);
+        Assert.Equal("WO-RW-001", integrationEvent.Payload.ReworkWorkOrderId);
+        Assert.Equal("WO-SOURCE-001", integrationEvent.Payload.SourceWorkOrderId);
+        Assert.Equal("OP-SOURCE-10", integrationEvent.Payload.SourceOperationTaskId);
+        Assert.Equal("ncr-001", integrationEvent.Payload.SourceNcrId);
+        Assert.Equal(3m, integrationEvent.Payload.Quantity);
+    }
+
+    [Fact]
     public void Work_order_released_converter_emits_public_mes_event_for_scheduling()
     {
         var workOrder = WorkOrder.Create(

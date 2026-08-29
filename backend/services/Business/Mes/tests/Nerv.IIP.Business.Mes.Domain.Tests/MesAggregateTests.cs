@@ -13,6 +13,43 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 public sealed class MesAggregateTests
 {
     [Fact]
+    public void Rework_work_order_captures_quality_source_facts_and_creation_event()
+    {
+        var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
+
+        var workOrder = WorkOrder.CreateRework(
+            "org-001",
+            "env-dev",
+            "WO-RW-001",
+            "SKU-001",
+            "PV-001",
+            "PCS",
+            3m,
+            100,
+            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+            "WO-SOURCE-001",
+            "OP-SOURCE-10",
+            "DEF-001",
+            "ncr-001",
+            "NCR-2026-0001",
+            "LOT-001",
+            "SN-001",
+            requestedAtUtc);
+
+        Assert.Equal(WorkOrder.ReworkType, workOrder.WorkOrderType);
+        Assert.Equal("WO-SOURCE-001", workOrder.SourceWorkOrderId);
+        Assert.Equal("OP-SOURCE-10", workOrder.SourceOperationTaskId);
+        Assert.Equal("DEF-001", workOrder.SourceDefectNo);
+        Assert.Equal("ncr-001", workOrder.SourceNcrId);
+        Assert.Equal("NCR-2026-0001", workOrder.SourceNcrCode);
+        Assert.Equal("LOT-001", workOrder.SourceLotNo);
+        Assert.Equal("SN-001", workOrder.SourceSerialNo);
+        var created = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Same(workOrder, created.WorkOrder);
+        Assert.Equal(requestedAtUtc, created.RequestedAtUtc);
+    }
+
+    [Fact]
     public void WorkOrder_references_ProductEngineering_production_version_by_public_id()
     {
         var workOrder = WorkOrder.Create(
@@ -27,6 +64,8 @@ public sealed class MesAggregateTests
 
         Assert.Equal("production-version-from-issue-95", workOrder.ProductionVersionId);
         Assert.Equal("SKU-001", workOrder.SkuId);
+        Assert.Equal(WorkOrder.StandardType, workOrder.WorkOrderType);
+        Assert.Null(workOrder.SourceNcrId);
     }
 
     [Fact]

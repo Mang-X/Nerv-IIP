@@ -9,6 +9,7 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
+    public const string ReworkWorkOrderCreated = "mes.ReworkWorkOrderCreated";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
     public const string OperationActualTimeSettled = "mes.OperationActualTimeSettled";
@@ -186,6 +187,35 @@ public sealed record WorkOrderClosedPayload(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     DateTimeOffset ClosedAtUtc);
+
+public sealed record ReworkWorkOrderCreatedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    ReworkWorkOrderCreatedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record ReworkWorkOrderCreatedPayload(
+    string SourceNcrId,
+    string SourceNcrCode,
+    string ReworkWorkOrderId,
+    string SourceWorkOrderId,
+    string? SourceOperationTaskId,
+    string SkuCode,
+    decimal Quantity,
+    string? SourceLotNo,
+    string? SourceSerialNo,
+    DateTimeOffset CreatedAtUtc);
 
 public static class MesEngineeringChangeImpactContractStatuses
 {

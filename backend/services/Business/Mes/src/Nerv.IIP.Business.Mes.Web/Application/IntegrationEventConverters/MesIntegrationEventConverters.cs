@@ -730,6 +730,43 @@ public sealed class WorkOrderReleasedIntegrationEventConverter
     }
 }
 
+public sealed class ReworkWorkOrderCreatedIntegrationEventConverter
+    : IIntegrationEventConverter<ReworkWorkOrderCreatedDomainEvent, ReworkWorkOrderCreatedIntegrationEvent>
+{
+    public ReworkWorkOrderCreatedIntegrationEvent Convert(ReworkWorkOrderCreatedDomainEvent domainEvent)
+    {
+        var workOrder = domainEvent.WorkOrder;
+        var idempotencyKey = EventIds.Idempotency(
+            "rework-work-order-created",
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            workOrder.SourceNcrId);
+        return new ReworkWorkOrderCreatedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.ReworkWorkOrderCreated,
+            MesIntegrationEventVersions.V1,
+            workOrder.CreatedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            workOrder.SourceNcrId!,
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            "system:business-mes",
+            idempotencyKey,
+            new ReworkWorkOrderCreatedPayload(
+                workOrder.SourceNcrId!,
+                workOrder.SourceNcrCode!,
+                workOrder.WorkOrderId,
+                workOrder.SourceWorkOrderId!,
+                workOrder.SourceOperationTaskId,
+                workOrder.SkuId,
+                workOrder.Quantity,
+                workOrder.SourceLotNo,
+                workOrder.SourceSerialNo,
+                workOrder.CreatedAtUtc));
+    }
+}
+
 public sealed class WorkOrderCompletedIntegrationEventConverter
     : IIntegrationEventConverter<WorkOrderCompletedDomainEvent, WorkOrderCompletedIntegrationEvent>
 {
