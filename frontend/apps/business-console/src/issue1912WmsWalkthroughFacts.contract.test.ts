@@ -7,6 +7,7 @@ import {
   assertWmsInboundSelectionMatchesQuery,
   assertWmsInitialListResponse,
   assertWmsListQueryFacts,
+  assertWmsPageWindow,
   assertWmsPageProofOptions,
   assertWmsOutboundPageSelection,
   assertWmsOutboundSelectionMatchesQuery,
@@ -30,7 +31,7 @@ import {
 const inboundPath = '/api/business-console/v1/wms/inbound-orders'
 const outboundPath = '/api/business-console/v1/wms/outbound-orders'
 
-// 预期值来自 NERV-1571 的独立场景输入：显式 pageWindow、页面选择后的 SITE-001 和作业池。
+// 预期值来自 NERV-1571 的独立场景输入：默认或显式 pageWindow、页面选择后的 SITE-001 和作业池。
 // 它们先于响应生成，并不是当前实现源码或响应 URL 的回读。
 
 function response(path: string, query: WalkthroughQuery, status = 200) {
@@ -97,7 +98,7 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
   it('uses the explicit scenario page window instead of a page implementation default', () => {
     const scenario = {
       ...NERV_1571_WMS_OUTBOUND_FACTS,
-      pageWindow: { skip: 0 as const, take: 20 },
+      pageWindow: { mode: 'selected' as const, skip: 0 as const, take: 20 },
     }
 
     expect(buildWmsOutboundListQueryFacts(scenario)).toMatchObject({
@@ -114,6 +115,17 @@ describe('NERV-1571 / #1912 WMS walkthrough fact contract', () => {
         'keyword',
       ),
     ).toThrow('query facts')
+  })
+
+  it('requires an explicit default-or-selected page-window mode', () => {
+    expect(() => assertWmsPageWindow({ mode: 'default', skip: 0, take: 10 })).not.toThrow()
+    expect(() => assertWmsPageWindow({ mode: 'selected', skip: 0, take: 20 })).not.toThrow()
+    expect(() => assertWmsPageWindow({ mode: 'default', skip: 0, take: 20 } as never)).toThrow(
+      'default page window must use take=10',
+    )
+    expect(() => assertWmsPageWindow({ skip: 0, take: 10 } as never)).toThrow(
+      'must declare mode default or selected',
+    )
   })
 
   it('fails closed for same-keyword tenant, environment, scope, pagination, site, path, and status mutations', () => {

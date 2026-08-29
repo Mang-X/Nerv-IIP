@@ -160,24 +160,20 @@ function workPoolScopeFacts(facts: WmsScenarioFacts): WmsWorkPoolScopeFacts {
 }
 
 function pageWindowFacts(facts: WmsScenarioFacts): WmsWalkthroughPageWindowInput {
-  const { skip, take } = facts.pageWindow
-  if (skip !== 0 || !Number.isInteger(take) || take <= 0) {
-    throw new Error(
-      `WMS scenario page window must be skip=0 and a positive integer take, received skip=${skip}/take=${take}`,
-    )
-  }
-  return { skip: 0, take }
+  assertWmsPageWindow(facts.pageWindow)
+  return facts.pageWindow
 }
 
 function listQueryFacts(facts: WmsScenarioFacts): WmsListQueryFacts {
   const scope = workPoolScopeFacts(facts)
   const pageWindow = pageWindowFacts(facts)
+  const { mode: _mode, ...queryPageWindow } = pageWindow
   requiredText('keyword', facts.keyword)
   return {
     organizationId: requiredText('organizationId', facts.organizationId),
     environmentId: requiredText('environmentId', facts.environmentId),
     ...scope,
-    ...pageWindow,
+    ...queryPageWindow,
   }
 }
 
@@ -241,25 +237,65 @@ export function assertWmsPageSelection(selection: WmsPageSelection): void {
 }
 
 export function assertWmsPageWindow(window: WmsWalkthroughPageWindowInput): void {
-  if (!window || window.skip !== 0 || !Number.isInteger(window.take) || window.take <= 0) {
+  if (
+    !window ||
+    (window.mode !== 'default' && window.mode !== 'selected') ||
+    window.skip !== 0 ||
+    !Number.isInteger(window.take) ||
+    window.take <= 0
+  ) {
     throw new Error(
-      `WMS page window selection must start at skip=0 with a positive integer take, received skip=${window?.skip}/take=${window?.take}`,
+      `WMS page window selection must declare mode default or selected, start at skip=0, and use a positive integer take, received mode=${window?.mode}/skip=${window?.skip}/take=${window?.take}`,
     )
+  }
+  const take = window.take as number
+  if (window.mode === 'default' && take !== 10) {
+    throw new Error(`WMS default page window must use take=10, received take=${take}`)
   }
 }
 
+type WmsPageWindowReadback = Readonly<{
+  skip: 0
+  take: number
+}>
+
+async function assertWmsDefaultPageWindow(
+  page: Page,
+  expectedWindow: Extract<WmsWalkthroughPageWindowInput, { mode: 'default' }>,
+  timeoutMs: number,
+): Promise<void> {
+  await expect(page.locator('table')).toBeVisible({ timeout: timeoutMs })
+  const trigger = page.getByLabel('每页条数', { exact: true })
+  const triggerCount = await trigger.count()
+  if (triggerCount === 0) return
+  if (triggerCount !== 1) {
+    throw new Error(
+      `WMS default page window expected zero or one page-size control, found ${triggerCount}`,
+    )
+  }
+  await expect(trigger).toBeVisible({ timeout: timeoutMs })
+  await expect(trigger).toContainText(String(expectedWindow.take), { timeout: timeoutMs })
+  const currentPage = page.locator('[aria-current="page"][aria-label^="第 "]')
+  await expect(currentPage).toHaveCount(1, { timeout: timeoutMs })
+  await expect(currentPage).toHaveAttribute('aria-label', '第 1 页', { timeout: timeoutMs })
+}
+
 /**
- * Selects the page size through the mounted table's public pagination control. The expected
- * window is an explicit scenario action: the helper does not infer it from a request or accept
- * the table's initial/default value. The selected option and the reset-to-first-page state are
- * read back before the caller can use the value as query authority.
+ * Resolves the expected page window from the mounted table's public state. Default mode accepts a
+ * low-cardinality table with no pagination control (or reads back the untouched default control);
+ * selected mode requires an explicit option action and independent selected-state readback.
  */
 export async function selectWmsPageWindow(
   page: Page,
   expectedWindow: WmsWalkthroughPageWindowInput,
   timeoutMs = 120_000,
-): Promise<WmsWalkthroughPageWindowInput> {
+): Promise<WmsPageWindowReadback> {
   assertWmsPageWindow(expectedWindow)
+  if (expectedWindow.mode === 'default') {
+    await assertWmsDefaultPageWindow(page, expectedWindow, timeoutMs)
+    return { skip: 0, take: expectedWindow.take }
+  }
+
   const trigger = page.getByLabel('每页条数', { exact: true })
   await expect(trigger).toHaveCount(1, { timeout: timeoutMs })
   await expect(trigger).toBeVisible({ timeout: timeoutMs })
@@ -811,12 +847,14 @@ export type WmsListPageProofOptions =
       kind: 'inbound'
       page: Page
       selection: WmsInboundPageSelection
+      pageWindow: WmsWalkthroughPageWindowInput
       query: WmsInboundListQueryProof
     }>
   | Readonly<{
       kind: 'outbound'
       page: Page
       selection: WmsOutboundPageSelection
+      pageWindow: WmsWalkthroughPageWindowInput
       query: WmsOutboundListQueryProof
     }>
 
@@ -839,6 +877,13 @@ export async function proveWmsListPage(options: WmsListPageProofOptions): Promis
   if (options.query.kind !== options.kind) {
     throw new Error(`WMS ${options.kind} proof received a ${options.query.kind} query contract`)
   }
+  assertWmsPageWindow(options.pageWindow)
+  if (
+    options.pageWindow.skip !== options.query.selectionQuery.skip ||
+    options.pageWindow.take !== options.query.selectionQuery.take
+  ) {
+    throw new Error('WMS page window input did not match the selection query facts')
+  }
 
   if (options.kind === 'inbound') {
     assertWmsInboundSelectionMatchesQuery(options.selection, options.query.selectionQuery)
@@ -849,10 +894,7 @@ export async function proveWmsListPage(options: WmsListPageProofOptions): Promis
     await selectWmsScopeOption(options.page, options.selection.scope)
   }
 
-  const selectedPageWindow = await selectWmsPageWindow(options.page, {
-    skip: options.query.selectionQuery.skip,
-    take: options.query.selectionQuery.take,
-  })
+  const selectedPageWindow = await selectWmsPageWindow(options.page, options.pageWindow)
   if (
     selectedPageWindow.skip !== options.query.selectionQuery.skip ||
     selectedPageWindow.take !== options.query.selectionQuery.take

@@ -39,6 +39,8 @@ export type WmsTargetResponseDecision = Readonly<{
 type WmsProductionFixtureOptions = Readonly<{
   kind: WmsProductionFixtureKind
   targetPath: WmsListPath
+  targetTotal?: number
+  expectPagination?: boolean
   onTargetRequest?: (
     request: Request,
     marked: boolean,
@@ -116,7 +118,12 @@ export async function mountWmsProductionFixture(
       await route.fulfill({
         status: decision.status ?? 200,
         contentType: 'application/json',
-        body: JSON.stringify(decision.body ?? { success: true, data: { items: [], total: 21 } }),
+        body: JSON.stringify(
+          decision.body ?? {
+            success: true,
+            data: { items: [], total: options.targetTotal ?? 21 },
+          },
+        ),
       })
       return
     }
@@ -152,10 +159,15 @@ export async function mountWmsProductionFixture(
     waitUntil: 'domcontentloaded',
     timeout: 120_000,
   })
-  await expect(page.getByLabel('每页条数', { exact: true })).toBeVisible({ timeout: 120_000 })
   await expect(page.getByLabel('作业范围', { exact: true })).toContainText(
     options.kind === 'inbound' ? '收货作业池' : '发货作业池',
     { timeout: 120_000 },
   )
+  const pageSizeTrigger = page.getByLabel('每页条数', { exact: true })
+  if (options.expectPagination === false) {
+    await expect(pageSizeTrigger).toHaveCount(0, { timeout: 120_000 })
+  } else {
+    await expect(pageSizeTrigger).toBeVisible({ timeout: 120_000 })
+  }
   return { targetRequests }
 }

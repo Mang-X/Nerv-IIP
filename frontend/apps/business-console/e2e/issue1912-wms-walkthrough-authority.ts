@@ -1,7 +1,14 @@
-export type WmsWalkthroughPageWindowInput = Readonly<{
-  skip: 0
-  take: number
-}>
+export type WmsWalkthroughPageWindowInput =
+  | Readonly<{
+      mode: 'default'
+      skip: 0
+      take: 10
+    }>
+  | Readonly<{
+      mode: 'selected'
+      skip: 0
+      take: number
+    }>
 
 /**
  * Independent NERV-1571 scenario vector.
@@ -17,9 +24,9 @@ export type WmsWalkthroughScenarioFacts = Readonly<{
   scopeId: string
   keyword: string
   /**
-   * Explicit walkthrough input for the first page window. This is deliberately not a page
-   * implementation default: callers must carry the scenario's selected/declared window into the
-   * expected query facts.
+   * Walkthrough input for the first page window. The mode records whether the scenario relies on
+   * the page's default window or performs an explicit page-size action; callers must carry that
+   * distinction into the page proof instead of inferring it from a response.
    */
   pageWindow: WmsWalkthroughPageWindowInput
 }>
@@ -49,11 +56,19 @@ export type WmsInboundWalkthroughQueryFacts = Omit<
     take: number
   }>
 
+/** The real low-cardinality walkthrough uses the page's documented default window. */
+export const NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT = {
+  mode: 'default',
+  skip: 0,
+  take: 10,
+} as const satisfies WmsWalkthroughPageWindowInput
+
 /** The fixture vector's explicit page-window input; it is not the page's implicit default. */
-export const NERV_1571_WMS_PAGE_WINDOW_INPUT: WmsWalkthroughPageWindowInput = {
+export const NERV_1571_WMS_PAGE_WINDOW_INPUT = {
+  mode: 'selected',
   skip: 0,
   take: 20,
-}
+} as const satisfies WmsWalkthroughPageWindowInput
 
 export const NERV_1571_WMS_INBOUND_FACTS: WmsInboundWalkthroughScenarioFacts = {
   organizationId: 'org-live',

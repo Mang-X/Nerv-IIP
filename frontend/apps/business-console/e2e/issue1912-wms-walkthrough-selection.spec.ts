@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT,
   NERV_1571_WMS_INBOUND_QUERY_FACTS,
   NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
+  NERV_1571_WMS_PAGE_WINDOW_INPUT,
 } from './issue1912-wms-walkthrough-authority'
 import {
   proveWmsListPage,
@@ -52,6 +54,7 @@ test.describe('NERV-1571 / #1912 WMS selection facts (production page fixture)',
         },
         site: { label: '工厂', optionCode: expectedQuery.siteCode },
       },
+      pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
       query: inboundProof(expectedQuery),
     })
 
@@ -63,6 +66,41 @@ test.describe('NERV-1571 / #1912 WMS selection facts (production page fixture)',
     const markedRefreshRequests = targetRequests.filter((entry) => entry.marked)
     expect(markedRefreshRequests).toHaveLength(1)
     expect(new URL(markedRefreshRequests[0]!.request.url()).search).toBe(responseUrl.search)
+  })
+
+  test('生产低基数入库页面按默认页窗口证明请求，不要求分页控件', async ({ page }) => {
+    const expectedQuery = {
+      ...NERV_1571_WMS_INBOUND_QUERY_FACTS,
+      take: NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT.take,
+    }
+    const { targetRequests } = await mountWmsProductionFixture(page, {
+      kind: 'inbound',
+      targetPath: inboundPath,
+      targetTotal: 1,
+      expectPagination: false,
+    })
+    const response = await proveWmsListPage({
+      kind: 'inbound',
+      page,
+      selection: {
+        scope: {
+          label: '作业范围',
+          option: '收货作业池',
+          scopeKind: expectedQuery.scopeKind,
+          scopeId: expectedQuery.scopeId,
+        },
+        site: { label: '工厂', optionCode: expectedQuery.siteCode },
+      },
+      pageWindow: NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT,
+      query: inboundProof(expectedQuery),
+    })
+
+    expect(response.status()).toBe(200)
+    expect(new URL(response.url()).searchParams.get('take')).toBe('10')
+    await expect(page.getByLabel('每页条数', { exact: true })).toHaveCount(0)
+    const markedRefreshRequests = targetRequests.filter((entry) => entry.marked)
+    expect(markedRefreshRequests).toHaveLength(1)
+    expect(new URL(markedRefreshRequests[0]!.request.url()).searchParams.get('take')).toBe('10')
   })
 
   test('作业范围 option 的底层 value 未回读为已选时失败关闭', async ({ page }) => {
@@ -272,12 +310,12 @@ test.describe('NERV-1571 / #1912 WMS selection facts (production page fixture)',
         url.searchParams.get('take') === String(expectedQuery.take)
       )
     }, 120_000)
-    await expect(selectWmsPageWindow(page, { skip: 0, take: expectedQuery.take })).resolves.toEqual(
-      {
-        skip: 0,
-        take: expectedQuery.take,
-      },
-    )
+    await expect(
+      selectWmsPageWindow(page, { ...NERV_1571_WMS_PAGE_WINDOW_INPUT, take: expectedQuery.take }),
+    ).resolves.toEqual({
+      skip: 0,
+      take: expectedQuery.take,
+    })
     await pageSizeRequest
     const pageSizeTargetRequest = targetRequests.find((entry) => {
       const url = new URL(entry.request.url())
@@ -288,5 +326,18 @@ test.describe('NERV-1571 / #1912 WMS selection facts (production page fixture)',
       'aria-label',
       '第 1 页',
     )
+  })
+
+  test('低基数列表的默认页窗口不要求不存在的分页控件', async ({ page }) => {
+    await page.setContent(`
+      <base href="http://walkthrough.fixture/">
+      <table aria-label="入库单列表">
+        <tbody><tr><td>IN-WALK-001</td></tr></tbody>
+      </table>
+    `)
+
+    await expect(
+      selectWmsPageWindow(page, NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT, 2_000),
+    ).resolves.toEqual({ skip: 0, take: 10 })
   })
 })

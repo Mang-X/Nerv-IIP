@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import {
   NERV_1571_WMS_INBOUND_QUERY_FACTS,
   NERV_1571_WMS_OUTBOUND_QUERY_FACTS,
+  NERV_1571_WMS_PAGE_WINDOW_INPUT,
 } from './issue1912-wms-walkthrough-authority'
 import { queryPath } from './issue1912-walkthrough-query'
 import { navigateAndWaitForInitialList } from './issue1912-walkthrough-policy'
@@ -242,6 +243,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
           scopeId: expectedQuery.scopeId,
         },
       },
+      pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
       query: outboundProof(expectedQuery),
     })
 
@@ -254,7 +256,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
       String(expectedQuery.take),
     )
 
-    await selectWmsPageWindow(page, { skip: 0, take: 10 }, 2_000)
+    await selectWmsPageWindow(page, { ...NERV_1571_WMS_PAGE_WINDOW_INPUT, take: 10 }, 2_000)
     await expect(
       refreshWmsListAndConfirm(page, outboundProof(expectedQuery), 2_000),
     ).rejects.toThrow('query facts')
@@ -274,6 +276,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
           },
           site: { label: '工厂', optionCode: 'SITE-001' },
         },
+        pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
         query: {
           ...inboundProof(NERV_1571_WMS_INBOUND_QUERY_FACTS),
           listPath: outboundPath as never,
@@ -293,6 +296,7 @@ test.describe('NERV-1571 / #1912 WMS walkthrough facts (Playwright mock fixture)
             scopeId: 'pool-shipping-001',
           },
         },
+        pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
         query: {
           ...outboundProof(NERV_1571_WMS_OUTBOUND_QUERY_FACTS),
           listPath: inboundPath as never,
