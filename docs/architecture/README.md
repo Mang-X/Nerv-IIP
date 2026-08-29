@@ -24,8 +24,8 @@
 | 本地开发与排障 | [`../runbooks/local-development.md`](../runbooks/local-development.md) |
 | 部署拓扑 | [deployment-baseline.md](deployment-baseline.md) |
 | 数据库发布、迁移与恢复 | [`../runbooks/database-release.md`](../runbooks/database-release.md) |
+| 脚本治理与操作排障 | [`../governance/script-automation.md`](../governance/script-automation.md) + [`../runbooks/script-automation.md`](../runbooks/script-automation.md) |
 | 测试有效性、证据与真实依赖 | M2-H 迁移完成前仍由 [test-validity-governance.md](test-validity-governance.md)、[test-evidence-governance.md](test-evidence-governance.md)、[real-dependency-test-lanes.md](real-dependency-test-lanes.md) 路由 |
-| 脚本治理 | 对应 M2 owner 收口前仍由 [script-automation-governance.md](script-automation-governance.md) 路由 |
 | 文档语言与决策分层 | [`../governance/docs/language.md`](../governance/docs/language.md)、[`../governance/decisions/records.md`](../governance/decisions/records.md) |
 | 可观测性 | [observability-baseline.md](observability-baseline.md) |
 
@@ -40,13 +40,14 @@
 - 调查、实验、审计和修复记录位于 [`../reports/README.md`](../reports/README.md)。
 - 当前任务进度、负责人和验收证据位于 GitHub/Linear。
 
-M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批授权、后端、Schema、决策记录、语言、设计系统、KnownException 和持久化启动 Governance。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
+M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已把 `script-automation-governance.md` 拆成 Governance、Runbook 与冻结 Reports。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
 
 ## 迁移期类型提示
 
 - M2-D 的 `database-release-runbook.md`、`file-storage-offline-migration-runbook.md`、`local-dev-troubleshooting.md`、`mobile-pda-deployment.md` 仅为兼容入口。
 - M2-E 的 `database-schema-catalog.md`、`factory-world-bible.md`、`frontline-contract-page-scope-action-matrix.md`、`glossary.md`、`integration-event-consumption-matrix.md`、`master-data-dictionary-rules.md`、`technology-stack-references.md` 仅为兼容入口。
 - M2-F 的 `authorization-matrix.md`、`backend-cleanddd-netcorepal-guidelines.md`、`database-schema-conventions.md`、`decision-record-governance.md`、`document-language-governance.md`、`frontend-design-system-planning.md`、`known-exception-user-visibility.md`、`persistence-startup-governance.md` 仅为兼容入口。
+- M2-G 的 `script-automation-governance.md` 仅为兼容入口；当前规则与操作分别位于 `docs/governance/script-automation.md`、`docs/runbooks/script-automation.md`。
 - 其它 `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 仍可能属于 Reference、Report 或机器伴随物，按正文生命周期判断。
 - `*-investigation.md`、`*-spike.md`、`*-remediation.md` 的完整正文已由 M2-B 迁往 Reports；同名短页只可能是兼容入口。
 - `*-module-product-design.md` 与 `frontline-role-journey-acceptance-matrix.md` 的完整 Product 正文已由 M2-C 迁往 `docs/product/`。
