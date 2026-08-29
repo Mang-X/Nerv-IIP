@@ -108,9 +108,6 @@ const dimensionLabel = computed(
 )
 const errorMessage = computed(() => inlineErrorMessage(aggregateError.value))
 const trendErrorMessage = computed(() => inlineErrorMessage(trendError.value))
-const degradedCount = computed(
-  () => aggregateBuckets.value.filter((bucket) => bucket.isDegraded).length,
-)
 const completeRateBuckets = computed(() =>
   trendBuckets.value.filter(
     (bucket) =>
@@ -147,13 +144,6 @@ const summaryCells = computed<NvMetricStripCell[]>(() => [
   { key: 'timezone', label: '查询时区', value: 'UTC' },
   { key: 'dimension', label: '聚合维度', value: dimensionLabel.value },
   { key: 'count', label: '结果', value: aggregateTotal.value, unit: ' 个桶' },
-  {
-    key: 'degraded',
-    label: '数据不完整',
-    value: degradedCount.value,
-    unit: ' 个桶',
-    valueTone: degradedCount.value > 0 ? 'warning' : undefined,
-  },
 ])
 
 const columns: NvDataTableColumn<BusinessConsoleTelemetryOeeAggregateBucket>[] = [
@@ -220,11 +210,11 @@ function bucketLabel(row: BusinessConsoleTelemetryOeeAggregateBucket) {
   return row.dimensionValue?.trim() || '未解析维度'
 }
 function trendLabel(row: BusinessConsoleTelemetryOeeAggregateBucket) {
-  return (
-    [row.businessDate ?? formatDateTime(row.bucketStartUtc, false), row.siteCode]
-      .filter(Boolean)
-      .join(' · ') || '未解析业务日'
-  )
+  const businessDate = row.businessDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (businessDate) return `${Number(businessDate[2])}/${Number(businessDate[3])}`
+  if (!row.bucketStartUtc) return '—'
+  const date = new Date(row.bucketStartUtc)
+  return Number.isNaN(date.getTime()) ? '—' : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
 }
 function bucketWindow(row: BusinessConsoleTelemetryOeeAggregateBucket) {
   return `${formatDateTime(row.bucketStartUtc)} – ${formatDateTime(row.bucketEndUtc)}`
@@ -351,6 +341,7 @@ function refreshReport() {
         <p class="text-sm text-muted-foreground">
           业务日按历史站点时区与日界线聚合；趋势独立读取完整窗口，不随下方核查表翻页改变。
         </p>
+        <p class="text-sm text-muted-foreground">横轴使用业务日“月/日”短标签。</p>
         <p v-if="filters.deviceAssetId" class="text-sm text-muted-foreground">
           当前设备范围：{{ filters.deviceAssetId }}；可在“设备资产”筛选框清除。
         </p>

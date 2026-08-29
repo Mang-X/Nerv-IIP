@@ -81,13 +81,19 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
   await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('完整窗口共 31 个业务日聚合桶。')).toBeVisible()
   await expect(page.getByText('2026-08-07 · SITE-SUZHOU')).toBeVisible()
-  await expect(page.getByText('缺少或存在冲突的工序标准速率')).toBeVisible()
   await expect(page.getByText('1 个桶缺少率值，未画成 0%')).toBeVisible()
+  await expect(page.getByText('横轴使用业务日“月/日”短标签。')).toBeVisible()
+  await expect(page.getByText('8/1', { exact: true })).toBeVisible()
+  await expect(page.getByText('8/31', { exact: true })).toBeVisible()
+  await expect(page.getByText('数据不完整', { exact: true })).toHaveCount(0)
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
   await page.screenshot({
     path: testInfo.outputPath('issue-2819-oee-day-trend.png'),
     fullPage: true,
   })
+
+  await page.getByRole('button', { name: '第 2 页', exact: true }).click()
+  await expect(page.getByText('缺少或存在冲突的工序标准速率')).toBeVisible()
 
   await page.getByRole('combobox', { name: '报表视角' }).click()
   await page.getByRole('option', { name: '工作中心横比' }).click()
@@ -130,7 +136,7 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
 function businessDayResponse(url: URL) {
   const allBuckets = Array.from({ length: 31 }, (_, index) => {
     const businessDate = `2026-08-${String(index + 1).padStart(2, '0')}`
-    if (index === 6) {
+    if (index === 25) {
       return {
         ...bucket('day', 'SITE-SUZHOU', businessDate, 0.799, null, 0.96, null),
         isDegraded: true,

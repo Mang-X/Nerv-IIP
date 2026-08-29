@@ -133,7 +133,7 @@ vi.mock('@nerv-iip/ui', () => ({
   NvLineChart: {
     props: ['data', 'series'],
     template:
-      '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}<span v-for="row in data">{{ row.oee }}/{{ row.availability }}/{{ row.performance }}/{{ row.quality }}</span></div>',
+      '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}<span v-for="row in data">{{ row.time }} {{ row.oee }}/{{ row.availability }}/{{ row.performance }}/{{ row.quality }}</span></div>',
   },
   NvPageHeader: {
     props: ['title', 'count'],
@@ -736,14 +736,28 @@ describe('equipment telemetry pages', () => {
       ...template,
       businessDate: `2026-07-${String(index + 1).padStart(2, '0')}`,
       bucketStartUtc: `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+      ...(index === 20
+        ? {
+            isDegraded: true,
+            oeeRate: null,
+            performanceRate: null,
+            degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+          }
+        : {}),
     }))
     telemetryPageMocks.aggregateBuckets = telemetryPageMocks.trendBuckets.slice(0, 20)
     telemetryPageMocks.aggregateTotal = 31
 
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('31 OEE')
+    const chartText = wrapper.get('[data-testid="line-chart"]').text()
+    expect(chartText).toContain('30 OEE')
+    expect(chartText).toContain('7/1')
+    expect(chartText).toContain('7/31')
+    expect(chartText).not.toContain('SITE-SUZHOU')
     expect(wrapper.text()).toContain('完整窗口共 31 个业务日聚合桶')
+    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
+    expect(wrapper.get('[data-testid="metric-strip"]').text()).not.toContain('数据不完整')
   })
 
   it('shows a deep-linked device scope and clears it when switching to an organization comparison', async () => {
