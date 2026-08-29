@@ -456,11 +456,15 @@ public sealed class IndustrialTelemetryEndpointContractTests
             await db.SaveChangesAsync();
         }
 
-        var exactWindow = "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=line&windowStartUtc=2026-07-10T08:00:00Z&windowEndUtc=2026-08-10T08:00:00Z&deviceAssetId=DEV-HTTP&workCenterId=WC-01&shiftCode=SHIFT-01&lineCode=LINE-01&workshopCode=WORKSHOP-01&businessDate=2026-07-10";
+        var exactWindow = "/api/business/v1/iiot/oee/aggregates?organizationId=org-001&environmentId=env-dev&dimension=line&windowStartUtc=2026-07-10T08:00:00Z&windowEndUtc=2026-08-10T08:00:00Z&deviceAssetId=DEV-HTTP&workCenterId=WC-01&shiftCode=SHIFT-01&lineCode=LINE-01&workshopCode=WORKSHOP-01&businessDate=2026-07-10&skip=0&take=1";
         using var response = await client.GetAsync(exactWindow);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var bucket = Assert.Single(document.RootElement.GetProperty("data").GetProperty("buckets").EnumerateArray());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("totalCount").GetInt32());
+        Assert.Equal(0, data.GetProperty("skip").GetInt32());
+        Assert.Equal(1, data.GetProperty("take").GetInt32());
+        var bucket = Assert.Single(data.GetProperty("buckets").EnumerateArray());
         Assert.Equal("line", bucket.GetProperty("dimension").GetString());
         Assert.Equal("LINE-01", bucket.GetProperty("dimensionValue").GetString());
         Assert.Equal(8m, bucket.GetProperty("goodQuantity").GetDecimal());
@@ -476,7 +480,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.True(degraded.GetProperty("isDegraded").GetBoolean());
         Assert.Equal(JsonValueKind.Null, degraded.GetProperty("availabilityRate").ValueKind);
         Assert.Equal(JsonValueKind.Null, degraded.GetProperty("performanceRate").ValueKind);
-        Assert.Contains("historical-local-time-ambiguous", degraded.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
+        Assert.Contains("historicalLocalTimeAmbiguous", degraded.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
     }
 
     [Fact]

@@ -68,6 +68,15 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Equal("WORKSHOP-01", Assert.Single((await handler.Handle(requests[2], CancellationToken.None)).Buckets).DimensionValue);
         Assert.Equal("SHIFT-01", Assert.Single((await handler.Handle(requests[3], CancellationToken.None)).Buckets).DimensionValue);
         Assert.Equal(businessDate, Assert.Single((await handler.Handle(requests[4], CancellationToken.None)).Buckets).BusinessDate);
+
+        var secondDevicePage = await handler.Handle(new(
+            "org-001", "env-dev", OeeAggregateDimensions.Device, start, end,
+            Skip: 1,
+            Take: 1), CancellationToken.None);
+        Assert.Equal(2, secondDevicePage.TotalCount);
+        Assert.Equal(1, secondDevicePage.Skip);
+        Assert.Equal(1, secondDevicePage.Take);
+        Assert.Equal("DEV-B", Assert.Single(secondDevicePage.Buckets).DimensionValue);
     }
 
     [RealPostgresFact]
@@ -136,13 +145,25 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             Assert.Equal(20m, result.Buckets.Sum(x => x.GoodQuantity));
             Assert.All(result.Buckets, bucket =>
             {
-                Assert.Null(bucket.AvailabilityRate);
-                Assert.Null(bucket.PerformanceRate);
-                Assert.Null(bucket.QualityRate);
-                Assert.Null(bucket.OeeRate);
-                Assert.Null(bucket.ExpectedOutputQuantity);
-                Assert.Contains("historical-dimension-effective-range-ambiguous", bucket.DegradedReasons);
+                Assert.Equal(1m, bucket.AvailabilityRate);
+                Assert.Equal(1m, bucket.QualityRate);
+                Assert.NotNull(bucket.PerformanceRate);
+                Assert.NotNull(bucket.OeeRate);
+                Assert.NotNull(bucket.ExpectedOutputQuantity);
+                Assert.Empty(bucket.DegradedReasons);
             });
+            Assert.Equal(
+                dimension == OeeAggregateDimensions.Day ? 40m : 48m,
+                result.Buckets.Sum(x => x.ExpectedOutputQuantity!.Value) / 10m);
+
+            if (dimension == OeeAggregateDimensions.Day)
+            {
+                var ordered = result.Buckets.OrderBy(x => x.BusinessDate).ToArray();
+                Assert.Equal(start, ordered[0].BucketStartUtc);
+                Assert.Equal(DateTimeOffset.Parse("2026-07-11T00:00:00Z"), ordered[0].BucketEndUtc);
+                Assert.Equal(DateTimeOffset.Parse("2026-07-11T00:00:00Z"), ordered[1].BucketStartUtc);
+                Assert.Equal(DateTimeOffset.Parse("2026-07-12T00:00:00Z"), ordered[1].BucketEndUtc);
+            }
         }
     }
 
@@ -185,25 +206,25 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Null(mixed.PerformanceRate);
         Assert.Null(mixed.QualityRate);
         Assert.Null(mixed.OeeRate);
-        Assert.Contains("production-uom-ambiguous", mixed.DegradedReasons);
+        Assert.Contains(OeeAggregateDegradedReason.ProductionUomAmbiguous, mixed.DegradedReasons);
         var missingRate = await BucketFor("DEV-RATE");
         Assert.Equal(1m, missingRate.AvailabilityRate);
         Assert.Null(missingRate.PerformanceRate);
         Assert.Null(missingRate.ExpectedOutputQuantity);
-        Assert.Contains("theoretical-rate-missing-or-ambiguous", missingRate.DegradedReasons);
+        Assert.Contains(OeeAggregateDegradedReason.TheoreticalRateMissingOrAmbiguous, missingRate.DegradedReasons);
         var gap = await BucketFor("DEV-GAP");
         Assert.Null(gap.AvailabilityRate);
         Assert.Null(gap.PerformanceRate);
         Assert.Null(gap.QualityRate);
         Assert.Null(gap.OeeRate);
-        Assert.Contains("runtime-state-coverage-incomplete", gap.DegradedReasons);
+        Assert.Contains(OeeAggregateDegradedReason.RuntimeStateCoverageIncomplete, gap.DegradedReasons);
         var dst = await BucketFor("DEV-DST");
         Assert.Null(dst.AvailabilityRate);
         Assert.Null(dst.PerformanceRate);
         Assert.Null(dst.QualityRate);
         Assert.Null(dst.OeeRate);
         Assert.Null(dst.ExpectedOutputQuantity);
-        Assert.Contains("historical-local-time-ambiguous", dst.DegradedReasons);
+        Assert.Contains(OeeAggregateDegradedReason.HistoricalLocalTimeAmbiguous, dst.DegradedReasons);
 
         Task<OeeAggregateBucket> BucketFor(string device) => GetBucketAsync(device);
         async Task<OeeAggregateBucket> GetBucketAsync(string device) => Assert.Single((await handler.Handle(new(
@@ -246,6 +267,8 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1, interceptor.FactLimits);
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1, interceptor.StateLimits);
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumStateSampleCount, interceptor.StateLimits);
+        Assert.All(interceptor.FactCommands, command => Assert.Contains("LIMIT", command, StringComparison.OrdinalIgnoreCase));
+        Assert.All(interceptor.StateCommands, command => Assert.Contains("LIMIT", command, StringComparison.OrdinalIgnoreCase));
 
         await db.Database.ExecuteSqlRawAsync(
             """
@@ -287,6 +310,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         var accepted = await new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None);
         Assert.Equal(10000, Assert.Single(accepted.Buckets).ProductionFactCount);
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1, interceptor.FactLimits);
+        Assert.All(interceptor.FactCommands, command => Assert.Contains("LIMIT", command, StringComparison.OrdinalIgnoreCase));
 
         db.OeeProductionFacts.Add(Fact("OVER", DateTimeOffset.Parse("2026-07-01T00:02:00Z"), "DEV-OVER", "WC-LIMIT", 1m, 0m, 0m, "PCS", 1m, new(2026, 7, 1)));
         await db.SaveChangesAsync();
@@ -372,6 +396,8 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         public List<int> Limits { get; } = [];
         public List<int> FactLimits { get; } = [];
         public List<int> StateLimits { get; } = [];
+        public List<string> FactCommands { get; } = [];
+        public List<string> StateCommands { get; } = [];
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command,
@@ -387,10 +413,12 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             if (command.CommandText.Contains("oee_production_facts", StringComparison.Ordinal))
             {
                 FactLimits.AddRange(limits);
+                FactCommands.Add(command.CommandText);
             }
             if (command.CommandText.Contains("device_state_snapshots", StringComparison.Ordinal))
             {
                 StateLimits.AddRange(limits);
+                StateCommands.Add(command.CommandText);
             }
             return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }

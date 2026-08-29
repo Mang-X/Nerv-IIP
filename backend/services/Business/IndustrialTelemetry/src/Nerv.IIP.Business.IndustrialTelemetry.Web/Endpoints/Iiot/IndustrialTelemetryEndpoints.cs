@@ -191,7 +191,7 @@ public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId
 public sealed record QueryOeeAggregateBucketsRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Dimension,
+    OeeAggregateDimension Dimension,
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc,
     string? DeviceAssetId,
@@ -199,7 +199,9 @@ public sealed record QueryOeeAggregateBucketsRequest(
     string? ShiftCode,
     string? LineCode,
     string? WorkshopCode,
-    DateOnly? BusinessDate);
+    DateOnly? BusinessDate,
+    int Skip = 0,
+    int Take = 100);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
@@ -595,7 +597,9 @@ public sealed class QueryOeeAggregateBucketsEndpoint(ISender sender)
             req.ShiftCode,
             req.LineCode,
             req.WorkshopCode,
-            req.BusinessDate), ct);
+            req.BusinessDate,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
