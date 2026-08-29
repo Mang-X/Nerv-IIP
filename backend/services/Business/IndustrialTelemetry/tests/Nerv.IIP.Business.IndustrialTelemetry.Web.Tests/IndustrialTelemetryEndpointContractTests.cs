@@ -381,7 +381,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
                 10m,
                 "PCS",
                 100m,
-                new DateTimeOffset(2026, 6, 1, 8, 45, 0, TimeSpan.Zero)));
+                new DateTimeOffset(2026, 6, 1, 8, 45, 0, TimeSpan.Zero),
+                OeeHistoricalDimensionSnapshot.MissingTimezone));
             await dbContext.SaveChangesAsync();
         }
 
@@ -412,8 +413,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var reportedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero);
             dbContext.OeeProductionFacts.AddRange(
-                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-001", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 80m, 10m, 10m, "PCS", 100m, reportedAtUtc),
-                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-002", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 1m, 0m, 0m, "KG", 100m, reportedAtUtc));
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-001", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 80m, 10m, 10m, "PCS", 100m, reportedAtUtc, OeeHistoricalDimensionSnapshot.MissingTimezone),
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-002", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 1m, 0m, 0m, "KG", 100m, reportedAtUtc, OeeHistoricalDimensionSnapshot.MissingTimezone));
             await dbContext.SaveChangesAsync();
         }
 
@@ -469,6 +470,288 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("PRPT-OEE-001", fact.SourceReportNo);
         Assert.Equal("DEV-PACK-01", fact.DeviceAssetId);
         Assert.Equal(100m, fact.TheoreticalRatePerHour);
+    }
+
+    [Fact]
+    public async Task Production_report_event_projects_the_event_time_historical_shift_bucket()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var reportedAtUtc = new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero);
+        var integrationEvent = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-history-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-HISTORY-001",
+            "PRPT-OEE-HISTORY-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-HISTORY-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-HISTORY-001",
+                "WO-001",
+                "OP-10",
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false,
+                SiteCode: "SITE-SH",
+                WorkshopCode: "WS-ASSEMBLY",
+                LineCode: "LINE-A",
+                ShiftCode: "NIGHT",
+                SiteTimezone: "Asia/Shanghai",
+                ShiftStartsAt: new TimeOnly(22, 0),
+                ShiftEndsAt: new TimeOnly(6, 0),
+                ShiftCrossesMidnight: true,
+                ShiftPaidMinutes: 480,
+                ShiftBreakMinutes: 30));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var fact = Assert.Single(dbContext.OeeProductionFacts);
+        Assert.Equal("SITE-SH", fact.SiteCode);
+        Assert.Equal("WS-ASSEMBLY", fact.WorkshopCode);
+        Assert.Equal("LINE-A", fact.LineCode);
+        Assert.Equal("NIGHT", fact.ShiftCode);
+        Assert.Equal("Asia/Shanghai", fact.SiteTimezone);
+        Assert.Equal(new DateOnly(2026, 8, 14), fact.BusinessDate);
+        Assert.Equal(new DateTimeOffset(2026, 8, 14, 14, 0, 0, TimeSpan.Zero), fact.ShiftBucketStartUtc);
+        Assert.Equal(new DateTimeOffset(2026, 8, 14, 22, 0, 0, TimeSpan.Zero), fact.ShiftBucketEndUtc);
+        Assert.Equal(reportedAtUtc, fact.AggregationOccurredAtUtc);
+        Assert.Equal(OeeHistoricalDimensionStatus.Resolved, fact.HistoricalDimensionStatus);
+    }
+
+    [Fact]
+    public async Task Reversal_reuses_the_original_fact_even_when_the_reversal_has_no_current_assignment_snapshot()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var originalReportedAtUtc = new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero);
+        var original = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-original-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            originalReportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-ORIGINAL-001",
+            "PRPT-OEE-ORIGINAL-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-ORIGINAL-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-ORIGINAL-001",
+                "WO-001",
+                "OP-10",
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                originalReportedAtUtc,
+                false,
+                SiteCode: "SITE-SH",
+                WorkshopCode: "WS-ASSEMBLY",
+                LineCode: "LINE-A",
+                ShiftCode: "NIGHT",
+                SiteTimezone: "Asia/Shanghai",
+                ShiftStartsAt: new TimeOnly(22, 0),
+                ShiftEndsAt: new TimeOnly(6, 0),
+                ShiftCrossesMidnight: true,
+                ShiftPaidMinutes: 480,
+                ShiftBreakMinutes: 30));
+        var reversalReportedAtUtc = new DateTimeOffset(2026, 8, 16, 1, 0, 0, TimeSpan.Zero);
+        var reversal = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-reversal-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reversalReportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-REVERSAL-001",
+            "PRPT-OEE-ORIGINAL-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-REVERSAL-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-REVERSAL-001",
+                "WO-001",
+                "OP-10",
+                string.Empty,
+                null,
+                -80m,
+                -10m,
+                -10m,
+                "UNSPECIFIED",
+                null,
+                reversalReportedAtUtc,
+                true,
+                ReversedReportNo: "PRPT-OEE-ORIGINAL-001"));
+
+        await handler.HandleAsync(original, CancellationToken.None);
+        await handler.HandleAsync(reversal, CancellationToken.None);
+        await handler.HandleAsync(reversal, CancellationToken.None);
+
+        var reversalFact = Assert.Single(dbContext.OeeProductionFacts.Where(x => x.SourceReportNo == "PRPT-OEE-REVERSAL-001"));
+        Assert.Equal("PRPT-OEE-ORIGINAL-001", reversalFact.ReversedReportNo);
+        Assert.Equal("WC-PACK-01", reversalFact.WorkCenterId);
+        Assert.Equal("DEV-PACK-01", reversalFact.DeviceAssetId);
+        Assert.Equal("PCS", reversalFact.UomCode);
+        Assert.Equal("SITE-SH", reversalFact.SiteCode);
+        Assert.Equal(new DateOnly(2026, 8, 14), reversalFact.BusinessDate);
+        Assert.Equal(originalReportedAtUtc, reversalFact.AggregationOccurredAtUtc);
+        Assert.Equal(reversalReportedAtUtc, reversalFact.ReportedAtUtc);
+        Assert.Equal(2, dbContext.OeeProductionFacts.Count());
+    }
+
+    [Fact]
+    public async Task Production_report_event_keeps_trustworthy_facts_with_queryable_historical_degradation()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+
+        await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
+            "MISSING-HIERARCHY",
+            new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
+            "Asia/Shanghai",
+            new TimeOnly(22, 0),
+            new TimeOnly(6, 0),
+            true,
+            workshopCode: null), CancellationToken.None);
+        await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
+            "MISSING-TIMEZONE",
+            new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
+            null,
+            new TimeOnly(22, 0),
+            new TimeOnly(6, 0),
+            true), CancellationToken.None);
+        await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
+            "MISSING-SHIFT",
+            new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
+            "Asia/Shanghai",
+            null,
+            null,
+            null), CancellationToken.None);
+        await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
+            "INVALID-TIMEZONE",
+            new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
+            "Factory/Unknown",
+            new TimeOnly(22, 0),
+            new TimeOnly(6, 0),
+            true), CancellationToken.None);
+        await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
+            "DST-GAP",
+            new DateTimeOffset(2026, 3, 8, 7, 30, 0, TimeSpan.Zero),
+            "America/New_York",
+            new TimeOnly(2, 30),
+            new TimeOnly(4, 0),
+            false), CancellationToken.None);
+        await handler.HandleAsync(CreateOeeHistoryEvent(
+            "org-001",
+            "env-dev",
+            "DST-AMBIGUOUS",
+            new DateTimeOffset(2026, 11, 1, 7, 0, 0, TimeSpan.Zero),
+            "America/New_York",
+            new TimeOnly(1, 30),
+            new TimeOnly(3, 0),
+            false), CancellationToken.None);
+
+        var facts = dbContext.OeeProductionFacts.ToDictionary(x => x.SourceReportNo);
+        Assert.Equal(6, facts.Count);
+        Assert.Equal(OeeHistoricalDimensionStatus.MissingHierarchy, facts["PRPT-OEE-MISSING-HIERARCHY"].HistoricalDimensionStatus);
+        Assert.Equal(new DateOnly(2026, 8, 14), facts["PRPT-OEE-MISSING-HIERARCHY"].BusinessDate);
+        Assert.Equal(OeeHistoricalDimensionStatus.MissingTimezone, facts["PRPT-OEE-MISSING-TIMEZONE"].HistoricalDimensionStatus);
+        Assert.Equal(OeeHistoricalDimensionStatus.MissingShiftDefinition, facts["PRPT-OEE-MISSING-SHIFT"].HistoricalDimensionStatus);
+        Assert.Equal(OeeHistoricalDimensionStatus.InvalidTimezone, facts["PRPT-OEE-INVALID-TIMEZONE"].HistoricalDimensionStatus);
+        Assert.Equal(OeeHistoricalDimensionStatus.InvalidLocalTime, facts["PRPT-OEE-DST-GAP"].HistoricalDimensionStatus);
+        Assert.Equal(OeeHistoricalDimensionStatus.AmbiguousLocalTime, facts["PRPT-OEE-DST-AMBIGUOUS"].HistoricalDimensionStatus);
+        Assert.Null(facts["PRPT-OEE-DST-GAP"].BusinessDate);
+        Assert.Null(facts["PRPT-OEE-DST-AMBIGUOUS"].ShiftBucketStartUtc);
+    }
+
+    [Theory]
+    [InlineData("org-other", "env-dev")]
+    [InlineData("org-001", "env-other")]
+    public async Task Reversal_without_an_original_in_the_same_scope_fails_for_replay_without_borrowing_another_scope(
+        string originalOrganizationId,
+        string originalEnvironmentId)
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var original = CreateOeeHistoryEvent(
+            originalOrganizationId,
+            originalEnvironmentId,
+            "SCOPED-ORIGINAL",
+            new DateTimeOffset(2026, 8, 14, 17, 30, 0, TimeSpan.Zero),
+            "Asia/Shanghai",
+            new TimeOnly(22, 0),
+            new TimeOnly(6, 0),
+            true);
+        var reversalAtUtc = new DateTimeOffset(2026, 8, 16, 1, 0, 0, TimeSpan.Zero);
+        var reversal = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-scoped-reversal",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reversalAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-SCOPED-REVERSAL",
+            "PRPT-OEE-SCOPED-ORIGINAL",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-SCOPED-REVERSAL",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-SCOPED-REVERSAL",
+                "WO-001",
+                "OP-10",
+                string.Empty,
+                null,
+                -10m,
+                0m,
+                0m,
+                "UNSPECIFIED",
+                null,
+                reversalAtUtc,
+                true,
+                ReversedReportNo: "PRPT-OEE-SCOPED-ORIGINAL"));
+
+        await handler.HandleAsync(original, CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.HandleAsync(reversal, CancellationToken.None));
+        Assert.DoesNotContain(dbContext.OeeProductionFacts, x => x.SourceReportNo == "PRPT-OEE-SCOPED-REVERSAL");
     }
 
     [Fact]
@@ -1520,6 +1803,55 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(expectedTotal, data.GetProperty("total").GetInt32());
         Assert.Equal(expectedItems, data.GetProperty("items").GetArrayLength());
+    }
+
+    private static ProductionReportRecordedIntegrationEvent CreateOeeHistoryEvent(
+        string organizationId,
+        string environmentId,
+        string suffix,
+        DateTimeOffset reportedAtUtc,
+        string? siteTimezone,
+        TimeOnly? shiftStartsAt,
+        TimeOnly? shiftEndsAt,
+        bool? shiftCrossesMidnight,
+        string? workshopCode = "WS-ASSEMBLY")
+    {
+        var reportNo = $"PRPT-OEE-{suffix}";
+        return new ProductionReportRecordedIntegrationEvent(
+            $"evt-{reportNo}",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            reportNo,
+            reportNo,
+            organizationId,
+            environmentId,
+            "system:mes",
+            $"production-report-recorded:{organizationId}:{environmentId}:{reportNo}",
+            new ProductionReportRecordedPayload(
+                reportNo,
+                "WO-001",
+                "OP-10",
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                10m,
+                0m,
+                0m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false,
+                SiteCode: "SITE-SH",
+                WorkshopCode: workshopCode,
+                LineCode: "LINE-A",
+                ShiftCode: shiftStartsAt == null ? null : "SHIFT-A",
+                SiteTimezone: siteTimezone,
+                ShiftStartsAt: shiftStartsAt,
+                ShiftEndsAt: shiftEndsAt,
+                ShiftCrossesMidnight: shiftCrossesMidnight,
+                ShiftPaidMinutes: shiftStartsAt == null ? null : 480,
+                ShiftBreakMinutes: shiftStartsAt == null ? null : 30));
     }
 
     private static async Task UpsertAlarmRuleAsync(

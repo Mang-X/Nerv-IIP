@@ -18,6 +18,23 @@
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres"
       ]
+    },
+    {
+      "id": "erp-operation-labor-redis-cap",
+      "service": "Erp",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests.Redis_cap_transport_converges_settle_void_redelivery_and_out_of_order_revisions_in_postgres",
+      "databasePrefix": "nerv_iip_erp",
+      "capVersionPrefix": "n2275-erp",
+      "diagnosticSchemas": [
+        "erp",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests.Redis_cap_transport_converges_settle_void_redelivery_and_out_of_order_revisions_in_postgres"
+      ]
     }
   ]
 }

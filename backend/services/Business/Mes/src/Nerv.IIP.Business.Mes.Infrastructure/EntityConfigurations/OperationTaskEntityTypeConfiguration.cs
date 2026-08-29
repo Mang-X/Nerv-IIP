@@ -38,6 +38,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PausedDurationTicks).HasColumnName("paused_duration_ticks").IsRequired().HasDefaultValue(0L).HasComment("Accumulated paused duration stored as .NET ticks and excluded from actual work time.");
         builder.Property(x => x.LaborTimeTicks).HasColumnName("labor_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
         builder.Property(x => x.MachineTimeTicks).HasColumnName("machine_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
+        builder.Property(x => x.MachineTimeExecutionDeviceAssetId)
+            .HasColumnName("machine_time_execution_device_asset_id").HasMaxLength(100)
+            .HasComment("Single device asset frozen when the current execution window started; null when no authoritative device was present.");
+        builder.Property(x => x.MachineTimeEvidenceUnavailable)
+            .HasColumnName("machine_time_evidence_unavailable").IsRequired().HasDefaultValue(true)
+            .HasComment("Whether the current execution window cannot produce billable machine ticks because device evidence was absent or changed.");
         builder.Property(x => x.ActualTimeSettlementRevision)
             .HasColumnName("actual_time_settlement_revision").IsRequired().HasDefaultValue(0L)
             .HasComment("Monotonic MES actual-time settlement revision; zero means the operation has never emitted a settlement.");

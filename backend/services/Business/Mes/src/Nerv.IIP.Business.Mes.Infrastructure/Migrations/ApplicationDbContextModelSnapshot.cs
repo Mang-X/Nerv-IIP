@@ -694,10 +694,21 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("actual_machine_ticks")
                         .HasComment("Nonnegative actual machine duration in .NET ticks frozen by this settlement.");
 
+                    b.Property<long?>("BillableMachineTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("billable_machine_ticks")
+                        .HasComment("Nullable nonnegative billable machine duration; zero is authoritative only while status is Available.");
+
                     b.Property<DateTimeOffset>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
                         .HasComment("Operation completion time in UTC frozen by this settlement.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Single MasterData device asset frozen for available billable machine time; null otherwise.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -705,6 +716,19 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the settlement.");
+
+                    b.Property<string>("MachineTimeBasisCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("machine_time_basis_code")
+                        .HasComment("Governed calculation basis for available billable machine time; null for non-available facts.");
+
+                    b.Property<string>("MachineTimeStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("machine_time_status")
+                        .HasComment("Billable machine-time fact state: Available, NotApplicable, or Unavailable.");
 
                     b.Property<string>("OperationTaskId")
                         .IsRequired()
@@ -759,6 +783,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("operation_actual_time_settlements", "mes", t =>
                         {
                             t.HasComment("Immutable MES operation actual-time settlement revisions and their void lifecycle.");
+
+                            t.HasCheckConstraint("ck_operation_actual_time_settlements_machine_fact", "(machine_time_status = 'Available' AND device_asset_id IS NOT NULL AND billable_machine_ticks IS NOT NULL AND billable_machine_ticks >= 0 AND machine_time_basis_code IS NOT NULL AND machine_time_basis_code = 'single-device-active-minus-explicit-pause-v1') OR (machine_time_status IN ('NotApplicable', 'Unavailable') AND device_asset_id IS NULL AND billable_machine_ticks IS NULL AND machine_time_basis_code IS NULL)");
 
                             t.HasCheckConstraint("ck_operation_actual_time_settlements_revision_positive", "revision > 0");
 
@@ -922,6 +948,19 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDefaultValue(0L)
                         .HasColumnName("labor_time_ticks")
                         .HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
+
+                    b.Property<bool>("MachineTimeEvidenceUnavailable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("machine_time_evidence_unavailable")
+                        .HasComment("Whether the current execution window cannot produce billable machine ticks because device evidence was absent or changed.");
+
+                    b.Property<string>("MachineTimeExecutionDeviceAssetId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("machine_time_execution_device_asset_id")
+                        .HasComment("Single device asset frozen when the current execution window started; null when no authoritative device was present.");
 
                     b.Property<long>("MachineTimeTicks")
                         .ValueGeneratedOnAdd()
@@ -1399,6 +1438,67 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("oee_device_asset_id")
                         .HasComment("Assigned device snapshot carried with the report for OEE projection and reversal consistency.");
 
+                    b.Property<string>("OeeDimensionDegradedReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_dimension_degraded_reason")
+                        .HasComment("Explicit reason why the event-time OEE dimension snapshot is degraded; NULL for resolved and legacy rows.");
+
+                    b.Property<string>("OeeDimensionResolutionStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("oee_dimension_resolution_status")
+                        .HasComment("Event-time OEE dimension resolution outcome: resolved or degraded; NULL marks legacy rows predating the snapshot contract.");
+
+                    b.Property<string>("OeeLineCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_line_code")
+                        .HasComment("Authoritative MasterData production line code captured with the production report.");
+
+                    b.Property<int?>("OeeShiftBreakMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("oee_shift_break_minutes")
+                        .HasComment("Break minutes in the captured shift definition.");
+
+                    b.Property<string>("OeeShiftCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_shift_code")
+                        .HasComment("MasterData shift code captured with its report-time definition.");
+
+                    b.Property<bool?>("OeeShiftCrossesMidnight")
+                        .HasColumnType("boolean")
+                        .HasColumnName("oee_shift_crosses_midnight")
+                        .HasComment("Whether the captured shift definition crosses local midnight.");
+
+                    b.Property<TimeOnly?>("OeeShiftEndsAt")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("oee_shift_ends_at")
+                        .HasComment("Local shift end time captured from MasterData at report time.");
+
+                    b.Property<int?>("OeeShiftPaidMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("oee_shift_paid_minutes")
+                        .HasComment("Paid minutes in the captured shift definition.");
+
+                    b.Property<TimeOnly?>("OeeShiftStartsAt")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("oee_shift_starts_at")
+                        .HasComment("Local shift start time captured from MasterData at report time.");
+
+                    b.Property<string>("OeeSiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_site_code")
+                        .HasComment("Authoritative MasterData site code captured with the production report.");
+
+                    b.Property<string>("OeeSiteTimezone")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_site_timezone")
+                        .HasComment("IANA site timezone captured from MasterData at report time.");
+
                     b.Property<decimal?>("OeeTheoreticalRatePerHour")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -1416,6 +1516,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("oee_work_center_id")
                         .HasComment("Work center snapshot carried with the report for OEE projection and reversal consistency.");
+
+                    b.Property<string>("OeeWorkshopCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_workshop_code")
+                        .HasComment("Authoritative MasterData workshop code captured with the production report.");
 
                     b.Property<string>("OperationTaskId")
                         .IsRequired()

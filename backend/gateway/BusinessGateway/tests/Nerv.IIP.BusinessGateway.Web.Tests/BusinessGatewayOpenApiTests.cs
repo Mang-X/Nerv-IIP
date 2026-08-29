@@ -65,6 +65,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertGovernedWriteIdempotencyHeaders(paths);
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/master-data/resources", "get", "deviceAssetId");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/master-data/resources", "get", "shiftCode");
         AssertSchemaProperties(
             document,
             "BusinessConsoleResourceItem",
@@ -906,6 +908,82 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests", "post", "createBusinessConsoleMesMaterialIssueRequest");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests", "get", "listBusinessConsoleMesMaterialIssueRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}", "get", "getBusinessConsoleMesMaterialIssueRequest");
+        AssertOperationId(paths, "/api/business-console/v1/mes/material-scan-prevalidation", "post", "prevalidateBusinessConsoleMesMaterialScan");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/mes/material-scan-prevalidation",
+            "post",
+            "400",
+            "502",
+            "503",
+            "504");
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        Assert.True(schemas.TryGetProperty("NervIIPContractsMesMesMaterialScanPrevalidationRequest", out _));
+        Assert.True(schemas.TryGetProperty("NervIIPContractsMesMesMaterialScanPrevalidationResponse", out _));
+        Assert.False(schemas.TryGetProperty("NervIIPContractsMesBusinessConsoleMesMaterialScanPrevalidationRequest", out _));
+        Assert.False(schemas.TryGetProperty("NervIIPContractsMesBusinessConsoleMesMaterialScanPrevalidationResponse", out _));
+        AssertRequiredSchemaProperties(
+            document,
+            "MesMaterialScanPrevalidationRequest",
+            "organizationId",
+            "environmentId",
+            "materialIssueRequestId",
+            "workOrderId",
+            "operationTaskId");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesMaterialScanPrevalidationResponse",
+            "decision",
+            "reasonCode",
+            "materialIssueRequestId",
+            "workOrderId",
+            "operationTaskId",
+            "evaluatedAtUtc");
+        AssertStringEnumProperty(
+            document,
+            "MesMaterialScanPrevalidationResponse",
+            "decision",
+            "accepted",
+            "rejected");
+        AssertOperationId(paths, "/api/business-console/v1/mes/context-scan-prevalidation", "post", "prevalidateBusinessConsoleMesContextScan");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/mes/context-scan-prevalidation",
+            "post",
+            "400",
+            "502",
+            "503",
+            "504");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesContextScanPrevalidationRequest",
+            "organizationId",
+            "environmentId",
+            "workOrderId",
+            "operationTaskId");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "decision",
+            "reasonCode",
+            "workOrderId",
+            "operationTaskId",
+            "objectType",
+            "scannedObjectId",
+            "evaluatedAtUtc");
+        AssertStringEnumProperty(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "decision",
+            "accepted",
+            "rejected");
+        AssertStringEnumProperty(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "objectType",
+            "operationTask",
+            "deviceAsset",
+            "personnel");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts", "post", "confirmBusinessConsoleMesLineSideMaterialReceipt");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns", "post", "returnBusinessConsoleMesLineSideMaterial");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");
@@ -1474,6 +1552,30 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal(values, actualValues);
     }
 
+    private static void AssertStringEnumProperty(
+        JsonDocument document,
+        string schemaNameSuffix,
+        string propertyName,
+        params string[] values)
+    {
+        var property = FindSchemaBySuffix(document, schemaNameSuffix)
+            .GetProperty("properties")
+            .GetProperty(propertyName);
+        var enumSchema = property.TryGetProperty("enum", out _)
+            ? property
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(property.GetProperty("$ref").GetString()!.Split('/').Last());
+        var actualValues = enumSchema.GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+
+        Assert.Equal("string", enumSchema.GetProperty("type").GetString());
+        Assert.Equal(values, actualValues);
+    }
+
     private static void AssertBusinessPartnerCreditFields(JsonDocument document)
     {
         var properties = FindSchemaBySuffix(document, "BusinessConsoleCreateBusinessPartnerRequest")
@@ -1859,7 +1961,7 @@ public sealed class BusinessGatewayOpenApiTests
             .EnumerateObject()
             .Where(schema =>
                 schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal) &&
-                !schema.Name.StartsWith("NetCorePalExtensionsDtoResponseDataOf", StringComparison.Ordinal))
+                !schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal))
             .ToArray();
 
         Assert.Single(schemas);

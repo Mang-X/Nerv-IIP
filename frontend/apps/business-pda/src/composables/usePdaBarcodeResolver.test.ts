@@ -64,6 +64,20 @@ describe('usePdaBarcodeResolver', () => {
     })
   })
 
+  it('returns a resolved non-navigation candidate to target-page consumers', async () => {
+    const candidate = {
+      objectType: 'personnel',
+      strongIds: { userId: 'USER-1' },
+    } satisfies BusinessConsoleBarcodeResolveCandidate
+    const resolver = usePdaBarcodeResolver({
+      ...scope,
+      resolveBarcode: vi.fn().mockResolvedValue(envelope('resolved', [candidate])),
+    })
+
+    await expect(resolver.resolveCandidate('BADGE')).resolves.toEqual(candidate)
+    expect(resolver.status.value).toBe('resolved')
+  })
+
   it('keeps unknown search results as non-navigable server candidates', async () => {
     const searchCandidates = vi.fn().mockResolvedValue({
       success: true,

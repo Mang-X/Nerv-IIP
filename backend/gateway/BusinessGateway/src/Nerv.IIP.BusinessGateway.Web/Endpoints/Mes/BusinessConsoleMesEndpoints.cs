@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
@@ -941,6 +942,66 @@ public sealed class GetBusinessConsoleMesMaterialIssueRequestEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetMaterialIssueRequestAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/material-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesMaterialScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesMaterialPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<MesMaterialScanPrevalidationRequest, MesMaterialScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsRead)
+{
+    protected override string OrganizationId(MesMaterialScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(MesMaterialScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<MesMaterialScanPrevalidationResponse> ForwardAsync(
+        MesMaterialScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/context-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesContextScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class PrevalidateBusinessConsoleMesContextScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesContextPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<MesContextScanPrevalidationRequest, MesContextScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsRead)
+{
+    protected override string OrganizationId(MesContextScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(MesContextScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<MesContextScanPrevalidationResponse> ForwardAsync(
+        MesContextScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1948,20 +2009,108 @@ public sealed class CreateBusinessConsoleMesFinishedGoodsReceiptRequestEndpoint(
 public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessMaintenanceClient maintenance,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesDowntimeEventListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesDowntimeEventListRequest, BusinessConsoleMesDowntimeEventListResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesDowntimeEventListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesDowntimeEventListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+    protected override async Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
+        BusinessConsoleMesDowntimeEventListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        return await MesDowntimeReasonNameEnricher.EnrichAsync(
+            response,
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// 停机原因码归 Maintenance 的 <c>downtime-reason</c> 目录所有，MES 只存码。读面按
+/// api-contract-and-codegen §17「列表行必须随业务标识返回可显示的 *Name」在门面层补中文名，
+/// 与 <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 同一姿势（读面跨域取名走门面，不让页面自己拼）。
+/// 目录里没有的码（历史自由文本停机原因）不编名字：<c>ReasonName</c> 留空，页面照实显示原值。
+/// </summary>
+internal static class MesDowntimeReasonNameEnricher
+{
+    /// <summary>
+    /// 停机原因目录是受控词表（当前世界史种子 5 条），一页取回即可覆盖。目录真超过这一页时本方法
+    /// **静默截断**：多出来的码解不出名字，与「目录里没有这个码」落在同一条降级路径上。
+    /// </summary>
+    private const int CatalogPageSize = 200;
+
+    public static async Task<BusinessConsoleMesDowntimeEventListResponse> EnrichAsync(
+        BusinessConsoleMesDowntimeEventListResponse response,
+        IBusinessMaintenanceClient maintenance,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var names = await LoadReasonNamesAsync(
+            maintenance, internalBearerToken, organizationId, environmentId, cancellationToken);
+
+        string? Resolve(string? reasonCode) =>
+            reasonCode is not null && names.TryGetValue(reasonCode, out var name) ? name : null;
+
+        return response with
+        {
+            Items = [.. response.Items.Select(item => item with { ReasonName = Resolve(item.ReasonCode) })],
+            ReasonSummary = [.. response.ReasonSummary.Select(row => row with { ReasonName = Resolve(row.ReasonCode) })],
+        };
+    }
+
+    /// <summary>
+    /// 取名是**增补**，不是停机读面的事实来源：Maintenance 不可用时停机数据本身完好、原因码原值也在，
+    /// 整页 502 是拿一个可降级的依赖去否决一个能正常回答的读面。因此按
+    /// <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 已判定可达的同一组失败降级为「解不出名字」，
+    /// 与「目录里没有这个码」走同一条路径（页面照实显示原值），不新增前端分支。
+    /// 调用方自己取消不在此列：那不是下游故障，必须原样抛回。
+    /// </summary>
+    private static async Task<Dictionary<string, string>> LoadReasonNamesAsync(
+        IBusinessMaintenanceClient maintenance,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var catalog = await maintenance.ListDowntimeReasonsAsync(
+                internalBearerToken,
+                new BusinessConsoleMaintenanceReasonDirectoryRequest(organizationId, environmentId, Take: CatalogPageSize),
+                cancellationToken);
+            return catalog.Items
+                .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
+                .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
+        }
+        catch (BusinessServiceProxyException exception) when (IsUnavailableReasonDirectory(exception.StatusCode))
+        {
+            return [];
+        }
+        catch (HttpRequestException)
+        {
+            return [];
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return [];
+        }
+    }
+
+    private static bool IsUnavailableReasonDirectory(System.Net.HttpStatusCode statusCode) =>
+        statusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.RequestTimeout
+        || (int)statusCode >= 500;
 }
 
 [Tags("Business Console MES")]
@@ -2192,8 +2341,6 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
         BusinessGatewayPermissions.MesTraceabilityRead)
     where TRequest : notnull
 {
-    public const string InspectionResultNodeType = "InspectionResult";
-
     protected abstract Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         TRequest request,
         CancellationToken cancellationToken);
@@ -2205,7 +2352,7 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
     {
         var response = await LoadTraceabilityAsync(request, cancellationToken);
         var inspectionNodeIds = response.Nodes
-            .Where(x => string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))
+            .Where(x => string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))
             .Select(x => x.NodeId)
             .ToHashSet(StringComparer.Ordinal);
         if (inspectionNodeIds.Count == 0)
@@ -2229,7 +2376,7 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
         }
 
         return new BusinessConsoleMesTraceabilityResponse(
-            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))],
+            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
             [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))]);
     }
 }

@@ -124,6 +124,7 @@ public sealed class MasterDataOpenApiTests
                 "userId",
                 "skillCode",
                 "workshopCode",
+                "deviceAssetId",
             ],
             parameterNames);
 
@@ -145,7 +146,7 @@ public sealed class MasterDataOpenApiTests
             schemas,
             "/api/business/v1/master-data/resources",
             "listBusinessMasterDataResources",
-            ["organizationId", "environmentId", "resourceType", "includeDisabled", "skip", "take", "codeSet", "parentCode", "siteCode", "lineCode", "workCenterCode", "category", "partnerType", "keyword", "all", "departmentCode", "shiftCode", "userId", "skillCode", "workshopCode"],
+            ["organizationId", "environmentId", "resourceType", "includeDisabled", "skip", "take", "codeSet", "parentCode", "siteCode", "lineCode", "workCenterCode", "category", "partnerType", "keyword", "all", "departmentCode", "shiftCode", "userId", "skillCode", "workshopCode", "deviceAssetId"],
             "resources",
             ["limit", "resources", "total", "truncated"],
             ["resourceType", "code", "displayName", "active", "snapshotVersion", "partnerType", "partnerRoles", "siteCode", "plantCode", "lineCode", "workshopCode", "capacityMinutesPerDay", "workCenterCode", "status", "category", "materialType", "codeSet", "baseUomCode", "taxId", "parentDepartmentCode", "departmentCode", "shiftCode", "userId", "skillCode", "skillLevel", "effectiveFrom", "effectiveTo", "fromUomCode", "toUomCode", "factor", "offset", "precision", "roundingMode", "deviceAssetId", "purchaseDate", "purchaseCost", "purchaseCurrencyCode", "warrantyExpiresOn", "supplierPartnerCode", "stationCode", "parentDeviceId", "retiredOn", "creditLimit", "creditCurrencyCode", "jobTitle", "employmentStatus", "phone", "timezone", "startsAt", "endsAt", "crossesMidnight", "paidMinutes", "breakMinutes"]);

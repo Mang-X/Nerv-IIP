@@ -82,6 +82,14 @@ public sealed class MesInventoryHttpClient(HttpClient httpClient)
     public HttpClient HttpClient { get; } = httpClient;
 }
 
+public sealed class MesInventoryHttpClientOptions
+{
+    public const string SectionName = "Mes:InventoryClient";
+
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
+}
+
 public sealed class MesMasterDataHttpClient(HttpClient httpClient)
 {
     public HttpClient HttpClient { get; } = httpClient;
