@@ -28,21 +28,46 @@ public sealed class MesIntegrationEventTests
         var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
         var settlement = new OperationActualTimeSettlementSnapshot(
             "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
-            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"]);
+            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"],
+            "DEVICE-001", MachineTimeFactStatus.Available, 24_000_000_000,
+            MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
         var integrationEvent = new OperationActualTimeSettledIntegrationEventConverter(
                 new StubMesIntegrationEventContextAccessor(
                     new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
             .Convert(new OperationActualTimeSettledDomainEvent(settlement));
+        var legacyEvent = new OperationActualTimeSettledV1IntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
+            .Convert(new OperationActualTimeSettledDomainEvent(settlement));
 
+        Assert.Equal(MesIntegrationEventVersions.V1, legacyEvent.EventVersion);
+        Assert.Equal(legacyEvent.IdempotencyKey, integrationEvent.IdempotencyKey);
+        Assert.Equal(
+            legacyEvent.IdempotencyKey,
+            new OperationActualTimeSettledV1IntegrationEventConverter(
+                    new StubMesIntegrationEventContextAccessor(
+                        new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
+                .Convert(new OperationActualTimeSettledDomainEvent(settlement)).IdempotencyKey);
+        Assert.Equal(
+            integrationEvent.IdempotencyKey,
+            new OperationActualTimeSettledIntegrationEventConverter(
+                    new StubMesIntegrationEventContextAccessor(
+                        new MesIntegrationEventContext("corr-settled", "cause-report-completed")))
+                .Convert(new OperationActualTimeSettledDomainEvent(settlement)).IdempotencyKey);
+        Assert.NotEqual(legacyEvent.GetType(), integrationEvent.GetType());
         Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettled, integrationEvent.EventType);
-        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
         Assert.Equal("corr-settled", integrationEvent.CorrelationId);
         Assert.Equal("cause-report-completed", integrationEvent.CausationId);
         Assert.Equal("mes:operation-actual-time-settled:org-001:env-dev:OP-001:2", integrationEvent.IdempotencyKey);
         Assert.Equal(2, integrationEvent.Payload.SettlementRevision);
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
         Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
+        Assert.Equal("DEVICE-001", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal(MesMachineTimeFactStatus.Available, integrationEvent.Payload.MachineTimeStatus);
+        Assert.Equal(24_000_000_000, integrationEvent.Payload.BillableMachineTicks);
+        Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, integrationEvent.Payload.MachineTimeBasisCode);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
     }
 
@@ -53,13 +78,34 @@ public sealed class MesIntegrationEventTests
         var voidedAtUtc = completedAtUtc.AddMinutes(10);
         var settlement = new OperationActualTimeSettlementSnapshot(
             "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 2,
-            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"]);
+            completedAtUtc, 72_000_000_000, 36_000_000_000, ["PR-001", "PR-002"],
+            "DEVICE-SETTLED", MachineTimeFactStatus.Available, 24_000_000_000,
+            MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
         var integrationEvent = new OperationActualTimeSettlementVoidedIntegrationEventConverter(
                 new StubMesIntegrationEventContextAccessor(
                     new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
             .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
+        var legacyEvent = new OperationActualTimeSettlementVoidedV1IntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
+            .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
 
+        Assert.Equal(MesIntegrationEventVersions.V1, legacyEvent.EventVersion);
+        Assert.Equal(legacyEvent.IdempotencyKey, integrationEvent.IdempotencyKey);
+        Assert.Equal(
+            legacyEvent.IdempotencyKey,
+            new OperationActualTimeSettlementVoidedV1IntegrationEventConverter(
+                    new StubMesIntegrationEventContextAccessor(
+                        new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
+                .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc)).IdempotencyKey);
+        Assert.Equal(
+            integrationEvent.IdempotencyKey,
+            new OperationActualTimeSettlementVoidedIntegrationEventConverter(
+                    new StubMesIntegrationEventContextAccessor(
+                        new MesIntegrationEventContext("corr-voided", "cause-report-reversed")))
+                .Convert(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc)).IdempotencyKey);
+        Assert.NotEqual(legacyEvent.GetType(), integrationEvent.GetType());
         Assert.Equal(MesIntegrationEventTypes.OperationActualTimeSettlementVoided, integrationEvent.EventType);
         Assert.Equal("corr-voided", integrationEvent.CorrelationId);
         Assert.Equal("cause-report-reversed", integrationEvent.CausationId);
@@ -69,7 +115,44 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(voidedAtUtc, integrationEvent.Payload.VoidedAtUtc);
         Assert.Equal(72_000_000_000, integrationEvent.Payload.ActualLaborTicks);
         Assert.Equal(36_000_000_000, integrationEvent.Payload.ActualMachineTicks);
+        Assert.Equal(MesIntegrationEventVersions.V2, integrationEvent.EventVersion);
+        Assert.Equal("DEVICE-SETTLED", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal(MesMachineTimeFactStatus.Available, integrationEvent.Payload.MachineTimeStatus);
+        Assert.Equal(24_000_000_000, integrationEvent.Payload.BillableMachineTicks);
+        Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, integrationEvent.Payload.MachineTimeBasisCode);
         Assert.Equal(["PR-001", "PR-002"], integrationEvent.Payload.CoveredProductionReportNos);
+    }
+
+    [Fact]
+    public void Actual_time_topics_encode_deployment_source_context_event_and_envelope_version()
+    {
+        Assert.Equal(
+            nameof(MesOperationActualTimeSettledIntegrationEvent),
+            MesActualTimeIntegrationEventTopics.SettledV1LegacyAlias);
+        Assert.Equal(
+            nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent),
+            MesActualTimeIntegrationEventTopics.VoidedV1LegacyAlias);
+        Assert.Equal(
+            "nerv-iip.production.business-mes.mes.operation-actual-time-settled.v1",
+            MesActualTimeIntegrationEventTopics.Settled("Production", MesIntegrationEventVersions.V1));
+        Assert.Equal(
+            "nerv-iip.production.business-mes.mes.operation-actual-time-settled.v2",
+            MesActualTimeIntegrationEventTopics.Settled("Production", MesIntegrationEventVersions.V2));
+        Assert.Equal(
+            "nerv-iip.production.business-mes.mes.operation-actual-time-settlement-voided.v1",
+            MesActualTimeIntegrationEventTopics.Voided("Production", MesIntegrationEventVersions.V1));
+        Assert.Equal(
+            "nerv-iip.production.business-mes.mes.operation-actual-time-settlement-voided.v2",
+            MesActualTimeIntegrationEventTopics.Voided("Production", MesIntegrationEventVersions.V2));
+        Assert.Equal(
+            MesActualTimeIntegrationEventTopics.Settled("CustomerPilot", MesIntegrationEventVersions.V2),
+            MesActualTimeIntegrationEventTopics.ResolveSubscriptionTemplate(
+                MesActualTimeIntegrationEventTopics.SettledV2Template,
+                "CustomerPilot"));
+        Assert.Equal(
+            MesActualTimeIntegrationEventTopics.VoidedV2Template,
+            MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(
+                typeof(MesOperationActualTimeSettlementVoidedV2IntegrationEvent)));
     }
 
     [Fact]

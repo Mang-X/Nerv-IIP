@@ -20,6 +20,8 @@ const receiptFilters = reactive({
   workOrderId: undefined as string | undefined,
 })
 const workOrderFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
 })
@@ -89,9 +91,11 @@ describe('PDA MES finished-goods receipt page', () => {
     createReceipt.mockResolvedValue(undefined)
     push.mockClear()
     receiptFilters.keyword = undefined
+    receiptFilters.workOrderId = undefined
     receiptFilters.organizationId = 'org-001'
     receiptFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     receiptsPending.value = false
     receiptsError.value = null
     receiptRows.value = receipts
@@ -166,12 +170,15 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).not.toContain('SKU-A')
   })
 
-  it('scanning sets the receipt keyword filter', async () => {
+  it('uses the resolved work-order strong id as an exact receipt filter', async () => {
     const wrapper = mount(ReceiptPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(receiptFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    expect(receiptFilters.workOrderId).toBe('WO-2026-0002')
+    expect(receiptFilters.keyword).toBeUndefined()
   })
 
   it('starts the new-receipt flow on the select-work-order step', async () => {

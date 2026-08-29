@@ -34,6 +34,7 @@
 - [ADR 0026](0026-industrial-telemetry-historian-storage.md) — `industrial-telemetry-historian-storage`
 - [ADR 0027](0027-filestorage-offline-migration-cutover-and-rollback.md) — `filestorage-offline-migration-cutover-and-rollback`
 - [ADR 0028](0028-retired-vertical-slice-script-entry-boundary.md) — `retired-vertical-slice-script-entry-boundary`
+- [ADR 0029](0029-reference-data-vocabulary-read-permission.md) — `reference-data-vocabulary-read-permission`
 
 ## 阅读规则
 

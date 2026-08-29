@@ -6,8 +6,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Testing;
 
@@ -16,10 +20,17 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection(ErpPostgresLaneDatabase.CollectionName)]
 public sealed class OperationLaborSettlementRedisCapTransportTests
 {
+    private const string DeploymentProfile = "Issue2382Acceptance";
+    private const string SettledV2Topic =
+        "nerv-iip.issue2382acceptance.business-mes.mes.operation-actual-time-settled.v2";
+    private const string VoidedV2Topic =
+        "nerv-iip.issue2382acceptance.business-mes.mes.operation-actual-time-settlement-voided.v2";
+
     [ErpCostPostgresRedisFact]
     public async Task Redis_cap_transport_converges_settle_void_redelivery_and_out_of_order_revisions_in_postgres()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await ErpPostgresLaneDatabase.ResetCapSchemaAsync();
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
         await InitializeAsync(factory);
@@ -27,16 +38,26 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
         var completedAtUtc = DateTimeOffset.Parse("2026-08-31T15:50:00Z");
         var revisionOne = Settled("transport-settle-r1", 1, completedAtUtc, 2 * TimeSpan.TicksPerHour);
         var revisionTwo = Settled("transport-settle-r2", 2, completedAtUtc.AddHours(1), 3 * TimeSpan.TicksPerHour);
+        var machineRevisionOne = MachineSettled("transport-machine-settle-r1", 1, completedAtUtc, 2 * TimeSpan.TicksPerHour);
+        var machineRevisionTwo = MachineSettled("transport-machine-settle-r2", 2, completedAtUtc.AddHours(1), 3 * TimeSpan.TicksPerHour);
 
-        await PublishAsync(factory, publisher =>
-            publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionTwo));
+        await PublishAsync(factory, async publisher =>
+        {
+            await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionTwo);
+            await publisher.PublishAsync(
+                SettledV2Topic,
+                machineRevisionTwo);
+        });
         await AssertEventuallyAsync(factory, async (db, token) =>
         {
             Assert.Equal(2, (await db.OperationLaborSettlementStates.AsNoTracking().SingleAsync(token)).ActiveRevision);
-            Assert.Equal(240m, (await db.WorkOrderCosts.Include(x => x.Details).AsNoTracking().SingleAsync(token)).LaborCost);
+            Assert.Equal(2, (await db.OperationMachineOverheadSettlementStates.AsNoTracking().SingleAsync(token)).ActiveRevision);
+            var cost = await db.WorkOrderCosts.Include(x => x.Details).AsNoTracking().SingleAsync(token);
+            Assert.Equal(240m, cost.LaborCost);
+            Assert.Equal(120m, cost.MachineOverheadCost);
         });
 
-        var redeliveredCapMessageId = await ForceSameCapMessageRedeliveryAsync(factory, revisionTwo.EventId);
+        var redeliveredCapMessageId = await ForceSameCapMessageRedeliveryAsync(factory, machineRevisionTwo.EventId);
         await AssertEventuallyAsync(factory, async (db, token) =>
         {
             var status = await db.Database.SqlQuery<string>($"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
@@ -53,7 +74,28 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent),
                 Voided("transport-void-r1", revisionOne, completedAtUtc.AddHours(2)));
             await publisher.PublishAsync(nameof(MesOperationActualTimeSettledIntegrationEvent), revisionOne);
+            await publisher.PublishAsync(
+                VoidedV2Topic,
+                MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2)));
         });
+
+        await AssertEventuallyAsync(factory, async (db, token) =>
+        {
+            Assert.Single(await db.OperationMachineOverheadSettlements.AsNoTracking().ToListAsync(token));
+            Assert.Empty(await db.OperationMachineOverheadSettlementVoids.AsNoTracking().ToListAsync(token));
+            Assert.Empty(await db.ProcessedIntegrationEvents
+                .Where(x => x.EventId == "transport-machine-void-r1")
+                .AsNoTracking().ToListAsync(token));
+        });
+
+        await PublishAsync(factory, async publisher => await publisher.PublishAsync(
+            SettledV2Topic,
+            machineRevisionOne));
+        await AssertEventuallyAsync(factory, async (db, token) =>
+            Assert.Equal(2, await db.OperationMachineOverheadSettlements.CountAsync(token)));
+        await PublishAsync(factory, async publisher => await publisher.PublishAsync(
+            VoidedV2Topic,
+            MachineVoided("transport-machine-void-r1", machineRevisionOne, completedAtUtc.AddHours(2))));
 
         await AssertEventuallyAsync(factory, async (db, token) =>
         {
@@ -62,15 +104,24 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             Assert.Equal(2, state.HighestRevision);
             Assert.Equal(2, state.ActiveRevision);
             Assert.Equal(240m, cost.LaborCost);
+            var machineState = await db.OperationMachineOverheadSettlementStates.AsNoTracking().SingleAsync(token);
+            Assert.Equal(2, machineState.HighestRevision);
+            Assert.Equal(2, machineState.ActiveRevision);
+            Assert.Equal(120m, cost.MachineOverheadCost);
             Assert.Equal(2, await db.OperationLaborSettlements.CountAsync(token));
             Assert.Single(await db.OperationLaborSettlementVoids.ToListAsync(token));
+            Assert.Equal(2, await db.OperationMachineOverheadSettlements.CountAsync(token));
+            Assert.Single(await db.OperationMachineOverheadSettlementVoids.ToListAsync(token));
             Assert.Single(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperation);
             Assert.DoesNotContain(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperationVoid);
+            Assert.Single(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperation);
+            Assert.DoesNotContain(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperationVoid);
             Assert.Single(await db.ProcessedIntegrationEvents.Where(x => x.EventId == revisionTwo.EventId).ToListAsync(token));
+            Assert.Single(await db.ProcessedIntegrationEvents.Where(x => x.EventId == machineRevisionTwo.EventId).ToListAsync(token));
             var receivedCount = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.received").SingleAsync(token);
             var publishedCount = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync(token);
-            Assert.Equal(3, receivedCount);
-            Assert.Equal(3, publishedCount);
+            Assert.Equal(7, receivedCount);
+            Assert.Equal(7, publishedCount);
             var redelivered = await db.Database.SqlQuery<long>($"SELECT \"Id\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
             Assert.Equal(redeliveredCapMessageId, redelivered);
             var redeliveredStatus = await db.Database.SqlQuery<string>($"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Id\" = {redeliveredCapMessageId}").SingleAsync(token);
@@ -105,10 +156,13 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             ["Cap:Version"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_VERSION"),
             ["Cap:TopicNamePrefix"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_TOPIC_PREFIX"),
             ["InternalService:BearerToken"] = "test-internal-token",
+            ["Approval:BaseUrl"] = "https://approval.test",
+            ["MasterData:BaseUrl"] = "https://master-data.test",
+            ["Wms:BaseUrl"] = "https://wms.test",
         };
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Development");
+            builder.UseEnvironment(DeploymentProfile);
             foreach (var (key, value) in settings) builder.UseSetting(key, value);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
             builder.ConfigureServices(services => services.PostConfigure<CapOptions>(options =>
@@ -130,9 +184,48 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             "org-transport", "env-transport", "WC-TRANSPORT", 80m, "CNY",
             DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null, 1,
             "system:test", "transport standard labor rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
+        db.AccountingPeriods.Add(AccountingPeriod.Open(
+            "org-transport", "env-transport", "2026-08",
+            new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31)));
+        db.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
+            "org-transport", "env-transport", "WC-TRANSPORT", "2026-08",
+            30_000m, 10_000m, 1_000m, "CNY", 1,
+            "system:test", "transport machine overhead rate", DateTimeOffset.Parse("2026-08-01T00:00:00Z")));
         await db.SaveChangesAsync();
         await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
         await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
+        AssertCanonicalSubscription<MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead,
+            MesOperationActualTimeSettledV2IntegrationEvent>(
+            scope.ServiceProvider,
+            MesActualTimeIntegrationEventTopics.SettledV2Template,
+            SettledV2Topic);
+        AssertCanonicalSubscription<MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead,
+            MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(
+            scope.ServiceProvider,
+            MesActualTimeIntegrationEventTopics.VoidedV2Template,
+            VoidedV2Topic);
+    }
+
+    private static void AssertCanonicalSubscription<THandler, TEvent>(
+        IServiceProvider services,
+        string authoritativeTemplate,
+        string resolvedTopic)
+    {
+        var method = typeof(THandler).GetMethod("HandleCapAsync")!;
+        var declaredSubscriptions = method.GetCustomAttributes(typeof(CapSubscribeAttribute), inherit: true)
+            .Cast<CapSubscribeAttribute>()
+            .ToArray();
+        var declared = Assert.Single(declaredSubscriptions);
+        Assert.Equal(authoritativeTemplate, declared.Name);
+        Assert.Equal(authoritativeTemplate, MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(typeof(TEvent)));
+
+        var candidates = services.GetRequiredService<IConsumerServiceSelector>().SelectCandidates()
+            .Where(x => x.ImplTypeInfo.AsType() == typeof(THandler) && x.MethodInfo == method)
+            .ToArray();
+        var candidate = Assert.Single(candidates);
+        var prefix = services.GetRequiredService<IOptions<CapOptions>>().Value.TopicNamePrefix;
+        var expectedTopic = string.IsNullOrWhiteSpace(prefix) ? resolvedTopic : $"{prefix}.{resolvedTopic}";
+        Assert.Equal(expectedTopic, candidate.TopicName);
     }
 
     private static async Task PublishAsync(WebApplicationFactory<Program> factory, Func<ICapPublisher, Task> publish)
@@ -181,6 +274,39 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
                 settled.Payload.SettlementRevision, settled.Payload.CompletedAtUtc, voidedAtUtc,
                 settled.Payload.ActualLaborTicks, settled.Payload.ActualMachineTicks,
                 settled.Payload.CoveredProductionReportNos));
+
+    private static MesOperationActualTimeSettledV2IntegrationEvent MachineSettled(
+        string eventId,
+        long revision,
+        DateTimeOffset completedAtUtc,
+        long billableMachineTicks)
+        => new(
+            eventId, MesIntegrationEventTypes.OperationActualTimeSettled, MesIntegrationEventVersions.V2,
+            completedAtUtc.AddMinutes(1), MesIntegrationEventSources.BusinessMes,
+            "correlation-transport", "causation-transport", "org-transport", "env-transport",
+            "operator:test", $"actual-time:OP-TRANSPORT:{revision}:settled:v2",
+            new OperationActualTimeSettledV2Payload(
+                "WO-TRANSPORT", "OP-TRANSPORT", "WC-TRANSPORT", revision, completedAtUtc,
+                billableMachineTicks, billableMachineTicks, [$"RPT-TRANSPORT-{revision}"],
+                "DEVICE-TRANSPORT", MesMachineTimeFactStatus.Available, billableMachineTicks,
+                MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1));
+
+    private static MesOperationActualTimeSettlementVoidedV2IntegrationEvent MachineVoided(
+        string eventId,
+        MesOperationActualTimeSettledV2IntegrationEvent settled,
+        DateTimeOffset voidedAtUtc)
+        => new(
+            eventId, MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V2, voidedAtUtc, MesIntegrationEventSources.BusinessMes,
+            settled.CorrelationId, settled.EventId, settled.OrganizationId, settled.EnvironmentId,
+            "operator:test", $"actual-time:{settled.Payload.OperationTaskId}:{settled.Payload.SettlementRevision}:voided:v2",
+            new OperationActualTimeSettlementVoidedV2Payload(
+                settled.Payload.WorkOrderId, settled.Payload.OperationTaskId, settled.Payload.WorkCenterId,
+                settled.Payload.SettlementRevision, settled.Payload.CompletedAtUtc, voidedAtUtc,
+                settled.Payload.ActualLaborTicks, settled.Payload.ActualMachineTicks,
+                settled.Payload.CoveredProductionReportNos, settled.Payload.DeviceAssetId,
+                settled.Payload.MachineTimeStatus, settled.Payload.BillableMachineTicks,
+                settled.Payload.MachineTimeBasisCode));
 }
 
 [AttributeUsage(AttributeTargets.Method)]

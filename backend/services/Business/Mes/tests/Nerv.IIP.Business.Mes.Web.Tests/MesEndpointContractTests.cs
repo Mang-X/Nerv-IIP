@@ -86,6 +86,80 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Context_scan_prevalidation_endpoint_is_exposed_for_resolved_strong_identifiers()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/context-scan-prevalidation",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+                objectType = "deviceAsset",
+                scannedObjectId = "device-001",
+            });
+
+        Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Context_scan_http_distinguishes_personnel_mismatch_from_qualification_source_unavailable()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender, DistinguishingContextScanSender>();
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var mismatch = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/context-scan-prevalidation",
+            ContextScanRequest("worker-other"));
+        var sourceUnavailable = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/context-scan-prevalidation",
+            ContextScanRequest("worker-001"));
+
+        Assert.Equal(HttpStatusCode.OK, mismatch.StatusCode);
+        using var mismatchBody = JsonDocument.Parse(await mismatch.Content.ReadAsStringAsync());
+        var mismatchData = mismatchBody.RootElement.TryGetProperty("data", out var mismatchPayload)
+            ? mismatchPayload
+            : mismatchBody.RootElement;
+        Assert.Equal(
+            "personnel-mismatch",
+            mismatchData.GetProperty("reasonCode").GetString());
+        Assert.Equal(HttpStatusCode.OK, sourceUnavailable.StatusCode);
+        var sourceUnavailableBody = await sourceUnavailable.Content.ReadAsStringAsync();
+        Assert.Contains("WORKER_SKILL_SOURCE_UNAVAILABLE", sourceUnavailableBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("personnel-mismatch", sourceUnavailableBody, StringComparison.Ordinal);
+    }
+
+    private static object ContextScanRequest(string scannedObjectId) =>
+        new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-001",
+            operationTaskId = "OP-10",
+            objectType = "personnel",
+            scannedObjectId,
+        };
+
+    [Fact]
     public async Task Material_scan_prevalidation_endpoint_preserves_accepted_handler_facts_on_the_http_wire()
     {
         var sender = new AcceptedMaterialScanSender();
@@ -828,7 +902,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(61, MesEndpointContracts.All.Count);
+        Assert.Equal(62, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -3489,6 +3563,43 @@ internal sealed class CapturingRecordDowntimeSender : ISender
         object request,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+}
+
+internal sealed class DistinguishingContextScanSender : ISender
+{
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        var query = Assert.IsType<PrevalidateContextScanQuery>(request);
+        _ = cancellationToken;
+        if (query.ScannedObjectId == "worker-001")
+        {
+            throw new KnownException(
+                "WORKER_SKILL_SOURCE_UNAVAILABLE: MasterData 人员资格来源暂不可用。");
+        }
+
+        return Task.FromResult((TResponse)(object)new MesContextScanPrevalidationResponse(
+            MesContextScanDecision.Rejected,
+            "personnel-mismatch",
+            query.WorkOrderId,
+            query.OperationTaskId,
+            query.ObjectType,
+            query.ScannedObjectId,
+            DateTimeOffset.Parse("2026-08-28T01:00:00Z")));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest => throw new NotSupportedException();
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 internal sealed class AcceptedMaterialScanSender : ISender

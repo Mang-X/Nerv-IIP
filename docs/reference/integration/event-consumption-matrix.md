@@ -84,8 +84,8 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally` |
-| MES | `MesOperationActualTimeSettledIntegrationEvent` | MES | ERP | `consumed-internally` |
-| MES | `MesOperationActualTimeSettlementVoidedIntegrationEvent` | MES | ERP | `consumed-internally` |
+| MES | V1 `MesOperationActualTimeSettledIntegrationEvent`；V2 `MesOperationActualTimeSettledV2IntegrationEvent` | MES | ERP：V1 归集实际人工；V2 归集机器制造费用 | `consumed-internally`（V1/V2） |
+| MES | V1 `MesOperationActualTimeSettlementVoidedIntegrationEvent`；V2 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` | MES | ERP：V1 精确冲销实际人工；V2 精确冲销机器制造费用 | `consumed-internally`（V1/V2） |
 | MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `MesOperationTaskManualDispatchClearedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `ProductionReportRecordedIntegrationEvent` | MES | IndustrialTelemetry、ERP、Quality | `consumed-internally` |
@@ -107,6 +107,8 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | WMS | `WcsTaskRetryExhausted` / `WmsIntegrationEvent` | WMS | Notification | `consumed-internally` |
 | WMS | `WcsTaskCompleted` / `WmsIntegrationEvent` | WMS | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | WMS | `WcsTaskCancelled` / `WmsIntegrationEvent` | WMS | WMS WCS adapter 边界 | `consumed-internally` |
+
+MES 工序工时结算事件按 ADR 0011 并行发布：V1 使用 `nerv-iip.<deployment-env>.business-mes.mes.operation-actual-time-settled.v1` 与 `nerv-iip.<deployment-env>.business-mes.mes.operation-actual-time-settlement-voided.v1`，且迁移期继续向当前 ERP 已订阅的 CLR-name legacy alias 发布同一个 V1 envelope；V2 使用相同事件名的 `.v2` 路由并携带满足状态组合约束的完整冻结机器工时事实。ERP 的 V1 消费者归集实际人工，V2 消费者按 `completedAtUtc` 冻结独立机器制造费用；`unavailable`、缺少适用期间/费率及币种冲突均失败关闭并保留重放能力。V1 禁止携带机器事实；V2 的 `available` 可携带真实零值，且当前唯一 basis 为 `single-device-active-minus-explicit-pause-v1`；无设备或执行中设备变化为 `unavailable` 且不写零，`notApplicable` 仅来自显式业务判定，未知状态字符串失败关闭。只有所有已登记及外部消费者均完成规范路由升级、旧版回放窗口结束且所有相关 DLQ 清理完成后，才可同时退役 V1 legacy alias 与 V1 契约；当前 ERP 消费者不是退役门的唯一判据。
 
 ## 业务服务本地事件
 

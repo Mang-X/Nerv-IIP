@@ -2113,21 +2113,38 @@ jobs:
 
   script-governance:
     name: Script Governance
-    # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
-    # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限。step 预算合计 153m（31 个 step：3m checkout
-    # + 30 × 5m；2026-08-23 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
-    # 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
-    # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
-    # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
-    # 此类 step，因此门禁从不读取这个数字——新增 step 时须人工保持其准确。
+    # 层级 B（失败后没有 step 运行）。job 预算是按观测运行时间设定的快速失败上限
+    # （docs/architecture/test-evidence-governance.md 的层级 B 规则）。
+    #
+    # 20m 的来源（#2700，2026-08-28 实测）：样本为 main 上 08-22 至 08-28 的 50 次 run
+    # （最近 25 次连续，更早区间每 4 次取 1）。整个 job 的观测区间是 6.63m–10.05m；
+    # 在最近 25 次连续采样中，19 次落在 9m 以上，中位数约 9.6m。
+    # 10.05m 那次是被旧的 10m 预算截断的，因此它是真实耗时的下界而非上界。
+    # 按本仓库既有取值规则「约为近期观测最大值的 2 倍」，10.05m → 20m。
+    #
+    # 耗时构成（run 33152528716，逐 step 实测，合计 583s）：证据契约测试 128s、
+    # 序数比较分层 120s、后端确定性检查器 74s、扫描边界契约 42s，四者约占 55%；
+    # 其余 27 个 step 合计约 220s，无单点异常。
+    #
+    # 这是运行器速度波动，不是某个 step 变慢：把 9.72m 与 7.10m 两次 run 逐 step 相除，
+    # 比值在 1.26x–1.62x 之间均匀分布（中位 1.35x），没有任何 step 单独跳变。
+    # 也不是新增 step：声明 step 数自 2026-08-23 起一直是 31（API 报告的 35 含 4 个
+    # 隐式 step）。真正的原因是三个大头 step 在 2026-08-04/08-10 落地后，从未按它们
+    # 重新推导过 job 预算。
+    #
+    # 旧判据「新增 step 若本地均在秒级完成，job 预算保持 10m」已作废：它只看单个 step
+    # 是否秒级，从不重算总和，因此 31 个秒级 step 累加贴顶时它不会报警。
+    # 新判据：增删 step 后按 main 上最近若干次 run 的**整 job** 观测最大值重新推导，
+    # 取其约 2 倍；不要只看新 step 自身耗时。
+    #
+    # step 预算合计 153m（31 个 step：3m checkout
+    # + 30 × 5m；2026-08-23 逐 step 实测求和），且仅为逐 step 上限。
+    # 合计超过 job 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1
+    # 执行的约束：「step 预算合计低于 job 预算」只适用于层级 A（会从 `if: always()`
+    # step 发布证据、而该 step 会被 job 级超时取消的 job）。本 job 没有此类 step，
+    # 因此门禁从不读取这个数字——新增 step 时须人工保持其准确。
     # 该合计只保留一个当前值：增删 step 直接改这个数字，不要追加历史增量句。
-    # 判据不变：新增 step 若本地均在秒级完成，job 预算保持 10m
-    # （MAN-669 PR-C 的两个 solution-configuration-membership step、#1509 的扫描
-    # 边界契约 step、#1512 的两个 ordinal 合同 step、#1826 的跨域对账契约 step、
-    # #1876 的信号退出码契约 step、#1877 的 FullChain 内存证据契约 step、#1887 的 ADR
-    # 生命周期禁令契约 step（本机 4.3s）均按此判断）。
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
