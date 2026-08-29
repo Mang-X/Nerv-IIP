@@ -6,6 +6,121 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 public sealed class OperationActualTimeSettlementTests
 {
     [Fact]
+    public void Completion_with_one_stable_device_freezes_billable_machine_ticks()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
+        task.Start(startedAtUtc);
+
+        task.Complete(startedAtUtc.AddHours(2), ["PR-001"]);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal("DEVICE-001", settlement.DeviceAssetId);
+        Assert.Equal(TimeSpan.FromHours(2).Ticks, settlement.BillableMachineTicks);
+        Assert.Equal(MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, settlement.MachineTimeBasisCode);
+    }
+
+    [Fact]
+    public void Zero_duration_with_one_stable_device_is_available_zero_not_unavailable()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
+        task.Start(startedAtUtc);
+
+        task.Complete(startedAtUtc, []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal(0, settlement.BillableMachineTicks);
+    }
+
+    [Fact]
+    public void Completion_without_a_device_marks_machine_time_unavailable_without_writing_zero()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Start(startedAtUtc);
+
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Unavailable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+        Assert.Null(settlement.MachineTimeBasisCode);
+    }
+
+    [Fact]
+    public void Device_change_during_execution_makes_machine_time_unavailable()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
+        task.Start(startedAtUtc);
+
+        task.Assign("operator-1", "DEVICE-002", "SHIFT-1", startedAtUtc.AddMinutes(30));
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Unavailable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+    }
+
+    [Fact]
+    public void Device_added_after_execution_started_makes_machine_time_unavailable()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Start(startedAtUtc);
+
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(30));
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Unavailable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+    }
+
+    [Fact]
+    public void Device_cleared_after_execution_started_makes_machine_time_unavailable()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
+        task.Start(startedAtUtc);
+
+        task.Assign("operator-1", null, "SHIFT-1", startedAtUtc.AddMinutes(30));
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Unavailable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+    }
+
+    [Fact]
+    public void Explicit_pause_is_excluded_from_billable_machine_ticks()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
+        task.Start(startedAtUtc);
+        task.Pause(startedAtUtc.AddMinutes(30));
+        task.Resume(startedAtUtc.AddMinutes(50));
+
+        task.Complete(startedAtUtc.AddHours(1), []);
+
+        var settlement = Settlement(task);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromMinutes(40).Ticks, settlement.BillableMachineTicks);
+    }
+
+    [Fact]
     public void Completion_freezes_one_monotonic_actual_time_settlement()
     {
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
@@ -30,6 +145,7 @@ public sealed class OperationActualTimeSettlementTests
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
         var voidedAtUtc = startedAtUtc.AddHours(3);
         var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
         task.Start(startedAtUtc);
         task.Complete(startedAtUtc.AddHours(2), ["PR-001", "PR-002"]);
         var settlement = Settlement(task);
@@ -47,6 +163,9 @@ public sealed class OperationActualTimeSettlementTests
         Assert.Equal(1, voided.Settlement.SettlementRevision);
         Assert.Equal(TimeSpan.FromHours(2).Ticks, voided.Settlement.ActualLaborTicks);
         Assert.Equal(TimeSpan.FromHours(2).Ticks, voided.Settlement.ActualMachineTicks);
+        Assert.Equal("DEVICE-001", voided.Settlement.DeviceAssetId);
+        Assert.Equal(MachineTimeFactStatus.Available, voided.Settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromHours(2).Ticks, voided.Settlement.BillableMachineTicks);
         Assert.Equal(["PR-001", "PR-002"], voided.Settlement.CoveredProductionReportNos);
     }
 
@@ -55,6 +174,7 @@ public sealed class OperationActualTimeSettlementTests
     {
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
         var task = CreateTask(startedAtUtc);
+        task.Assign("operator-1", "DEVICE-001", "SHIFT-1", startedAtUtc.AddMinutes(-5));
         task.Start(startedAtUtc);
         task.Complete(startedAtUtc.AddHours(1), ["PR-001"]);
         task.ReopenAfterReportReversal(Settlement(task), startedAtUtc.AddHours(2));
@@ -67,7 +187,25 @@ public sealed class OperationActualTimeSettlementTests
         Assert.Equal(2, settled.Settlement.SettlementRevision);
         Assert.Equal(TimeSpan.FromHours(1).Ticks, settled.Settlement.ActualLaborTicks);
         Assert.Equal(TimeSpan.FromHours(1).Ticks, settled.Settlement.ActualMachineTicks);
+        Assert.Equal("DEVICE-001", settled.Settlement.DeviceAssetId);
+        Assert.Equal(MachineTimeFactStatus.Available, settled.Settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settled.Settlement.BillableMachineTicks);
         Assert.Equal(["PR-001", "PR-002", "PR-REV-001"], settled.Settlement.CoveredProductionReportNos);
+    }
+
+    [Fact]
+    public void Explicit_not_applicable_snapshot_remains_distinct_from_unavailable()
+    {
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
+        var settlement = OperationActualTimeSettlement.Capture(
+            new OperationActualTimeSettlementSnapshot(
+                "org-001", "env-dev", "WO-001", "OP-001", "WC-001", 1,
+                completedAtUtc, 0, 0, [], MachineTimeStatus: MachineTimeFactStatus.NotApplicable));
+
+        Assert.Equal(MachineTimeFactStatus.NotApplicable, settlement.MachineTimeStatus);
+        Assert.Null(settlement.DeviceAssetId);
+        Assert.Null(settlement.BillableMachineTicks);
+        Assert.Null(settlement.MachineTimeBasisCode);
     }
 
     [Fact]

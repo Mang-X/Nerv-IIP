@@ -25,6 +25,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using System.Net;
@@ -2272,7 +2273,7 @@ public sealed class MesPersistenceContractTests
             dbContext.MaterialIssueRequests.Add(materialIssue);
             await dbContext.SaveChangesAsync();
 
-            await new RecordProductionReportCommandHandler(dbContext).Handle(
+            await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2325,7 +2326,7 @@ public sealed class MesPersistenceContractTests
                 CancellationToken.None);
             await dbContext.SaveChangesAsync();
 
-            await new RecordProductionReportCommandHandler(dbContext).Handle(
+            await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
                     10m, 0m, true, now.AddMinutes(40), "report-collab-001"),
@@ -2371,7 +2372,7 @@ public sealed class MesPersistenceContractTests
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
@@ -2432,7 +2433,7 @@ public sealed class MesPersistenceContractTests
             request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-BATCH-A");
             await dbContext.SaveChangesAsync();
 
-            await new RecordProductionReportCommandHandler(dbContext).Handle(
+            await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2527,7 +2528,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("DEV-CNC-01", deviceNode.NodeId);
         Assert.Equal(reportedAtUtc, deviceNode.OccurredAtUtc);
 
-        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
         Assert.Equal("DEF-TRACE-001", inspectionNode.NodeId);
         Assert.Equal("SCRAP-SURFACE", inspectionNode.DisplayName);
         Assert.Equal(DefectRecord.OpenStatus, inspectionNode.Status);
@@ -2608,7 +2609,7 @@ public sealed class MesPersistenceContractTests
         var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.OperatorNodeType);
         Assert.Equal("user-emp-010", operatorNode.NodeId);
         Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
-        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
         Assert.Equal(3, traceability.Nodes.Count(x => x.NodeType == "ProductionReport"));
         Assert.All(
             traceability.Nodes.Where(x => x.NodeType == "ProductionReport"),
@@ -2890,7 +2891,7 @@ public sealed class MesPersistenceContractTests
             request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-OIL-A");
             await dbContext.SaveChangesAsync();
 
-            var handler = new RecordProductionReportCommandHandler(dbContext);
+            var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
             await handler.Handle(
                 new RecordProductionReportCommand(
                     "org-001",
@@ -2943,7 +2944,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2997,7 +2998,7 @@ public sealed class MesPersistenceContractTests
         request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -3068,7 +3069,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -3111,7 +3112,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -3156,7 +3157,7 @@ public sealed class MesPersistenceContractTests
         dbContext.MaterialIssueRequests.AddRange(lotARequest, lotBRequest);
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -3225,7 +3226,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -3286,7 +3287,7 @@ public sealed class MesPersistenceContractTests
         dbContext.MaterialIssueRequests.Add(materialIssue);
         await dbContext.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -3395,7 +3396,7 @@ public sealed class MesPersistenceContractTests
             null));
         await dbContext.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -3472,7 +3473,7 @@ public sealed class MesPersistenceContractTests
             null));
         await dbContext.SaveChangesAsync();
 
-        var report = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var report = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -3512,7 +3513,7 @@ public sealed class MesPersistenceContractTests
             now,
             null));
         await dbContext.SaveChangesAsync();
-        var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",

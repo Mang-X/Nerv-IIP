@@ -135,7 +135,10 @@ const uiStubs = {
   SelectValue: true,
   NvSelectContent: passthrough,
   NvSelectItem: passthrough,
-  NvDialog: {
+  // NvDialog 是 reka-ui DialogRoot 的重命名再导出（frontend/packages/ui/src/components/pc/dialog/index.ts），
+  // <script setup> 编译期直接绑定导入标识符，不经过按名解析；stub 必须按其真实组件名 DialogRoot 匹配，
+  // 否则真实 DialogRoot（内容始终无条件渲染 slot）会绕过本 stub，dialog 的开合状态在测试里恒为"已渲染"。
+  DialogRoot: {
     props: ['open'],
     emits: ['update:open'],
     template: '<div v-if="open"><slot /></div>',
@@ -197,7 +200,7 @@ function operationTask(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function mountPage(
+function mountPageWithAuth(
   permissionCodes = [
     'business.mes.quality.read',
     'business.mes.quality.write',
@@ -216,9 +219,14 @@ function mountPage(
       permissionCodes,
     },
   })
-  return mount(QualityPage, {
+  const wrapper = mount(QualityPage, {
     global: { plugins: [pinia], stubs: uiStubs },
   })
+  return { wrapper, auth }
+}
+
+function mountPage(permissionCodes?: string[]) {
+  return mountPageWithAuth(permissionCodes).wrapper
 }
 
 function button(wrapper: VueWrapper, label: string) {
@@ -405,12 +413,41 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     )
   })
 
+  it('does not open the defect dialog when the entry guard trips between render and click (isolated stale-DOM interleave)', async () => {
+    // 以确定性交错模拟 stale-DOM 时序（同族手法见 downtime/handovers 同名用例）：按钮渲染时守卫
+    // 未拦截，权限在同一 tick 内失效——DOM 的 disabled 属性还没来得及重渲染，trigger() 读到的
+    // 仍是旧值，点击得以派发，从而真正跑进 openDefectDialog 内部的
+    // `if (defectEntryBlocker.value) return`。不能证明项：本用例只证明「blocker 为真时该行会
+    // 早返回」，不证明真实浏览器点击与 Vue microtask flush 之间确有这个时序窗口——那属于
+    // ProviderBehavior，本 lane（jsdom + vue-test-utils）证不到。
+    // principal 由 shallowRef 承载（frontend/packages/auth/src/store.ts），只有对 principal 本身
+    // 重新赋值才会被追踪；改嵌套字段（如 permissionCodes）不会触发依赖更新，必须整体替换。
+    // 断言取对话框内容是否挂载而非 recordDefect 是否被调用：defectTargets/eligibleOperationTasks
+    // 对权限有独立判空，缺权限时无论 openDefectDialog 内部守卫在不在，目标列表都会先一步清空，
+    // 用「表单是否有值」无法专门证伪这一行；对话框开合状态才是这条守卫独有、不与其它防线重叠的信号。
+    const { wrapper, auth } = mountPageWithAuth()
+    const btn = button(wrapper, '登记缺陷')
+    expect(btn.attributes('disabled')).toBeUndefined()
+
+    auth.principal = { ...auth.principal!, permissionCodes: [] }
+    await btn.trigger('click')
+
+    expect(wrapper.find('[aria-label="工单与工序"]').exists()).toBe(false)
+    expect(recordDefect).not.toHaveBeenCalled()
+  })
+
   it('gates missing permission and a write scope that does not cover the selected operation', async () => {
     const withoutPermission = mountPage([
       'business.mes.quality.read',
       'business.mes.operations.read',
     ])
     expect(button(withoutPermission, '登记缺陷').attributes('disabled')).toBeDefined()
+    // 此刻组织/环境/写入范围/工序全部就绪，唯独缺 quality.write：eligibleOperationTasks
+    // 内部同样判空这条权限，故仅凭 disabled 状态抓不住 defectEntryBlocker 里
+    // `!canWriteQuality.value` 这第一条早返回——删掉它后 blocker 会落到
+    // eligibleOperationTasks.length === 0 分支，给出另一句文案，disabled 依旧为真。
+    // 精确文案断言能抓住这条差异。
+    expect(button(withoutPermission, '登记缺陷').attributes('title')).toBe('没有缺陷登记权限')
 
     coversWorkOrder.mockImplementation(({ operationTasks }) =>
       operationTasks.some((task: Record<string, unknown>) => task.operationTaskId === 'OP-2'),

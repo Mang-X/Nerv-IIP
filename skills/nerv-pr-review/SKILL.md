@@ -37,7 +37,7 @@ pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <h
 
 再定位两轴的判据来源——**这一步归协调者，不是席位的活**。席位收到的应是成品清单，不是搜索任务：
 
-- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`（机械可算），再从 `docs/architecture/` 与 `docs/adr/` 里挑出与改动面相关的，**列成文件清单**。
+- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`（机械可算）；再从 `docs/governance/README.md`、`docs/architecture/README.md` 与 `docs/adr/README.md` 按改动面挑出相关的当前规则、架构和决策记录，**列成文件清单**。Reference 只在改动涉及其查询事实时加入，冻结 Report 不作为当前标准。
 - **规格来源**：票号取自 PR body 的 `Fixes #` / `Closes #`。取不到就问用户（票号常只在分支名或 commit 里）。仍然没有，就地判定**无规格可依**，规格轴席位不派。
 
 完成判据：head SHA、base SHA、改动路径清单、标准来源清单、规格来源（票号或「无规格可依」）都拿到。
@@ -146,10 +146,11 @@ done
 路径均相对仓库根。技能的源目录（`skills/<name>/`）与安装目录（`.agents/skills/<name>/`）到根的深度差一层，文件相对写法必在一端解析错，所以这里不用 markdown 链接。
 
 - `AGENTS.md` 与目标路径上的各级 `AGENTS.md` —— 开工与交付纪律
-- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式
-- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径
-- `docs/architecture/document-language-governance.md` —— 协作文本发布门禁
-- `docs/architecture/decision-record-governance.md` —— PR 触及 ADR 时的分层判据与取代规则
+- `docs/governance/README.md` —— 当前工程规则总入口
+- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式（M2-H 迁移前路径）
+- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径（M2 对应 owner 迁移前路径）
+- `docs/governance/docs/language.md` —— 协作文本发布规则
+- `docs/governance/decisions/records.md` —— PR 触及 ADR 时的分层判据与取代规则
 
 ## 与其它技能的边界
 

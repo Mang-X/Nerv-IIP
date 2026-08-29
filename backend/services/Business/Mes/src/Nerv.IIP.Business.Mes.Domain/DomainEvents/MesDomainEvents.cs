@@ -26,6 +26,18 @@ public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesE
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
 
+public enum MachineTimeFactStatus
+{
+    Available,
+    NotApplicable,
+    Unavailable,
+}
+
+public static class MachineTimeBasisCodes
+{
+    public const string SingleDeviceActiveMinusExplicitPauseV1 = "single-device-active-minus-explicit-pause-v1";
+}
+
 public sealed record OperationActualTimeSettlementSnapshot(
     string OrganizationId,
     string EnvironmentId,
@@ -36,7 +48,11 @@ public sealed record OperationActualTimeSettlementSnapshot(
     DateTimeOffset CompletedAtUtc,
     long ActualLaborTicks,
     long ActualMachineTicks,
-    IReadOnlyCollection<string> CoveredProductionReportNos);
+    IReadOnlyCollection<string> CoveredProductionReportNos,
+    string? DeviceAssetId = null,
+    MachineTimeFactStatus MachineTimeStatus = MachineTimeFactStatus.Unavailable,
+    long? BillableMachineTicks = null,
+    string? MachineTimeBasisCode = null);
 
 public sealed record OperationActualTimeSettledDomainEvent(
     OperationActualTimeSettlementSnapshot Settlement) : IDomainEvent;

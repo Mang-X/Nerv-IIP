@@ -619,7 +619,8 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                         rework,
                         "pcs",
                         theoreticalRate,
-                        shiftEndUtc);
+                        shiftEndUtc,
+                        OeeHistoricalDimensionSnapshot.MissingTimezone);
                     dbContext.OeeProductionFacts.Add(fact);
                     written++;
                     await FlushAsync(cancellationToken);
