@@ -7,6 +7,8 @@ using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.ServiceAuth;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
@@ -76,6 +78,37 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpPayableBySourceDocument");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpReceivableBySourceDocument");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpCostCandidateBySourceDocument");
+    }
+
+    [Fact]
+    public void Machine_overhead_internal_endpoints_derive_scope_from_required_headers_and_use_system_actor()
+    {
+        Assert.Null(typeof(ReconcileWorkCenterMachineOverheadRequest).GetProperty("OrganizationId"));
+        Assert.Null(typeof(ReconcileWorkCenterMachineOverheadRequest).GetProperty("EnvironmentId"));
+        Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("OrganizationId"));
+        Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("EnvironmentId"));
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Organization-Id"] = " org-trusted ";
+        context.Request.Headers["X-Environment-Id"] = " env-trusted ";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Erp:MachineOverheadReconciliation:AuthorizedScopes:0:OrganizationId"] = "org-trusted",
+            ["Erp:MachineOverheadReconciliation:AuthorizedScopes:0:EnvironmentId"] = "env-trusted",
+        }).Build();
+        var authorizer = new ConfigurationErpMachineOverheadInternalScopeAuthorizer(configuration);
+        var scope = authorizer.ResolveAuthorizedScope(context);
+
+        Assert.Equal("org-trusted", scope.OrganizationId);
+        Assert.Equal("env-trusted", scope.EnvironmentId);
+        Assert.Equal("system:business-erp-finance-reconciliation", ConfigurationErpMachineOverheadInternalScopeAuthorizer.SystemActor);
+
+        var missingScope = new DefaultHttpContext();
+        Assert.Throws<KnownException>(() => { _ = authorizer.ResolveAuthorizedScope(missingScope); });
+        var unauthorizedScope = new DefaultHttpContext();
+        unauthorizedScope.Request.Headers["X-Organization-Id"] = "org-other";
+        unauthorizedScope.Request.Headers["X-Environment-Id"] = "env-trusted";
+        Assert.Throws<KnownException>(() => { _ = authorizer.ResolveAuthorizedScope(unauthorizedScope); });
     }
 
     [Fact]

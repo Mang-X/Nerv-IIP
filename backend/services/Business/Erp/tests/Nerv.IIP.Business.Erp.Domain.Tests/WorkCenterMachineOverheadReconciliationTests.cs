@@ -80,6 +80,28 @@ public sealed class WorkCenterMachineOverheadReconciliationTests
             disposition: AbnormalDowntimeDisposition.None));
     }
 
+    [Fact]
+    public void Persistence_precision_is_normalized_before_derived_values_are_frozen()
+    {
+        var reconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-a", "env-a", "WC-01", "2026-08",
+            new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), 1, "CNY",
+            1.0000005m, 2.0000005m, 1,
+            0.1000005m, 0.2000005m, 0.3000015m,
+            0, AbnormalDowntimeDisposition.None, 1,
+            "user:accountant", "ledger:2026-08", "fractional precision",
+            new DateTimeOffset(2026, 8, 31, 16, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(1.000001m, reconciliation.ActualFixedOverheadAmount);
+        Assert.Equal(2.000001m, reconciliation.ActualVariableOverheadAmount);
+        Assert.Equal(3.000002m, reconciliation.ActualTotalOverheadAmount);
+        Assert.Equal(0.100001m, reconciliation.AppliedFixedAmount);
+        Assert.Equal(0.200001m, reconciliation.AppliedVariableAmount);
+        Assert.Equal(0.300002m, reconciliation.AppliedTotalAmount);
+        Assert.Equal(0m, reconciliation.AppliedRoundingDifferenceAmount);
+        Assert.Equal(0.000000000028m, reconciliation.AppliedMachineHours);
+    }
+
     private static WorkCenterMachineOverheadReconciliation Record(
         decimal actualFixed,
         decimal actualVariable,

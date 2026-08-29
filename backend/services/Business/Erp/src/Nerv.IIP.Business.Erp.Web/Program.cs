@@ -36,6 +36,7 @@ try
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
+    builder.Services.AddSingleton<IErpMachineOverheadInternalScopeAuthorizer, ConfigurationErpMachineOverheadInternalScopeAuthorizer>();
     var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IPurchaseOrderApprovalClient, HttpPurchaseOrderApprovalClient>(client =>
     {

@@ -57,22 +57,23 @@ public sealed class WorkCenterMachineOverheadReconciliation
         ValidateAbnormalDowntime(abnormalDowntimeTicks, abnormalDowntimeDisposition);
         if (revision <= 0) throw new ArgumentOutOfRangeException(nameof(revision));
 
-        ActualFixedOverheadAmount = actualFixedOverheadAmount;
-        ActualVariableOverheadAmount = actualVariableOverheadAmount;
-        ActualTotalOverheadAmount = actualFixedOverheadAmount + actualVariableOverheadAmount;
+        ActualFixedOverheadAmount = NormalizeAmount(actualFixedOverheadAmount);
+        ActualVariableOverheadAmount = NormalizeAmount(actualVariableOverheadAmount);
+        ActualTotalOverheadAmount = NormalizeAmount(ActualFixedOverheadAmount + ActualVariableOverheadAmount);
         AppliedMachineTicks = appliedMachineTicks;
-        AppliedMachineHours = AppliedMachineTicks / (decimal)TimeSpan.TicksPerHour;
-        AppliedFixedAmount = appliedFixedAmount;
-        AppliedVariableAmount = appliedVariableAmount;
-        AppliedTotalAmount = appliedTotalAmount;
-        AppliedRoundingDifferenceAmount = appliedTotalAmount - appliedFixedAmount - appliedVariableAmount;
-        UnderOverAppliedFixedAmount = actualFixedOverheadAmount - appliedFixedAmount;
-        UnderOverAppliedVariableAmount = actualVariableOverheadAmount - appliedVariableAmount;
-        UnderOverAppliedTotalAmount = ActualTotalOverheadAmount - appliedTotalAmount;
+        AppliedMachineHours = NormalizeHours(AppliedMachineTicks);
+        AppliedFixedAmount = NormalizeAmount(appliedFixedAmount);
+        AppliedVariableAmount = NormalizeAmount(appliedVariableAmount);
+        AppliedTotalAmount = NormalizeAmount(appliedTotalAmount);
+        AppliedRoundingDifferenceAmount = NormalizeAmount(
+            AppliedTotalAmount - AppliedFixedAmount - AppliedVariableAmount);
+        UnderOverAppliedFixedAmount = NormalizeAmount(ActualFixedOverheadAmount - AppliedFixedAmount);
+        UnderOverAppliedVariableAmount = NormalizeAmount(ActualVariableOverheadAmount - AppliedVariableAmount);
+        UnderOverAppliedTotalAmount = NormalizeAmount(ActualTotalOverheadAmount - AppliedTotalAmount);
         UnallocatedFixedOverheadAmount = Math.Max(UnderOverAppliedFixedAmount, 0m);
         OverAppliedFixedOverheadAmount = Math.Max(-UnderOverAppliedFixedAmount, 0m);
         AbnormalDowntimeTicks = abnormalDowntimeTicks;
-        AbnormalDowntimeHours = AbnormalDowntimeTicks / (decimal)TimeSpan.TicksPerHour;
+        AbnormalDowntimeHours = NormalizeHours(AbnormalDowntimeTicks);
         AbnormalDowntimeDisposition = abnormalDowntimeDisposition;
         Revision = revision;
         RecordedBy = RequireCanonicalActor(recordedBy);
@@ -149,6 +150,12 @@ public sealed class WorkCenterMachineOverheadReconciliation
         if (ticks > 0 && disposition == AbnormalDowntimeDisposition.None)
             throw new ArgumentException("Positive abnormal downtime requires an explicit disposition.", nameof(disposition));
     }
+
+    private static decimal NormalizeAmount(decimal value)
+        => decimal.Round(value, 6, MidpointRounding.AwayFromZero);
+
+    private static decimal NormalizeHours(long ticks)
+        => decimal.Round(ticks / (decimal)TimeSpan.TicksPerHour, 12, MidpointRounding.AwayFromZero);
 
     private static string NormalizeCurrencyCode(string value)
     {

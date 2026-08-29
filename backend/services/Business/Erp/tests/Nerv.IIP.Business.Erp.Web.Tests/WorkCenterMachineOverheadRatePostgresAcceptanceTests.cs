@@ -254,6 +254,23 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         AddMachineSettlement(db, await Rate("org-pg", "env-pg", "WC-PG", "2026-07"), "OP-PERIOD", 1, 100);
         await db.SaveChangesAsync();
 
+        await using (var currencyMismatchTransaction = await db.Database.BeginTransactionAsync())
+        {
+            AddMachineSettlement(db, reconciliationRate, "OP-CURRENCY", 1, 1, currencyCode: "USD");
+            await db.SaveChangesAsync();
+            await Assert.ThrowsAsync<KnownException>(() => new ReconcileWorkCenterMachineOverheadCommandHandler(
+                db, new PostgreSqlErpAdvisoryLockAllocator(db)).Handle(
+                new(
+                    "org-pg", "env-pg", "WC-PG", "2026-06", 30_000m, 10_000m, "CNY",
+                    0, AbnormalDowntimeDisposition.None,
+                    "system:test", "ledger:currency-negative", "currency mismatch proof",
+                    new DateTimeOffset(2026, 6, 30, 15, 0, 0, TimeSpan.Zero)),
+                CancellationToken.None));
+            await currencyMismatchTransaction.RollbackAsync();
+        }
+        db.ChangeTracker.Clear();
+        reconciliationRate = await Rate("org-pg", "env-pg", "WC-PG", "2026-06");
+
         await using (var reconciliationTransaction = await db.Database.BeginTransactionAsync())
         {
             await new ReconcileWorkCenterMachineOverheadCommandHandler(
@@ -366,6 +383,58 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             reconciliation.Id.Id,
             """{"organization_id":"org-other","revision":2}""",
             PostgresErrorCodes.ForeignKeyViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"environment_id":"env-other","revision":2}""",
+            PostgresErrorCodes.ForeignKeyViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"work_center_id":"WC-OTHER","revision":2}""",
+            PostgresErrorCodes.ForeignKeyViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"accounting_period_code":"2026-07","revision":2}""",
+            PostgresErrorCodes.ForeignKeyViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"rate_revision":999,"revision":2}""",
+            PostgresErrorCodes.ForeignKeyViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            $$"""{"work_center_machine_overhead_rate_id":"{{Guid.CreateVersion7()}}","revision":2}""",
+            PostgresErrorCodes.ForeignKeyViolation);
+
+        var crossScopeRate = await Rate("org-other", "env-pg", "WC-PG", "2026-06");
+        db.WorkCenterMachineOverheadReconciliations.Add(WorkCenterMachineOverheadReconciliation.Record(
+            "org-other", "env-pg", "WC-PG", "2026-06",
+            crossScopeRate.Id, crossScopeRate.Revision, "CNY",
+            1m, 1m, 0, 0m, 0m, 0m, 0, AbnormalDowntimeDisposition.None,
+            1, "system:test", "ledger:cross-scope", "same revision in another organization",
+            new DateTimeOffset(2026, 6, 30, 16, 30, 0, TimeSpan.Zero)));
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.WorkCenterMachineOverheadReconciliations.CountAsync(x => x.Revision == 1));
+
+        var fractional = WorkCenterMachineOverheadReconciliation.Record(
+            "org-pg", "env-pg", "WC-PG", "2026-06",
+            reconciliationRate.Id, reconciliationRate.Revision, "CNY",
+            1.0000005m, 2.0000005m, 1,
+            0.1000005m, 0.2000005m, 0.3000015m,
+            1, AbnormalDowntimeDisposition.PeriodExpense,
+            2, "system:test", "ledger:fractional", "provider precision proof",
+            new DateTimeOffset(2026, 6, 30, 17, 0, 0, TimeSpan.Zero));
+        db.WorkCenterMachineOverheadReconciliations.Add(fractional);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var fractionalReadback = await db.WorkCenterMachineOverheadReconciliations.SingleAsync(x => x.Id == fractional.Id);
+        Assert.Equal(1.000001m, fractionalReadback.ActualFixedOverheadAmount);
+        Assert.Equal(3.000002m, fractionalReadback.ActualTotalOverheadAmount);
+        Assert.Equal(0.000000000028m, fractionalReadback.AppliedMachineHours);
+        Assert.Equal(0.000000000028m, fractionalReadback.AbnormalDowntimeHours);
 
         db.WorkCenterMachineOverheadRates.Add(
             WorkCenterMachineOverheadRate.DefineApplicable(
@@ -401,7 +470,12 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             definitions.Add(reconciliationIndexes.GetString(0), reconciliationIndexes.GetString(1));
         Assert.Equal(2, definitions.Count);
         Assert.Contains("UNIQUE", definitions["ux_wc_machine_overhead_reconciliations_scope_revision"], StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("accounting_period_code", definitions["ix_wc_machine_overhead_reconciliations_period"], StringComparison.Ordinal);
+        Assert.Contains(
+            "(organization_id, environment_id, work_center_id, accounting_period_code, revision DESC)",
+            definitions["ux_wc_machine_overhead_reconciliations_scope_revision"], StringComparison.Ordinal);
+        Assert.Contains(
+            "(organization_id, environment_id, accounting_period_code, work_center_id)",
+            definitions["ix_wc_machine_overhead_reconciliations_period"], StringComparison.Ordinal);
     }
 
     private static OperationMachineOverheadSettlementState AddMachineSettlement(
@@ -410,7 +484,8 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         string operationTaskId,
         long revision,
         long machineHours,
-        OperationMachineOverheadSettlementState? existingState = null)
+        OperationMachineOverheadSettlementState? existingState = null,
+        string? currencyCode = null)
     {
         db.OperationMachineOverheadSettlements.Add(OperationMachineOverheadSettlement.CreateApplied(
             rate.OrganizationId, rate.EnvironmentId, $"WO-{operationTaskId}", operationTaskId,
@@ -420,7 +495,7 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
                 : new DateTimeOffset(2026, 6, 30, 12, 0, 0, TimeSpan.Zero),
             $"DEVICE-{operationTaskId}", machineHours * TimeSpan.TicksPerHour,
             "single-device-active-minus-explicit-pause-v1", rate.Id, rate.AccountingPeriodCode,
-            rate.Revision, rate.CurrencyCode, rate.FixedHourlyRate, rate.VariableHourlyRate,
+            rate.Revision, currencyCode ?? rate.CurrencyCode, rate.FixedHourlyRate, rate.VariableHourlyRate,
             $"evt-{operationTaskId}-{revision}", new string('a', 64)));
         var state = existingState ?? OperationMachineOverheadSettlementState.Open(
             rate.OrganizationId, rate.EnvironmentId, operationTaskId);

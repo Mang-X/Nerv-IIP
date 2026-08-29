@@ -104,6 +104,25 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
     }
 
     [Fact]
+    public async Task Close_still_requires_reconciliation_when_latest_rate_becomes_not_applicable_after_active_settlement()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        AddActiveSettlement(db, "org-a", "env-a", "WC-01", "2026-08", "OP-A", 1, 10);
+        db.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineNotApplicable(
+            "org-a", "env-a", "WC-01", "2026-08", "CNY", 2,
+            "system:test", "future allocation disabled after active settlement", new(2026, 8, 31, 15, 0, 0, TimeSpan.Zero)));
+        await db.SaveChangesAsync();
+
+        var close = new CloseAccountingPeriodCommandHandler(db, new PostgreSqlErpAdvisoryLockAllocator(db));
+        var exception = await Assert.ThrowsAsync<KnownException>(() => close.Handle(
+            new("org-a", "env-a", "2026-08", "user:controller", "period close"),
+            CancellationToken.None));
+
+        Assert.Contains("缺少机器制造费用实际池归集核对", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Reconciliation_rejects_missing_rate_and_currency_mismatch()
     {
         await using var missingRateDb = CreateDb();
@@ -115,6 +134,17 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         AddPeriodAndRate(currencyDb, "org-a", "env-a", "WC-01", "2026-08");
         await currencyDb.SaveChangesAsync();
         await Assert.ThrowsAsync<KnownException>(() => Reconcile(currencyDb, 1m, 1m, currencyCode: "USD"));
+    }
+
+    [Fact]
+    public async Task Reconciliation_rejects_active_settlement_currency_mismatch()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        AddActiveSettlement(db, "org-a", "env-a", "WC-01", "2026-08", "OP-USD", 1, 1, currencyCode: "USD");
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => Reconcile(db, 1m, 1m));
     }
 
     [Fact]
@@ -176,7 +206,8 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         string operationTaskId,
         long revision,
         long machineHours,
-        OperationMachineOverheadSettlementState? existingState = null)
+        OperationMachineOverheadSettlementState? existingState = null,
+        string currencyCode = "CNY")
     {
         var rate = db.WorkCenterMachineOverheadRates.Local.FirstOrDefault(x =>
             x.OrganizationId == organizationId && x.EnvironmentId == environmentId
@@ -193,7 +224,7 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
             organizationId, environmentId, $"WO-{operationTaskId}", operationTaskId, workCenterId,
             revision, completedAt, $"DEVICE-{operationTaskId}", machineHours * TimeSpan.TicksPerHour,
             "single-device-active-minus-explicit-pause-v1", rate.Id, periodCode, rate.Revision,
-            "CNY", 30m, 10m, $"evt-{operationTaskId}-{revision}", new string('a', 64)));
+            currencyCode, 30m, 10m, $"evt-{operationTaskId}-{revision}", new string('a', 64)));
         var state = existingState ?? OperationMachineOverheadSettlementState.Open(
             organizationId, environmentId, operationTaskId);
         state.ApplySettlement(revision);
