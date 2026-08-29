@@ -18,7 +18,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     [MesRealPostgresFact]
     public async Task Rework_request_creates_one_source_linked_work_order_and_persists_inbox_and_numbering()
     {
-        await using var provider = await ResetAndCreateProviderAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
 
         await HandleAsync(provider, CreateEvent());
@@ -45,7 +46,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     [MesRealPostgresFact]
     public async Task Same_ncr_with_different_payload_is_dead_lettered_instead_of_treated_as_replay()
     {
-        await using var provider = await ResetAndCreateProviderAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
         await HandleAsync(provider, CreateEvent());
 
@@ -65,7 +67,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     [MesRealPostgresFact]
     public async Task Missing_or_mismatched_mes_source_facts_fail_closed()
     {
-        await using var provider = await ResetAndCreateProviderAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
         await HandleAsync(provider, CreateEvent(eventId: "evt-missing-defect"));
         await SeedSourceAsync(provider, "org-001", "env-dev");
         await HandleAsync(provider, CreateEvent(eventId: "evt-sku-mismatch", skuCode: "SKU-WRONG", idempotencyKey: "quality:rework:sku-wrong"));
@@ -91,7 +94,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     [MesRealPostgresFact]
     public async Task Concurrent_delivery_serializes_on_ncr_scope_and_creates_exactly_one_work_order()
     {
-        await using var provider = await ResetAndCreateProviderAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
         var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -125,7 +129,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     [MesRealPostgresFact]
     public async Task Same_ncr_identity_is_isolated_by_organization_and_environment()
     {
-        await using var provider = await ResetAndCreateProviderAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
         await SeedSourceAsync(provider, "org-002", "env-test");
 
@@ -144,9 +149,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         Assert.Contains(workOrders, x => x.OrganizationId == "org-002" && x.EnvironmentId == "env-test");
     }
 
-    private static async Task<ServiceProvider> ResetAndCreateProviderAsync()
+    private static async Task<ServiceProvider> CreateMigratedProviderAsync()
     {
-        await MesPostgresLaneDatabase.ResetSchemaAsync();
         var services = new ServiceCollection();
         services.AddSingleton<IMediator>(new NoopMediator());
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
