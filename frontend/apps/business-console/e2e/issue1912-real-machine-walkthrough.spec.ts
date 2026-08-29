@@ -25,11 +25,28 @@ import {
 } from './issue1912-walkthrough-runtime'
 import {
   classifyRequestFailure,
+  clickRefreshAndWaitForListResponse,
   clickTabAndConfirmUnmount,
   fillFilterAndWaitForListResponse,
+  listQueryFingerprint,
   navigateAndWaitForInitialList,
   RequestFailureEvidenceTracker,
 } from './issue1912-walkthrough-policy'
+import {
+  assertWmsPageProofOptions,
+  buildWmsInboundSelectionQueryFacts,
+  buildWmsInboundListQueryFacts,
+  buildWmsOutboundSelectionQueryFacts,
+  buildWmsOutboundListQueryFacts,
+  assertWmsInitialListResponse,
+  fillWmsKeywordAndConfirm,
+  proveWmsListPage,
+  withWmsInitialListResponseGuard,
+  type WmsInboundListPageProofInput,
+  type WmsOutboundListPageProofInput,
+} from './issue1912-wms-walkthrough-facts'
+import { NERV_1571_WMS_PAGE_WINDOW_INPUT } from './issue1912-wms-walkthrough-authority'
+import { queryPath as canonicalQueryPath } from './issue1912-walkthrough-query'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -114,6 +131,7 @@ type UiProof = {
   pageHttpStatus: number
   listPath: string
   listHttpStatus: number
+  listQuery: JsonRecord
   stableKey: string
   renderedRowText: string
   emptyText: string
@@ -129,6 +147,10 @@ type ActorRuntime = {
   page: Page
   tracker: SessionCredentialTracker
   requestFailureEvidence: RequestFailureEvidenceTracker
+  successfulListResponses: Map<string, Response>
+  lastNavigationResponse: Response | null
+  lastNavigationRoute: string | null
+  lastNavigationEpoch: number | null
   principalId: string
   principalType: string
   permissionCodes: string[]
@@ -288,12 +310,9 @@ function dateOnly(date: Date): string {
 }
 
 function queryPath(path: string, query: JsonRecord): string {
-  const url = new URL(path, baseURL!)
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== null && value !== undefined && value !== '')
-      url.searchParams.set(key, String(value))
-  }
-  return `${url.pathname}${url.search}`
+  if (!baseURL)
+    throw new Error('managed walkthrough query path requires NERV_IIP_PLAYWRIGHT_BASE_URL')
+  return canonicalQueryPath(path, query, baseURL)
 }
 
 function errorText(error: unknown): string {
@@ -441,6 +460,10 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     page,
     tracker: sessionCredentialTracker,
     requestFailureEvidence: new RequestFailureEvidenceTracker(),
+    successfulListResponses: new Map(),
+    lastNavigationResponse: null,
+    lastNavigationRoute: null,
+    lastNavigationEpoch: null,
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -452,6 +475,10 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     page: workerPage,
     tracker: workerSessionCredentialTracker,
     requestFailureEvidence: new RequestFailureEvidenceTracker(),
+    successfulListResponses: new Map(),
+    lastNavigationResponse: null,
+    lastNavigationRoute: null,
+    lastNavigationEpoch: null,
     principalId: '',
     principalType: '',
     permissionCodes: [],
@@ -520,6 +547,13 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
               error: errorText(error),
             })
           })
+      }
+      if (
+        response.request().method() === 'GET' &&
+        response.status() === 200 &&
+        url.pathname.startsWith('/api/')
+      ) {
+        runtime.successfulListResponses.set(url.pathname, response)
       }
       if (url.pathname.startsWith('/api/') && response.status() >= 400) {
         failedRequests.push({
@@ -721,42 +755,204 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     listPath: string
     stableText: string
     filterLabel?: string
+    // `client` proves the rendered table after a local filter; `server` requires an exact 200 list response.
+    filterResponseMode?: 'server' | 'client'
+    // The expected list scope is an independent walkthrough fact, not copied from the response.
+    // Server-filter proofs fail closed when this query is omitted.
+    expectedListQuery?: JsonRecord
     tabText?: string | RegExp
+    // Reuse a settled route when a tab proof only needs refreshed data; a full reload can supersede API work.
+    reuseCurrentRoute?: boolean
+    refreshListBeforeProof?: boolean
     selectOptions?: Array<{ label: string; option: string }>
     emptyText: string
     screenshotName: string
   }
 
-  const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
+  type EstablishedPage = {
+    runtime: ActorRuntime
+    targetPage: Page
+    listPath: string
+    navigation: Response
+    firstList: Response
+    firstListNavigationEpoch: number | undefined
+  }
+
+  type ListProofContext = Readonly<{
+    page: Page
+    listPath: string
+    response: Response
+    navigationEpoch: number | undefined
+  }>
+
+  type WmsPageProofOptions = Readonly<{
+    actor: 'wms-worker'
+    route: string
+    filterLabel: string
+    emptyText: string
+    screenshotName: string
+    wms: WmsInboundListPageProofInput | WmsOutboundListPageProofInput
+  }>
+
+  const erpListQuery = (query: JsonRecord = {}): JsonRecord => ({
+    organizationId,
+    environmentId,
+    skip: 0,
+    take: 10,
+    ...query,
+  })
+
+  const samePageRoute = (currentUrl: string, route: string): boolean => {
+    if (!currentUrl) return false
+    const current = new URL(currentUrl)
+    const expected = new URL(route, currentUrl)
+    return (
+      current.origin === expected.origin &&
+      current.pathname === expected.pathname &&
+      current.search === expected.search
+    )
+  }
+
+  const establishPage = async (options: PageProofOptions): Promise<EstablishedPage> => {
     const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
     const targetPage = runtime.page
-    const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(targetPage.url())
+    const reuseCurrentRoute = options.reuseCurrentRoute === true
+    if (reuseCurrentRoute && !samePageRoute(targetPage.url(), options.route)) {
+      throw new Error(`page ${options.route} cannot reuse the current route ${targetPage.url()}`)
+    }
     let navigation: Response | null = null
-    let firstList!: Response
-    let navigationConfirmed = false
-    try {
-      const initialPage = await navigateAndWaitForInitialList(targetPage, {
-        route: options.route,
-        listPath: options.listPath,
-        timeoutMs: 120_000,
-      })
-      navigation = initialPage.navigation
-      firstList = initialPage.firstList
-      expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
-      expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
-      navigationAttempt.confirm('navigation')
-      navigationConfirmed = true
-    } finally {
-      if (navigationConfirmed) navigationAttempt.complete()
-      else navigationAttempt.cancel()
+    let firstList: Response | null = null
+    let firstListNavigationEpoch: number | undefined
+
+    if (reuseCurrentRoute) {
+      if (
+        !runtime.lastNavigationRoute ||
+        !samePageRoute(runtime.lastNavigationRoute, options.route)
+      ) {
+        throw new Error(`page ${options.route} has no matching completed navigation to reuse`)
+      }
+      navigation = runtime.lastNavigationResponse
+      if (!navigation || navigation.status() !== 200) {
+        throw new Error(`page ${options.route} has no completed HTTP 200 navigation to reuse`)
+      }
+      firstList = runtime.successfulListResponses.get(options.listPath) ?? null
+      firstListNavigationEpoch = runtime.lastNavigationEpoch ?? undefined
+    } else {
+      const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(
+        targetPage.url(),
+      )
+      let navigationConfirmed = false
+      try {
+        const initialPage = await navigateAndWaitForInitialList(targetPage, {
+          route: options.route,
+          listPath: options.listPath,
+          timeoutMs: 120_000,
+        })
+        navigation = initialPage.navigation
+        firstList = initialPage.firstList
+        firstListNavigationEpoch = initialPage.navigationEpoch
+        runtime.lastNavigationResponse = navigation
+        runtime.lastNavigationRoute = targetPage.url()
+        runtime.lastNavigationEpoch = initialPage.navigationEpoch
+        runtime.successfulListResponses.set(options.listPath, firstList)
+        expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
+        expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
+        navigationAttempt.confirm('navigation')
+        navigationConfirmed = true
+      } finally {
+        if (navigationConfirmed) navigationAttempt.complete()
+        else navigationAttempt.cancel()
+      }
     }
 
+    if (!navigation || !firstList) {
+      throw new Error(`list ${options.listPath} has no completed HTTP 200 response to prove`)
+    }
+    return {
+      runtime,
+      targetPage,
+      listPath: options.listPath,
+      navigation,
+      firstList,
+      firstListNavigationEpoch,
+    }
+  }
+
+  const initialListProofContext = (established: EstablishedPage): ListProofContext => ({
+    page: established.targetPage,
+    listPath: established.listPath,
+    response: established.firstList,
+    navigationEpoch: established.firstListNavigationEpoch,
+  })
+
+  const refreshListProofContext = async (
+    established: EstablishedPage,
+    listPath: string,
+  ): Promise<ListProofContext> => {
+    if (listPath !== established.listPath) {
+      throw new Error(
+        `refresh proof path ${listPath} did not match established list path ${established.listPath}`,
+      )
+    }
+    // A data refresh is not a lifecycle transition: any API abort remains an unexpected failure.
+    const response = await clickRefreshAndWaitForListResponse(established.targetPage, listPath)
+    const navigationEpoch = established.runtime.lastNavigationEpoch ?? undefined
+    established.runtime.successfulListResponses.set(listPath, response)
+    return {
+      page: established.targetPage,
+      listPath,
+      response,
+      navigationEpoch,
+    }
+  }
+
+  const completePageProof = async (
+    node: NodeName,
+    options: PageProofOptions,
+    established: EstablishedPage,
+    listProof: ListProofContext,
+  ): Promise<UiProof> => {
+    const { runtime, targetPage, navigation } = established
+    if (listProof.page !== targetPage || listProof.listPath !== options.listPath) {
+      throw new Error(
+        `list proof context did not match established page/path for ${options.listPath}`,
+      )
+    }
+    if (
+      new URL(listProof.response.url()).pathname !== listProof.listPath ||
+      listProof.response.request().frame() !== targetPage.mainFrame()
+    ) {
+      throw new Error(
+        `list proof response was not emitted by the established page/path for ${options.listPath}`,
+      )
+    }
+    const firstList = listProof.response
+    const firstListNavigationEpoch = listProof.navigationEpoch
+
+    expect(navigation.status(), `page ${options.route} must return HTTP 200`).toBe(200)
+    expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
+
     if (options.filterLabel) {
+      const filterResponseMode = options.filterResponseMode ?? 'server'
+      const expectedListQueryFingerprint =
+        filterResponseMode === 'server'
+          ? options.expectedListQuery === undefined
+            ? (() => {
+                throw new Error(
+                  `server filter proof for ${options.listPath} requires explicit expected list query facts`,
+                )
+              })()
+            : listQueryFingerprint(queryPath(options.listPath, options.expectedListQuery))
+          : undefined
       await fillFilterAndWaitForListResponse(targetPage, {
         route: targetPage.url(),
         listPath: options.listPath,
         filterLabel: options.filterLabel,
         stableText: options.stableText,
+        responseMode: filterResponseMode,
+        initialListResponse: firstList,
+        initialListNavigationEpoch: firstListNavigationEpoch,
+        expectedListQueryFingerprint,
         timeoutMs: 120_000,
       })
     }
@@ -795,9 +991,10 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       actor: runtime.actor,
       principalId: runtime.principalId,
       page: options.route,
-      pageHttpStatus: navigation?.status() ?? 0,
-      listPath: new URL(firstList.url()).pathname,
+      pageHttpStatus: navigation.status(),
+      listPath: options.listPath,
       listHttpStatus: firstList.status(),
+      listQuery: Object.fromEntries(new URL(firstList.url()).searchParams.entries()),
       stableKey: options.stableText,
       renderedRowText: safeText(await row.innerText()),
       emptyText: options.emptyText,
@@ -807,14 +1004,76 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     return proof
   }
 
-  const provePageSafely = async (node: NodeName, options: PageProofOptions) => {
+  const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
+    const established = await establishPage(options)
+    const listProof = options.refreshListBeforeProof
+      ? await refreshListProofContext(established, options.listPath)
+      : initialListProofContext(established)
+    return completePageProof(node, options, established, listProof)
+  }
+
+  const proveWmsPage = async (node: NodeName, options: WmsPageProofOptions): Promise<UiProof> => {
+    assertWmsPageProofOptions(options)
+    const listPath = options.wms.query.listPath
+    const pageOptions: PageProofOptions = {
+      actor: 'wms-worker',
+      route: options.route,
+      listPath,
+      stableText: options.wms.query.keywordQuery.keyword,
+      emptyText: options.emptyText,
+      screenshotName: options.screenshotName,
+    }
+    const guarded = await withWmsInitialListResponseGuard(
+      workerRuntime.page,
+      listPath,
+      () => establishPage(pageOptions),
+      120_000,
+      pageOptions.route,
+    )
+    const established = guarded.result
+    if (established.firstList !== guarded.firstList) {
+      throw new Error(
+        `WMS initial list response was not bound to the first response for ${listPath}`,
+      )
+    }
+    assertWmsInitialListResponse(
+      { url: guarded.firstList.url(), status: guarded.firstList.status() },
+      listPath,
+    )
+    const refreshedList = await proveWmsListPage({
+      ...options.wms,
+      page: established.targetPage,
+    })
+    const keywordList = await fillWmsKeywordAndConfirm(
+      established.targetPage,
+      options.wms.query,
+      refreshedList,
+      established.firstListNavigationEpoch,
+      options.filterLabel,
+    )
+    established.runtime.successfulListResponses.set(listPath, keywordList)
+    return completePageProof(node, pageOptions, established, {
+      page: established.targetPage,
+      listPath,
+      response: keywordList,
+      navigationEpoch: established.runtime.lastNavigationEpoch ?? undefined,
+    })
+  }
+
+  const runProofSafely = async <T>(node: NodeName, proof: () => Promise<T>): Promise<T> => {
     try {
-      return await provePage(node, options)
+      return await proof()
     } catch (error) {
       markFailure(node, error, 'mixed')
       throw error
     }
   }
+
+  const provePageSafely = (node: NodeName, options: PageProofOptions) =>
+    runProofSafely(node, () => provePage(node, options))
+
+  const proveWmsPageSafely = (node: NodeName, options: WmsPageProofOptions) =>
+    runProofSafely(node, () => proveWmsPage(node, options))
 
   try {
     await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 120_000 })
@@ -986,6 +1245,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/rfqs',
       listPath: '/api/business-console/v1/erp/procurement/rfqs',
       filterLabel: 'RFQ 关键字',
+      expectedListQuery: erpListQuery(),
       stableText: RFQ_NO,
       emptyText: '还没有询价单。可从采购申请或供应商策略发起真实询价。',
       screenshotName: '01-rfq.png',
@@ -994,6 +1254,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/supplier-quotations',
       listPath: '/api/business-console/v1/erp/procurement/supplier-quotations',
       filterLabel: '供应商报价关键字',
+      expectedListQuery: erpListQuery(),
       stableText: SUPPLIER_QUOTATION_NO,
       emptyText: '还没有供应商报价。先在询价单页面发起询价，供应商回价后在此汇总比价。',
       screenshotName: '02-supplier-quotation.png',
@@ -1047,6 +1308,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/purchase-orders',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
       filterLabel: '采购订单关键字',
+      expectedListQuery: erpListQuery(),
       stableText: PURCHASE_ORDER_NO,
       emptyText: '还没有采购订单。已批准的供应商报价或采购申请转单后会在这里出现。',
       screenshotName: '03-purchase-order-pending.png',
@@ -1170,6 +1432,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/purchase-orders',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
       filterLabel: '采购订单关键字',
+      expectedListQuery: erpListQuery(),
       stableText: PURCHASE_ORDER_NO,
       emptyText: '还没有采购订单。已批准的供应商报价或采购申请转单后会在这里出现。',
       screenshotName: '05-purchase-order-released.png',
@@ -1240,6 +1503,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/procurement/receipts',
       listPath: '/api/business-console/v1/erp/procurement/purchase-orders',
       filterLabel: '采购收货关键字',
+      expectedListQuery: erpListQuery(),
       stableText: PURCHASE_ORDER_NO,
       emptyText: '还没有可收货的采购订单。采购订单释放后会在这里跟进入库。',
       screenshotName: '06-purchase-receipt.png',
@@ -1568,14 +1832,42 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity,
     )
-    const inboundUi = await provePageSafely('receipt-inbound-inventory', {
+    const inboundQueryFacts = {
+      organizationId,
+      environmentId,
+      scopeKind: receiptScopeKind,
+      scopeId: receiptScopeId,
+      siteCode: receiptReadSiteCode,
+      keyword: INBOUND_ORDER_NO,
+      pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
+    }
+    const inboundKeywordQuery = buildWmsInboundListQueryFacts(inboundQueryFacts)
+    const inboundListQuery = buildWmsInboundSelectionQueryFacts(inboundQueryFacts)
+    const inboundUi = await proveWmsPageSafely('receipt-inbound-inventory', {
       actor: 'wms-worker',
       route: '/wms/inbound',
-      listPath: '/api/business-console/v1/wms/inbound-orders',
       filterLabel: '关键字搜索',
-      stableText: INBOUND_ORDER_NO,
       emptyText: '暂无入库单。收货作业产生入库单后会出现在这里。',
       screenshotName: '07-wms-inbound.png',
+      wms: {
+        kind: 'inbound',
+        selection: {
+          scope: {
+            label: '作业范围',
+            option: receiptScope.displayName,
+            scopeKind: inboundListQuery.scopeKind,
+            scopeId: inboundListQuery.scopeId,
+          },
+          site: { label: '工厂', optionCode: inboundListQuery.siteCode },
+        },
+        query: {
+          kind: 'inbound',
+          listPath: '/api/business-console/v1/wms/inbound-orders',
+          selectionQuery: inboundListQuery,
+          keywordQuery: inboundKeywordQuery,
+          forbiddenQueryKeys: [],
+        },
+      },
     })
     record({
       node: 'receipt-inbound-inventory',
@@ -1616,6 +1908,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/sales/quotations',
       listPath: '/api/business-console/v1/erp/sales/quotations',
       filterLabel: '报价单关键字',
+      expectedListQuery: erpListQuery(),
       stableText: SALES_QUOTATION_NO,
       emptyText: '还没有报价单。可从销售机会或客户需求创建报价。',
       screenshotName: '08-sales-quotation.png',
@@ -1643,6 +1936,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: `/erp/sales/orders?keyword=${encodeURIComponent(SALES_ORDER_NO)}`,
       listPath: '/api/business-console/v1/erp/sales/sales-orders',
       filterLabel: '销售订单关键字',
+      filterResponseMode: 'server',
+      expectedListQuery: erpListQuery(),
       stableText: SALES_ORDER_NO,
       emptyText: '还没有销售订单。批准报价后可在这里生成订单。',
       screenshotName: '09-sales-order.png',
@@ -1674,6 +1969,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/planning',
       listPath: '/api/business-console/v1/planning/demands',
       filterLabel: '需求池关键字',
+      filterResponseMode: 'client',
       stableText: SALES_ORDER_NO,
       emptyText: '当前范围没有计划需求。',
       screenshotName: '10-planning-demand.png',
@@ -1723,6 +2019,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       listPath: '/api/business-console/v1/planning/suggestions',
       stableText: FINISHED_SKU,
       tabText: /计划建议/,
+      reuseCurrentRoute: true,
+      refreshListBeforeProof: true,
       emptyText: '当前范围没有计划建议。',
       screenshotName: '11-planning-suggestion.png',
     })
@@ -2090,6 +2388,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/sales/deliveries',
       listPath: '/api/business-console/v1/erp/sales/delivery-orders',
       filterLabel: '发货关键字',
+      expectedListQuery: erpListQuery(),
       stableText: DELIVERY_ORDER_NO,
       emptyText: '还没有发货单',
       screenshotName: '16-sales-delivery.png',
@@ -2230,14 +2529,40 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         version: assignedOutboundVersion,
       },
     })
-    const outboundUi = await provePageSafely('delivery-wms-outbound', {
+    const outboundQueryFacts = {
+      organizationId,
+      environmentId,
+      scopeKind: shipmentScopeKind,
+      scopeId: shipmentScopeId,
+      keyword: DELIVERY_ORDER_NO,
+      pageWindow: NERV_1571_WMS_PAGE_WINDOW_INPUT,
+    }
+    const outboundKeywordQuery = buildWmsOutboundListQueryFacts(outboundQueryFacts)
+    const outboundListQuery = buildWmsOutboundSelectionQueryFacts(outboundQueryFacts)
+    const outboundUi = await proveWmsPageSafely('delivery-wms-outbound', {
       actor: 'wms-worker',
       route: '/wms/outbound',
-      listPath: '/api/business-console/v1/wms/outbound-orders',
       filterLabel: '关键字搜索',
-      stableText: DELIVERY_ORDER_NO,
       emptyText: '暂无出库单。发货作业产生出库单后会出现在这里。',
       screenshotName: '17-wms-outbound.png',
+      wms: {
+        kind: 'outbound',
+        selection: {
+          scope: {
+            label: '作业范围',
+            option: shipmentScope.displayName,
+            scopeKind: outboundListQuery.scopeKind,
+            scopeId: outboundListQuery.scopeId,
+          },
+        },
+        query: {
+          kind: 'outbound',
+          listPath: '/api/business-console/v1/wms/outbound-orders',
+          selectionQuery: outboundListQuery,
+          keywordQuery: outboundKeywordQuery,
+          forbiddenQueryKeys: ['siteCode'],
+        },
+      },
     })
     record({
       node: 'delivery-wms-outbound',
@@ -2305,6 +2630,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       route: '/erp/finance/ar-ap',
       listPath: '/api/business-console/v1/erp/finance/receivables',
       filterLabel: '应收关键字',
+      expectedListQuery: erpListQuery(),
       stableText: DELIVERY_ORDER_NO,
       emptyText: '还没有应收账款。销售出货或手工登记后会在这里形成应收。',
       screenshotName: '18-account-receivable.png',
@@ -2359,7 +2685,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
                 assertionBoundary:
                   'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
                 requestFailurePolicy:
-                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Expected 403 from a missing WMS scope is recorded separately with no side effect.',
+                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, including requests started after the transition or reported after completion, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Client-side planning demand filtering proves the rendered row without a second list wait, while same-route suggestion proof refreshes its completed list before confirming tab unmount.',
                 setup,
                 identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
                 expectedBusinessRejections,
