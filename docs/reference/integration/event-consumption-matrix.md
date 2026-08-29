@@ -76,11 +76,13 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `DefectRaisedIntegrationEvent` | MES / Quality 公共契约生产路径 | Quality | `consumed-internally` |
 | Quality | `NcrOpenedIntegrationEvent` | Quality | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | Quality | `NcrDispositionDecidedIntegrationEvent` | Quality | MES | `consumed-internally` |
+| Quality | `NcrReworkRequestedIntegrationEvent` | Quality | MES | `consumed-internally` |
 | Quality | `NcrClosedIntegrationEvent` | Quality | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | Quality | `InspectionResultIntegrationEvent`（passed/conditional/rejected） | Quality | Inventory、MES、Scheduling；RMA 场景下 ERP 处理相应财务结果 | `consumed-internally` |
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
+| MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | 当前没有活动状态消费者 | `producer-only-until-feature` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally` |

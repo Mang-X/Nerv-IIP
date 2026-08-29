@@ -14,7 +14,7 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
 {
     private const string PreviousMigration = "20260827093753_AddMesProductionReportOperator";
     private const string TargetMigration = "20260827160719_AddMesProductionReportOeeDimensionSnapshot";
-    private const string LatestMigration = "20260828045610_AddMesBillableMachineTimeFacts";
+    private const string LatestMigration = "20260829103216_AddMesReworkWorkOrderFoundation";
     private static readonly string[] SnapshotColumns =
     [
         "oee_dimension_degraded_reason",
