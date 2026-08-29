@@ -20,6 +20,10 @@ public sealed class OperationActualTimeSettlementEntityTypeConfiguration
             tableBuilder.HasCheckConstraint(
                 "ck_operation_actual_time_settlements_void_order",
                 "voided_at_utc IS NULL OR voided_at_utc >= completed_at_utc");
+            tableBuilder.HasCheckConstraint(
+                "ck_operation_actual_time_settlements_machine_fact",
+                "(machine_time_status = 'Available' AND device_asset_id IS NOT NULL AND billable_machine_ticks IS NOT NULL AND billable_machine_ticks >= 0 AND machine_time_basis_code IS NOT NULL AND machine_time_basis_code = 'single-device-active-minus-explicit-pause-v1') OR " +
+                "(machine_time_status IN ('NotApplicable', 'Unavailable') AND device_asset_id IS NULL AND billable_machine_ticks IS NULL AND machine_time_basis_code IS NULL)");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator()
@@ -42,6 +46,15 @@ public sealed class OperationActualTimeSettlementEntityTypeConfiguration
             .HasComment("Nonnegative actual labor duration in .NET ticks frozen by this settlement.");
         builder.Property(x => x.ActualMachineTicks).HasColumnName("actual_machine_ticks").IsRequired()
             .HasComment("Nonnegative actual machine duration in .NET ticks frozen by this settlement.");
+        builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100)
+            .HasComment("Single MasterData device asset frozen for available billable machine time; null otherwise.");
+        builder.Property(x => x.MachineTimeStatus).HasColumnName("machine_time_status")
+            .HasConversion<string>().IsRequired().HasMaxLength(32)
+            .HasComment("Billable machine-time fact state: Available, NotApplicable, or Unavailable.");
+        builder.Property(x => x.BillableMachineTicks).HasColumnName("billable_machine_ticks")
+            .HasComment("Nullable nonnegative billable machine duration; zero is authoritative only while status is Available.");
+        builder.Property(x => x.MachineTimeBasisCode).HasColumnName("machine_time_basis_code").HasMaxLength(100)
+            .HasComment("Governed calculation basis for available billable machine time; null for non-available facts.");
         builder.Property(x => x.VoidedAtUtc).HasColumnName("voided_at_utc")
             .HasComment("UTC time when the settlement was voided by completion-report reversal; null while active.");
         builder.HasAlternateKey(x => new

@@ -16123,6 +16123,91 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/context-scan-prevalidation": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "prevalidateBusinessConsoleMesContextScan",
+        "requestBody": {
+          "x-name": "MesContextScanPrevalidationRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPContractsMesMesContextScanPrevalidationRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts": {
       "post": {
         "tags": [
@@ -46094,6 +46179,132 @@
             "minLength": 1
           },
           "operationTaskId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsMesMesContextScanPrevalidationResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsMesMesContextScanPrevalidationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision",
+          "reasonCode",
+          "workOrderId",
+          "operationTaskId",
+          "objectType",
+          "scannedObjectId",
+          "evaluatedAtUtc"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/NervIIPContractsMesMesContextScanDecision"
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operationTaskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "objectType": {
+            "$ref": "#/components/schemas/NervIIPContractsMesMesContextScanObjectType"
+          },
+          "scannedObjectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evaluatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          }
+        }
+      },
+      "NervIIPContractsMesMesContextScanDecision": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Accepted",
+          "Rejected"
+        ],
+        "enum": [
+          "accepted",
+          "rejected"
+        ]
+      },
+      "NervIIPContractsMesMesContextScanObjectType": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "OperationTask",
+          "DeviceAsset",
+          "Personnel"
+        ],
+        "enum": [
+          "operationTask",
+          "deviceAsset",
+          "personnel"
+        ]
+      },
+      "NervIIPContractsMesMesContextScanPrevalidationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "workOrderId",
+          "operationTaskId",
+          "objectType",
+          "scannedObjectId"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "environmentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operationTaskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "objectType": {
+            "$ref": "#/components/schemas/NervIIPContractsMesMesContextScanObjectType"
+          },
+          "scannedObjectId": {
             "type": "string",
             "minLength": 1
           }

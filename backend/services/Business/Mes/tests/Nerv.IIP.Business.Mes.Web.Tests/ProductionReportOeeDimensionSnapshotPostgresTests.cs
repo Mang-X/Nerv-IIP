@@ -14,6 +14,7 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
 {
     private const string PreviousMigration = "20260827093753_AddMesProductionReportOperator";
     private const string TargetMigration = "20260827160719_AddMesProductionReportOeeDimensionSnapshot";
+    private const string LatestMigration = "20260828045610_AddMesBillableMachineTimeFacts";
     private static readonly string[] SnapshotColumns =
     [
         "oee_dimension_degraded_reason",
@@ -40,7 +41,8 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
         await using var context = new ApplicationDbContext(options, new NoopMediator());
         MesPostgresLaneDatabase.AssertUsesGovernedDatabase(context);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(TargetMigration);
+        // Seed through the current model before exercising the OEE migration's own down/up boundary.
+        await migrator.MigrateAsync(LatestMigration);
 
         var reportedAtUtc = DateTimeOffset.Parse("2026-08-27T23:30:00Z");
         context.WorkOrders.Add(WorkOrder.Create(

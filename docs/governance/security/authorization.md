@@ -68,6 +68,8 @@
 
 新增资源或 action 时优先复用现有语义（如 `read`、`manage`、`create`、`write`、`run`）；只有真实授权边界不同才新增权限码，不能为页面按钮或单个客户端制造同义权限。
 
+参考数据词表是否拥有独立读权限码，按 [ADR 0029](../../adr/0029-reference-data-vocabulary-read-permission.md) 决策 2 的三条件裁定，命名与换绑形态见其决策 4/5；未触发不做预防性拆分。
+
 ## Gateway 与公开入口
 
 1. 浏览器端以 Gateway/公开 facade 为授权执行边界时，Gateway 必须使用当前 principal 和明确 organization/environment/resource 上下文完成授权，不得只依赖前端隐藏按钮。

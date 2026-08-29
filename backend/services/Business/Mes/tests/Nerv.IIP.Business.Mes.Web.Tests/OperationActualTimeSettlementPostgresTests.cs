@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Contracts.Mes;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -20,6 +21,11 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class OperationActualTimeSettlementPostgresTests
 {
+    private const string SettledV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v1";
+    private const string SettledV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2";
+    private const string VoidedV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v1";
+    private const string VoidedV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2";
+
     [MesRealPostgresFact]
     public async Task Completion_state_and_settlement_outbox_are_committed_together_on_postgres()
     {
@@ -44,18 +50,36 @@ public sealed class OperationActualTimeSettlementPostgresTests
             .AsNoTracking()
             .Include(x => x.CoveredReports)
             .SingleAsync();
-        var settlementOutbox = Assert.Single(
-            await ReadCapOutboxContentAsync(),
-            content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal));
+        var settlementOutboxes = (await ReadCapOutboxContentAsync())
+            .Where(content => content.Contains("mes.OperationActualTimeSettled", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(3, settlementOutboxes.Length);
+        var settlementOutbox = Assert.Single(settlementOutboxes,
+            content => content.StartsWith(SettledV2Topic, StringComparison.Ordinal));
+        Assert.Contains(settlementOutboxes,
+            content => content.StartsWith(SettledV1Topic, StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
+        Assert.Contains(settlementOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettledIntegrationEvent), StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(1, task.ActualTimeSettlementRevision);
+        Assert.Equal("DEVICE-001", settlement.DeviceAssetId);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settlement.BillableMachineTicks);
+        Assert.Equal(MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, settlement.MachineTimeBasisCode);
         Assert.Equal(
             new[] { staged.ReportNo, completing.ReportNo }.Order(StringComparer.Ordinal),
             settlement.CoveredReports.Select(x => x.ReportNo).Order(StringComparer.Ordinal));
         Assert.Null(settlement.VoidedAtUtc);
         Assert.Contains("\"SettlementRevision\":1", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"EventVersion\":2", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"DeviceAssetId\":\"DEVICE-001\"", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"MachineTimeStatus\":\"available\"", settlementOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"BillableMachineTicks\":36000000000", settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(staged.ReportNo, settlementOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, settlementOutbox, StringComparison.Ordinal);
+        await AssertMachineFactCheckRejectsIllegalRowsAsync(settlement.Id.Id);
     }
 
     [MesRealPostgresFact]
@@ -82,18 +106,32 @@ public sealed class OperationActualTimeSettlementPostgresTests
             .AsNoTracking()
             .Include(x => x.CoveredReports)
             .SingleAsync();
-        var voidOutbox = Assert.Single(
-            await ReadCapOutboxContentAsync(),
-            content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal));
+        var voidOutboxes = (await ReadCapOutboxContentAsync())
+            .Where(content => content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(3, voidOutboxes.Length);
+        var voidOutbox = Assert.Single(voidOutboxes,
+            content => content.StartsWith(VoidedV2Topic, StringComparison.Ordinal));
+        Assert.Contains(voidOutboxes,
+            content => content.StartsWith(VoidedV1Topic, StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
+        Assert.Contains(voidOutboxes,
+            content => content.StartsWith(nameof(MesOperationActualTimeSettlementVoidedIntegrationEvent), StringComparison.Ordinal)
+                && content.Contains("\"EventVersion\":1", StringComparison.Ordinal));
 
         Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
         Assert.Equal(1, task.ActualTimeSettlementRevision);
         Assert.Equal(0, task.LaborTimeTicks);
         Assert.Equal(0, task.MachineTimeTicks);
         Assert.Equal(At(70), settlement.VoidedAtUtc);
+        Assert.Equal("DEVICE-001", settlement.DeviceAssetId);
+        Assert.Equal(MachineTimeFactStatus.Available, settlement.MachineTimeStatus);
+        Assert.Equal(TimeSpan.FromHours(1).Ticks, settlement.BillableMachineTicks);
         Assert.Equal([completing.ReportNo], settlement.CoveredReports.Select(x => x.ReportNo));
         Assert.Contains("\"SettlementRevision\":1", voidOutbox, StringComparison.Ordinal);
         Assert.Contains("\"ActualLaborTicks\":36000000000", voidOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"DeviceAssetId\":\"DEVICE-001\"", voidOutbox, StringComparison.Ordinal);
+        Assert.Contains("\"BillableMachineTicks\":36000000000", voidOutbox, StringComparison.Ordinal);
         Assert.Contains(completing.ReportNo, voidOutbox, StringComparison.Ordinal);
     }
 
@@ -113,7 +151,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-001", "OP-001", 10m, 0m, true,
                     At(60), "report-complete-postgres-atomic-failure-001")));
-            Assert.Contains("injected settlement outbox failure", exception.ToString(), StringComparison.Ordinal);
+            Assert.Contains("injected second-version settlement outbox failure after V1", exception.ToString(), StringComparison.Ordinal);
         }
 
         using var assertionScope = factory.Services.CreateScope();
@@ -153,7 +191,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
                 new ReverseProductionReportCommand(
                     "org-001", "env-dev", completedReportNo, "故障注入", At(70),
                     "user:operator-001", "report-reverse-postgres-void-failure-001")));
-            Assert.Contains("injected void outbox failure", exception.ToString(), StringComparison.Ordinal);
+            Assert.Contains("injected second-version void outbox failure after V1", exception.ToString(), StringComparison.Ordinal);
         }
 
         using var assertionScope = factory.Services.CreateScope();
@@ -374,6 +412,49 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal(expectedConstraintName, exception.ConstraintName);
     }
 
+    private static async Task AssertMachineFactCheckRejectsIllegalRowsAsync(Guid settlementId)
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        var illegalFacts = new (string Status, string? Device, long? Ticks, string? Basis)[]
+        {
+            ("Available", null, 0, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Available", "DEVICE-001", null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Available", "DEVICE-001", 0, null),
+            ("Available", "DEVICE-001", -1, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Available", "DEVICE-001", 0, "non-canonical-basis"),
+            ("Unavailable", "DEVICE-001", null, null),
+            ("Unavailable", null, 0, null),
+            ("Unavailable", null, null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("NotApplicable", "DEVICE-001", null, null),
+            ("NotApplicable", null, 0, null),
+            ("NotApplicable", null, null, MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1),
+            ("Unknown", null, null, null),
+        };
+
+        foreach (var fact in illegalFacts)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE mes.operation_actual_time_settlements
+                SET machine_time_status = @status,
+                    device_asset_id = @device,
+                    billable_machine_ticks = @ticks,
+                    machine_time_basis_code = @basis
+                WHERE id = @id
+                """;
+            command.Parameters.AddWithValue("id", settlementId);
+            command.Parameters.AddWithValue("status", fact.Status);
+            command.Parameters.AddWithValue("device", (object?)fact.Device ?? DBNull.Value);
+            command.Parameters.AddWithValue("ticks", (object?)fact.Ticks ?? DBNull.Value);
+            command.Parameters.AddWithValue("basis", (object?)fact.Basis ?? DBNull.Value);
+
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+            Assert.Equal("ck_operation_actual_time_settlements_machine_fact", exception.ConstraintName);
+        }
+    }
+
     private static WebApplicationFactory<Program> CreateFactory()
     {
         var settings = new Dictionary<string, string?>
@@ -420,11 +501,15 @@ public sealed class OperationActualTimeSettlementPostgresTests
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1,
             At(480));
 
-    private static OperationTask CreateRunningTask() =>
-        OperationTask.Create(
+    private static OperationTask CreateRunningTask()
+    {
+        var task = OperationTask.Queue(
             "org-001", "env-dev", "WO-001", "OP-001",
-            OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], At(0),
-            TimeSpan.FromHours(1), At(0), null);
+            10, "WC-001", [], At(0), TimeSpan.FromHours(1));
+        task.Assign("operator-001", "DEVICE-001", "SHIFT-1", At(-5));
+        task.Start(At(0));
+        return task;
+    }
 
     private static ApplicationDbContext CreateContext(DbContextOptions<ApplicationDbContext> options) =>
         new(options, new NoopMediator());
@@ -434,12 +519,12 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT \"Content\" FROM cap.published";
+        command.CommandText = "SELECT \"Name\", \"Content\" FROM cap.published";
         await using var reader = await command.ExecuteReaderAsync();
         var content = new List<string>();
         while (await reader.ReadAsync())
         {
-            content.Add(reader.GetString(0));
+            content.Add($"{reader.GetString(0)}\n{reader.GetString(1)}");
         }
 
         return content.ToArray();
@@ -454,8 +539,11 @@ public sealed class OperationActualTimeSettlementPostgresTests
             CREATE OR REPLACE FUNCTION cap.reject_actual_time_settlement_outbox()
             RETURNS trigger AS $$
             BEGIN
-                IF NEW."Content" LIKE '%mes.OperationActualTimeSettled%' THEN
-                    RAISE EXCEPTION 'injected settlement outbox failure';
+                IF NEW."Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2'
+                   AND EXISTS (
+                       SELECT 1 FROM cap.published
+                       WHERE "Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settled.v1') THEN
+                    RAISE EXCEPTION 'injected second-version settlement outbox failure after V1';
                 END IF;
                 RETURN NEW;
             END;
@@ -476,8 +564,11 @@ public sealed class OperationActualTimeSettlementPostgresTests
             CREATE OR REPLACE FUNCTION cap.reject_actual_time_settlement_void_outbox()
             RETURNS trigger AS $$
             BEGIN
-                IF NEW."Content" LIKE '%mes.OperationActualTimeSettlementVoided%' THEN
-                    RAISE EXCEPTION 'injected void outbox failure';
+                IF NEW."Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2'
+                   AND EXISTS (
+                       SELECT 1 FROM cap.published
+                       WHERE "Name" = 'nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v1') THEN
+                    RAISE EXCEPTION 'injected second-version void outbox failure after V1';
                 END IF;
                 RETURN NEW;
             END;

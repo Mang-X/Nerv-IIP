@@ -57,7 +57,8 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
             0m,
             "PCS",
             10m,
-            DateTimeOffset.Parse(reportedAtUtc));
+            DateTimeOffset.Parse(reportedAtUtc),
+            OeeHistoricalDimensionSnapshot.MissingTimezone);
 
     private sealed class NoopMediator : IMediator
     {

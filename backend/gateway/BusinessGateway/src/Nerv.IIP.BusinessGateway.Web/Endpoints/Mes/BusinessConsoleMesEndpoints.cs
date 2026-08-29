@@ -975,6 +975,36 @@ public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/context-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesContextScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class PrevalidateBusinessConsoleMesContextScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesContextPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<MesContextScanPrevalidationRequest, MesContextScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsRead)
+{
+    protected override string OrganizationId(MesContextScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(MesContextScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<MesContextScanPrevalidationResponse> ForwardAsync(
+        MesContextScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts")]
 [BusinessGatewayOperationId("confirmBusinessConsoleMesLineSideMaterialReceipt")]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
