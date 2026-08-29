@@ -4,7 +4,6 @@ using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
-using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
@@ -40,7 +39,16 @@ public sealed class ReconcileWorkCenterMachineOverheadEndpoint(
 
     public override async Task HandleAsync(ReconcileWorkCenterMachineOverheadRequest req, CancellationToken ct)
     {
-        var scope = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        var authorization = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        if (authorization.MissingRequiredHeader)
+        {
+            await Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                detail: "X-Organization-Id and X-Environment-Id headers are required.")
+                .ExecuteAsync(HttpContext);
+            return;
+        }
+        var scope = authorization.Scope;
         if (scope is null)
         {
             await Send.ForbiddenAsync(ct);
@@ -86,7 +94,16 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsEndpoint(
 
     public override async Task HandleAsync(ListWorkCenterMachineOverheadReconciliationsRequest req, CancellationToken ct)
     {
-        var scope = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        var authorization = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        if (authorization.MissingRequiredHeader)
+        {
+            await Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                detail: "X-Organization-Id and X-Environment-Id headers are required.")
+                .ExecuteAsync(HttpContext);
+            return;
+        }
+        var scope = authorization.Scope;
         if (scope is null)
         {
             await Send.ForbiddenAsync(ct);
@@ -104,19 +121,25 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsEndpoint(
 }
 
 public sealed record ErpInternalServiceScope(string OrganizationId, string EnvironmentId, string Actor);
+public sealed record ErpInternalServiceScopeAuthorization(
+    ErpInternalServiceScope? Scope,
+    bool MissingRequiredHeader);
 
 public interface IErpMachineOverheadInternalScopeAuthorizer
 {
-    ErpInternalServiceScope? ResolveAuthorizedScope(HttpContext context);
+    ErpInternalServiceScopeAuthorization ResolveAuthorizedScope(HttpContext context);
 }
 
 public sealed class AuthenticatedErpMachineOverheadInternalScopeAuthorizer
     : IErpMachineOverheadInternalScopeAuthorizer
 {
-    public ErpInternalServiceScope? ResolveAuthorizedScope(HttpContext context)
+    public ErpInternalServiceScopeAuthorization ResolveAuthorizedScope(HttpContext context)
     {
-        var requestedOrganizationId = RequiredHeader(context, "X-Organization-Id");
-        var requestedEnvironmentId = RequiredHeader(context, "X-Environment-Id");
+        var requestedOrganizationId = OptionalHeader(context, "X-Organization-Id");
+        var requestedEnvironmentId = OptionalHeader(context, "X-Environment-Id");
+        if (requestedOrganizationId is null || requestedEnvironmentId is null)
+            return new(null, true);
+
         var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var authorizedOrganizationId = context.User.FindFirstValue(ScopedCallerClaimTypes.OrganizationId);
         var authorizedEnvironmentId = context.User.FindFirstValue(ScopedCallerClaimTypes.EnvironmentId);
@@ -124,17 +147,17 @@ public sealed class AuthenticatedErpMachineOverheadInternalScopeAuthorizer
             || !string.Equals(requestedOrganizationId, authorizedOrganizationId, StringComparison.Ordinal)
             || !string.Equals(requestedEnvironmentId, authorizedEnvironmentId, StringComparison.Ordinal))
         {
-            return null;
+            return new(null, false);
         }
 
-        return new(requestedOrganizationId, requestedEnvironmentId, $"internal-service:{subject}");
+        return new(
+            new(requestedOrganizationId, requestedEnvironmentId, $"internal-service:{subject}"),
+            false);
     }
 
-    private static string RequiredHeader(HttpContext context, string name)
+    private static string? OptionalHeader(HttpContext context, string name)
     {
         var value = context.Request.Headers[name].ToString().Trim();
-        return string.IsNullOrWhiteSpace(value)
-            ? throw new KnownException($"{name} header is required.")
-            : value;
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

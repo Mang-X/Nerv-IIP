@@ -116,6 +116,27 @@ public sealed class MachineOverheadInternalEndpointAuthorizationTests
         sender.AssertNoRequests();
     }
 
+    [Theory]
+    [InlineData("POST", null, "env-trusted")]
+    [InlineData("POST", "org-trusted", null)]
+    [InlineData("GET", null, "env-trusted")]
+    [InlineData("GET", "org-trusted", null)]
+    public async Task Endpoints_reject_each_missing_scope_header_with_400_and_do_not_dispatch(
+        string method,
+        string? organizationId,
+        string? environmentId)
+    {
+        var sender = new CapturingSender();
+        await using var factory = CreateFactory(sender);
+        using var client = factory.CreateClient();
+        var token = method == "POST" ? "finance-manager-a-token" : "finance-reader-token";
+        using var request = CreateRequest(method, token, organizationId, environmentId);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        sender.AssertNoRequests();
+    }
+
     [Fact]
     public async Task Get_dispatches_the_claim_bound_query_scope_and_request_filters()
     {
