@@ -7,6 +7,7 @@
 | 操作 | 当前 Runbook | 主要权威生产者 |
 | --- | --- | --- |
 | 本地开发、Aspire、worktree、真实依赖与排障 | [`local-development.md`](local-development.md) | `nerv.ps1 help`、`nerv.ps1 ports`、AppHost、配置与脚本 |
+| 脚本执行、验证、兼容性与治理排障 | [`script-automation.md`](script-automation.md) | `nerv.ps1 help`、目标脚本 `Get-Help`、`scripts/check-script-governance.ps1`、共享脚本 library/tests |
 | 数据库发布、迁移、备份、恢复与 seed | [`database-release.md`](database-release.md) | `scripts/install/migrate-*.ps1`、migration manifest、EF migrations、ADR 0009 |
 | FileStorage 停服离线迁移、切换与回滚 | [`file-storage-offline-migration.md`](file-storage-offline-migration.md) | ADR 0027、FileStorage/provider 实现、对应迁移实现 |
 | PDA / Capacitor / APK 构建与部署 | [`mobile-pda-deployment.md`](mobile-pda-deployment.md) | `frontend/apps/business-pda/scripts/pda-apk-build.ps1`、Capacitor/Android 配置 |
@@ -24,4 +25,4 @@ PDA 测试层次、模拟/真栈/真机证据仍由 `docs/architecture/mobile-pd
 
 ## M2 迁移兼容
 
-`docs/architecture/` 下本批 4 个旧文件名在 M2 期间只保留短导航，不能继续维护 Runbook 正文；兼容入口及本目录内临时旧相对链接指针的删除条件由 M2-M/M4 统一收口。
+`docs/architecture/` 下已迁移的旧 Runbook/Governance 文件名在 M2 期间只保留短导航，不能继续维护操作或规则正文；兼容入口及本目录内临时旧相对链接指针的删除条件由 M2-M/M4 统一收口。
