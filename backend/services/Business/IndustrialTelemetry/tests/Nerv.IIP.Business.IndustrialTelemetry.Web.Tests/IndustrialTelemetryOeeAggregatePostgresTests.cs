@@ -37,7 +37,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
 
         var handler = new QueryOeeAggregateBucketsQueryHandler(db);
         var workCenter = await handler.Handle(new(
-            "org-001", "env-dev", OeeAggregateDimensions.WorkCenter, start, end,
+            "org-001", "env-dev", OeeAggregateDimension.WorkCenter, start, end,
             WorkCenterId: "WC-01"), CancellationToken.None);
         var weighted = Assert.Single(workCenter.Buckets);
         Assert.Equal(2, weighted.DeviceCount);
@@ -51,11 +51,11 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
 
         var requests = new[]
         {
-            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimensions.Device, start, end, DeviceAssetId: "DEV-A"),
-            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimensions.Line, start, end, LineCode: "LINE-01"),
-            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimensions.Workshop, start, end, WorkshopCode: "WORKSHOP-01"),
-            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimensions.Shift, start, end, ShiftCode: "SHIFT-01"),
-            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimensions.Day, start, end, BusinessDate: businessDate),
+            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimension.Device, start, end, DeviceAssetId: "DEV-A"),
+            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimension.Line, start, end, LineCode: "LINE-01"),
+            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimension.Workshop, start, end, WorkshopCode: "WORKSHOP-01"),
+            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimension.Shift, start, end, ShiftCode: "SHIFT-01"),
+            new QueryOeeAggregateBucketsQuery("org-001", "env-dev", OeeAggregateDimension.Day, start, end, BusinessDate: businessDate),
         };
         foreach (var request in requests)
         {
@@ -70,7 +70,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Equal(businessDate, Assert.Single((await handler.Handle(requests[4], CancellationToken.None)).Buckets).BusinessDate);
 
         var secondDevicePage = await handler.Handle(new(
-            "org-001", "env-dev", OeeAggregateDimensions.Device, start, end,
+            "org-001", "env-dev", OeeAggregateDimension.Device, start, end,
             Skip: 1,
             Take: 1), CancellationToken.None);
         Assert.Equal(2, secondDevicePage.TotalCount);
@@ -105,7 +105,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         await db.SaveChangesAsync();
 
         var result = await new QueryOeeAggregateBucketsQueryHandler(db).Handle(new(
-            "org-001", "env-dev", OeeAggregateDimensions.Device, start, start.AddHours(1),
+            "org-001", "env-dev", OeeAggregateDimension.Device, start, start.AddHours(1),
             DeviceAssetId: "DEV-TARGET",
             WorkCenterId: "WC-01",
             ShiftCode: "SHIFT-01",
@@ -136,7 +136,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         await db.SaveChangesAsync();
 
         var handler = new QueryOeeAggregateBucketsQueryHandler(db);
-        foreach (var dimension in new[] { OeeAggregateDimensions.WorkCenter, OeeAggregateDimensions.Line, OeeAggregateDimensions.Workshop, OeeAggregateDimensions.Day })
+        foreach (var dimension in new[] { OeeAggregateDimension.WorkCenter, OeeAggregateDimension.Line, OeeAggregateDimension.Workshop, OeeAggregateDimension.Day })
         {
             var result = await handler.Handle(new(
                 "org-001", "env-dev", dimension, start, start.AddDays(2)), CancellationToken.None);
@@ -153,10 +153,10 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
                 Assert.Empty(bucket.DegradedReasons);
             });
             Assert.Equal(
-                dimension == OeeAggregateDimensions.Day ? 40m : 48m,
+                dimension == OeeAggregateDimension.Day ? 40m : 48m,
                 result.Buckets.Sum(x => x.ExpectedOutputQuantity!.Value) / 10m);
 
-            if (dimension == OeeAggregateDimensions.Day)
+            if (dimension == OeeAggregateDimension.Day)
             {
                 var ordered = result.Buckets.OrderBy(x => x.BusinessDate).ToArray();
                 Assert.Equal(start, ordered[0].BucketStartUtc);
@@ -165,6 +165,14 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
                 Assert.Equal(DateTimeOffset.Parse("2026-07-12T00:00:00Z"), ordered[1].BucketEndUtc);
             }
         }
+
+        var filteredWorkCenter = Assert.Single((await handler.Handle(new(
+            "org-001", "env-dev", OeeAggregateDimension.WorkCenter, start, start.AddDays(2),
+            WorkCenterId: "WC-B"), CancellationToken.None)).Buckets);
+        Assert.Equal("WC-B", filteredWorkCenter.DimensionValue);
+        Assert.Equal(230m, filteredWorkCenter.ExpectedOutputQuantity);
+        Assert.Equal(0.043478m, filteredWorkCenter.PerformanceRate);
+        Assert.Equal(0.043478m, filteredWorkCenter.OeeRate);
     }
 
     [RealPostgresFact]
@@ -196,11 +204,11 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
 
         var handler = new QueryOeeAggregateBucketsQueryHandler(db);
         var reversalBucket = Assert.Single((await handler.Handle(new(
-            "org-001", "env-dev", OeeAggregateDimensions.Device, start, start.AddHours(1), DeviceAssetId: "DEV-REV"), CancellationToken.None)).Buckets);
+            "org-001", "env-dev", OeeAggregateDimension.Device, start, start.AddHours(1), DeviceAssetId: "DEV-REV"), CancellationToken.None)).Buckets);
         Assert.Equal(2, reversalBucket.ProductionFactCount);
         Assert.Equal(0m, reversalBucket.GoodQuantity);
         Assert.Empty((await handler.Handle(new(
-            "org-001", "env-dev", OeeAggregateDimensions.Device, start.AddDays(1), start.AddDays(1).AddHours(1), DeviceAssetId: "DEV-REV"), CancellationToken.None)).Buckets);
+            "org-001", "env-dev", OeeAggregateDimension.Device, start.AddDays(1), start.AddDays(1).AddHours(1), DeviceAssetId: "DEV-REV"), CancellationToken.None)).Buckets);
 
         var mixed = await BucketFor("DEV-MIX");
         Assert.Null(mixed.PerformanceRate);
@@ -228,7 +236,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
 
         Task<OeeAggregateBucket> BucketFor(string device) => GetBucketAsync(device);
         async Task<OeeAggregateBucket> GetBucketAsync(string device) => Assert.Single((await handler.Handle(new(
-            "org-001", "env-dev", OeeAggregateDimensions.Device, start, start.AddHours(1), DeviceAssetId: device), CancellationToken.None)).Buckets);
+            "org-001", "env-dev", OeeAggregateDimension.Device, start, start.AddHours(1), DeviceAssetId: device), CancellationToken.None)).Buckets);
     }
 
     [RealPostgresFact]
@@ -261,7 +269,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         await using var db = CreateLaneDbContext(interceptor);
         var startUtc = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
         var request = new QueryOeeAggregateBucketsQuery(
-            "org-001", "env-dev", OeeAggregateDimensions.WorkCenter, startUtc, startUtc.AddDays(1), WorkCenterId: "WC-BOUNDARY");
+            "org-001", "env-dev", OeeAggregateDimension.WorkCenter, startUtc, startUtc.AddDays(1), WorkCenterId: "WC-BOUNDARY");
         var accepted = await new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None);
         Assert.Equal(OeeAggregateMaterializationLimits.MaximumStateSampleCount, Assert.Single(accepted.Buckets).StateSampleCount);
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1, interceptor.FactLimits);
@@ -305,7 +313,7 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             FROM generate_series(1, 10000) AS sample;
             """);
         var request = new QueryOeeAggregateBucketsQuery(
-            "org-001", "env-dev", OeeAggregateDimensions.WorkCenter,
+            "org-001", "env-dev", OeeAggregateDimension.WorkCenter,
             DateTimeOffset.Parse("2026-07-01T00:00:00Z"), DateTimeOffset.Parse("2026-07-02T00:00:00Z"), WorkCenterId: "WC-LIMIT");
         var accepted = await new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None);
         Assert.Equal(10000, Assert.Single(accepted.Buckets).ProductionFactCount);

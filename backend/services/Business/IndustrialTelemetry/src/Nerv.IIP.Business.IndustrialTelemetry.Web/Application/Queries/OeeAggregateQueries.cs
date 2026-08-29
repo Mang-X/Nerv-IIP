@@ -31,17 +31,6 @@ public enum OeeAggregateDimension
 public sealed class OeeAggregateDimensionJsonConverter()
     : JsonStringEnumConverter<OeeAggregateDimension>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
 
-public static class OeeAggregateDimensions
-{
-    public const OeeAggregateDimension Device = OeeAggregateDimension.Device;
-    public const OeeAggregateDimension WorkCenter = OeeAggregateDimension.WorkCenter;
-    public const OeeAggregateDimension Line = OeeAggregateDimension.Line;
-    public const OeeAggregateDimension Workshop = OeeAggregateDimension.Workshop;
-    public const OeeAggregateDimension Shift = OeeAggregateDimension.Shift;
-    public const OeeAggregateDimension Day = OeeAggregateDimension.Day;
-    public static readonly TimeSpan MaximumWindow = TimeSpan.FromDays(31);
-}
-
 [JsonConverter(typeof(OeeAggregateDegradedReasonJsonConverter))]
 public enum OeeAggregateDegradedReason
 {
@@ -121,6 +110,21 @@ internal static class OeeAggregateQueryPlan
             .Where(x => request.LineCode == null || x.LineCode == request.LineCode)
             .Where(x => request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode)
             .Where(x => request.BusinessDate == null || x.BusinessDate == request.BusinessDate)
+            .OrderBy(x => x.AggregationOccurredAtUtc)
+            .ThenBy(x => x.SourceReportNo)
+            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1);
+
+    internal static IQueryable<OeeProductionFact> BuildHierarchyTimelineFacts(
+        ApplicationDbContext dbContext,
+        QueryOeeAggregateBucketsQuery request,
+        IReadOnlyCollection<string> deviceIds) =>
+        dbContext.OeeProductionFacts
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.AggregationOccurredAtUtc >= request.WindowStartUtc)
+            .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc)
+            .Where(x => deviceIds.Contains(x.DeviceAssetId))
             .OrderBy(x => x.AggregationOccurredAtUtc)
             .ThenBy(x => x.SourceReportNo)
             .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1);
@@ -219,13 +223,15 @@ public sealed record OeeAggregateBucket(
 
 public sealed class QueryOeeAggregateBucketsQueryValidator : AbstractValidator<QueryOeeAggregateBucketsQuery>
 {
+    private static readonly TimeSpan MaximumWindow = TimeSpan.FromDays(31);
+
     public QueryOeeAggregateBucketsQueryValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
         RuleFor(x => x.WindowEndUtc)
-            .Must((query, endUtc) => endUtc - query.WindowStartUtc <= OeeAggregateDimensions.MaximumWindow)
+            .Must((query, endUtc) => endUtc - query.WindowStartUtc <= MaximumWindow)
             .WithMessage("OEE aggregate window cannot exceed 31 days.");
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.WorkCenterId).MaximumLength(100);
@@ -245,11 +251,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         CancellationToken cancellationToken)
     {
         var facts = await OeeAggregateQueryPlan.BuildFacts(dbContext, request).ToArrayAsync(cancellationToken);
-        if (facts.Length > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
-        {
-            throw new KnownException(
-                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
-        }
+        EnsureProductionFactMaterializationLimit(facts.Length);
         if (facts.Length == 0)
         {
             return Response(request, []);
@@ -276,6 +278,14 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         }
 
         var deviceIds = facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
+        var runtimeFacts = facts;
+        if (request.Dimension is OeeAggregateDimension.WorkCenter or OeeAggregateDimension.Line or OeeAggregateDimension.Workshop)
+        {
+            runtimeFacts = await OeeAggregateQueryPlan
+                .BuildHierarchyTimelineFacts(dbContext, request, deviceIds)
+                .ToArrayAsync(cancellationToken);
+            EnsureProductionFactMaterializationLimit(runtimeFacts.Length);
+        }
         var earliestStart = groups.Min(x => x.StartUtc);
         var latestEnd = groups.Max(x => x.EndUtc);
         var carryIns = await OeeAggregateQueryPlan
@@ -298,7 +308,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                     .ThenBy(y => y.SourceSequence, StringComparer.Ordinal)
                     .ToArray(),
                 StringComparer.Ordinal);
-        var runtimeWindows = BuildRuntimeWindows(facts, request);
+        var runtimeWindows = BuildRuntimeWindows(runtimeFacts, request);
 
         var allBuckets = groups
             .Select(group => CalculateBucket(
@@ -495,7 +505,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         var workshopCode = SingleValue(group.Facts.Select(x => x.WorkshopCode));
         var lineCode = SingleValue(group.Facts.Select(x => x.LineCode));
         var workCenterId = SingleValue(group.Facts.Select(x => x.WorkCenterId));
-        var deviceAssetId = dimension == OeeAggregateDimensions.Device
+        var deviceAssetId = dimension == OeeAggregateDimension.Device
             ? group.Key.DimensionValue
             : SingleValue(group.Facts.Select(x => x.DeviceAssetId));
         var shiftCode = SingleValue(group.Facts.Select(x => x.ShiftCode));
@@ -536,6 +546,15 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         {
             throw new KnownException(
                 $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumStateSampleCount} device-state materialization limit; narrow the window or add dimension filters.");
+        }
+    }
+
+    private static void EnsureProductionFactMaterializationLimit(int materializedFactCount)
+    {
+        if (materializedFactCount > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
         }
     }
 
@@ -606,11 +625,11 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         if (HasMultipleValues(facts.Select(x => x.SiteCode))) reasons.Add(OeeAggregateDegradedReason.SiteDimensionAmbiguous);
         if (HasMultipleValues(facts.Select(x => x.WorkshopCode))) reasons.Add(OeeAggregateDegradedReason.WorkshopDimensionAmbiguous);
         if (HasMultipleValues(facts.Select(x => x.LineCode))) reasons.Add(OeeAggregateDegradedReason.LineDimensionAmbiguous);
-        if (dimension == OeeAggregateDimensions.Day && facts.Any(x => x.BusinessDate is null || string.IsNullOrWhiteSpace(x.SiteTimezone)))
+        if (dimension == OeeAggregateDimension.Day && facts.Any(x => x.BusinessDate is null || string.IsNullOrWhiteSpace(x.SiteTimezone)))
         {
             reasons.Add(OeeAggregateDegradedReason.SiteTimezoneOrDayBoundaryMissing);
         }
-        if (dimension == OeeAggregateDimensions.Shift && facts.Any(x => x.BusinessDate is null || x.ShiftBucketStartUtc is null || x.ShiftBucketEndUtc is null))
+        if (dimension == OeeAggregateDimension.Shift && facts.Any(x => x.BusinessDate is null || x.ShiftBucketStartUtc is null || x.ShiftBucketEndUtc is null))
         {
             reasons.Add(OeeAggregateDegradedReason.ShiftDefinitionOrBoundaryMissing);
         }
@@ -660,25 +679,25 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         internal static string? DimensionValueFor(OeeProductionFact fact, OeeAggregateDimension dimension) =>
             dimension switch
             {
-                OeeAggregateDimensions.Device => fact.DeviceAssetId,
-                OeeAggregateDimensions.WorkCenter => fact.WorkCenterId,
-                OeeAggregateDimensions.Line => fact.LineCode,
-                OeeAggregateDimensions.Workshop => fact.WorkshopCode,
-                OeeAggregateDimensions.Shift => fact.ShiftCode,
-                OeeAggregateDimensions.Day => fact.SiteCode,
+                OeeAggregateDimension.Device => fact.DeviceAssetId,
+                OeeAggregateDimension.WorkCenter => fact.WorkCenterId,
+                OeeAggregateDimension.Line => fact.LineCode,
+                OeeAggregateDimension.Workshop => fact.WorkshopCode,
+                OeeAggregateDimension.Shift => fact.ShiftCode,
+                OeeAggregateDimension.Day => fact.SiteCode,
                 _ => throw new UnreachableException(),
             };
 
         public static BucketKey From(OeeProductionFact fact, QueryOeeAggregateBucketsQuery request) =>
             request.Dimension switch
             {
-                OeeAggregateDimensions.Device => new(fact.DeviceAssetId, null, null, null, null, request.WindowStartUtc, request.WindowEndUtc),
-                OeeAggregateDimensions.WorkCenter => new(fact.WorkCenterId, fact.SiteCode, fact.WorkshopCode, fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
-                OeeAggregateDimensions.Line => new(fact.LineCode, fact.SiteCode, fact.WorkshopCode, fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
-                OeeAggregateDimensions.Workshop => new(fact.WorkshopCode, fact.SiteCode, fact.WorkshopCode, null, null, request.WindowStartUtc, request.WindowEndUtc),
-                OeeAggregateDimensions.Shift when fact.BusinessDate is not null && fact.ShiftBucketStartUtc is not null && fact.ShiftBucketEndUtc is not null =>
+                OeeAggregateDimension.Device => new(fact.DeviceAssetId, null, null, null, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimension.WorkCenter => new(fact.WorkCenterId, fact.SiteCode, fact.WorkshopCode, fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimension.Line => new(fact.LineCode, fact.SiteCode, fact.WorkshopCode, fact.LineCode, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimension.Workshop => new(fact.WorkshopCode, fact.SiteCode, fact.WorkshopCode, null, null, request.WindowStartUtc, request.WindowEndUtc),
+                OeeAggregateDimension.Shift when fact.BusinessDate is not null && fact.ShiftBucketStartUtc is not null && fact.ShiftBucketEndUtc is not null =>
                     new(fact.ShiftCode, fact.SiteCode, fact.WorkshopCode, fact.LineCode, fact.BusinessDate, fact.ShiftBucketStartUtc.Value, fact.ShiftBucketEndUtc.Value),
-                OeeAggregateDimensions.Day when TryGetBusinessDayBounds(fact, out var dayStartUtc, out var dayEndUtc) =>
+                OeeAggregateDimension.Day when TryGetBusinessDayBounds(fact, out var dayStartUtc, out var dayEndUtc) =>
                     new(fact.SiteCode, fact.SiteCode, null, null, fact.BusinessDate, dayStartUtc, dayEndUtc),
                 _ => new(null, null, null, null, null, request.WindowStartUtc, request.WindowEndUtc),
             };
