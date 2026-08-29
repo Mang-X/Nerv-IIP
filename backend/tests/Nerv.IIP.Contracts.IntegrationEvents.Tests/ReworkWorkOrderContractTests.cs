@@ -46,6 +46,18 @@ public sealed class ReworkWorkOrderContractTests
     }
 
     [Fact]
+    public void Quality_rework_request_uses_utc_microsecond_timestamp_precision()
+    {
+        var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
+
+        var withinMicrosecond = ReworkPayload(requestedAtUtc.AddTicks(9));
+        var nextMicrosecond = ReworkPayload(requestedAtUtc.AddTicks(11));
+
+        Assert.Equal(requestedAtUtc, withinMicrosecond.RequestedAtUtc);
+        Assert.Equal(requestedAtUtc.AddTicks(TimeSpan.TicksPerMicrosecond), nextMicrosecond.RequestedAtUtc);
+    }
+
+    [Fact]
     public void Mes_rework_created_receipt_round_trips_created_work_order_lineage()
     {
         var created = new ReworkWorkOrderCreatedIntegrationEvent(
@@ -85,4 +97,14 @@ public sealed class ReworkWorkOrderContractTests
 
     private static DateTimeOffset At(int minute) =>
         DateTimeOffset.Parse("2026-08-29T08:00:00Z").AddMinutes(minute);
+
+    private static NcrReworkRequestedPayload ReworkPayload(DateTimeOffset requestedAtUtc) => new(
+        "ncr-001",
+        "NCR-2026-0001",
+        "DEF-001",
+        "SKU-001",
+        3m,
+        "LOT-001",
+        "SN-001",
+        requestedAtUtc);
 }

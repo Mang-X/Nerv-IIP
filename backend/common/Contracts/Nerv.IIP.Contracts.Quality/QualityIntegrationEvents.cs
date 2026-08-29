@@ -383,7 +383,12 @@ public sealed record NcrReworkRequestedPayload(
     decimal Quantity,
     string? LotNo,
     string? SerialNo,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc)
+{
+    public DateTimeOffset RequestedAtUtc { get; } = new(
+        RequestedAtUtc.UtcTicks - (RequestedAtUtc.UtcTicks % TimeSpan.TicksPerMicrosecond),
+        TimeSpan.Zero);
+}
 
 public sealed record MrbReviewPayload(
     string ReviewerId,

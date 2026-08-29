@@ -25,7 +25,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
         var integrationEvent = CreateEvent(
-            requestedAtUtc: DateTimeOffset.Parse("2026-08-29T08:00:00Z").AddTicks(1));
+            requestedAtUtc: DateTimeOffset.Parse("2026-08-29T08:00:00Z").AddTicks(9));
 
         ReworkWorkOrderCreatedDomainEvent createdDomainEvent;
         await using (var creationScope = provider.CreateAsyncScope())
@@ -117,11 +117,12 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
-        await HandleAsync(provider, CreateEvent());
+        var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
+        await HandleAsync(provider, CreateEvent(requestedAtUtc: requestedAtUtc.AddTicks(9)));
 
         await HandleAsync(provider, CreateEvent(
             eventId: "evt-conflict",
-            requestedAtUtc: DateTimeOffset.Parse("2026-08-29T08:01:00Z")));
+            requestedAtUtc: requestedAtUtc.AddTicks(11)));
 
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
