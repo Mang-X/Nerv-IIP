@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using DotNetCore.CAP.Internal;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
+using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
@@ -36,6 +37,7 @@ try
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
+    builder.Services.AddSingleton<IErpMachineOverheadInternalScopeAuthorizer, AuthenticatedErpMachineOverheadInternalScopeAuthorizer>();
     var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IPurchaseOrderApprovalClient, HttpPurchaseOrderApprovalClient>(client =>
     {
@@ -56,6 +58,7 @@ try
         client.BaseAddress = wmsBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddErpMachineOverheadInternalCallerAuthorization(builder.Configuration);
     builder.Services
         .AddFastEndpoints(o =>
         {

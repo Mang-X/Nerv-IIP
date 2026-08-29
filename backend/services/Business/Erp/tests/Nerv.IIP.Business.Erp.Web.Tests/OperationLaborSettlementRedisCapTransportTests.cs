@@ -159,6 +159,13 @@ public sealed class OperationLaborSettlementRedisCapTransportTests
             ["Approval:BaseUrl"] = "https://approval.test",
             ["MasterData:BaseUrl"] = "https://master-data.test",
             ["Wms:BaseUrl"] = "https://wms.test",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:Name"] = "transport-finance-reconciliation",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:BearerToken"] = "transport-finance-reconciliation-token",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:Subject"] = "transport-finance-reconciliation",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:OrganizationId"] = "org-transport",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:EnvironmentId"] = "env-transport",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:Permissions:0"] = "business.erp.finance.read",
+            ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:0:Permissions:1"] = "business.erp.finance.manage",
         };
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
