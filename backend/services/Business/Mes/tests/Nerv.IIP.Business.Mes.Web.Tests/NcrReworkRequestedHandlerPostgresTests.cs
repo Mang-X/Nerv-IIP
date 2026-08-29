@@ -214,6 +214,87 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     }
 
     [MesRealPostgresFact]
+    public async Task Rework_release_captures_material_shortage_and_blocks_start()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var materialSnapshotProvider = new StaticMaterialSnapshotProvider(
+            MesMaterialRequirementSnapshotResult.Captured(
+                "product-engineering:PV-001",
+                [new MesMaterialRequirementSnapshotLine(
+                    null,
+                    "MAT-REWORK",
+                    null,
+                    5m,
+                    "PCS",
+                    2m,
+                    0m,
+                    "PV-001:MAT-REWORK",
+                    [])]));
+        await using var provider = await CreateMigratedProviderAsync(materialSnapshotProvider);
+        await SeedSourceAsync(provider, "org-001", "env-dev");
+
+        await HandleAsync(provider, CreateEvent());
+
+        await using var assertionScope = provider.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = await db.WorkOrders.SingleAsync(x => x.SourceNcrId == "ncr-001");
+        Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
+        Assert.Equal(WorkOrder.MaterialRequirementSnapshotCapturedStatus, workOrder.MaterialRequirementSnapshotStatus);
+        var requirement = await db.MaterialRequirements.SingleAsync(x => x.WorkOrderId == workOrder.WorkOrderIdValue);
+        Assert.Equal("MAT-REWORK", requirement.MaterialId);
+        Assert.Equal(5m, requirement.RequiredQuantity);
+        Assert.Equal(2m, requirement.AvailableQuantity);
+
+        var queried = await new ListOperationTasksQueryHandler(db).Handle(
+            new ListOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                null,
+                WorkOrderId: workOrder.WorkOrderIdValue),
+            CancellationToken.None);
+        var firstTask = queried.Items.First();
+        Assert.Empty(firstTask.AllowedActions);
+        Assert.Contains("MATERIAL_SHORTAGE: 物料 MAT-REWORK 缺口 3", firstTask.BlockReasons);
+    }
+
+    [MesRealPostgresFact]
+    public async Task Different_ncrs_in_same_scope_create_unique_operation_task_ids()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = await CreateMigratedProviderAsync();
+        await SeedSourceAsync(provider, "org-001", "env-dev");
+        await SeedSourceAsync(
+            provider,
+            "org-001",
+            "env-dev",
+            sourceWorkOrderId: "WO-SOURCE-002",
+            defectNo: "DEF-002",
+            operationTaskPrefix: "OP-SOURCE-002");
+
+        await HandleAsync(provider, CreateEvent());
+        await HandleAsync(provider, CreateEvent(
+            eventId: "evt-rework-002",
+            ncrId: "ncr-002",
+            ncrCode: "NCR-2026-0002",
+            sourceDefectNo: "DEF-002",
+            idempotencyKey: "quality:rework:org-001:env-dev:ncr-002"));
+
+        await using var assertionScope = provider.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var reworkWorkOrderIds = await db.WorkOrders
+            .Where(x => x.WorkOrderType == WorkOrder.ReworkType)
+            .Select(x => x.WorkOrderIdValue)
+            .ToArrayAsync();
+        Assert.Equal(2, reworkWorkOrderIds.Length);
+        var operationTaskIds = await db.OperationTasks
+            .Where(x => reworkWorkOrderIds.Contains(x.WorkOrderId))
+            .Select(x => x.OperationTaskIdValue)
+            .ToArrayAsync();
+        Assert.Equal(4, operationTaskIds.Length);
+        Assert.Equal(4, operationTaskIds.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [MesRealPostgresFact]
     public async Task Same_ncr_with_different_payload_is_dead_lettered_instead_of_treated_as_replay()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -319,7 +400,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
         await SeedSourceAsync(provider, "org-001", "env-dev");
-        await SeedSourceAsync(provider, "org-002", "env-test");
+        await SeedSourceAsync(provider, "org-002", "env-test", workOrderLevelDefect: true);
 
         await HandleAsync(provider, CreateEvent());
         await HandleAsync(provider, CreateEvent(
@@ -342,10 +423,15 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         Assert.Equal([10, 20, 30], workOrderLevelTasks.Select(x => x.OperationSequence));
     }
 
-    private static async Task<ServiceProvider> CreateMigratedProviderAsync()
+    private static Task<ServiceProvider> CreateMigratedProviderAsync() =>
+        CreateMigratedProviderAsync(NoRequirementsSnapshotProvider.Instance);
+
+    private static async Task<ServiceProvider> CreateMigratedProviderAsync(
+        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IMediator>(new NoopMediator());
+        services.AddSingleton(materialSnapshotProvider);
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
             MesPostgresLaneDatabase.ConnectionString,
             npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "mes")));
@@ -362,14 +448,18 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     private static async Task SeedSourceAsync(
         IServiceProvider provider,
         string organizationId,
-        string environmentId)
+        string environmentId,
+        string sourceWorkOrderId = "WO-SOURCE-001",
+        string defectNo = "DEF-001",
+        string operationTaskPrefix = "OP-SOURCE",
+        bool workOrderLevelDefect = false)
     {
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var sourceWorkOrder = WorkOrder.Create(
             organizationId,
             environmentId,
-            "WO-SOURCE-001",
+            sourceWorkOrderId,
             "SKU-001",
             "PV-001",
             10m,
@@ -381,8 +471,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             OperationTask.Queue(
                 organizationId,
                 environmentId,
-                "WO-SOURCE-001",
-                "OP-SOURCE-10",
+                sourceWorkOrderId,
+                $"{operationTaskPrefix}-10",
                 10,
                 "WC-010",
                 ["WC-010-B"],
@@ -396,8 +486,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             OperationTask.Create(
                 organizationId,
                 environmentId,
-                "WO-SOURCE-001",
-                "OP-SOURCE-20",
+                sourceWorkOrderId,
+                $"{operationTaskPrefix}-20",
                 OperationTaskLifecycleStatus.Completed,
                 20,
                 "WC-020",
@@ -414,8 +504,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             OperationTask.Create(
                 organizationId,
                 environmentId,
-                "WO-SOURCE-001",
-                "OP-SOURCE-30",
+                sourceWorkOrderId,
+                $"{operationTaskPrefix}-30",
                 OperationTaskLifecycleStatus.InProgress,
                 30,
                 "WC-030",
@@ -436,9 +526,9 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         db.DefectRecords.Add(DefectRecord.Create(
             organizationId,
             environmentId,
-            "DEF-001",
-            "WO-SOURCE-001",
-            organizationId == "org-002" ? null : "OP-SOURCE-20",
+            defectNo,
+            sourceWorkOrderId,
+            workOrderLevelDefect ? null : $"{operationTaskPrefix}-20",
             "surface-defect",
             3m,
             DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
@@ -510,6 +600,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             db,
             provider.GetRequiredService<MesCodingService>(),
             new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db),
+            provider.GetRequiredService<IMesMaterialRequirementSnapshotProvider>(),
             coordinator ?? provider.GetRequiredService<IMesReworkWorkOrderScopeCoordinator>());
     }
 
@@ -517,6 +608,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         string eventId = "evt-rework-001",
         string organizationId = "org-001",
         string environmentId = "env-dev",
+        string ncrId = "ncr-001",
+        string ncrCode = "NCR-2026-0001",
         string skuCode = "SKU-001",
         decimal quantity = 3m,
         string sourceDefectNo = "DEF-001",
@@ -534,8 +627,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             "user:quality-manager",
             idempotencyKey,
             new NcrReworkRequestedPayload(
-                "ncr-001",
-                "NCR-2026-0001",
+                ncrId,
+                ncrCode,
                 sourceDefectNo,
                 skuCode,
                 quantity,
@@ -614,5 +707,24 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class StaticMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult result)
+        : IMesMaterialRequirementSnapshotProvider
+    {
+        public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
+            MesMaterialRequirementSnapshotRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(result);
+    }
+
+    private sealed class NoRequirementsSnapshotProvider : IMesMaterialRequirementSnapshotProvider
+    {
+        public static readonly NoRequirementsSnapshotProvider Instance = new();
+
+        public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
+            MesMaterialRequirementSnapshotRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(MesMaterialRequirementSnapshotResult.NoRequirements("test:no-requirements"));
     }
 }

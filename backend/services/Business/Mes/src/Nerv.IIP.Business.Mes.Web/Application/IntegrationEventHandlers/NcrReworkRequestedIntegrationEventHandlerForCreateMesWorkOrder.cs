@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
@@ -15,6 +16,7 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
     ApplicationDbContext dbContext,
     MesCodingService codingService,
     IIntegrationEventDeadLetterStore deadLetterStore,
+    IMesMaterialRequirementSnapshotProvider materialSnapshotProvider,
     IMesReworkWorkOrderScopeCoordinator scopeCoordinator)
     : IIntegrationEventHandler<NcrReworkRequestedIntegrationEvent>, ICapSubscribe
 {
@@ -200,9 +202,6 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
             payload.RequestedAtUtc,
             integrationEvent.CorrelationId,
             integrationEvent.EventId);
-        reworkWorkOrder.RecordMaterialRequirementSnapshot(
-            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
-            payload.RequestedAtUtc);
         var reworkRouting = sourceRouting[firstSourceOperationIndex..]
             .Select((source, index) => new RoutingStepSnapshot(
                 $"OPT-{index:D4}-{Guid.CreateVersion7():N}",
@@ -216,6 +215,12 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
         var reworkOperationTasks = reworkWorkOrder.Release(payload.RequestedAtUtc, reworkRouting);
         dbContext.WorkOrders.Add(reworkWorkOrder);
         dbContext.OperationTasks.AddRange(reworkOperationTasks);
+        await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
+            dbContext,
+            materialSnapshotProvider,
+            reworkWorkOrder,
+            payload.RequestedAtUtc,
+            cancellationToken);
     }
 
     private static bool Matches(WorkOrder workOrder, NcrReworkRequestedPayload payload) =>
