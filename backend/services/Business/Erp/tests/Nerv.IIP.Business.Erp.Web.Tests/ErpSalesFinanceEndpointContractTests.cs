@@ -7,6 +7,8 @@ using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.ServiceAuth;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
@@ -50,7 +52,9 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(25, contracts.Length);
+        Assert.Equal(27, contracts.Length);
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ManagePolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ReadPolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/payment" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "registerErpAccountPayablePayment");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payment-executions" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.OperationId == "approveErpPaymentExecution");
@@ -74,6 +78,22 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpPayableBySourceDocument");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpReceivableBySourceDocument");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpCostCandidateBySourceDocument");
+    }
+
+    [Fact]
+    public void Machine_overhead_internal_endpoints_use_scope_bound_caller_policy_without_body_scope()
+    {
+        Assert.Null(typeof(ReconcileWorkCenterMachineOverheadRequest).GetProperty("OrganizationId"));
+        Assert.Null(typeof(ReconcileWorkCenterMachineOverheadRequest).GetProperty("EnvironmentId"));
+        Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("OrganizationId"));
+        Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("EnvironmentId"));
+
+        var post = ErpFinanceEndpointContracts.Get<ReconcileWorkCenterMachineOverheadEndpoint>();
+        var get = ErpFinanceEndpointContracts.Get<ListWorkCenterMachineOverheadReconciliationsEndpoint>();
+        Assert.Equal(MachineOverheadInternalCallerAuthorization.ManagePolicyName, post.AuthorizationPolicy);
+        Assert.Equal(ErpPermissionCodes.FinanceManage, post.PermissionCode);
+        Assert.Equal(MachineOverheadInternalCallerAuthorization.ReadPolicyName, get.AuthorizationPolicy);
+        Assert.Equal(ErpPermissionCodes.FinanceRead, get.PermissionCode);
     }
 
     [Fact]

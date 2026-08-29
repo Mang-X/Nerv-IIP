@@ -94,7 +94,8 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventHand
 
 public sealed class OperationMachineOverheadSettlementOrchestrator(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IErpAdvisoryLockAllocator periodLock)
 {
     public async Task ProcessSettlementAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
@@ -259,6 +260,19 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             return;
         }
 
+        await periodLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.AccountingPeriodCode,
+            cancellationToken);
+        await periodLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            $"{settlement.AccountingPeriodCode}\n{settlement.WorkCenterId}",
+            cancellationToken);
+
         if (existingVoid is not null)
         {
             await TryRecordInboxAsync(
@@ -372,6 +386,21 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
         ResolvedWorkCenterMachineOverheadRate resolved;
         try
         {
+            resolved = await new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(dbContext).Handle(
+                new(payload.OrganizationId, payload.EnvironmentId, payload.WorkCenterId, payload.CompletedAtUtc),
+                cancellationToken);
+            await periodLock.AcquireAsync(
+                ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+                payload.OrganizationId,
+                payload.EnvironmentId,
+                resolved.AccountingPeriodCode,
+                cancellationToken);
+            await periodLock.AcquireAsync(
+                ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+                payload.OrganizationId,
+                payload.EnvironmentId,
+                $"{resolved.AccountingPeriodCode}\n{payload.WorkCenterId}",
+                cancellationToken);
             resolved = await new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(dbContext).Handle(
                 new(payload.OrganizationId, payload.EnvironmentId, payload.WorkCenterId, payload.CompletedAtUtc),
                 cancellationToken);
