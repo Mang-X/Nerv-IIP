@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -249,18 +250,28 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
                 cancellationToken);
             return;
         }
-        if (existingVoid is not null)
+        if (settlement is null)
         {
-            await TryRecordInboxAsync(
+            await AddMissingSettlementDeadLetterAsync(
                 MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
                 integrationEvent,
                 cancellationToken);
             return;
         }
 
-        if (settlement is null)
+        if (!await IsAccountingPeriodOpenAsync(settlement, cancellationToken))
         {
-            await AddMissingSettlementDeadLetterAsync(
+            await AddClosedAccountingPeriodDeadLetterAsync(
+                MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+                integrationEvent,
+                settlement.AccountingPeriodCode,
+                cancellationToken);
+            return;
+        }
+
+        if (existingVoid is not null)
+        {
+            await TryRecordInboxAsync(
                 MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
                 integrationEvent,
                 cancellationToken);
@@ -430,6 +441,16 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
                 && x.EnvironmentId == environmentId
                 && x.OperationTaskId == operationTaskId
                 && (x.WorkOrderId != workOrderId || x.WorkCenterId != workCenterId),
+            cancellationToken);
+
+    private Task<bool> IsAccountingPeriodOpenAsync(
+        OperationMachineOverheadSettlement settlement,
+        CancellationToken cancellationToken)
+        => dbContext.AccountingPeriods.AsNoTracking().AnyAsync(
+            x => x.OrganizationId == settlement.OrganizationId
+                && x.EnvironmentId == settlement.EnvironmentId
+                && x.PeriodCode == settlement.AccountingPeriodCode
+                && x.Status == AccountingPeriodStatus.Open,
             cancellationToken);
 
     private async Task<OperationMachineOverheadSettlementState> GetOrCreateStateAsync(
