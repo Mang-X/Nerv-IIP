@@ -58,7 +58,7 @@ try
         client.BaseAddress = wmsBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
-    builder.Services.AddErpMachineOverheadInternalCallerAuthentication();
+    builder.Services.AddErpMachineOverheadInternalCallerAuthorization(builder.Configuration);
     builder.Services
         .AddFastEndpoints(o =>
         {

@@ -53,8 +53,8 @@ public sealed class ErpSalesFinanceEndpointContractTests
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
         Assert.Equal(27, contracts.Length);
-        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthentication.PolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
-        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthentication.PolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ManagePolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ReadPolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/payment" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "registerErpAccountPayablePayment");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payment-executions" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.OperationId == "approveErpPaymentExecution");
@@ -88,10 +88,12 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("OrganizationId"));
         Assert.Null(typeof(ListWorkCenterMachineOverheadReconciliationsRequest).GetProperty("EnvironmentId"));
 
-        Assert.All(
-            ErpFinanceEndpointContracts.All.Where(contract => contract.EndpointType == typeof(ReconcileWorkCenterMachineOverheadEndpoint)
-                || contract.EndpointType == typeof(ListWorkCenterMachineOverheadReconciliationsEndpoint)),
-            contract => Assert.Equal(MachineOverheadInternalCallerAuthentication.PolicyName, contract.AuthorizationPolicy));
+        var post = ErpFinanceEndpointContracts.Get<ReconcileWorkCenterMachineOverheadEndpoint>();
+        var get = ErpFinanceEndpointContracts.Get<ListWorkCenterMachineOverheadReconciliationsEndpoint>();
+        Assert.Equal(MachineOverheadInternalCallerAuthorization.ManagePolicyName, post.AuthorizationPolicy);
+        Assert.Equal(ErpPermissionCodes.FinanceManage, post.PermissionCode);
+        Assert.Equal(MachineOverheadInternalCallerAuthorization.ReadPolicyName, get.AuthorizationPolicy);
+        Assert.Equal(ErpPermissionCodes.FinanceRead, get.PermissionCode);
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 
@@ -117,10 +118,8 @@ public sealed class AuthenticatedErpMachineOverheadInternalScopeAuthorizer
         var requestedOrganizationId = RequiredHeader(context, "X-Organization-Id");
         var requestedEnvironmentId = RequiredHeader(context, "X-Environment-Id");
         var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var authorizedOrganizationId = context.User.FindFirstValue(
-            MachineOverheadInternalCallerAuthentication.OrganizationClaim);
-        var authorizedEnvironmentId = context.User.FindFirstValue(
-            MachineOverheadInternalCallerAuthentication.EnvironmentClaim);
+        var authorizedOrganizationId = context.User.FindFirstValue(ScopedCallerClaimTypes.OrganizationId);
+        var authorizedEnvironmentId = context.User.FindFirstValue(ScopedCallerClaimTypes.EnvironmentId);
         if (string.IsNullOrWhiteSpace(subject)
             || !string.Equals(requestedOrganizationId, authorizedOrganizationId, StringComparison.Ordinal)
             || !string.Equals(requestedEnvironmentId, authorizedEnvironmentId, StringComparison.Ordinal))

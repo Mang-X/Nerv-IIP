@@ -278,7 +278,7 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
                 new(
                     "org-pg", "env-pg", "WC-PG", "2026-06", 30_000m, 10_000m, "CNY",
                     8 * TimeSpan.TicksPerHour, AbnormalDowntimeDisposition.PeriodExpense,
-                    "user:accountant", "ledger:2026-06", "period reconciliation",
+                    "internal-service:finance-manager-a", "ledger:2026-06", "period reconciliation",
                     new DateTimeOffset(2026, 6, 30, 16, 0, 0, TimeSpan.Zero)),
                 CancellationToken.None);
             await db.SaveChangesAsync();
@@ -293,6 +293,8 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         Assert.Equal(39_180m, reconciliation.UnderOverAppliedTotalAmount);
         Assert.Equal(29_380m, reconciliation.UnallocatedFixedOverheadAmount);
         Assert.Equal(8m, reconciliation.AbnormalDowntimeHours);
+        Assert.Equal("internal-service:finance-manager-a", reconciliation.RecordedBy);
+        Assert.Equal("ledger:2026-06", reconciliation.SourceReference);
 
         await using (var closeTransaction = await db.Database.BeginTransactionAsync())
         {
