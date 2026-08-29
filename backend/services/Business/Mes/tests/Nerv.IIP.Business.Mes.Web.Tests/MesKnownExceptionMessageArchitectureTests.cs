@@ -45,6 +45,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConfirmLineSideMaterialReceiptCommandHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConvertPlanToWorkOrderCommandHandler", "CreateWorkOrderAsync", 2, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "Handle", 9, "已有中文静态消息，非本层英文候选"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "ResolveFrozenMaterialSelectionAsync", 2, "冻结物料候选不存在或审计归属歧义的中文业务拒绝"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ForceReleaseQualityHoldCommandHandler", "Handle", 2, "同步公开质量保留强制释放拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "RecordDefectCommandHandler", "Handle", 2, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReleaseWorkOrderCommandHandler", "Handle", 6, "稳定错误码与 readiness code 排除"),
@@ -60,7 +61,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/TelemetryProductionReportCandidateQueries.cs", "GetTelemetryProductionReportCandidateQueryHandler", "Handle", 1, "同步公开遥测报工候选查询"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrders/GetWorkOrderTransformationQuery.cs", "GetWorkOrderTransformationQueryHandler", "Handle", 1, "同步公开工单转换读回不存在拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialReadinessQueryHandler", "Handle", 1, "dynamic readiness message 透传"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialIssueRequestQueryHandler", "Handle", 1, "领料详情在当前组织与环境 scope 内不存在的统一中文拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMesWorkOrderDetailQueryHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/PrevalidateMaterialScanQuery.cs", "MaterialScanPrevalidationErrors", "SourceUnavailable", 1, "固定中文外层消息；provider、异常与 HTTP reason 仅进入受控日志"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesAuthenticatedActor", "Resolve", 3, "MesEndpoints internal/header 分支排除"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesQualityHoldRequestContext", "Resolve", 1, "MesEndpoints internal/header 分支排除"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/WorkOrderTransformationEndpoints.cs", "GetWorkOrderTransformationEndpoint", "HandleAsync", 1, "同步公开工单转换读回路由参数校验"),
@@ -72,9 +75,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(58, discovered.Count);
-        Assert.Equal(140, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(137, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(61, discovered.Count);
+        Assert.Equal(144, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(140, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);

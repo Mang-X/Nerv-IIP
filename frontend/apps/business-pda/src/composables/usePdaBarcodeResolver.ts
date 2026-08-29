@@ -33,7 +33,7 @@ interface BarcodeResolverOptions {
   searchCandidates?: (query: string) => Promise<BusinessConsoleSearchEnvelope>
 }
 
-function isForbidden(error: unknown) {
+export function isForbiddenRequestError(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const value = error as { status?: number; response?: { status?: number } }
   return value.status === 403 || value.response?.status === 403
@@ -91,7 +91,9 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
     { flush: 'sync' },
   )
 
-  async function resolve(value: string): Promise<RouteLocationRaw | null> {
+  async function resolveCandidate(
+    value: string,
+  ): Promise<BusinessConsoleBarcodeResolveCandidate | null> {
     const currentGeneration = ++generation
     const normalized = value.trim()
     const scope = currentScope()
@@ -127,9 +129,8 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
           status.value = 'unsupported'
           return null
         }
-        const route = barcodeCandidateRoute(receivedCandidates[0]!)
-        status.value = route ? 'resolved' : 'unsupported'
-        return route
+        status.value = 'resolved'
+        return receivedCandidates[0]!
       }
       if (envelope.data.status === 'ambiguous') {
         candidates.value = receivedCandidates
@@ -148,13 +149,26 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
       return null
     } catch (error) {
       if (currentGeneration !== generation) return null
-      status.value = isForbidden(error) ? 'forbidden' : 'error'
+      status.value = isForbiddenRequestError(error) ? 'forbidden' : 'error'
       return null
     }
   }
 
-  function selectCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
+  async function resolve(value: string): Promise<RouteLocationRaw | null> {
+    const candidate = await resolveCandidate(value)
+    if (!candidate) return null
     const route = barcodeCandidateRoute(candidate)
+    if (!route) status.value = 'unsupported'
+    return route
+  }
+
+  function chooseCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
+    status.value = 'resolved'
+    return candidate
+  }
+
+  function selectCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
+    const route = barcodeCandidateRoute(chooseCandidate(candidate))
     if (!route) status.value = 'unsupported'
     return route
   }
@@ -185,7 +199,7 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
         scannedValue.value !== query
       )
         return
-      searchStatus.value = isForbidden(error) ? 'forbidden' : 'error'
+      searchStatus.value = isForbiddenRequestError(error) ? 'forbidden' : 'error'
     }
   }
 
@@ -197,6 +211,8 @@ export function usePdaBarcodeResolver(options: BarcodeResolverOptions) {
     searchStatus,
     searchResults,
     resolve,
+    resolveCandidate,
+    chooseCandidate,
     selectCandidate,
     searchUnknownCandidates,
     cancel: invalidate,

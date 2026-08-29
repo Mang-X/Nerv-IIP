@@ -4,14 +4,166 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
-    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 2 and its explicit exclusion of substitute inventory aggregation.
+    // Contract: ProviderBehavior + Regression. Authority: Issue #2223 review 5036479152.
+    // Serial candidate/UOM/site awaits keep peak concurrency at one; removing the shared bound lets it exceed eight.
     [Fact]
-    public async Task Http_provider_freezes_normalized_mbom_substitute_candidates_without_counting_their_inventory_yet()
+    public async Task Http_provider_bounds_parallel_inventory_queries_across_candidates_uoms_and_sites()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
+            "MAT-PRIMARY",
+            "ea",
+            "MAT-ALT-A;MAT-ALT-B;MAT-ALT-C;MAT-ALT-D");
+        var masterDataHandler = new StubHttpMessageHandler(_ => JsonEnvelope(new
+        {
+            resources = new[]
+            {
+                new
+                {
+                    resourceType = "uom-conversion",
+                    code = "box->ea",
+                    displayName = "box to ea",
+                    active = true,
+                    snapshotVersion = "2026-06-01T00:00:00Z",
+                    effectiveFrom = "2026-01-01",
+                    effectiveTo = (string?)null,
+                    fromUomCode = "box",
+                    toUomCode = "ea",
+                    factor = 2m,
+                    offset = 0m,
+                    precision = 0,
+                    roundingMode = "half-up",
+                },
+            },
+            total = 1,
+            truncated = false,
+            limit = (int?)null,
+        }));
+        var releaseInventory = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstRequestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var twoRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inventoryRequests = new List<string>();
+        var concurrencyLock = new object();
+        var activeRequests = 0;
+        var peakConcurrency = 0;
+        var inventoryHandler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            lock (concurrencyLock)
+            {
+                inventoryRequests.Add(pathAndQuery);
+                activeRequests++;
+                peakConcurrency = Math.Max(peakConcurrency, activeRequests);
+                if (activeRequests == 1)
+                {
+                    firstRequestStarted.TrySetResult();
+                }
+
+                if (activeRequests >= 2)
+                {
+                    twoRequestsStarted.TrySetResult();
+                }
+            }
+
+            try
+            {
+                await releaseInventory.Task.WaitAsync(cancellationToken);
+                return JsonEnvelope(Availability("candidate", "ea", "production", 1m));
+            }
+            finally
+            {
+                lock (concurrencyLock)
+                {
+                    activeRequests--;
+                }
+            }
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMasterDataHttpClient(new HttpClient(masterDataHandler) { BaseAddress = new Uri("http://master-data") }),
+            new MesMaterialRequirementInventoryOptions { SiteCodes = ["SITE-A", "SITE-B"] });
+
+        var snapshotTask = provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
+        try
+        {
+            await TestTimeout.RunAsync(
+                operation: "observe the first Inventory availability request",
+                action: token => new ValueTask(firstRequestStarted.Task.WaitAsync(token)),
+                timeout: TimeSpan.FromSeconds(5));
+            await TestTimeout.RunAsync(
+                operation: "observe overlapping Inventory availability requests",
+                action: token => new ValueTask(twoRequestsStarted.Task.WaitAsync(token)),
+                timeout: TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            releaseInventory.TrySetResult();
+        }
+
+        var result = await snapshotTask;
+
+        Assert.InRange(peakConcurrency, 2, 8);
+        Assert.Equal(20, inventoryRequests.Count);
+        Assert.All(inventoryRequests, pathAndQuery =>
+        {
+            Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+            Assert.True(
+                pathAndQuery.Contains("siteCode=SITE-A", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("siteCode=SITE-B", StringComparison.Ordinal));
+            Assert.True(
+                pathAndQuery.Contains("uomCode=ea", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal));
+        });
+        Assert.Equal(30m, Assert.Single(result.Lines).AvailableQuantity);
+    }
+
+    // Contract: ProviderBehavior + Regression. Authority: Issue #2223 review 5036805693.
+    // Treating one failed candidate/UOM/site branch as zero would publish a partial aggregate as a complete snapshot.
+    [Fact]
+    public async Task Http_provider_fails_the_whole_snapshot_when_any_inventory_candidate_branch_fails()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
+            "MAT-PRIMARY",
+            "PCS",
+            "MAT-ALT-A");
+        var inventoryRequests = new List<string>();
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+        {
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            inventoryRequests.Add(pathAndQuery);
+            return pathAndQuery.Contains("skuCode=MAT-ALT-A", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = JsonContent.Create(new { message = "candidate unavailable" }),
+                }
+                : JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 5m));
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetSnapshotAsync(
+            NewSnapshotRequest(),
+            CancellationToken.None));
+
+        Assert.Contains("MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE", exception.Message);
+        Assert.Contains("Inventory", exception.Message);
+        Assert.Contains("503", exception.Message);
+        Assert.Equal(2, inventoryRequests.Count);
+    }
+
+    // Contract: DomainInvariant + Regression. Authority: Issue #2223 acceptance 1-2.
+    // Removing substitute queries, counting the primary requirement once per candidate, or skipping candidate normalization makes this test fail.
+    [Fact]
+    public async Task Http_provider_counts_the_normalized_substitute_pool_without_repeating_the_primary_requirement()
     {
         var productEngineeringHandler = SingleMaterialProductEngineeringHandler(
             "MAT-PRIMARY",
@@ -20,8 +172,22 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         var inventoryRequests = new List<string>();
         var inventoryHandler = new StubHttpMessageHandler(request =>
         {
-            inventoryRequests.Add(request.RequestUri!.PathAndQuery);
-            return JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 3m));
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            inventoryRequests.Add(pathAndQuery);
+            Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("uomCode=PCS", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("siteCode=production", pathAndQuery, StringComparison.Ordinal);
+            return pathAndQuery switch
+            {
+                var value when value.Contains("skuCode=MAT-PRIMARY", StringComparison.Ordinal) =>
+                    JsonEnvelope(Availability("MAT-PRIMARY", "PCS", "production", 3m)),
+                var value when value.Contains("skuCode=mat-alt-a", StringComparison.Ordinal) =>
+                    JsonEnvelope(Availability("mat-alt-a", "PCS", "production", 4m)),
+                var value when value.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal) =>
+                    JsonEnvelope(Availability("MAT-ALT-B", "PCS", "production", 5m)),
+                _ => throw new InvalidOperationException($"Unexpected Inventory request: {pathAndQuery}"),
+            };
         });
         var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
             new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
@@ -32,15 +198,18 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
 
         var line = Assert.Single(result.Lines);
         Assert.Equal(["mat-alt-a", "MAT-ALT-B"], line.SubstituteMaterialIds);
-        Assert.Equal(3m, line.AvailableQuantity);
-        Assert.Single(inventoryRequests);
-        Assert.Contains("skuCode=MAT-PRIMARY", inventoryRequests[0], StringComparison.Ordinal);
+        Assert.Equal(10m, line.RequiredQuantity);
+        Assert.Equal(12m, line.AvailableQuantity);
+        Assert.Equal(3, inventoryRequests.Count);
+        Assert.Single(inventoryRequests, x => x.Contains("skuCode=MAT-PRIMARY", StringComparison.Ordinal));
+        Assert.Single(inventoryRequests, x => x.Contains("skuCode=mat-alt-a", StringComparison.Ordinal));
+        Assert.Single(inventoryRequests, x => x.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task Http_provider_floors_converted_availability_for_material_readiness()
     {
-        var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-BOXED", "ea");
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-BOXED", "ea", "MAT-ALT-BOXED");
         var masterDataHandler = new StubHttpMessageHandler(_ => JsonEnvelope(new
         {
             resources = new[]
@@ -69,9 +238,12 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         var inventoryHandler = new StubHttpMessageHandler(request =>
         {
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal))
+            Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+            if (pathAndQuery.Contains("skuCode=MAT-ALT-BOXED", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal))
             {
-                return JsonEnvelope(Availability("MAT-BOXED", "box", "production", 1m));
+                return JsonEnvelope(Availability("MAT-ALT-BOXED", "box", "production", 1m));
             }
 
             return JsonEnvelope(Availability("MAT-BOXED", "ea", "production", 0m));
@@ -86,6 +258,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
 
         var line = Assert.Single(result.Lines);
         Assert.Equal("ea", line.UomCode);
+        Assert.Equal(["MAT-ALT-BOXED"], line.SubstituteMaterialIds);
         Assert.Equal(2m, line.AvailableQuantity);
     }
 
@@ -367,11 +540,21 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
                 return JsonEnvelope(Availability("MAT-OIL", "L", 12m));
             }
 
-            if (pathAndQuery.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal))
+            if (pathAndQuery.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("uomCode=KG", StringComparison.Ordinal))
             {
-                Assert.Contains("uomCode=KG", pathAndQuery, StringComparison.Ordinal);
                 Assert.Contains("siteCode=production", pathAndQuery, StringComparison.Ordinal);
                 return JsonEnvelope(Availability("MAT-ALT-B", "KG", 3m));
+            }
+
+            if (pathAndQuery.Contains("skuCode=mat-alt-a", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("skuCode=MAT-ALT-A", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("skuCode=MAT-ALT-B", StringComparison.Ordinal) ||
+                pathAndQuery.Contains("skuCode=mat-alt-shared", StringComparison.Ordinal))
+            {
+                Assert.Contains("siteCode=production", pathAndQuery, StringComparison.Ordinal);
+                var uomCode = pathAndQuery.Contains("uomCode=KG", StringComparison.Ordinal) ? "KG" : "L";
+                return JsonEnvelope(Availability("candidate", uomCode, 0m));
             }
 
             throw new InvalidOperationException($"Unexpected Inventory request: {pathAndQuery}");
@@ -394,7 +577,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
 
         Assert.Equal(MesMaterialRequirementSnapshotStatus.Captured, result.Status);
         Assert.Equal(2, result.Lines.Count);
-        Assert.Equal(2, inventoryRequests.Count);
+        Assert.Equal(6, inventoryRequests.Count);
         var oil = Assert.Single(result.Lines, x => x.MaterialId == "MAT-OIL");
         Assert.Equal(15m, oil.RequiredQuantity);
         Assert.Equal(12m, oil.AvailableQuantity);
@@ -600,11 +783,23 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         });
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handle) : HttpMessageHandler
+    private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle;
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handle)
+            : this((request, _) => Task.FromResult(handle(request)))
+        {
+        }
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle)
+        {
+            this.handle = handle;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            return Task.FromResult(handle(request));
+            return handle(request, cancellationToken);
         }
     }
 

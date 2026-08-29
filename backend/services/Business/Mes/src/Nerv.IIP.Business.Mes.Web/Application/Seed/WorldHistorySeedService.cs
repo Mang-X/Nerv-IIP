@@ -719,7 +719,9 @@ public sealed class WorldHistorySeedService(
                 completesOperation: isLast && execution == WorldHistoryExecution.Closed,
                 reportedAtUtc,
                 scrapReasonCode: scrap > 0m ? "SCRAP-DIM" : null,
-                producedLotNo: WorldHistoryMesSpec.ProducedLotNo(plan.WorkOrderNo));
+                producedLotNo: WorldHistoryMesSpec.ProducedLotNo(plan.WorkOrderNo),
+                // 报工人就是这道工序的派工对象；追溯图的人员节点据此点亮。
+                reportedBy: finalTask.Assignee.UserId);
             dbContext.ProductionReports.Add(report);
 
             workOrder.RecordProductionProgress(good, scrap, reportedAtUtc);

@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（7 个 spec / 64 个用例）
+### e2e spec 清单（8 个 spec / 68 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -38,6 +38,11 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   403 forbidden 留在扫码页，以及过期双强 ID 在目标页被当前主体授权范围拒绝；唯一结果用例同时
   记录 Business Console mutation 请求清单，证明除只读语义的 `POST barcode/resolve` 外没有调用
   扫码记录或业务写 endpoint。该层仍不证明真实后端、FullChain、真机或实体扫码枪。
+- `e2e/mes-scan-prevalidation.spec.ts`（3）：375×812 mock Chromium 覆盖 MES 四现场页的
+  歧义、未知、不支持和无权状态；报工物料/人员扫码只消费当前工单工序 pair 的服务端预校验，
+  错误扫码保持写门禁且业务写请求为零，正确物料扫码选择服务端核验批次并随报工 payload 提交；
+  领料连续扫码丢弃迟到结果，失败状态由后续正确扫码解除。该层不证明真实后端、FullChain、
+  真机或实体扫码枪。
 - `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；

@@ -27,7 +27,7 @@ const state = vi.hoisted(() => ({
   row: {
     handoverId: 'handover-001',
     shiftId: 'EARLY',
-    teamId: 'TEAM-A',
+    teamId: 'TEAM-A' as string | undefined,
     teamName: '总装早班一组' as string | undefined,
     handoverStatus: 'open',
     openIssueCount: 1,
@@ -113,7 +113,10 @@ const stubs = {
       </section>
     `,
   },
-  NvDialog: {
+  // NvDialog 是 reka-ui DialogRoot 的重命名再导出（frontend/packages/ui/src/components/pc/dialog/index.ts），
+  // <script setup> 编译期直接绑定导入标识符，不经过按名解析；stub 必须按其真实组件名 DialogRoot 匹配，
+  // 否则真实 DialogRoot（内容始终无条件渲染 slot）会绕过本 stub，dialog 的开合状态在测试里恒为"已渲染"。
+  DialogRoot: {
     props: ['open'],
     emits: ['update:open'],
     template: '<div v-if="open"><slot /></div>',
@@ -207,6 +210,10 @@ describe('MES handovers read-face guard', () => {
   it('shows neutral placeholders instead of raw identifiers when the directory cannot resolve them', () => {
     state.catalogResolved = false
     state.row.teamName = undefined
+    // teamId 留着业务码（如 'TEAM-A'）时，resolveTeamLabel 在目录未解出时会兜底显示码本身
+    // （人可读，非原始标识符，属预期行为，见 handovers.vue 的 resolveTeamLabel）；只有真的没有
+    // teamId 时才会落到 '未指派'，这里显式清空 teamId 来触发这条兜底分支。
+    state.row.teamId = undefined
     const wrapper = mountPage()
     const visibleText = wrapper.text()
 
@@ -214,6 +221,37 @@ describe('MES handovers read-face guard', () => {
     expect(visibleText).toContain('未指派')
     expect(visibleText).not.toMatch(UUID_PATTERN)
     expect(visibleText).not.toMatch(TECHNICAL_USER_PATTERN)
+  })
+
+  it('disables the create button and explains why when the user lacks manage permission', () => {
+    state.principal.permissionCodes = []
+    const wrapper = mountPage()
+
+    const button = wrapper.get('[aria-label="新建班次交接"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe('没有交接单管理权限')
+  })
+
+  it('does not open the create dialog when the entry guard trips between render and click (isolated stale-DOM interleave)', async () => {
+    // 以确定性交错模拟 stale-DOM 时序：按钮渲染时守卫未拦截（未禁用），业务上下文在同一 tick 内
+    // 失效——Vue 的 DOM patch 要到下一个 microtask 才落地，而 vue-test-utils 的 trigger() 派发前
+    // 会同步读取当前 DOM 的 disabled 属性；不等 nextTick 就直接改状态再点击，能在 DOM 还没来得及
+    // 重渲染成禁用之前触发点击，从而真正跑进 openCreateDialog 内部的
+    // `if (createEntryBlocker.value) return`。不能证明项：本用例只证明「blocker 为真时该行会
+    // 早返回」，不证明真实浏览器点击与 Vue microtask flush 之间确有这个时序窗口——那属于
+    // ProviderBehavior，本 lane（jsdom + vue-test-utils）证不到。
+    // `reactive(state.filters)` 拿到的是 Vue 按目标对象缓存的同一个响应式代理（组件内部
+    // useMesShiftHandovers() 拿到的也是它），必须经这个代理写，直接改 state.filters 的裸对象
+    // 不会触发依赖更新。这是本票要补的鉴别力：删掉那一行，此用例必须变红。
+    const wrapper = mountPage()
+    const button = wrapper.get('[aria-label="新建班次交接"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    reactive(state.filters).environmentId = ''
+    await button.trigger('click')
+
+    expect(mutations.makeIdempotencyKey).not.toHaveBeenCalled()
+    expect(mutations.createShiftHandover).not.toHaveBeenCalled()
   })
 
   it('validates the create form before issuing a mutation', async () => {
@@ -299,7 +337,7 @@ describe('MES handovers read-face guard', () => {
     expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，服务端已受理。')
   })
 
-  it('does not repeat an uncertain accept after the refreshed list confirms the state change', async () => {
+  it('closes the accept dialog and disables the row entry once the refreshed list confirms an uncertain accept', async () => {
     mutations.acceptShiftHandover.mockRejectedValueOnce(new Error('request timed out'))
     mutations.refreshHandovers.mockImplementationOnce(async () => {
       state.row.handoverStatus = 'accepted'
@@ -313,9 +351,11 @@ describe('MES handovers read-face guard', () => {
     expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
     expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
     expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，列表已确认。')
-
-    await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
-    await flushPromises()
+    // 刷新确认已接班后，submitAccept 会主动关闭弹层（handovers.vue:361）；行内接班按钮也随之
+    // 因 canAcceptRow() 不再满足 isOpenHandover() 而禁用——不留重复提交的入口，不是"表单还开着
+    // 但静默吞掉第二次提交"。
+    expect(wrapper.find('[data-testid="accept-handover-form"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="accept-handover"]').attributes('disabled')).toBeDefined()
     expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
   })
 

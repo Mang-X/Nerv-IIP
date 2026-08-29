@@ -4113,6 +4113,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     shortageQuantity?: number;
     status?: string;
     shortageStage?: string | null;
+    substituteMaterialIds?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRequest = {
@@ -4180,10 +4181,72 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     materialCode?: string | null;
     isSupplementary?: boolean;
     originalMaterialIssueRequestNo?: string | null;
+    substitutedMaterialId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestRow = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestDetailRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesMaterialScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesMaterialScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesMaterialScanDecision;
+    reasonCode: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    materialId?: string | null;
+    materialLotId?: string | null;
+    materialQualification?: string | null;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesMaterialScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesMaterialScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesContextScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesContextScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesContextScanDecision;
+    reasonCode: string;
+    workOrderId: string;
+    operationTaskId: string;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesContextScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesContextScanObjectType = 'operationTask' | 'deviceAsset' | 'personnel';
+
+export type NervIipContractsMesMesContextScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
@@ -4344,6 +4407,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
      */
     operationActualMachineHours?: number | null;
+    /**
+     * 提交本条报工的操作人引用；升级前的历史报工为 null。
+     */
+    reportedBy?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {
@@ -4390,6 +4457,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
      */
     operationActualMachineHours?: number | null;
+    /**
+     * 提交本条报工的操作人引用；升级前的历史报工为 null。
+     */
+    reportedBy?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {
@@ -4678,6 +4749,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEvent
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow>;
     total?: number;
+    reasonSummary?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
@@ -4694,6 +4766,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
     workCenterId?: string | null;
     reasonCode?: string | null;
+    reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow = {
+    reasonCode?: string;
+    openCount?: number;
+    durationMinutes?: number;
+    reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {
@@ -4797,6 +4881,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     nodeType?: string;
     displayName?: string;
     status?: string;
+    /**
+     * 该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。
+     */
+    occurredAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTraceabilityEdge = {
@@ -15089,6 +15177,110 @@ export type ListBusinessConsoleMesMaterialIssueRequestsResponses = {
 
 export type ListBusinessConsoleMesMaterialIssueRequestsResponse = ListBusinessConsoleMesMaterialIssueRequestsResponses[keyof ListBusinessConsoleMesMaterialIssueRequestsResponses];
 
+export type GetBusinessConsoleMesMaterialIssueRequestData = {
+    body?: never;
+    path: {
+        requestId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}';
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestRow;
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestResponse = GetBusinessConsoleMesMaterialIssueRequestResponses[keyof GetBusinessConsoleMesMaterialIssueRequestResponses];
+
+export type PrevalidateBusinessConsoleMesMaterialScanData = {
+    body: NervIipContractsMesMesMaterialScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/material-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanError = PrevalidateBusinessConsoleMesMaterialScanErrors[keyof PrevalidateBusinessConsoleMesMaterialScanErrors];
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponse = PrevalidateBusinessConsoleMesMaterialScanResponses[keyof PrevalidateBusinessConsoleMesMaterialScanResponses];
+
+export type PrevalidateBusinessConsoleMesContextScanData = {
+    body: NervIipContractsMesMesContextScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/context-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesContextScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesContextScanError = PrevalidateBusinessConsoleMesContextScanErrors[keyof PrevalidateBusinessConsoleMesContextScanErrors];
+
+export type PrevalidateBusinessConsoleMesContextScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesContextScanResponse = PrevalidateBusinessConsoleMesContextScanResponses[keyof PrevalidateBusinessConsoleMesContextScanResponses];
+
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest;
     path: {
@@ -16026,6 +16218,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         shiftId?: string | null;
         deviceAssetId?: string | null;
         workOrderId?: string | null;
+        reasonCode?: string | null;
         skip?: number;
         take?: number;
     };
@@ -16636,6 +16829,7 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         userId?: string | null;
         skillCode?: string | null;
         workshopCode?: string | null;
+        deviceAssetId?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };

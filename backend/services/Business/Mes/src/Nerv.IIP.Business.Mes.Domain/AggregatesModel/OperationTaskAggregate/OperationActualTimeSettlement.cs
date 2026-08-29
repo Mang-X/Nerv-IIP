@@ -24,6 +24,10 @@ public sealed class OperationActualTimeSettlement : Entity<OperationActualTimeSe
         CompletedAtUtc = snapshot.CompletedAtUtc;
         ActualLaborTicks = snapshot.ActualLaborTicks;
         ActualMachineTicks = snapshot.ActualMachineTicks;
+        DeviceAssetId = snapshot.DeviceAssetId;
+        MachineTimeStatus = snapshot.MachineTimeStatus;
+        BillableMachineTicks = snapshot.BillableMachineTicks;
+        MachineTimeBasisCode = snapshot.MachineTimeBasisCode;
         _coveredReports.AddRange(snapshot.CoveredProductionReportNos.Select(reportNo =>
             OperationActualTimeSettlementReport.Create(
                 snapshot.OrganizationId,
@@ -42,6 +46,10 @@ public sealed class OperationActualTimeSettlement : Entity<OperationActualTimeSe
     public DateTimeOffset CompletedAtUtc { get; private set; }
     public long ActualLaborTicks { get; private set; }
     public long ActualMachineTicks { get; private set; }
+    public string? DeviceAssetId { get; private set; }
+    public MachineTimeFactStatus MachineTimeStatus { get; private set; }
+    public long? BillableMachineTicks { get; private set; }
+    public string? MachineTimeBasisCode { get; private set; }
     public DateTimeOffset? VoidedAtUtc { get; private set; }
     public IReadOnlyCollection<OperationActualTimeSettlementReport> CoveredReports => _coveredReports;
 
@@ -52,6 +60,8 @@ public sealed class OperationActualTimeSettlement : Entity<OperationActualTimeSe
         {
             throw new ArgumentOutOfRangeException(nameof(snapshot), "Settlement revision must be positive.");
         }
+
+        ValidateMachineTimeFact(snapshot);
 
         return new OperationActualTimeSettlement(snapshot);
     }
@@ -67,7 +77,36 @@ public sealed class OperationActualTimeSettlement : Entity<OperationActualTimeSe
             CompletedAtUtc,
             ActualLaborTicks,
             ActualMachineTicks,
-            _coveredReports.Select(x => x.ReportNo).Order(StringComparer.Ordinal).ToArray());
+            _coveredReports.Select(x => x.ReportNo).Order(StringComparer.Ordinal).ToArray(),
+            DeviceAssetId,
+            MachineTimeStatus,
+            BillableMachineTicks,
+            MachineTimeBasisCode);
+
+    private static void ValidateMachineTimeFact(OperationActualTimeSettlementSnapshot snapshot)
+    {
+        if (snapshot.MachineTimeStatus == MachineTimeFactStatus.Available)
+        {
+            if (string.IsNullOrWhiteSpace(snapshot.DeviceAssetId) ||
+                snapshot.BillableMachineTicks is null or < 0 ||
+                !string.Equals(
+                    snapshot.MachineTimeBasisCode,
+                    MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1,
+                    StringComparison.Ordinal))
+            {
+                throw new ArgumentException("Available machine time requires one device, nonnegative billable ticks, and the governed basis code.", nameof(snapshot));
+            }
+
+            return;
+        }
+
+        if (snapshot.DeviceAssetId is not null ||
+            snapshot.BillableMachineTicks is not null ||
+            snapshot.MachineTimeBasisCode is not null)
+        {
+            throw new ArgumentException("Non-available machine time cannot carry a billable machine snapshot.", nameof(snapshot));
+        }
+    }
 
     public void Void(DateTimeOffset voidedAtUtc)
     {

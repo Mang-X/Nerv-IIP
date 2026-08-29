@@ -44,7 +44,9 @@ public sealed record RecordProductionReportCommand(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+    string Source = "manual",
+    // 操作人由前线 HTTP 边界从已认证 principal 注入，不由业务载荷携带。
+    string? ReportedBy = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
 {
     internal bool PersistsCallerIntentReceipt { get; private init; } = true;
 
@@ -67,7 +69,8 @@ public sealed record RecordProductionReportCommand(
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
         string? SerialNo = null,
-        string Source = "manual")
+        string Source = "manual",
+        string? ReportedBy = null)
         : this(
             OrganizationId,
             EnvironmentId,
@@ -94,7 +97,8 @@ public sealed record RecordProductionReportCommand(
             DefectRecordNo,
             ProducedLotNo,
             SerialNo,
-            Source)
+            Source,
+            ReportedBy)
     {
         PersistsCallerIntentReceipt = false;
     }
@@ -122,6 +126,7 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
             .WithMessage("Production report source must be manual or telemetry.");
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ReportedBy).MaximumLength(ProductionReport.ReportedByMaxLength);
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -132,7 +137,10 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class RecordProductionReportCommandHandler(
+    ApplicationDbContext dbContext,
+    IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
@@ -229,6 +237,15 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             producedLotNo = $"{request.WorkOrderId}-{request.OperationTaskId}-{allocation.Code}";
         }
 
+        var oeeProjection = ProductionReportOeeProjectionFactory.Create(operationTask);
+        var oeeDimensionSnapshot = await oeeDimensionSnapshotProvider.CaptureAsync(
+            new ProductionReportOeeDimensionSnapshotRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                operationTask.DeviceAssetId,
+                operationTask.WorkCenterId,
+                operationTask.ShiftId),
+            cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
@@ -244,9 +261,11 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.DefectRecordNo,
             producedLotNo,
             request.SerialNo,
-            ProductionReportOeeProjectionFactory.Create(operationTask),
+            oeeProjection,
             request.Source,
-            consumedMaterialLots.Count);
+            consumedMaterialLots.Count,
+            request.ReportedBy,
+            oeeDimensionSnapshot);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)

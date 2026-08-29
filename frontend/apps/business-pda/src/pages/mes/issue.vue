@@ -15,7 +15,6 @@ import {
   NvListRow,
   NvMobileResult,
   NvMobileToast,
-  NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -30,6 +29,9 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { describeRequestError } from '@/api/request-timeout'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -136,6 +138,12 @@ const submitting = ref(false)
 // 开始新操作（重新打开新建/接收表单、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
 const returnOperationKey = ref('')
+const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
+const scanGuarded = scanGate.guarded
+const scannedWorkOrderId = ref('')
+const scannedOperationTaskId = ref('')
+const scannedMaterialIssueRequestId = ref('')
 
 // --- 新建领料表单 ---
 const creating = ref(false)
@@ -159,6 +167,7 @@ const createSheetOpen = computed({
 })
 
 function openCreate() {
+  scanGate.clear('list')
   result.value = null
   selectedWorkOrder.value = null
   issueMaterialId.value = ''
@@ -176,6 +185,7 @@ function chooseWorkOrder(wo: WorkOrder) {
 }
 
 async function submitCreate() {
+  if (scanGuarded.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const materialId = issueMaterialId.value.trim()
   if (!workOrderId || materialId === '') return
@@ -246,6 +256,7 @@ function canReceive(req: IssueRequest) {
 
 function openReceive(req: IssueRequest) {
   if (!canReceive(req)) return
+  scanGate.clear('list')
   result.value = null
   // 新一轮线边接收 → 作废上一个幂等键
   operationKey.value = ''
@@ -263,6 +274,7 @@ function canReturn(req: IssueRequest) {
 
 function openReturn(req: IssueRequest) {
   if (!canReturn(req)) return
+  scanGate.clear('list')
   result.value = null
   returnOperationKey.value = makeIdempotencyKey()
   returning.value = req
@@ -290,6 +302,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function submitReceive() {
+  if (scanGuarded.value) return
   const req = receiving.value
   const requestId = req?.requestId
   if (!requestId) return
@@ -333,6 +346,7 @@ async function submitReceive() {
 }
 
 async function submitReturn() {
+  if (scanGuarded.value) return
   const req = returning.value
   const requestId = req?.requestId
   const quantity = returnedQuantity.value
@@ -388,7 +402,7 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
-// ScanBar 仅在列表态活跃；新建/接收/结果展开时不抢焦点
+// 扫码仅在列表态活跃；新建/接收/结果展开时不抢焦点。
 const scanActive = computed(
   () =>
     result.value === null &&
@@ -397,11 +411,38 @@ const scanActive = computed(
     returning.value === null,
 )
 
-function onScan(value: string) {
-  filters.keyword = value
+function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind === 'work-order') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = ''
+    scannedMaterialIssueRequestId.value = ''
+    filters.keyword = undefined
+    filters.workOrderId = value.workOrderId
+    return
+  }
+  if (value.kind === 'operation-task') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = value.operationTaskId
+    scannedMaterialIssueRequestId.value = ''
+    filters.keyword = undefined
+    filters.workOrderId = value.workOrderId
+    return
+  }
+  if (value.kind === 'material') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = value.operationTaskId
+    scannedMaterialIssueRequestId.value = value.materialIssueRequestId
+    filters.workOrderId = value.workOrderId
+    filters.keyword = value.materialId ?? value.materialIssueRequestId
+  }
 }
-function onScanWorkOrder(value: string) {
-  workOrderFilters.keyword = value
+
+function onCreateScanAccepted(value: MesScanAccepted) {
+  if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
+  workOrderFilters.keyword = undefined
+  workOrderFilters.workOrderId = value.workOrderId
+  scannedWorkOrderId.value = value.workOrderId
+  scannedOperationTaskId.value = value.kind === 'operation-task' ? value.operationTaskId : ''
 }
 </script>
 
@@ -421,6 +462,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="new-issue"
+          :disabled="scanPending"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -465,7 +507,24 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描工单号 / 领料单" :active="scanActive" @scan="onScan" />
+      <MesScanPrevalidation
+        :organization-id="filters.organizationId"
+        :environment-id="filters.environmentId"
+        :work-order-id="scannedWorkOrderId"
+        :operation-task-id="scannedOperationTaskId"
+        placeholder="扫描工单 / 工序 / 物料批次"
+        :active="scanActive"
+        :accepted-kinds="['work-order', 'operation-task', 'material']"
+        @accepted="onScanAccepted"
+        @status-change="scanGate.set('list', $event)"
+      />
+      <p
+        v-if="scannedMaterialIssueRequestId"
+        data-testid="issue-scanned-material"
+        class="text-sm text-muted-foreground"
+      >
+        已核验当前工单工序的物料批次
+      </p>
 
       <LineSideInventoryBalancesPanel
         :items="lineSideInventoryBalances"
@@ -531,7 +590,8 @@ function onScanWorkOrder(value: string) {
               v-if="canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
-              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary"
+              :disabled="scanPending"
+              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReceive(req)"
             >
               线边接收
@@ -540,7 +600,8 @@ function onScanWorkOrder(value: string) {
               v-if="canReturn(req)"
               type="button"
               :data-testid="`return-${req.requestId}`"
-              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary"
+              :disabled="scanPending"
+              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReturn(req)"
             >
               线边退料
@@ -592,7 +653,8 @@ function onScanWorkOrder(value: string) {
             returnedQuantity === null ||
             returnedQuantity <= 0 ||
             (returning !== null && returnedQuantity > returnableQuantity(returning)) ||
-            submitting
+            submitting ||
+            scanGuarded
           "
           @click="submitReturn"
         >
@@ -606,7 +668,16 @@ function onScanWorkOrder(value: string) {
       <div class="space-y-4 pb-2">
         <!-- 选工单 -->
         <div v-if="!selectedWorkOrder" class="space-y-2">
-          <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
+          <MesScanPrevalidation
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :work-order-id="scannedWorkOrderId"
+            :operation-task-id="scannedOperationTaskId"
+            placeholder="扫描工单或工序"
+            :accepted-kinds="['work-order', 'operation-task']"
+            @accepted="onCreateScanAccepted"
+            @status-change="scanGate.set('create', $event)"
+          />
           <p class="text-sm text-muted-foreground">选择领料的工单（共 {{ workOrderTotal }} 张）</p>
           <RetryableListError
             v-if="workOrdersError"
@@ -687,7 +758,7 @@ function onScanWorkOrder(value: string) {
           <button
             type="button"
             data-testid="submit-issue"
-            :disabled="!createValid || submitting"
+            :disabled="!createValid || submitting || scanGuarded"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="submitCreate"
           >
@@ -730,7 +801,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="submit-receive"
-          :disabled="!receiveValid || submitting"
+          :disabled="!receiveValid || submitting || scanGuarded"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submitReceive"
         >

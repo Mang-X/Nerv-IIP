@@ -19,7 +19,7 @@ public sealed class ErpCostAccountingAggregateTests
     public void Work_order_cost_settlement_reconciles_inputs_capitalization_and_variance()
     {
         var cost = WorkOrderCost.Open("org-001", "env-dev", "WO-001", "FG-001");
-        cost.RecordLabor("RPT-001", "WC-01", 2m, 50m, false, new DateTimeOffset(2026, 7, 11, 1, 0, 0, TimeSpan.Zero));
+        cost.RecordLabor("RPT-001", "WC-01", 2m, 50m, "CNY", false, new DateTimeOffset(2026, 7, 11, 1, 0, 0, TimeSpan.Zero));
         cost.RecordMaterial("MOVE-001", "RPT-001", "RM-001", 3m, 20m, new DateTimeOffset(2026, 7, 11, 2, 0, 0, TimeSpan.Zero));
 
         cost.Complete(8m, 1, 1, new DateTimeOffset(2026, 7, 11, 3, 0, 0, TimeSpan.Zero));
@@ -32,6 +32,7 @@ public sealed class ErpCostAccountingAggregateTests
         Assert.Equal(152m, cost.CapitalizedCost);
         Assert.Equal(8m, cost.VarianceCost);
         Assert.Equal(cost.TotalAccumulatedCost, cost.WipClearedCost);
+        Assert.Equal("CNY", cost.LaborCurrencyCode);
         Assert.Equal(2, cost.Details.Count);
     }
 
@@ -39,10 +40,25 @@ public sealed class ErpCostAccountingAggregateTests
     public void Work_order_cost_reversal_nets_prior_labor_report()
     {
         var cost = WorkOrderCost.Open("org-001", "env-dev", "WO-002", "FG-002");
-        cost.RecordLabor("RPT-002", "WC-01", 1.5m, 40m, false, DateTimeOffset.UtcNow);
-        cost.RecordLabor("RPT-002-R", "WC-01", 1.5m, 40m, true, DateTimeOffset.UtcNow);
+        cost.RecordLabor("RPT-002", "WC-01", 1.5m, 40m, "cny", false, DateTimeOffset.UtcNow);
+        cost.RecordLabor("RPT-002-R", "WC-01", 1.5m, 40m, "CNY", true, DateTimeOffset.UtcNow);
 
         Assert.Equal(0m, cost.LaborCost);
+        Assert.Equal("CNY", cost.LaborCurrencyCode);
+    }
+
+    [Fact]
+    public void Work_order_cost_rejects_mixed_priced_labor_currency()
+    {
+        var cost = WorkOrderCost.Open("org-001", "env-dev", "WO-002", "FG-002");
+        cost.RecordLabor("RPT-USD", "WC-01", 1m, 40m, "USD", false, DateTimeOffset.UtcNow);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            cost.RecordLabor("RPT-CNY", "WC-01", 1m, 40m, "CNY", false, DateTimeOffset.UtcNow));
+
+        Assert.Contains("labor currency", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("USD", cost.LaborCurrencyCode);
+        Assert.Single(cost.Details);
     }
 
     [Fact]

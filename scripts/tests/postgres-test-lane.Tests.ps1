@@ -340,8 +340,10 @@ try {
     $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
     Assert-Contract ($testOwnedCount -ge 1 -and $runnerOwnedCount -ge 1) 'Both ownership forms must stay represented; if one empties, its half of the contract stops being exercised.'
     Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
-    # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
-    # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
+    # PostgreSQL lane 的当前成员事实只由 manifest、冻结身份和运行证据证明；项目状态文档不参与脚本判定。
+    # IndustrialTelemetry 的既有混合类只有 7 条真实 PostgreSQL 证明；#2604 登记历史 fact 类的 2 条，
+    # #2601 再登记多维 OEE 查询类的 6 条；混合类仍必须方法级 filter，专用 provider 类也由精确 identity 冻结；否则 TRX 身份集合
+    # 不等于冻结身份而红。
     # Quality 同理：七个类中只有 23 条是真实 PostgreSQL 证明。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 23) 'The Quality member must freeze exactly its twenty-three governed PostgreSQL identities.'
@@ -384,14 +386,15 @@ try {
     Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 7) 'The IndustrialTelemetry member must freeze exactly its seven governed PostgreSQL identities.'
+    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 15) 'The IndustrialTelemetry member must freeze exactly its fifteen governed PostgreSQL identities.'
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
-    # MES：base 的既有证明加上替代料快照 1 条与 OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，共有 36 条真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
-    # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
+    # MES：base 的既有证明加上替代料快照 1 条、OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，
+    # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）和报工 OEE 维度快照迁移 1 条，共有 40 条真实 PostgreSQL 证明；
+    # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 36) 'The MES member must freeze exactly its thirty-six governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 40) 'The MES member must freeze exactly its forty governed PostgreSQL identities.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
@@ -411,6 +414,7 @@ try {
             'MesCapSaveBoundaryPostgresTests.cs',
             'MesCapSubscriptionTests.cs',
             'MesCollaborationPostgresTests.cs',
+            'MesDowntimeReadFacePostgresTests.cs',
             'MesMaterialSubstituteSnapshotPostgresTests.cs',
             'MesSchedulePlanProvenancePostgresTests.cs',
             'OperationActualTimeSettlementPostgresTests.cs',
@@ -444,10 +448,12 @@ try {
             'IndustrialTelemetryDeviceControlReadFaceTests.cs',
             'IndustrialTelemetryHistorianTests.cs',
             'IndustrialTelemetryIdempotentConcurrencyTests.cs',
+            'IndustrialTelemetryOeeAggregatePostgresTests.cs',
+            'IndustrialTelemetryOeeHistoricalFactPostgresTests.cs',
             'IndustrialTelemetryOeePostgresQueryTests.cs')) {
         $telemetrySourcePath = Join-Path $repoRoot "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/$telemetrySource"
         Assert-Contract (Test-Path -LiteralPath $telemetrySourcePath -PathType Leaf) "IndustrialTelemetry lane source '$telemetrySource' must exist."
-        # 这四个类改造前用的是 IndustrialTelemetryPostgresTestDatabase（Postgres 非 PostgreSql，子串不命中），
+        # 既有四个类改造前用的是 IndustrialTelemetryPostgresTestDatabase（Postgres 非 PostgreSql，子串不命中），
         # 且该类仍在同一测试项目里被规模种子用例合法使用——只扫共享 helper 的名字对回潮毫无鉴别力。
         foreach ($telemetryFactory in @('IndustrialTelemetryPostgresTestDatabase.CreateAsync', 'PostgreSqlTestDatabase.CreateAsync')) {
             Assert-LaneOwnedDatabase -SourcePath $telemetrySourcePath -InnerDatabaseFactory $telemetryFactory
@@ -484,32 +490,6 @@ try {
         Assert-Contract ($wmsSourceText -cnotmatch '"[^"\r\n]*CREATE DATABASE') "WMS lane source '$wmsSource' must not hand-roll CREATE DATABASE; NERV-822 converged these files onto the shared helper."
     }
 
-    # 「其余服务（…）仍属于拆解③后续批次」这句已经三次把已接入的服务写回未接入列表（#1553 的 Quality、
-    # #1555 的 Quality/IndustrialTelemetry、#1557 的 WMS）。只改文字会让它第四次回潮，因此把它变成门禁：
-    # 该句列出的服务集合与 manifest 里 active 成员的 service 集合，交集必须为空。
-    function Assert-PendingServiceListExcludesLaneMembers([string]$ReadinessPath, [object[]]$ActiveMembers) {
-        $readiness = [IO.File]::ReadAllText($ReadinessPath)
-        $sentence = [regex]::Match($readiness, '其余服务（(?<list>[^）]*)）仍属于拆解③后续批次')
-        if (-not $sentence.Success) {
-            # 全部接入后该句合法消失，但必须换成同样可核的收尾表述，否则"没有待接入服务"就无从证伪。
-            if ($readiness.Contains('拆解③登记的服务至此全部接入', [StringComparison]::Ordinal)) { return }
-            throw 'The readiness narrative must either name the pending services or state that none remain, so the gate has something to check.'
-        }
-        $pendingServices = @($sentence.Groups['list'].Value -split '、' | ForEach-Object { $_.Replace(' 等', '').Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        foreach ($activeMember in $ActiveMembers) {
-            foreach ($pendingService in $pendingServices) {
-                if ([string]::Equals($pendingService, [string]$activeMember.service, [StringComparison]::OrdinalIgnoreCase)) {
-                    throw "Service '$pendingService' is already an active lane member but the readiness narrative still lists it as pending."
-                }
-            }
-        }
-    }
-    Assert-PendingServiceListExcludesLaneMembers -ReadinessPath (Join-Path $repoRoot 'docs/architecture/implementation-readiness.md') -ActiveMembers $activeMembers
-    $regressedReadinessPath = Join-Path $fixtureRoot 'regressed-readiness.md'
-    [IO.File]::WriteAllText($regressedReadinessPath, '其余服务（WMS、ERP、DemandPlanning 等）仍属于拆解③后续批次。', [Text.UTF8Encoding]::new($false))
-    $pendingListRejected = $false
-    try { Assert-PendingServiceListExcludesLaneMembers -ReadinessPath $regressedReadinessPath -ActiveMembers $activeMembers } catch { $pendingListRejected = $_.Exception.Message.Contains('still lists it as pending', [StringComparison]::Ordinal) }
-    Assert-Contract $pendingListRejected 'Listing an already-onboarded service as pending must fail closed.'
     # runner 形态必须留一根钉：MasterData 是裁决原文里 runner 的动机样本（失败时要留 CAP outbox 状态），
     # 钉住它，"runner 半边契约仍被行使"才不是一句空话。
     $masterDataOwnership = @($activeMembers | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })
@@ -537,7 +517,7 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 4) 'The ERP member must freeze exactly its four PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 15) 'The ERP member must freeze exactly its fifteen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
@@ -547,6 +527,7 @@ try {
     foreach ($runnerOwnedSource in @(
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs',
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs',
+            'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorkCenterMachineOverheadRatePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs')) {
         $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource

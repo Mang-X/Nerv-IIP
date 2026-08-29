@@ -11,7 +11,7 @@
 
 # #1887：`verify-adr-format.ps1` 的生命周期禁令面。两件事各自被守住：
 #
-# 1. 双向对齐：docs/architecture/decision-record-governance.md 的「生命周期禁用标题表」与脚本
+# 1. 双向对齐：docs/governance/decisions/records.md 的「生命周期禁用标题表」与脚本
 #    里的三个列表逐字相等。文档多一行门禁不查、门禁多一条文档没写，都在这里转红——否则
 #    「文档强度高于实现强度」会以两个方向复发。
 # 2. 鉴别力：逐条禁用标题各插一次必红，`## 实施说明` 白名单不红，日期戳标题必红，现存的合法
@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $gatePath = Join-Path $repoRoot 'scripts/verify-adr-format.ps1'
-$governanceDocPath = Join-Path $repoRoot 'docs/architecture/decision-record-governance.md'
+$governanceDocPath = Join-Path $repoRoot 'docs/governance/decisions/records.md'
 $realAdrRoot = Join-Path $repoRoot 'docs/adr'
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
@@ -81,7 +81,7 @@ Assert-Contract ($scriptAllowlist.Count -gt 0) '白名单为空时，`## 实施�
 
 $governanceDoc = [IO.File]::ReadAllText($governanceDocPath)
 $tableMatch = [regex]::Match($governanceDoc, '(?s)### 生命周期禁用标题表.*?\n\n(?<table>\| 禁用标题 \| 匹配方式 \|.*?)\n\n')
-Assert-Contract ($tableMatch.Success) 'decision-record-governance.md 必须保留「### 生命周期禁用标题表」及其表格。'
+Assert-Contract ($tableMatch.Success) 'records.md 必须保留「### 生命周期禁用标题表」及其表格。'
 
 $documentedPrefixes = [System.Collections.Generic.List[string]]::new()
 $documentedExact = [System.Collections.Generic.List[string]]::new()
@@ -97,7 +97,7 @@ foreach ($row in ($tableMatch.Groups['table'].Value -split "`n")) {
 }
 
 $allowlistMatch = [regex]::Match($governanceDoc, '\*\*白名单：`## (?<title>[^`]+)`\*\*')
-Assert-Contract ($allowlistMatch.Success) 'decision-record-governance.md 必须成文写出白名单标题。'
+Assert-Contract ($allowlistMatch.Success) 'records.md 必须成文写出白名单标题。'
 
 Assert-SetEquals -Actual $scriptPrefixes -Expected @($documentedPrefixes) `
     -Message '生命周期禁用前缀在脚本与治理文档之间漂移了，两处必须同改。'

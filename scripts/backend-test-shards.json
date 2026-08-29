@@ -23,7 +23,9 @@
       "excludedTestClasses": [
         "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests",
+        "Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests",
         "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests",
+        "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests",
         "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests",
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests",
         "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests",
@@ -37,7 +39,8 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests"
       ],
       "excludedTestLanes": [
-        "real-postgres"
+        "real-postgres",
+        "redis-cap"
       ],
       "excludedTests": [
         "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres",
@@ -132,6 +135,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
@@ -174,6 +178,7 @@
         "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests",
         "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests"
       ],

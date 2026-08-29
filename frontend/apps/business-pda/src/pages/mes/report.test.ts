@@ -334,6 +334,7 @@ describe('PDA MES production reporting page', () => {
     scrapReasonCodesErrorRef.value = null
     operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     taskFilters.workOrderId = undefined
     route.query = {}
   })
@@ -451,12 +452,75 @@ describe('PDA MES production reporting page', () => {
     expect(refreshWorkOrderDetail).toHaveBeenCalledTimes(1)
   })
 
-  it('scanning sets the work-order keyword filter', async () => {
+  it('uses the resolved work-order strong id as the exact report route', async () => {
     const wrapper = mount(ReportPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(workOrderFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    await flushPromises()
+    expect(workOrderFilters.workOrderId).toBe('WO-2026-0002')
+    expect(workOrderFilters.keyword).toBeUndefined()
+    expect(replace).toHaveBeenCalledWith({
+      path: '/mes/report',
+      query: { workOrderId: 'WO-2026-0002' },
+    })
+  })
+
+  it('applies accepted material, device, and personnel scans to the selected report context', async () => {
+    materialLotsRef.value = [
+      {
+        requestId: 'MIR-PDA-001',
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+        materialId: 'MAT-OIL',
+        uomCode: 'L',
+        materialLotId: 'LOT-OIL-001',
+        requestedQuantity: 5,
+        receivedQuantity: 5,
+        consumedQuantity: 1,
+        status: 'received',
+      },
+    ]
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await selectWorkOrder(wrapper, 0)
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const scanner = wrapper
+      .findAllComponents({ name: 'MesScanPrevalidation' })
+      .find((item) => (item.props('acceptedKinds') as string[]).includes('material'))!
+
+    await scanner.vm.$emit('accepted', {
+      kind: 'material',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      materialIssueRequestId: 'MIR-PDA-001',
+    })
+    await scanner.vm.$emit('accepted', {
+      kind: 'device',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'DEVICE-1',
+    })
+    await scanner.vm.$emit('accepted', {
+      kind: 'personnel',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'USER-1',
+    })
+    await flushPromises()
+
+    expect(
+      document.body.querySelector<HTMLInputElement>('[data-testid="material-lot-MIR-PDA-001"]')!
+        .checked,
+    ).toBe(true)
+    expect(document.body.querySelector('[data-testid="report-validated-device"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="report-validated-personnel"]')).not.toBeNull()
+    wrapper.unmount()
   })
 
   it('shows detail operations after a work order is selected without list discovery', async () => {

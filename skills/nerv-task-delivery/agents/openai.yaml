@@ -1,0 +1,3 @@
+display_name: Nerv Task Delivery
+short_description: Drive an issue or Linear task to merge with separate implementation and review seats per pull request.
+default_prompt: Set up one worktree and branch per task, dispatch a dedicated implementation seat that runs the gates and opens the pull request itself, stand up review seats once per pull request, send every later round back to those same seats, and stop for a root-cause proposal after three rounds.

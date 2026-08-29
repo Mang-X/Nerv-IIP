@@ -150,6 +150,14 @@ builder.Services.AddHttpClient<IBusinessMesWorkOrderTransformationClient, HttpBu
 {
     client.BaseAddress = mesBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesMaterialPrevalidationClient, HttpBusinessMesMaterialPrevalidationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessMesContextPrevalidationClient, HttpBusinessMesContextPrevalidationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessSchedulingClient, HttpBusinessSchedulingClient>(client =>
 {
     client.BaseAddress = schedulingBaseAddress;

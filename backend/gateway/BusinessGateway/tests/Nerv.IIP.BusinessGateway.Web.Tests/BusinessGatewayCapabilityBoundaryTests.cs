@@ -438,6 +438,186 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
+    public void IndustrialTelemetry_capability_boundary_mutation_matrix_rejects_each_escape()
+    {
+        var baseDocuments = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                "Capabilities/IndustrialTelemetry/BusinessIndustrialTelemetryClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public partial interface IBusinessIndustrialTelemetryClient {} " +
+                "public partial class HttpBusinessIndustrialTelemetryClient : " +
+                "BusinessServiceHttpClient, IBusinessIndustrialTelemetryClient {}"),
+            new SourceDocument(
+                "Capabilities/IndustrialTelemetry/IndustrialTelemetryWireDto.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed record IndustrialTelemetryWireDto(string Value);"),
+            new SourceDocument(
+                "BusinessServiceClients.cs.config.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed class IndustrialTelemetryOptions {} " +
+                "public sealed class NestedHolder { " +
+                "public sealed class NestedDto {} }"),
+        };
+        var contract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>(),
+            managedSeedCapabilities: new Dictionary<string, string>
+            {
+                [Identity("Interface", "IBusinessIndustrialTelemetryClient")] =
+                    "IndustrialTelemetry",
+                [Identity("Class", "HttpBusinessIndustrialTelemetryClient")] =
+                    "IndustrialTelemetry",
+            },
+            capabilityDirectories: new Dictionary<string, string>
+            {
+                ["IndustrialTelemetry"] = "Capabilities/IndustrialTelemetry",
+            });
+
+        Assert.Empty(AnalyzeCapabilityBoundary(baseDocuments, contract));
+
+        var mutations = new[]
+        {
+            new CapabilityBoundaryMutation(
+                "old giant re-add",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legacy-rollback.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessIndustrialTelemetryClient {} " +
+                    "public partial class HttpBusinessIndustrialTelemetryClient : " +
+                    "BusinessServiceHttpClient, IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "new client in old giant",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.new-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnnamedIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "duplicate interface",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-interface.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "duplicate class",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-class.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "partial class escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.partial.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessIndustrialTelemetryClient " +
+                    "{ public void LegacyPartialFragment() {} }"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "nested client escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.nested.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class LegacyOuter { " +
+                    "public sealed class NestedIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {} }"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "wrong directory",
+                new SourceDocument(
+                    "Capabilities/Quality/WrongIndustrialTelemetryClient.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class WrongDirectoryIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "bidirectional interface escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.bidirectional.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public interface IDerivedIndustrialTelemetryClient : " +
+                    "IBusinessIndustrialTelemetryClient {} " +
+                    "public sealed class NonConventionalIndustrialTelemetryClient : " +
+                    "IDerivedIndustrialTelemetryClient {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "indirect base-chain escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.indirect-base-chain.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public abstract class NonConventionalBase : " +
+                    "HttpBusinessIndustrialTelemetryClient {} " +
+                    "public sealed class LegacyDerivedIndustrialTelemetryClient : " +
+                    "NonConventionalBase {}"),
+                "must be under Capabilities/IndustrialTelemetry"),
+            new CapabilityBoundaryMutation(
+                "unassigned shared-base client",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.unassigned-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnassignedIndustrialTelemetryClient : " +
+                    "BusinessServiceHttpClient {}"),
+                "Unassigned capability client"),
+        };
+
+        foreach (var mutation in mutations)
+        {
+            var violations = AnalyzeCapabilityBoundary(
+                baseDocuments.Append(mutation.Document),
+                contract);
+            var report = string.Join(Environment.NewLine, violations);
+
+            Assert.True(
+                violations.Count > 0,
+                $"Mutation '{mutation.Name}' was accepted by the IndustrialTelemetry boundary contract.");
+            Assert.Contains(mutation.Document.RelativePath, report, StringComparison.Ordinal);
+            Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
+        }
+
+        var legacyRollbackContract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>
+            {
+                [Identity("Interface", "IBusinessIndustrialTelemetryClient")] =
+                    new("IndustrialTelemetry", ["BusinessServiceClients.cs"]),
+                [Identity("Class", "HttpBusinessIndustrialTelemetryClient")] =
+                    new("IndustrialTelemetry", ["BusinessServiceClients.cs"]),
+            },
+            managedSeedCapabilities: contract.ManagedSeedCapabilities,
+            capabilityDirectories: contract.CapabilityDirectories);
+        var legacyRollbackReport = string.Join(
+            Environment.NewLine,
+            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
+
+        Assert.Contains(
+            "Legacy symbol " + Identity("Interface", "IBusinessIndustrialTelemetryClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Legacy symbol " + Identity("Class", "HttpBusinessIndustrialTelemetryClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+
+        var falsePositiveViolations = AnalyzeCapabilityBoundary(
+            baseDocuments.Append(
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legitimate.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class IndustrialTelemetryOptionsDto {}")),
+            contract);
+
+        Assert.Empty(falsePositiveViolations);
+    }
+
+    [Fact]
     public void Erp_client_declarations_live_together_in_its_capability_file()
     {
         var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
@@ -457,6 +637,476 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             Assert.Single(owners);
             Assert.Equal(expectedPath, owners[0]);
         }
+    }
+
+    [Fact]
+    public void BarcodeLabel_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/BarcodeLabel/BusinessBarcodeLabelClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessBarcodeLabelClient"),
+            Identity("Class", "HttpBusinessBarcodeLabelClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void IndustrialTelemetry_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/IndustrialTelemetry/BusinessIndustrialTelemetryClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessIndustrialTelemetryClient"),
+            Identity("Class", "HttpBusinessIndustrialTelemetryClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void Maintenance_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Maintenance/BusinessMaintenanceClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessMaintenanceClient"),
+            Identity("Class", "HttpBusinessMaintenanceClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void Maintenance_capability_boundary_mutation_matrix_rejects_each_escape()
+    {
+        var baseDocuments = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                "Capabilities/Maintenance/BusinessMaintenanceClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public partial interface IBusinessMaintenanceClient {} " +
+                "public partial class HttpBusinessMaintenanceClient : " +
+                "BusinessServiceHttpClient, IBusinessMaintenanceClient {}"),
+            new SourceDocument(
+                "Capabilities/Maintenance/MaintenanceWireDto.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed record MaintenanceWireDto(string Value);"),
+            new SourceDocument(
+                "BusinessServiceClients.cs.config.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed class MaintenanceOptions {} " +
+                "public sealed class NestedHolder { " +
+                "public sealed class NestedDto {} }"),
+        };
+        var contract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>(),
+            managedSeedCapabilities: new Dictionary<string, string>
+            {
+                [Identity("Interface", "IBusinessMaintenanceClient")] =
+                    "Maintenance",
+                [Identity("Class", "HttpBusinessMaintenanceClient")] =
+                    "Maintenance",
+            },
+            capabilityDirectories: new Dictionary<string, string>
+            {
+                ["Maintenance"] = "Capabilities/Maintenance",
+            });
+
+        Assert.Empty(AnalyzeCapabilityBoundary(baseDocuments, contract));
+
+        var mutations = new[]
+        {
+            new CapabilityBoundaryMutation(
+                "old giant re-add",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legacy-rollback.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessMaintenanceClient {} " +
+                    "public partial class HttpBusinessMaintenanceClient : " +
+                    "BusinessServiceHttpClient, IBusinessMaintenanceClient {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "new client in old giant",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.new-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnnamedMaintenanceClient : " +
+                    "IBusinessMaintenanceClient {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "duplicate interface",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-interface.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessMaintenanceClient {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "duplicate class",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-class.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessMaintenanceClient {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "partial class escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.partial.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessMaintenanceClient " +
+                    "{ public void LegacyPartialFragment() {} }"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "nested client escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.nested.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class LegacyOuter { " +
+                    "public sealed class NestedMaintenanceClient : " +
+                    "IBusinessMaintenanceClient {} }"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "wrong directory",
+                new SourceDocument(
+                    "Capabilities/Quality/WrongMaintenanceClient.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class WrongDirectoryMaintenanceClient : " +
+                    "IBusinessMaintenanceClient {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "bidirectional interface escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.bidirectional.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public interface IDerivedMaintenanceClient : " +
+                    "IBusinessMaintenanceClient {} " +
+                    "public sealed class NonConventionalMaintenanceClient : " +
+                    "IDerivedMaintenanceClient {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "indirect base-chain escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.indirect-base-chain.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public abstract class NonConventionalBase : " +
+                    "HttpBusinessMaintenanceClient {} " +
+                    "public sealed class LegacyDerivedMaintenanceClient : " +
+                    "NonConventionalBase {}"),
+                "must be under Capabilities/Maintenance"),
+            new CapabilityBoundaryMutation(
+                "unassigned shared-base client",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.unassigned-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnassignedMaintenanceClient : " +
+                    "BusinessServiceHttpClient {}"),
+                "Unassigned capability client"),
+        };
+
+        foreach (var mutation in mutations)
+        {
+            var violations = AnalyzeCapabilityBoundary(
+                baseDocuments.Append(mutation.Document),
+                contract);
+            var report = string.Join(Environment.NewLine, violations);
+
+            Assert.True(
+                violations.Count > 0,
+                $"Mutation '{mutation.Name}' was accepted by the Maintenance boundary contract.");
+            Assert.Contains(mutation.Document.RelativePath, report, StringComparison.Ordinal);
+            Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
+        }
+
+        var legacyRollbackContract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>
+            {
+                [Identity("Interface", "IBusinessMaintenanceClient")] =
+                    new("Maintenance", ["BusinessServiceClients.cs"]),
+                [Identity("Class", "HttpBusinessMaintenanceClient")] =
+                    new("Maintenance", ["BusinessServiceClients.cs"]),
+            },
+            managedSeedCapabilities: contract.ManagedSeedCapabilities,
+            capabilityDirectories: contract.CapabilityDirectories);
+        var legacyRollbackReport = string.Join(
+            Environment.NewLine,
+            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
+
+        Assert.Contains(
+            "Legacy symbol " + Identity("Interface", "IBusinessMaintenanceClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Legacy symbol " + Identity("Class", "HttpBusinessMaintenanceClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+
+        var falsePositiveViolations = AnalyzeCapabilityBoundary(
+            baseDocuments.Append(
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legitimate.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class MaintenanceOptionsDto {}")),
+            contract);
+
+        Assert.Empty(falsePositiveViolations);
+    }
+
+    [Fact]
+    public void Mes_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Mes/BusinessMesClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessMesClient"),
+            Identity("Class", "HttpBusinessMesClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void Wms_client_declarations_live_together_in_its_capability_file()
+    {
+        var declarations = BuildSnapshot(LoadProductionDocuments()).Declarations;
+        var expectedPath = "Capabilities/Wms/BusinessWmsClient.cs";
+
+        foreach (var identity in new[]
+        {
+            Identity("Interface", "IBusinessWmsClient"),
+            Identity("Class", "HttpBusinessWmsClient"),
+        })
+        {
+            var owners = declarations
+                .Where(declaration => declaration.Identity == identity)
+                .Select(declaration => declaration.RelativePath)
+                .ToArray();
+
+            Assert.Single(owners);
+            Assert.Equal(expectedPath, owners[0]);
+        }
+    }
+
+    [Fact]
+    public void Mes_capability_boundary_mutation_matrix_rejects_each_escape()
+    {
+        var baseDocuments = new[]
+        {
+            new SourceDocument(
+                "Shared/BusinessServiceHttpClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public abstract class BusinessServiceHttpClient {}"),
+            new SourceDocument(
+                "Capabilities/Mes/BusinessMesClient.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public partial interface IBusinessMesClient {} " +
+                "public partial class HttpBusinessMesClient : " +
+                "BusinessServiceHttpClient, IBusinessMesClient {}"),
+            new SourceDocument(
+                "Capabilities/Mes/MesWireDto.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed record MesWireDto(string Value);"),
+            new SourceDocument(
+                "BusinessServiceClients.cs.config.cs",
+                $"namespace {BusinessServicesNamespace}; " +
+                "public sealed class MesOptions {} " +
+                "public sealed class NestedHolder { " +
+                "public sealed class NestedDto {} }"),
+        };
+        var contract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>(),
+            managedSeedCapabilities: new Dictionary<string, string>
+            {
+                [Identity("Interface", "IBusinessMesClient")] =
+                    "Mes",
+                [Identity("Class", "HttpBusinessMesClient")] =
+                    "Mes",
+            },
+            capabilityDirectories: new Dictionary<string, string>
+            {
+                ["Mes"] = "Capabilities/Mes",
+            });
+
+        Assert.Empty(AnalyzeCapabilityBoundary(baseDocuments, contract));
+
+        var mutations = new[]
+        {
+            new CapabilityBoundaryMutation(
+                "old giant re-add",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legacy-rollback.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessMesClient {} " +
+                    "public partial class HttpBusinessMesClient : " +
+                    "BusinessServiceHttpClient, IBusinessMesClient {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "new client in old giant",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.new-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnnamedMesClient : " +
+                    "IBusinessMesClient {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "duplicate interface",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-interface.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial interface IBusinessMesClient {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "duplicate class",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.duplicate-class.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessMesClient {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "partial class escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.partial.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public partial class HttpBusinessMesClient " +
+                    "{ public void LegacyPartialFragment() {} }"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "nested client escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.nested.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class LegacyOuter { " +
+                    "public sealed class NestedMesClient : " +
+                    "IBusinessMesClient {} }"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "wrong directory",
+                new SourceDocument(
+                    "Capabilities/Quality/WrongMesClient.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class WrongDirectoryMesClient : " +
+                    "IBusinessMesClient {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "bidirectional interface escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.bidirectional.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public interface IDerivedMesClient : " +
+                    "IBusinessMesClient {} " +
+                    "public sealed class NonConventionalMesClient : " +
+                    "IDerivedMesClient {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "indirect base-chain escape",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.indirect-base-chain.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public abstract class NonConventionalBase : " +
+                    "HttpBusinessMesClient {} " +
+                    "public sealed class LegacyDerivedMesClient : " +
+                    "NonConventionalBase {}"),
+                "must be under Capabilities/Mes"),
+            new CapabilityBoundaryMutation(
+                "unassigned shared-base client",
+                new SourceDocument(
+                    "BusinessServiceClients.cs.unassigned-client.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class UnassignedMesClient : " +
+                    "BusinessServiceHttpClient {}"),
+                "Unassigned capability client"),
+        };
+
+        foreach (var mutation in mutations)
+        {
+            var violations = AnalyzeCapabilityBoundary(
+                baseDocuments.Append(mutation.Document),
+                contract);
+            var report = string.Join(Environment.NewLine, violations);
+
+            Assert.True(
+                violations.Count > 0,
+                $"Mutation '{mutation.Name}' was accepted by the Mes boundary contract.");
+            Assert.Contains(mutation.Document.RelativePath, report, StringComparison.Ordinal);
+            Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
+        }
+
+        var legacyRollbackContract = CreateFixtureContract(
+            legacy: new Dictionary<string, LegacyDeclarationContract>
+            {
+                [Identity("Interface", "IBusinessMesClient")] =
+                    new("Mes", ["BusinessServiceClients.cs"]),
+                [Identity("Class", "HttpBusinessMesClient")] =
+                    new("Mes", ["BusinessServiceClients.cs"]),
+            },
+            managedSeedCapabilities: contract.ManagedSeedCapabilities,
+            capabilityDirectories: contract.CapabilityDirectories);
+        var legacyRollbackReport = string.Join(
+            Environment.NewLine,
+            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
+
+        Assert.Contains(
+            "Legacy symbol " + Identity("Interface", "IBusinessMesClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Legacy symbol " + Identity("Class", "HttpBusinessMesClient") +
+            " declaration locations changed",
+            legacyRollbackReport,
+            StringComparison.Ordinal);
+
+        var falsePositiveViolations = AnalyzeCapabilityBoundary(
+            baseDocuments.Append(
+                new SourceDocument(
+                    "BusinessServiceClients.cs.legitimate.cs",
+                    $"namespace {BusinessServicesNamespace}; " +
+                    "public sealed class MesOptionsDto {}")),
+            contract);
+
+        Assert.Empty(falsePositiveViolations);
     }
 
     private static IReadOnlyList<string> AnalyzeSharedBoundary(
@@ -808,7 +1458,12 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Inventory" &&
                     capability != "Quality" &&
                     capability != "Approval" &&
-                    capability != "Notification");
+                    capability != "Notification" &&
+                    capability != "BarcodeLabel" &&
+                    capability != "IndustrialTelemetry" &&
+                    capability != "Maintenance" &&
+                    capability != "Mes" &&
+                    capability != "Wms");
             AddManagedType(
                 seedCapabilities,
                 legacyDeclarations,
@@ -825,7 +1480,12 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     capability != "Inventory" &&
                     capability != "Quality" &&
                     capability != "Approval" &&
-                    capability != "Notification");
+                    capability != "Notification" &&
+                    capability != "BarcodeLabel" &&
+                    capability != "IndustrialTelemetry" &&
+                    capability != "Maintenance" &&
+                    capability != "Mes" &&
+                    capability != "Wms");
         }
 
         seedCapabilities.Add(
@@ -852,6 +1512,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "Mes",
             "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
             includeInLegacy: false);
+        seedCapabilities[Identity("Interface", "IBusinessMesMaterialPrevalidationClient")] = "Mes";
+        seedCapabilities[Identity("Class", "HttpBusinessMesMaterialPrevalidationClient")] = "Mes";
+        seedCapabilities[Identity("Interface", "IBusinessMesContextPrevalidationClient")] = "Mes";
+        seedCapabilities[Identity("Class", "HttpBusinessMesContextPrevalidationClient")] = "Mes";
 
         AddManagedType(
             seedCapabilities,
@@ -975,6 +1639,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "BusinessServices"));
 
     private sealed record SourceDocument(string RelativePath, string Source);
+
+    private sealed record CapabilityBoundaryMutation(
+        string Name,
+        SourceDocument Document,
+        string ExpectedViolation);
 
     private sealed record SharedTypeDeclaration(string RelativePath, string TypeName);
 

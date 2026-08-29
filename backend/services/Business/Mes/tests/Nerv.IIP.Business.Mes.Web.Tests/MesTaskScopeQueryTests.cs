@@ -585,7 +585,7 @@ public sealed class MesTaskScopeQueryTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
