@@ -404,6 +404,57 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/devices/{deviceAssetId}/history", "get", "queryBusinessConsoleTelemetryDeviceHistory");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/oee", "get", "queryBusinessConsoleTelemetryOee");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/oee/aggregates", "get", "queryBusinessConsoleTelemetryOeeAggregates");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/telemetry/oee/aggregates", "get", "dimension");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/telemetry/oee/aggregates",
+            "get",
+            "400", "502", "503", "504");
+        AssertStringEnumSchema(
+            document,
+            "NervIIPContractsIndustrialTelemetryOeeAggregateDimension",
+            "device", "workCenter", "line", "workshop", "shift", "day");
+        AssertSchemaProperties(
+            document,
+            "OeeAggregateBucketsResponse",
+            "organizationId",
+            "environmentId",
+            "dimension",
+            "windowStartUtc",
+            "windowEndUtc",
+            "buckets",
+            "totalCount",
+            "skip",
+            "take");
+        AssertSchemaProperties(
+            document,
+            "OeeAggregateBucket",
+            "dimension",
+            "dimensionValue",
+            "siteCode",
+            "workshopCode",
+            "lineCode",
+            "workCenterId",
+            "deviceAssetId",
+            "shiftCode",
+            "businessDate",
+            "bucketStartUtc",
+            "bucketEndUtc",
+            "deviceCount",
+            "stateSampleCount",
+            "productionFactCount",
+            "availabilityRate",
+            "performanceRate",
+            "qualityRate",
+            "oeeRate",
+            "goodQuantity",
+            "scrapQuantity",
+            "reworkQuantity",
+            "outputUomCode",
+            "expectedOutputQuantity",
+            "isDegraded",
+            "degradedReasons");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-availability", "get", "queryBusinessConsoleTelemetryRuntimeAvailability");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-hours", "get", "queryBusinessConsoleTelemetryRuntimeHours");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");

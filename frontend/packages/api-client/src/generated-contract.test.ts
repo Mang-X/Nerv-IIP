@@ -69,6 +69,12 @@ import type {
   BusinessConsoleSearchResponse,
   BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleTelemetryOeeAggregateBucket,
+  BusinessConsoleTelemetryOeeAggregateDegradedReason,
+  BusinessConsoleTelemetryOeeAggregateDimension,
+  BusinessConsoleTelemetryOeeAggregateEnvelope,
+  BusinessConsoleTelemetryOeeAggregateRequest,
+  BusinessConsoleTelemetryOeeAggregateResponse,
   BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   BusinessConsoleAssignWmsResourceRequest,
   BusinessConsoleCompleteWmsInboundOrderRequest,
@@ -93,6 +99,7 @@ import type {
   BusinessConsoleWorkbenchSummaryResponse,
   BusinessConsoleWorkScopeAuthorizationPath,
   CancelBusinessConsolePlanningDemandData,
+  QueryBusinessConsoleTelemetryOeeAggregatesData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
   CreateOrUpdateBusinessConsolePlanningForecastData,
@@ -926,6 +933,7 @@ describe('generated API client contract', () => {
       'postBusinessConsoleTelemetryAlarmMutationOptions',
       'queryBusinessConsoleTelemetryDeviceHistoryQueryOptions',
       'queryBusinessConsoleTelemetryOeeQueryOptions',
+      'queryBusinessConsoleTelemetryOeeAggregatesQueryOptions',
       'queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions',
       'queryBusinessConsoleTelemetryRuntimeHoursQueryOptions',
       'listBusinessConsoleNotificationMessagesQueryOptions',
@@ -981,6 +989,7 @@ describe('generated API client contract', () => {
       'postBusinessConsoleTelemetryAlarm',
       'queryBusinessConsoleTelemetryDeviceHistory',
       'queryBusinessConsoleTelemetryOee',
+      'queryBusinessConsoleTelemetryOeeAggregates',
       'queryBusinessConsoleTelemetryRuntimeAvailability',
       'queryBusinessConsoleTelemetryRuntimeHours',
       'listBusinessConsoleNotificationMessages',
@@ -1195,6 +1204,40 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleBarcodePrintBatchResponse>().toBeObject()
     expectTypeOf<BusinessConsoleApprovalChainResponse>().toBeObject()
     expectTypeOf<BusinessConsoleTelemetryOeeEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateBucket>().toBeObject()
+    expectTypeOf<QueryBusinessConsoleTelemetryOeeAggregatesData>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateDimension>().toEqualTypeOf<
+      'device' | 'workCenter' | 'line' | 'workshop' | 'shift' | 'day'
+    >()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateDegradedReason>().toEqualTypeOf<
+      | 'runtimeStateFactsMissing'
+      | 'runtimeStateCoverageIncomplete'
+      | 'productionUomAmbiguous'
+      | 'productionOutputMissing'
+      | 'theoreticalRateMissingOrAmbiguous'
+      | 'productiveRuntimeMissing'
+      | 'loadingRuntimeMissing'
+      | 'historicalDimensionLegacyUnresolved'
+      | 'historicalHierarchyMissing'
+      | 'historicalTimezoneMissing'
+      | 'historicalTimezoneInvalid'
+      | 'historicalShiftDefinitionMissing'
+      | 'historicalShiftDefinitionInvalid'
+      | 'historicalReportOutsideShiftWindow'
+      | 'historicalLocalTimeInvalid'
+      | 'historicalLocalTimeAmbiguous'
+      | 'siteDimensionMissing'
+      | 'workshopDimensionMissing'
+      | 'lineDimensionMissing'
+      | 'siteDimensionAmbiguous'
+      | 'workshopDimensionAmbiguous'
+      | 'lineDimensionAmbiguous'
+      | 'siteTimezoneOrDayBoundaryMissing'
+      | 'shiftDefinitionOrBoundaryMissing'
+    >()
     expectTypeOf<BusinessConsoleSchedulingPlanSummaryResponse>().toBeObject()
     expectTypeOf<BusinessConsoleMaintenanceAssetReliabilityEnvelope>().toBeObject()
     expectTypeOf<CancelBusinessConsolePlanningDemandData>().toBeObject()

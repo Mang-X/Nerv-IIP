@@ -1209,6 +1209,58 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfOeeAggregateBucketsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsIndustrialTelemetryOeeAggregateBucketsResponse | null;
+};
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateBucketsResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    dimension?: NervIipContractsIndustrialTelemetryOeeAggregateDimension;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    buckets?: Array<NervIipContractsIndustrialTelemetryOeeAggregateBucket>;
+    totalCount?: number;
+    skip?: number;
+    take?: number;
+};
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateDimension = 'device' | 'workCenter' | 'line' | 'workshop' | 'shift' | 'day';
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateBucket = {
+    dimension?: NervIipContractsIndustrialTelemetryOeeAggregateDimension;
+    dimensionValue?: string | null;
+    siteCode?: string | null;
+    workshopCode?: string | null;
+    lineCode?: string | null;
+    workCenterId?: string | null;
+    deviceAssetId?: string | null;
+    shiftCode?: string | null;
+    businessDate?: string | null;
+    bucketStartUtc?: string;
+    bucketEndUtc?: string;
+    deviceCount?: number;
+    stateSampleCount?: number;
+    productionFactCount?: number;
+    availabilityRate?: number | null;
+    performanceRate?: number | null;
+    qualityRate?: number | null;
+    oeeRate?: number | null;
+    goodQuantity?: number;
+    scrapQuantity?: number;
+    reworkQuantity?: number;
+    outputUomCode?: string | null;
+    expectedOutputQuantity?: number | null;
+    isDegraded?: boolean;
+    degradedReasons?: Array<NervIipContractsIndustrialTelemetryOeeAggregateDegradedReason>;
+};
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateDegradedReason = 'runtimeStateFactsMissing' | 'runtimeStateCoverageIncomplete' | 'productionUomAmbiguous' | 'productionOutputMissing' | 'theoreticalRateMissingOrAmbiguous' | 'productiveRuntimeMissing' | 'loadingRuntimeMissing' | 'historicalDimensionLegacyUnresolved' | 'historicalHierarchyMissing' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'siteDimensionMissing' | 'workshopDimensionMissing' | 'lineDimensionMissing' | 'siteDimensionAmbiguous' | 'workshopDimensionAmbiguous' | 'lineDimensionAmbiguous' | 'siteTimezoneOrDayBoundaryMissing' | 'shiftDefinitionOrBoundaryMissing';
+
+export type NervIipContractsIndustrialTelemetryQueryOeeAggregateBucketsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfEquipmentRuntimeAvailabilityResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityResponse | null;
 };
@@ -10468,6 +10520,56 @@ export type QueryBusinessConsoleTelemetryOeeResponses = {
 };
 
 export type QueryBusinessConsoleTelemetryOeeResponse = QueryBusinessConsoleTelemetryOeeResponses[keyof QueryBusinessConsoleTelemetryOeeResponses];
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        dimension: NervIipContractsIndustrialTelemetryOeeAggregateDimension;
+        windowStartUtc: string;
+        windowEndUtc: string;
+        deviceAssetId?: string | null;
+        workCenterId?: string | null;
+        shiftCode?: string | null;
+        lineCode?: string | null;
+        workshopCode?: string | null;
+        businessDate?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/telemetry/oee/aggregates';
+};
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesError = QueryBusinessConsoleTelemetryOeeAggregatesErrors[keyof QueryBusinessConsoleTelemetryOeeAggregatesErrors];
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfOeeAggregateBucketsResponse;
+};
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesResponse = QueryBusinessConsoleTelemetryOeeAggregatesResponses[keyof QueryBusinessConsoleTelemetryOeeAggregatesResponses];
 
 export type QueryBusinessConsoleTelemetryRuntimeAvailabilityData = {
     body?: never;
