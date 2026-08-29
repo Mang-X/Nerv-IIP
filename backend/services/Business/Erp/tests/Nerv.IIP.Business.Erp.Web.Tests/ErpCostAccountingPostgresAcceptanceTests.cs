@@ -30,6 +30,97 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
     [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_rework_origin_arriving_after_cost_events_stays_isolated_and_queryable()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var reportedAtUtc = DateTimeOffset.Parse("2026-08-30T03:30:00Z");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setupDb.Database.MigrateAsync();
+            setupDb.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+                "org-pg", "env-pg", "WC-PG", 50m, "CNY",
+                DateTimeOffset.Parse("2026-01-01T00:00:00Z"), null, 1,
+                "system:test", "governed PostgreSQL rate", DateTimeOffset.Parse("2026-01-01T00:00:00Z")));
+            var sourceCost = WorkOrderCost.Open("org-pg", "env-pg", "WO-SOURCE-PG", "FG-PG");
+            sourceCost.RecordLabor("RPT-SOURCE-PG", "WC-PG", 1m, 25m, "CNY", false, reportedAtUtc.AddDays(-1));
+            setupDb.WorkOrderCosts.Add(sourceCost);
+            await setupDb.SaveChangesAsync();
+        }
+
+        var report = new ProductionReportRecordedIntegrationEvent(
+            "evt-rework-report-pg", MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1, reportedAtUtc, MesIntegrationEventSources.BusinessMes,
+            "RPT-RW-PG", "WO-RW-PG", "org-pg", "env-pg", "operator:test", "rework-report-pg",
+            new ProductionReportRecordedPayload(
+                "RPT-RW-PG", "WO-RW-PG", "OP-RW-PG", "WC-PG", null,
+                2m, 0m, 0m, "ea", 1m, reportedAtUtc, false, MaterialMovementCount: 0));
+        await using (var reportDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+                    reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb))
+                .HandleAsync(report, CancellationToken.None);
+        }
+
+        var created = new ReworkWorkOrderCreatedIntegrationEvent(
+            "evt-rework-created-pg", MesIntegrationEventTypes.ReworkWorkOrderCreated,
+            MesIntegrationEventVersions.V1, reportedAtUtc.AddMinutes(1),
+            MesIntegrationEventSources.BusinessMes, "corr-rework-pg", "cause-ncr-pg",
+            "org-pg", "env-pg", "system:business-mes", "rework-created-pg",
+            new ReworkWorkOrderCreatedPayload(
+                "ncr-pg", "NCR-PG", "WO-RW-PG", "WO-SOURCE-PG", "OP-SOURCE-PG",
+                "FG-PG", 2m, "LOT-PG", null, reportedAtUtc.AddMinutes(1)));
+        await using (var attributionDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
+                attributionDb, attributionDb, new PostgreSqlWorkOrderCostMutationLock(attributionDb));
+            await handler.HandleAsync(created, CancellationToken.None);
+            await handler.HandleAsync(created, CancellationToken.None);
+        }
+
+        var completed = new WorkOrderCompletedIntegrationEvent(
+            "evt-rework-completed-pg", MesIntegrationEventTypes.WorkOrderCompleted,
+            MesIntegrationEventVersions.V1, reportedAtUtc.AddMinutes(2),
+            MesIntegrationEventSources.BusinessMes, "WO-RW-PG", "WO-RW-PG",
+            "org-pg", "env-pg", "system:mes", "rework-completed-pg",
+            new WorkOrderCompletedPayload(
+                "WO-RW-PG", "FG-PG", 2m, 2m, 0m, reportedAtUtc.AddMinutes(2), 1, 0));
+        await using (var completionDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
+                    completionDb, deadLetters, completionDb)
+                .HandleAsync(completed, CancellationToken.None);
+        }
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(assertDb);
+        var source = await assertDb.WorkOrderCosts.Include(x => x.Details)
+            .SingleAsync(x => x.WorkOrderId == "WO-SOURCE-PG");
+        var rework = await assertDb.WorkOrderCosts.Include(x => x.Details)
+            .SingleAsync(x => x.WorkOrderId == "WO-RW-PG");
+        Assert.Equal(25m, source.TotalAccumulatedCost);
+        Assert.False(source.IsRework);
+        Assert.Equal(100m, rework.LaborCost);
+        Assert.True(rework.CapitalizationPublished);
+        Assert.Equal("ncr-pg", rework.SourceNcrId);
+        Assert.Equal("WO-SOURCE-PG", rework.SourceWorkOrderId);
+        Assert.Equal("FG-PG", rework.SkuCode);
+        Assert.Single(await assertDb.ProcessedIntegrationEvents
+            .Where(x => x.ConsumerName == ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost.ConsumerName)
+            .ToArrayAsync());
+
+        var byNcr = await new ListWorkOrderCostsQueryHandler(assertDb).Handle(
+            new ListWorkOrderCostsQuery("org-pg", "env-pg", SourceNcrId: "ncr-pg"),
+            CancellationToken.None);
+        Assert.Equal("rework", Assert.Single(byNcr.Items).CostKind);
+        Assert.Equal(100m, byNcr.ReworkCostTotal);
+        Assert.Equal(0m, byNcr.OrdinaryCostTotal);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
