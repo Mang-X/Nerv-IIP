@@ -101,6 +101,22 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
             }
         }
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
+        dbContext.OperationLaborReportSnapshots.Add(OperationLaborReportSnapshot.Create(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            integrationEvent.Payload.WorkOrderId,
+            integrationEvent.Payload.OperationTaskId,
+            integrationEvent.Payload.WorkCenterId,
+            integrationEvent.Payload.ReportNo,
+            integrationEvent.Payload.GoodQuantity,
+            integrationEvent.Payload.ScrapQuantity,
+            integrationEvent.Payload.ReworkQuantity,
+            integrationEvent.Payload.UomCode,
+            integrationEvent.Payload.TheoreticalRatePerHour,
+            integrationEvent.Payload.ReportedAtUtc,
+            integrationEvent.Payload.IsReversal,
+            integrationEvent.Payload.ReversedReportNo,
+            integrationEvent.EventId));
         var priorTotal = cost.TotalAccumulatedCost;
         if (hasLaborBasis)
         {
