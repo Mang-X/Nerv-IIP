@@ -29,6 +29,234 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
     [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-31T15:00:00Z");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var settled = MachineSettled(
+            "evt-machine-closed", "org-machine-closed", "env-machine-closed",
+            "WO-MACHINE-CLOSED", "OP-MACHINE-CLOSED", "WC-MACHINE-CLOSED",
+            completedAtUtc, TimeSpan.TicksPerHour);
+
+        await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setupDb.Database.MigrateAsync();
+            var period = AccountingPeriod.Open(
+                "org-machine-closed", "env-machine-closed", "2026-08",
+                new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31));
+            period.Close("auditor:test", "month end close");
+            setupDb.AccountingPeriods.Add(period);
+            setupDb.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-machine-closed", "env-machine-closed", "WC-MACHINE-CLOSED", "2026-08",
+                30_000m, 10_000m, 1_000m, "CNY", 1,
+                "system:test", "approved machine overhead rate", completedAtUtc.AddDays(-30)));
+            await setupDb.SaveChangesAsync();
+        }
+
+        await using (var closedDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineSettlementConsumer(closedDb, deadLetters).HandleAsync(settled, CancellationToken.None);
+        }
+
+        await using (var closedAssertDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            Assert.Empty(await closedAssertDb.ProcessedIntegrationEvents.ToListAsync());
+            Assert.Empty(await closedAssertDb.OperationMachineOverheadSettlements.ToListAsync());
+            Assert.Empty(await closedAssertDb.OperationMachineOverheadSettlementStates.ToListAsync());
+            Assert.Empty(await closedAssertDb.WorkOrderCosts.ToListAsync());
+            Assert.Empty(await closedAssertDb.Set<WorkOrderCostDetail>().ToListAsync());
+        }
+        Assert.Equal("closed-accounting-period", Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None)).FailureCode);
+
+        await using (var reopenDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var period = await reopenDb.AccountingPeriods.SingleAsync();
+            period.Reopen("auditor:test", "approved late machine settlement");
+            await reopenDb.SaveChangesAsync();
+        }
+
+        await using (var replayDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineSettlementConsumer(replayDb, deadLetters).HandleAsync(settled, CancellationToken.None);
+        }
+        await using (var duplicateDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineSettlementConsumer(duplicateDb, deadLetters).HandleAsync(settled, CancellationToken.None);
+        }
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Single(await assertDb.ProcessedIntegrationEvents.Where(x => x.EventId == settled.EventId).ToListAsync());
+        var snapshot = await assertDb.OperationMachineOverheadSettlements.SingleAsync();
+        Assert.Equal("2026-08", snapshot.AccountingPeriodCode);
+        Assert.Equal(1, snapshot.RateRevision);
+        Assert.Equal(40m, snapshot.Amount);
+        Assert.Equal(1, (await assertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
+        var cost = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(40m, cost.MachineOverheadCost);
+        Assert.Single(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperation);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_priced_labor_then_zero_not_applicable_machine_settle_and_void_do_not_freeze_machine_currency()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-31T15:00:00Z");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var settled = MachineSettled(
+            "evt-machine-na-zero", "org-machine-currency", "env-machine-currency",
+            "WO-LABOR-FIRST", "OP-LABOR-FIRST", "WC-NOT-APPLICABLE",
+            completedAtUtc, null, MesMachineTimeFactStatus.NotApplicable);
+
+        await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setupDb.Database.MigrateAsync();
+            setupDb.AccountingPeriods.Add(AccountingPeriod.Open(
+                "org-machine-currency", "env-machine-currency", "2026-08",
+                new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31)));
+            setupDb.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineNotApplicable(
+                "org-machine-currency", "env-machine-currency", "WC-NOT-APPLICABLE", "2026-08",
+                "CNY", 1, "system:test", "no machine overhead", completedAtUtc.AddDays(-30)));
+            var cost = WorkOrderCost.Open(
+                "org-machine-currency", "env-machine-currency", "WO-LABOR-FIRST", "SKU-001");
+            cost.RecordLabor("RPT-USD-FIRST", "WC-LABOR", 1m, 80m, "USD", false, completedAtUtc.AddMinutes(-10));
+            setupDb.WorkOrderCosts.Add(cost);
+            await setupDb.SaveChangesAsync();
+        }
+
+        await using (var settlementDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineSettlementConsumer(settlementDb, deadLetters).HandleAsync(settled, CancellationToken.None);
+        }
+        await using (var voidDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineVoidConsumer(voidDb, deadLetters).HandleAsync(
+                MachineVoided("evt-machine-na-zero-void", settled, completedAtUtc.AddHours(1)),
+                CancellationToken.None);
+        }
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        var snapshot = await assertDb.OperationMachineOverheadSettlements.SingleAsync();
+        var reversal = await assertDb.OperationMachineOverheadSettlementVoids.SingleAsync();
+        var persisted = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(0m, snapshot.Amount);
+        Assert.Equal(0m, reversal.Amount);
+        Assert.Equal("USD", persisted.LaborCurrencyCode);
+        Assert.Null(persisted.MachineOverheadCurrencyCode);
+        Assert.Equal(80m, persisted.TotalAccumulatedCost);
+        Assert.Empty(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Empty(await deadLetters.ListAsync(
+            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_zero_available_machine_settle_and_void_do_not_poison_later_priced_labor_currency()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-31T15:00:00Z");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var settled = MachineSettled(
+            "evt-machine-zero-first", "org-machine-zero-first", "env-machine-zero-first",
+            "WO-MACHINE-FIRST", "OP-MACHINE-FIRST", "WC-MACHINE-FIRST",
+            completedAtUtc, 0);
+
+        await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setupDb.Database.MigrateAsync();
+            setupDb.AccountingPeriods.Add(AccountingPeriod.Open(
+                "org-machine-zero-first", "env-machine-zero-first", "2026-08",
+                new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31)));
+            setupDb.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-machine-zero-first", "env-machine-zero-first", "WC-MACHINE-FIRST", "2026-08",
+                30_000m, 10_000m, 1_000m, "CNY", 1,
+                "system:test", "approved machine overhead rate", completedAtUtc.AddDays(-30)));
+            await setupDb.SaveChangesAsync();
+        }
+
+        await using (var settlementDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineSettlementConsumer(settlementDb, deadLetters).HandleAsync(settled, CancellationToken.None);
+        }
+        await using (var voidDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineVoidConsumer(voidDb, deadLetters).HandleAsync(
+                MachineVoided("evt-machine-zero-first-void", settled, completedAtUtc.AddHours(1)),
+                CancellationToken.None);
+        }
+        await using (var laborDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var cost = await laborDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+            cost.RecordLabor("RPT-USD-LATER", "WC-LABOR", 1m, 80m, "USD", false, completedAtUtc.AddHours(2));
+            await laborDb.SaveChangesAsync();
+        }
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        var snapshot = await assertDb.OperationMachineOverheadSettlements.SingleAsync();
+        var reversal = await assertDb.OperationMachineOverheadSettlementVoids.SingleAsync();
+        var persisted = await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(0m, snapshot.Amount);
+        Assert.Equal(0m, reversal.Amount);
+        Assert.Equal("USD", persisted.LaborCurrencyCode);
+        Assert.Null(persisted.MachineOverheadCurrencyCode);
+        Assert.Equal(80m, persisted.TotalAccumulatedCost);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_nonzero_machine_overhead_still_fails_closed_for_priced_labor_in_another_currency()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-31T15:00:00Z");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setupDb.Database.MigrateAsync();
+            setupDb.AccountingPeriods.Add(AccountingPeriod.Open(
+                "org-machine-priced", "env-machine-priced", "2026-08",
+                new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31)));
+            setupDb.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
+                "org-machine-priced", "env-machine-priced", "WC-MACHINE-PRICED", "2026-08",
+                30_000m, 10_000m, 1_000m, "CNY", 1,
+                "system:test", "approved machine overhead rate", completedAtUtc.AddDays(-30)));
+            var cost = WorkOrderCost.Open(
+                "org-machine-priced", "env-machine-priced", "WO-MACHINE-PRICED", "SKU-001");
+            cost.RecordLabor("RPT-USD-PRICED", "WC-LABOR", 1m, 80m, "USD", false, completedAtUtc.AddMinutes(-10));
+            setupDb.WorkOrderCosts.Add(cost);
+            await setupDb.SaveChangesAsync();
+        }
+
+        var settled = MachineSettled(
+            "evt-machine-priced", "org-machine-priced", "env-machine-priced",
+            "WO-MACHINE-PRICED", "OP-MACHINE-PRICED", "WC-MACHINE-PRICED",
+            completedAtUtc, TimeSpan.TicksPerHour);
+        await using (var settlementDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineSettlementConsumer(settlementDb, deadLetters).HandleAsync(settled, CancellationToken.None);
+        }
+
+        await using var assertDb = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Empty(await assertDb.OperationMachineOverheadSettlements.ToListAsync());
+        Assert.Empty(await assertDb.ProcessedIntegrationEvents.Where(x => x.EventId == settled.EventId).ToListAsync());
+        Assert.Equal(80m, (await assertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync()).TotalAccumulatedCost);
+        Assert.Equal("incompatible-work-order-machine-overhead-currency", Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None)).FailureCode);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
@@ -708,6 +936,93 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         var postgres = Assert.IsType<PostgresException>(error.InnerException);
         Assert.Equal(constraintName, postgres.ConstraintName);
     }
+
+    private static MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead MachineSettlementConsumer(
+        ApplicationDbContext db,
+        InMemoryIntegrationEventDeadLetterStore deadLetters)
+        => new(
+            db,
+            db,
+            new PostgreSqlWorkOrderCostMutationLock(db),
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters));
+
+    private static MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead MachineVoidConsumer(
+        ApplicationDbContext db,
+        InMemoryIntegrationEventDeadLetterStore deadLetters)
+        => new(
+            db,
+            db,
+            new PostgreSqlWorkOrderCostMutationLock(db),
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters));
+
+    private static MesOperationActualTimeSettledV2IntegrationEvent MachineSettled(
+        string eventId,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string operationTaskId,
+        string workCenterId,
+        DateTimeOffset completedAtUtc,
+        long? billableMachineTicks,
+        MesMachineTimeFactStatus status = MesMachineTimeFactStatus.Available)
+        => new(
+            eventId,
+            MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V2,
+            completedAtUtc.AddMinutes(1),
+            MesIntegrationEventSources.BusinessMes,
+            $"correlation-{eventId}",
+            $"causation-{eventId}",
+            organizationId,
+            environmentId,
+            "operator:test",
+            $"actual-time:{operationTaskId}:1:settled:v2",
+            new OperationActualTimeSettledV2Payload(
+                workOrderId,
+                operationTaskId,
+                workCenterId,
+                1,
+                completedAtUtc,
+                TimeSpan.TicksPerHour,
+                billableMachineTicks ?? 0,
+                [],
+                status == MesMachineTimeFactStatus.Available ? $"DEVICE-{operationTaskId}" : null,
+                status,
+                status == MesMachineTimeFactStatus.Available ? billableMachineTicks : null,
+                status == MesMachineTimeFactStatus.Available
+                    ? MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1
+                    : null));
+
+    private static MesOperationActualTimeSettlementVoidedV2IntegrationEvent MachineVoided(
+        string eventId,
+        MesOperationActualTimeSettledV2IntegrationEvent settled,
+        DateTimeOffset voidedAtUtc)
+        => new(
+            eventId,
+            MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V2,
+            voidedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            settled.CorrelationId,
+            settled.EventId,
+            settled.OrganizationId,
+            settled.EnvironmentId,
+            "operator:test",
+            $"actual-time:{settled.Payload.OperationTaskId}:{settled.Payload.SettlementRevision}:voided:v2",
+            new OperationActualTimeSettlementVoidedV2Payload(
+                settled.Payload.WorkOrderId,
+                settled.Payload.OperationTaskId,
+                settled.Payload.WorkCenterId,
+                settled.Payload.SettlementRevision,
+                settled.Payload.CompletedAtUtc,
+                voidedAtUtc,
+                settled.Payload.ActualLaborTicks,
+                settled.Payload.ActualMachineTicks,
+                settled.Payload.CoveredProductionReportNos,
+                settled.Payload.DeviceAssetId,
+                settled.Payload.MachineTimeStatus,
+                settled.Payload.BillableMachineTicks,
+                settled.Payload.MachineTimeBasisCode));
 
     private sealed class NoopMediator : IMediator
     {

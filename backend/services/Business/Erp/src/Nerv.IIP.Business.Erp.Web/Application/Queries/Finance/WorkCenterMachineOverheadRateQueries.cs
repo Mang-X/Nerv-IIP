@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
@@ -137,6 +138,12 @@ public sealed record ResolvedWorkCenterMachineOverheadRate(
     string CurrencyCode,
     int Revision);
 
+internal sealed class ClosedAccountingPeriodForMachineOverheadSettlementException(string periodCode)
+    : Exception($"Accounting period '{periodCode}' is closed and cannot accept machine-overhead settlement.")
+{
+    public string PeriodCode { get; } = periodCode;
+}
+
 public sealed class ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ResolveWorkCenterMachineOverheadRateForSettlementQuery, ResolvedWorkCenterMachineOverheadRate>
 {
@@ -148,22 +155,26 @@ public sealed class ResolveWorkCenterMachineOverheadRateForSettlementQueryHandle
         var environmentId = request.EnvironmentId.Trim();
         var workCenterId = request.WorkCenterId.Trim();
         var completionDate = DateOnly.FromDateTime(request.CompletedAtUtc.UtcDateTime);
-        var periodCodes = await dbContext.AccountingPeriods
+        var periods = await dbContext.AccountingPeriods
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.StartDate <= completionDate
                 && x.EndDate >= completionDate)
-            .Select(x => x.PeriodCode)
+            .Select(x => new { x.PeriodCode, x.Status })
             .Take(2)
             .ToListAsync(cancellationToken);
-        if (periodCodes.Count != 1)
+        if (periods.Count != 1)
         {
             throw new KnownException(
                 $"结算完成时点『{request.CompletedAtUtc:O}』未唯一匹配会计期间『{organizationId}·{environmentId}』。");
         }
 
-        var periodCode = periodCodes[0];
+        var period = periods[0];
+        if (period.Status != AccountingPeriodStatus.Open)
+            throw new ClosedAccountingPeriodForMachineOverheadSettlementException(period.PeriodCode);
+
+        var periodCode = period.PeriodCode;
         var resolved = await dbContext.WorkCenterMachineOverheadRates
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId

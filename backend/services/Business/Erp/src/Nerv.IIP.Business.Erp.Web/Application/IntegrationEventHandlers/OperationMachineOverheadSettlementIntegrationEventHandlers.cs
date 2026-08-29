@@ -153,7 +153,7 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             integrationEvent.EnvironmentId,
             payload.WorkOrderId,
             cancellationToken);
-        if (!cost.TryFreezeMachineOverheadCurrency(settlement.CurrencyCode))
+        if (!TryFreezeMachineOverheadCurrency(cost, settlement.Amount, settlement.CurrencyCode))
         {
             await AddCurrencyDeadLetterAsync(
                 MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
@@ -272,7 +272,7 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             integrationEvent.EnvironmentId,
             payload.WorkOrderId,
             cancellationToken);
-        if (cost is not null && !cost.TryFreezeMachineOverheadCurrency(settlement.CurrencyCode))
+        if (!TryFreezeMachineOverheadCurrency(cost, settlement.Amount, settlement.CurrencyCode))
         {
             await AddCurrencyDeadLetterAsync(
                 MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
@@ -364,6 +364,15 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             resolved = await new ResolveWorkCenterMachineOverheadRateForSettlementQueryHandler(dbContext).Handle(
                 new(payload.OrganizationId, payload.EnvironmentId, payload.WorkCenterId, payload.CompletedAtUtc),
                 cancellationToken);
+        }
+        catch (ClosedAccountingPeriodForMachineOverheadSettlementException exception)
+        {
+            await AddClosedAccountingPeriodDeadLetterAsync(
+                consumerName,
+                integrationEvent,
+                exception.PeriodCode,
+                cancellationToken);
+            return null;
         }
         catch (KnownException exception)
         {
@@ -474,6 +483,12 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
         => ErpProcessedIntegrationEventInbox.TryRecordAsync(
             dbContext, consumerName, integrationEvent, cancellationToken);
 
+    private static bool TryFreezeMachineOverheadCurrency(
+        WorkOrderCost? cost,
+        decimal amount,
+        string currencyCode)
+        => amount == 0m || cost is null || cost.TryFreezeMachineOverheadCurrency(currencyCode);
+
     private async Task PostLateAdjustmentIfCapitalizedAsync(
         WorkOrderCost cost,
         decimal priorTotal,
@@ -514,6 +529,19 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
                 integrationEvent,
                 "missing-machine-overhead-rate",
                 detail),
+            cancellationToken);
+
+    private Task AddClosedAccountingPeriodDeadLetterAsync(
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        string periodCode,
+        CancellationToken cancellationToken)
+        => deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                consumerName,
+                integrationEvent,
+                "closed-accounting-period",
+                $"Accounting period '{periodCode}' is closed; reopen it before replaying this machine-overhead settlement."),
             cancellationToken);
 
     private Task AddMissingSettlementDeadLetterAsync(
