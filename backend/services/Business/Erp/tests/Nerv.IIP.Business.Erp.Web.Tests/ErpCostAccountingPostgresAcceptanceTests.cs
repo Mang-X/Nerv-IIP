@@ -150,17 +150,59 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             await MachineVoidConsumer(duplicateVoidDb, deadLetters).HandleAsync(voided, CancellationToken.None);
         }
 
-        await using var finalAssertDb = new ApplicationDbContext(options, new NoopMediator());
-        Assert.Single(await finalAssertDb.ProcessedIntegrationEvents.Where(x => x.EventId == voided.EventId).ToListAsync());
-        Assert.Equal(-40m, (await finalAssertDb.OperationMachineOverheadSettlementVoids.SingleAsync()).Amount);
-        Assert.Null((await finalAssertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
-        var finalCost = await finalAssertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
-        Assert.Equal(0m, finalCost.MachineOverheadCost);
-        Assert.Equal(0m, finalCost.WipClearedCost);
-        Assert.Single(finalCost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperationVoid);
-        var voucher = await finalAssertDb.JournalVouchers.Include(x => x.Lines).SingleAsync();
-        Assert.Equal(40m, voucher.Lines.Sum(x => x.DebitAmount));
-        Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount));
+        await using (var finalAssertDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            Assert.Single(await finalAssertDb.ProcessedIntegrationEvents.Where(x => x.EventId == voided.EventId).ToListAsync());
+            Assert.Equal(-40m, (await finalAssertDb.OperationMachineOverheadSettlementVoids.SingleAsync()).Amount);
+            Assert.Null((await finalAssertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
+            var finalCost = await finalAssertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+            Assert.Equal(0m, finalCost.MachineOverheadCost);
+            Assert.Equal(0m, finalCost.WipClearedCost);
+            Assert.Single(finalCost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperationVoid);
+            var voucher = await finalAssertDb.JournalVouchers.Include(x => x.Lines).SingleAsync();
+            Assert.Equal(40m, voucher.Lines.Sum(x => x.DebitAmount));
+            Assert.Equal(voucher.Lines.Sum(x => x.DebitAmount), voucher.Lines.Sum(x => x.CreditAmount));
+        }
+
+        await using (var closeAfterVoidDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            (await closeAfterVoidDb.AccountingPeriods.SingleAsync())
+                .Close("auditor:test", "close after machine void");
+            await closeAfterVoidDb.SaveChangesAsync();
+        }
+        await using (var duplicateAfterCloseDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineVoidConsumer(duplicateAfterCloseDb, deadLetters).HandleAsync(voided, CancellationToken.None);
+        }
+
+        var conflictingVoid = voided with
+        {
+            EventId = "evt-machine-closed-void-conflict",
+            Payload = voided.Payload with { VoidedAtUtc = voided.Payload.VoidedAtUtc.AddMinutes(1) },
+        };
+        await using (var conflictAfterCloseDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await MachineVoidConsumer(conflictAfterCloseDb, deadLetters).HandleAsync(conflictingVoid, CancellationToken.None);
+        }
+
+        await using var idempotencyAssertDb = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Single(await idempotencyAssertDb.ProcessedIntegrationEvents.Where(x => x.EventId == voided.EventId).ToListAsync());
+        Assert.Empty(await idempotencyAssertDb.ProcessedIntegrationEvents.Where(x => x.EventId == conflictingVoid.EventId).ToListAsync());
+        Assert.Single(await idempotencyAssertDb.OperationMachineOverheadSettlementVoids.ToListAsync());
+        Assert.Null((await idempotencyAssertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
+        var idempotentCost = await idempotencyAssertDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(0m, idempotentCost.MachineOverheadCost);
+        Assert.Equal(0m, idempotentCost.WipClearedCost);
+        Assert.Single(idempotentCost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperationVoid);
+        Assert.Single(await idempotencyAssertDb.JournalVouchers.ToListAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None), x => x.FailureCode == "closed-accounting-period");
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None), x => x.FailureCode == "conflicting-operation-machine-overhead-settlement");
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]

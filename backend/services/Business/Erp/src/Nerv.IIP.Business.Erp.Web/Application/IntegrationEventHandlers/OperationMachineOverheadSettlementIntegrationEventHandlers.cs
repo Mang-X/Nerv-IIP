@@ -259,21 +259,21 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             return;
         }
 
+        if (existingVoid is not null)
+        {
+            await TryRecordInboxAsync(
+                MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+                integrationEvent,
+                cancellationToken);
+            return;
+        }
+
         if (!await IsAccountingPeriodOpenAsync(settlement, cancellationToken))
         {
             await AddClosedAccountingPeriodDeadLetterAsync(
                 MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
                 integrationEvent,
                 settlement.AccountingPeriodCode,
-                cancellationToken);
-            return;
-        }
-
-        if (existingVoid is not null)
-        {
-            await TryRecordInboxAsync(
-                MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
-                integrationEvent,
                 cancellationToken);
             return;
         }
