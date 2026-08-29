@@ -71,11 +71,16 @@ public sealed class WorkOrderCostReadContractTests
 
         Assert.Equal("available", response.MachineCostStatus);
         Assert.Null(response.MachineCostUnavailableReason);
+        Assert.Null(response.CurrencyCode);
+        Assert.Equal("CNY", response.MachineCurrencyCode);
         Assert.Equal(2.000000m, response.ActualMachineHours);
         Assert.Equal(60.000000m, response.AppliedFixedMachineOverhead);
         Assert.Equal(20.000000m, response.AppliedVariableMachineOverhead);
         Assert.Equal(80.000000m, response.AppliedMachineOverheadTotal);
         Assert.Equal(3, response.MachineOverheadOperations.Count);
+        Assert.Equal(1, response.MachineOverheadPageNumber);
+        Assert.Equal(50, response.MachineOverheadPageSize);
+        Assert.Equal(3, response.TotalMachineOverheadOperations);
         var operations = response.MachineOverheadOperations.ToDictionary(x => x.OperationTaskId, StringComparer.Ordinal);
         var applied = operations["OP-APPLIED"];
         Assert.Equal(applicable.Id.ToString(), applied.SettlementId);
@@ -92,6 +97,14 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal("machine_overhead_not_applicable", operations["OP-NOT-APPLICABLE"].UnavailableReason);
         Assert.Null(operations["OP-NOT-APPLICABLE"].ActualMachineHours);
         Assert.Null(operations["OP-NOT-APPLICABLE"].AppliedMachineOverheadTotal);
+
+        var secondPage = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-machine", "env-machine", "WO-MACHINE", PageNumber: 2, PageSize: 1),
+            CancellationToken.None);
+        Assert.Equal(2, secondPage.MachineOverheadPageNumber);
+        Assert.Equal(1, secondPage.MachineOverheadPageSize);
+        Assert.Equal(3, secondPage.TotalMachineOverheadOperations);
+        Assert.Equal("OP-NOT-APPLICABLE", Assert.Single(secondPage.MachineOverheadOperations).OperationTaskId);
     }
 
     [Fact]
@@ -116,10 +129,46 @@ public sealed class WorkOrderCostReadContractTests
 
         Assert.Equal("notApplicable", response.MachineCostStatus);
         Assert.Equal("machine_overhead_not_applicable", response.MachineCostUnavailableReason);
+        Assert.Null(response.MachineCurrencyCode);
         Assert.Null(response.ActualMachineHours);
         Assert.Null(response.AppliedFixedMachineOverhead);
         Assert.Null(response.AppliedVariableMachineOverhead);
         Assert.Null(response.AppliedMachineOverheadTotal);
+    }
+
+    [Fact]
+    public async Task Labor_and_machine_aggregates_keep_their_own_currency_codes()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var labor = OperationLaborSettlement.Create(
+            "org-currency", "env-currency", "WO-CURRENCY", "OP-LABOR", "WC-LABOR", 1,
+            CompletedAtUtc, TimeSpan.TicksPerHour, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "USD", 20m, "evt-labor-currency", "hash-labor-currency");
+        var laborState = OperationLaborSettlementState.Open("org-currency", "env-currency", "OP-LABOR");
+        laborState.ApplySettlement(1);
+        var machine = OperationMachineOverheadSettlement.CreateApplied(
+            "org-currency", "env-currency", "WO-CURRENCY", "OP-MACHINE", "WC-MACHINE", 1,
+            CompletedAtUtc, "DEVICE-CURRENCY", TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1",
+            new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), "2026-08", 1,
+            "CNY", 30m, 10m, "evt-machine-currency", new string('f', 64));
+        var machineState = OperationMachineOverheadSettlementState.Open(
+            "org-currency", "env-currency", "OP-MACHINE");
+        machineState.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-currency", "env-currency", "WO-CURRENCY", "FG-CURRENCY");
+        cost.RecordActualLabor(labor);
+        db.AddRange(cost, labor, laborState, machine, machineState);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-currency", "env-currency", "WO-CURRENCY"), CancellationToken.None);
+
+        Assert.Equal("USD", response.CurrencyCode);
+        Assert.Equal("CNY", response.MachineCurrencyCode);
+        Assert.Equal("available", response.MachineCostStatus);
+        Assert.Equal(40m, response.AppliedMachineOverheadTotal);
     }
 
     [Fact]
@@ -702,7 +751,7 @@ public sealed class WorkOrderCostReadContractTests
     [Fact]
     public async Task Http_contract_binds_claim_scope_and_preserves_explicit_zero_and_unavailable_nulls()
     {
-        var sender = new CapturingSender();
+        var sender = new CapturingSender("available");
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
@@ -737,9 +786,55 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal(0m, data.GetProperty("actualLaborHours").GetDecimal());
         Assert.Equal(0m, data.GetProperty("actualMachineHours").GetDecimal());
         Assert.Equal("available", data.GetProperty("machineCostStatus").GetString());
+        Assert.Equal("CNY", data.GetProperty("machineCurrencyCode").GetString());
         Assert.Equal(0m, data.GetProperty("appliedFixedMachineOverhead").GetDecimal());
         Assert.Equal(0m, data.GetProperty("appliedVariableMachineOverhead").GetDecimal());
         Assert.Equal(0m, data.GetProperty("appliedMachineOverheadTotal").GetDecimal());
+        Assert.Equal(2, data.GetProperty("machineOverheadPageNumber").GetInt32());
+        Assert.Equal(25, data.GetProperty("machineOverheadPageSize").GetInt32());
+        Assert.Equal(0, data.GetProperty("totalMachineOverheadOperations").GetInt32());
+        Assert.Equal(JsonValueKind.Array, data.GetProperty("machineOverheadOperations").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("notApplicable", "machine_overhead_not_applicable")]
+    [InlineData("unavailable", "currency_conflict")]
+    public async Task Http_contract_serializes_machine_three_state_nullability(
+        string machineCostStatus,
+        string reason)
+    {
+        var sender = new CapturingSender(machineCostStatus);
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(TestHostConfiguration()));
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ISender>();
+                services.AddSingleton<ISender>(sender);
+            });
+        });
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, "/api/business/v1/erp/finance/work-order-costs/WO-STATE");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-erp-machine-overhead-token");
+        request.Headers.Add("X-Organization-Id", "org-test");
+        request.Headers.Add("X-Environment-Id", "env-test");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = json.RootElement.GetProperty("data");
+        Assert.Equal(machineCostStatus, data.GetProperty("machineCostStatus").GetString());
+        Assert.Equal(reason, data.GetProperty("machineCostUnavailableReason").GetString());
+        foreach (var propertyName in new[]
+        {
+            "machineCurrencyCode", "actualMachineHours", "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead", "appliedMachineOverheadTotal"
+        })
+            Assert.Equal(JsonValueKind.Null, data.GetProperty(propertyName).ValueKind);
         Assert.Equal(JsonValueKind.Array, data.GetProperty("machineOverheadOperations").ValueKind);
     }
 
@@ -772,6 +867,10 @@ public sealed class WorkOrderCostReadContractTests
         Assert.True(properties.TryGetProperty("appliedFixedMachineOverhead", out _));
         Assert.True(properties.TryGetProperty("appliedVariableMachineOverhead", out _));
         Assert.True(properties.TryGetProperty("appliedMachineOverheadTotal", out _));
+        Assert.True(properties.TryGetProperty("machineCurrencyCode", out _));
+        Assert.True(properties.TryGetProperty("machineOverheadPageNumber", out _));
+        Assert.True(properties.TryGetProperty("machineOverheadPageSize", out _));
+        Assert.True(properties.TryGetProperty("totalMachineOverheadOperations", out _));
         Assert.True(properties.TryGetProperty("machineOverheadOperations", out _));
         Assert.False(properties.TryGetProperty("actualFixedMachineOverhead", out _));
         var machineOperationSchema = json.RootElement.GetProperty("components").GetProperty("schemas")
@@ -789,6 +888,43 @@ public sealed class WorkOrderCostReadContractTests
         })
             Assert.True(machineOperationProperties.TryGetProperty(propertyName, out _), propertyName);
 
+        var required = schema.Value.GetProperty("required")
+            .EnumerateArray().Select(x => x.GetString()).ToHashSet(StringComparer.Ordinal);
+        foreach (var propertyName in new[]
+        {
+            "machineCostStatus", "machineOverheadPageNumber", "machineOverheadPageSize",
+            "totalMachineOverheadOperations", "machineOverheadOperations"
+        })
+            Assert.Contains(propertyName, required);
+        foreach (var propertyName in new[]
+        {
+            "machineCostUnavailableReason", "machineCurrencyCode", "actualMachineHours",
+            "appliedFixedMachineOverhead", "appliedVariableMachineOverhead", "appliedMachineOverheadTotal"
+        })
+        {
+            Assert.DoesNotContain(propertyName, required);
+            Assert.True(properties.GetProperty(propertyName).GetProperty("nullable").GetBoolean(), propertyName);
+        }
+
+        var operationRequired = machineOperationSchema.Value.GetProperty("required")
+            .EnumerateArray().Select(x => x.GetString()).ToHashSet(StringComparer.Ordinal);
+        foreach (var propertyName in new[]
+        {
+            "operationTaskId", "workCenterId", "settlementId", "settlementRevision", "status",
+            "accountingPeriodCode", "currencyCode", "workCenterMachineOverheadRateId", "rateRevision",
+            "completedAtUtc", "sourceEventId"
+        })
+            Assert.Contains(propertyName, operationRequired);
+        foreach (var propertyName in new[]
+        {
+            "unavailableReason", "actualMachineHours", "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead", "appliedMachineOverheadTotal", "deviceAssetId", "machineTimeBasisCode"
+        })
+        {
+            Assert.DoesNotContain(propertyName, operationRequired);
+            Assert.True(machineOperationProperties.GetProperty(propertyName).GetProperty("nullable").GetBoolean(), propertyName);
+        }
+
         var periodOperation = json.RootElement.GetProperty("paths")
             .GetProperty("/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations")
             .GetProperty("get");
@@ -804,7 +940,7 @@ public sealed class WorkOrderCostReadContractTests
         Assert.True(periodProperties.TryGetProperty("reconciliationUnavailableReason", out _));
     }
 
-    private sealed class CapturingSender : ISender
+    private sealed class CapturingSender(string machineCostStatus) : ISender
     {
         public List<GetWorkOrderCostVarianceQuery> Queries { get; } = [];
 
@@ -812,12 +948,21 @@ public sealed class WorkOrderCostReadContractTests
         {
             var query = Assert.IsType<GetWorkOrderCostVarianceQuery>(request);
             Queries.Add(query);
+            var available = machineCostStatus == "available";
+            var reason = machineCostStatus switch
+            {
+                "notApplicable" => "machine_overhead_not_applicable",
+                "unavailable" => "currency_conflict",
+                _ => null,
+            };
             return Task.FromResult((TResponse)(object)new WorkOrderCostVarianceResponse(
                 query.OrganizationId, query.EnvironmentId, query.WorkOrderId, "CNY", "actualOperation",
                 "available", null, 0m, 0m, 0m, 0m, 0m, 0m, "neutral",
                 "notApplicable", "actual_payroll_rate_not_modeled",
-                0m, 0m, 0m, 0m, 0m, "available", null,
-                query.PageNumber, query.PageSize, 0, [], 0m, 0m, 0m, []));
+                0m, 0m, 0m, 0m, available ? 0m : null, machineCostStatus, reason,
+                available ? "CNY" : null, query.PageNumber, query.PageSize, 0, [],
+                available ? 0m : null, available ? 0m : null, available ? 0m : null,
+                query.PageNumber, query.PageSize, 0, []));
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
