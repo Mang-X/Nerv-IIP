@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -91,6 +92,52 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             .Select(x => x.Revision)
             .ToArrayAsync();
         Assert.Equal(new[] { 1, 2 }, revisions);
+
+        await using var thirdScope = provider.CreateAsyncScope();
+        await using var fourthScope = provider.CreateAsyncScope();
+        await using var reconciliationGateDb = new ApplicationDbContext(options, new NoopMediator());
+        await using var reconciliationGateTransaction = await reconciliationGateDb.Database.BeginTransactionAsync();
+        await new PostgreSqlErpAdvisoryLockAllocator(reconciliationGateDb).AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+            "org-concurrent", "env-concurrent", "2026-06\nWC-CONCURRENT", CancellationToken.None);
+
+        var firstReconciliation = thirdScope.ServiceProvider.GetRequiredService<ISender>().Send(
+            ReconciliationCommand(30_000m, "user:first"));
+        var secondReconciliation = fourthScope.ServiceProvider.GetRequiredService<ISender>().Send(
+            ReconciliationCommand(31_000m, "user:second"));
+        var reconciliationGateReleased = false;
+        try
+        {
+            await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 2);
+            Assert.False(firstReconciliation.IsCompleted);
+            Assert.False(secondReconciliation.IsCompleted);
+            await reconciliationGateTransaction.CommitAsync();
+            reconciliationGateReleased = true;
+            var ids = await Task.WhenAll(firstReconciliation, secondReconciliation)
+                .WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(2, ids.Distinct().Count());
+        }
+        finally
+        {
+            if (!reconciliationGateReleased) await reconciliationGateTransaction.RollbackAsync();
+            try
+            {
+                await Task.WhenAll(firstReconciliation, secondReconciliation)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch
+            {
+                // Preserve the primary assertion or command failure while observing both tasks.
+            }
+        }
+
+        assertDb.ChangeTracker.Clear();
+        Assert.Equal(
+            new[] { 1, 2 },
+            await assertDb.WorkCenterMachineOverheadReconciliations
+                .OrderBy(x => x.Revision)
+                .Select(x => x.Revision)
+                .ToArrayAsync());
     }
 
     [ErpCostPostgresFact]
@@ -193,6 +240,28 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
                 new("org-pg", "env-pg", "WC-LABOR-ONLY", new(2026, 6, 15, 8, 0, 0, TimeSpan.Zero)),
                 CancellationToken.None));
 
+        var reconciliationRate = await db.WorkCenterMachineOverheadRates
+            .SingleAsync(x => x.OrganizationId == "org-pg"
+                && x.EnvironmentId == "env-pg"
+                && x.WorkCenterId == "WC-PG"
+                && x.AccountingPeriodCode == "2026-06"
+                && x.Revision == 2);
+        db.WorkCenterMachineOverheadReconciliations.Add(
+            WorkCenterMachineOverheadReconciliation.Record(
+                "org-pg", "env-pg", "WC-PG", "2026-06",
+                reconciliationRate.Id, reconciliationRate.Revision, "CNY",
+                30_000m, 10_000m, 600 * TimeSpan.TicksPerHour,
+                18_000m, 6_000m, 24_000m,
+                8 * TimeSpan.TicksPerHour, AbnormalDowntimeDisposition.PeriodExpense,
+                1, "user:accountant", "ledger:2026-06", "period reconciliation",
+                new DateTimeOffset(2026, 6, 30, 16, 0, 0, TimeSpan.Zero)));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var reconciliation = await db.WorkCenterMachineOverheadReconciliations.SingleAsync();
+        Assert.Equal(16_000m, reconciliation.UnderOverAppliedTotalAmount);
+        Assert.Equal(12_000m, reconciliation.UnallocatedFixedOverheadAmount);
+        Assert.Equal(8m, reconciliation.AbnormalDowntimeHours);
+
         db.AccountingPeriods.Add(AccountingPeriod.Open(
             "org-pg", "env-pg", "2026-OVERLAP", new(2026, 6, 15), new(2026, 7, 15)));
         await db.SaveChangesAsync();
@@ -217,6 +286,29 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         {
             invalidCostBasis.Parameters.AddWithValue("id", Guid.CreateVersion7());
             var exception = await Assert.ThrowsAsync<PostgresException>(() => invalidCostBasis.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+        }
+
+        await using (var invalidReconciliation = new NpgsqlCommand("""
+            INSERT INTO erp.work_center_machine_overhead_reconciliations
+                (id, organization_id, environment_id, work_center_id, accounting_period_code,
+                 work_center_machine_overhead_rate_id, rate_revision, currency_code,
+                 actual_fixed_overhead_amount, actual_variable_overhead_amount, actual_total_overhead_amount,
+                 applied_machine_ticks, applied_machine_hours, applied_fixed_amount, applied_variable_amount,
+                 applied_total_amount, applied_rounding_difference_amount,
+                 under_over_applied_fixed_amount, under_over_applied_variable_amount,
+                 under_over_applied_total_amount, unallocated_fixed_overhead_amount,
+                 over_applied_fixed_overhead_amount, abnormal_downtime_ticks, abnormal_downtime_hours,
+                 abnormal_downtime_disposition, revision, recorded_by, source_reference, reason, recorded_at_utc)
+            VALUES
+                (@id, 'org-pg', 'env-pg', 'WC-PG', '2026-06', @rate_id, 2, 'CNY',
+                 30000, 10000, 40001, 0, 0, 0, 0, 0, 0, 30000, 10000, 40000,
+                 30000, 0, 0, 0, 'None', 2, 'user:test', 'bad-ledger', 'invalid total', now())
+            """, connection))
+        {
+            invalidReconciliation.Parameters.AddWithValue("id", Guid.CreateVersion7());
+            invalidReconciliation.Parameters.AddWithValue("rate_id", reconciliationRate.Id.Id);
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => invalidReconciliation.ExecuteNonQueryAsync());
             Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
         }
 
@@ -264,6 +356,15 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             actor,
             "concurrent rate",
             new DateTimeOffset(2026, 5, 25, 8, 0, 0, TimeSpan.Zero));
+
+    private static ReconcileWorkCenterMachineOverheadCommand ReconciliationCommand(
+        decimal fixedAmount,
+        string actor)
+        => new(
+            "org-concurrent", "env-concurrent", "WC-CONCURRENT", "2026-06",
+            fixedAmount, 10_000m, "CNY", 0, AbnormalDowntimeDisposition.None,
+            actor, $"ledger:{actor}", "concurrent reconciliation",
+            new DateTimeOffset(2026, 6, 30, 16, 0, 0, TimeSpan.Zero));
 
     private static async Task WaitForAdvisoryLockWaitersAsync(
         string connectionString,

@@ -50,12 +50,27 @@ public sealed record CloseAccountingPeriodCommand(
     string ClosedBy,
     string Reason) : ICommand;
 
-public sealed class CloseAccountingPeriodCommandHandler(ApplicationDbContext dbContext)
+public sealed class CloseAccountingPeriodCommandHandler(
+    ApplicationDbContext dbContext,
+    IErpAdvisoryLockAllocator reconciliationLock)
     : ICommandHandler<CloseAccountingPeriodCommand>
 {
+    public CloseAccountingPeriodCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, new PostgreSqlErpAdvisoryLockAllocator(dbContext))
+    {
+    }
+
     public async Task Handle(CloseAccountingPeriodCommand request, CancellationToken cancellationToken)
     {
+        await reconciliationLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+            request.OrganizationId.Trim(), request.EnvironmentId.Trim(), request.PeriodCode.Trim(),
+            cancellationToken);
         var period = await AccountingPeriodPostingGuard.FindPeriodAsync(dbContext, request.OrganizationId, request.EnvironmentId, request.PeriodCode, cancellationToken);
+        await MachineOverheadPeriodCloseGuard.EnsureReadyAsync(
+            dbContext, reconciliationLock,
+            request.OrganizationId, request.EnvironmentId, request.PeriodCode,
+            cancellationToken);
         period.Close(request.ClosedBy, request.Reason);
     }
 }
