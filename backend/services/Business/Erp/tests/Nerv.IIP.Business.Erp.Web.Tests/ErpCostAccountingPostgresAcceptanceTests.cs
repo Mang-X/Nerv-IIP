@@ -463,6 +463,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         var reportSnapshot = Assert.Single(await assertDb.OperationLaborReportSnapshots.AsNoTracking().ToListAsync());
         Assert.Equal(10m, reportSnapshot.GoodQuantity);
         Assert.Equal(5m, reportSnapshot.TheoreticalRatePerHour);
+        Assert.False(reportSnapshot.HasValidNumericScale);
         Assert.Equal(80m, cost.MachineOverheadCost);
         Assert.Single(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperation);
         Assert.Single(await assertDb.OperationMachineOverheadSettlements.ToListAsync());
@@ -471,13 +472,78 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         var read = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
             new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT"),
             CancellationToken.None);
-        Assert.Equal("available", read.LaborVarianceStatus);
-        Assert.Equal(2.000000m, read.StandardLaborHours);
+        Assert.Equal("unavailable", read.LaborVarianceStatus);
+        Assert.Equal("numeric_scale_out_of_range", read.UnavailableReason);
+        Assert.Null(read.StandardLaborHours);
         Assert.Equal(2.000000m, read.ActualLaborHours);
-        Assert.Equal(0.000000m, read.LaborEfficiencyVarianceAmount);
-        Assert.Equal("neutral", read.LaborEfficiencyVarianceDirection);
+        Assert.Null(read.LaborEfficiencyVarianceAmount);
         Assert.Equal(2.000000m, read.ActualMachineHours);
         Assert.Equal("unavailable", read.MachineCostStatus);
+
+        var governedRateId = await assertDb.WorkCenterCostRates.Select(x => x.Id).SingleAsync();
+        var oldRevision = OperationLaborSettlement.Create(
+            "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-REVISION", "WC-REVISION", 1,
+            completedAtUtc, TimeSpan.TicksPerHour, governedRateId,
+            1, "CNY", 1m, "evt-revision-old", "hash-revision-old");
+        var activeRevision = OperationLaborSettlement.Create(
+            "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-REVISION", "WC-REVISION", 2,
+            completedAtUtc, 2 * TimeSpan.TicksPerHour, governedRateId,
+            2, "CNY", 1m, "evt-revision-active", "hash-revision-active");
+        var revisionState = OperationLaborSettlementState.Open(
+            "org-concurrent", "env-concurrent", "OP-REVISION");
+        revisionState.ApplySettlement(1);
+        revisionState.ApplySettlement(2);
+        var roundingSettlement = OperationLaborSettlement.Create(
+            "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-ROUND", "WC-ROUND", 1,
+            completedAtUtc, TimeSpan.TicksPerHour, governedRateId,
+            1, "CNY", 1m, "evt-round", "hash-round");
+        var roundingState = OperationLaborSettlementState.Open(
+            "org-concurrent", "env-concurrent", "OP-ROUND");
+        roundingState.ApplySettlement(1);
+        assertDb.AddRange(
+            oldRevision,
+            activeRevision,
+            revisionState,
+            OperationLaborCoveredReport.Create(
+                "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-REVISION", 1, "RPT-REVISION-OLD"),
+            OperationLaborCoveredReport.Create(
+                "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-REVISION", 2, "RPT-REVISION-ACTIVE"),
+            OperationLaborReportSnapshot.Create(
+                "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-REVISION", "WC-REVISION", "RPT-REVISION-OLD",
+                100m, 0m, 0m, "ea", 2m, reportedAtUtc.AddMinutes(1), false, null, "evt-report-revision-old"),
+            OperationLaborReportSnapshot.Create(
+                "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-REVISION", "WC-REVISION", "RPT-REVISION-ACTIVE",
+                4m, 0m, 0m, "ea", 2m, reportedAtUtc.AddMinutes(2), false, null, "evt-report-revision-active"),
+            roundingSettlement,
+            roundingState,
+            OperationLaborCoveredReport.Create(
+                "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-ROUND", 1, "RPT-ROUND"),
+            OperationLaborReportSnapshot.Create(
+                "org-concurrent", "env-concurrent", "WO-CONCURRENT", "OP-ROUND", "WC-ROUND", "RPT-ROUND",
+                2.000001m, 0m, 0m, "ea", 2m, reportedAtUtc.AddMinutes(3), false, null, "evt-report-round"));
+        await assertDb.SaveChangesAsync();
+        assertDb.ChangeTracker.Clear();
+
+        var vectorRead = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
+            new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT"),
+            CancellationToken.None);
+        Assert.Equal(3, vectorRead.TotalOperations);
+        var operations = vectorRead.Operations.ToDictionary(x => x.OperationTaskId, StringComparer.Ordinal);
+        Assert.Equal(2, operations["OP-REVISION"].SettlementRevision);
+        Assert.Equal(new[] { "RPT-REVISION-ACTIVE" },
+            operations["OP-REVISION"].CoveredReports.Select(x => x.ReportNo));
+        Assert.Equal(1.000001m, operations["OP-ROUND"].StandardLaborHours);
+        Assert.Equal(-0.000001m, operations["OP-ROUND"].LaborEfficiencyVarianceHours);
+        Assert.Equal(1.000001m, operations["OP-ROUND"].StandardLaborCost);
+        Assert.Equal(-0.000001m, operations["OP-ROUND"].LaborEfficiencyVarianceAmount);
+
+        var secondPage = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
+            new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT", 2, 2),
+            CancellationToken.None);
+        Assert.Equal(3, secondPage.TotalOperations);
+        Assert.Equal(2, secondPage.PageNumber);
+        Assert.Equal(2, secondPage.PageSize);
+        Assert.Equal("OP-ROUND", Assert.Single(secondPage.Operations).OperationTaskId);
 
         var snapshotIndexes = await assertDb.Database.SqlQueryRaw<string>("""
             SELECT indexname AS "Value"
@@ -494,7 +560,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             "ux_operation_labor_report_snapshots_scope_report",
         ], snapshotIndexes);
 
-        assertDb.OperationLaborReportSnapshots.Remove(reportSnapshot);
+        assertDb.OperationLaborReportSnapshots.Remove(await assertDb.OperationLaborReportSnapshots
+            .SingleAsync(x => x.ReportNo == "RPT-CONCURRENT"));
         await assertDb.SaveChangesAsync();
         assertDb.ChangeTracker.Clear();
         var historicalRead = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
@@ -502,7 +569,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             CancellationToken.None);
         Assert.Equal("unavailable", historicalRead.LaborVarianceStatus);
         Assert.Equal("missing_report_snapshot", historicalRead.UnavailableReason);
-        Assert.Equal(2.000000m, historicalRead.ActualLaborHours);
+        Assert.Equal(5.000000m, historicalRead.ActualLaborHours);
         Assert.Null(historicalRead.StandardLaborHours);
     }
 

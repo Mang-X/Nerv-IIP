@@ -136,6 +136,11 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
         var operationResults = settlements
             .Select(settlement => BuildOperation(settlement, covered, snapshots))
             .ToArray();
+        var page = operationResults
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToArray();
+        var currencies = settlements.Select(x => x.CurrencyCode).Distinct(StringComparer.Ordinal).ToArray();
         try
         {
             var unavailableReason = settlements.Count == 0
@@ -152,12 +157,6 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             decimal? varianceHours = unavailableReason is null ? Round(actualLaborHours!.Value - standardLaborHours!.Value) : null;
             decimal? varianceAmount = unavailableReason is null ? Round(actualLaborCost!.Value - standardLaborCost!.Value) : null;
             var machineHours = await ActiveMachineHoursAsync(organizationId, environmentId, workOrderId, cancellationToken);
-            var page = operationResults
-                .Skip((request.PageNumber - 1) * request.PageSize)
-                .Take(request.PageSize)
-                .ToArray();
-
-            var currencies = settlements.Select(x => x.CurrencyCode).Distinct(StringComparer.Ordinal).ToArray();
             return new(
                 organizationId,
                 environmentId,
@@ -189,7 +188,9 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
         }
         catch (OverflowException)
         {
-            return Unavailable(organizationId, environmentId, workOrderId, request, NumericOverflowReason);
+            return UnavailableWithOperations(
+                organizationId, environmentId, workOrderId, request, NumericOverflowReason,
+                currencies.Length == 1 ? currencies[0] : null, operationResults.Length, page);
         }
     }
 
@@ -274,6 +275,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
     {
         if (reportNos.Count == 0) return "missing_output_basis";
         if (reports.Count != reportNos.Count) return "missing_report_snapshot";
+        if (reports.Any(x => !x.HasValidNumericScale)) return "numeric_scale_out_of_range";
         if (reports.Any(x => x.OperationTaskId != settlement.OperationTaskId
                 || x.WorkCenterId != settlement.WorkCenterId))
             return "report_scope_conflict";
@@ -336,6 +338,22 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             "notApplicable", "actual_payroll_rate_not_modeled",
             null, null, null, null, null, "unavailable", MachineCostUnavailableReason,
             request.PageNumber, request.PageSize, 0, []);
+
+    private static WorkOrderCostVarianceResponse UnavailableWithOperations(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        GetWorkOrderCostVarianceQuery request,
+        string reason,
+        string? currencyCode,
+        int totalOperations,
+        IReadOnlyList<OperationLaborVarianceItem> operations)
+        => new(
+            organizationId, environmentId, workOrderId, currencyCode, "actualOperation",
+            "unavailable", reason, null, null, null, null, null, null, null,
+            "notApplicable", "actual_payroll_rate_not_modeled",
+            null, null, null, null, null, "unavailable", MachineCostUnavailableReason,
+            request.PageNumber, request.PageSize, totalOperations, operations);
 
     private static decimal Round(decimal value)
         => decimal.Round(value, 6, MidpointRounding.AwayFromZero);

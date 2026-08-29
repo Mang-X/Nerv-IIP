@@ -258,7 +258,7 @@ public sealed class WorkOrderCostReadContractTests
     }
 
     [Fact]
-    public async Task Reversal_original_must_belong_to_the_same_operation_work_center_and_settlement_lineage()
+    public async Task Reversal_original_must_belong_to_the_current_settlement_membership()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -281,9 +281,9 @@ public sealed class WorkOrderCostReadContractTests
                 2m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-2), false, null, "evt-current"),
             OperationLaborReportSnapshot.Create(
                 "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", "WC-CURRENT", "RPT-REVERSAL",
-                1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-1), true, "RPT-OTHER-OP", "evt-reversal"),
+                1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-1), true, "RPT-NOT-COVERED", "evt-reversal"),
             OperationLaborReportSnapshot.Create(
-                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-OTHER", "WC-OTHER", "RPT-OTHER-OP",
+                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", "WC-CURRENT", "RPT-NOT-COVERED",
                 1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-3), false, null, "evt-other"));
         await db.SaveChangesAsync();
 
@@ -293,6 +293,42 @@ public sealed class WorkOrderCostReadContractTests
 
         Assert.Equal("unavailable", response.LaborVarianceStatus);
         Assert.Equal("conflicting_reversal_snapshot", response.UnavailableReason);
+        Assert.Equal("unavailable", Assert.Single(response.Operations).Status);
+    }
+
+    [Fact]
+    public async Task Reversal_original_must_match_the_current_operation_and_work_center_scope()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var settlement = OperationLaborSettlement.Create(
+            "org-scope", "env-scope", "WO-SCOPE", "OP-CURRENT", "WC-CURRENT", 1,
+            CompletedAtUtc, TimeSpan.TicksPerHour, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "CNY", 60m, "evt-scope-settlement", "hash-scope-settlement");
+        var state = OperationLaborSettlementState.Open("org-scope", "env-scope", "OP-CURRENT");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-scope", "env-scope", "WO-SCOPE", "FG-SCOPE");
+        cost.RecordActualLabor(settlement);
+        db.AddRange(cost, settlement, state,
+            OperationLaborCoveredReport.Create(
+                "org-scope", "env-scope", "WO-SCOPE", "OP-CURRENT", 1, "RPT-ORIGINAL"),
+            OperationLaborCoveredReport.Create(
+                "org-scope", "env-scope", "WO-SCOPE", "OP-CURRENT", 1, "RPT-REVERSAL"),
+            OperationLaborReportSnapshot.Create(
+                "org-scope", "env-scope", "WO-SCOPE", "OP-OTHER", "WC-OTHER", "RPT-ORIGINAL",
+                1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-2), false, null, "evt-scope-original"),
+            OperationLaborReportSnapshot.Create(
+                "org-scope", "env-scope", "WO-SCOPE", "OP-CURRENT", "WC-CURRENT", "RPT-REVERSAL",
+                1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-1), true, "RPT-ORIGINAL", "evt-scope-reversal"));
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new GetWorkOrderCostVarianceQuery("org-scope", "env-scope", "WO-SCOPE"),
+            CancellationToken.None);
+
+        Assert.Equal("unavailable", response.LaborVarianceStatus);
+        Assert.Equal("report_scope_conflict", response.UnavailableReason);
         Assert.Equal("unavailable", Assert.Single(response.Operations).Status);
     }
 
@@ -349,6 +385,50 @@ public sealed class WorkOrderCostReadContractTests
     }
 
     [Fact]
+    public async Task Aggregate_numeric_overflow_preserves_operation_lineage_pagination_and_total_count()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var cost = WorkOrderCost.Open("org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", "FG-OVERFLOW");
+
+        OperationLaborSettlement Settlement(string operationTaskId, string sourceEventId)
+            => OperationLaborSettlement.Create(
+                "org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW",
+                operationTaskId, $"WC-{operationTaskId}", 1, CompletedAtUtc, TimeSpan.TicksPerHour,
+                new WorkCenterCostRateId(Guid.CreateVersion7()), 1, "CNY", decimal.MaxValue,
+                sourceEventId, $"hash-{sourceEventId}");
+
+        var first = Settlement("OP-A", "evt-overflow-a");
+        var second = Settlement("OP-B", "evt-overflow-b");
+        var firstState = OperationLaborSettlementState.Open(
+            "org-aggregate-overflow", "env-aggregate-overflow", "OP-A");
+        firstState.ApplySettlement(1);
+        var secondState = OperationLaborSettlementState.Open(
+            "org-aggregate-overflow", "env-aggregate-overflow", "OP-B");
+        secondState.ApplySettlement(1);
+        db.AddRange(cost, first, second, firstState, secondState);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new GetWorkOrderCostVarianceQuery(
+                "org-aggregate-overflow", "env-aggregate-overflow", "WO-AGGREGATE-OVERFLOW", 2, 1),
+            CancellationToken.None);
+
+        Assert.Equal("unavailable", response.LaborVarianceStatus);
+        Assert.Equal("numeric_overflow", response.UnavailableReason);
+        Assert.Null(response.ActualLaborHours);
+        Assert.Null(response.ActualLaborCost);
+        Assert.Equal(2, response.TotalOperations);
+        Assert.Equal(2, response.PageNumber);
+        Assert.Equal(1, response.PageSize);
+        var operation = Assert.Single(response.Operations);
+        Assert.Equal("OP-B", operation.OperationTaskId);
+        Assert.Equal("WC-OP-B", operation.WorkCenterId);
+        Assert.Equal(1, operation.SettlementRevision);
+    }
+
+    [Fact]
     public async Task Read_keeps_decimal_intermediates_unrounded_then_uses_six_digit_away_from_zero_boundaries()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -379,6 +459,40 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal(-0.007813m, response.LaborEfficiencyVarianceHours);
         Assert.Equal(-0.468750m, response.LaborEfficiencyVarianceAmount);
         Assert.Equal("favorable", response.LaborEfficiencyVarianceDirection);
+    }
+
+    [Fact]
+    public async Task Snapshot_numeric_scale_beyond_six_digits_fails_closed()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var settlement = OperationLaborSettlement.Create(
+            "org-scale", "env-scale", "WO-SCALE", "OP-SCALE", "WC-SCALE", 1,
+            CompletedAtUtc, TimeSpan.TicksPerHour, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "CNY", 60m, "evt-scale-settlement", "hash-scale-settlement");
+        var state = OperationLaborSettlementState.Open("org-scale", "env-scale", "OP-SCALE");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-scale", "env-scale", "WO-SCALE", "FG-SCALE");
+        cost.RecordActualLabor(settlement);
+        db.AddRange(cost, settlement, state,
+            OperationLaborCoveredReport.Create(
+                "org-scale", "env-scale", "WO-SCALE", "OP-SCALE", 1, "RPT-SCALE"),
+            OperationLaborReportSnapshot.Create(
+                "org-scale", "env-scale", "WO-SCALE", "OP-SCALE", "WC-SCALE", "RPT-SCALE",
+                10m, 0m, 0m, "ea", 5.0000004m, CompletedAtUtc.AddMinutes(-1), false, null, "evt-scale-report"));
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new GetWorkOrderCostVarianceQuery("org-scale", "env-scale", "WO-SCALE"),
+            CancellationToken.None);
+
+        Assert.Equal("unavailable", response.LaborVarianceStatus);
+        Assert.Equal("numeric_scale_out_of_range", response.UnavailableReason);
+        var operation = Assert.Single(response.Operations);
+        Assert.Equal("unavailable", operation.Status);
+        Assert.Equal("numeric_scale_out_of_range", operation.UnavailableReason);
+        Assert.Null(operation.StandardLaborHours);
     }
 
     [Fact]

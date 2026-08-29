@@ -3468,6 +3468,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("good_quantity")
                         .HasComment("Frozen reported good quantity before reversal sign normalization.");
 
+                    b.Property<bool>("HasValidNumericScale")
+                        .HasColumnType("boolean")
+                        .HasColumnName("has_valid_numeric_scale")
+                        .HasComment("Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion.");
+
                     b.Property<bool>("IsReversal")
                         .HasColumnType("boolean")
                         .HasColumnName("is_reversal")

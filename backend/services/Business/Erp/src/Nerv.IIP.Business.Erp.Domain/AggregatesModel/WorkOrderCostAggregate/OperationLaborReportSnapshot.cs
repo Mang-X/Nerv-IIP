@@ -37,6 +37,10 @@ public sealed class OperationLaborReportSnapshot : Entity<OperationLaborReportSn
         ReworkQuantity = reworkQuantity;
         UomCode = ErpText.Required(uomCode, nameof(uomCode));
         TheoreticalRatePerHour = theoreticalRatePerHour;
+        HasValidNumericScale = HasScaleAtMostSix(goodQuantity)
+            && HasScaleAtMostSix(scrapQuantity)
+            && HasScaleAtMostSix(reworkQuantity)
+            && (theoreticalRatePerHour is null || HasScaleAtMostSix(theoreticalRatePerHour.Value));
         ReportedAtUtc = reportedAtUtc.Offset == TimeSpan.Zero
             ? reportedAtUtc
             : throw new ArgumentException("Timestamp must use UTC offset zero.", nameof(reportedAtUtc));
@@ -58,6 +62,7 @@ public sealed class OperationLaborReportSnapshot : Entity<OperationLaborReportSn
     public decimal ReworkQuantity { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
     public decimal? TheoreticalRatePerHour { get; private set; }
+    public bool HasValidNumericScale { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
     public bool IsReversal { get; private set; }
     public string? ReversedReportNo { get; private set; }
@@ -83,4 +88,7 @@ public sealed class OperationLaborReportSnapshot : Entity<OperationLaborReportSn
             organizationId, environmentId, workOrderId, operationTaskId, workCenterId,
             reportNo, goodQuantity, scrapQuantity, reworkQuantity, uomCode,
             theoreticalRatePerHour, reportedAtUtc, isReversal, reversedReportNo, sourceEventId);
+
+    private static bool HasScaleAtMostSix(decimal value)
+        => ((decimal.GetBits(value)[3] >> 16) & 0x7F) <= 6;
 }

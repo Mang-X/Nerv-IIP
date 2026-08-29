@@ -146,6 +146,7 @@ public sealed class OperationLaborReportSnapshotEntityTypeConfiguration : IEntit
         builder.Property(x => x.ReworkQuantity).HasColumnName("rework_quantity").HasPrecision(18, 6).HasComment("Frozen reported rework quantity; excluded from standard labor hours.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(30).HasComment("Frozen MES output unit of measure.");
         builder.Property(x => x.TheoreticalRatePerHour).HasColumnName("theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Frozen theoretical good-output rate per labor hour.");
+        builder.Property(x => x.HasValidNumericScale).HasColumnName("has_valid_numeric_scale").HasComment("Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").HasComment("Original MES production-report UTC timestamp.");
         builder.Property(x => x.IsReversal).HasColumnName("is_reversal").HasComment("Whether this report reverses a prior production report.");
         builder.Property(x => x.ReversedReportNo).HasColumnName("reversed_report_no").HasMaxLength(100).HasComment("Original MES report number for a reversal snapshot.");

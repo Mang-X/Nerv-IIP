@@ -28,6 +28,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     rework_quantity = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: false, comment: "Frozen reported rework quantity; excluded from standard labor hours."),
                     uom_code = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false, comment: "Frozen MES output unit of measure."),
                     theoretical_rate_per_hour = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: true, comment: "Frozen theoretical good-output rate per labor hour."),
+                    has_valid_numeric_scale = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion."),
                     reported_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "Original MES production-report UTC timestamp."),
                     is_reversal = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether this report reverses a prior production report."),
                     reversed_report_no = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true, comment: "Original MES report number for a reversal snapshot."),
