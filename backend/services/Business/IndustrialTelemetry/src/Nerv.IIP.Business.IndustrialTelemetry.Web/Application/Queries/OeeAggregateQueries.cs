@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
+using System.Linq.Expressions;
 using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -95,39 +96,49 @@ public static class OeeAggregateMaterializationLimits
 
 internal static class OeeAggregateQueryPlan
 {
-    internal static IQueryable<OeeProductionFact> BuildFacts(
-        ApplicationDbContext dbContext,
-        QueryOeeAggregateBucketsQuery request) =>
-        dbContext.OeeProductionFacts
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.AggregationOccurredAtUtc >= request.WindowStartUtc)
-            .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => request.WorkCenterId == null || x.WorkCenterId == request.WorkCenterId)
-            .Where(x => request.ShiftCode == null || x.ShiftCode == request.ShiftCode)
-            .Where(x => request.LineCode == null || x.LineCode == request.LineCode)
-            .Where(x => request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode)
-            .Where(x => request.BusinessDate == null || x.BusinessDate == request.BusinessDate)
-            .OrderBy(x => x.AggregationOccurredAtUtc)
-            .ThenBy(x => x.SourceReportNo)
-            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1);
-
-    internal static IQueryable<OeeProductionFact> BuildHierarchyTimelineFacts(
+    internal static async Task<MaterializedProductionFactSet> LoadFactsAsync(
         ApplicationDbContext dbContext,
         QueryOeeAggregateBucketsQuery request,
-        IReadOnlyCollection<string> deviceIds) =>
-        dbContext.OeeProductionFacts
+        CancellationToken cancellationToken)
+    {
+        var scopedFacts = dbContext.OeeProductionFacts
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.AggregationOccurredAtUtc >= request.WindowStartUtc)
-            .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc)
-            .Where(x => deviceIds.Contains(x.DeviceAssetId))
+            .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc);
+        var selection = SelectionFor(request);
+        var selectedDeviceIds = scopedFacts
+            .Where(selection)
+            .Select(x => x.DeviceAssetId)
+            .Distinct();
+        var contextFacts = await scopedFacts
+            .Where(x => selectedDeviceIds.Contains(x.DeviceAssetId))
             .OrderBy(x => x.AggregationOccurredAtUtc)
             .ThenBy(x => x.SourceReportNo)
-            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1);
+            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1)
+            .ToArrayAsync(cancellationToken);
+        if (contextFacts.Length > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
+        {
+            throw new KnownException(
+                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
+        }
+
+        var matchesSelection = selection.Compile();
+        return new MaterializedProductionFactSet(
+            contextFacts,
+            contextFacts.Where(matchesSelection).ToArray());
+    }
+
+    private static Expression<Func<OeeProductionFact, bool>> SelectionFor(
+        QueryOeeAggregateBucketsQuery request) =>
+        x =>
+            (request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId) &&
+            (request.WorkCenterId == null || x.WorkCenterId == request.WorkCenterId) &&
+            (request.ShiftCode == null || x.ShiftCode == request.ShiftCode) &&
+            (request.LineCode == null || x.LineCode == request.LineCode) &&
+            (request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode) &&
+            (request.BusinessDate == null || x.BusinessDate == request.BusinessDate);
 
     internal static IQueryable<DeviceStateSnapshot> BuildInWindowStates(
         ApplicationDbContext dbContext,
@@ -167,6 +178,10 @@ internal static class OeeAggregateQueryPlan
                 .First())
             .Take(OeeAggregateMaterializationLimits.MaximumStateSampleCount + 1);
 }
+
+internal sealed record MaterializedProductionFactSet(
+    OeeProductionFact[] ContextFacts,
+    OeeProductionFact[] SelectedFacts);
 
 public sealed record QueryOeeAggregateBucketsQuery(
     string OrganizationId,
@@ -250,8 +265,8 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         QueryOeeAggregateBucketsQuery request,
         CancellationToken cancellationToken)
     {
-        var facts = await OeeAggregateQueryPlan.BuildFacts(dbContext, request).ToArrayAsync(cancellationToken);
-        EnsureProductionFactMaterializationLimit(facts.Length);
+        var materializedFacts = await OeeAggregateQueryPlan.LoadFactsAsync(dbContext, request, cancellationToken);
+        var facts = materializedFacts.SelectedFacts;
         if (facts.Length == 0)
         {
             return Response(request, []);
@@ -278,14 +293,6 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         }
 
         var deviceIds = facts.Select(x => x.DeviceAssetId).Where(x => x != null).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray();
-        var runtimeFacts = facts;
-        if (request.Dimension is OeeAggregateDimension.WorkCenter or OeeAggregateDimension.Line or OeeAggregateDimension.Workshop)
-        {
-            runtimeFacts = await OeeAggregateQueryPlan
-                .BuildHierarchyTimelineFacts(dbContext, request, deviceIds)
-                .ToArrayAsync(cancellationToken);
-            EnsureProductionFactMaterializationLimit(runtimeFacts.Length);
-        }
         var earliestStart = groups.Min(x => x.StartUtc);
         var latestEnd = groups.Max(x => x.EndUtc);
         var carryIns = await OeeAggregateQueryPlan
@@ -308,7 +315,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                     .ThenBy(y => y.SourceSequence, StringComparer.Ordinal)
                     .ToArray(),
                 StringComparer.Ordinal);
-        var runtimeWindows = BuildRuntimeWindows(runtimeFacts, request);
+        var runtimeWindows = BuildRuntimeWindows(materializedFacts.ContextFacts, groups, request);
 
         var allBuckets = groups
             .Select(group => CalculateBucket(
@@ -322,39 +329,31 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
     }
 
     private static IReadOnlyDictionary<DeviceBucketKey, IReadOnlyList<RuntimeWindow>> BuildRuntimeWindows(
-        IReadOnlyCollection<OeeProductionFact> facts,
+        IReadOnlyCollection<OeeProductionFact> contextFacts,
+        IReadOnlyCollection<FactBucket> groups,
         QueryOeeAggregateBucketsQuery request)
     {
         var windows = new Dictionary<DeviceBucketKey, List<RuntimeWindow>>();
-        foreach (var deviceGroup in facts.GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal))
+        var segmentsByDevice = contextFacts
+            .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
+            .ToDictionary(
+                x => x.Key,
+                x => BuildHierarchySegments(x, request),
+                StringComparer.Ordinal);
+        foreach (var group in groups)
         {
-            var orderedFacts = deviceGroup
-                .OrderBy(x => x.AggregationOccurredAtUtc)
-                .ThenBy(x => x.SourceReportNo, StringComparer.Ordinal)
-                .ToArray();
-            if (request.Dimension is OeeAggregateDimension.WorkCenter or OeeAggregateDimension.Line or OeeAggregateDimension.Workshop)
+            foreach (var deviceId in group.Facts.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal))
             {
-                var currentKey = BucketKey.From(orderedFacts[0], request);
-                var currentStart = request.WindowStartUtc;
-                foreach (var fact in orderedFacts.Skip(1))
+                foreach (var segment in segmentsByDevice[deviceId])
                 {
-                    var nextKey = BucketKey.From(fact, request);
-                    if (nextKey == currentKey)
+                    if (!MatchesHierarchyFilters(segment.Fact, request) ||
+                        !SegmentBelongsToBucket(segment.Fact, group.Key, request))
                     {
                         continue;
                     }
 
-                    AddWindow(deviceGroup.Key, currentKey, currentStart, fact.AggregationOccurredAtUtc);
-                    currentKey = nextKey;
-                    currentStart = fact.AggregationOccurredAtUtc;
+                    AddWindow(deviceId, group.Key, segment.StartUtc, segment.EndUtc, group.StartUtc, group.EndUtc);
                 }
-                AddWindow(deviceGroup.Key, currentKey, currentStart, request.WindowEndUtc);
-                continue;
-            }
-
-            foreach (var key in orderedFacts.Select(x => BucketKey.From(x, request)).Distinct())
-            {
-                AddWindow(deviceGroup.Key, key, key.StartUtc, key.EndUtc);
             }
         }
 
@@ -363,10 +362,55 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             x => (IReadOnlyList<RuntimeWindow>)x.Value,
             EqualityComparer<DeviceBucketKey>.Default);
 
-        void AddWindow(string deviceId, BucketKey key, DateTimeOffset startUtc, DateTimeOffset endUtc)
+        static IReadOnlyList<HierarchySegment> BuildHierarchySegments(
+            IEnumerable<OeeProductionFact> deviceFacts,
+            QueryOeeAggregateBucketsQuery request)
         {
-            var clippedStart = startUtc < request.WindowStartUtc ? request.WindowStartUtc : startUtc;
-            var clippedEnd = endUtc > request.WindowEndUtc ? request.WindowEndUtc : endUtc;
+            var orderedFacts = deviceFacts
+                .OrderBy(x => x.AggregationOccurredAtUtc)
+                .ThenBy(x => x.SourceReportNo, StringComparer.Ordinal)
+                .ToArray();
+            var segments = new List<HierarchySegment>();
+            var currentFact = orderedFacts[0];
+            var currentHierarchy = HierarchyKey.From(currentFact);
+            var currentStart = request.WindowStartUtc;
+            foreach (var fact in orderedFacts.Skip(1))
+            {
+                var nextHierarchy = HierarchyKey.From(fact);
+                if (nextHierarchy == currentHierarchy)
+                {
+                    continue;
+                }
+
+                AddSegment(currentFact, currentStart, fact.AggregationOccurredAtUtc);
+                currentFact = fact;
+                currentHierarchy = nextHierarchy;
+                currentStart = fact.AggregationOccurredAtUtc;
+            }
+            AddSegment(currentFact, currentStart, request.WindowEndUtc);
+            return segments;
+
+            void AddSegment(OeeProductionFact fact, DateTimeOffset startUtc, DateTimeOffset endUtc)
+            {
+                var clippedStart = startUtc < request.WindowStartUtc ? request.WindowStartUtc : startUtc;
+                var clippedEnd = endUtc > request.WindowEndUtc ? request.WindowEndUtc : endUtc;
+                if (clippedEnd > clippedStart)
+                {
+                    segments.Add(new HierarchySegment(fact, clippedStart, clippedEnd));
+                }
+            }
+        }
+
+        void AddWindow(
+            string deviceId,
+            BucketKey key,
+            DateTimeOffset segmentStartUtc,
+            DateTimeOffset segmentEndUtc,
+            DateTimeOffset bucketStartUtc,
+            DateTimeOffset bucketEndUtc)
+        {
+            var clippedStart = segmentStartUtc < bucketStartUtc ? bucketStartUtc : segmentStartUtc;
+            var clippedEnd = segmentEndUtc > bucketEndUtc ? bucketEndUtc : segmentEndUtc;
             if (clippedEnd <= clippedStart)
             {
                 return;
@@ -378,9 +422,28 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                 deviceWindows = [];
                 windows.Add(lookupKey, deviceWindows);
             }
+            if (deviceWindows.Count > 0 && deviceWindows[^1].EndUtc == clippedStart)
+            {
+                deviceWindows[^1] = deviceWindows[^1] with { EndUtc = clippedEnd };
+                return;
+            }
             deviceWindows.Add(new RuntimeWindow(clippedStart, clippedEnd));
         }
     }
+
+    private static bool MatchesHierarchyFilters(
+        OeeProductionFact fact,
+        QueryOeeAggregateBucketsQuery request) =>
+        (request.WorkCenterId is null || fact.WorkCenterId == request.WorkCenterId) &&
+        (request.LineCode is null || fact.LineCode == request.LineCode) &&
+        (request.WorkshopCode is null || fact.WorkshopCode == request.WorkshopCode);
+
+    private static bool SegmentBelongsToBucket(
+        OeeProductionFact fact,
+        BucketKey bucket,
+        QueryOeeAggregateBucketsQuery request) =>
+        request.Dimension is not (OeeAggregateDimension.WorkCenter or OeeAggregateDimension.Line or OeeAggregateDimension.Workshop) ||
+        BucketKey.From(fact, request) == bucket;
 
     private static OeeAggregateBucket CalculateBucket(
         OeeAggregateDimension dimension,
@@ -549,15 +612,6 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         }
     }
 
-    private static void EnsureProductionFactMaterializationLimit(int materializedFactCount)
-    {
-        if (materializedFactCount > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
-        {
-            throw new KnownException(
-                $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
-        }
-    }
-
     private static RuntimeTotals CalculateRuntime(
         IReadOnlyList<DeviceStateSnapshot> states,
         DateTimeOffset startUtc,
@@ -664,6 +718,12 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
     private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, int StateSampleCount, bool HasCompleteCoverage);
     private sealed record StatePoint(DateTimeOffset OccurredAtUtc, string State);
     private sealed record RuntimeWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
+    private sealed record HierarchySegment(OeeProductionFact Fact, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
+    private sealed record HierarchyKey(string WorkCenterId, string? SiteCode, string? WorkshopCode, string? LineCode)
+    {
+        internal static HierarchyKey From(OeeProductionFact fact) =>
+            new(fact.WorkCenterId, fact.SiteCode, fact.WorkshopCode, fact.LineCode);
+    }
     private sealed record FactBucket(BucketKey Key, OeeProductionFact[] Facts, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
     private sealed record DeviceBucketKey(string DeviceId, BucketKey Bucket);
 

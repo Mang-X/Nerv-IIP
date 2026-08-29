@@ -117,9 +117,10 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Equal(1, bucket.ProductionFactCount);
         Assert.Equal(1m, bucket.GoodQuantity);
         Assert.Equal(1m, bucket.AvailabilityRate);
-        Assert.Equal(1m, bucket.PerformanceRate);
+        Assert.Equal(0.95m, bucket.ExpectedOutputQuantity);
+        Assert.Equal(1.052632m, bucket.PerformanceRate);
         Assert.Equal(1m, bucket.QualityRate);
-        Assert.Equal(1m, bucket.OeeRate);
+        Assert.Equal(1.052632m, bucket.OeeRate);
     }
 
     [RealPostgresFact]
@@ -166,13 +167,40 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             }
         }
 
-        var filteredWorkCenter = Assert.Single((await handler.Handle(new(
-            "org-001", "env-dev", OeeAggregateDimension.WorkCenter, start, start.AddDays(2),
-            WorkCenterId: "WC-B"), CancellationToken.None)).Buckets);
-        Assert.Equal("WC-B", filteredWorkCenter.DimensionValue);
-        Assert.Equal(230m, filteredWorkCenter.ExpectedOutputQuantity);
-        Assert.Equal(0.043478m, filteredWorkCenter.PerformanceRate);
-        Assert.Equal(0.043478m, filteredWorkCenter.OeeRate);
+        var filteredDimensions = new[]
+        {
+            (Dimension: OeeAggregateDimension.Device, ExpectedOutput: 230m, ExpectedRate: 0.043478m),
+            (Dimension: OeeAggregateDimension.WorkCenter, ExpectedOutput: 230m, ExpectedRate: 0.043478m),
+            (Dimension: OeeAggregateDimension.Line, ExpectedOutput: 230m, ExpectedRate: 0.043478m),
+            (Dimension: OeeAggregateDimension.Workshop, ExpectedOutput: 230m, ExpectedRate: 0.043478m),
+            (Dimension: OeeAggregateDimension.Shift, ExpectedOutput: 70m, ExpectedRate: 0.142857m),
+            (Dimension: OeeAggregateDimension.Day, ExpectedOutput: 150m, ExpectedRate: 0.066667m),
+        };
+        var hierarchyFilters = new[]
+        {
+            (WorkCenterId: (string?)"WC-B", LineCode: (string?)null, WorkshopCode: (string?)null),
+            (WorkCenterId: (string?)null, LineCode: (string?)"LINE-B", WorkshopCode: (string?)null),
+            (WorkCenterId: (string?)null, LineCode: (string?)null, WorkshopCode: (string?)"WS-B"),
+        };
+        foreach (var expected in filteredDimensions)
+        {
+            foreach (var filter in hierarchyFilters)
+            {
+                var filteredBucket = Assert.Single((await handler.Handle(new(
+                    "org-001", "env-dev", expected.Dimension, start, start.AddDays(2),
+                    WorkCenterId: filter.WorkCenterId,
+                    LineCode: filter.LineCode,
+                    WorkshopCode: filter.WorkshopCode), CancellationToken.None)).Buckets);
+                Assert.Equal(1, filteredBucket.ProductionFactCount);
+                Assert.Equal(10m, filteredBucket.GoodQuantity);
+                Assert.Equal(expected.ExpectedOutput, filteredBucket.ExpectedOutputQuantity);
+                Assert.Equal(1m, filteredBucket.AvailabilityRate);
+                Assert.Equal(expected.ExpectedRate, filteredBucket.PerformanceRate);
+                Assert.Equal(1m, filteredBucket.QualityRate);
+                Assert.Equal(expected.ExpectedRate, filteredBucket.OeeRate);
+                Assert.Empty(filteredBucket.DegradedReasons);
+            }
+        }
     }
 
     [RealPostgresFact]
@@ -307,7 +335,9 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
                  good_quantity, scrap_quantity, rework_quantity, uom_code, theoretical_rate_per_hour,
                  reported_at_utc, aggregation_occurred_at_utc, historical_dimension_status)
             SELECT (md5('oee-fact-' || sample::text))::uuid, 'org-001', 'env-dev',
-                   'OEE-FACT-' || sample::text, 'WC-LIMIT', 'DEV-' || sample::text,
+                   'OEE-FACT-' || sample::text,
+                   CASE WHEN sample = 10000 THEN 'WC-LIMIT' ELSE 'WC-CONTEXT' END,
+                   'DEV-LIMIT',
                    1, 0, 0, 'PCS', 1,
                    TIMESTAMPTZ '2026-07-01T00:01:00Z', TIMESTAMPTZ '2026-07-01T00:01:00Z', 'LegacyUnresolved'
             FROM generate_series(1, 10000) AS sample;
@@ -316,15 +346,18 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             "org-001", "env-dev", OeeAggregateDimension.WorkCenter,
             DateTimeOffset.Parse("2026-07-01T00:00:00Z"), DateTimeOffset.Parse("2026-07-02T00:00:00Z"), WorkCenterId: "WC-LIMIT");
         var accepted = await new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None);
-        Assert.Equal(10000, Assert.Single(accepted.Buckets).ProductionFactCount);
+        Assert.Equal(1, Assert.Single(accepted.Buckets).ProductionFactCount);
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1, interceptor.FactLimits);
-        Assert.All(interceptor.FactCommands, command => Assert.Contains("LIMIT", command, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("LIMIT", Assert.Single(interceptor.FactCommands), StringComparison.OrdinalIgnoreCase);
 
-        db.OeeProductionFacts.Add(Fact("OVER", DateTimeOffset.Parse("2026-07-01T00:02:00Z"), "DEV-OVER", "WC-LIMIT", 1m, 0m, 0m, "PCS", 1m, new(2026, 7, 1)));
+        db.OeeProductionFacts.Add(Fact("OVER", DateTimeOffset.Parse("2026-07-01T00:02:00Z"), "DEV-LIMIT", "WC-CONTEXT", 1m, 0m, 0m, "PCS", 1m, new(2026, 7, 1)));
         await db.SaveChangesAsync();
+        interceptor.FactCommands.Clear();
+        interceptor.FactLimits.Clear();
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None));
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("LIMIT", Assert.Single(interceptor.FactCommands), StringComparison.OrdinalIgnoreCase);
     }
 
     private static ApplicationDbContext CreateLaneDbContext(DbCommandInterceptor? interceptor = null)
