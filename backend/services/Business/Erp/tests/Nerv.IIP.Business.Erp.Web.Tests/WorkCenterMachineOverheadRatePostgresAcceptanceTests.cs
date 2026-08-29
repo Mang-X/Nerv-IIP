@@ -246,21 +246,55 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
                 && x.WorkCenterId == "WC-PG"
                 && x.AccountingPeriodCode == "2026-06"
                 && x.Revision == 2);
-        db.WorkCenterMachineOverheadReconciliations.Add(
-            WorkCenterMachineOverheadReconciliation.Record(
-                "org-pg", "env-pg", "WC-PG", "2026-06",
-                reconciliationRate.Id, reconciliationRate.Revision, "CNY",
-                30_000m, 10_000m, 600 * TimeSpan.TicksPerHour,
-                18_000m, 6_000m, 24_000m,
-                8 * TimeSpan.TicksPerHour, AbnormalDowntimeDisposition.PeriodExpense,
-                1, "user:accountant", "ledger:2026-06", "period reconciliation",
-                new DateTimeOffset(2026, 6, 30, 16, 0, 0, TimeSpan.Zero)));
+        var activeState = AddMachineSettlement(db, reconciliationRate, "OP-PG", 1, 10);
+        AddMachineSettlement(db, reconciliationRate, "OP-PG", 2, 20, activeState);
+        AddMachineSettlement(db, await Rate("org-other", "env-pg", "WC-PG", "2026-06"), "OP-ORG", 1, 100);
+        AddMachineSettlement(db, await Rate("org-pg", "env-other", "WC-PG", "2026-06"), "OP-ENV", 1, 100);
+        AddMachineSettlement(db, await Rate("org-pg", "env-pg", "WC-OTHER", "2026-06"), "OP-WC", 1, 100);
+        AddMachineSettlement(db, await Rate("org-pg", "env-pg", "WC-PG", "2026-07"), "OP-PERIOD", 1, 100);
         await db.SaveChangesAsync();
+
+        await using (var reconciliationTransaction = await db.Database.BeginTransactionAsync())
+        {
+            await new ReconcileWorkCenterMachineOverheadCommandHandler(
+                db, new PostgreSqlErpAdvisoryLockAllocator(db)).Handle(
+                new(
+                    "org-pg", "env-pg", "WC-PG", "2026-06", 30_000m, 10_000m, "CNY",
+                    8 * TimeSpan.TicksPerHour, AbnormalDowntimeDisposition.PeriodExpense,
+                    "user:accountant", "ledger:2026-06", "period reconciliation",
+                    new DateTimeOffset(2026, 6, 30, 16, 0, 0, TimeSpan.Zero)),
+                CancellationToken.None);
+            await db.SaveChangesAsync();
+            await reconciliationTransaction.CommitAsync();
+        }
         db.ChangeTracker.Clear();
         var reconciliation = await db.WorkCenterMachineOverheadReconciliations.SingleAsync();
-        Assert.Equal(16_000m, reconciliation.UnderOverAppliedTotalAmount);
-        Assert.Equal(12_000m, reconciliation.UnallocatedFixedOverheadAmount);
+        Assert.Equal(20m, reconciliation.AppliedMachineHours);
+        Assert.Equal(620m, reconciliation.AppliedFixedAmount);
+        Assert.Equal(200m, reconciliation.AppliedVariableAmount);
+        Assert.Equal(820m, reconciliation.AppliedTotalAmount);
+        Assert.Equal(39_180m, reconciliation.UnderOverAppliedTotalAmount);
+        Assert.Equal(29_380m, reconciliation.UnallocatedFixedOverheadAmount);
         Assert.Equal(8m, reconciliation.AbnormalDowntimeHours);
+
+        await using (var closeTransaction = await db.Database.BeginTransactionAsync())
+        {
+            await Assert.ThrowsAsync<KnownException>(() => new CloseAccountingPeriodCommandHandler(
+                db, new PostgreSqlErpAdvisoryLockAllocator(db)).Handle(
+                new("org-pg", "env-pg", "2026-06", "user:controller", "period close"),
+                CancellationToken.None));
+            await closeTransaction.RollbackAsync();
+        }
+
+        async Task<WorkCenterMachineOverheadRate> Rate(
+            string organizationId, string environmentId, string workCenterId, string periodCode)
+            => await db.WorkCenterMachineOverheadRates
+                .Where(x => x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
+                    && x.WorkCenterId == workCenterId
+                    && x.AccountingPeriodCode == periodCode)
+                .OrderByDescending(x => x.Revision)
+                .FirstAsync();
 
         db.AccountingPeriods.Add(AccountingPeriod.Open(
             "org-pg", "env-pg", "2026-OVERLAP", new(2026, 6, 15), new(2026, 7, 15)));
@@ -312,6 +346,27 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
         }
 
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"abnormal_downtime_ticks":36000000000,"abnormal_downtime_hours":1,"abnormal_downtime_disposition":"None","revision":2}""",
+            PostgresErrorCodes.CheckViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"revision":0}""",
+            PostgresErrorCodes.CheckViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"revision":1}""",
+            PostgresErrorCodes.UniqueViolation);
+        await AssertCloneRejectedAsync(
+            connection,
+            reconciliation.Id.Id,
+            """{"organization_id":"org-other","revision":2}""",
+            PostgresErrorCodes.ForeignKeyViolation);
+
         db.WorkCenterMachineOverheadRates.Add(
             WorkCenterMachineOverheadRate.DefineApplicable(
                 "org-pg", "env-pg", "WC-PG", "2026-06",
@@ -329,6 +384,75 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         var indexDefinition = Assert.IsType<string>(await indexCommand.ExecuteScalarAsync());
         Assert.Contains("UNIQUE", indexDefinition, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("accounting_period_code", indexDefinition, StringComparison.Ordinal);
+
+        await using var reconciliationIndexesCommand = new NpgsqlCommand("""
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'erp'
+              AND tablename = 'work_center_machine_overhead_reconciliations'
+              AND indexname IN (
+                  'ux_wc_machine_overhead_reconciliations_scope_revision',
+                  'ix_wc_machine_overhead_reconciliations_period')
+            ORDER BY indexname
+            """, connection);
+        await using var reconciliationIndexes = await reconciliationIndexesCommand.ExecuteReaderAsync();
+        var definitions = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await reconciliationIndexes.ReadAsync())
+            definitions.Add(reconciliationIndexes.GetString(0), reconciliationIndexes.GetString(1));
+        Assert.Equal(2, definitions.Count);
+        Assert.Contains("UNIQUE", definitions["ux_wc_machine_overhead_reconciliations_scope_revision"], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("accounting_period_code", definitions["ix_wc_machine_overhead_reconciliations_period"], StringComparison.Ordinal);
+    }
+
+    private static OperationMachineOverheadSettlementState AddMachineSettlement(
+        ApplicationDbContext db,
+        WorkCenterMachineOverheadRate rate,
+        string operationTaskId,
+        long revision,
+        long machineHours,
+        OperationMachineOverheadSettlementState? existingState = null)
+    {
+        db.OperationMachineOverheadSettlements.Add(OperationMachineOverheadSettlement.CreateApplied(
+            rate.OrganizationId, rate.EnvironmentId, $"WO-{operationTaskId}", operationTaskId,
+            rate.WorkCenterId, revision,
+            rate.AccountingPeriodCode == "2026-07"
+                ? new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero)
+                : new DateTimeOffset(2026, 6, 30, 12, 0, 0, TimeSpan.Zero),
+            $"DEVICE-{operationTaskId}", machineHours * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", rate.Id, rate.AccountingPeriodCode,
+            rate.Revision, rate.CurrencyCode, rate.FixedHourlyRate, rate.VariableHourlyRate,
+            $"evt-{operationTaskId}-{revision}", new string('a', 64)));
+        var state = existingState ?? OperationMachineOverheadSettlementState.Open(
+            rate.OrganizationId, rate.EnvironmentId, operationTaskId);
+        state.ApplySettlement(revision);
+        if (existingState is null) db.OperationMachineOverheadSettlementStates.Add(state);
+        return state;
+    }
+
+    private static async Task AssertCloneRejectedAsync(
+        NpgsqlConnection connection,
+        Guid sourceId,
+        string overridesJson,
+        string expectedSqlState)
+    {
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO erp.work_center_machine_overhead_reconciliations
+            SELECT (jsonb_populate_record(
+                NULL::erp.work_center_machine_overhead_reconciliations,
+                to_jsonb(source_row) || jsonb_build_object('id', @id)
+                    || CAST(@overrides AS jsonb)
+            )).*
+            FROM (
+                SELECT *
+                FROM erp.work_center_machine_overhead_reconciliations
+                WHERE id = @source_id
+            ) AS source_row
+            """, connection);
+        command.Parameters.AddWithValue("id", Guid.CreateVersion7());
+        command.Parameters.AddWithValue("source_id", sourceId);
+        command.Parameters.AddWithValue("overrides", overridesJson);
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(expectedSqlState, exception.SqlState);
     }
 
     private sealed class NoopMediator : IMediator
@@ -372,24 +496,22 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         int expectedCount,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await TestTimeout.RunAsync(
-            operation: $"open the machine-rate advisory-lock probe connection for {applicationName}",
-            action: async token => await connection.OpenAsync(token),
-            timeout: TimeSpan.FromSeconds(10),
-            cancellationToken,
-            sensitiveValues: [connectionString]);
-        await using var command = new NpgsqlCommand("""
-            SELECT count(*)
-            FROM pg_stat_activity
-            WHERE application_name = @application_name
-              AND wait_event_type = 'Lock'
-              AND query LIKE 'SELECT pg_advisory_xact_lock%'
-            """, connection);
-        command.Parameters.AddWithValue("application_name", applicationName);
         await Eventually.WaitAsync(
             condition: $"{expectedCount} PostgreSQL machine-rate advisory-lock waiters for {applicationName}",
-            observe: async token => Convert.ToInt32(await command.ExecuteScalarAsync(token)),
+            observe: async token =>
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(token);
+                await using var command = new NpgsqlCommand("""
+                    SELECT count(*)
+                    FROM pg_stat_activity
+                    WHERE application_name = @application_name
+                      AND wait_event_type = 'Lock'
+                      AND query LIKE 'SELECT pg_advisory_xact_lock%'
+                    """, connection);
+                command.Parameters.AddWithValue("application_name", applicationName);
+                return Convert.ToInt32(await command.ExecuteScalarAsync(token));
+            },
             isSatisfied: waitingCount => waitingCount >= expectedCount,
             describe: waitingCount => $"waiters={waitingCount}; expected>={expectedCount}",
             options: new EventuallyOptions(

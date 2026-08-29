@@ -55,11 +55,6 @@ public sealed class CloseAccountingPeriodCommandHandler(
     IErpAdvisoryLockAllocator reconciliationLock)
     : ICommandHandler<CloseAccountingPeriodCommand>
 {
-    public CloseAccountingPeriodCommandHandler(ApplicationDbContext dbContext)
-        : this(dbContext, new PostgreSqlErpAdvisoryLockAllocator(dbContext))
-    {
-    }
-
     public async Task Handle(CloseAccountingPeriodCommand request, CancellationToken cancellationToken)
     {
         await reconciliationLock.AcquireAsync(

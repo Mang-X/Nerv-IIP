@@ -171,6 +171,50 @@ internal static class MachineOverheadAppliedSnapshotReader
             active.Sum(x => x.Amount),
             active.Select(x => x.CurrencyCode).ToHashSet(StringComparer.Ordinal));
     }
+
+    public static async Task<IReadOnlyDictionary<string, MachineOverheadAppliedSnapshot>> ReadForWorkCentersAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string accountingPeriodCode,
+        IReadOnlyCollection<string> workCenterIds,
+        CancellationToken cancellationToken)
+    {
+        var grouped = await (
+            from settlement in dbContext.OperationMachineOverheadSettlements.AsNoTracking()
+            join state in dbContext.OperationMachineOverheadSettlementStates.AsNoTracking()
+                on new { settlement.OrganizationId, settlement.EnvironmentId, settlement.OperationTaskId }
+                equals new { state.OrganizationId, state.EnvironmentId, state.OperationTaskId }
+            where settlement.OrganizationId == organizationId
+                && settlement.EnvironmentId == environmentId
+                && settlement.AccountingPeriodCode == accountingPeriodCode
+                && workCenterIds.Contains(settlement.WorkCenterId)
+                && settlement.Applicability == MachineOverheadApplicability.Applicable
+                && state.ActiveRevision == settlement.SettlementRevision
+            group settlement by new { settlement.WorkCenterId, settlement.CurrencyCode }
+            into rows
+            select new
+            {
+                rows.Key.WorkCenterId,
+                rows.Key.CurrencyCode,
+                AppliedMachineTicks = rows.Sum(x => x.ActualMachineTicks!.Value),
+                AppliedFixedAmount = rows.Sum(x => x.FixedAmount),
+                AppliedVariableAmount = rows.Sum(x => x.VariableAmount),
+                AppliedTotalAmount = rows.Sum(x => x.Amount),
+            }).ToListAsync(cancellationToken);
+
+        return grouped
+            .GroupBy(x => x.WorkCenterId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => new MachineOverheadAppliedSnapshot(
+                    group.Sum(x => x.AppliedMachineTicks),
+                    group.Sum(x => x.AppliedFixedAmount),
+                    group.Sum(x => x.AppliedVariableAmount),
+                    group.Sum(x => x.AppliedTotalAmount),
+                    group.Select(x => x.CurrencyCode).ToHashSet(StringComparer.Ordinal)),
+                StringComparer.Ordinal);
+    }
 }
 
 internal static class MachineOverheadPeriodCloseGuard
@@ -186,17 +230,19 @@ internal static class MachineOverheadPeriodCloseGuard
         organizationId = organizationId.Trim();
         environmentId = environmentId.Trim();
         accountingPeriodCode = accountingPeriodCode.Trim();
-        var rateRevisions = await dbContext.WorkCenterMachineOverheadRates.AsNoTracking()
+        var applicableRates = await dbContext.WorkCenterMachineOverheadRates.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
-                && x.AccountingPeriodCode == accountingPeriodCode)
+                && x.AccountingPeriodCode == accountingPeriodCode
+                && x.Applicability == MachineOverheadApplicability.Applicable
+                && !dbContext.WorkCenterMachineOverheadRates.Any(newer =>
+                    newer.OrganizationId == x.OrganizationId
+                    && newer.EnvironmentId == x.EnvironmentId
+                    && newer.AccountingPeriodCode == x.AccountingPeriodCode
+                    && newer.WorkCenterId == x.WorkCenterId
+                    && newer.Revision > x.Revision))
+            .OrderBy(x => x.WorkCenterId)
             .ToListAsync(cancellationToken);
-        var applicableRates = rateRevisions
-            .GroupBy(x => x.WorkCenterId, StringComparer.Ordinal)
-            .Select(group => group.OrderByDescending(x => x.Revision).First())
-            .Where(x => x.Applicability == MachineOverheadApplicability.Applicable)
-            .OrderBy(x => x.WorkCenterId, StringComparer.Ordinal)
-            .ToArray();
 
         foreach (var rate in applicableRates)
         {
@@ -206,16 +252,28 @@ internal static class MachineOverheadPeriodCloseGuard
                 $"{accountingPeriodCode}\n{rate.WorkCenterId}", cancellationToken);
         }
 
+        var workCenterIds = applicableRates.Select(x => x.WorkCenterId).ToArray();
+        var latestReconciliations = await dbContext.WorkCenterMachineOverheadReconciliations.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.AccountingPeriodCode == accountingPeriodCode
+                && workCenterIds.Contains(x.WorkCenterId)
+                && !dbContext.WorkCenterMachineOverheadReconciliations.Any(newer =>
+                    newer.OrganizationId == x.OrganizationId
+                    && newer.EnvironmentId == x.EnvironmentId
+                    && newer.AccountingPeriodCode == x.AccountingPeriodCode
+                    && newer.WorkCenterId == x.WorkCenterId
+                    && newer.Revision > x.Revision))
+            .ToListAsync(cancellationToken);
+        var reconciliationByWorkCenter = latestReconciliations
+            .ToDictionary(x => x.WorkCenterId, StringComparer.Ordinal);
+        var appliedByWorkCenter = await MachineOverheadAppliedSnapshotReader.ReadForWorkCentersAsync(
+            dbContext, organizationId, environmentId, accountingPeriodCode, workCenterIds, cancellationToken);
+
         foreach (var rate in applicableRates)
         {
-            var reconciliation = await dbContext.WorkCenterMachineOverheadReconciliations.AsNoTracking()
-                .Where(x => x.OrganizationId == organizationId
-                    && x.EnvironmentId == environmentId
-                    && x.WorkCenterId == rate.WorkCenterId
-                    && x.AccountingPeriodCode == accountingPeriodCode)
-                .OrderByDescending(x => x.Revision)
-                .FirstOrDefaultAsync(cancellationToken)
-                ?? throw new KnownException(
+            if (!reconciliationByWorkCenter.TryGetValue(rate.WorkCenterId, out var reconciliation))
+                throw new KnownException(
                     $"会计期间『{accountingPeriodCode}』工作中心『{rate.WorkCenterId}』缺少机器制造费用实际池归集核对。");
             if (reconciliation.WorkCenterMachineOverheadRateId != rate.Id
                 || reconciliation.RateRevision != rate.Revision)
@@ -230,9 +288,8 @@ internal static class MachineOverheadPeriodCloseGuard
                 throw new KnownException(
                     $"会计期间『{accountingPeriodCode}』工作中心『{rate.WorkCenterId}』仍有未处理异常停机。");
 
-            var current = await MachineOverheadAppliedSnapshotReader.ReadAsync(
-                dbContext, organizationId, environmentId, accountingPeriodCode, rate.WorkCenterId,
-                cancellationToken);
+            var current = appliedByWorkCenter.GetValueOrDefault(rate.WorkCenterId)
+                ?? new MachineOverheadAppliedSnapshot(0, 0m, 0m, 0m, new HashSet<string>(StringComparer.Ordinal));
             if (current.CurrencyCodes.Any(currency => !string.Equals(currency, rate.CurrencyCode, StringComparison.Ordinal)))
                 throw new KnownException(
                     $"会计期间『{accountingPeriodCode}』工作中心『{rate.WorkCenterId}』active settlement 币种不一致。");

@@ -29,8 +29,9 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         await Reconcile(db, ActualFixed: 1_000m, ActualVariable: 500m);
         await db.SaveChangesAsync();
 
-        var item = Assert.Single(await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
-            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None));
+        var response = await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
+            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None);
+        var item = Assert.Single(response.Items);
         Assert.Equal(20m, item.AppliedMachineHours);
         Assert.Equal(600m, item.AppliedFixedAmount);
         Assert.Equal(200m, item.AppliedVariableAmount);
@@ -45,7 +46,7 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         await using var db = CreateDb();
         AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
         await db.SaveChangesAsync();
-        var close = new CloseAccountingPeriodCommandHandler(db);
+        var close = new CloseAccountingPeriodCommandHandler(db, new PostgreSqlErpAdvisoryLockAllocator(db));
         var command = new CloseAccountingPeriodCommand(
             "org-a", "env-a", "2026-08", "user:controller", "month end complete");
 
@@ -88,7 +89,7 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         var state = await db.OperationMachineOverheadSettlementStates.SingleAsync();
         AddActiveSettlement(db, "org-a", "env-a", "WC-01", "2026-08", "OP-A", 2, 20, state);
         await db.SaveChangesAsync();
-        var close = new CloseAccountingPeriodCommandHandler(db);
+        var close = new CloseAccountingPeriodCommandHandler(db, new PostgreSqlErpAdvisoryLockAllocator(db));
         await Assert.ThrowsAsync<KnownException>(() => close.Handle(
             new("org-a", "env-a", "2026-08", "user:controller", "close"), CancellationToken.None));
 
@@ -114,6 +115,27 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         AddPeriodAndRate(currencyDb, "org-a", "env-a", "WC-01", "2026-08");
         await currencyDb.SaveChangesAsync();
         await Assert.ThrowsAsync<KnownException>(() => Reconcile(currencyDb, 1m, 1m, currencyCode: "USD"));
+    }
+
+    [Fact]
+    public async Task Reconciliation_history_has_bounded_stable_pagination()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        await db.SaveChangesAsync();
+        await Reconcile(db, 1_000m, 100m);
+        await Reconcile(db, 2_000m, 200m);
+        await Reconcile(db, 3_000m, 300m);
+        await db.SaveChangesAsync();
+
+        var response = await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
+            new("org-a", "env-a", "2026-08", "WC-01", PageNumber: 2, PageSize: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.TotalCount);
+        Assert.Equal(2, response.PageNumber);
+        Assert.Equal(1, response.PageSize);
+        Assert.Equal(2, Assert.Single(response.Items).Revision);
     }
 
     private static ApplicationDbContext CreateDb()

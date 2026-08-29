@@ -7,7 +7,35 @@ public sealed record ListWorkCenterMachineOverheadReconciliationsQuery(
     string OrganizationId,
     string EnvironmentId,
     string AccountingPeriodCode,
-    string? WorkCenterId = null) : IRequest<IReadOnlyList<WorkCenterMachineOverheadReconciliationItem>>;
+    string? WorkCenterId = null,
+    int PageNumber = 1,
+    int PageSize = 50) : IQuery<ListWorkCenterMachineOverheadReconciliationsResponse>;
+
+public sealed class ListWorkCenterMachineOverheadReconciliationsQueryValidator
+    : AbstractValidator<ListWorkCenterMachineOverheadReconciliationsQuery>
+{
+    public ListWorkCenterMachineOverheadReconciliationsQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).Must(BeNonBlank).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).Must(BeNonBlank).MaximumLength(100);
+        RuleFor(x => x.AccountingPeriodCode).Must(BeNonBlank).MaximumLength(50);
+        RuleFor(x => x.WorkCenterId).Must(BeNonBlank).MaximumLength(100).When(x => x.WorkCenterId is not null);
+        RuleFor(x => x.PageNumber).GreaterThanOrEqualTo(1);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+    }
+
+    private static bool BeNonBlank(string? value) => !string.IsNullOrWhiteSpace(value);
+}
+
+public sealed record ListWorkCenterMachineOverheadReconciliationsResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string AccountingPeriodCode,
+    string? WorkCenterId,
+    int PageNumber,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<WorkCenterMachineOverheadReconciliationItem> Items);
 
 public sealed record WorkCenterMachineOverheadReconciliationItem(
     string Id,
@@ -40,9 +68,9 @@ public sealed record WorkCenterMachineOverheadReconciliationItem(
     DateTimeOffset RecordedAtUtc);
 
 public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(ApplicationDbContext dbContext)
-    : IRequestHandler<ListWorkCenterMachineOverheadReconciliationsQuery, IReadOnlyList<WorkCenterMachineOverheadReconciliationItem>>
+    : IQueryHandler<ListWorkCenterMachineOverheadReconciliationsQuery, ListWorkCenterMachineOverheadReconciliationsResponse>
 {
-    public async Task<IReadOnlyList<WorkCenterMachineOverheadReconciliationItem>> Handle(
+    public async Task<ListWorkCenterMachineOverheadReconciliationsResponse> Handle(
         ListWorkCenterMachineOverheadReconciliationsQuery request,
         CancellationToken cancellationToken)
     {
@@ -56,9 +84,13 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
                 && x.AccountingPeriodCode == periodCode);
         if (!string.IsNullOrEmpty(workCenterId)) query = query.Where(x => x.WorkCenterId == workCenterId);
 
-        return await query
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query
             .OrderBy(x => x.WorkCenterId)
             .ThenByDescending(x => x.Revision)
+            .ThenBy(x => x.Id)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
             .Select(x => new WorkCenterMachineOverheadReconciliationItem(
                 x.Id.ToString(), x.WorkCenterId, x.AccountingPeriodCode, x.Revision, x.RateRevision,
                 x.CurrencyCode, x.ActualFixedOverheadAmount, x.ActualVariableOverheadAmount,
@@ -72,5 +104,9 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
                 x.AbnormalDowntimeDisposition != Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending,
                 x.RecordedBy, x.SourceReference, x.Reason, x.RecordedAtUtc))
             .ToListAsync(cancellationToken);
+
+        return new(
+            organizationId, environmentId, periodCode, workCenterId,
+            request.PageNumber, request.PageSize, totalCount, items);
     }
 }

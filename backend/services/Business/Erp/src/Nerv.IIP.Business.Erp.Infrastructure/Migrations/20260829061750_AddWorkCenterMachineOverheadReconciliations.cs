@@ -11,6 +11,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddUniqueConstraint(
+                name: "ak_wc_machine_overhead_rates_hard_scope",
+                schema: "erp",
+                table: "work_center_machine_overhead_rates",
+                columns: new[] { "id", "organization_id", "environment_id", "work_center_id", "accounting_period_code", "revision" });
+
             migrationBuilder.CreateTable(
                 name: "work_center_machine_overhead_reconciliations",
                 schema: "erp",
@@ -55,10 +61,10 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     table.CheckConstraint("ck_wc_machine_overhead_reconciliations_downtime", "abnormal_downtime_hours = abnormal_downtime_ticks / 36000000000.0 AND ((abnormal_downtime_ticks = 0 AND abnormal_downtime_disposition = 'None') OR (abnormal_downtime_ticks > 0 AND abnormal_downtime_disposition IN ('Pending', 'PeriodExpense')))");
                     table.ForeignKey(
                         name: "FK_work_center_machine_overhead_reconciliations_work_center_ma~",
-                        column: x => x.work_center_machine_overhead_rate_id,
+                        columns: x => new { x.work_center_machine_overhead_rate_id, x.organization_id, x.environment_id, x.work_center_id, x.accounting_period_code, x.rate_revision },
                         principalSchema: "erp",
                         principalTable: "work_center_machine_overhead_rates",
-                        principalColumn: "id",
+                        principalColumns: new[] { "id", "organization_id", "environment_id", "work_center_id", "accounting_period_code", "revision" },
                         onDelete: ReferentialAction.Restrict);
                 },
                 comment: "Append-only monthly work-center machine-overhead pool reconciliation and close readiness fact.");
@@ -73,7 +79,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 name: "IX_work_center_machine_overhead_reconciliations_work_center_ma~",
                 schema: "erp",
                 table: "work_center_machine_overhead_reconciliations",
-                column: "work_center_machine_overhead_rate_id");
+                columns: new[] { "work_center_machine_overhead_rate_id", "organization_id", "environment_id", "work_center_id", "accounting_period_code", "rate_revision" });
 
             migrationBuilder.CreateIndex(
                 name: "ux_wc_machine_overhead_reconciliations_scope_revision",
@@ -90,6 +96,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "work_center_machine_overhead_reconciliations",
                 schema: "erp");
+
+            migrationBuilder.DropUniqueConstraint(
+                name: "ak_wc_machine_overhead_rates_hard_scope",
+                schema: "erp",
+                table: "work_center_machine_overhead_rates");
         }
     }
 }

@@ -97,13 +97,6 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
     IIntegrationEventDeadLetterStore deadLetterStore,
     IErpAdvisoryLockAllocator periodLock)
 {
-    public OperationMachineOverheadSettlementOrchestrator(
-        ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
-        : this(dbContext, deadLetterStore, new PostgreSqlErpAdvisoryLockAllocator(dbContext))
-    {
-    }
-
     public async Task ProcessSettlementAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

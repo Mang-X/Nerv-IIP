@@ -51,7 +51,27 @@ public sealed class WorkCenterMachineOverheadReconciliationEntityTypeConfigurati
         builder.Property(x => x.Reason).HasColumnName("reason").IsRequired().HasMaxLength(500).HasComment("Business reason for this immutable revision.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").HasComment("UTC instant when this revision was recorded.");
         builder.Ignore(x => x.IsReadyForClose);
-        builder.HasOne<WorkCenterMachineOverheadRate>().WithMany().HasForeignKey(x => x.WorkCenterMachineOverheadRateId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<WorkCenterMachineOverheadRate>()
+            .WithMany()
+            .HasForeignKey(x => new
+            {
+                x.WorkCenterMachineOverheadRateId,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.WorkCenterId,
+                x.AccountingPeriodCode,
+                x.RateRevision,
+            })
+            .HasPrincipalKey(x => new
+            {
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.WorkCenterId,
+                x.AccountingPeriodCode,
+                x.Revision,
+            })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.AccountingPeriodCode, x.Revision })
             .IsUnique().IsDescending(false, false, false, false, true)
             .HasDatabaseName("ux_wc_machine_overhead_reconciliations_scope_revision");

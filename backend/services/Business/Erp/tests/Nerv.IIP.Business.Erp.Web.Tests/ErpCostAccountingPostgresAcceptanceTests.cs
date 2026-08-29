@@ -436,7 +436,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             .HandleAsync(settled, CancellationToken.None);
         var machineTask = new MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead(
                 machineDb, machineDb, new PostgreSqlWorkOrderCostMutationLock(machineDb),
-                new OperationMachineOverheadSettlementOrchestrator(machineDb, deadLetters))
+                new OperationMachineOverheadSettlementOrchestrator(machineDb, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(machineDb)))
             .HandleAsync(machineSettled, CancellationToken.None);
         await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 3);
         Assert.False(reportTask.IsCompleted);
@@ -1048,7 +1048,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             db,
             db,
             new PostgreSqlWorkOrderCostMutationLock(db),
-            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters));
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db)));
 
     private static MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead MachineVoidConsumer(
         ApplicationDbContext db,
@@ -1057,7 +1057,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             db,
             db,
             new PostgreSqlWorkOrderCostMutationLock(db),
-            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters));
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db)));
 
     private static MesOperationActualTimeSettledV2IntegrationEvent MachineSettled(
         string eventId,

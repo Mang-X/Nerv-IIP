@@ -1310,8 +1310,6 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkCenterMachineOverheadRateId");
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "AccountingPeriodCode", "WorkCenterId")
                         .HasDatabaseName("ix_wc_machine_overhead_reconciliations_period");
 
@@ -1319,6 +1317,8 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsUnique()
                         .IsDescending(false, false, false, false, true)
                         .HasDatabaseName("ux_wc_machine_overhead_reconciliations_scope_revision");
+
+                    b.HasIndex("WorkCenterMachineOverheadRateId", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "RateRevision");
 
                     b.ToTable("work_center_machine_overhead_reconciliations", "erp", t =>
                         {
@@ -3368,6 +3368,9 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("Id", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
+                        .HasName("ak_wc_machine_overhead_rates_hard_scope");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
                         .IsUnique()
                         .IsDescending(false, false, false, false, true)
@@ -5032,7 +5035,8 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate.WorkCenterMachineOverheadRate", null)
                         .WithMany()
-                        .HasForeignKey("WorkCenterMachineOverheadRateId")
+                        .HasForeignKey("WorkCenterMachineOverheadRateId", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "RateRevision")
+                        .HasPrincipalKey("Id", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
