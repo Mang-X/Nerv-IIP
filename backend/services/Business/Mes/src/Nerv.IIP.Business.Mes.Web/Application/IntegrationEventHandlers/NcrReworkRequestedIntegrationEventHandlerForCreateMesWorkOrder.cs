@@ -100,12 +100,31 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
                 x.WorkOrderIdValue == defect.WorkOrderId,
             cancellationToken);
 
-        if (defect.OperationTaskId is not null && !await dbContext.OperationTasks.AnyAsync(
-                x => x.OrganizationId == integrationEvent.OrganizationId &&
-                    x.EnvironmentId == integrationEvent.EnvironmentId &&
-                    x.WorkOrderId == sourceWorkOrder.WorkOrderIdValue &&
-                    x.OperationTaskIdValue == defect.OperationTaskId,
-                cancellationToken))
+        var sourceRouting = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == integrationEvent.OrganizationId &&
+                x.EnvironmentId == integrationEvent.EnvironmentId &&
+                x.WorkOrderId == sourceWorkOrder.WorkOrderIdValue)
+            .OrderBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationTaskIdValue)
+            .ToArrayAsync(cancellationToken);
+        if (sourceRouting.Length == 0)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "mes.ncrReworkRequested.sourceRoutingMissing",
+                $"MES source work order '{sourceWorkOrder.WorkOrderIdValue}' has no frozen operation routing.",
+                cancellationToken);
+            return;
+        }
+
+        var firstSourceOperationIndex = defect.OperationTaskId is null
+            ? 0
+            : Array.FindIndex(
+                sourceRouting,
+                x => string.Equals(x.OperationTaskIdValue, defect.OperationTaskId, StringComparison.Ordinal));
+        if (firstSourceOperationIndex < 0)
         {
             await DeadLetterAsync(
                 integrationEvent,
@@ -161,7 +180,7 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
                 defect.OperationTaskId,
                 payload.RequestedAtUtc),
             cancellationToken);
-        dbContext.WorkOrders.Add(WorkOrder.CreateRework(
+        var reworkWorkOrder = WorkOrder.CreateRework(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
             allocation.Code,
@@ -180,7 +199,23 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
             payload.SerialNo,
             payload.RequestedAtUtc,
             integrationEvent.CorrelationId,
-            integrationEvent.EventId));
+            integrationEvent.EventId);
+        reworkWorkOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            payload.RequestedAtUtc);
+        var reworkRouting = sourceRouting[firstSourceOperationIndex..]
+            .Select((source, index) => new RoutingStepSnapshot(
+                $"OPT-{index:D4}-{Guid.CreateVersion7():N}",
+                source.OperationSequence,
+                source.WorkCenterId,
+                source.AlternativeWorkCenterIdList,
+                source.Duration,
+                source.RequiresQualityInspection,
+                source.OperationCode))
+            .ToArray();
+        var reworkOperationTasks = reworkWorkOrder.Release(payload.RequestedAtUtc, reworkRouting);
+        dbContext.WorkOrders.Add(reworkWorkOrder);
+        dbContext.OperationTasks.AddRange(reworkOperationTasks);
     }
 
     private static bool Matches(WorkOrder workOrder, NcrReworkRequestedPayload payload) =>
