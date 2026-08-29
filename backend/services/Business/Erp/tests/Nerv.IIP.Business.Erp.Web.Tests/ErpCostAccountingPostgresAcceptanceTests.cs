@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
@@ -406,7 +407,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             "org-concurrent", "env-concurrent", "operator:test", "report:RPT-CONCURRENT",
             new ProductionReportRecordedPayload(
                 "RPT-CONCURRENT", "WO-CONCURRENT", "OP-CONCURRENT", "WC-CONCURRENT", null,
-                10m, 0m, 0m, "ea", 5m, reportedAtUtc, false, MaterialMovementCount: 0));
+                10m, 0m, 0m, "ea", 5.0000004m, reportedAtUtc, false, MaterialMovementCount: 0));
         var settled = new MesOperationActualTimeSettledIntegrationEvent(
             "evt-settled-concurrent", MesIntegrationEventTypes.OperationActualTimeSettled, 1,
             completedAtUtc.AddMinutes(1), MesIntegrationEventSources.BusinessMes,
@@ -459,10 +460,50 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Single(cost.Details, x => x.LaborBasis == LaborCostBasis.ActualOperation);
         Assert.Single(await assertDb.OperationLaborSettlements.ToListAsync());
         Assert.Single(await assertDb.OperationLaborCoveredReports.ToListAsync());
+        var reportSnapshot = Assert.Single(await assertDb.OperationLaborReportSnapshots.AsNoTracking().ToListAsync());
+        Assert.Equal(10m, reportSnapshot.GoodQuantity);
+        Assert.Equal(5m, reportSnapshot.TheoreticalRatePerHour);
         Assert.Equal(80m, cost.MachineOverheadCost);
         Assert.Single(cost.Details, x => x.MachineOverheadBasis == MachineOverheadCostBasis.ActualOperation);
         Assert.Single(await assertDb.OperationMachineOverheadSettlements.ToListAsync());
         Assert.Equal(1, (await assertDb.OperationMachineOverheadSettlementStates.SingleAsync()).ActiveRevision);
+
+        var read = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
+            new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT"),
+            CancellationToken.None);
+        Assert.Equal("available", read.LaborVarianceStatus);
+        Assert.Equal(2.000000m, read.StandardLaborHours);
+        Assert.Equal(2.000000m, read.ActualLaborHours);
+        Assert.Equal(0.000000m, read.LaborEfficiencyVarianceAmount);
+        Assert.Equal("neutral", read.LaborEfficiencyVarianceDirection);
+        Assert.Equal(2.000000m, read.ActualMachineHours);
+        Assert.Equal("unavailable", read.MachineCostStatus);
+
+        var snapshotIndexes = await assertDb.Database.SqlQueryRaw<string>("""
+            SELECT indexname AS "Value"
+            FROM pg_indexes
+            WHERE schemaname = 'erp'
+              AND tablename = 'operation_labor_report_snapshots'
+              AND indexname IN (
+                'ux_operation_labor_report_snapshots_scope_report',
+                'ix_operation_labor_report_snapshots_work_order_operation')
+            ORDER BY indexname
+            """).ToListAsync();
+        Assert.Equal([
+            "ix_operation_labor_report_snapshots_work_order_operation",
+            "ux_operation_labor_report_snapshots_scope_report",
+        ], snapshotIndexes);
+
+        assertDb.OperationLaborReportSnapshots.Remove(reportSnapshot);
+        await assertDb.SaveChangesAsync();
+        assertDb.ChangeTracker.Clear();
+        var historicalRead = await new GetWorkOrderCostVarianceQueryHandler(assertDb).Handle(
+            new GetWorkOrderCostVarianceQuery("org-concurrent", "env-concurrent", "WO-CONCURRENT"),
+            CancellationToken.None);
+        Assert.Equal("unavailable", historicalRead.LaborVarianceStatus);
+        Assert.Equal("missing_report_snapshot", historicalRead.UnavailableReason);
+        Assert.Equal(2.000000m, historicalRead.ActualLaborHours);
+        Assert.Null(historicalRead.StandardLaborHours);
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
