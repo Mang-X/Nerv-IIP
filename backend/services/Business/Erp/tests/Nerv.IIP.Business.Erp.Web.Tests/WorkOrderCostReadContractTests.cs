@@ -165,7 +165,7 @@ public sealed class WorkOrderCostReadContractTests
     }
 
     [Fact]
-    public async Task Read_covers_zero_overproduction_reversal_reopen_and_pagination_vectors()
+    public async Task Read_covers_zero_overproduction_reversal_from_original_snapshot_reopen_and_pagination_vectors()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -215,7 +215,7 @@ public sealed class WorkOrderCostReadContractTests
             Covered("OP-REVERSAL", 1, "RPT-REVERSAL-ORIGINAL"),
             Covered("OP-REVERSAL", 1, "RPT-REVERSAL-VOID"),
             Snapshot("OP-REVERSAL", "RPT-REVERSAL-ORIGINAL", 8m),
-            Snapshot("OP-REVERSAL", "RPT-REVERSAL-VOID", 8m, true, "RPT-REVERSAL-ORIGINAL"),
+            Snapshot("OP-REVERSAL", "RPT-REVERSAL-VOID", 3m, true, "RPT-REVERSAL-ORIGINAL"),
             reopenedOld, reopened, ActiveState("OP-REOPEN", 2, reopen: true),
             Covered("OP-REOPEN", 1, "RPT-REOPEN-OLD"),
             Covered("OP-REOPEN", 2, "RPT-REOPEN-ACTIVE"),
@@ -243,6 +243,8 @@ public sealed class WorkOrderCostReadContractTests
             operations["OP-REVERSAL"].StandardLaborHours!.Value,
             operations["OP-REVERSAL"].LaborEfficiencyVarianceHours!.Value,
             operations["OP-REVERSAL"].LaborEfficiencyVarianceDirection!));
+        Assert.Equal(3m, operations["OP-REVERSAL"].CoveredReports
+            .Single(x => x.ReportNo == "RPT-REVERSAL-VOID").GoodQuantity);
         Assert.Equal(2, operations["OP-REOPEN"].SettlementRevision);
         Assert.Equal(new[] { "RPT-REOPEN-ACTIVE" },
             operations["OP-REOPEN"].CoveredReports.Select(x => x.ReportNo));
@@ -253,6 +255,97 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal(4, secondPage.TotalOperations);
         Assert.Equal(2, secondPage.Operations.Count);
         Assert.Equal(new[] { "OP-REVERSAL", "OP-ZERO" }, secondPage.Operations.Select(x => x.OperationTaskId));
+    }
+
+    [Fact]
+    public async Task Reversal_original_must_belong_to_the_same_operation_work_center_and_settlement_lineage()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var settlement = OperationLaborSettlement.Create(
+            "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", "WC-CURRENT", 1,
+            CompletedAtUtc, TimeSpan.TicksPerHour, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "CNY", 60m, "evt-lineage-settlement", "hash-lineage-settlement");
+        var state = OperationLaborSettlementState.Open("org-lineage", "env-lineage", "OP-CURRENT");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-lineage", "env-lineage", "WO-LINEAGE", "FG-LINEAGE");
+        cost.RecordActualLabor(settlement);
+        db.AddRange(cost, settlement, state,
+            OperationLaborCoveredReport.Create(
+                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", 1, "RPT-CURRENT"),
+            OperationLaborCoveredReport.Create(
+                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", 1, "RPT-REVERSAL"),
+            OperationLaborReportSnapshot.Create(
+                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", "WC-CURRENT", "RPT-CURRENT",
+                2m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-2), false, null, "evt-current"),
+            OperationLaborReportSnapshot.Create(
+                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-CURRENT", "WC-CURRENT", "RPT-REVERSAL",
+                1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-1), true, "RPT-OTHER-OP", "evt-reversal"),
+            OperationLaborReportSnapshot.Create(
+                "org-lineage", "env-lineage", "WO-LINEAGE", "OP-OTHER", "WC-OTHER", "RPT-OTHER-OP",
+                1m, 0m, 0m, "ea", 2m, CompletedAtUtc.AddMinutes(-3), false, null, "evt-other"));
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new GetWorkOrderCostVarianceQuery("org-lineage", "env-lineage", "WO-LINEAGE"),
+            CancellationToken.None);
+
+        Assert.Equal("unavailable", response.LaborVarianceStatus);
+        Assert.Equal("conflicting_reversal_snapshot", response.UnavailableReason);
+        Assert.Equal("unavailable", Assert.Single(response.Operations).Status);
+    }
+
+    public static TheoryData<string, decimal[], decimal, decimal> NumericOverflowVectors => new()
+    {
+        { "sum", [decimal.MaxValue, decimal.MaxValue], 1m, 1m },
+        { "division", [decimal.MaxValue], 0.1m, 1m },
+        { "multiplication", [999_999_999_999.999999m], 0.000001m, 999_999_999_999.999999m },
+    };
+
+    [Theory]
+    [MemberData(nameof(NumericOverflowVectors))]
+    public async Task Decimal_sum_division_or_multiplication_overflow_fails_closed_as_unavailable(
+        string vector,
+        decimal[] goodQuantities,
+        decimal theoreticalRate,
+        decimal hourlyRate)
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrderId = $"WO-OVERFLOW-{vector}";
+        var settlement = OperationLaborSettlement.Create(
+            "org-overflow", "env-overflow", workOrderId, "OP-OVERFLOW", "WC-OVERFLOW", 1,
+            CompletedAtUtc, 0, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "CNY", hourlyRate, $"evt-overflow-{vector}", $"hash-overflow-{vector}");
+        var state = OperationLaborSettlementState.Open("org-overflow", "env-overflow", "OP-OVERFLOW");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-overflow", "env-overflow", workOrderId, "FG-OVERFLOW");
+        cost.RecordActualLabor(settlement);
+        db.AddRange(cost, settlement, state);
+        for (var index = 0; index < goodQuantities.Length; index++)
+        {
+            var reportNo = $"RPT-OVERFLOW-{index}";
+            db.AddRange(
+                OperationLaborCoveredReport.Create(
+                    "org-overflow", "env-overflow", workOrderId, "OP-OVERFLOW", 1, reportNo),
+                OperationLaborReportSnapshot.Create(
+                    "org-overflow", "env-overflow", workOrderId, "OP-OVERFLOW", "WC-OVERFLOW", reportNo,
+                    goodQuantities[index], 0m, 0m, "ea", theoreticalRate, CompletedAtUtc.AddMinutes(-index - 1),
+                    false, null, $"evt-overflow-report-{index}"));
+        }
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new GetWorkOrderCostVarianceQuery("org-overflow", "env-overflow", workOrderId),
+            CancellationToken.None);
+
+        Assert.Equal("unavailable", response.LaborVarianceStatus);
+        Assert.Equal("numeric_overflow", response.UnavailableReason);
+        Assert.Null(response.StandardLaborHours);
+        Assert.Null(response.LaborEfficiencyVarianceAmount);
+        Assert.Equal("unavailable", Assert.Single(response.Operations).Status);
     }
 
     [Fact]
