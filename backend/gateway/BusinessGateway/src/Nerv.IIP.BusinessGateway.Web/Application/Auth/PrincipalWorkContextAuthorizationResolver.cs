@@ -38,7 +38,7 @@ public static class PrincipalWorkContextAuthorizationResolver
                 !hasCompleteSelection && !hasPartialSelection);
         }
 
-        var grants = TrustedGrants(authorization, permissionCode);
+        var grants = TrustedGrantsForPermission(authorization, permissionCode);
         var candidates = NormalizeCandidates(context.CandidateScopes ?? []).ToList();
         if (!candidates.Any(x =>
                 string.Equals(x.Kind, "organization", StringComparison.Ordinal)
@@ -130,11 +130,11 @@ public static class PrincipalWorkContextAuthorizationResolver
             .ToArray();
         return AuthorizeCandidates(
             NormalizeCandidates(siteCandidates, allowSite: true),
-            TrustedGrants(authorization, permissionCode),
+            TrustedGrantsForPermission(authorization, permissionCode),
             organizationId);
     }
 
-    private static AuthorizationScopeGrant[] TrustedGrants(
+    internal static AuthorizationScopeGrant[] TrustedGrantsForPermission(
         BusinessGatewayAuthorizationResult authorization,
         string permissionCode) =>
         (authorization.ScopeGrants ?? [])

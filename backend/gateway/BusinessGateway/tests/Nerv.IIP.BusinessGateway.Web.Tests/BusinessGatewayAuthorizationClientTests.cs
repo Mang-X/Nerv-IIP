@@ -33,6 +33,8 @@ public sealed class BusinessGatewayAuthorizationClientTests
             CancellationToken.None);
 
         Assert.True(result.IsAllowed);
+        Assert.Equal("org-001", result.AuthorizedOrganizationId);
+        Assert.Equal("env-dev", result.AuthorizedEnvironmentId);
         var grant = Assert.Single(result.ScopeGrants!);
         Assert.Equal("role-worker", grant.SourceId);
         Assert.Equal("workshop", grant.ScopeKind);

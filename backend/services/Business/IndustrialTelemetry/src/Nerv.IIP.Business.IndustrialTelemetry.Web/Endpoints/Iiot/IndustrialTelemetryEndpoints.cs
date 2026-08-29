@@ -10,6 +10,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.ServiceAuth;
 
@@ -188,20 +189,6 @@ public sealed record ListAlarmEventsRequest(
     AlarmEventId? AlarmEventId = null);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
-public sealed record QueryOeeAggregateBucketsRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    OeeAggregateDimension Dimension,
-    DateTimeOffset WindowStartUtc,
-    DateTimeOffset WindowEndUtc,
-    string? DeviceAssetId,
-    string? WorkCenterId,
-    string? ShiftCode,
-    string? LineCode,
-    string? WorkshopCode,
-    DateOnly? BusinessDate,
-    int Skip = 0,
-    int Take = 100);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);

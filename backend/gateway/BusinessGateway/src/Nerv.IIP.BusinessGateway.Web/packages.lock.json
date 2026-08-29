@@ -534,6 +534,12 @@
       "nerv.iip.contracts.iam": {
         "type": "Project"
       },
+      "nerv.iip.contracts.industrialtelemetry": {
+        "type": "Project",
+        "dependencies": {
+          "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )"
+        }
+      },
       "nerv.iip.contracts.integrationevents": {
         "type": "Project"
       },
