@@ -25,6 +25,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using System.Net;
@@ -2527,7 +2528,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("DEV-CNC-01", deviceNode.NodeId);
         Assert.Equal(reportedAtUtc, deviceNode.OccurredAtUtc);
 
-        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
         Assert.Equal("DEF-TRACE-001", inspectionNode.NodeId);
         Assert.Equal("SCRAP-SURFACE", inspectionNode.DisplayName);
         Assert.Equal(DefectRecord.OpenStatus, inspectionNode.Status);
@@ -2608,7 +2609,7 @@ public sealed class MesPersistenceContractTests
         var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.OperatorNodeType);
         Assert.Equal("user-emp-010", operatorNode.NodeId);
         Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
-        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
         Assert.Equal(3, traceability.Nodes.Count(x => x.NodeType == "ProductionReport"));
         Assert.All(
             traceability.Nodes.Where(x => x.NodeType == "ProductionReport"),
