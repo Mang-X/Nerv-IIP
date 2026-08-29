@@ -104,7 +104,7 @@ public static class ScopedCallerAuthentication
         foreach (var profile in options.Profiles)
         {
             if (!IsCanonicalValue(profile.Name)
-                || !IsCanonicalValue(profile.BearerToken)
+                || !InternalServiceBearerToken.IsValidToken(profile.BearerToken)
                 || !IsSafeSubject(profile.Subject)
                 || !IsCanonicalValue(profile.OrganizationId)
                 || !IsCanonicalValue(profile.EnvironmentId)
@@ -137,9 +137,15 @@ public sealed class ScopedCallerAuthenticationHandler(
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!InternalServiceBearerToken.TryParse(Request.Headers.Authorization.ToString(), out var suppliedToken))
+        var authorization = Request.Headers.Authorization.ToString();
+        if (!authorization.StartsWith("Bearer", StringComparison.OrdinalIgnoreCase))
         {
             return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        if (!InternalServiceBearerToken.TryParseStrict(authorization, out var suppliedToken))
+        {
+            return Task.FromResult(AuthenticateResult.Fail("Malformed scoped caller bearer authorization."));
         }
 
         ScopedCallerProfile? matchedProfile = null;

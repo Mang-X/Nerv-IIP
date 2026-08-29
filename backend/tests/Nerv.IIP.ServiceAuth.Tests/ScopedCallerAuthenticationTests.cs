@@ -40,8 +40,6 @@ public sealed class ScopedCallerAuthenticationTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("Basic caller-token-one-0123456789")]
-    [InlineData("Bearercaller-token-one-0123456789")]
-    [InlineData("Bearer")]
     public async Task Missing_or_non_bearer_authorization_does_not_authenticate(string? authorization)
     {
         await using var provider = Services(ValidConfiguration()).BuildServiceProvider();
@@ -51,6 +49,24 @@ public sealed class ScopedCallerAuthenticationTests
 
         Assert.False(result.Succeeded);
         Assert.True(result.None);
+    }
+
+    [Theory]
+    [InlineData("Bearer")]
+    [InlineData("Bearercaller-token-one-0123456789")]
+    [InlineData("Bearer  caller-token-one-0123456789")]
+    [InlineData("Bearer\tcaller-token-one-0123456789")]
+    [InlineData("Bearer caller-token-one-0123456789 ")]
+    [InlineData("Bearer caller-token-one 0123456789")]
+    public async Task Malformed_bearer_authorization_is_rejected_by_the_real_handler(string authorization)
+    {
+        await using var provider = Services(ValidConfiguration()).BuildServiceProvider();
+
+        var result = await Context(provider, authorization).AuthenticateAsync(Scheme);
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.None);
+        Assert.Contains("Malformed", result.Failure!.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -68,21 +84,30 @@ public sealed class ScopedCallerAuthenticationTests
         Assert.Contains("Invalid", result.Failure!.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Named_policy_accepts_only_the_configured_scheme_and_permission()
+    [Theory]
+    [InlineData(ScopedCallerClaimTypes.Subject, null)]
+    [InlineData(ScopedCallerClaimTypes.OrganizationId, null)]
+    [InlineData(ScopedCallerClaimTypes.EnvironmentId, null)]
+    [InlineData(ScopedCallerClaimTypes.Permission, "internal.other.write")]
+    public async Task Named_policy_rejects_missing_scope_claims_and_wrong_permission(
+        string removedClaimType,
+        string? replacementPermission)
     {
         await using var provider = Services(ValidConfiguration()).BuildServiceProvider();
         var authenticated = await Context(provider, $"Bearer {Token}").AuthenticateAsync(Scheme);
         var authorization = provider.GetRequiredService<IAuthorizationService>();
 
         var allowed = await authorization.AuthorizeAsync(authenticated.Principal!, null, Policy);
-        var wrongPermission = new ClaimsPrincipal(new ClaimsIdentity(
-            authenticated.Principal!.Claims.Where(x => x.Type != ScopedCallerClaimTypes.Permission)
-                .Append(new Claim(ScopedCallerClaimTypes.Permission, "business.other.write")),
-            Scheme));
+        var rejectedClaims = authenticated.Principal!.Claims.Where(x => x.Type != removedClaimType).ToList();
+        if (replacementPermission is not null)
+        {
+            rejectedClaims.Add(new Claim(ScopedCallerClaimTypes.Permission, replacementPermission));
+        }
+
+        var rejectedPrincipal = new ClaimsPrincipal(new ClaimsIdentity(rejectedClaims, Scheme));
 
         Assert.True(allowed.Succeeded);
-        Assert.False((await authorization.AuthorizeAsync(wrongPermission, null, Policy)).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(rejectedPrincipal, null, Policy)).Succeeded);
     }
 
     [Fact]
@@ -108,10 +133,43 @@ public sealed class ScopedCallerAuthenticationTests
         var subject = await allowed.Content.ReadAsStringAsync();
         client.DefaultRequestHeaders.Authorization = new("Bearer", "wrong-token-one-0123456789");
         var rejected = await client.GetAsync("/secure");
+        using var malformedRequest = new HttpRequestMessage(HttpMethod.Get, "/secure");
+        malformedRequest.Headers.TryAddWithoutValidation("Authorization", $"Bearer  {Token}");
+        var malformed = await client.SendAsync(malformedRequest);
 
         Assert.Equal(StatusCodes.Status200OK, (int)allowed.StatusCode);
         Assert.Equal("gateway-finance", subject);
         Assert.Equal(StatusCodes.Status401Unauthorized, (int)rejected.StatusCode);
+        Assert.Equal(StatusCodes.Status401Unauthorized, (int)malformed.StatusCode);
+    }
+
+    [Fact]
+    public async Task Named_policy_rejects_a_principal_authenticated_only_by_a_different_scheme()
+    {
+        const string otherScheme = "OtherScopedInboundCaller";
+        const string otherToken = "other-scheme-token-0123456789";
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Services.AddAuthentication(otherScheme);
+        builder.Services.AddNervIipScopedCallerAuthentication(ValidConfiguration(), Scheme);
+        builder.Services.AddNervIipScopedCallerAuthentication(
+            ValidConfiguration(("Profiles:0:BearerToken", otherToken)),
+            otherScheme);
+        builder.Services.AddNervIipScopedCallerPolicy(Policy, Scheme, Permission);
+        await using var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.MapGet("/secure", () => Results.Ok()).RequireAuthorization(Policy);
+        app.Urls.Add("http://127.0.0.1:0");
+        await app.StartAsync();
+
+        var address = app.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        using var client = new HttpClient { BaseAddress = new Uri(address) };
+        client.DefaultRequestHeaders.Authorization = new("Bearer", otherToken);
+
+        var response = await client.GetAsync("/secure");
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, (int)response.StatusCode);
     }
 
     [Fact]
@@ -150,6 +208,39 @@ public sealed class ScopedCallerAuthenticationTests
     }
 
     [Fact]
+    public async Task Existing_generic_internal_service_scheme_keeps_legacy_bearer_whitespace_semantics()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["InternalService:BearerToken"] = "existing-generic-token"
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNervIipInternalServiceAuthentication(configuration, new StubHostEnvironment("Production"));
+        await using var provider = services.BuildServiceProvider();
+
+        var result = await Context(provider, "Bearer  existing-generic-token ")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public void Duplicate_scoped_caller_scheme_fails_closed_when_the_scheme_provider_is_resolved()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNervIipScopedCallerAuthentication(ValidConfiguration(), Scheme);
+        services.AddNervIipScopedCallerAuthentication(ValidConfiguration(), Scheme);
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            provider.GetRequiredService<IAuthenticationSchemeProvider>());
+
+        Assert.Contains("Scheme already exists", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Different_tokens_for_the_same_subject_and_scope_are_valid()
     {
         var configuration = ValidConfiguration(
@@ -163,10 +254,16 @@ public sealed class ScopedCallerAuthenticationTests
         using var host = Host(configuration);
         await host.StartAsync();
 
-        var secondary = await Context(host.Services, "Bearer caller-token-two-0123456789")
+        await using var primaryScope = host.Services.CreateAsyncScope();
+        var primary = await Context(primaryScope.ServiceProvider, $"Bearer {Token}")
+            .AuthenticateAsync(Scheme);
+        await using var secondaryScope = host.Services.CreateAsyncScope();
+        var secondary = await Context(secondaryScope.ServiceProvider, "Bearer caller-token-two-0123456789")
             .AuthenticateAsync(Scheme);
 
+        Assert.True(primary.Succeeded);
         Assert.True(secondary.Succeeded);
+        Assert.Equal("gateway-finance", primary.Principal!.FindFirstValue(ScopedCallerClaimTypes.Subject));
         Assert.Equal("gateway-finance", secondary.Principal!.FindFirstValue(ScopedCallerClaimTypes.Subject));
     }
 
@@ -184,6 +281,10 @@ public sealed class ScopedCallerAuthenticationTests
     {
         new[] { ("__clear__", (string?)null) },
         new[] { ("Profiles:0:BearerToken", (string?)" ") },
+        new[] { ("Profiles:0:BearerToken", (string?)" caller-token-one-0123456789") },
+        new[] { ("Profiles:0:BearerToken", (string?)"caller-token-one-0123456789 ") },
+        new[] { ("Profiles:0:BearerToken", (string?)"caller-token one-0123456789") },
+        new[] { ("Profiles:0:BearerToken", (string?)"Bearer caller-token-one-0123456789") },
         new[] { ("Profiles:0:Subject", (string?)" ") },
         new[] { ("Profiles:0:Subject", (string?)"unsafe subject") },
         new[] { ("Profiles:0:OrganizationId", (string?)" ") },
