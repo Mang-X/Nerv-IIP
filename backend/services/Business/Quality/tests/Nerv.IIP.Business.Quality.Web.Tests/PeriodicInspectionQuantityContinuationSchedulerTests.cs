@@ -62,7 +62,8 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
                 count => count == 4,
                 count => $"started={count}",
                 new EventuallyOptions(TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(10), []));
-            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            await Assert.ThrowsAsync<TimeoutException>(
+                () => sender.FifthCandidateStarted.Task.WaitAsync(TimeSpan.FromMilliseconds(100)));
             Assert.Equal(4, sender.StartedCount);
         }
         finally
@@ -232,6 +233,7 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
 
         public int StartedCount => Volatile.Read(ref startedCount);
         public TaskCompletionSource ReleaseCandidates { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FifthCandidateStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task<TResponse> Send<TResponse>(
             IRequest<TResponse> request,
@@ -253,7 +255,11 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
             }
 
             Assert.IsType<GeneratePeriodicInspectionQuantityTaskBatchForContextCommand>(request);
-            Interlocked.Increment(ref startedCount);
+            if (Interlocked.Increment(ref startedCount) == 5)
+            {
+                FifthCandidateStarted.TrySetResult();
+            }
+
             await ReleaseCandidates.Task.WaitAsync(cancellationToken);
             return (TResponse)(object)1;
         }
