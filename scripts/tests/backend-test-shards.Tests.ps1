@@ -678,8 +678,9 @@ $excludedSelectors = @(
 # #1963 PR-A 新增 WorkOrderTransformation PostgreSQL 类后，选择器总数增加到 67；#2247 的替代料快照
 # provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane；后续 machine-overhead provider 与
 # ERP 工序人工 Redis/CAP transport 类并入治理后，选择器总数增加到 71；#2604 的历史 OEE fact
-# provider 类同样只含真实 PostgreSQL 用例，因此当前选择器总数为 72。
-Assert-Contract ($excludedSelectors.Count -eq 72) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# provider 类同样只含真实 PostgreSQL 用例，因此选择器总数为 72；#2807 的 MES 返工工单并发
+# 验收类整类进入 real-postgres lane 后，当前选择器总数为 73。
+Assert-Contract ($excludedSelectors.Count -eq 73) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests'))) 'The Quality periodic-inspection PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests'))) 'The Quality scrap-reason PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'

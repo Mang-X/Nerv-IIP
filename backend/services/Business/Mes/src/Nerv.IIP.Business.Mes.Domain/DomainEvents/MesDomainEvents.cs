@@ -16,6 +16,12 @@ public enum OperationTaskManualDispatchClearReason
 
 public sealed record WorkOrderCreatedDomainEvent(WorkOrder WorkOrder) : IDomainEvent;
 
+public sealed record ReworkWorkOrderCreatedDomainEvent(
+    WorkOrder WorkOrder,
+    DateTimeOffset RequestedAtUtc,
+    string CorrelationId,
+    string CausationId) : IDomainEvent;
+
 public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
 
 public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTimeOffset CompletedAtUtc) : IDomainEvent;
