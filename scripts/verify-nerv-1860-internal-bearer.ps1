@@ -252,8 +252,11 @@ try {
         [ordered]@{ name = 'business-gateway'; pid = $businessGatewayProcess.Id; executable = $businessGatewayExecutable.Substring($repoRoot.Length + 1); environmentKey = 'InternalService__BearerToken'; fingerprint = Get-Nerv1860Fingerprint $businessGatewayToken; tokenLength = $businessGatewayToken.Length },
         [ordered]@{ name = 'product-engineering'; pid = $productEngineeringProcess.Id; executable = $productEngineeringExecutable.Substring($repoRoot.Length + 1); environmentKey = 'InternalService__BearerToken'; fingerprint = Get-Nerv1860Fingerprint $productEngineeringToken; tokenLength = $productEngineeringToken.Length }
     )
-    $fingerprints = @($participants | ForEach-Object { [string] $_.fingerprint } | Select-Object -Unique)
-    $tokenLengths = @($participants | ForEach-Object { [int] $_.tokenLength } | Select-Object -Unique)
+    $fingerprints = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@($participants | ForEach-Object { [string] $_.fingerprint }),
+        [StringComparer]::Ordinal)
+    $tokenLengths = [Collections.Generic.HashSet[int]]::new(
+        [int[]]@($participants | ForEach-Object { [int] $_.tokenLength }))
     if ($fingerprints.Count -ne 1 -or $tokenLengths.Count -ne 1) {
         throw 'AppHost, IAM, BusinessGateway, and ProductEngineering did not receive one credential snapshot.'
     }
