@@ -532,6 +532,123 @@ function Get-Man517RemainingProcessNames {
     return $remaining.ToArray()
 }
 
+function Wait-Man517OwnedComposeServicesStopped {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $OwnedServices,
+        [Parameter(Mandatory)] [string] $ComposeFile,
+        [Parameter(Mandatory)] [ValidateRange(1, 60000)] [int] $DeadlineMilliseconds
+    )
+
+    $owned = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($service in $OwnedServices) { [void]$owned.Add($service) }
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $attempts = 0
+    $lastObservation = 'unavailable'
+    while ($true) {
+        $attempts++
+        $remainingDeadlineMilliseconds = [Math]::Max(1, $DeadlineMilliseconds - [int]$stopwatch.ElapsedMilliseconds)
+        try {
+            $observation = Get-Man517ComposeRunningServicesObservation `
+                -ComposeFile $ComposeFile `
+                -Attempt $attempts `
+                -RemainingDeadlineMilliseconds $remainingDeadlineMilliseconds
+        }
+        catch {
+            $elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
+            $failure = [InvalidOperationException]::new(
+                "Compose cleanup state query failed: deadlineMilliseconds=$DeadlineMilliseconds; attempts=$attempts; elapsedMilliseconds=$elapsedMilliseconds; lastObservation=$lastObservation; $($_.Exception.Message)",
+                $_.Exception)
+            $failure.Data['DeadlineMilliseconds'] = $DeadlineMilliseconds
+            $failure.Data['Attempts'] = $attempts
+            $failure.Data['ElapsedMilliseconds'] = $elapsedMilliseconds
+            $failure.Data['LastObservation'] = $lastObservation
+            throw $failure
+        }
+
+        $remaining = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($runningService in @($observation.runningServices)) {
+            if ($owned.Contains([string]$runningService)) {
+                [void]$remaining.Add([string]$runningService)
+            }
+        }
+        $remainingNames = [string[]]@($remaining)
+        [Array]::Sort($remainingNames, [StringComparer]::Ordinal)
+        $elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
+        $lastObservation = "observedAtUtc=$($observation.observedAtUtc); running=[$(@($observation.runningServices) -join ',')]; ownedRemaining=[$($remainingNames -join ',')]; query=$($observation.query); log=$($observation.logPath)"
+
+        if ($remainingNames.Count -eq 0 -and $elapsedMilliseconds -le $DeadlineMilliseconds) {
+            return [pscustomobject]@{
+                status = 'converged'
+                converged = $true
+                deadlineMilliseconds = $DeadlineMilliseconds
+                attempts = $attempts
+                elapsedMilliseconds = $elapsedMilliseconds
+                remainingNames = $remainingNames
+                lastObservation = $lastObservation
+                query = $observation.query
+                logPath = $observation.logPath
+            }
+        }
+        if ($elapsedMilliseconds -ge $DeadlineMilliseconds) {
+            return [pscustomobject]@{
+                status = 'timed-out'
+                converged = $false
+                deadlineMilliseconds = $DeadlineMilliseconds
+                attempts = $attempts
+                elapsedMilliseconds = $elapsedMilliseconds
+                remainingNames = $remainingNames
+                lastObservation = $lastObservation
+                query = $observation.query
+                logPath = $observation.logPath
+            }
+        }
+    }
+}
+
+function Get-Man517ComposeRunningServicesObservation {
+    param(
+        [Parameter(Mandatory)] [string] $ComposeFile,
+        [Parameter(Mandatory)] [ValidateRange(1, 100000)] [int] $Attempt,
+        [Parameter(Mandatory)] [ValidateRange(1, 60000)] [int] $RemainingDeadlineMilliseconds
+    )
+
+    $queryArguments = @('compose', '-f', $ComposeFile, 'ps', '--services', '--status', 'running')
+    $query = "docker compose -f `"$ComposeFile`" ps --services --status running"
+    $logDirectory = Join-Path $root "artifacts/script-logs/man517-verify-infrastructure-stopped/attempt-$Attempt"
+    $logPath = Join-Path $logDirectory 'observation.json'
+    [System.IO.Directory]::CreateDirectory($logDirectory) | Out-Null
+    try {
+        $queryTimeoutSeconds = [Math]::Max(1, [int][Math]::Ceiling($RemainingDeadlineMilliseconds / 1000.0))
+        $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments $queryArguments -WorkingDirectory $root -TimeoutSeconds $queryTimeoutSeconds -Name "man517-verify-infrastructure-stopped-$Attempt"
+        $runningServices = [string[]]@("$($result.Stdout)" -split '\r?\n' |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim() })
+        $observedAtUtc = [DateTimeOffset]::UtcNow
+        @{
+            observedAtUtc = $observedAtUtc
+            query = $query
+            runningServices = $runningServices
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $logPath -Encoding utf8
+        return [pscustomobject]@{
+            runningServices = $runningServices
+            observedAtUtc = $observedAtUtc
+            query = $query
+            logPath = $logPath
+        }
+    }
+    catch {
+        $safeFailure = Protect-ScriptAutomationText -Text $_.Exception.Message
+        @{
+            observedAtUtc = [DateTimeOffset]::UtcNow
+            query = $query
+            status = 'failed'
+            failure = $safeFailure
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $logPath -Encoding utf8
+        throw [InvalidOperationException]::new("Compose status query failed; query=$query; log=$logPath; failure=$safeFailure", $_.Exception)
+    }
+}
+
 function Export-Man517FailureDiagnostics {
     param([object]$FailureRecord)
     $diagnosticsRoot = Join-Path $root 'artifacts/acceptance/man517/diagnostics'
@@ -660,6 +777,17 @@ $databaseCreated = $false
 $acceptanceFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
 $cleanupErrorCodes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$composeCleanupDeadlineMilliseconds = 15000
+$composeCleanupResult = [pscustomobject]@{
+    status = 'not-owned'
+    deadlineMilliseconds = $composeCleanupDeadlineMilliseconds
+    attempts = 0
+    elapsedMilliseconds = 0
+    remainingNames = [string[]]@()
+    lastObservation = 'not-required'
+    query = $null
+    logPath = $null
+}
 # 清理证据按「这次运行拥有的东西」逐项记账：托管进程按 pid+启动时间确认身份，
 # 数据库按精确名字，容器只算本脚本启动的那几个。
 $ownedProcesses = [System.Collections.Generic.List[object]]::new()
@@ -891,15 +1019,31 @@ finally {
         catch { $cleanupFailures.Add("infrastructure: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('owned-resource-cleanup-failed') }
         # 只对本脚本启动的服务记账；脚本运行前就在跑的基础设施不属于这次运行，也不许被算进来。
         try {
-            $stillRunningResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man517-verify-infrastructure-stopped'
-            $stillRunning = @("$($stillRunningResult.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
-            $remainingOwnedServices = @($servicesToStop | Where-Object { $stillRunning -contains $_ })
-            if ($remainingOwnedServices.Count -gt 0) {
-                $cleanupFailures.Add("script-owned compose services still running: $($remainingOwnedServices -join ', ')")
+            $composeCleanupResult = Wait-Man517OwnedComposeServicesStopped `
+                -OwnedServices $servicesToStop `
+                -ComposeFile $composeFile `
+                -DeadlineMilliseconds $composeCleanupDeadlineMilliseconds
+            $remainingOwnedServices = [string[]]@($composeCleanupResult.remainingNames)
+            if (-not $composeCleanupResult.converged) {
+                $cleanupFailures.Add("script-owned compose services still running: $($remainingOwnedServices -join ', '); deadlineMilliseconds=$($composeCleanupResult.deadlineMilliseconds); attempts=$($composeCleanupResult.attempts); elapsedMilliseconds=$($composeCleanupResult.elapsedMilliseconds); lastObservation=$($composeCleanupResult.lastObservation)")
                 [void]$cleanupErrorCodes.Add('owned-resource-cleanup-failed')
             }
         }
-        catch { $cleanupFailures.Add("infrastructure cleanup verification: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('cleanup-verification-failed') }
+        catch {
+            $remainingOwnedServices = $null
+            $composeCleanupResult = [pscustomobject]@{
+                status = 'unavailable'
+                deadlineMilliseconds = $_.Exception.Data['DeadlineMilliseconds']
+                attempts = $_.Exception.Data['Attempts']
+                elapsedMilliseconds = $_.Exception.Data['ElapsedMilliseconds']
+                remainingNames = $null
+                lastObservation = $_.Exception.Data['LastObservation']
+                query = $null
+                logPath = $null
+            }
+            $cleanupFailures.Add("infrastructure cleanup verification: $($_.Exception.Message)")
+            [void]$cleanupErrorCodes.Add('cleanup-verification-failed')
+        }
     }
     try {
         $injectedCleanupEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
@@ -920,8 +1064,15 @@ finally {
             }
             composeServices = @{
                 owned = $servicesToStop
-                remaining = $remainingOwnedServices.Count
+                status = $composeCleanupResult.status
+                remaining = if ([string]::Equals($composeCleanupResult.status, 'unavailable', [StringComparison]::Ordinal)) { $null } else { @($remainingOwnedServices).Count }
                 remainingNames = $remainingOwnedServices
+                deadlineMilliseconds = $composeCleanupResult.deadlineMilliseconds
+                attempts = $composeCleanupResult.attempts
+                elapsedMilliseconds = $composeCleanupResult.elapsedMilliseconds
+                lastObservation = $composeCleanupResult.lastObservation
+                query = $composeCleanupResult.query
+                logPath = $composeCleanupResult.logPath
             }
             cleanupFailures = @($cleanupFailures | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $cleanupEvidencePath -Encoding utf8
@@ -960,7 +1111,7 @@ if ($canonicalResultEnabled) {
         $fullChainProbeCounters.skipped -ne 0) {
         throw 'MAN-517 canonical success requires exact TRX counts expected=1, discovered=1, passed=1, failed=0, skipped=0.'
     }
-    if ($remainingProcessNames.Count -ne 0 -or $remainingDatabases -ne 0 -or $remainingOwnedServices.Count -ne 0 -or $cleanupErrorCodes.Count -ne 0) {
+    if ($remainingProcessNames.Count -ne 0 -or $remainingDatabases -ne 0 -or @($remainingOwnedServices).Count -ne 0 -or $cleanupErrorCodes.Count -ne 0) {
         throw 'MAN-517 canonical success requires zero cleanup remaining counts and empty cleanup error codes.'
     }
 
