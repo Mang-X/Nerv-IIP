@@ -171,10 +171,31 @@ function scopeQuery(filters: MesScope) {
   }
 }
 
-interface MesSelectedWorkScope {
+export interface MesSelectedWorkScope {
   kind: string
   id: string
   displayName?: string
+}
+
+export interface MesReportExecutionContext {
+  principalId: string
+  organizationId: string
+  environmentId: string
+  scopeKind: string
+  scopeId: string
+}
+
+function hasSameReportExecutionContext(
+  current: MesReportExecutionContext,
+  frozen: MesReportExecutionContext,
+) {
+  return (
+    current.principalId === frozen.principalId &&
+    current.organizationId === frozen.organizationId &&
+    current.environmentId === frozen.environmentId &&
+    current.scopeKind === frozen.scopeKind &&
+    current.scopeId === frozen.scopeId
+  )
 }
 
 export interface MesWorkScopeOption {
@@ -1470,6 +1491,17 @@ export function useMesProductionReports() {
   const reportScope = useMesPrincipalWorkScope(filters, MES_REPORTING_WRITE_PERMISSION)
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters))
+  const reportContext = computed<MesReportExecutionContext | undefined>(() => {
+    const selectedScope = reportScope.selectedScope.value
+    if (!selectedScope || !hasScope(filters)) return undefined
+    return {
+      principalId: reportScope.principalIdentity.value,
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      scopeKind: selectedScope.kind,
+      scopeId: selectedScope.id,
+    }
+  })
 
   const reportsQuery = useQuery(() => ({
     ...listBusinessConsoleMesProductionReportsQueryOptions({
@@ -1516,21 +1548,32 @@ export function useMesProductionReports() {
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,
+    reportScope: reportScope.selectedScope,
+    reportContext,
     confirmReport: async (input: {
       reportNo: string
       productionReportId: string
       workOrderId: string
       operationTaskId: string
+      context: MesReportExecutionContext
     }): Promise<BusinessConsoleMesProductionReportDetail> => {
       const reportNo = input.reportNo.trim()
-      if (!hasScope(filters) || !reportNo) {
+      const currentContext = reportContext.value
+      if (
+        !currentContext ||
+        !reportNo ||
+        !hasSameReportExecutionContext(currentContext, input.context)
+      ) {
         throw new Error('报工公开回读上下文无效，尚不能确认成功。')
       }
       let report: BusinessConsoleMesProductionReportDetail | undefined
       try {
         const { data } = await getBusinessConsoleMesProductionReport({
           path: { reportNo },
-          query: scopeQuery(filters),
+          query: {
+            organizationId: input.context.organizationId,
+            environmentId: input.context.environmentId,
+          },
           throwOnError: true,
         })
         report = data?.success ? data.data?.report : undefined

@@ -5,7 +5,12 @@ import type {
 } from '@nerv-iip/api-client'
 import { computed, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { hasCompleteReworkAuthority } from '@/composables/mes/mesWorkOrderAuthority'
+import {
+  hasCompleteReworkAuthority,
+  hasSameMesWorkOrderAuthority,
+} from '@/composables/mes/mesWorkOrderAuthority'
+
+type WorkScope = { kind: string; id: string }
 
 type WorkOrder = BusinessConsoleMesWorkOrderItem
 type Task = BusinessConsoleMesOperationTaskRow
@@ -19,15 +24,27 @@ interface UseMesReportIdentityOptions {
   exactOperationTaskError: Readonly<Ref<unknown>>
   exactOperationTaskScopeReady: Readonly<Ref<boolean>>
   exactOperationTaskScopeMessage: Readonly<Ref<string>>
+  reportingWriteScope: Readonly<Ref<WorkScope | undefined>>
 }
 
 function queryId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function canReport(task: Task) {
+function isInsideScope(task: Task, scope: WorkScope | undefined) {
+  if (!scope) return false
+  if (scope.kind === 'work-center') return task.workCenterId === scope.id
+  if (scope.kind === 'team') return task.teamId === scope.id
+  if (scope.kind === 'self') return task.assignedUserId === scope.id
+  return scope.kind === 'organization'
+}
+
+function canReport(task: Task, parent: WorkOrder | null, scope: WorkScope | undefined) {
   return (
     hasCompleteReworkAuthority(task) &&
+    parent !== null &&
+    hasSameMesWorkOrderAuthority(parent, task) &&
+    isInsideScope(task, scope) &&
     task.allowedActions?.some((action) => action.trim().toLowerCase() === 'report') === true
   )
 }
@@ -74,7 +91,11 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     )
   })
 
-  const visibleOperationTasks = computed(() => workOrderOperationTasks.value.filter(canReport))
+  const visibleOperationTasks = computed(() =>
+    workOrderOperationTasks.value.filter((task) =>
+      canReport(task, selectedWorkOrder.value, options.reportingWriteScope.value),
+    ),
+  )
 
   const selectedTask = computed<Task | null>(() => {
     const operationTaskId = requestedOperationTaskId.value
@@ -94,7 +115,12 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     const workOrderId = selectedWorkOrder.value?.workOrderId
     const task = selectedTask.value
     const operationTaskId = task?.operationTaskId
-    if (!workOrderId || !operationTaskId || task?.workOrderId !== workOrderId || !canReport(task)) {
+    if (
+      !workOrderId ||
+      !operationTaskId ||
+      task?.workOrderId !== workOrderId ||
+      !canReport(task, selectedWorkOrder.value, options.reportingWriteScope.value)
+    ) {
       return null
     }
     return { workOrderId, operationTaskId }
@@ -125,7 +151,12 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       if (!hasCompleteReworkAuthority(selectedTask.value)) {
         return `工序任务 ${operationTaskId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
       }
-      if (!canReport(selectedTask.value)) {
+      if (!hasSameMesWorkOrderAuthority(selectedWorkOrder.value, selectedTask.value)) {
+        return `工序任务 ${operationTaskId} 的返工来源与工单不一致，已阻止报工，请刷新后重试。`
+      }
+      if (
+        !canReport(selectedTask.value, selectedWorkOrder.value, options.reportingWriteScope.value)
+      ) {
         return `工序任务 ${operationTaskId} 当前不可报工，服务端未开放 report 动作。`
       }
     }

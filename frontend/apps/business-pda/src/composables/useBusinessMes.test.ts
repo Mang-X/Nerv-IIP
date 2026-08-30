@@ -362,7 +362,7 @@ describe('pda useBusinessMes composables', () => {
         data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
       },
     )
-    authState.principal = {
+    reactiveAuthState.principal = {
       principalId: 'user-001',
       organizationId: 'org-001',
       environmentId: 'env-dev',
@@ -1256,7 +1256,8 @@ describe('pda useBusinessMes composables', () => {
         },
       },
     })
-    const { confirmReport } = useMesProductionReports()
+    const { confirmReport, reportContext } = useMesProductionReports()
+    const context = reportContext.value!
 
     await expect(
       confirmReport({
@@ -1264,6 +1265,7 @@ describe('pda useBusinessMes composables', () => {
         productionReportId: 'report-id-1',
         workOrderId: 'wo-1',
         operationTaskId: 'ot-1',
+        context,
       }),
     ).resolves.toMatchObject({ reportNo: 'RPT-1', workOrderId: 'wo-1', operationTaskId: 'ot-1' })
     expect(productionReportFetch).toHaveBeenCalledWith({
@@ -1287,7 +1289,7 @@ describe('pda useBusinessMes composables', () => {
         },
       },
     })
-    const { confirmReport } = useMesProductionReports()
+    const { confirmReport, reportContext } = useMesProductionReports()
 
     await expect(
       confirmReport({
@@ -1295,13 +1297,14 @@ describe('pda useBusinessMes composables', () => {
         productionReportId: 'report-id-1',
         workOrderId: 'wo-1',
         operationTaskId: 'ot-1',
+        context: reportContext.value!,
       }),
     ).rejects.toThrow('尚未回读到同一工单与工序')
   })
 
   it('rejects a production report when public GET is not yet visible', async () => {
     productionReportFetch.mockRejectedValueOnce({ status: 404 })
-    const { confirmReport } = useMesProductionReports()
+    const { confirmReport, reportContext } = useMesProductionReports()
 
     await expect(
       confirmReport({
@@ -1309,8 +1312,31 @@ describe('pda useBusinessMes composables', () => {
         productionReportId: 'report-id-pending',
         workOrderId: 'wo-1',
         operationTaskId: 'ot-1',
+        context: reportContext.value!,
       }),
     ).rejects.toThrow('尚未回读到同一工单与工序')
+  })
+
+  it('rejects an old receipt when principal changes before public GET confirmation', async () => {
+    const { confirmReport, reportContext } = useMesProductionReports()
+    const frozenContext = { ...reportContext.value! }
+    reactiveAuthState.principal = {
+      principalId: 'user-002',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-A',
+        productionReportId: 'report-a',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+        context: frozenContext,
+      }),
+    ).rejects.toThrow('回读上下文无效')
+    expect(productionReportFetch).not.toHaveBeenCalled()
   })
 
   it('does not send a production report when no reporting scope is selected', async () => {

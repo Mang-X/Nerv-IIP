@@ -390,7 +390,7 @@ const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskNo: null,
   status: 'Queued',
   operationSequence: index + 1,
-  workCenterId: 'WC-MANY',
+  workCenterId: 'WC-A',
   qualityStatus: 'Pending',
   allowedActions: ['start'],
   blockReasons: [],
@@ -967,7 +967,13 @@ export async function routeBusinessConsoleApi(route: Route) {
       : workOrderScopedItems
     const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
     const take = Number(requestUrl.searchParams.get('take') ?? 100)
-    const items = scopedItems.slice(skip, skip + take)
+    const items = scopedItems
+      .slice(skip, skip + take)
+      .map((task) =>
+        pathname === `${base}/reportable-operation-tasks`
+          ? { ...task, allowedActions: ['report'] }
+          : task,
+      )
     return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {

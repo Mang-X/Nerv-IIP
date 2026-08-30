@@ -29,6 +29,7 @@ import {
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
   useMesWorkOrders,
+  type MesReportExecutionContext,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
@@ -61,6 +62,16 @@ const routeWorkOrderId = computed(() => {
   const value = route.query.workOrderId
   return typeof value === 'string' ? value.trim() : ''
 })
+
+const {
+  recordReport,
+  confirmReport,
+  reportScopeMessage,
+  reportScopePending,
+  reportScopeReady,
+  reportScope,
+  reportContext,
+} = useMesProductionReports()
 
 const {
   filters: workOrderFilters,
@@ -120,10 +131,8 @@ const {
   exactOperationTaskError,
   exactOperationTaskScopeReady,
   exactOperationTaskScopeMessage,
+  reportingWriteScope: reportScope,
 })
-
-const { recordReport, confirmReport, reportScopeMessage, reportScopePending, reportScopeReady } =
-  useMesProductionReports()
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
@@ -233,6 +242,7 @@ interface ReportIntent {
   workOrderId: string
   operationTaskId: string
   intentKey: string
+  context: MesReportExecutionContext
   payload: {
     goodQuantity: number
     scrapQuantity: number
@@ -251,9 +261,22 @@ interface ReportIntent {
   result: ResultState | null
 }
 const intents = reactive(new Map<string, ReportIntent>())
-const pairKey = computed(() =>
-  pair.value ? `${pair.value.workOrderId}\u0000${pair.value.operationTaskId}` : '',
-)
+function reportContextKey(context: MesReportExecutionContext | undefined) {
+  if (!context) return ''
+  return [
+    context.principalId,
+    context.organizationId,
+    context.environmentId,
+    context.scopeKind,
+    context.scopeId,
+  ].join('\u0000')
+}
+const pairKey = computed(() => {
+  const contextKey = reportContextKey(reportContext.value)
+  return pair.value && contextKey
+    ? `${contextKey}\u0000${pair.value.workOrderId}\u0000${pair.value.operationTaskId}`
+    : ''
+})
 const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
 const result = computed(() => currentIntent.value?.result ?? null)
 const submitting = computed(() => currentIntent.value?.status === 'pending')
@@ -404,6 +427,8 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 async function submit() {
   if (scanGuarded.value) return
   if (!reportScopeReady.value) return
+  const executionContext = reportContext.value
+  if (!executionContext) return
   const identity = pair.value
   const task = selectedTask.value
   const workOrderId = identity?.workOrderId
@@ -418,7 +443,7 @@ async function submit() {
   ) {
     return
   }
-  const key = `${workOrderId}\u0000${operationTaskId}`
+  const key = `${reportContextKey(executionContext)}\u0000${workOrderId}\u0000${operationTaskId}`
   let intent = intents.get(key)
   if (intent?.status === 'pending' || intent?.status === 'success') return
   if (!intent) {
@@ -428,6 +453,7 @@ async function submit() {
       workOrderId,
       operationTaskId,
       intentKey: makeIdempotencyKey(),
+      context: { ...executionContext },
       payload: {
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
@@ -470,7 +496,13 @@ async function submit() {
       intent.receipt = { reportNo, productionReportId }
     }
     const { reportNo, productionReportId } = intent.receipt
-    await confirmReport({ reportNo, productionReportId, workOrderId, operationTaskId })
+    await confirmReport({
+      reportNo,
+      productionReportId,
+      workOrderId,
+      operationTaskId,
+      context: intent.context,
+    })
     if (intent.attempt !== attempt) return
     const description = [`${workOrderId} · ${operationTaskId}`]
     description.push(`报工单号 ${reportNo}`)

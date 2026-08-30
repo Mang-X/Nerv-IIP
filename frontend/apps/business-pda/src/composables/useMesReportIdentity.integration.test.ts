@@ -221,6 +221,7 @@ async function createHarness(initialUrl: string) {
         exactOperationTaskError: exactAuthority.error,
         exactOperationTaskScopeReady: exactAuthority.reportingReadScopeReady,
         exactOperationTaskScopeMessage: exactAuthority.reportingReadScopeMessage,
+        reportingWriteScope: computed(() => ({ kind: 'work-center', id: 'WC-1' })),
       })
       return () =>
         h(

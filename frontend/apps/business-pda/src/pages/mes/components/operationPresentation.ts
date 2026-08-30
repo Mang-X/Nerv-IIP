@@ -4,6 +4,7 @@ import type { OperationActionContext } from '@/composables/useBusinessMes'
 import {
   hasCompleteReworkAuthority,
   isReworkWorkOrder,
+  parseMesWorkOrderAuthority,
   type MesWorkOrderAuthority,
 } from '@/composables/mes/mesWorkOrderAuthority'
 
@@ -86,8 +87,9 @@ export function withReworkLabel(label: string, item: MesWorkOrderAuthority) {
 }
 
 export function reworkSourceLabel(item: MesWorkOrderAuthority) {
-  if (!isReworkWorkOrder(item) || !hasCompleteReworkAuthority(item)) return ''
-  return `来源 NCR ${item.sourceNcrCode!.trim()}（${item.sourceNcrId!.trim()}） · 源工单 ${item.sourceWorkOrderId!.trim()}`
+  const authority = parseMesWorkOrderAuthority(item)
+  if (authority?.kind !== 'rework') return ''
+  return `来源 NCR ${authority.sourceNcrCode}（${authority.sourceNcrId}） · 源工单 ${authority.sourceWorkOrderId}`
 }
 
 export function formatOperationDate(value?: string | null) {
