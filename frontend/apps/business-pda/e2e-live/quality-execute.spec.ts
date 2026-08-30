@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, request as playwrightRequest, test } from '@playwright/test'
-import { loginViaUi } from './support/login'
+import { loginViaUi, readAuthenticatedPrincipalId } from './support/login'
 import { assertLiveStackReachable } from './support/preflight'
 import { simulateScanGun } from './support/scan-gun'
 
@@ -163,6 +163,8 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
 
   await assertLiveStackReachable()
   await loginViaUi(page)
+  const authenticatedPrincipalId = await readAuthenticatedPrincipalId(page)
+  expect(authenticatedPrincipalId.length).toBeGreaterThan(0)
 
   // 收集列表 GET 响应（提交后按 inspectionTaskId 反查 skuCode，用于回读窄化过滤）。
   const listItems: InspectionTaskItem[] = []
@@ -388,7 +390,7 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
     const skuCode = listItems.find((t) => t.inspectionTaskId === inspectionTaskId)?.skuCode
     expect(listScope, 'PDA 任务列表请求缺少 self scope').toEqual({
       scopeKind: 'self',
-      scopeId: expect.any(String),
+      scopeId: authenticatedPrincipalId,
     })
     const completedTask = await readBackCompletedTask(
       api,

@@ -28,3 +28,18 @@ export async function loginViaUi(page: Page): Promise<void> {
   await expect(page).toHaveURL('/')
   await expect(page.getByRole('button', { name: '工作台', exact: true })).toBeVisible()
 }
+
+export async function readAuthenticatedPrincipalId(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('nerv-iip.business-pda.auth') ?? '{}') as {
+        principal?: { principalId?: unknown }
+      }
+      return typeof stored.principal?.principalId === 'string'
+        ? stored.principal.principalId.trim()
+        : ''
+    } catch {
+      return ''
+    }
+  })
+}
