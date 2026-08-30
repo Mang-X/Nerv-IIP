@@ -62,27 +62,29 @@ function Get-Nerv1860ProcessEnvironmentValue {
 function Get-Nerv1860ExactProcess {
     param([Parameter(Mandatory)] [string] $ExecutablePath)
 
-    $processName = [System.IO.Path]::GetFileNameWithoutExtension($ExecutablePath)
-    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
-    do {
-        $exactProcesses = @(Get-Process -Name $processName -ErrorAction SilentlyContinue | Where-Object {
-            try {
-                [string]::Equals(
-                    [System.IO.Path]::GetFullPath($_.Path),
-                    [System.IO.Path]::GetFullPath($ExecutablePath),
-                    [StringComparison]::Ordinal)
+    $processTable = Invoke-NativeCommandOutput `
+        -Command '/bin/ps' `
+        -Arguments @('-axo', 'pid=,command=') `
+        -WorkingDirectory $repoRoot `
+        -TimeoutSeconds 30 `
+        -Name 'nerv-1860-process-table'
+    $pattern = "^\s*(?<pid>\d+)\s+$([regex]::Escape([System.IO.Path]::GetFullPath($ExecutablePath)))(?:\s|$)"
+    $exactProcesses = @(
+        $processTable -split '\r?\n' | ForEach-Object {
+            $processMatch = [regex]::Match(
+                $_,
+                $pattern,
+                [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+            if ($processMatch.Success) {
+                [pscustomobject]@{ Id = [int] $processMatch.Groups['pid'].Value }
             }
-            catch {
-                $false
-            }
-        })
-        if ($exactProcesses.Count -eq 1) {
-            return $exactProcesses[0]
         }
-        Start-Sleep -Milliseconds 500
-    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    )
+    if ($exactProcesses.Count -ne 1) {
+        throw "Expected exactly one process for '$ExecutablePath', found $($exactProcesses.Count)."
+    }
 
-    throw "Expected exactly one process for '$ExecutablePath', found $($exactProcesses.Count)."
+    return $exactProcesses[0]
 }
 
 function Get-Nerv1860Fingerprint {
