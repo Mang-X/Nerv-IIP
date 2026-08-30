@@ -2514,24 +2514,20 @@ public static class MesTraceabilityQueries
 
             if (reworkWorkOrder.SourceLotNo is not null)
             {
-                var sourceLotNodeId = reports.Any(report =>
-                    !report.IsReversed &&
-                    string.Equals(report.WorkOrderId, reworkWorkOrder.WorkOrderIdValue, StringComparison.Ordinal) &&
-                    string.Equals(report.ProducedLotNo, reworkWorkOrder.SourceLotNo, StringComparison.Ordinal))
-                    ? $"{reworkWorkOrder.SourceNcrId}:source-lot:{reworkWorkOrder.SourceLotNo}"
-                    : reworkWorkOrder.SourceLotNo;
+                var sourceLotNodeId = SourceOccurrenceNodeId(
+                    reworkWorkOrder.SourceNcrId!,
+                    "lot",
+                    reworkWorkOrder.SourceLotNo);
                 AddNode(sourceLotNodeId, MesTraceabilityNodeType.ProducedLot, reworkWorkOrder.SourceLotNo, "Source");
                 AddEdge(sourceLotNodeId, reworkWorkOrder.SourceNcrId!, "identified-in-ncr");
             }
 
             if (reworkWorkOrder.SourceSerialNo is not null)
             {
-                var sourceSerialNodeId = reports.Any(report =>
-                    !report.IsReversed &&
-                    string.Equals(report.WorkOrderId, reworkWorkOrder.WorkOrderIdValue, StringComparison.Ordinal) &&
-                    string.Equals(report.SerialNo, reworkWorkOrder.SourceSerialNo, StringComparison.Ordinal))
-                    ? $"{reworkWorkOrder.SourceNcrId}:source-serial:{reworkWorkOrder.SourceSerialNo}"
-                    : reworkWorkOrder.SourceSerialNo;
+                var sourceSerialNodeId = SourceOccurrenceNodeId(
+                    reworkWorkOrder.SourceNcrId!,
+                    "serial",
+                    reworkWorkOrder.SourceSerialNo);
                 AddNode(sourceSerialNodeId, MesTraceabilityNodeType.Serial, reworkWorkOrder.SourceSerialNo, "Source");
                 AddEdge(sourceSerialNodeId, reworkWorkOrder.SourceNcrId!, "identified-in-ncr");
             }
@@ -2575,6 +2571,9 @@ public static class MesTraceabilityQueries
 
         return true;
     }
+
+    private static string SourceOccurrenceNodeId(string sourceNcrId, string kind, string sourceValue) =>
+        $"{sourceNcrId}:source-{kind}:{sourceValue}";
 }
 
 public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext dbContext)

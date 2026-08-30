@@ -506,6 +506,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         string reworkWorkOrderId;
         string reworkOperationTaskId;
         string reportNo;
+        (string LotNodeId, string SerialNodeId)[] activeSourceOccurrenceIds;
         await using (var executionScope = provider.CreateAsyncScope())
         {
             var db = executionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -542,7 +543,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                         reportedAtUtc,
                         "rework-trace:report",
                         ProducedLotNo: "LOT-001",
-                        SerialNo: "SN-REWORK-001",
+                        SerialNo: "SN-001",
                         ReportedBy: "operator-rework"),
                     CancellationToken.None);
             await db.SaveChangesAsync();
@@ -586,7 +587,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                     new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
                     CancellationToken.None),
                 await new GetBatchTraceabilityQueryHandler(db).Handle(
-                    new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-REWORK-001"),
+                    new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-001"),
                     CancellationToken.None),
                 await new GetMaterialLotTraceabilityQueryHandler(db).Handle(
                     new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-001"),
@@ -594,6 +595,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             };
 
             Assert.All(graphs, graph => AssertReworkChain(graph, reworkWorkOrderId, reportNo, expectOutput: true));
+            activeSourceOccurrenceIds = graphs.Select(GetSourceOccurrenceIds).ToArray();
 
             var batchGraph = graphs[2];
             Assert.Contains(batchGraph.Edges, x =>
@@ -655,11 +657,19 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             await new GetBatchTraceabilityQueryHandler(assertionDb).Handle(
                 new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
                 CancellationToken.None),
+            await new GetBatchTraceabilityQueryHandler(assertionDb).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-001"),
+                CancellationToken.None),
             await new GetMaterialLotTraceabilityQueryHandler(assertionDb).Handle(
                 new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-001"),
                 CancellationToken.None),
         };
         Assert.All(afterReversalGraphs, graph => AssertReworkChain(graph, reworkWorkOrderId, reportNo, expectOutput: false));
+        Assert.Equal(activeSourceOccurrenceIds.Length, afterReversalGraphs.Length);
+        for (var index = 0; index < afterReversalGraphs.Length; index++)
+        {
+            Assert.Equal(activeSourceOccurrenceIds[index], GetSourceOccurrenceIds(afterReversalGraphs[index]));
+        }
     }
 
     private static void AssertReworkChain(
@@ -676,16 +686,13 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             x.FromNodeId == "WO-SOURCE-001" &&
             x.ToNodeId == "ncr-001" &&
             x.RelationType == "raised-ncr");
-        var sourceLotNode = Assert.Single(graph.Nodes, x =>
-            x.DisplayName == "LOT-001" &&
-            x.NodeType == MesTraceabilityNodeType.ProducedLot &&
-            x.Status == "Source");
+        var (sourceLotNodeId, sourceSerialNodeId) = GetSourceOccurrenceIds(graph);
         Assert.Contains(graph.Edges, x =>
-            x.FromNodeId == sourceLotNode.NodeId &&
+            x.FromNodeId == sourceLotNodeId &&
             x.ToNodeId == "ncr-001" &&
             x.RelationType == "identified-in-ncr");
         Assert.Contains(graph.Edges, x =>
-            x.FromNodeId == "SN-001" &&
+            x.FromNodeId == sourceSerialNodeId &&
             x.ToNodeId == "ncr-001" &&
             x.RelationType == "identified-in-ncr");
         Assert.Contains(graph.Edges, x =>
@@ -709,7 +716,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 x.RelationType == "produced-lot");
             Assert.Contains(graph.Edges, x =>
                 x.FromNodeId == reportNo &&
-                x.ToNodeId == "SN-REWORK-001" &&
+                x.ToNodeId == "SN-001" &&
                 x.RelationType == "produced-serial");
         }
         else
@@ -721,6 +728,21 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 x.FromNodeId == reportNo &&
                 x.RelationType is "produced-lot" or "produced-serial");
         }
+    }
+
+    private static (string LotNodeId, string SerialNodeId) GetSourceOccurrenceIds(MesTraceabilityResponse graph)
+    {
+        var sourceLotNode = Assert.Single(graph.Nodes, x =>
+            x.DisplayName == "LOT-001" &&
+            x.NodeType == MesTraceabilityNodeType.ProducedLot &&
+            x.Status == "Source");
+        var sourceSerialNode = Assert.Single(graph.Nodes, x =>
+            x.DisplayName == "SN-001" &&
+            x.NodeType == MesTraceabilityNodeType.Serial &&
+            x.Status == "Source");
+        Assert.Equal("ncr-001:source-lot:LOT-001", sourceLotNode.NodeId);
+        Assert.Equal("ncr-001:source-serial:SN-001", sourceSerialNode.NodeId);
+        return (sourceLotNode.NodeId, sourceSerialNode.NodeId);
     }
 
     private static void AssertAcyclic(IReadOnlyCollection<MesTraceabilityEdge> edges)
