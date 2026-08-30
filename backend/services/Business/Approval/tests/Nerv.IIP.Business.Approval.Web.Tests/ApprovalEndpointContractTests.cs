@@ -169,6 +169,8 @@ public sealed class ApprovalEndpointContractTests
 
         Assert.False(new ListApprovalChainsQueryValidator().Validate(
             new ListApprovalChainsQuery("", "env-dev", null, null, null, null, null, 0, 100)).IsValid);
+        Assert.False(new ListApprovalChainsQueryValidator().Validate(
+            new ListApprovalChainsQuery("org-001", "", null, null, null, null, null, 0, 100)).IsValid);
         Assert.False(new ListPendingApprovalTasksQueryValidator().Validate(
             new ListPendingApprovalTasksQuery("org-001", "", "user", "u-reviewer", 0, 100)).IsValid);
     }
@@ -186,6 +188,7 @@ public sealed class ApprovalEndpointContractTests
 
         Assert.False(templateValidator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, -1, 100)).IsValid);
         Assert.False(templateValidator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, 0, 0)).IsValid);
+        Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, -1, 100)).IsValid);
         Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, 0, 501)).IsValid);
         Assert.False(taskValidator.Validate(new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "u-reviewer", -1, 100)).IsValid);
     }

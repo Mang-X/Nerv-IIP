@@ -28,15 +28,6 @@ public static class ApprovalValidationRules
         validator.RuleFor(environmentId).RequiredApprovalCode(100);
     }
 
-    public static void AddOptionalTenantRules<T>(
-        this AbstractValidator<T> validator,
-        Expression<Func<T, string?>> organizationId,
-        Expression<Func<T, string?>> environmentId)
-    {
-        validator.RuleFor(organizationId).OptionalApprovalCode(100);
-        validator.RuleFor(environmentId).OptionalApprovalCode(100);
-    }
-
     public static void AddOffsetPageRules<T>(
         this AbstractValidator<T> validator,
         Expression<Func<T, int>> skip,
