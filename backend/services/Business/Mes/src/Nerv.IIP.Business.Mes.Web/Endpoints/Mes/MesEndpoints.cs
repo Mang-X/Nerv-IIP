@@ -373,6 +373,19 @@ public sealed record AssignDispatchTaskRequest(
     string? TeamName = null,
     IReadOnlyCollection<DispatchParticipantInput>? Participants = null);
 
+public sealed record ClaimDispatchTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string OperationTaskId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    DateTimeOffset? ClaimedAtUtc,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
+
 public sealed record OperationTaskActionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1140,6 +1153,30 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
     }
 }
 
+public sealed class ClaimDispatchTaskEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ClaimDispatchTaskRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ClaimDispatchTaskEndpoint>());
+
+    public override async Task HandleAsync(ClaimDispatchTaskRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ClaimDispatchTaskCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OperationTaskId,
+            req.AssignedUserId,
+            req.AssignedUserName,
+            req.DeviceAssetId,
+            req.ShiftId,
+            req.ClaimedAtUtc ?? timeProvider.GetUtcNow(),
+            MesAuthenticatedActor.Resolve(HttpContext),
+            req.IdempotencyKey,
+            req.TeamId,
+            req.TeamName), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ListOperationTasksEndpoint(ISender sender)
     : MesEndpoint<ListOperationTasksRequest, MesOperationTaskListResponse>
 {
@@ -1783,6 +1820,7 @@ public static class MesEndpointContracts
         new(typeof(ListDispatchTasksEndpoint), "GET", "/api/business/v1/mes/dispatch-tasks", MesPermissionCodes.DispatchRead, "listBusinessMesDispatchTasks"),
         new(typeof(AssignDispatchTaskEndpoint), "POST", "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign", MesPermissionCodes.DispatchManage, "assignBusinessMesDispatchTask"),
         new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
+        new(typeof(ClaimDispatchTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim", MesPermissionCodes.OperationsManage, "claimBusinessMesOperationTask"),
         new(typeof(ListReportableOperationTasksEndpoint), "GET", "/api/business/v1/mes/reportable-operation-tasks", MesPermissionCodes.ReportingRead, "listBusinessMesReportableOperationTasks"),
         new(typeof(StartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/start", MesPermissionCodes.OperationsManage, "startBusinessMesOperationTask"),
         new(typeof(AuthorizeAndStartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start", MesPermissionCodes.OperationsManage, "authorizeAndStartBusinessMesOperationTask"),

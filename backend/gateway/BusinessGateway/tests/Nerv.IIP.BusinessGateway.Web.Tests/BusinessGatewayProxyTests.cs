@@ -1766,6 +1766,86 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(20, mes.LastOperationTaskListRequest.Take);
     }
 
+    // Break caught: PDA self-claim must bind the authenticated worker and the selected work center,
+    // never a caller-provided assignee.
+    [Fact]
+    public async Task Mes_operation_self_claim_binds_principal_and_authorized_work_center()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesOperationsManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-CLAIM",
+                    "WO-001",
+                    "Queued",
+                    10,
+                    "WC-A",
+                    "DEV-A",
+                    "SHIFT-A",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Ready"),
+            ],
+            EmulateMesListPaging = true,
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                [new BusinessMasterDataWorkContextCoveredWorkCenter(
+                    "WC-A", "A 工作中心", "WS-A", "team-workshop")],
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center", "WC-A", "A 工作中心", "team-workshop", [])),
+            WorkerDirectory =
+            [
+                new BusinessConsoleWorkerDirectoryItem(
+                    "user-admin", "EMP-001", "操作员甲", null, null, "操作工", "active", null, true,
+                    [new BusinessConsoleWorkerTeamItem("TEAM-A", "甲班", false, "WS-A")],
+                    [],
+                    "v1"),
+            ],
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/operation-tasks/OP-CLAIM/claim?organizationId=org-001&environmentId=env-dev&scopeKind=work-center&scopeId=WC-A",
+            new { assignedUserId = "forged-user", idempotencyKey = "claim-001" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MesOperationsManage, auth.LastRequirement!.PermissionCode);
+        Assert.True(auth.LastRequirement.IncludePrincipalContext);
+        Assert.Equal("WC-A", mes.LastOperationTaskListRequest!.WorkCenterIds);
+        Assert.Equal("OP-CLAIM", mes.LastOperationTaskListRequest.OperationTaskId);
+        Assert.Equal("user-admin", masterData.LastListWorkersRequest!.UserId);
+        Assert.Equal("WC-A", masterData.LastListWorkersRequest.WorkCenterCode);
+        Assert.Equal("user-admin", mes.LastClaimDispatchRequest!.AssignedUserId);
+        Assert.Equal("操作员甲", mes.LastClaimDispatchRequest.AssignedUserName);
+        Assert.Equal("DEV-A", mes.LastClaimDispatchRequest.DeviceAssetId);
+        Assert.Equal("SHIFT-A", mes.LastClaimDispatchRequest.ShiftId);
+        Assert.Equal("TEAM-A", mes.LastClaimDispatchRequest.TeamId);
+        Assert.Equal("user:user-admin", mes.LastClaimDispatchActor);
+    }
+
     [Fact]
     public async Task Mes_actual_hours_facades_forward_distinct_upstream_values_without_nested_carriers()
     {
@@ -17285,6 +17365,10 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public string? LastAssignDispatchActor { get; private set; }
 
+    public string? LastClaimDispatchActor { get; private set; }
+
+    public BusinessConsoleMesClaimDispatchTaskForwardRequest? LastClaimDispatchRequest { get; private set; }
+
     public int RetryFinishedGoodsReceiptInventoryPostingCallCount { get; private set; }
 
     public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest? LastRetryFinishedGoodsReceiptInventoryPostingRequest { get; private set; }
@@ -17633,6 +17717,19 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastAssignDispatchActor = actor;
         LastAssignDispatchRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ClaimDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesClaimDispatchTaskForwardRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastClaimDispatchActor = actor;
+        LastClaimDispatchRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true, "BusinessMes", "DispatchTask", operationTaskId));
     }
 
     public async Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(

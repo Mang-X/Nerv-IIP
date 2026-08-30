@@ -42,6 +42,8 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务�
 
 **当前工序门禁（MAN-637）**：工序任务的 URL、标题、详情、动作与结果使用同一 `workOrderId + operationTaskId`。详情展示工单、工序任务、设备、SOP、服务端门禁评估时间和阻塞原因；前序未完成按 `operationSequence` 显示“工序 N / 等 N 道”，物料未齐套、设备不可用和质量保留也分别以现场可读说明呈现，不把当前或前序任务 raw ID 当显示编号。按钮只消费 MES 当前返回的 `allowedActions`，不按页面缓存中的状态猜测；服务端没有返回 `start` 时不能开始，完成态空动作保持只读，所有启用控件（包括页头返回）保持至少 44 px。提交前再次按同一 pair 和授权范围回读，409 后关闭旧动作并刷新；只有 confirmed 回执或完成权威回读才显示成功，accepted/未确认结果提示核实且沿用原幂等意图。重试前若 principal、组织、环境或 manage scope 已变化，不发 mutation，而是保留旧结果、context 与幂等键并给出可读的“上下文已变化”冲突；身份恢复且 watcher 与工序链接自动打开逻辑更新完成后仍保留安全重试与返回入口。未知结果若来自完整工序链接，当前链接必须仍是同一 `workOrderId + operationTaskId`；换到其它 pair 或 query 不完整时页面拒绝旧 mutation 并保留原意图，恢复原 pair 后才能 same-key 重试。身份类冲突换到其它 pair 或返回后改选任务才清理；普通列表选择没有链接 pair 时继续按选择代际处理。首次动作或重试的请求调用期间若 route、principal、组织/环境或读写作业范围改变，页面才丢弃旧 success/error 并刷新当前上下文。若操作员不换 URL、直接从 A 改选 B，独立选择代际同样阻止 A 的旧结果覆盖或关闭 B。完整工序链接在任务数据先到时仍等待写作业范围解析完成，最终只打开当前 manage identity 下的精确 pair。
 
+**任务领取**：工序执行页在已核验的工作中心范围内展示 Queued 未指派任务，并提供“领取任务”。Gateway 始终把领取人绑定为当前认证主体，按 MasterData 启用人员目录核验其属于该任务工作中心；MES 原子拒绝已被领取的任务并保留 `assignedUserId/assignedUserName/assignedAtUtc` 追溯事实。PDA 对同一次领取意图复用稳定幂等键，不能由客户端指定领取人。
+
 ## 4. 分期
 
 里程碑顺序（与 spec §11 一致）：

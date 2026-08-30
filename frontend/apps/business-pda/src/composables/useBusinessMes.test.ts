@@ -3,14 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
-  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
-  getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
@@ -161,6 +160,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   ),
   completeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
     'completeBusinessConsoleMesOperationTask',
+  ),
+  claimBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'claimBusinessConsoleMesOperationTask',
   ),
   recordBusinessConsoleMesProductionReportMutationOptions: mockMutationOptions(
     'recordBusinessConsoleMesProductionReport',
@@ -1318,6 +1320,75 @@ describe('pda useBusinessMes composables', () => {
         }),
       }),
     )
+  })
+
+  it('claims an unassigned queued task with the authenticated work-center scope and a stable key', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'ot-claim',
+              workOrderId: 'wo-claim',
+              status: 'Queued',
+              assignedUserId: 'user-001',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('claimBusinessConsoleMesOperationTask')!
+    mutateAsync.mockResolvedValue({ success: true, data: { status: 'Accepted' } })
+    const context = mes.captureOperationActionContext('claim', 'wo-claim', 'ot-claim')
+
+    const claimed = await mes.claimTask('wo-claim', 'ot-claim', {
+      idempotencyKey: 'operation-claim-1',
+      context,
+    })
+
+    expect(claimBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()
+    expect(mutateAsync).toHaveBeenCalledWith({
+      path: { operationTaskId: 'ot-claim' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+      body: { idempotencyKey: 'operation-claim-1' },
+    })
+    expect(claimed?.assignedUserId).toBe('user-001')
+  })
+
+  it('reuses the pending claim key after an unknown result even when the retry supplies a new key', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { operationTaskId: 'ot-claim', workOrderId: 'wo-claim', assignedUserId: 'user-001' },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('claimBusinessConsoleMesOperationTask')!
+    mutateAsync
+      .mockRejectedValueOnce(new TypeError('response lost after commit'))
+      .mockResolvedValueOnce({ success: true, data: { status: 'Accepted' } })
+    const context = mes.captureOperationActionContext('claim', 'wo-claim', 'ot-claim')
+
+    await expect(
+      mes.claimTask('wo-claim', 'ot-claim', { idempotencyKey: 'claim-key-1', context }),
+    ).rejects.toThrow('response lost after commit')
+    await mes.claimTask('wo-claim', 'ot-claim', { idempotencyKey: 'claim-key-2', context })
+
+    expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('claim-key-1')
+    expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('claim-key-1')
   })
 
   it('fails closed before task readback and mutation when no operation scope is selected', async () => {
