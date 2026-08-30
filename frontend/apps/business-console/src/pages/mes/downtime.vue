@@ -572,8 +572,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -585,9 +583,12 @@ function formatError(error: unknown) {
       :rows="downtimeEvents"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
+      :error="downtimeEventsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无停机事件。点击上方「登记停机」记录设备异常，登记后可在这里跟进恢复与影响范围。"
+      @retry="refreshDowntimeEvents"
     >
       <template #cell-deviceAssetId="{ row }">
         <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />

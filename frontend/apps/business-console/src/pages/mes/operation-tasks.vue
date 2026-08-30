@@ -609,7 +609,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
     <p
       v-if="operationScopeMessage"
       data-testid="operation-scope-message"
@@ -632,9 +631,12 @@ function formatError(error: unknown) {
       :row-key="rowKey"
       :client-sort="false"
       :loading="operationTasksPending"
+      :error="operationTasksError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
+      @retry="refreshOperationTasks"
     >
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>

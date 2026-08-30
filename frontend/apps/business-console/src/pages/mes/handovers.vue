@@ -472,8 +472,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -485,9 +483,12 @@ function formatError(error: unknown) {
       :rows="handovers"
       row-key="handoverId"
       :loading="handoversPending"
+      :error="handoversError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无班次交接。点击上方「新建交接」登记未完成事项，接班人可在这里确认接收。"
+      @retry="refreshHandovers"
     >
       <template #cell-handoverStatus="{ row }">
         <NvStatusBadge
