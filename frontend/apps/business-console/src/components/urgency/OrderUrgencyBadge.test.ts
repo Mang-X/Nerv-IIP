@@ -115,11 +115,7 @@ const stubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  // `NvSelectValue` is reka's `SelectValue` re-exported under an Nv alias; the
-  // component's own name stays `SelectValue`, which is the key test-utils matches
-  // when stubbing (an `NvSelectValue` key misses and the real reka value throws
-  // "must be used within SelectRoot").
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<span><slot /></span>' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

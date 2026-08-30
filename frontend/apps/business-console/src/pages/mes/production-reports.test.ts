@@ -282,9 +282,9 @@ function mountReports(permissionCodes: string[]) {
           props: ['label'],
           template: '<span data-testid="badge">{{ label }}</span>',
         },
-        TooltipProvider: { template: '<div><slot /></div>' },
-        TooltipRoot: { template: '<div><slot /></div>' },
-        TooltipTrigger: { template: '<div><slot /></div>' },
+        NvTooltipProvider: { template: '<div><slot /></div>' },
+        NvTooltip: { template: '<div><slot /></div>' },
+        NvTooltipTrigger: { template: '<div><slot /></div>' },
         NvTooltipContent: { template: '<div><slot /></div>' },
         // 冲销确认框内容不渲染(否则 reka Dialog 内层需 DialogRoot context);key 复用/关闭路径测试
         // 直接驱动 setup 方法(openReverse/submitReverse/onReverseOpenChange),不依赖弹窗 DOM。
@@ -302,7 +302,7 @@ function mountReports(permissionCodes: string[]) {
         NvSelectTrigger: { template: '<div><slot /></div>' },
         NvSelectContent: { template: '<div><slot /></div>' },
         NvSelectItem: { template: '<div><slot /></div>' },
-        SelectValue: { template: '<span />' },
+        NvSelectValue: { template: '<span />' },
         NvInput: { template: '<input />' },
         Spinner: true,
       },
