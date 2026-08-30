@@ -7,6 +7,17 @@ namespace Nerv.IIP.Business.Quality.Domain.Tests;
 public sealed class InspectionTaskTests
 {
     [Fact]
+    public void CreatePending_ShouldRejectPeriodicTaskWithoutStableSourceLine()
+    {
+        Assert.Throws<ArgumentException>(() => InspectionTask.CreatePending(
+            "org-001", "env-dev",
+            new InspectionPlanId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b101")),
+            "operation", "mes", "WO-001", null, "SKU-FG-1000", 5m, "pcs", null, null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"), DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "quality:periodic-time:org-001:env-dev:WO-001:OP-10:1"));
+    }
+
+    [Fact]
     public void CreatePending_ShouldCaptureSourcePlanAndPendingState()
     {
         var task = InspectionTask.CreatePending(
