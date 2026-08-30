@@ -318,15 +318,39 @@ if printf '%s' "$*" | grep -q 'migrations list'; then
       exit 2
     fi
   done
+  require_value() {
+    flag=$1
+    expected=$2
+    shift 2
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "$flag" ]; then
+        shift
+        if [ "$#" -eq 0 ] || [ "$1" != "$expected" ]; then
+          printf 'unexpected migration list value for %s\n' "$flag" >&2
+          exit 3
+        fi
+        return
+      fi
+      shift
+    done
+    printf 'missing migration list value for %s\n' "$flag" >&2
+    exit 3
+  }
+  require_value --project "$NERV_IIP_FAKE_EXPECTED_PROJECT" "$@"
+  require_value --startup-project "$NERV_IIP_FAKE_EXPECTED_STARTUP_PROJECT" "$@"
+  require_value --context "$NERV_IIP_FAKE_EXPECTED_CONTEXT" "$@"
+  require_value --connection "$NERV_IIP_FAKE_EXPECTED_CONNECTION" "$@"
   if [ -f "$NERV_IIP_FAKE_MIGRATION_MARKER" ]; then
-    applied=true
-    migration_id=202608300002_After
+    first_applied=true
+    last_applied=true
   else
-    applied=false
-    migration_id=202608300001_Before
+    first_applied=false
+    last_applied=false
   fi
   printf 'data: [\n'
-  printf 'data:   {"id":"%s","name":"fixture","safeName":"fixture","applied":%s}\n' "$migration_id" "$applied"
+  printf 'data:   {"id":"202608300001_First","name":"first","safeName":"first","applied":%s},\n' "$first_applied"
+  printf 'data:   {"id":"202608300002_After","name":"after","safeName":"after","applied":%s},\n' "$last_applied"
+  printf 'data:   {"id":"202608300003_Pending","name":"pending","safeName":"pending","applied":false}\n'
   printf 'data: ]\n'
   exit 0
 fi
@@ -358,11 +382,16 @@ esac
 
     $applyReleaseId = "business-release-apply-redaction-$([Guid]::NewGuid().ToString('N'))"
     $migrationMarker = Join-Path $fakeCommandDirectory 'migration-applied'
+    $applyConnection = "Host=localhost;Database=$($first.expectedDatabase);Username=$secretMarker;Password=redacted-by-generic-filter"
     $apply = Invoke-MigratorProbe -Environment @{
         # Username is intentionally used for the marker: the generic Password= redactor
         # cannot satisfy this assertion, so only whole-argument sensitivity kills M9.
-        ([string]$first.connectionEnvironmentVariable) = "Host=localhost;Database=$($first.expectedDatabase);Username=$secretMarker;Password=redacted-by-generic-filter"
+        ([string]$first.connectionEnvironmentVariable) = $applyConnection
         NERV_IIP_FAKE_MIGRATION_MARKER = $migrationMarker
+        NERV_IIP_FAKE_EXPECTED_PROJECT = [string]$first.project
+        NERV_IIP_FAKE_EXPECTED_STARTUP_PROJECT = [string]$first.startupProject
+        NERV_IIP_FAKE_EXPECTED_CONTEXT = [string]$first.context
+        NERV_IIP_FAKE_EXPECTED_CONNECTION = $applyConnection
     } -Arguments @('-Service', [string]$first.service, '-ReleaseId', $applyReleaseId) -PathOverride $fakeCommandDirectory
     if ($apply.ExitCode -ne 0 -or -not $apply.Output.Contains('migration completed', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Expected the fake apply path to complete through the business wrapper. Output: $($apply.Output)"
