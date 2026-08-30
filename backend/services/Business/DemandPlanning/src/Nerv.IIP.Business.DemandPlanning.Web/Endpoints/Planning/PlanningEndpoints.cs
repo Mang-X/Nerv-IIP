@@ -92,7 +92,12 @@ public sealed record ReleaseMasterProductionScheduleBucketRequest(
     [property: QueryParam] string EnvironmentId,
     string ReleasedBy);
 
-public sealed record ListDemandSourcesRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListDemandSourcesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record CancelDemandSourceRequest(
     [property: RouteParam] DemandSourceId DemandSourceId,
@@ -300,7 +305,12 @@ public sealed class ListDemandSourcesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListDemandSourcesRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListDemandSourcesQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var response = await sender.Send(new ListDemandSourcesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

@@ -4706,6 +4706,30 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_demand_list_facade_forwards_composed_query_fields()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/planning/demands?organizationId=org-001&environmentId=env-dev&keyword=%20pump%20&skip=7&take=23");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(
+            new BusinessConsoleDemandSourceListRequest("org-001", "env-dev", " pump ", 7, 23),
+            planning.LastDemandListRequest);
+    }
+
+    [Fact]
     public async Task Planning_mrp_run_list_exposes_input_degradation_sources()
     {
         var planning = new RecordingPlanningClient();
@@ -15105,6 +15129,8 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleMpsListRequest? LastMpsListRequest { get; private set; }
 
+    public BusinessConsoleDemandSourceListRequest? LastDemandListRequest { get; private set; }
+
     public BusinessConsoleCreateMpsBucketRequest? LastCreateMpsRequest { get; private set; }
 
     public string? LastUpdateMpsId { get; private set; }
@@ -15249,10 +15275,11 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
-        BusinessConsolePlanningContextRequest request,
+        BusinessConsoleDemandSourceListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastDemandListRequest = request;
         return Task.FromResult(new BusinessConsoleDemandSourceListResponse([]));
     }
 
