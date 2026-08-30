@@ -26,5 +26,5 @@ export async function loginViaUi(page: Page): Promise<void> {
   await page.getByRole('button', { name: '登录' }).click()
 
   await expect(page).toHaveURL('/')
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '工作台', exact: true })).toBeVisible()
 }

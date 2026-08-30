@@ -121,6 +121,8 @@ async function readBackCompletedTask(
   authorization: string,
   organizationId: string,
   environmentId: string,
+  scopeKind: string,
+  scopeId: string,
   inspectionTaskId: string,
   skuCode: string | undefined,
 ): Promise<InspectionTaskItem | null> {
@@ -133,6 +135,8 @@ async function readBackCompletedTask(
         params: {
           organizationId,
           environmentId,
+          scopeKind,
+          scopeId,
           status: 'completed',
           ...(skuCode ? { skuCode } : {}),
           skip,
@@ -162,15 +166,19 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
 
   // 收集列表 GET 响应（提交后按 inspectionTaskId 反查 skuCode，用于回读窄化过滤）。
   const listItems: InspectionTaskItem[] = []
+  let listScope: { scopeKind: 'self'; scopeId: string } | undefined
   page.on('response', (response) => {
     const url = response.url()
+    const requestUrl = new URL(url)
     if (
       response.request().method() !== 'GET' ||
-      !url.includes('/quality/inspection-tasks') ||
-      SUBMIT_PATH_RE.test(url)
+      !requestUrl.pathname.endsWith('/quality/inspection-tasks')
     ) {
       return
     }
+    const scopeKind = requestUrl.searchParams.get('scopeKind')
+    const scopeId = requestUrl.searchParams.get('scopeId')
+    if (scopeKind === 'self' && scopeId) listScope = { scopeKind, scopeId }
     void response
       .json()
       .then((envelope: Envelope<{ items?: InspectionTaskItem[] }>) => {
@@ -378,11 +386,17 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
 
     // 状态回读：status=completed 列表中找到该任务，且回链 inspectionRecordId 与提交响应一致。
     const skuCode = listItems.find((t) => t.inspectionTaskId === inspectionTaskId)?.skuCode
+    expect(listScope, 'PDA 任务列表请求缺少 self scope').toEqual({
+      scopeKind: 'self',
+      scopeId: expect.any(String),
+    })
     const completedTask = await readBackCompletedTask(
       api,
       authorization,
       organizationId as string,
       environmentId as string,
+      listScope!.scopeKind,
+      listScope!.scopeId,
       inspectionTaskId as string,
       skuCode,
     )
