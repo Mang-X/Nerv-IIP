@@ -134,6 +134,21 @@ public sealed class ErpDemoSeedStartupGovernanceTests
     }
 
     [Fact]
+    public async Task Healthy_host_releases_its_provider_when_the_factory_stops_the_host()
+    {
+        var factory = new ProviderCleanupFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/health");
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.False(factory.ProviderDisposed);
+
+        await factory.DisposeAsync();
+
+        Assert.True(factory.ProviderDisposed);
+    }
+
+    [Fact]
     public void Host_evaluates_the_fail_closed_gate_before_it_starts_listening()
     {
         var program = ReadRepositoryText(ProgramRelativePath);
@@ -255,12 +270,65 @@ public sealed class ErpDemoSeedStartupGovernanceTests
         protected override IHost CreateHost(IHostBuilder builder)
         {
             var host = builder.Build();
-            _providerDisposed.Task
-                .WaitAsync(TimeSpan.FromSeconds(10))
+            TestTimeout.RunAsync(
+                    "wait for the ERP root provider to be disposed before deferred host start",
+                    token => new ValueTask(_providerDisposed.Task.WaitAsync(token)),
+                    TimeSpan.FromSeconds(10))
+                .AsTask()
                 .GetAwaiter()
                 .GetResult();
             host.Start();
             return host;
+        }
+    }
+
+    private sealed class ProviderCleanupFactory : WebApplicationFactory<Program>
+    {
+        private readonly TaskCompletionSource _providerDisposed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool ProviderDisposed => _providerDisposed.Task.IsCompletedSuccessfully;
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            ConfigureTestHost(builder);
+            builder.ConfigureServices(services =>
+                services.AddSingleton<IHostLifetime>(_ => new ProviderDisposalProbe(_providerDisposed)));
+        }
+
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            var host = builder.Build();
+            host.Start();
+            return new ProviderCleanupObservationHost(host, _providerDisposed.Task);
+        }
+    }
+
+    private sealed class ProviderCleanupObservationHost(IHost inner, Task providerDisposed) : IHost
+    {
+        public IServiceProvider Services => inner.Services;
+
+        public void Dispose() => inner.Dispose();
+
+        public Task StartAsync(CancellationToken cancellationToken = default) =>
+            inner.StartAsync(cancellationToken);
+
+        public async Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            await inner.StopAsync(cancellationToken);
+            try
+            {
+                await TestTimeout.RunAsync(
+                    "wait for the ERP entry point to dispose its root provider after host shutdown",
+                    token => new ValueTask(providerDisposed.WaitAsync(token)),
+                    TimeSpan.FromSeconds(10),
+                    cancellationToken);
+            }
+            catch
+            {
+                inner.Dispose();
+                throw;
+            }
         }
     }
 

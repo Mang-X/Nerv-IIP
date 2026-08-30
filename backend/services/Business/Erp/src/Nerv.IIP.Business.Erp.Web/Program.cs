@@ -133,17 +133,16 @@ try
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
-    var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
-    if (autoMigrate && !builder.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessERP in Development. Use an explicit migrator, release script or migration bundle outside Development.");
-    }
-
     // 演示种子 fail-closed：在创建 host/provider 前拒绝无效配置，避免失败路径与 deferred start 争夺释放所有权。
     ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(builder.Configuration, builder.Environment);
 
     await using var app = builder.Build();
     app.UseNervIipCorrelation();
+    var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
+    if (autoMigrate && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessERP in Development. Use an explicit migrator, release script or migration bundle outside Development.");
+    }
 
     if (autoMigrate)
     {
