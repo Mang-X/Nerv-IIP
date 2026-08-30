@@ -96,7 +96,7 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
             if ($parseErrors.Count -gt 0) {
                 throw "PowerShell parse failed for $parsePath`: $($parseErrors -join '; ')"
             }
-            if ([IO.Path]::GetFileName($parsePath) -eq 'pda-apk-build.ps1') {
+            if ([string]::Equals([IO.Path]::GetFileName($parsePath), 'pda-apk-build.ps1', [StringComparison]::Ordinal)) {
                 $buildAst = $parsedAst
             }
             Write-Host "PDA_PARSE_OK=$([IO.Path]::GetRelativePath($repoRoot, $parsePath))"
@@ -109,14 +109,14 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
             $assignment = @($buildAst.EndBlock.Statements | Where-Object {
                 $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
                 $_.Left -is [Management.Automation.Language.VariableExpressionAst] -and
-                $_.Left.VariablePath.UserPath -ceq $buildResolverContract.Variable
+                [string]::Equals($_.Left.VariablePath.UserPath, $buildResolverContract.Variable, [StringComparison]::Ordinal)
             })
             $command = $assignment.Count -eq 1 -and
                 $assignment[0].Right -is [Management.Automation.Language.PipelineAst] -and
                 $assignment[0].Right.PipelineElements.Count -eq 1 -and
                 $assignment[0].Right.PipelineElements[0] -is [Management.Automation.Language.CommandAst] ?
                 $assignment[0].Right.PipelineElements[0].GetCommandName() : $null
-            if ($command -cne $buildResolverContract.Command) {
+            if (-not [string]::Equals($command, $buildResolverContract.Command, [StringComparison]::Ordinal)) {
                 throw "pda-apk-build must assign `$$($buildResolverContract.Variable) from $($buildResolverContract.Command); found '$command'."
             }
         }
@@ -169,7 +169,7 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
                 'PDA_ADB_MARKER -s emulator-5554 shell input keyevent 66'
             )
             if ($scanAdbInvocations.Count -ne $expectedScanAdbInvocations.Count -or
-                [string]::Join("`n", $scanAdbInvocations) -cne [string]::Join("`n", $expectedScanAdbInvocations) -or
+                -not [string]::Equals([string]::Join("`n", $scanAdbInvocations), [string]::Join("`n", $expectedScanAdbInvocations), [StringComparison]::Ordinal) -or
                 -not $scanOutput.Contains("已向 emulator-5554 注入码值 'NERV-1973'", [StringComparison]::Ordinal)) {
                 throw "pda-adb-scan must invoke exactly the text and Enter adb commands and report success. Output: $scanOutput; adb: $($scanAdbInvocations -join '; ')"
             }
