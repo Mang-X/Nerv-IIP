@@ -125,7 +125,7 @@ public sealed record ChangeToolingStatusCommand(
     string EnvironmentId,
     string Code,
     ToolingAssetStatus Status,
-    ToolingAuditSafeText Reason,
+    ToolingOperationAuditContext.ToolingAuditSafeText Reason,
     ToolingOperationAuditContext AuditContext) : ICommand;
 
 public sealed class ChangeToolingStatusCommandHandler(

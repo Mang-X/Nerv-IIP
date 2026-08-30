@@ -1,8 +1,10 @@
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using System.Security.Claims;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
@@ -402,14 +404,33 @@ public sealed class ToolingAuditTests
         string correlationId,
         string causationId,
         string actor,
-        string operationId) => ToolingOperationAuditContext.CreateFromTrustedBoundary(
-            actor,
-            correlationId,
-            causationId,
-            operationId);
+        string operationId) => TrustedAdmission(actor, correlationId, causationId, operationId).GetRequiredContext();
 
-    private static ToolingAuditSafeText TrustedText(string value) =>
-        ToolingAuditSafeText.CreateFromTrustedBoundary(value, "reason");
+    private static ToolingOperationAuditContext.ToolingAuditSafeText TrustedText(string value) =>
+        TrustedAdmission().RequireAuditSafeText(value, "reason");
+
+    private static IToolingOperationAdmission TrustedAdmission(
+        string actor = "user:operator",
+        string correlationId = "corr-test",
+        string causationId = "cause-test",
+        string operationId = "operation-test")
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("token_type", "internal_service")],
+                "test"))
+        };
+        httpContext.Request.Headers["Authorization"] = "Bearer tooling-audit-test-credential";
+        httpContext.Request.Headers["X-Authenticated-Actor"] = actor;
+        httpContext.Request.Headers["X-Correlation-Id"] = correlationId;
+        httpContext.Request.Headers["X-Causation-Id"] = causationId;
+        httpContext.Request.Headers["X-Idempotency-Key"] = operationId;
+        return new ToolingOperationAuditContext.ToolingAuditSafeText.HttpAdmission(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
+    }
 
     private static string AuditText(ToolingAuditEntry audit) => string.Join('|',
         audit.OperationKind,

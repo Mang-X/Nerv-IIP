@@ -149,7 +149,7 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
-    builder.Services.AddScoped<IToolingOperationAdmission, HttpToolingOperationAdmission>();
+    builder.Services.AddScoped<IToolingOperationAdmission, ToolingOperationAuditContext.ToolingAuditSafeText.HttpAdmission>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

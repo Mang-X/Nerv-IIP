@@ -94,7 +94,7 @@ public sealed class MasterDataIntegrationEventContextTests
                 ],
                 "test"))
         };
-        var accessor = new HttpToolingOperationAdmission(new HttpContextAccessor
+        var accessor = new ToolingOperationAuditContext.ToolingAuditSafeText.HttpAdmission(new HttpContextAccessor
         {
             HttpContext = httpContext
         });
@@ -133,21 +133,17 @@ public sealed class MasterDataIntegrationEventContextTests
         var causation = field == "causation" ? invalidValue : "cause-001";
         var operation = field == "operation" ? invalidValue : "operation-001";
 
-        Assert.Throws<KnownException>(() => ToolingOperationAuditContext.CreateFromTrustedBoundary(
-            actor,
-            correlation,
-            causation,
-            operation));
+        var admission = CreateToolingAdmission(actor, correlation, causation, operation);
+
+        Assert.Throws<KnownException>(() => admission.GetRequiredContext());
     }
 
     [Fact]
     public void Tooling_context_rejects_overlong_identity()
     {
-        Assert.Throws<KnownException>(() => ToolingOperationAuditContext.CreateFromTrustedBoundary(
-            "user:operator-001",
-            new string('x', 201),
-            "cause-001",
-            "operation-001"));
+        var admission = CreateToolingAdmission(correlationId: new string('x', 201));
+
+        Assert.Throws<KnownException>(() => admission.GetRequiredContext());
     }
 
     [Theory]
@@ -158,28 +154,29 @@ public sealed class MasterDataIntegrationEventContextTests
     public void Tooling_context_rejects_the_current_opaque_authorization_credential(string field)
     {
         const string credential = "opaque-current-credential-7ff1";
-        Assert.Throws<KnownException>(() => ToolingOperationAuditContext.CreateFromTrustedBoundary(
+        var admission = CreateToolingAdmission(
             field == "actor" ? $"user:{credential}" : "user:operator-001",
             field == "correlation" ? credential : "corr-001",
             field == "causation" ? credential : "cause-001",
             field == "operation" ? credential : "operation-001",
-            [credential]));
+            credential);
+
+        Assert.Throws<KnownException>(() => admission.GetRequiredContext());
     }
 
     [Fact]
     public void Tooling_admission_allows_plain_language_that_only_mentions_sensitive_terms()
     {
-        _ = ToolingOperationAuditContext.CreateFromTrustedBoundary(
+        var admission = CreateToolingAdmission(
             "user:password-rotation",
             "authorization-plan",
             "secret-review",
             "bearer-migration");
+        _ = admission.GetRequiredContext();
 
         Assert.Equal(
             "password rotation planned",
-            ToolingAuditSafeText.CreateFromTrustedBoundary(
-                " password rotation planned ",
-                "reason").Value);
+            admission.RequireAuditSafeText(" password rotation planned ", "reason").Value);
     }
 
     [Theory]
@@ -189,23 +186,46 @@ public sealed class MasterDataIntegrationEventContextTests
     [InlineData("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
     [InlineData("Database=next;HOST=db;Username=changed")]
     [InlineData("User ID=changed;Initial Catalog=next;Server=db")]
+    [InlineData("postgresql://svc:pass@db/prod")]
+    [InlineData("POSTGRES://other:changed@next/catalog")]
     [InlineData("planned\u0001service")]
     public void Tooling_admission_rejects_bounded_sensitive_text_categories(string value)
     {
         Assert.Throws<KnownException>(() =>
-            ToolingAuditSafeText.CreateFromTrustedBoundary(value, "reason"));
+            CreateToolingAdmission().RequireAuditSafeText(value, "reason"));
     }
 
     [Fact]
     public void Tooling_admission_rejects_actual_bearer_and_overlong_audit_text()
     {
         const string credential = "opaque-current-credential-7ff1";
-        Assert.Throws<KnownException>(() => ToolingAuditSafeText.CreateFromTrustedBoundary(
-            credential,
-            "reason",
-            [credential]));
-        Assert.Throws<KnownException>(() => ToolingAuditSafeText.CreateFromTrustedBoundary(
-            new string('x', 501),
-            "reason"));
+        var admission = CreateToolingAdmission(credential: credential);
+
+        Assert.Throws<KnownException>(() => admission.RequireAuditSafeText(credential, "reason"));
+        Assert.Throws<KnownException>(() => admission.RequireAuditSafeText(new string('x', 501), "reason"));
+    }
+
+    private static IToolingOperationAdmission CreateToolingAdmission(
+        string actor = "user:operator-001",
+        string correlationId = "corr-001",
+        string causationId = "cause-001",
+        string operationId = "operation-001",
+        string credential = "admission-test-credential")
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("token_type", "internal_service")],
+                "test"))
+        };
+        httpContext.Request.Headers["Authorization"] = $"Bearer {credential}";
+        httpContext.Request.Headers["X-Authenticated-Actor"] = actor;
+        httpContext.Request.Headers["X-Correlation-Id"] = correlationId;
+        httpContext.Request.Headers["X-Causation-Id"] = causationId;
+        httpContext.Request.Headers["X-Idempotency-Key"] = operationId;
+        return new ToolingOperationAuditContext.ToolingAuditSafeText.HttpAdmission(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
     }
 }
