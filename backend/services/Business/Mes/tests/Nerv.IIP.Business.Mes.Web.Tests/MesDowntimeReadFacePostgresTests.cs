@@ -76,6 +76,21 @@ public sealed class MesDowntimeReadFacePostgresTests
         // DT-MECH：30 分钟已恢复 + 15 分钟仍在停机；查询时刻是 10:30，但历史窗口在 10:15 截断。
         Assert.Equal(new[] { 60m, 45m, 20m }, response.ReasonSummary.Select(x => x.DurationMinutes));
         Assert.Equal(new[] { 0, 1, 0 }, response.ReasonSummary.Select(x => x.OpenCount));
+
+        var futureWindow = await CreateHandler(dbContext).Handle(
+            new ListDowntimeEventsQuery(
+                Org,
+                Env,
+                null,
+                null,
+                WindowStartUtc: DateTimeOffset.Parse("2026-07-30T08:00:00Z"),
+                WindowEndUtc: DateTimeOffset.Parse("2026-07-30T11:00:00Z")),
+            CancellationToken.None);
+
+        // windowEnd 在未来时，DT-MECH-2 只能累计到查询时刻 10:30；若误用 windowEnd 会得到 90 分钟。
+        Assert.Equal(
+            60m,
+            futureWindow.ReasonSummary.Single(x => x.ReasonCode == "DT-MECH").DurationMinutes);
     }
 
     /// <summary>
