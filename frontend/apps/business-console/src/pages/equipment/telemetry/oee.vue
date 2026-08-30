@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleTelemetryOeeAggregateBucket,
-  BusinessConsoleTelemetryOeeAggregateDimension,
-} from '@nerv-iip/api-client'
-import type { DateRange, LineSeries, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { BusinessConsoleTelemetryOeeAggregateDimension } from '@nerv-iip/api-client'
+import type { DateRange, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import {
   describeTelemetryOeeDegradation,
   formatOeeRate,
@@ -11,6 +8,7 @@ import {
   useBusinessTelemetryOeeTrend,
 } from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
+import { presentOeeReport, type OeeTableRow } from '@/pages/equipment/telemetry/oeePresentation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -64,7 +62,6 @@ const {
   aggregateBuckets,
   aggregateError,
   aggregatePending,
-  aggregateResponse,
   aggregateTotal,
   filters,
   refreshAggregates,
@@ -108,33 +105,14 @@ const dimensionLabel = computed(
 )
 const errorMessage = computed(() => inlineErrorMessage(aggregateError.value))
 const trendErrorMessage = computed(() => inlineErrorMessage(trendError.value))
-const completeRateBuckets = computed(() =>
-  trendBuckets.value.filter(
-    (bucket) =>
-      bucket.oeeRate != null &&
-      bucket.availabilityRate != null &&
-      bucket.performanceRate != null &&
-      bucket.qualityRate != null,
-  ),
+const reportPresentation = computed(() =>
+  presentOeeReport({
+    dimension: filters.dimension,
+    trendBuckets: trendBuckets.value,
+    tableBuckets: aggregateBuckets.value,
+    tableTotal: aggregateTotal.value,
+  }),
 )
-const omittedTrendCount = computed(
-  () => trendBuckets.value.length - completeRateBuckets.value.length,
-)
-const trendData = computed(() =>
-  completeRateBuckets.value.map((bucket) => ({
-    time: trendLabel(bucket),
-    oee: percentNumber(bucket.oeeRate),
-    availability: percentNumber(bucket.availabilityRate),
-    performance: percentNumber(bucket.performanceRate),
-    quality: percentNumber(bucket.qualityRate),
-  })),
-)
-const trendSeries: LineSeries[] = [
-  { key: 'oee', label: 'OEE' },
-  { key: 'availability', label: '可用率' },
-  { key: 'performance', label: '性能率' },
-  { key: 'quality', label: '质量率' },
-]
 const summaryCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'window',
@@ -146,9 +124,13 @@ const summaryCells = computed<NvMetricStripCell[]>(() => [
   { key: 'count', label: '结果', value: aggregateTotal.value, unit: ' 个桶' },
 ])
 
-const columns: NvDataTableColumn<BusinessConsoleTelemetryOeeAggregateBucket>[] = [
-  { key: 'dimensionValue', header: '对比对象', accessor: bucketLabel },
-  { key: 'bucketStartUtc', header: '聚合窗口', accessor: bucketWindow },
+const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
+  { key: 'primaryLabel', header: '对比对象' },
+  { key: 'hierarchyLabel', header: '站点 / 层级' },
+  ...(filters.dimension === 'day' || filters.dimension === 'shift'
+    ? [{ key: 'businessDateLabel', header: '业务日' }]
+    : []),
+  { key: 'windowLabel', header: '聚合窗口' },
   { key: 'oeeRate', header: 'OEE', accessor: (row) => rateCell(row.oeeRate) },
   {
     key: 'availabilityRate',
@@ -163,7 +145,7 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryOeeAggregateBucket>[] =
   { key: 'qualityRate', header: '质量率', accessor: (row) => rateCell(row.qualityRate) },
   { key: 'deviceCount', header: '设备', accessor: (row) => `${row.deviceCount ?? 0} 台` },
   { key: 'isDegraded', header: '数据状态', accessor: degradationSummary },
-]
+])
 
 const windowRange = computed<DateRange>({
   get: () => ({
@@ -197,27 +179,8 @@ function fromDateInput(value: string, dayOffset: number) {
   if (!year || !month || !day) return new Date().toISOString()
   return new Date(year, month - 1, day + dayOffset).toISOString()
 }
-function percentNumber(value: number | null | undefined) {
-  return Number((value! * 100).toFixed(1))
-}
 function rateCell(value: number | null | undefined) {
   return value == null ? '—' : formatOeeRate(value)
-}
-function bucketLabel(row: BusinessConsoleTelemetryOeeAggregateBucket) {
-  if (row.dimension === 'day') {
-    return [row.businessDate, row.siteCode].filter(Boolean).join(' · ') || '未解析业务日'
-  }
-  return row.dimensionValue?.trim() || '未解析维度'
-}
-function trendLabel(row: BusinessConsoleTelemetryOeeAggregateBucket) {
-  const businessDate = row.businessDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (businessDate) return `${Number(businessDate[2])}/${Number(businessDate[3])}`
-  if (!row.bucketStartUtc) return '—'
-  const date = new Date(row.bucketStartUtc)
-  return Number.isNaN(date.getTime()) ? '—' : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
-}
-function bucketWindow(row: BusinessConsoleTelemetryOeeAggregateBucket) {
-  return `${formatDateTime(row.bucketStartUtc)} – ${formatDateTime(row.bucketEndUtc)}`
 }
 function formatWindow(start: string, end: string) {
   return `${formatDateTime(start, false)} – ${formatDateTime(end, false)}`
@@ -230,13 +193,10 @@ function formatDateTime(value?: string | null, includeTime = true) {
     ? date.toLocaleString('zh-CN', { timeZone: 'UTC', hour12: false })
     : date.toLocaleDateString('zh-CN', { timeZone: 'UTC' })
 }
-function degradationSummary(row: BusinessConsoleTelemetryOeeAggregateBucket) {
+function degradationSummary(row: OeeTableRow) {
   if (!row.isDegraded) return '完整'
   const reasons = row.degradedReasons ?? []
   return reasons.length > 0 ? reasons.map(describeTelemetryOeeDegradation).join('；') : '数据不完整'
-}
-function rowKey(row: BusinessConsoleTelemetryOeeAggregateBucket) {
-  return [row.dimension, row.dimensionValue, row.businessDate, row.bucketStartUtc].join(':')
 }
 function refreshReport() {
   return Promise.all([refreshAggregates(), refreshTrend()])
@@ -350,31 +310,62 @@ function refreshReport() {
         {{ trendErrorMessage }}
       </p>
       <div
-        v-if="trendPending && trendData.length === 0"
+        v-if="trendPending && reportPresentation.trendBucketCount === 0"
         class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground"
       >
         正在加载趋势…
       </div>
       <div
-        v-else-if="!trendErrorMessage && trendData.length === 0"
+        v-else-if="!trendErrorMessage && reportPresentation.trendBucketCount === 0"
         class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground"
       >
         当前窗口没有可绘制的完整率值；缺失事实仍会保留在下方核查表中。
       </div>
       <template v-else-if="!trendErrorMessage">
         <p class="text-sm text-muted-foreground" role="status">
-          完整窗口共 {{ trendBuckets.length }} 个业务日聚合桶。
+          完整窗口共 {{ reportPresentation.trendBucketCount }} 个业务日聚合桶，按
+          {{ reportPresentation.trendGroups.length }} 个站点分别呈现。
         </p>
-        <p v-if="omittedTrendCount > 0" class="text-sm text-warning" role="status">
-          {{ omittedTrendCount }} 个桶缺少率值，未画成 0%；请在下方查看缺失原因。
+        <p
+          v-if="reportPresentation.omittedTrendBucketCount > 0"
+          class="text-sm text-warning"
+          role="status"
+        >
+          {{ reportPresentation.omittedTrendBucketCount }} 个桶缺少率值，未画成
+          0%；请在下方查看缺失原因。
         </p>
-        <NvLineChart
-          :data="trendData"
-          x-key="time"
-          :series="trendSeries"
-          :height="280"
-          value-suffix="%"
-        />
+        <div class="grid gap-4">
+          <section
+            v-for="group in reportPresentation.trendGroups"
+            :key="group.key"
+            class="grid gap-3 rounded-lg border p-3"
+            :data-oee-site="group.siteCode ?? ''"
+          >
+            <div>
+              <h3 class="text-sm font-semibold text-foreground">站点 {{ group.siteLabel }}</h3>
+              <p class="text-xs text-muted-foreground">
+                {{ group.bucketCount }} 个桶，{{ group.pointCount }} 个完整率值点<span
+                  v-if="group.omittedCount > 0"
+                  >，{{ group.omittedCount }} 个缺失点保留在核查表</span
+                >。
+              </p>
+            </div>
+            <div
+              v-if="group.points.length === 0"
+              class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+            >
+              本站点当前窗口没有可绘制的完整率值；缺失事实仍保留在下方核查表中。
+            </div>
+            <NvLineChart
+              v-else
+              :data="group.points"
+              x-key="time"
+              :series="group.series"
+              :height="280"
+              value-suffix="%"
+            />
+          </section>
+        </div>
       </template>
     </section>
 
@@ -389,13 +380,13 @@ function refreshReport() {
         v-model:page="page"
         v-model:page-size="pageSize"
         :columns="columns"
-        :rows="aggregateBuckets"
-        :row-key="rowKey"
+        :rows="reportPresentation.tableRows"
+        row-key="key"
         :loading="aggregatePending"
         :error="aggregateError"
         :error-message="errorMessage"
         :manual="true"
-        :total-items="aggregateTotal"
+        :total-items="reportPresentation.tableTotal"
         :page-size-options="[10, 20, 50, 100]"
         :searchable="false"
         :column-settings="false"
@@ -420,7 +411,7 @@ function refreshReport() {
 
     <p class="text-xs text-muted-foreground">
       查询窗口以 UTC 传输；业务日与班次按历史事实记录的站点时区、日界线和班次边界聚合。当前返回
-      {{ aggregateResponse?.buckets?.length ?? 0 }} 个桶。
+      {{ reportPresentation.tablePageCount }} 个桶。
     </p>
   </BusinessLayout>
 </template>

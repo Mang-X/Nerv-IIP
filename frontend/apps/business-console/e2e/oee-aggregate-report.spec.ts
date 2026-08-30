@@ -33,7 +33,7 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-test('设备工程师查看业务日趋势并切换工作中心横比', async ({ page }, testInfo) => {
+test('设备工程师分站点查看业务日趋势并核对同名班次', async ({ page }, testInfo) => {
   const aggregateRequests: URL[] = []
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
@@ -64,7 +64,7 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
       const dimension = url.searchParams.get('dimension') ?? 'day'
       return fulfill(
         route,
-        envelope(dimension === 'workCenter' ? workCenterResponse(url) : businessDayResponse(url)),
+        envelope(dimension === 'shift' ? shiftResponse(url) : businessDayResponse(url)),
       )
     }
     return fulfill(route, envelope({ items: [], total: 0 }))
@@ -79,31 +79,60 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
   expect(pageErrors).toEqual([])
 
   await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText('完整窗口共 31 个业务日聚合桶。')).toBeVisible()
-  await expect(page.getByText('2026-08-07 · SITE-SUZHOU')).toBeVisible()
+  await expect(page.getByText(/完整窗口共 62 个业务日聚合桶，按\s*2 个站点分别呈现/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '站点 SITE-WUXI', exact: true })).toBeVisible()
+  await expect(page.getByText('31 个桶，30 个完整率值点，1 个缺失点保留在核查表。')).toBeVisible()
+  await expect(page.getByText('31 个桶，31 个完整率值点。')).toBeVisible()
   await expect(page.getByText('1 个桶缺少率值，未画成 0%')).toBeVisible()
   await expect(page.getByText('横轴使用业务日“月/日”短标签。')).toBeVisible()
-  await expect(page.getByText('8/1', { exact: true })).toBeVisible()
-  await expect(page.getByText('8/31', { exact: true })).toBeVisible()
+  await expect(page.getByText('SITE-SUZHOU · OEE', { exact: true })).toBeVisible()
+  await expect(page.getByText('SITE-WUXI · OEE', { exact: true })).toBeVisible()
+  await expect(page.getByText('8/1', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('8/31', { exact: true })).toHaveCount(2)
   await expect(page.getByText('数据不完整', { exact: true })).toHaveCount(0)
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
+
+  const suzhouChart = page.locator('[data-oee-site="SITE-SUZHOU"]').getByRole('figure')
+  for (const xRatio of [0.15, 0.35, 0.55, 0.75]) {
+    const chartBox = await suzhouChart.boundingBox()
+    expect(chartBox).not.toBeNull()
+    await suzhouChart.hover({
+      position: { x: chartBox!.width * xRatio, y: chartBox!.height * 0.5 },
+    })
+    if (await page.locator('.nv-vis-card').count()) break
+  }
+  await expect(
+    page.locator('.nv-vis-card').filter({ hasText: 'SITE-SUZHOU · OEE' }).last(),
+  ).toBeVisible()
   await page.screenshot({
     path: testInfo.outputPath('issue-2819-oee-day-trend.png'),
     fullPage: true,
   })
 
-  await page.getByRole('button', { name: '第 2 页', exact: true }).click()
+  await page.getByRole('button', { name: '第 3 页', exact: true }).click()
   await expect(page.getByText('缺少或存在冲突的工序标准速率')).toBeVisible()
+  await expect(page.getByText('2026-08-26', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
 
   await page.getByRole('combobox', { name: '报表视角' }).click()
-  await page.getByRole('option', { name: '工作中心横比' }).click()
+  await page.getByRole('option', { name: '班次横比' }).click()
   await page.keyboard.press('Escape')
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('')
-  await expect(page.getByText('WC-CNC-5AXIS')).toBeVisible()
-  await expect(page.getByText('WC-ASSEMBLY-FINAL')).toBeVisible()
+  await expect(page.getByText('SHIFT-DAY', { exact: true })).toHaveCount(2)
+  await expect(
+    page.getByText('站点 SITE-SUZHOU › 车间 WORKSHOP-MACHINING › 产线 LINE-CNC', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('站点 SITE-WUXI › 车间 WORKSHOP-ASSEMBLY › 产线 LINE-FINAL', {
+      exact: true,
+    }),
+  ).toBeVisible()
   await page.waitForTimeout(500)
   await page.screenshot({
-    path: testInfo.outputPath('issue-2819-oee-work-center-comparison.png'),
+    path: testInfo.outputPath('issue-2819-oee-shift-comparison.png'),
     fullPage: true,
   })
 
@@ -116,12 +145,10 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
         url.searchParams.get('deviceAssetId') === 'DEV-CNC-01',
     ),
   ).toBe(true)
-  expect(aggregateRequests.some((url) => url.searchParams.get('dimension') === 'workCenter')).toBe(
-    true,
-  )
+  expect(aggregateRequests.some((url) => url.searchParams.get('dimension') === 'shift')).toBe(true)
   expect(
     aggregateRequests
-      .filter((url) => url.searchParams.get('dimension') === 'workCenter')
+      .filter((url) => url.searchParams.get('dimension') === 'shift')
       .every((url) => !url.searchParams.has('deviceAssetId')),
   ).toBe(true)
   expect(
@@ -136,25 +163,44 @@ test('设备工程师查看业务日趋势并切换工作中心横比', async ({
 function businessDayResponse(url: URL) {
   const allBuckets = Array.from({ length: 31 }, (_, index) => {
     const businessDate = `2026-08-${String(index + 1).padStart(2, '0')}`
-    if (index === 25) {
-      return {
-        ...bucket('day', 'SITE-SUZHOU', businessDate, 0.799, null, 0.96, null),
-        isDegraded: true,
-        degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
-      }
-    }
-    return bucket('day', 'SITE-SUZHOU', businessDate, 0.781, 0.86, 0.93, 0.625)
-  })
+    const suzhou = bucket('day', 'SITE-SUZHOU', businessDate, 0.781, 0.86, 0.93, 0.625, {
+      siteCode: 'SITE-SUZHOU',
+    })
+    const wuxi = bucket('day', 'SITE-WUXI', businessDate, 0.88, 0.91, 0.975, 0.781, {
+      siteCode: 'SITE-WUXI',
+    })
+    return index === 25
+      ? [
+          {
+            ...suzhou,
+            performanceRate: null,
+            oeeRate: null,
+            isDegraded: true,
+            degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+          },
+          wuxi,
+        ]
+      : [suzhou, wuxi]
+  }).flat()
   const skip = Number(url.searchParams.get('skip') ?? 0)
   const take = Number(url.searchParams.get('take') ?? 20)
   return aggregateResponse(url, 'day', allBuckets.slice(skip, skip + take), allBuckets.length)
 }
 
-function workCenterResponse(url: URL) {
-  return aggregateResponse(url, 'workCenter', [
-    bucket('workCenter', 'WC-CNC-5AXIS', null, 0.846, 0.904, 0.975, 0.746),
-    bucket('workCenter', 'WC-ASSEMBLY-FINAL', null, 0.91, 0.868, 0.989, 0.781),
-    bucket('workCenter', 'WC-PAINT-LINE', null, 0.773, 0.831, 0.957, 0.615),
+function shiftResponse(url: URL) {
+  return aggregateResponse(url, 'shift', [
+    bucket('shift', 'SHIFT-DAY', '2026-08-24', 0.846, 0.904, 0.975, 0.746, {
+      siteCode: 'SITE-SUZHOU',
+      workshopCode: 'WORKSHOP-MACHINING',
+      lineCode: 'LINE-CNC',
+      shiftCode: 'SHIFT-DAY',
+    }),
+    bucket('shift', 'SHIFT-DAY', '2026-08-24', 0.91, 0.868, 0.989, 0.781, {
+      siteCode: 'SITE-WUXI',
+      workshopCode: 'WORKSHOP-ASSEMBLY',
+      lineCode: 'LINE-FINAL',
+      shiftCode: 'SHIFT-DAY',
+    }),
   ])
 }
 
@@ -185,15 +231,16 @@ function bucket(
   performanceRate: number | null,
   qualityRate: number,
   oeeRate: number | null,
+  overrides: Record<string, unknown> = {},
 ) {
   const day = businessDate ?? '2026-08-24'
   return {
     dimension,
     dimensionValue,
     siteCode: 'SITE-SUZHOU',
-    workshopCode: dimension === 'workCenter' ? 'WORKSHOP-MACHINING' : null,
-    lineCode: dimension === 'workCenter' ? 'LINE-CNC' : null,
-    workCenterId: dimension === 'workCenter' ? dimensionValue : null,
+    workshopCode: null,
+    lineCode: null,
+    workCenterId: null,
     deviceAssetId: null,
     shiftCode: null,
     businessDate,
@@ -213,6 +260,7 @@ function bucket(
     expectedOutputQuantity: 2100,
     isDegraded: false,
     degradedReasons: [],
+    ...overrides,
   }
 }
 

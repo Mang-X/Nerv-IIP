@@ -90,13 +90,27 @@ vi.mock('@nerv-iip/ui', () => ({
     `,
   },
   NvDataTable: {
-    props: ['rows', 'columns', 'loading', 'error', 'errorMessage', 'emptyMessage'],
+    props: [
+      'rows',
+      'columns',
+      'rowKey',
+      'totalItems',
+      'loading',
+      'error',
+      'errorMessage',
+      'emptyMessage',
+    ],
     template: `
-      <div>
+      <div data-testid="data-table" :data-total="totalItems">
         <span v-if="loading">加载中</span>
         <span v-else-if="error">{{ errorMessage }}</span>
         <span v-else-if="rows.length === 0">{{ emptyMessage }}</span>
-        <div v-for="row in rows" :key="JSON.stringify(row)">
+        <div
+          v-for="row in rows"
+          :key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+          data-testid="data-row"
+          :data-row-key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+        >
           <span v-for="col in columns" :key="col.key">
             {{ col.accessor ? col.accessor(row) : row[col.key] }}
           </span>
@@ -421,13 +435,27 @@ const stubs = {
   NvBadge: { template: '<span><slot /></span>' },
   NvButton: { template: '<button><slot /></button>' },
   NvDataTable: {
-    props: ['rows', 'columns', 'loading', 'error', 'errorMessage', 'emptyMessage'],
+    props: [
+      'rows',
+      'columns',
+      'rowKey',
+      'totalItems',
+      'loading',
+      'error',
+      'errorMessage',
+      'emptyMessage',
+    ],
     template: `
-      <div>
+      <div data-testid="data-table" :data-total="totalItems">
         <span v-if="loading">加载中</span>
         <span v-else-if="error">{{ errorMessage }}</span>
         <span v-else-if="rows.length === 0">{{ emptyMessage }}</span>
-        <div v-for="row in rows" :key="JSON.stringify(row)">
+        <div
+          v-for="row in rows"
+          :key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+          data-testid="data-row"
+          :data-row-key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+        >
           <span v-for="col in columns" :key="col.key">
             {{ col.accessor ? col.accessor(row) : row[col.key] }}
           </span>
@@ -722,7 +750,7 @@ describe('equipment telemetry pages', () => {
   it('keeps missing aggregate rates out of the trend and explains the degraded bucket', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('1 OEE')
+    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('1 SITE-SUZHOU · OEE')
     expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
     expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
     expect(wrapper.text()).toContain('—')
@@ -751,13 +779,80 @@ describe('equipment telemetry pages', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
     const chartText = wrapper.get('[data-testid="line-chart"]').text()
-    expect(chartText).toContain('30 OEE')
+    expect(chartText).toContain('30 SITE-SUZHOU · OEE')
     expect(chartText).toContain('7/1')
     expect(chartText).toContain('7/31')
-    expect(chartText).not.toContain('SITE-SUZHOU')
+    expect(chartText).toContain('SITE-SUZHOU · OEE')
+    expect(wrapper.text()).toContain('按 1 个站点分别呈现')
     expect(wrapper.text()).toContain('完整窗口共 31 个业务日聚合桶')
     expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
     expect(wrapper.get('[data-testid="metric-strip"]').text()).not.toContain('数据不完整')
+  })
+
+  it('renders equal business dates as independent site-owned trend groups', () => {
+    telemetryPageMocks.trendBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimensionValue: 'SITE-SUZHOU',
+        siteCode: 'SITE-SUZHOU',
+        businessDate: '2026-07-01',
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimensionValue: 'SITE-WUXI',
+        siteCode: 'SITE-WUXI',
+        businessDate: '2026-07-01',
+        oeeRate: 0.61,
+      },
+    ]
+    telemetryPageMocks.aggregateBuckets = [...telemetryPageMocks.trendBuckets]
+    telemetryPageMocks.aggregateTotal = 2
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+    const charts = wrapper.findAll('[data-testid="line-chart"]')
+
+    expect(charts).toHaveLength(2)
+    expect(charts[0]?.text()).toContain('1 SITE-SUZHOU · OEE')
+    expect(charts[1]?.text()).toContain('1 SITE-WUXI · OEE')
+    expect(charts[0]?.text()).not.toContain('SITE-WUXI')
+    expect(charts[1]?.text()).not.toContain('SITE-SUZHOU')
+    expect(wrapper.text()).toContain('按 2 个站点分别呈现')
+  })
+
+  it('keeps equal shift codes in different sites and hierarchy readable with distinct row keys', () => {
+    ;(telemetryPageMocks.route as { query: Record<string, string> }).query = {
+      dimension: 'shift',
+      windowStartUtc: '2026-07-01T00:00:00.000Z',
+      windowEndUtc: '2026-07-02T00:00:00.000Z',
+    }
+    telemetryPageMocks.aggregateBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimension: 'shift',
+        dimensionValue: 'SHIFT-DAY',
+        siteCode: 'SITE-SUZHOU',
+        workshopCode: 'WS-MACHINING',
+        lineCode: 'LINE-CNC',
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimension: 'shift',
+        dimensionValue: 'SHIFT-DAY',
+        siteCode: 'SITE-WUXI',
+        workshopCode: 'WS-ASSEMBLY',
+        lineCode: 'LINE-FINAL',
+      },
+    ]
+    telemetryPageMocks.aggregateTotal = 2
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+    const rows = wrapper.findAll('[data-testid="data-row"]')
+
+    expect(wrapper.text()).toContain('站点 SITE-SUZHOU › 车间 WS-MACHINING › 产线 LINE-CNC')
+    expect(wrapper.text()).toContain('站点 SITE-WUXI › 车间 WS-ASSEMBLY › 产线 LINE-FINAL')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.attributes('data-row-key')).not.toBe(rows[1]?.attributes('data-row-key'))
+    expect(wrapper.get('[data-testid="data-table"]').attributes('data-total')).toBe('2')
   })
 
   it('shows a deep-linked device scope and clears it when switching to an organization comparison', async () => {
