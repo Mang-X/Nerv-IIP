@@ -1430,6 +1430,26 @@ describe('business MES composables', () => {
     expect(directoryFactory().enabled).toBe(true)
   })
 
+  // #2793 裁定：`enabled` 不加权限前置。前端 principal 的权限码只是提示，网关才是权威；
+  // 加了前置一旦权限码滞后就再也不发请求，页面永远显示无权限且没有证据能纠正。
+  // 少发的只是一次请求，归因交由 downtime.vue 分流 403 与其它失败来解决。
+  // 若有人给这条 query 加上 `permissionCodes.includes(...)` 之类的前置，本用例必红。
+  it('still issues the downtime-reason directory read when the principal lacks that read permission', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal!,
+      // 刻意给一组「别的都齐、唯独没有目录读权限」的权限码：这样它能通过这条 query 的
+      // 其它所有前置（组织/环境上下文齐备），差别只在那一个码上。
+      permissionCodes: ['business.mes.downtime.read', 'business.mes.downtime.manage'],
+    }
+
+    useMesDowntimeEvents()
+
+    const directoryFactory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleSearchableDirectory',
+    )!
+    expect(directoryFactory().enabled).toBe(true)
+  })
+
   it('uses the searchable-directory 1-based page and server page-size bound for downtime reasons', () => {
     useMesDowntimeEvents()
 

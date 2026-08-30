@@ -3002,6 +3002,14 @@ export function useMesDowntimeEvents() {
         rankingMode: 'default',
       },
     }),
+    // 只以业务上下文为前置，**不加权限前置**（#2793 裁定）：
+    // ① 权威是网关，前端 principal 的权限码只是提示；一旦它滞后于真实授权，加了前置就再也
+    //    不发请求，页面永远显示无权限且没有任何证据能纠正——403 至少是权威事实。
+    // ② 这份目录同时供只读筛选下拉使用（见上方 reasonFilterOptions 注释与
+    //    “reads the downtime-reason directory without waiting for a write scope” 用例），
+    //    按写面权限或角色抑制请求会连带削掉读面能力。
+    // ③ 少发的只是一次请求；真正的缺陷是归因，由 downtime.vue 的 recordEntryBlocker 分流
+    //    403 与其它失败来解决。反之若只加前置不加分支，会直接掉进「组织尚未配置」那句更糟的误诊。
     enabled: hasBusinessContext(filters),
   }))
   const recordMutation = useMutation({

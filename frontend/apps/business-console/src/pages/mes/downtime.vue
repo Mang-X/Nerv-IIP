@@ -44,7 +44,12 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES } from '@/permissions'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  isForbiddenError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -134,6 +139,19 @@ const reasonFilterOptions = computed(() => [
   ...downtimeReasonOptions.value.map((option) => ({ value: option.value, label: option.name })),
 ])
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
+// 停机原因目录读失败的**唯一归因点**：写面（登记入口 blocker）与读面（原因筛选）共用同一句话。
+// 归因分两处必然漂移——同一个 403 在两个面上会说成两种话；本页此前读面干脆什么都不说，
+// 下拉静默只剩「全部原因」，用户看不出是没权限还是真没配。
+// 网关在缺少停机原因词表读权限时回 403（ADR 0029 换绑后的权限码），生成客户端在
+// throwOnError 下把它抛成 query error；笼统说「读取失败，请刷新」会让运维一直刷新，
+// 掉到「组织尚未配置」则会让运维去配字典——两条都指错了地方。
+const downtimeReasonsMessage = computed(() => {
+  const error = downtimeReasonsError.value
+  if (!error) return ''
+  return isForbiddenError(error)
+    ? '当前角色没有停机原因词表的读取权限，请联系管理员开通'
+    : '停机原因读取失败，请刷新后重试'
+})
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
@@ -319,7 +337,7 @@ const recordEntryBlocker = computed(() => {
   }
   if (operationTasksPending.value) return '正在读取可登记停机的工序'
   if (downtimeReasonsPending.value) return '正在读取停机原因'
-  if (downtimeReasonsError.value) return '停机原因读取失败，请刷新后重试'
+  if (downtimeReasonsMessage.value) return downtimeReasonsMessage.value
   if (downtimeReasonOptions.value.length === 0) return '当前组织尚未配置可用停机原因'
   if (eligibleDowntimeTargets.value.length === 0) {
     return '当前授权范围内暂无同时具备工作中心与设备上下文的工序'
@@ -616,6 +634,14 @@ function formatError(error: unknown) {
     </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <p
+      v-if="downtimeReasonsMessage"
+      class="text-sm text-destructive"
+      role="alert"
+      data-testid="downtime-reasons-message"
+    >
+      {{ downtimeReasonsMessage }}
+    </p>
 
     <NvDataTable
       manual
