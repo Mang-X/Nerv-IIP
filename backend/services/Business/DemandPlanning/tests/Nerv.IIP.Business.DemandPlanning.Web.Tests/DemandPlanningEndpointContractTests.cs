@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
@@ -920,6 +921,155 @@ public sealed class DemandPlanningEndpointContractTests
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.True(response.IsSuccessStatusCode, $"Expected DemandPlanning demand write endpoint to execute, got {(int)response.StatusCode}: {body}");
+    }
+
+    // Contract: PublicContract + Regression. Authority: Issue #2128 acceptance.
+    [Fact]
+    public async Task DemandPlanning_http_demand_list_uses_composed_criteria()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DemandSources.AddRange(
+                DemandSource.Create("org-001", "env-dev", "manual", "DEMAND-PUMP-A", "SKU-PUMP-A", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+                DemandSource.Create("org-001", "env-dev", "manual", "DEMAND-PUMP-B", "SKU-PUMP-B", "pcs", "SITE-01", 20m, new DateOnly(2026, 6, 2)),
+                DemandSource.Create("org-001", "env-dev", "manual", "DEMAND-OTHER", "SKU-OTHER", "pcs", "SITE-01", 30m, new DateOnly(2026, 6, 3)),
+                DemandSource.Create("org-002", "env-dev", "manual", "DEMAND-PUMP-OTHER-ORG", "SKU-PUMP-X", "pcs", "SITE-01", 40m, new DateOnly(2026, 6, 4)),
+                DemandSource.Create("org-001", "env-test", "manual", "DEMAND-PUMP-OTHER-ENV", "SKU-PUMP-Y", "pcs", "SITE-01", 50m, new DateOnly(2026, 6, 5)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var response = await client.GetAsync(
+            "/api/business/v1/planning/demands" +
+            "?organizationId=%20org-001%20&environmentId=%20env-dev%20&keyword=%20PuMp%20&skip=1&take=1");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean());
+        var items = document.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        var item = Assert.Single(items);
+        Assert.Equal("DEMAND-PUMP-B", item.GetProperty("sourceReference").GetString());
+        Assert.DoesNotContain(items, item => item.GetProperty("sourceReference").GetString()!.Contains("OTHER-ORG", StringComparison.Ordinal));
+        Assert.DoesNotContain(items, item => item.GetProperty("sourceReference").GetString()!.Contains("OTHER-ENV", StringComparison.Ordinal));
+    }
+
+    // Contract: PublicContract + Regression. Authority: Issue #2128 acceptance.
+    [Fact]
+    public async Task DemandPlanning_http_forecast_list_uses_composed_criteria()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.ForecastInputs.AddRange(
+                ForecastInput.Create("org-001", "env-dev", "FORECAST-PUMP-A", "SKU-PUMP-A", "pcs", "SITE-01", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30), 10m, 0, 0),
+                ForecastInput.Create("org-001", "env-dev", "FORECAST-PUMP-B", "SKU-PUMP-B", "pcs", "SITE-01", new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31), 20m, 0, 0),
+                ForecastInput.Create("org-001", "env-dev", "FORECAST-OTHER", "SKU-OTHER", "pcs", "SITE-01", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 30m, 0, 0),
+                ForecastInput.Create("org-002", "env-dev", "FORECAST-PUMP-OTHER-ORG", "SKU-PUMP-X", "pcs", "SITE-01", new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), 40m, 0, 0),
+                ForecastInput.Create("org-001", "env-test", "FORECAST-PUMP-OTHER-ENV", "SKU-PUMP-Y", "pcs", "SITE-01", new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), 50m, 0, 0));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var response = await client.GetAsync(
+            "/api/business/v1/planning/forecasts" +
+            "?organizationId=%20org-001%20&environmentId=%20env-dev%20&keyword=%20PuMp%20&skip=1&take=1");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean());
+        var items = document.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        var item = Assert.Single(items);
+        Assert.Equal("FORECAST-PUMP-B", item.GetProperty("forecastReference").GetString());
+        Assert.DoesNotContain(items, item => item.GetProperty("forecastReference").GetString()!.Contains("OTHER-ORG", StringComparison.Ordinal));
+        Assert.DoesNotContain(items, item => item.GetProperty("forecastReference").GetString()!.Contains("OTHER-ENV", StringComparison.Ordinal));
+    }
+
+    // Contract: PublicContract + Regression. Authority: Issue #2128 acceptance.
+    [Fact]
+    public async Task DemandPlanning_http_demand_list_uses_default_and_clamped_paging_and_ignores_blank_keyword()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DemandSources.AddRange(Enumerable.Range(0, 501)
+                .Select(index => DemandSource.Create(
+                    "org-001",
+                    "env-dev",
+                    "manual",
+                    $"DEMAND-{index:D3}",
+                    "SKU-FG-1000",
+                    "pcs",
+                    "SITE-01",
+                    10m,
+                    new DateOnly(2026, 6, 1))));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var defaultResponse = await client.GetAsync("/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev");
+        var defaultBody = await defaultResponse.Content.ReadAsStringAsync();
+        Assert.True(defaultResponse.IsSuccessStatusCode, $"{defaultResponse.StatusCode}: {defaultBody}");
+        using var defaultDocument = JsonDocument.Parse(defaultBody);
+        var defaultItems = defaultDocument.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        Assert.Equal(100, defaultItems.Length);
+        Assert.Equal("DEMAND-000", defaultItems[0].GetProperty("sourceReference").GetString());
+
+        var lowerBoundResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev&keyword=%20%20&skip=-1&take=0");
+        var lowerBoundBody = await lowerBoundResponse.Content.ReadAsStringAsync();
+        Assert.True(lowerBoundResponse.IsSuccessStatusCode, $"{lowerBoundResponse.StatusCode}: {lowerBoundBody}");
+        using var lowerBoundDocument = JsonDocument.Parse(lowerBoundBody);
+        var lowerBoundItems = lowerBoundDocument.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        Assert.Single(lowerBoundItems);
+        Assert.Equal("DEMAND-000", lowerBoundItems[0].GetProperty("sourceReference").GetString());
+
+        var upperBoundResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev&skip=0&take=501");
+        var upperBoundBody = await upperBoundResponse.Content.ReadAsStringAsync();
+        Assert.True(upperBoundResponse.IsSuccessStatusCode, $"{upperBoundResponse.StatusCode}: {upperBoundBody}");
+        using var upperBoundDocument = JsonDocument.Parse(upperBoundBody);
+        Assert.Equal(500, upperBoundDocument.RootElement.GetProperty("data").GetArrayLength());
+    }
+
+    // Contract: PublicContract + Regression. Authority: Issue #2128 acceptance.
+    [Fact]
+    public async Task DemandPlanning_http_list_queries_without_tenant_return_response_data_errors()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var requests = new[]
+        {
+            (Path: "/api/business/v1/planning/demands?environmentId=env-dev", Message: "组织标识不能为空"),
+            (Path: "/api/business/v1/planning/demands?organizationId=org-001", Message: "环境标识不能为空"),
+            (Path: "/api/business/v1/planning/forecasts?environmentId=env-dev", Message: "组织标识不能为空"),
+            (Path: "/api/business/v1/planning/forecasts?organizationId=org-001", Message: "环境标识不能为空"),
+        };
+
+        foreach (var request in requests)
+        {
+            var response = await client.GetAsync(request.Path);
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(body);
+            Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+            Assert.Contains(request.Message, document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+            Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+            Assert.NotEmpty(document.RootElement.GetProperty("errorData").EnumerateArray());
+            Assert.False(document.RootElement.TryGetProperty("data", out _), body);
+        }
     }
 
     /// <summary>

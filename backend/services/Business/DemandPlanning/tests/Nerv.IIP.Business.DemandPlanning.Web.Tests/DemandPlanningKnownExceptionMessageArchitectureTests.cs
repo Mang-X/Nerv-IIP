@@ -21,6 +21,8 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/RunMrpCommand.cs";
     private const string PlanningSuggestionDownstreamBridgePath =
         "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningSuggestionDownstreamBridge.cs";
+    private const string ListQueryCriteriaPath =
+        "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Queries/ListQueryCriteria.cs";
     private const string DemandPlanningCodingPath =
         "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/DemandPlanningCodingService.cs";
     private const string SharedCodeAllocatorPath =
@@ -35,6 +37,7 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         RejectPlanningSuggestionPath,
         RunMrpPath,
         PlanningSuggestionDownstreamBridgePath,
+        ListQueryCriteriaPath,
     ];
 
     private static readonly IReadOnlyCollection<DemandPlanningKnownExceptionSite> ExpectedSites =
@@ -59,6 +62,8 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         Target(PlanningSuggestionDownstreamBridgePath, "HttpMesPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 3),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpErpPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 3),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpErpPlanningSuggestionDownstreamBridge", "ReadResponseDataAsync", 2),
+
+        Target(ListQueryCriteriaPath, "TenantScope", "From", 2),
 
         Excluded(RunMrpPath, "MarkMrpRunRunningCommandHandler", "Handle", 2, "后台 worker 状态转换，不返回原始 HTTP 请求"),
         Excluded(RunMrpPath, "ExecuteMrpRunCommandHandler", "Handle", 2, "后台 worker 计算事务，不返回原始 HTTP 请求"),

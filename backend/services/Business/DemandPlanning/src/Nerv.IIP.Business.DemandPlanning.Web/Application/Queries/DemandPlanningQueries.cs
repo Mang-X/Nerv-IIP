@@ -83,7 +83,12 @@ public sealed class ListMasterProductionScheduleBucketsQueryHandler(ApplicationD
     }
 }
 
-public sealed record ListDemandSourcesQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
+public sealed record ListDemandSourcesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
 
 public sealed record DemandSourceResponse(
     string DemandSourceId,
@@ -104,10 +109,26 @@ public sealed class ListDemandSourcesQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<IReadOnlyCollection<DemandSourceResponse>> Handle(ListDemandSourcesQuery request, CancellationToken cancellationToken)
     {
-        return await dbContext.DemandSources.AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
+        var query = dbContext.DemandSources.AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
+
+        if (keyword is not null)
+        {
+            query = query.Where(x =>
+                x.DemandType.ToLower().Contains(keyword)
+                || x.SourceReference.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword)
+                || x.SiteCode.ToLower().Contains(keyword));
+        }
+
+        return await query
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new DemandSourceResponse(
                 x.Id.ToString(),
                 x.DemandType,
@@ -125,13 +146,24 @@ public sealed class ListDemandSourcesQueryHandler(ApplicationDbContext dbContext
     }
 }
 
+public sealed class ListDemandSourcesQueryValidator : AbstractValidator<ListDemandSourcesQuery>
+{
+    public ListDemandSourcesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
+
 public sealed record ListForecastInputsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode,
     string? SiteCode,
     DateOnly? FromDate,
-    DateOnly? ToDate) : IQuery<IReadOnlyCollection<ForecastInputResponse>>;
+    DateOnly? ToDate,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake) : IQuery<IReadOnlyCollection<ForecastInputResponse>>;
 
 public sealed record ForecastInputResponse(
     ForecastInputId ForecastInputId,
@@ -150,8 +182,11 @@ public sealed class ListForecastInputsQueryHandler(ApplicationDbContext dbContex
 {
     public async Task<IReadOnlyCollection<ForecastInputResponse>> Handle(ListForecastInputsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.ForecastInputs.AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
         if (!string.IsNullOrWhiteSpace(request.SkuCode))
         {
             query = query.Where(x => x.SkuCode == request.SkuCode);
@@ -172,11 +207,22 @@ public sealed class ListForecastInputsQueryHandler(ApplicationDbContext dbContex
             query = query.Where(x => x.PeriodStartDate <= request.ToDate);
         }
 
+        if (keyword is not null)
+        {
+            query = query.Where(x =>
+                x.ForecastReference.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword)
+                || x.UomCode.ToLower().Contains(keyword)
+                || x.SiteCode.ToLower().Contains(keyword));
+        }
+
         return await query
             .OrderBy(x => x.PeriodStartDate)
             .ThenBy(x => x.SkuCode)
             .ThenBy(x => x.SiteCode)
             .ThenBy(x => x.ForecastReference)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new ForecastInputResponse(
                 x.Id,
                 x.ForecastReference,
@@ -189,6 +235,14 @@ public sealed class ListForecastInputsQueryHandler(ApplicationDbContext dbContex
                 x.BackwardConsumptionDays,
                 x.ForwardConsumptionDays))
             .ToListAsync(cancellationToken);
+    }
+}
+
+public sealed class ListForecastInputsQueryValidator : AbstractValidator<ListForecastInputsQuery>
+{
+    public ListForecastInputsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
     }
 }
 

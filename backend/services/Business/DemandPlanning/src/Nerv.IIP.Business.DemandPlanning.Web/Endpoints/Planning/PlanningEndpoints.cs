@@ -92,7 +92,12 @@ public sealed record ReleaseMasterProductionScheduleBucketRequest(
     [property: QueryParam] string EnvironmentId,
     string ReleasedBy);
 
-public sealed record ListDemandSourcesRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListDemandSourcesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record CancelDemandSourceRequest(
     [property: RouteParam] DemandSourceId DemandSourceId,
@@ -123,7 +128,10 @@ public sealed record ListForecastInputsRequest(
     string? SkuCode,
     string? SiteCode,
     DateOnly? FromDate,
-    DateOnly? ToDate);
+    DateOnly? ToDate,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record RunMrpRequest(string OrganizationId, string EnvironmentId, DateOnly HorizonStart, DateOnly HorizonEnd);
 
@@ -300,7 +308,12 @@ public sealed class ListDemandSourcesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListDemandSourcesRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListDemandSourcesQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var response = await sender.Send(new ListDemandSourcesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -366,7 +379,10 @@ public sealed class ListForecastInputsEndpoint(ISender sender)
             req.SkuCode,
             req.SiteCode,
             req.FromDate,
-            req.ToDate), ct);
+            req.ToDate,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
