@@ -45,25 +45,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 . (Join-Path $repoRoot 'scripts' 'lib' 'ScriptAutomation.ps1')
-
-# 显式 ANDROID_HOME/ANDROID_SDK_ROOT 优先；未设时自动探测约定安装位置，零知识可跑。
-function Resolve-PdaAndroidHome {
-    $adbName = $IsWindows ? 'adb.exe' : 'adb'
-    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
-    if ($IsWindows) {
-        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $candidates += Join-Path $env:USERPROFILE 'android-sdk' }
-        if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $candidates += Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
-    }
-    else {
-        $candidates += Join-Path $HOME 'Library/Android/sdk'
-        $candidates += Join-Path $HOME 'Android/Sdk'
-    }
-    foreach ($candidate in $candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path -LiteralPath (Join-Path $candidate 'platform-tools' $adbName) -PathType Leaf) { return $candidate }
-    }
-    return $null
-}
+. (Join-Path $PSScriptRoot 'PdaAndroidTools.ps1')
 
 $resolvedSdk = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($resolvedSdk)) {
@@ -71,7 +53,7 @@ if ([string]::IsNullOrWhiteSpace($resolvedSdk)) {
     exit 1
 }
 $env:ANDROID_HOME = $resolvedSdk
-$adbExe = Join-Path $env:ANDROID_HOME 'platform-tools' ($IsWindows ? 'adb.exe' : 'adb')
+$adbExe = Join-Path $env:ANDROID_HOME 'platform-tools' (Get-PdaPlatformToolName -Name 'adb')
 
 # --- 码值校验：adb shell input text 对特殊字符没有可靠的跨版本转义通道——
 #     空格须编码为 %s；& | ( ) < > ; * ~ ' " \ $ 会被设备端 shell 解析（破坏码值甚至注入命令）；

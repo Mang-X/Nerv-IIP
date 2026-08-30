@@ -66,31 +66,12 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 . (Join-Path $repoRoot 'scripts' 'lib' 'ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot 'PdaAndroidTools.ps1')
 
 $appDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $androidDir = Join-Path $appDir 'android'
 
-# --- 1. 工具链前置检查（显式 env 优先；未设时自动探测约定安装位置——工具链装在
-#     用户目录但不设全局 env 时（本仓开发机现状），新终端/新会话零知识也能直接跑；
-#     探测不到才失败，不静默降级）。
-function Resolve-PdaAndroidHome {
-    $adbName = $IsWindows ? 'adb.exe' : 'adb'
-    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
-    if ($IsWindows) {
-        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $candidates += Join-Path $env:USERPROFILE 'android-sdk' }
-        if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $candidates += Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
-    }
-    else {
-        $candidates += Join-Path $HOME 'Library/Android/sdk'
-        $candidates += Join-Path $HOME 'Android/Sdk'
-    }
-    foreach ($candidate in $candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path -LiteralPath (Join-Path $candidate 'platform-tools' $adbName) -PathType Leaf) { return $candidate }
-    }
-    return $null
-}
-
+# --- 1. 工具链前置检查。
 $androidHome = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($androidHome)) {
     Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md（sdkmanager 装 platform-tools/build-tools/platforms/emulator/系统镜像）。'
@@ -98,54 +79,6 @@ if ([string]::IsNullOrWhiteSpace($androidHome)) {
 }
 $env:ANDROID_HOME = $androidHome
 Write-Diagnostic "ANDROID_HOME=$androidHome"
-
-# JDK 解析：显式 JAVA_HOME 若满足 21+ 直接用；否则从 PATH 与当前平台约定位置探测。
-# Capacitor 8 的 android 库 sourceCompatibility=21，JDK 17 会报「无效的源发行版：21」。
-function Get-PdaJdkMajor([string] $jdkHome) {
-    $javaName = $IsWindows ? 'java.exe' : 'java'
-    $releaseFile = Join-Path $jdkHome 'release'
-    if (-not (Test-Path -LiteralPath (Join-Path $jdkHome 'bin' $javaName) -PathType Leaf) -or -not (Test-Path -LiteralPath $releaseFile -PathType Leaf)) { return 0 }
-    $m = (Select-String -LiteralPath $releaseFile -Pattern '^JAVA_VERSION="([^"]+)"').Matches
-    if ($m.Count -eq 0) { return 0 }
-    return [int] (($m[0].Groups[1].Value) -split '\.')[0]
-}
-
-function Resolve-PdaJavaHome21 {
-    if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
-        $explicitMajor = Get-PdaJdkMajor $env:JAVA_HOME
-        if ($explicitMajor -ge 21 -and $explicitMajor -le 24) { return $env:JAVA_HOME }
-        Write-Diagnostic -Level 'WARN' -Message "显式 JAVA_HOME 不在兼容区间 JDK 21–24（$($env:JAVA_HOME)，主版本 $explicitMajor；Gradle 8.14 最高支持 Java 24），尝试探测约定位置的兼容 JDK。"
-    }
-    $best = $null
-    $bestMajor = 0
-    $roots = @()
-    if (-not [string]::IsNullOrWhiteSpace($HOME)) { $roots += Join-Path $HOME '.jdks' }
-    if ($IsWindows) {
-        $roots += 'C:\Program Files\Eclipse Adoptium'
-        $roots += 'C:\Program Files\Java'
-    }
-    else {
-        $javaCommand = Get-Command 'java' -ErrorAction SilentlyContinue
-        if ($javaCommand -and (Test-Path -LiteralPath $javaCommand.Source -PathType Leaf)) {
-            $javaFile = Get-Item -LiteralPath $javaCommand.Source
-            $resolvedJavaFile = $javaFile.ResolveLinkTarget($true)
-            $javaPath = $null -eq $resolvedJavaFile ? $javaFile.FullName : $resolvedJavaFile.FullName
-            $commandJdkHome = Split-Path -Parent (Split-Path -Parent $javaPath)
-            $commandMajor = Get-PdaJdkMajor $commandJdkHome
-            if ($commandMajor -ge 21 -and $commandMajor -le 24) { return $commandJdkHome }
-        }
-    }
-    foreach ($root in $roots) {
-        if (-not (Test-Path $root)) { continue }
-        foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory)) {
-            $major = Get-PdaJdkMajor $dir.FullName
-            # 兼容区间 21–24：下限是 Capacitor 8 的 sourceCompatibility=21，
-            # 上限是 Gradle 8.14 支持的最高 daemon JVM（Java 24），更高版本会构建失败。
-            if ($major -ge 21 -and $major -le 24 -and $major -gt $bestMajor) { $best = $dir.FullName; $bestMajor = $major }
-        }
-    }
-    return $best
-}
 
 $resolvedJavaHome = Resolve-PdaJavaHome21
 if ([string]::IsNullOrWhiteSpace($resolvedJavaHome)) {

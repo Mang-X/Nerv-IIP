@@ -1,12 +1,12 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Executes business-pda Android tool discovery against disposable fake SDK/JDK commands
+#     - Executes business-pda Android tool discovery against one disposable fake SDK/JDK fixture
 #   Writes:
-#     - Temporary test harness files outside the repository
-#     - artifacts/script-logs/** through the governed command wrapper
+#     - Temporary test files outside the repository
+#     - artifacts/script-logs/** through ScriptAutomation
 #   Cleanup:
-#     - Removes the disposable test harness directory in finally
+#     - Removes the disposable fixture in finally
 #   Requires:
 #     - PowerShell 7
 
@@ -14,22 +14,22 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $pdaScripts = Join-Path $repoRoot 'frontend/apps/business-pda/scripts'
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $pdaScripts 'PdaAndroidTools.ps1')
+
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-pda-android-tools-$([Guid]::NewGuid().ToString('N'))"
 $sdkRoot = Join-Path $fixtureRoot 'android-sdk'
 $jdkRoot = Join-Path $fixtureRoot 'jdk-21'
-$previousAndroidHome = $env:ANDROID_HOME
-$previousAndroidSdkRoot = $env:ANDROID_SDK_ROOT
-$previousJavaHome = $env:JAVA_HOME
+$avdManagerCapture = Join-Path $fixtureRoot 'avdmanager-arguments.log'
 
 function Write-FakeTool {
     param(
         [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $PosixBody,
-        [Parameter(Mandatory)] [string] $WindowsBody
+        [Parameter(Mandatory)] [string] $Body
     )
 
     [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
-    [IO.File]::WriteAllText($Path, ($IsWindows ? $WindowsBody : $PosixBody), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($Path, $Body, [Text.UTF8Encoding]::new($false))
     if (-not $IsWindows) {
         [IO.File]::SetUnixFileMode(
             $Path,
@@ -44,82 +44,105 @@ try {
     $avdManagerName = $IsWindows ? 'avdmanager.bat' : 'avdmanager'
     $javaName = $IsWindows ? 'java.exe' : 'java'
 
-    $adbPosix = @'
+    if ($IsWindows) {
+        Write-FakeTool -Path (Join-Path $sdkRoot 'platform-tools' $adbName) -Body ''
+        Write-FakeTool -Path (Join-Path $jdkRoot 'bin' $javaName) -Body ''
+    }
+    else {
+        $adbBody = @'
 #!/bin/sh
+printf 'PDA_ADB_MARKER\n'
 case "$*" in *devices*) printf 'List of devices attached\n' ;; esac
-exit 0
 '@
-    $emulatorPosix = @'
+        $emulatorBody = @'
 #!/bin/sh
-printf 'accel is installed and usable\n'
+printf 'PDA_EMULATOR_MARKER installed and usable\n'
 '@
-    $avdManagerPosix = @'
+        $avdManagerBody = @'
 #!/bin/sh
-printf 'nerv-test-avd\n'
+printf 'PDA_AVDMANAGER_MARKER\n'
+printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
 '@
-    $javaPosix = @'
-#!/bin/sh
-exit 0
-'@
-    $adbWindows = "@echo off`r`nif `"%1`"==`"devices`" echo List of devices attached`r`nexit /b 0`r`n"
-    $emulatorWindows = "@echo accel is installed and usable`r`n"
-    $avdManagerWindows = "@echo nerv-test-avd`r`n"
-    $javaWindows = "@exit /b 0`r`n"
-
-    Write-FakeTool -Path (Join-Path $sdkRoot 'platform-tools' $adbName) -PosixBody $adbPosix -WindowsBody $adbWindows
-    Write-FakeTool -Path (Join-Path $sdkRoot 'emulator' $emulatorName) -PosixBody $emulatorPosix -WindowsBody $emulatorWindows
-    Write-FakeTool -Path (Join-Path $sdkRoot 'cmdline-tools' 'latest' 'bin' $avdManagerName) -PosixBody $avdManagerPosix -WindowsBody $avdManagerWindows
-    Write-FakeTool -Path (Join-Path $jdkRoot 'bin' $javaName) -PosixBody $javaPosix -WindowsBody $javaWindows
+        Write-FakeTool -Path (Join-Path $sdkRoot 'platform-tools' $adbName) -Body $adbBody
+        Write-FakeTool -Path (Join-Path $sdkRoot 'emulator' $emulatorName) -Body $emulatorBody
+        Write-FakeTool -Path (Join-Path $sdkRoot 'cmdline-tools' 'latest' 'bin' $avdManagerName) -Body $avdManagerBody
+        Write-FakeTool -Path (Join-Path $jdkRoot 'bin' $javaName) -Body "#!/bin/sh`nexit 0`n"
+    }
     [IO.File]::WriteAllText((Join-Path $jdkRoot 'release'), 'JAVA_VERSION="21.0.8"', [Text.UTF8Encoding]::new($false))
 
-    $env:ANDROID_HOME = $sdkRoot
-    $env:ANDROID_SDK_ROOT = $null
-    $env:JAVA_HOME = $jdkRoot
+    Invoke-WithScopedEnvironment -Variables @{
+        ANDROID_HOME = $sdkRoot
+        ANDROID_SDK_ROOT = $null
+        JAVA_HOME = $jdkRoot
+        NERV_PDA_FAKE_AVDMANAGER_CAPTURE = $avdManagerCapture
+    } -ScriptBlock {
+        foreach ($parsePath in @(
+            (Join-Path $pdaScripts 'PdaAndroidTools.ps1')
+            (Join-Path $pdaScripts 'pda-apk-build.ps1')
+            (Join-Path $pdaScripts 'pda-avd.ps1')
+            (Join-Path $pdaScripts 'pda-adb-scan.ps1')
+            $PSCommandPath
+        )) {
+            $tokens = $null
+            $parseErrors = $null
+            [void] [Management.Automation.Language.Parser]::ParseInput(
+                [IO.File]::ReadAllText($parsePath),
+                [ref] $tokens,
+                [ref] $parseErrors)
+            if ($parseErrors.Count -gt 0) {
+                throw "PowerShell parse failed for $parsePath`: $($parseErrors -join '; ')"
+            }
+            Write-Host "PDA_PARSE_OK=$([IO.Path]::GetRelativePath($repoRoot, $parsePath))"
+        }
 
-    $buildText = Get-Content -LiteralPath (Join-Path $pdaScripts 'pda-apk-build.ps1') -Raw
-    $tokens = $null
-    $parseErrors = $null
-    $buildAst = [Management.Automation.Language.Parser]::ParseInput($buildText, [ref] $tokens, [ref] $parseErrors)
-    $requiredFunctions = @('Resolve-PdaAndroidHome', 'Get-PdaJdkMajor', 'Resolve-PdaJavaHome21')
-    $functionText = @($requiredFunctions | ForEach-Object {
-        $functionName = $_
-        $functionAst = $buildAst.Find({
-            param($node)
-            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                [string]::Equals($node.Name, $functionName, [StringComparison]::Ordinal)
-        }, $true)
-        if ($null -eq $functionAst) { throw "Missing tool resolver function: $functionName" }
-        $functionAst.Extent.Text
-    }) -join [Environment]::NewLine
-    $buildHarnessPath = Join-Path $fixtureRoot 'pda-apk-build-tools.ps1'
-    $buildHarness = @"
-function Write-Diagnostic { param([string] `$Level, [string] `$Message) }
-$functionText
-Write-Host "ANDROID_HOME=`$(Resolve-PdaAndroidHome)"
-Write-Host "JAVA_HOME=`$(Resolve-PdaJavaHome21)"
-"@
-    [IO.File]::WriteAllText($buildHarnessPath, $buildHarness, [Text.UTF8Encoding]::new($false))
-    $buildOutput = & pwsh -NoProfile -File $buildHarnessPath 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or
-        -not $buildOutput.Contains("ANDROID_HOME=$sdkRoot", [StringComparison]::Ordinal) -or
-        -not $buildOutput.Contains("JAVA_HOME=$jdkRoot", [StringComparison]::Ordinal)) {
-        throw "pda-apk-build must accept the platform-native adb/java names. Output: $buildOutput"
-    }
+        if (-not [string]::Equals((Resolve-PdaAndroidHome), $sdkRoot, [StringComparison]::Ordinal)) {
+            throw 'The PDA Android SDK resolver did not select the explicit fixture SDK.'
+        }
+        if (-not [string]::Equals((Resolve-PdaJavaHome21), $jdkRoot, [StringComparison]::Ordinal)) {
+            throw 'The PDA JDK resolver did not select the explicit fixture JDK.'
+        }
+        foreach ($toolContract in @(
+            [pscustomobject]@{ Name = 'adb'; WindowsSuffix = '.exe'; Expected = $adbName }
+            [pscustomobject]@{ Name = 'emulator'; WindowsSuffix = '.exe'; Expected = $emulatorName }
+            [pscustomobject]@{ Name = 'avdmanager'; WindowsSuffix = '.bat'; Expected = $avdManagerName }
+            [pscustomobject]@{ Name = 'java'; WindowsSuffix = '.exe'; Expected = $javaName }
+        )) {
+            $resolvedName = Get-PdaPlatformToolName -Name $toolContract.Name -WindowsSuffix $toolContract.WindowsSuffix
+            if (-not [string]::Equals($resolvedName, $toolContract.Expected, [StringComparison]::Ordinal)) {
+                throw "PDA tool name resolution returned '$resolvedName'; expected '$($toolContract.Expected)'."
+            }
+        }
 
-    $avdOutput = & pwsh -NoProfile -File (Join-Path $pdaScripts 'pda-avd.ps1') -Action status 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or -not $avdOutput.Contains('nerv-test-avd', [StringComparison]::Ordinal)) {
-        throw "pda-avd status must invoke the platform-native adb/emulator/avdmanager names. Output: $avdOutput"
-    }
+        if ($IsWindows) {
+            Write-Host 'PDA_WINDOWS_CODE_PATH_ONLY=SDK/JDK and .exe/.bat names resolved; fake tools not executed'
+        }
+        else {
+            $avdResult = Invoke-PwshScript -ScriptPath (Join-Path $pdaScripts 'pda-avd.ps1') -Arguments @('-Action', 'status') -Name 'pda-avd-tool-resolution' -WorkingDirectory $repoRoot -TimeoutSeconds 30
+            $avdOutput = [IO.File]::ReadAllText($avdResult.StdoutPath)
+            foreach ($marker in @('PDA_ADB_MARKER', 'PDA_EMULATOR_MARKER', 'PDA_AVDMANAGER_MARKER')) {
+                if (-not $avdOutput.Contains($marker, [StringComparison]::Ordinal)) {
+                    throw "pda-avd status did not invoke $marker. Output: $avdOutput"
+                }
+            }
 
-    $scanOutput = & pwsh -NoProfile -File (Join-Path $pdaScripts 'pda-adb-scan.ps1') -Code 'NERV-1973' -Serial 'emulator-5554' 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or -not $scanOutput.Contains("已向 emulator-5554 注入码值 'NERV-1973'", [StringComparison]::Ordinal)) {
-        throw "pda-adb-scan must invoke the platform-native adb name. Output: $scanOutput"
+            $createResult = Invoke-PwshScript -ScriptPath (Join-Path $pdaScripts 'pda-avd.ps1') -Arguments @('-Action', 'create', '-AvdName', 'nerv-pda-fixture') -Name 'pda-avd-image-resolution' -WorkingDirectory $repoRoot -TimeoutSeconds 30
+            $createOutput = [IO.File]::ReadAllText($createResult.StdoutPath)
+            $capturedArguments = [IO.File]::ReadAllText($avdManagerCapture)
+            $expectedAbi = ($IsMacOS -and [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [Runtime.InteropServices.Architecture]::Arm64) ? 'arm64-v8a' : 'x86_64'
+            $expectedPackage = "system-images;android-35;google_apis;$expectedAbi"
+            if (-not $capturedArguments.Contains("create avd -n nerv-pda-fixture -k $expectedPackage -d pixel_5", [StringComparison]::Ordinal)) {
+                throw "pda-avd create did not select $expectedPackage. Output: $createOutput; captured: $capturedArguments"
+            }
+
+            $scanResult = Invoke-PwshScript -ScriptPath (Join-Path $pdaScripts 'pda-adb-scan.ps1') -Arguments @('-Code', 'NERV-1973', '-Serial', 'emulator-5554') -Name 'pda-adb-scan-tool-resolution' -WorkingDirectory $repoRoot -TimeoutSeconds 30
+            $scanOutput = [IO.File]::ReadAllText($scanResult.StdoutPath)
+            if (-not $scanOutput.Contains("已向 emulator-5554 注入码值 'NERV-1973'", [StringComparison]::Ordinal)) {
+                throw "pda-adb-scan must invoke the platform-native adb name. Output: $scanOutput"
+            }
+        }
     }
 }
 finally {
-    $env:ANDROID_HOME = $previousAndroidHome
-    $env:ANDROID_SDK_ROOT = $previousAndroidSdkRoot
-    $env:JAVA_HOME = $previousJavaHome
     if (Test-Path -LiteralPath $fixtureRoot) {
         Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
     }
