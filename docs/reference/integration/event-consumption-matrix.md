@@ -82,7 +82,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
-| MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执 | `consumed-internally` |
+| MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally` |
