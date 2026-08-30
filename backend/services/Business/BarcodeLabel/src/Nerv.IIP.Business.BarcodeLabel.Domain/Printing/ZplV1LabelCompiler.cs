@@ -127,7 +127,7 @@ public static class ZplV1LabelCompiler
                 return;
             case PlainLabelBarcodeType.DataMatrix:
                 builder.Append("^BXN,6,200^FD")
-                    .Append(value)
+                    .Append(EncodeForDataMatrix(value))
                     .Append("^FS");
                 return;
             default:
@@ -167,7 +167,10 @@ public static class ZplV1LabelCompiler
         });
 
     private static string EncodeGs1ForDataMatrix(Gs1BarcodeValue value, string separatorEscape) =>
-        EncodeGs1(value, separatorEscape, segment => segment.Replace("_", "__", StringComparison.Ordinal));
+        EncodeGs1(value, separatorEscape, EncodeForDataMatrix);
+
+    private static string EncodeForDataMatrix(string value) =>
+        value.Replace("_", "__", StringComparison.Ordinal);
 
     private static string EncodeGs1(
         Gs1BarcodeValue value,

@@ -51,6 +51,15 @@ public sealed class ZplV1LabelCompilerTests
     }
 
     [Fact]
+    public void Compile_doubles_literal_underscores_in_plain_datamatrix_data()
+    {
+        // Zebra ZPL Programming Guide P1099958-001, ^BX quality 200: __ encodes a literal underscore.
+        var zpl = CompileText(PlainItem("DM_1SN", PlainLabelBarcodeType.DataMatrix));
+
+        Assert.Contains("^BXN,6,200^FDDM__1SN^FS", zpl, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compile_rejects_gs1_control_data_in_plain_code128()
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", "LOT-001", "SN-001", null);
