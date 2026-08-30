@@ -62,9 +62,10 @@ function Get-Nerv1860ProcessEnvironmentValue {
 function Get-Nerv1860ExactProcess {
     param([Parameter(Mandatory)] [string] $ExecutablePath)
 
+    $processName = [System.IO.Path]::GetFileNameWithoutExtension($ExecutablePath)
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
     do {
-        $matches = @(Get-Process | Where-Object {
+        $exactProcesses = @(Get-Process -Name $processName -ErrorAction SilentlyContinue | Where-Object {
             try {
                 [string]::Equals(
                     [System.IO.Path]::GetFullPath($_.Path),
@@ -75,13 +76,13 @@ function Get-Nerv1860ExactProcess {
                 $false
             }
         })
-        if ($matches.Count -eq 1) {
-            return $matches[0]
+        if ($exactProcesses.Count -eq 1) {
+            return $exactProcesses[0]
         }
         Start-Sleep -Milliseconds 500
     } while ([DateTimeOffset]::UtcNow -lt $deadline)
 
-    throw "Expected exactly one process for '$ExecutablePath', found $($matches.Count)."
+    throw "Expected exactly one process for '$ExecutablePath', found $($exactProcesses.Count)."
 }
 
 function Get-Nerv1860Fingerprint {
