@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -40,7 +41,7 @@ public sealed record ListSpcControlChartsRequest(
     bool? Locked,
     string? Keyword,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListSpcControlChartsEndpointResponse(
     IReadOnlyCollection<SpcControlChartCatalogItemResponse> Items,

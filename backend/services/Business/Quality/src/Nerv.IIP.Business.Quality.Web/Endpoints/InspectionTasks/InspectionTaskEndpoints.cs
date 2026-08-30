@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
@@ -16,7 +17,7 @@ public sealed record ListInspectionTasksRequest(
     string? Status,
     string? SkuCode,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     InspectionTaskId? InspectionTaskId = null,
     string? ScopeKind = null,
     string? PrincipalId = null,

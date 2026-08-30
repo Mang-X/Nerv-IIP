@@ -4178,6 +4178,7 @@
       "route": "/api/business/v1/quality/inspection-records",
       "operationId": "listBusinessQualityInspectionRecords",
       "classification": "exposed",
+      "note": "#2126：复用组合式租户与分页 criteria；保留检验记录专属筛选、公开字段、默认值和校验语义。",
       "gateways": [
         "business"
       ],
@@ -4230,6 +4231,7 @@
       "route": "/api/business/v1/quality/inspection-tasks",
       "operationId": "listBusinessQualityInspectionTasks",
       "classification": "exposed",
+      "note": "#2126：复用组合式租户、关键词与分页 criteria；保留任务工作台专属 scope、逾期筛选、Take 上限和响应契约。",
       "gateways": [
         "business"
       ],
@@ -4508,6 +4510,7 @@
       "route": "/api/business/v1/quality/spc/control-charts",
       "operationId": "listBusinessQualitySpcControlCharts",
       "classification": "exposed",
+      "note": "#2126：复用组合式租户、关键词与分页 criteria；保留 SPC 台账专属锁定状态、统计字段和响应契约。",
       "gateways": [
         "business"
       ],
