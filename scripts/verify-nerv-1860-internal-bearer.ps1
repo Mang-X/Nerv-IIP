@@ -1,14 +1,14 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Starts, pauses, resumes, inspects, and stops one session-owned managed FullStack run
+#     - Starts, inspects, and stops one session-owned managed FullStack run
 #     - Sends HTTP requests only to endpoints owned by that FullStack session
 #   Writes:
 #     - artifacts/fullstack/<session-id>/nerv-1860/**
 #     - artifacts/script-logs/nerv-1860-managed-fullstack/**
 #     - Local full-stack session manifests and artifacts
 #   Cleanup:
-#     - Resumes the owned coordinator and delegates exact session cleanup to the managed FullStack lifecycle
+#     - Delegates exact session cleanup to the managed FullStack lifecycle
 #     - Falls back to the exact SessionId stop command if the owned coordinator does not finish
 #   Requires:
 #     - PowerShell 7 on macOS
@@ -116,21 +116,27 @@ function Invoke-Nerv1860Http {
         SkipHttpErrorCheck = $true
         TimeoutSec = 30
     }
-    if ($null -ne $Body) {
+    if ($PSBoundParameters.ContainsKey('Body')) {
         $parameters['Body'] = $Body
         $parameters['ContentType'] = 'application/json'
     }
     $response = Invoke-WebRequest @parameters
-    $json = if ([string]::IsNullOrWhiteSpace($response.Content)) {
+    $content = if ($response.Content -is [byte[]]) {
+        [System.Text.Encoding]::UTF8.GetString($response.Content)
+    }
+    else {
+        [string] $response.Content
+    }
+    $json = if ([string]::IsNullOrWhiteSpace($content)) {
         $null
     }
     else {
-        $response.Content | ConvertFrom-Json
+        $content | ConvertFrom-Json
     }
 
     return [pscustomobject]@{
         StatusCode = [int] $response.StatusCode
-        Content = [string] $response.Content
+        Content = $content
         Json = $json
     }
 }
@@ -174,7 +180,6 @@ function Stop-Nerv1860OwnedSession {
 $manifestPath = Get-NervFullStackManifestPath -SessionId $SessionId
 $managedLogDirectory = Join-Path $repoRoot "artifacts/script-logs/nerv-1860-managed-fullstack/$SessionId"
 $managed = $null
-$coordinatorPaused = $false
 $acceptanceFailure = $null
 $runExitCode = $null
 $artifactPath = $null
@@ -218,14 +223,6 @@ try {
     if ($null -eq $manifest -or -not [string]::Equals([string] $manifest.state, 'Running', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Managed FullStack session '$SessionId' did not reach Running within $StartupTimeoutSeconds seconds."
     }
-
-    Invoke-NativeCommandWithTimeout `
-        -Command '/bin/kill' `
-        -Arguments @('-STOP', "$($managed.ProcessId)") `
-        -WorkingDirectory $repoRoot `
-        -TimeoutSeconds 30 `
-        -Name "nerv-1860-pause-$SessionId" | Out-Null
-    $coordinatorPaused = $true
 
     $artifactPath = [System.IO.Path]::GetFullPath([string] $manifest.artifactPath)
     $evidenceDirectory = Join-Path $artifactPath 'nerv-1860'
@@ -370,20 +367,6 @@ finally {
     $userAccessToken = $null
     $internalToken = $null
     $adminPassword = $null
-
-    if ($coordinatorPaused -and $null -ne $managed -and -not $managed.Process.HasExited) {
-        try {
-            Invoke-NativeCommandWithTimeout `
-                -Command '/bin/kill' `
-                -Arguments @('-CONT', "$($managed.ProcessId)") `
-                -WorkingDirectory $repoRoot `
-                -TimeoutSeconds 30 `
-                -Name "nerv-1860-resume-$SessionId" | Out-Null
-        }
-        catch {
-            if ($null -eq $acceptanceFailure) { $acceptanceFailure = $_ }
-        }
-    }
 
     if ($null -ne $managed) {
         if (-not $managed.Process.WaitForExit($RunTimeoutSeconds * 1000)) {
