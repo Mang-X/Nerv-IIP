@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.BarcodeRules;
 
@@ -9,7 +10,7 @@ public sealed record ListBarcodeRulesQuery(
     string? Status,
     string? Keyword,
     int Skip = 0,
-    int Take = 100) : IQuery<BarcodeRuleListResult>;
+    int Take = OffsetPage.DefaultTake) : IQuery<BarcodeRuleListResult>;
 
 public sealed record BarcodeRuleListResult(IReadOnlyCollection<BarcodeRuleSummary> Items, int Total);
 
@@ -28,12 +29,11 @@ public sealed class ListBarcodeRulesQueryValidator : AbstractValidator<ListBarco
 {
     public ListBarcodeRulesQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.Status).MaximumLength(30);
         RuleFor(x => x.Keyword).MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
@@ -42,25 +42,27 @@ public sealed class ListBarcodeRulesQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<BarcodeRuleListResult> Handle(ListBarcodeRulesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.BarcodeRules
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();
             query = query.Where(x => x.Status == status);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim();
-            query = query.Where(x => x.RuleCode.Contains(keyword) || x.Prefix.Contains(keyword));
+            query = query.Where(x => x.RuleCode.ToLower().Contains(keyword) || x.Prefix.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.RuleCode)
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new BarcodeRuleSummary(
                 x.Id,
                 x.RuleCode,

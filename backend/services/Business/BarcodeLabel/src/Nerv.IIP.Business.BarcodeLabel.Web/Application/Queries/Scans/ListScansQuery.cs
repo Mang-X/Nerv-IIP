@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Scans;
 
@@ -11,7 +12,7 @@ public sealed record ListScansQuery(
     string? SourceWorkflow,
     string? SourceDocumentId,
     int Skip = 0,
-    int Take = 100) : IQuery<ScanRecordListResult>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ScanRecordListResult>;
 
 public sealed record ScanRecordListResult(IReadOnlyCollection<ScanRecordSummary> Items, int Total);
 
@@ -30,14 +31,13 @@ public sealed class ListScansQueryValidator : AbstractValidator<ListScansQuery>
 {
     public ListScansQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.DeviceCode).MaximumLength(100);
         RuleFor(x => x.ScannedValue).MaximumLength(200);
         RuleFor(x => x.SourceWorkflow).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
@@ -46,7 +46,9 @@ public sealed class ListScansQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<ScanRecordListResult> Handle(ListScansQuery request, CancellationToken cancellationToken)
     {
-        var query = dbContext.ScanRecords.Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var query = dbContext.ScanRecords.Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
         if (!string.IsNullOrWhiteSpace(request.DeviceCode))
         {
             query = query.Where(x => x.DeviceCode == request.DeviceCode);
@@ -71,8 +73,8 @@ public sealed class ListScansQueryHandler(ApplicationDbContext dbContext)
         var items = await query
             .OrderByDescending(x => x.ScannedAtUtc)
             .ThenByDescending(x => x.Id)
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new ScanRecordSummary(x.Id, x.DeviceCode, x.ScannedValue, x.SourceWorkflow, x.SourceDocumentId, x.Result, x.RejectionReason, x.DownstreamProcessingStatus, x.ScannedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ScanRecordListResult(items, total);
