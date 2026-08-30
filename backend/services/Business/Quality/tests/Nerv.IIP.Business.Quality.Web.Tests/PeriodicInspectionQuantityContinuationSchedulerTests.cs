@@ -55,6 +55,42 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
     }
 
     [Fact]
+    public async Task Parallel_executor_runs_all_candidates_with_a_peak_of_the_requested_limit()
+    {
+        var taskScheduler = new DeterministicTaskScheduler();
+        var executor = new ParallelPeriodicInspectionCandidateExecutor(taskScheduler);
+        var releaseCandidates = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var activeCandidates = 0;
+        var peakConcurrency = 0;
+        var completedCandidates = 0;
+
+        var execution = executor.ExecuteAsync(
+            Enumerable.Range(1, 5).ToArray(),
+            4,
+            async (_, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var active = Interlocked.Increment(ref activeCandidates);
+                UpdatePeak(ref peakConcurrency, active);
+                await releaseCandidates.Task;
+                Interlocked.Decrement(ref activeCandidates);
+                Interlocked.Increment(ref completedCandidates);
+            },
+            CancellationToken.None);
+
+        taskScheduler.RunUntilIdle();
+        Assert.Equal(4, peakConcurrency);
+        Assert.False(execution.IsCompleted);
+
+        releaseCandidates.SetResult();
+        taskScheduler.RunUntilIdle();
+        await execution;
+
+        Assert.Equal(5, completedCandidates);
+        Assert.Equal(0, activeCandidates);
+    }
+
+    [Fact]
     public async Task Poison_candidate_is_persistently_deferred_before_the_next_candidate_runs()
     {
         var start = DateTimeOffset.Parse("2026-08-25T01:00:00Z");
@@ -138,6 +174,21 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
                 operationId,
                 new PeriodicInspectionRuntimeContextId(Guid.CreateVersion7()),
                 observedNextAttemptAtUtc);
+    }
+
+    private static void UpdatePeak(ref int peakConcurrency, int activeCandidates)
+    {
+        var observedPeak = Volatile.Read(ref peakConcurrency);
+        while (activeCandidates > observedPeak)
+        {
+            var previousPeak = Interlocked.CompareExchange(ref peakConcurrency, activeCandidates, observedPeak);
+            if (previousPeak == observedPeak)
+            {
+                return;
+            }
+
+            observedPeak = previousPeak;
+        }
     }
 
     private sealed class FirstCandidateBlockingSender : ISender
@@ -259,5 +310,47 @@ public sealed class PeriodicInspectionQuantityContinuationSchedulerTests
                 await Task.WhenAll(executions);
             }
         }
+    }
+
+    private sealed class DeterministicTaskScheduler : TaskScheduler
+    {
+        private readonly Queue<Task> tasks = new();
+
+        public void RunUntilIdle()
+        {
+            while (true)
+            {
+                Task? task;
+                lock (tasks)
+                {
+                    task = tasks.Count > 0 ? tasks.Dequeue() : null;
+                }
+
+                if (task is null)
+                {
+                    return;
+                }
+
+                TryExecuteTask(task);
+            }
+        }
+
+        protected override IEnumerable<Task>? GetScheduledTasks()
+        {
+            lock (tasks)
+            {
+                return tasks.ToArray();
+            }
+        }
+
+        protected override void QueueTask(Task task)
+        {
+            lock (tasks)
+            {
+                tasks.Enqueue(task);
+            }
+        }
+
+        protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued) => false;
     }
 }

@@ -150,6 +150,18 @@ internal interface IPeriodicInspectionCandidateExecutor
 
 internal sealed class ParallelPeriodicInspectionCandidateExecutor : IPeriodicInspectionCandidateExecutor
 {
+    private readonly TaskScheduler taskScheduler;
+
+    public ParallelPeriodicInspectionCandidateExecutor()
+        : this(TaskScheduler.Default)
+    {
+    }
+
+    internal ParallelPeriodicInspectionCandidateExecutor(TaskScheduler taskScheduler)
+    {
+        this.taskScheduler = taskScheduler;
+    }
+
     public Task ExecuteAsync<TCandidate>(
         IReadOnlyList<TCandidate> candidates,
         int maxConcurrency,
@@ -161,6 +173,7 @@ internal sealed class ParallelPeriodicInspectionCandidateExecutor : IPeriodicIns
             {
                 MaxDegreeOfParallelism = maxConcurrency,
                 CancellationToken = cancellationToken,
+                TaskScheduler = taskScheduler,
             },
             (candidate, token) => new ValueTask(executeCandidate(candidate, token)));
 }
