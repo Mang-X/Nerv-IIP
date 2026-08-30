@@ -132,7 +132,7 @@ public sealed class HttpToolingOperationAdmission(IHttpContextAccessor httpConte
 internal static class ToolingAuditContentAdmission
 {
     private const int MaxIdentityLength = 200;
-    private const int MaxAuditTextLength = 1000;
+    private const int MaxAuditTextLength = 500;
     private const string UserActorPrefix = "user:";
     private static readonly HashSet<string> CredentialAssignmentKeys = new(StringComparer.OrdinalIgnoreCase)
     {

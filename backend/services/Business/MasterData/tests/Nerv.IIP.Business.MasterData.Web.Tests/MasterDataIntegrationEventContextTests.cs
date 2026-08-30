@@ -205,7 +205,7 @@ public sealed class MasterDataIntegrationEventContextTests
             "reason",
             [credential]));
         Assert.Throws<KnownException>(() => ToolingAuditSafeText.CreateFromTrustedBoundary(
-            new string('x', 1001),
+            new string('x', 501),
             "reason"));
     }
 }
