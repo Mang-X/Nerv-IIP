@@ -18,15 +18,9 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     private readonly TimeProvider timeProvider;
     private readonly IUploadCommitStorage commitStorage;
     private readonly UploadSessionGateRegistry gateRegistry;
-    private readonly UploadCommitExecutionLeaseManager? executionLeaseManager;
+    private readonly UploadCommitExecutionLeaseManager executionLeaseManager;
     private readonly ILogger<PostgreSqlFileStorageService> logger;
 
-    public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IConfiguration configuration)
-        : this(dbContext, new ServerProxyUploadProvider(), configuration: configuration)
-    {
-    }
-
-    [ActivatorUtilitiesConstructor]
     public PostgreSqlFileStorageService(
         ApplicationDbContext dbContext,
         IFileStorageUploadProvider uploadProvider,
@@ -47,28 +41,6 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         this.gateRegistry = gateRegistry;
         this.executionLeaseManager = executionLeaseManager;
         this.logger = logger;
-    }
-
-    public PostgreSqlFileStorageService(
-        ApplicationDbContext dbContext,
-        IFileStorageUploadProvider uploadProvider,
-        ILocalTusFileStoreAccessor? tusStoreAccessor = null,
-        IConfiguration? configuration = null,
-        TimeProvider? timeProvider = null,
-        IUploadCommitStorage? commitStorage = null,
-        UploadSessionGateRegistry? gateRegistry = null,
-        UploadCommitExecutionLeaseManager? executionLeaseManager = null,
-        ILogger<PostgreSqlFileStorageService>? logger = null)
-    {
-        this.dbContext = dbContext;
-        this.uploadProvider = uploadProvider;
-        this.tusStoreAccessor = tusStoreAccessor;
-        this.configuration = configuration;
-        this.timeProvider = timeProvider ?? TimeProvider.System;
-        this.commitStorage = commitStorage ?? new UnavailableUploadCommitStorage();
-        this.gateRegistry = gateRegistry ?? new UploadSessionGateRegistry();
-        this.executionLeaseManager = executionLeaseManager;
-        this.logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgreSqlFileStorageService>.Instance;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -226,12 +198,6 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(completedFile));
         }
 
-        if (string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal)
-            && session.ExpiresAtUtc <= timeProvider.GetUtcNow())
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话已过期。");
-        }
-
         var completionChecksum = FileStoragePurposePolicies.ValidateCompletionChecksum(
             session.FilePurpose,
             session.Checksum,
@@ -242,16 +208,33 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileMetadataResponse>.BadRequest(completionChecksum.Message!);
         }
 
-        var now = timeProvider.GetUtcNow();
         if (string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
         {
             await using var patchGate = await gateRegistry.EnterPatchCommitAsync(uploadSessionId, cancellationToken);
             await dbContext.Entry(session).ReloadAsync(cancellationToken);
+            if (session.Completed)
+            {
+                var completedFile = await dbContext.StoredFiles.SingleOrDefaultAsync(
+                    x => x.FileId == session.FileId,
+                    cancellationToken);
+                return completedFile is null
+                    ? FileStorageResult<FileMetadataResponse>.Failure(
+                        StatusCodes.Status503ServiceUnavailable,
+                        "已完成上传的元数据暂不可用。")
+                    : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(completedFile));
+            }
+
             if (!string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
             {
                 return FileStorageResult<FileMetadataResponse>.Failure(
                     StatusCodes.Status409Conflict,
                     "上传完成操作正在进行中，请稍后重试。");
+            }
+
+            var now = timeProvider.GetUtcNow();
+            if (session.ExpiresAtUtc <= now)
+            {
+                return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话已过期。");
             }
 
             var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
@@ -345,12 +328,13 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         }
 
         var executionOwnerId = NewId("wrk");
-        if (!await TryClaimCommitExecutionAsync(session, executionOwnerId, cancellationToken))
+        if (!await executionLeaseManager.TryClaimAsync(session.UploadSessionId, executionOwnerId, cancellationToken))
         {
             return FileStorageResult<FileMetadataResponse>.Failure(
                 StatusCodes.Status409Conflict,
                 "另一工作进程正在恢复上传完成操作，请稍后重试。");
         }
+        await dbContext.Entry(session).ReloadAsync(cancellationToken);
 
         var storageActionPreviouslyStarted = session.StorageActionStartedAtUtc is not null;
         if (!storageActionPreviouslyStarted)
@@ -365,14 +349,12 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         UploadCommitStorageResult storageResult;
         try
         {
-            storageResult = executionLeaseManager is null
-                ? await commitStorage.CommitAsync(ToCommitIntent(session), cancellationToken)
-                : await executionLeaseManager.ExecuteWithRenewalAsync(
-                    session.UploadSessionId,
-                    executionOwnerId,
-                    ToCommitIntent(session),
-                    commitStorage,
-                    cancellationToken);
+            storageResult = await executionLeaseManager.ExecuteWithRenewalAsync(
+                session.UploadSessionId,
+                executionOwnerId,
+                ToCommitIntent(session),
+                commitStorage,
+                cancellationToken);
         }
         catch (UploadCommitExecutionLostException)
         {
@@ -391,8 +373,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             storageResult = UploadCommitStorageResult.RetryableUnavailable();
         }
 
-        if (executionLeaseManager is not null
-            && !await executionLeaseManager.StillOwnsAsync(
+        if (!await executionLeaseManager.StillOwnsAsync(
                 session.UploadSessionId,
                 executionOwnerId,
                 cancellationToken))
@@ -691,6 +672,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             x.UploadSessionId == uploadSessionId
             && x.Provider == TusUploadProvider.Name
             && x.State == UploadSessionState.Open
+            && !x.LegacyCompleted
             && x.ExpiresAtUtc > now,
             cancellationToken);
     }
@@ -702,7 +684,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return await dbContext.UploadSessions
             .Where(x => x.UploadSessionId == uploadSessionId
                 && x.Provider == TusUploadProvider.Name
-                && x.State == UploadSessionState.Open)
+                && x.State == UploadSessionState.Open
+                && !x.LegacyCompleted)
             .Select(x => new LocalTusUploadSession(
                 x.UploadSessionId,
                 x.ExpectedSizeBytes,
@@ -792,44 +775,6 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             StatusCodes.Status409Conflict,
             "上传提交执行所有权已变更，请稍后重试。");
 
-    private async Task<bool> TryClaimCommitExecutionAsync(
-        UploadSessionRecord session,
-        string executionOwnerId,
-        CancellationToken cancellationToken)
-    {
-        var now = timeProvider.GetUtcNow();
-        var leaseUntil = now.AddMinutes(5);
-        if (!dbContext.Database.IsRelational())
-        {
-            if (session.ExecutionLeaseUntilUtc is { } existingLease && existingLease > now)
-            {
-                return false;
-            }
-
-            session.ClaimExecution(executionOwnerId, leaseUntil);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return true;
-        }
-
-        var claimed = await dbContext.UploadSessions
-            .Where(x => x.UploadSessionId == session.UploadSessionId
-                && x.State == UploadSessionState.Committing
-                && (x.ExecutionLeaseUntilUtc == null || x.ExecutionLeaseUntilUtc <= now))
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(x => x.ExecutionOwnerId, executionOwnerId)
-                    .SetProperty(x => x.ExecutionLeaseUntilUtc, leaseUntil)
-                    .SetProperty(x => x.ConcurrencyVersion, x => x.ConcurrencyVersion + 1),
-                cancellationToken);
-        if (claimed != 1)
-        {
-            return false;
-        }
-
-        await dbContext.Entry(session).ReloadAsync(cancellationToken);
-        return string.Equals(session.ExecutionOwnerId, executionOwnerId, StringComparison.Ordinal);
-    }
-
     private async Task<long> CalculateUsedBytesAsync(
         string organizationId,
         string environmentId,
@@ -849,7 +794,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
         var now = timeProvider.GetUtcNow();
         var reservedBytes = dbContext.UploadSessions
-            .Where(session => session.State != UploadSessionState.Completed
+            .Where(session => !session.LegacyCompleted
+                && session.State != UploadSessionState.Completed
                 && session.ExpiresAtUtc > now
                 && session.OrganizationId == organizationId
                 && session.EnvironmentId == environmentId);

@@ -9,10 +9,13 @@ public sealed record UploadCommitRecoveryResult(int Examined, int Completed, int
 
 public sealed class UploadCommitRecoveryProcessor(
     ApplicationDbContext dbContext,
-    IFileStorageService fileStorageService,
+    IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,
     ILogger<UploadCommitRecoveryProcessor> logger)
 {
+    private const int BatchSize = 25;
+    private const int MaxDegreeOfParallelism = 4;
+
     public async Task<UploadCommitRecoveryResult> RunOnceAsync(CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
@@ -27,9 +30,10 @@ public sealed class UploadCommitRecoveryProcessor(
             .Where(x => x.State == UploadSessionState.Committing
                 && x.RecoveryTerminalAtUtc == null
                 && (x.NextRecoveryAtUtc == null || x.NextRecoveryAtUtc <= now))
-            .OrderBy(x => x.NextRecoveryAtUtc)
+            .OrderBy(x => x.NextRecoveryAtUtc != null)
+            .ThenBy(x => x.NextRecoveryAtUtc)
             .ThenBy(x => x.CommittingAtUtc)
-            .Take(25)
+            .Take(BatchSize)
             .Select(x => new
             {
                 x.UploadSessionId,
@@ -42,22 +46,46 @@ public sealed class UploadCommitRecoveryProcessor(
             .ToArrayAsync(cancellationToken);
 
         var completed = 0;
-        foreach (var session in sessions)
-        {
-            var result = await fileStorageService.CompleteUploadSessionAsync(
-                session.UploadSessionId,
-                new CompleteUploadSessionRequest(
-                    session.OrganizationId,
-                    session.EnvironmentId,
-                    session.FilePurpose,
-                    session.Checksum,
-                    session.ExpectedSizeBytes),
-                cancellationToken);
-            if (result.StatusCode == StatusCodes.Status200OK)
+        await Parallel.ForEachAsync(
+            sessions,
+            new ParallelOptions
             {
-                completed++;
-            }
-        }
+                MaxDegreeOfParallelism = MaxDegreeOfParallelism,
+                CancellationToken = cancellationToken
+            },
+            async (session, itemCancellationToken) =>
+            {
+                try
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var fileStorageService = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
+                    var result = await fileStorageService.CompleteUploadSessionAsync(
+                        session.UploadSessionId,
+                        new CompleteUploadSessionRequest(
+                            session.OrganizationId,
+                            session.EnvironmentId,
+                            session.FilePurpose,
+                            session.Checksum,
+                            session.ExpectedSizeBytes),
+                        itemCancellationToken);
+                    if (result.StatusCode == StatusCodes.Status200OK)
+                    {
+                        Interlocked.Increment(ref completed);
+                    }
+                }
+                catch (OperationCanceledException) when (itemCancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "FileStorage 提交恢复单项失败；UploadSessionId={UploadSessionId}，ErrorCode={ErrorCode}。",
+                        session.UploadSessionId,
+                        "commit-recovery-item-failed");
+                }
+            });
 
         if (sessions.Length > 0 || terminal > 0)
         {

@@ -28,7 +28,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateUploadSession_PersistsUploadSessionRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
 
@@ -59,7 +59,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateUploadSession_OverLengthInput_ReturnsBadRequestWithoutPersisting()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         var request = CreateUploadRequest() with
         {
             ContentType = new string('a', 257)
@@ -77,7 +77,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateUploadSession_NonCanonicalPurpose_IsRejectedBeforePersistence()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             configuration: FileStorageTestConfiguration.Default);
         var request = CreateUploadRequest() with
@@ -107,7 +107,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 ["FileStorage:PurposePolicies:application-package:BlockedExtensions:0"] = ".ps1"
             })
             .Build();
-        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+        var service = FileStorageServiceTestFactory.Create(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
         var request = CreateUploadRequest() with
         {
             FileName = "install.ps1",
@@ -129,7 +129,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         string contentType)
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest() with
@@ -148,7 +148,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateBarcodeLabelTemplateUpload_AboveSixtyFourKiB_IsRejected()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest() with { ExpectedSizeBytes = (64 * 1024) + 1 },
@@ -163,7 +163,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateBarcodeLabelTemplateUpload_AtSixtyFourKiB_IsAccepted()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest() with { ExpectedSizeBytes = 64 * 1024 },
@@ -182,7 +182,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         string ownerType)
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         var request = CreateBarcodeLabelTemplateUploadRequest();
 
         var result = await service.CreateUploadSessionAsync(
@@ -203,7 +203,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateBarcodeLabelTemplateUpload_MissingOrInvalidSha256_IsRejected(string? checksum)
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest() with { Checksum = checksum },
@@ -235,7 +235,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow));
         await dbContext.SaveChangesAsync();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest() with { ExpectedSizeBytes = 1 },
@@ -266,7 +266,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow));
         await dbContext.SaveChangesAsync();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest() with { ExpectedSizeBytes = 1 },
@@ -287,7 +287,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         string filePurpose)
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         var createdResult = await service.CreateUploadSessionAsync(
             CreateBarcodeLabelTemplateUploadRequest(),
             CancellationToken.None);
@@ -349,7 +349,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CompleteBarcodeLabelTemplateUpload_MissingOrMismatchedChecksum_IsRejected(string? checksum)
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         var request = CreateBarcodeLabelTemplateUploadRequest();
         var created = (await service.CreateUploadSessionAsync(request, CancellationToken.None)).Value!;
 
@@ -380,10 +380,10 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 ["FileStorage:PurposePolicies:barcode-label-template:RequireSha256Checksum"] = "false"
             })
             .Build();
-        var createService = new PostgreSqlFileStorageService(dbContext, configuration: checksumOptionalConfiguration);
+        var createService = FileStorageServiceTestFactory.Create(dbContext, configuration: checksumOptionalConfiguration);
         var request = CreateBarcodeLabelTemplateUploadRequest() with { Checksum = null };
         var created = (await createService.CreateUploadSessionAsync(request, CancellationToken.None)).Value!;
-        var completeService = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var completeService = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await completeService.CompleteUploadSessionAsync(
             created.UploadSessionId,
@@ -452,7 +452,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 ["FileStorage:Quotas:OrganizationPurpose:org-001:prod:application-package:MaxBytes"] = "4096"
             })
             .Build();
-        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+        var service = FileStorageServiceTestFactory.Create(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
 
         var result = await service.CreateUploadSessionAsync(CreateUploadRequest() with { ExpectedSizeBytes = 1 }, CancellationToken.None);
 
@@ -472,7 +472,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 ["FileStorage:Quotas:OrganizationPurpose:org-001:prod:application-package:MaxBytes"] = "4096"
             })
             .Build();
-        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+        var service = FileStorageServiceTestFactory.Create(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
         var first = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
         Assert.Equal(StatusCodes.Status200OK, first.StatusCode);
 
@@ -513,7 +513,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 ["FileStorage:Quotas:Organization:org-001:prod:MaxBytes"] = "4096"
             })
             .Build();
-        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+        var service = FileStorageServiceTestFactory.Create(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
 
         var result = await service.CreateUploadSessionAsync(
             CreateUploadRequest() with
@@ -536,7 +536,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
         var storage = new SuccessfulUploadCommitStorage("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new ServerProxyUploadProvider(),
             configuration: FileStorageTestConfiguration.Default,
@@ -574,7 +574,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CompleteUploadSession_WhenStorageProvesNoFinalActionStarted_ReopensSession()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
 
         var result = await service.CompleteUploadSessionAsync(
@@ -596,7 +596,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
         var storage = new SuccessfulUploadCommitStorage("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new ServerProxyUploadProvider(),
             configuration: FileStorageTestConfiguration.Default,
@@ -630,7 +630,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                     ["FileStorage:PurposePolicies:application-package:AllowedExtensions:0"] = ".zip"
                 })
                 .Build();
-            var service = new PostgreSqlFileStorageService(
+            var service = FileStorageServiceTestFactory.Create(
                 dbContext,
                 new TusUploadProvider(),
                 new TestTusStoreAccessor(store),
@@ -660,7 +660,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task GetFileMetadata_ReadsStoredFileRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         dbContext.StoredFiles.Add(StoredFileRecord.Create(
             "file_123",
             "org-001",
@@ -702,7 +702,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task ListFiles_FiltersByPurposeUploaderTimeAndStatusAndReturnsTotal()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         var now = DateTimeOffset.UtcNow;
         dbContext.StoredFiles.AddRange(
             StoredFileRecord.Create(
@@ -847,7 +847,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             now.AddMinutes(-index),
             now.AddMinutes(-index))));
         await dbContext.SaveChangesAsync();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.ListFilesAsync(
             new ListFilesRequest("org-001", "prod", null, null, null, null, null, Skip: 0, Take: 500),
@@ -862,7 +862,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateUploadSession_NegativeExpectedSize_ReturnsBadRequestWithoutPersisting()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(
             CreateUploadRequest() with { ExpectedSizeBytes = -1 },
@@ -910,7 +910,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task GetUploadSessionIdForDownloadGrant_TenantMismatch_DoesNotRedeemGrant()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", grantId: "dgr_123");
         await dbContext.SaveChangesAsync();
 
@@ -928,7 +928,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task GetUploadSessionIdForDownloadGrant_AvailableFile_ConsumesGrantOnce()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", grantId: "dgr_123");
         await dbContext.SaveChangesAsync();
 
@@ -952,7 +952,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task GetUploadSessionIdForDownloadGrant_NonAvailableFile_DoesNotRedeemGrant()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         AddCompletedTusFileWithGrant(dbContext, "file_deleted", "ups_deleted", grantId: "dgr_deleted");
         await dbContext.SaveChangesAsync();
         var file = await dbContext.StoredFiles.SingleAsync();
@@ -1226,7 +1226,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             var configuration = new ConfigurationBuilder()
                 .AddConfiguration(FileStorageTestConfiguration.Default)
                 .Build();
-            var service = new PostgreSqlFileStorageService(
+            var service = FileStorageServiceTestFactory.Create(
                 dbContext,
                 new ServerProxyUploadProvider(),
                 configuration: configuration,
@@ -1269,7 +1269,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             var configuration = new ConfigurationBuilder()
                 .AddConfiguration(FileStorageTestConfiguration.Default)
                 .Build();
-            var service = new PostgreSqlFileStorageService(
+            var service = FileStorageServiceTestFactory.Create(
                 dbContext,
                 new ServerProxyUploadProvider(),
                 configuration: configuration,
@@ -1296,7 +1296,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     public async Task CreateDownloadGrant_InsertsDownloadGrantRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
         dbContext.StoredFiles.Add(StoredFileRecord.Create(
             "file_123",
             "org-001",
@@ -1474,7 +1474,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     private static PostgreSqlFileStorageService CreateSuccessfulCommitService(
         ApplicationDbContext dbContext,
         string checksum) =>
-        new(
+        FileStorageServiceTestFactory.Create(
             dbContext,
             new ServerProxyUploadProvider(),
             configuration: FileStorageTestConfiguration.Default,

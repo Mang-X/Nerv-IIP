@@ -11,6 +11,17 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AlterColumn<bool>(
+                name: "completed",
+                schema: "filestorage",
+                table: "upload_sessions",
+                type: "boolean",
+                nullable: false,
+                comment: "Expand-window compatibility flag written by both the legacy and durable commit protocols.",
+                oldClrType: typeof(bool),
+                oldType: "boolean",
+                oldComment: "Whether the upload session was completed.");
+
             migrationBuilder.AddColumn<string>(
                 name: "commit_checksum",
                 schema: "filestorage",
@@ -160,11 +171,6 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                     END;
                 """);
 
-            migrationBuilder.DropColumn(
-                name: "completed",
-                schema: "filestorage",
-                table: "upload_sessions");
-
             migrationBuilder.CreateIndex(
                 name: "IX_upload_sessions_commit_id",
                 schema: "filestorage",
@@ -182,26 +188,28 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                 name: "CK_upload_sessions_state_intent",
                 schema: "filestorage",
                 table: "upload_sessions",
-                sql: "(state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND (recovery_terminal_at_utc IS NULL OR (next_recovery_at_utc IS NULL AND last_recovery_error_code IS NOT NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)) AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR (state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)");
+                sql: "(completed AND state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (NOT completed AND state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND (recovery_terminal_at_utc IS NULL OR (next_recovery_at_utc IS NULL AND last_recovery_error_code IS NOT NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)) AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR (completed AND state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
+            migrationBuilder.Sql(
+                """
+                UPDATE filestorage.upload_sessions
+                SET completed = completed OR state = 'completed';
+                """);
+
+            migrationBuilder.AlterColumn<bool>(
                 name: "completed",
                 schema: "filestorage",
                 table: "upload_sessions",
                 type: "boolean",
                 nullable: false,
-                defaultValue: false,
-                comment: "Whether the upload session was completed.");
-
-            migrationBuilder.Sql(
-                """
-                UPDATE filestorage.upload_sessions
-                SET completed = state = 'completed';
-                """);
+                comment: "Whether the upload session was completed.",
+                oldClrType: typeof(bool),
+                oldType: "boolean",
+                oldComment: "Expand-window compatibility flag written by both the legacy and durable commit protocols.");
 
             migrationBuilder.DropIndex(
                 name: "IX_upload_sessions_commit_id",

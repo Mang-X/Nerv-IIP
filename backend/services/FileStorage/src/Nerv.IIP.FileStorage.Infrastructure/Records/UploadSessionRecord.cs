@@ -34,7 +34,9 @@ public sealed class UploadSessionRecord
     public string? ExecutionOwnerId { get; private set; }
     public DateTimeOffset? ExecutionLeaseUntilUtc { get; private set; }
     public long ConcurrencyVersion { get; private set; }
-    public bool Completed => string.Equals(State, UploadSessionState.Completed, StringComparison.Ordinal);
+    public bool LegacyCompleted { get; private set; }
+    public bool Completed => string.Equals(State, UploadSessionState.Completed, StringComparison.Ordinal)
+        || (LegacyCompleted && string.Equals(State, UploadSessionState.Open, StringComparison.Ordinal));
     public DateTimeOffset? CompletedAtUtc { get; private set; }
 
     public static UploadSessionRecord Create(
@@ -73,7 +75,8 @@ public sealed class UploadSessionRecord
             Provider = provider,
             CreatedAtUtc = createdAtUtc,
             ExpiresAtUtc = expiresAtUtc,
-            State = UploadSessionState.Open
+            State = UploadSessionState.Open,
+            LegacyCompleted = false
         };
     }
 
@@ -85,6 +88,7 @@ public sealed class UploadSessionRecord
         }
 
         State = UploadSessionState.Committing;
+        LegacyCompleted = false;
         CommitId = commitId;
         CommitChecksum = commitChecksum;
         CommittingAtUtc = committingAtUtc;
@@ -149,6 +153,7 @@ public sealed class UploadSessionRecord
         }
 
         State = UploadSessionState.Open;
+        LegacyCompleted = false;
         CommitId = null;
         CommitChecksum = null;
         CommittingAtUtc = null;
@@ -165,6 +170,7 @@ public sealed class UploadSessionRecord
     public void MarkCompleted(DateTimeOffset completedAtUtc)
     {
         State = UploadSessionState.Completed;
+        LegacyCompleted = true;
         CompletedAtUtc = completedAtUtc;
         NextRecoveryAtUtc = null;
         LastRecoveryErrorCode = null;

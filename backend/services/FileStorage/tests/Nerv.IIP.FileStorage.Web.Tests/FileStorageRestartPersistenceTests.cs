@@ -1,4 +1,5 @@
 using Npgsql;
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http;
@@ -89,12 +90,14 @@ public sealed class FileStorageRestartPersistenceTests
                 Assert.Null(migratedOpen.CommitId);
                 var migratedOrphan = migratedUploadStates.Single(x => x.UploadSessionId == "legacy-upload-orphan");
                 Assert.Equal(UploadSessionState.Committing, migratedOrphan.State);
+                Assert.True(migratedOrphan.LegacyCompleted);
+                Assert.False(migratedOrphan.Completed);
                 Assert.StartsWith("legacy_", migratedOrphan.CommitId, StringComparison.Ordinal);
                 Assert.Equal($"sha256:{new string('a', 64)}", migratedOrphan.CommitChecksum);
                 Assert.Null(migratedOrphan.CompletedAtUtc);
                 Assert.NotNull(migratedOrphan.StorageActionStartedAtUtc);
 
-                var recoveryService = new PostgreSqlFileStorageService(
+                var recoveryService = FileStorageServiceTestFactory.Create(
                     migrationDb,
                     new ServerProxyUploadProvider(),
                     configuration: migrationScope.ServiceProvider.GetRequiredService<IConfiguration>(),
@@ -104,7 +107,7 @@ public sealed class FileStorageRestartPersistenceTests
                     executionLeaseManager: migrationScope.ServiceProvider.GetRequiredService<UploadCommitExecutionLeaseManager>());
                 var recovery = new UploadCommitRecoveryProcessor(
                     migrationDb,
-                    recoveryService,
+                    FileStorageServiceTestFactory.CreateRecoveryScopeFactory(recoveryService),
                     migrationScope.ServiceProvider.GetRequiredService<TimeProvider>(),
                     Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadCommitRecoveryProcessor>.Instance);
                 Assert.Equal(new UploadCommitRecoveryResult(1, 0, 1), await recovery.RunOnceAsync(CancellationToken.None));
@@ -184,6 +187,7 @@ public sealed class FileStorageRestartPersistenceTests
             Assert.NotNull(usage);
             Assert.Equal(4096, usage.UsedBytes);
             Assert.True(persistedUploadSession.Completed);
+            Assert.True(persistedUploadSession.LegacyCompleted);
             Assert.Equal("completed", persistedUploadSession.State);
             Assert.False(string.IsNullOrWhiteSpace(persistedUploadSession.CommitId));
             Assert.NotNull(persistedUploadSession.CommittingAtUtc);
@@ -205,7 +209,7 @@ public sealed class FileStorageRestartPersistenceTests
         var storage = new BlockingRealPostgresCommitStorage();
         var configuration = firstScope.ServiceProvider.GetRequiredService<IConfiguration>();
         var clock = firstScope.ServiceProvider.GetRequiredService<TimeProvider>();
-        var first = new PostgreSqlFileStorageService(
+        var first = FileStorageServiceTestFactory.Create(
             firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new ServerProxyUploadProvider(),
             configuration: configuration,
@@ -213,7 +217,7 @@ public sealed class FileStorageRestartPersistenceTests
             commitStorage: storage,
             gateRegistry: new UploadSessionGateRegistry(),
             executionLeaseManager: firstScope.ServiceProvider.GetRequiredService<UploadCommitExecutionLeaseManager>());
-        var second = new PostgreSqlFileStorageService(
+        var second = FileStorageServiceTestFactory.Create(
             secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new ServerProxyUploadProvider(),
             configuration: configuration,
@@ -253,6 +257,111 @@ public sealed class FileStorageRestartPersistenceTests
         Assert.Single(await evidenceDb.StoredFiles.Where(x => x.FileId == created.FileId).ToArrayAsync());
         var completed = await evidenceDb.UploadSessions.SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
         Assert.Equal(UploadSessionState.Completed, completed.State);
+    }
+
+    [FileStorageRealPostgresFact]
+    public async Task Expand_migration_keeps_legacy_completed_write_readable_by_new_protocol()
+    {
+        await ResetFileStorageSchemaAsync();
+        await using var factory = CreateFactory(LaneConnectionString, autoMigrate: true);
+        _ = factory.CreateClient();
+
+        await using (var connection = new NpgsqlConnection(LaneConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                INSERT INTO filestorage.stored_files (
+                    file_id, organization_id, environment_id, owner_service, owner_type, owner_id,
+                    file_purpose, file_name, content_type, size_bytes, checksum, object_key, status,
+                    created_at_utc, completed_at_utc)
+                VALUES (
+                    'file_legacy_expand', 'org-expand', 'production', 'legacy', 'attachment', 'owner-expand',
+                    'attachment', 'expand.txt', 'text/plain', 5, NULL,
+                    'org-expand/file_legacy_expand', 'available', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+                INSERT INTO filestorage.upload_sessions (
+                    upload_session_id, file_id, organization_id, environment_id, owner_service, owner_type,
+                    owner_id, file_purpose, file_name, content_type, expected_size_bytes, checksum, object_key,
+                    provider, created_at_utc, expires_at_utc, completed, completed_at_utc)
+                VALUES (
+                    'ups_legacy_expand', 'file_legacy_expand', 'org-expand', 'production', 'legacy', 'attachment',
+                    'owner-expand', 'attachment', 'expand.txt', 'text/plain', 5, NULL,
+                    'org-expand/file_legacy_expand', 'server-proxy', CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP + INTERVAL '1 hour', TRUE, CURRENT_TIMESTAMP);
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var session = await db.UploadSessions.AsNoTracking().SingleAsync(x => x.UploadSessionId == "ups_legacy_expand");
+        Assert.True(session.LegacyCompleted);
+        Assert.True(session.Completed);
+        Assert.Equal(UploadSessionState.Open, session.State);
+
+        var result = await scope.ServiceProvider.GetRequiredService<IFileStorageService>().CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-expand", "production", "attachment", null, 5),
+            CancellationToken.None);
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        var mutationRan = false;
+        var mutation = await scope.ServiceProvider.GetRequiredService<IUploadSessionMutationGate>()
+            .ExecutePatchMutationAsync(
+                session.UploadSessionId,
+                _ =>
+                {
+                    mutationRan = true;
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        Assert.Equal(UploadSessionMutationResult.NotOpen, mutation);
+        Assert.False(mutationRan);
+    }
+
+    [FileStorageRealPostgresFact]
+    public async Task Recovery_batch_prioritizes_never_attempted_intent_before_due_retries()
+    {
+        await ResetFileStorageSchemaAsync();
+        await using var factory = CreateFactory(LaneConnectionString, autoMigrate: true);
+        _ = factory.CreateClient();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+        for (var index = 0; index < 25; index++)
+        {
+            var retry = CreateConstraintSession(
+                $"ups_due_retry_{index:D2}",
+                $"file_due_retry_{index:D2}",
+                $"org-constraint/file_due_retry_{index:D2}");
+            retry.BeginCommit($"cmt_due_retry_{index:D2}", null, now.AddMinutes(-2));
+            retry.RecordRecoveryFailure("retryable", now.AddMinutes(-1));
+            db.UploadSessions.Add(retry);
+        }
+
+        var fresh = CreateConstraintSession(
+            "ups_never_attempted",
+            "file_never_attempted",
+            "org-constraint/file_never_attempted");
+        fresh.BeginCommit("cmt_never_attempted", null, now.AddMinutes(-1));
+        db.UploadSessions.Add(fresh);
+        await db.SaveChangesAsync();
+
+        var processed = new ConcurrentBag<string>();
+        var services = new ServiceCollection();
+        services.AddScoped<IFileStorageService>(_ => new RecordingRecoveryFileStorageService(processed));
+        await using var recoveryProvider = services.BuildServiceProvider();
+        var processor = new UploadCommitRecoveryProcessor(
+            db,
+            recoveryProvider.GetRequiredService<IServiceScopeFactory>(),
+            scope.ServiceProvider.GetRequiredService<TimeProvider>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadCommitRecoveryProcessor>.Instance);
+
+        var result = await processor.RunOnceAsync(CancellationToken.None);
+
+        Assert.Equal(25, result.Examined);
+        Assert.Contains("ups_never_attempted", processed);
     }
 
     [FileStorageRealPostgresFact]
@@ -464,6 +573,39 @@ public sealed class FileStorageRestartPersistenceTests
                 intent.ExpectedSizeBytes,
                 $"sha256:{new string('c', 64)}");
         }
+    }
+
+    private sealed class RecordingRecoveryFileStorageService(ConcurrentBag<string> processed) : IFileStorageService
+    {
+        public Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+            string uploadSessionId,
+            CompleteUploadSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            processed.Add(uploadSessionId);
+            return Task.FromResult(FileStorageResult<FileMetadataResponse>.ServiceUnavailable("恢复延后探针。"));
+        }
+
+        public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+            CreateUploadSessionRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
+            string fileId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileListResponse>> ListFilesAsync(
+            ListFilesRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileStorageUsageResponse>> GetUsageAsync(
+            FileStorageUsageRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+            string fileId,
+            CreateDownloadGrantRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private static UploadSessionRecord CreateConstraintSession(

@@ -1,6 +1,4 @@
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.FileStorage.Infrastructure;
-using Nerv.IIP.FileStorage.Infrastructure.Records;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
@@ -13,12 +11,17 @@ public sealed class UploadCommitExecutionLostException : Exception
 }
 
 public sealed class UploadCommitExecutionLeaseManager(
-    IDbContextFactory<ApplicationDbContext> dbContextFactory,
+    UploadCommitExecutionLeaseStore leaseStore,
     TimeProvider timeProvider,
     ILogger<UploadCommitExecutionLeaseManager> logger)
 {
-    public static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan RenewalInterval = TimeSpan.FromMinutes(1);
+
+    public Task<bool> TryClaimAsync(
+        string uploadSessionId,
+        string executionOwnerId,
+        CancellationToken cancellationToken) =>
+        leaseStore.TryClaimAsync(uploadSessionId, executionOwnerId, cancellationToken);
 
     public async Task<UploadCommitStorageResult> ExecuteWithRenewalAsync(
         string uploadSessionId,
@@ -58,15 +61,7 @@ public sealed class UploadCommitExecutionLeaseManager(
         string executionOwnerId,
         CancellationToken cancellationToken)
     {
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await dbContext.UploadSessions
-            .AsNoTracking()
-            .AnyAsync(
-                x => x.UploadSessionId == uploadSessionId
-                    && x.State == UploadSessionState.Committing
-                    && x.ExecutionOwnerId == executionOwnerId
-                    && x.ExecutionLeaseUntilUtc > timeProvider.GetUtcNow(),
-                cancellationToken);
+        return await leaseStore.StillOwnsAsync(uploadSessionId, executionOwnerId, cancellationToken);
     }
 
     private async Task RenewUntilCancelledAsync(
@@ -77,7 +72,7 @@ public sealed class UploadCommitExecutionLeaseManager(
         while (true)
         {
             await Task.Delay(RenewalInterval, timeProvider, cancellationToken);
-            if (!await TryRenewAsync(uploadSessionId, executionOwnerId, cancellationToken))
+            if (!await leaseStore.TryRenewAsync(uploadSessionId, executionOwnerId, cancellationToken))
             {
                 logger.LogWarning(
                     "FileStorage 上传提交执行租约续租失败；UploadSessionId={UploadSessionId}，ErrorCode={ErrorCode}。",
@@ -88,39 +83,4 @@ public sealed class UploadCommitExecutionLeaseManager(
         }
     }
 
-    private async Task<bool> TryRenewAsync(
-        string uploadSessionId,
-        string executionOwnerId,
-        CancellationToken cancellationToken)
-    {
-        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var now = timeProvider.GetUtcNow();
-        var leaseUntil = now.Add(LeaseDuration);
-        if (dbContext.Database.IsRelational())
-        {
-            return await dbContext.UploadSessions
-                .Where(x => x.UploadSessionId == uploadSessionId
-                    && x.State == UploadSessionState.Committing
-                    && x.ExecutionOwnerId == executionOwnerId
-                    && x.ExecutionLeaseUntilUtc > now)
-                .ExecuteUpdateAsync(
-                    setters => setters.SetProperty(x => x.ExecutionLeaseUntilUtc, leaseUntil),
-                    cancellationToken) == 1;
-        }
-
-        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(
-            x => x.UploadSessionId == uploadSessionId,
-            cancellationToken);
-        if (session is null
-            || !string.Equals(session.State, UploadSessionState.Committing, StringComparison.Ordinal)
-            || !string.Equals(session.ExecutionOwnerId, executionOwnerId, StringComparison.Ordinal)
-            || session.ExecutionLeaseUntilUtc <= now)
-        {
-            return false;
-        }
-
-        session.RenewExecutionLease(leaseUntil);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return true;
-    }
 }

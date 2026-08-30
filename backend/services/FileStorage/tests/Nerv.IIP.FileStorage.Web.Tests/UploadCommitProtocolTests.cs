@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -90,7 +91,7 @@ public sealed class UploadCommitProtocolTests
         var recoveryStorage = new ThrowingStorage();
         var processor = new UploadCommitRecoveryProcessor(
             db,
-            CreateService(db, recoveryStorage),
+            FileStorageServiceTestFactory.CreateRecoveryScopeFactory(CreateService(db, recoveryStorage)),
             TimeProvider.System,
             NullLogger<UploadCommitRecoveryProcessor>.Instance);
         Assert.Equal(new UploadCommitRecoveryResult(0, 0, 0, 1), await processor.RunOnceAsync(CancellationToken.None));
@@ -136,6 +137,134 @@ public sealed class UploadCommitProtocolTests
     }
 
     [Fact]
+    public async Task ExistingStoredFileWithDifferentObjectKey_FailsClosedWithoutStorageExecution()
+    {
+        await using var db = CreateDbContext();
+        var session = CreateSession("ups_existing_file_mismatch");
+        session.BeginCommit("cmt_existing_file_mismatch", null, DateTimeOffset.UtcNow);
+        db.UploadSessions.Add(session);
+        db.StoredFiles.Add(StoredFileRecord.Create(
+            session.FileId,
+            session.OrganizationId,
+            session.EnvironmentId,
+            session.OwnerService,
+            session.OwnerType,
+            session.OwnerId,
+            session.FilePurpose,
+            session.FileName,
+            session.ContentType,
+            session.ExpectedSizeBytes,
+            $"sha256:{new string('a', 64)}",
+            "org-001/different-final-object",
+            Nerv.IIP.FileStorage.Domain.FileStorageFileStatus.Available,
+            session.CreatedAtUtc,
+            DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+        var storage = new ThrowingStorage();
+        var service = CreateService(db, storage);
+
+        var result = await service.CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, 5),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
+        Assert.Equal(0, storage.Attempts);
+        var retained = await db.UploadSessions.SingleAsync();
+        Assert.Equal(UploadSessionState.Committing, retained.State);
+        Assert.Equal("existing-file-intent-mismatch", retained.LastRecoveryErrorCode);
+        Assert.NotNull(retained.RecoveryTerminalAtUtc);
+    }
+
+    [Fact]
+    public async Task CompleteWaitingForPatchGate_RechecksExpiryBeforeTx1()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var db = CreateDbContext();
+        var registry = new UploadSessionGateRegistry();
+        var session = UploadSessionRecord.Create(
+            "ups_expiry_gate",
+            "file_expiry_gate",
+            "org-001",
+            "prod",
+            "AppHub",
+            "Attachment",
+            "owner-1",
+            "attachment",
+            "a.txt",
+            "text/plain",
+            5,
+            null,
+            "org-001/file_expiry_gate",
+            ServerProxyUploadProvider.Name,
+            clock.GetUtcNow(),
+            clock.GetUtcNow().AddMinutes(1));
+        db.UploadSessions.Add(session);
+        await db.SaveChangesAsync();
+        var service = FileStorageServiceTestFactory.Create(
+            db,
+            new ServerProxyUploadProvider(),
+            configuration: FileStorageTestConfiguration.Default,
+            timeProvider: clock,
+            commitStorage: new ThrowingStorage(),
+            gateRegistry: registry);
+        var patchGate = await registry.EnterPatchCommitAsync(session.UploadSessionId, CancellationToken.None);
+
+        var completion = service.CompleteUploadSessionAsync(
+            session.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, 5),
+            CancellationToken.None);
+        Assert.False(completion.IsCompleted);
+        clock.Advance(TimeSpan.FromMinutes(2));
+        await patchGate.DisposeAsync();
+
+        var result = await completion;
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        var retained = await db.UploadSessions.SingleAsync();
+        Assert.Equal(UploadSessionState.Open, retained.State);
+        Assert.Null(retained.CommitId);
+    }
+
+    [Fact]
+    public async Task RecoveryBatch_UsesBoundedIndependentScopesAndContinuesAfterOneFailure()
+    {
+        await using var db = CreateDbContext();
+        for (var index = 0; index < 5; index++)
+        {
+            var session = CreateSession($"ups_recovery_parallel_{index}");
+            session.BeginCommit($"cmt_recovery_parallel_{index}", null, DateTimeOffset.UtcNow);
+            db.UploadSessions.Add(session);
+        }
+        await db.SaveChangesAsync();
+
+        var probe = new RecoveryBatchProbe("ups_recovery_parallel_1");
+        var services = new ServiceCollection();
+        services.AddScoped<IFileStorageService>(_ => new ProbedRecoveryFileStorageService(probe));
+        await using var provider = services.BuildServiceProvider();
+        var processor = new UploadCommitRecoveryProcessor(
+            db,
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            TimeProvider.System,
+            NullLogger<UploadCommitRecoveryProcessor>.Instance);
+
+        var run = processor.RunOnceAsync(CancellationToken.None);
+        try
+        {
+            await probe.FourEntered;
+            Assert.Equal(4, probe.MaxActive);
+            Assert.Equal(4, probe.Processed.Count);
+        }
+        finally
+        {
+            probe.Release();
+        }
+
+        Assert.Equal(new UploadCommitRecoveryResult(5, 0, 5), await run);
+        Assert.Equal(5, probe.Instances);
+        Assert.Equal(5, probe.Processed.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     public async Task ActiveStorageExecution_RenewsLeaseAndPreventsSecondOwnerAfterOriginalExpiry()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -146,10 +275,7 @@ public sealed class UploadCommitProtocolTests
             .Options;
         await using var firstDb = new ApplicationDbContext(options);
         await using var secondDb = new ApplicationDbContext(options);
-        var leaseManager = new UploadCommitExecutionLeaseManager(
-            new TestDbContextFactory(options),
-            clock,
-            NullLogger<UploadCommitExecutionLeaseManager>.Instance);
+        var leaseManager = FileStorageServiceTestFactory.CreateLeaseManager(firstDb, clock);
         var session = CreateSession("ups_lease");
         session.BeginCommit("cmt_lease", null, clock.GetUtcNow());
         firstDb.UploadSessions.Add(session);
@@ -207,10 +333,7 @@ public sealed class UploadCommitProtocolTests
         ownerDb.UploadSessions.Add(session);
         await ownerDb.SaveChangesAsync();
         var storage = new BlockingStorage();
-        var leaseManager = new UploadCommitExecutionLeaseManager(
-            new TestDbContextFactory(options),
-            clock,
-            NullLogger<UploadCommitExecutionLeaseManager>.Instance);
+        var leaseManager = FileStorageServiceTestFactory.CreateLeaseManager(ownerDb, clock);
         var service = CreateService(ownerDb, storage, clock, leaseManager);
         var completion = service.CompleteUploadSessionAsync(
             session.UploadSessionId,
@@ -275,7 +398,7 @@ public sealed class UploadCommitProtocolTests
             db.UploadSessions.Add(session);
             await db.SaveChangesAsync();
 
-            var service = new PostgreSqlFileStorageService(
+            var service = FileStorageServiceTestFactory.Create(
                 db,
                 new ServerProxyUploadProvider(),
                 configuration: FileStorageTestConfiguration.Default,
@@ -283,7 +406,7 @@ public sealed class UploadCommitProtocolTests
                 gateRegistry: scope.ServiceProvider.GetRequiredService<UploadSessionGateRegistry>());
             var processor = new UploadCommitRecoveryProcessor(
                 db,
-                service,
+                FileStorageServiceTestFactory.CreateRecoveryScopeFactory(service),
                 clock,
                 NullLogger<UploadCommitRecoveryProcessor>.Instance);
 
@@ -331,7 +454,7 @@ public sealed class UploadCommitProtocolTests
         var recoveringService = CreateService(db, new VerifiedStorage($"sha256:{new string('c', 64)}"), clock);
         var processor = new UploadCommitRecoveryProcessor(
             db,
-            recoveringService,
+            FileStorageServiceTestFactory.CreateRecoveryScopeFactory(recoveringService),
             clock,
             NullLogger<UploadCommitRecoveryProcessor>.Instance);
         var recovered = await processor.RunOnceAsync(CancellationToken.None);
@@ -348,7 +471,7 @@ public sealed class UploadCommitProtocolTests
         IUploadCommitStorage storage,
         TimeProvider? timeProvider = null,
         UploadCommitExecutionLeaseManager? executionLeaseManager = null) =>
-        new(
+        FileStorageServiceTestFactory.Create(
             db,
             new ServerProxyUploadProvider(),
             configuration: FileStorageTestConfiguration.Default,
@@ -363,7 +486,7 @@ public sealed class UploadCommitProtocolTests
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition)
     {
-        for (var attempt = 0; attempt < 100; attempt++)
+        for (var attempt = 0; attempt < 10_000; attempt++)
         {
             if (await condition())
             {
@@ -373,7 +496,7 @@ public sealed class UploadCommitProtocolTests
             await Task.Yield();
         }
 
-        Assert.Fail("等待提交执行租约续租超时。");
+        Assert.Fail("等待异步协议条件超出确定性迭代上限。");
     }
 
     private static UploadSessionRecord CreateSession(string uploadSessionId) =>
@@ -456,9 +579,90 @@ public sealed class UploadCommitProtocolTests
         }
     }
 
-    private sealed class TestDbContextFactory(DbContextOptions<ApplicationDbContext> options)
-        : IDbContextFactory<ApplicationDbContext>
+    private sealed class RecoveryBatchProbe(string throwingUploadSessionId)
     {
-        public ApplicationDbContext CreateDbContext() => new(options);
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource fourEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int active;
+        private int maxActive;
+        private int instances;
+
+        public ConcurrentBag<string> Processed { get; } = [];
+        public int MaxActive => Volatile.Read(ref maxActive);
+        public int Instances => Volatile.Read(ref instances);
+        public Task FourEntered => fourEntered.Task;
+
+        public void RecordInstance() => Interlocked.Increment(ref instances);
+
+        public async Task ExecuteAsync(string uploadSessionId, CancellationToken cancellationToken)
+        {
+            Processed.Add(uploadSessionId);
+            var current = Interlocked.Increment(ref active);
+            while (current > Volatile.Read(ref maxActive))
+            {
+                Interlocked.CompareExchange(ref maxActive, current, Volatile.Read(ref maxActive));
+            }
+            if (current == 4)
+            {
+                fourEntered.TrySetResult();
+            }
+
+            try
+            {
+                await release.Task.WaitAsync(cancellationToken);
+                if (string.Equals(uploadSessionId, throwingUploadSessionId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("可达的单项数据库失败探针。");
+                }
+            }
+            finally
+            {
+                Interlocked.Decrement(ref active);
+            }
+        }
+
+        public void Release() => release.TrySetResult();
     }
+
+    private sealed class ProbedRecoveryFileStorageService : IFileStorageService
+    {
+        private readonly RecoveryBatchProbe probe;
+
+        public ProbedRecoveryFileStorageService(RecoveryBatchProbe probe)
+        {
+            this.probe = probe;
+            probe.RecordInstance();
+        }
+
+        public async Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+            string uploadSessionId,
+            CompleteUploadSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            await probe.ExecuteAsync(uploadSessionId, cancellationToken);
+            return FileStorageResult<FileMetadataResponse>.ServiceUnavailable("恢复延后探针。");
+        }
+
+        public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+            CreateUploadSessionRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
+            string fileId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileListResponse>> ListFilesAsync(
+            ListFilesRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileStorageUsageResponse>> GetUsageAsync(
+            FileStorageUsageRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+            string fileId,
+            CreateDownloadGrantRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
 }

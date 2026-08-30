@@ -35,17 +35,18 @@ public sealed class UploadSessionMutationGate(
         await using var gate = await registry.EnterPatchCommitAsync(uploadSessionId, cancellationToken);
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var state = await dbContext.UploadSessions
+        var session = await dbContext.UploadSessions
             .AsNoTracking()
             .Where(x => x.UploadSessionId == uploadSessionId)
-            .Select(x => x.State)
+            .Select(x => new { x.State, x.LegacyCompleted })
             .SingleOrDefaultAsync(cancellationToken);
-        if (state is null)
+        if (session is null)
         {
             return UploadSessionMutationResult.NotFound;
         }
 
-        if (!string.Equals(state, UploadSessionState.Open, StringComparison.Ordinal))
+        if (session.LegacyCompleted
+            || !string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
         {
             return UploadSessionMutationResult.NotOpen;
         }

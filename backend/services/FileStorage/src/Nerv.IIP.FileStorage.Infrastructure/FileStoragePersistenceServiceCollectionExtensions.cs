@@ -25,6 +25,7 @@ public static class FileStoragePersistenceServiceCollectionExtensions
         services.AddScoped<IDbContextFactory<ApplicationDbContext>>(services =>
             new FileStorageDbContextFactory(
                 services.GetRequiredService<DbContextOptions<ApplicationDbContext>>()));
+        services.AddScoped<UploadCommitExecutionLeaseStore>();
         services.AddScoped<FileStorageDatabaseMigrationRunner>();
 
         return services;

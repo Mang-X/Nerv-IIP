@@ -61,7 +61,7 @@ public sealed class FileStorageTusProviderTests
     public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
@@ -461,7 +461,7 @@ public sealed class FileStorageTusProviderTests
     public async Task PostgreSqlCreateUploadSession_WithTusProvider_PersistsTusProvider()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
