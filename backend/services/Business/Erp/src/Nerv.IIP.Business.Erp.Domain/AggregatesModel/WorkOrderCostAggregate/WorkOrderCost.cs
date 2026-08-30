@@ -41,6 +41,10 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public string WorkOrderId { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
+    public string? SourceNcrId { get; private set; }
+    public string? SourceNcrCode { get; private set; }
+    public string? SourceWorkOrderId { get; private set; }
+    public bool IsRework => SourceNcrId is not null;
     public string? LaborCurrencyCode { get; private set; }
     public string? MachineOverheadCurrencyCode { get; private set; }
     public decimal CompletedQuantity { get; private set; }
@@ -66,6 +70,37 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
         => new(organizationId, environmentId, workOrderId, skuCode);
 
     public void AssignSku(string skuCode) => SkuCode = ErpText.Required(skuCode, nameof(skuCode));
+
+    public void AttributeRework(
+        string sourceNcrId,
+        string sourceNcrCode,
+        string sourceWorkOrderId,
+        string skuCode)
+    {
+        var normalizedSourceNcrId = ErpText.Required(sourceNcrId, nameof(sourceNcrId));
+        var normalizedSourceNcrCode = ErpText.Required(sourceNcrCode, nameof(sourceNcrCode));
+        var normalizedSourceWorkOrderId = ErpText.Required(sourceWorkOrderId, nameof(sourceWorkOrderId));
+        var normalizedSkuCode = ErpText.Required(skuCode, nameof(skuCode));
+
+        if (SourceNcrId is not null)
+        {
+            if (!string.Equals(SourceNcrId, normalizedSourceNcrId, StringComparison.Ordinal)
+                || !string.Equals(SourceNcrCode, normalizedSourceNcrCode, StringComparison.Ordinal)
+                || !string.Equals(SourceWorkOrderId, normalizedSourceWorkOrderId, StringComparison.Ordinal)
+                || !string.Equals(SkuCode, normalizedSkuCode, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Work order '{WorkOrderId}' already has a different rework cost origin.");
+            }
+
+            return;
+        }
+
+        SourceNcrId = normalizedSourceNcrId;
+        SourceNcrCode = normalizedSourceNcrCode;
+        SourceWorkOrderId = normalizedSourceWorkOrderId;
+        SkuCode = normalizedSkuCode;
+    }
 
     public bool TryFreezeLaborCurrency(string currencyCode)
     {

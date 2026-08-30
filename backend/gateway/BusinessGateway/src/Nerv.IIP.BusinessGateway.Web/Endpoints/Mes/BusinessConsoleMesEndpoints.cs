@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
@@ -2094,7 +2095,8 @@ internal static class MesDowntimeReasonNameEnricher
                 .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
                 .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
         }
-        catch (BusinessServiceProxyException exception) when (IsUnavailableReasonDirectory(exception.StatusCode))
+        catch (BusinessServiceProxyException exception) when (
+            BusinessConsoleReadEnrichmentFailurePolicy.CanDegrade(exception.StatusCode))
         {
             return [];
         }
@@ -2108,9 +2110,6 @@ internal static class MesDowntimeReasonNameEnricher
         }
     }
 
-    private static bool IsUnavailableReasonDirectory(System.Net.HttpStatusCode statusCode) =>
-        statusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.RequestTimeout
-        || (int)statusCode >= 500;
 }
 
 [Tags("Business Console MES")]

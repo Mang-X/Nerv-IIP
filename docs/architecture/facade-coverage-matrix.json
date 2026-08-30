@@ -720,6 +720,14 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-order-costs",
+      "operationId": "listErpWorkOrderCosts",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows a future ERP work-order cost analysis Business Console phase. Issue #2814 intentionally delivers service-side readback without Console/PDA computation or UI changes."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
       "operationId": "listErpWorkCenterMachineOverheadReconciliations",
       "classification": "deferred",
