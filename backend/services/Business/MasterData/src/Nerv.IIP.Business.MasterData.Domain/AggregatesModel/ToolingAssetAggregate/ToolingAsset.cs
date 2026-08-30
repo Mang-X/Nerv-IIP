@@ -162,10 +162,15 @@ public class ChangeoverMatrixEntry : Entity<ChangeoverMatrixEntryId>, IAggregate
         var now = DateTime.UtcNow;
         var entry = new ChangeoverMatrixEntry
         {
-            OrganizationId = Required(organizationId), EnvironmentId = Required(environmentId), WorkCenterCode = Required(workCenterCode),
+            OrganizationId = Required(organizationId),
+            EnvironmentId = Required(environmentId),
+            WorkCenterCode = Required(workCenterCode),
             SourceType = string.IsNullOrWhiteSpace(fromSkuCode) ? ChangeoverSourceType.ProductCategory : ChangeoverSourceType.Sku,
-            SourceCode = Required(fromSkuCode ?? fromProductCategoryCode!), ToSkuCode = Required(toSkuCode),
-            SetupMinutes = setupMinutes, CreatedAtUtc = now, UpdatedAtUtc = now
+            SourceCode = Required(fromSkuCode ?? fromProductCategoryCode!),
+            ToSkuCode = Required(toSkuCode),
+            SetupMinutes = setupMinutes,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
         };
         entry.requiredTooling.AddRange(tooling.Select(ChangeoverRequiredTooling.Create));
         return entry;
