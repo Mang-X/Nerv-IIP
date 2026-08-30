@@ -63,6 +63,14 @@ try {
     Assert-Contract ([string]::Equals((@($erpMember.expectedTestIdentities) -join "`n"), $erpIdentity, [StringComparison]::Ordinal)) 'The ERP labor-cost Redis/CAP member must freeze its transport identity.'
     Assert-Contract ([string]::Equals((@($erpMember.diagnosticSchemas) -join '|'), 'erp|cap', [StringComparison]::Ordinal)) 'The ERP labor-cost Redis/CAP member must restrict diagnostics to ERP and CAP schemas.'
 
+    $qualityMember = Import-NervRedisCapTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-rework-receipt-redis-cap' -RepositoryRoot $repoRoot
+    $qualityIdentity = 'Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres'
+    Assert-Contract ([string]::Equals([string]$qualityMember.service, 'Quality', [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must be owned by Quality.'
+    Assert-Contract ([string]::Equals([string]$qualityMember.tier, 'core', [StringComparison]::Ordinal) -and [string]::Equals([string]$qualityMember.status, 'active', [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must be active/core.'
+    Assert-Contract ([string]::Equals([string]$qualityMember.project, 'backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must target the Quality Web test project.'
+    Assert-Contract ([string]::Equals((@($qualityMember.expectedTestIdentities) -join "`n"), $qualityIdentity, [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must freeze its transport identity.'
+    Assert-Contract ([string]::Equals((@($qualityMember.diagnosticSchemas) -join '|'), 'quality|cap', [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must restrict diagnostics to Quality and CAP schemas.'
+
     $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
     Assert-Contract (-not $runnerContent.Contains('}.GetNewClosure()', [StringComparison]::Ordinal)) 'Runner callbacks must retain the runner script session state so hosted PowerShell can resolve Get-RedisKeys and Invoke-RedisCli.'
 

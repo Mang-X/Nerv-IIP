@@ -135,13 +135,16 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests",
@@ -178,6 +181,7 @@
         "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests",
         "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests"
       ],

@@ -55,6 +55,16 @@ public sealed class WorkCenterMachineOverheadRateEntityTypeConfiguration
                     "currency_code ~ '^[A-Z]{3}$' AND revision > 0");
             });
         builder.HasKey(x => x.Id);
+        builder.HasAlternateKey(x => new
+            {
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.WorkCenterId,
+                x.AccountingPeriodCode,
+                x.Revision,
+            })
+            .HasName("ak_wc_machine_overhead_rates_hard_scope");
         builder.Property(x => x.Id)
             .HasColumnName("id")
             .UseGuidVersion7ValueGenerator()

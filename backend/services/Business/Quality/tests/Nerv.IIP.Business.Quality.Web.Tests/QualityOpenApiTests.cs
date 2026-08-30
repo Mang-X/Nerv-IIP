@@ -68,6 +68,16 @@ public sealed class QualityOpenApiTests
         AssertQueryParameter(scrapReasonOperation, "take", required: false);
 
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
+        AssertRequestSchemaDeprecatedProperty(
+            document,
+            "/api/business/v1/quality/ncrs/{ncrId}/close",
+            "post",
+            "reworkWorkOrderId");
+        AssertSchemaProperties(
+            document,
+            "NervIIPBusinessQualityWebEndpointsNonconformanceReportsNonconformanceReportDto",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
         AssertSchemaProperties(
             document,
             "NervIIPBusinessQualityWebEndpointsInspectionPlansCreateInspectionPlanRequest",
@@ -104,6 +114,21 @@ public sealed class QualityOpenApiTests
             .GetProperty(schemaRef.Split('/')[^1]);
         Assert.Contains("reason", schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertRequestSchemaDeprecatedProperty(
+        JsonDocument document,
+        string route,
+        string method,
+        string propertyName)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var property = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaRef.Split('/')[^1]).GetProperty("properties").GetProperty(propertyName);
+
+        Assert.True(property.GetProperty("deprecated").GetBoolean());
     }
 
     private static void AssertQueryParameter(JsonElement operation, string name, bool required)

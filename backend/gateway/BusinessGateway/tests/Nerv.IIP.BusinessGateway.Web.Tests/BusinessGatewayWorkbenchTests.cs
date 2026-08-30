@@ -308,7 +308,12 @@ public sealed class BusinessGatewayWorkbenchTests
 
             return Task.FromResult(
                 requirement.PermissionCode == BusinessGatewayPermissions.MesWorkOrdersRead
-                    ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
+                    ? BusinessGatewayAuthorizationResult.Allowed(
+                        "user-admin",
+                        "user",
+                        "admin",
+                        requirement.OrganizationId,
+                        requirement.EnvironmentId)
                     : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
         }
     }

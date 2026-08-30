@@ -8,6 +8,249 @@ public sealed class MesActualTimeSettlementContractTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void Settlement_v2_json_distinguishes_available_zero_from_unavailable()
+    {
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
+        var integrationEvent = new MesOperationActualTimeSettledV2IntegrationEvent(
+            "evt-settled-2", MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V2, completedAtUtc, MesIntegrationEventSources.BusinessMes,
+            "corr-settled-2", "cause-settled-2", "org-001", "env-dev", "system:mes",
+            "operation-actual-time-settled:org-001:env-dev:OP-001:3",
+            new OperationActualTimeSettledV2Payload(
+                "WO-001", "OP-001", "WC-001", 3, completedAtUtc,
+                0, 0, [], "DEVICE-001", MesMachineTimeFactStatus.Available, 0,
+                MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1));
+
+        var json = JsonSerializer.Serialize(integrationEvent, JsonOptions);
+        var roundTripped = JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(json, JsonOptions);
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal(MesIntegrationEventVersions.V2, roundTripped.EventVersion);
+        Assert.Equal("DEVICE-001", roundTripped.Payload.DeviceAssetId);
+        Assert.Equal(MesMachineTimeFactStatus.Available, roundTripped.Payload.MachineTimeStatus);
+        Assert.Contains("\"machineTimeStatus\":\"available\"", json, StringComparison.Ordinal);
+        Assert.Equal(0, roundTripped.Payload.BillableMachineTicks);
+        Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, roundTripped.Payload.MachineTimeBasisCode);
+        Assert.Contains("\"billableMachineTicks\":0", json, StringComparison.Ordinal);
+
+        var unavailableEvent = integrationEvent with
+        {
+            EventId = "evt-settled-unavailable-2",
+            Payload = integrationEvent.Payload with
+            {
+                DeviceAssetId = null,
+                MachineTimeStatus = MesMachineTimeFactStatus.Unavailable,
+                BillableMachineTicks = null,
+                MachineTimeBasisCode = null,
+            },
+        };
+        var unavailableJson = JsonSerializer.Serialize(unavailableEvent, JsonOptions);
+        var unavailableRoundTripped = JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(unavailableJson, JsonOptions);
+
+        Assert.NotNull(unavailableRoundTripped);
+        Assert.Equal(MesMachineTimeFactStatus.Unavailable, unavailableRoundTripped.Payload.MachineTimeStatus);
+        Assert.Null(unavailableRoundTripped.Payload.BillableMachineTicks);
+        Assert.Contains("\"machineTimeStatus\":\"unavailable\"", unavailableJson, StringComparison.Ordinal);
+        Assert.Contains("\"billableMachineTicks\":null", unavailableJson, StringComparison.Ordinal);
+
+        var notApplicableJson = JsonSerializer.Serialize(
+            unavailableEvent with
+            {
+                EventId = "evt-settled-not-applicable-2",
+                Payload = unavailableEvent.Payload with
+                {
+                    MachineTimeStatus = MesMachineTimeFactStatus.NotApplicable,
+                },
+            },
+            JsonOptions);
+        var notApplicableRoundTripped = JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(
+            notApplicableJson,
+            JsonOptions);
+
+        Assert.NotNull(notApplicableRoundTripped);
+        Assert.Equal(MesMachineTimeFactStatus.NotApplicable, notApplicableRoundTripped.Payload.MachineTimeStatus);
+        Assert.Contains("\"machineTimeStatus\":\"notApplicable\"", notApplicableJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Legacy_v1_json_without_machine_fact_fields_remains_readable_as_unavailable()
+    {
+        const string json = """
+            {"eventId":"evt-v1","eventType":"mes.OperationActualTimeSettled","eventVersion":1,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v1","causationId":"cause-v1","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v1","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":36000000000,"actualMachineTicks":36000000000,"coveredProductionReportNos":[]}}
+            """;
+
+        var roundTripped = JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(json, JsonOptions);
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal(MesIntegrationEventVersions.V1, roundTripped.EventVersion);
+        var serialized = JsonSerializer.Serialize(roundTripped, JsonOptions);
+        Assert.DoesNotContain("deviceAssetId", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("machineTimeStatus", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("billableMachineTicks", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("machineTimeBasisCode", serialized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Void_v2_json_preserves_the_original_billable_machine_snapshot()
+    {
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
+        var voidedAtUtc = completedAtUtc.AddMinutes(10);
+        var integrationEvent = new MesOperationActualTimeSettlementVoidedV2IntegrationEvent(
+            "evt-voided-2", MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V2, voidedAtUtc, MesIntegrationEventSources.BusinessMes,
+            "corr-voided-2", "cause-voided-2", "org-001", "env-dev", "system:mes",
+            "operation-actual-time-settlement-voided:org-001:env-dev:OP-001:3",
+            new OperationActualTimeSettlementVoidedV2Payload(
+                "WO-001", "OP-001", "WC-001", 3, completedAtUtc, voidedAtUtc,
+                36_000_000_000, 36_000_000_000, [], "DEVICE-001",
+                MesMachineTimeFactStatus.Available, 36_000_000_000,
+                MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1));
+
+        var json = JsonSerializer.Serialize(integrationEvent, JsonOptions);
+        var roundTripped = JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(json, JsonOptions);
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal("DEVICE-001", roundTripped.Payload.DeviceAssetId);
+        Assert.Equal(MesMachineTimeFactStatus.Available, roundTripped.Payload.MachineTimeStatus);
+        Assert.Equal(36_000_000_000, roundTripped.Payload.BillableMachineTicks);
+        Assert.Equal(MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1, roundTripped.Payload.MachineTimeBasisCode);
+    }
+
+    [Fact]
+    public void Settlement_v2_rejects_numeric_machine_time_status()
+    {
+        const string json = """
+            {"eventId":"evt-v2","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],"deviceAssetId":"DEVICE-001","machineTimeStatus":0,"billableMachineTicks":0,"machineTimeBasisCode":"single-device-active-minus-explicit-pause-v1"}}
+            """;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Settlement_v2_rejects_unknown_machine_time_status_string()
+    {
+        const string json = """
+            {"eventId":"evt-v2","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],"deviceAssetId":"DEVICE-001","machineTimeStatus":"futureStatus","billableMachineTicks":0,"machineTimeBasisCode":"single-device-active-minus-explicit-pause-v1"}}
+            """;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Void_v2_rejects_missing_machine_fact()
+    {
+        const string json = """
+            {"eventId":"evt-void-v2","eventType":"mes.OperationActualTimeSettlementVoided","eventVersion":2,"occurredAtUtc":"2026-08-26T03:10:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","voidedAtUtc":"2026-08-26T03:10:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[]}}
+            """;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("\"machineTimeStatus\":\"available\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("\"deviceAssetId\":\"DEVICE-001\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"billableMachineTicks\":0")]
+    [InlineData("\"machineTimeStatus\":\"unavailable\",\"billableMachineTicks\":0")]
+    [InlineData("\"machineTimeStatus\":\"notApplicable\",\"deviceAssetId\":\"DEVICE-001\"")]
+    public void Settlement_v2_rejects_incomplete_or_contradictory_machine_fact(string machineFactJson)
+    {
+        var json = """
+            {"eventId":"evt-v2-invalid","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],__MACHINE_FACT__}}
+            """.Replace("__MACHINE_FACT__", machineFactJson, StringComparison.Ordinal);
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Settlement_v2_requires_machine_fact_while_v1_rejects_explicit_null_v2_properties()
+    {
+        const string v2WithoutFact = """
+            {"eventId":"evt-v2-missing","eventType":"mes.OperationActualTimeSettled","eventVersion":2,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[]}}
+            """;
+        const string v1WithExplicitNullFacts = """
+            {"eventId":"evt-v1-extra","eventType":"mes.OperationActualTimeSettled","eventVersion":1,"occurredAtUtc":"2026-08-26T03:00:00Z","sourceService":"business-mes","correlationId":"corr-v1","causationId":"cause-v1","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v1","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],"deviceAssetId":null,"machineTimeStatus":null,"billableMachineTicks":null,"machineTimeBasisCode":null}}
+            """;
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(v2WithoutFact, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(v1WithExplicitNullFacts, JsonOptions));
+    }
+
+    [Fact]
+    public void Void_v1_rejects_explicit_null_v2_properties()
+    {
+        const string json = """
+            {"eventId":"evt-void-v1-extra","eventType":"mes.OperationActualTimeSettlementVoided","eventVersion":1,"occurredAtUtc":"2026-08-26T03:10:00Z","sourceService":"business-mes","correlationId":"corr-v1","causationId":"cause-v1","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v1","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z","voidedAtUtc":"2026-08-26T03:10:00Z","actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],"deviceAssetId":null,"machineTimeStatus":null,"billableMachineTicks":null,"machineTimeBasisCode":null}}
+            """;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedIntegrationEvent>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("settled", "\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"billableMachineTicks\":-1,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("settled", "\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"wrong-basis\"")]
+    [InlineData("settled", "\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"unavailable\",\"billableMachineTicks\":null,\"machineTimeBasisCode\":null")]
+    [InlineData("settled", "\"deviceAssetId\":null,\"machineTimeStatus\":\"notApplicable\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":null")]
+    [InlineData("voided", "\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":0,\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("voided", "\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"futureStatus\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("voided", "\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"billableMachineTicks\":-1,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\"")]
+    [InlineData("voided", "\"deviceAssetId\":null,\"machineTimeStatus\":\"unavailable\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":null")]
+    public void V2_rejects_targeted_enum_and_machine_fact_invariant_failures(
+        string eventKind,
+        string machineFactJson)
+    {
+        var voidFields = eventKind == "voided" ? ",\"voidedAtUtc\":\"2026-08-26T03:10:00Z\"" : string.Empty;
+        var eventType = eventKind == "voided"
+            ? MesIntegrationEventTypes.OperationActualTimeSettlementVoided
+            : MesIntegrationEventTypes.OperationActualTimeSettled;
+        var json = """
+            {"eventId":"evt-v2-targeted","eventType":"__EVENT_TYPE__","eventVersion":2,"occurredAtUtc":"2026-08-26T03:10:00Z","sourceService":"business-mes","correlationId":"corr-v2","causationId":"cause-v2","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem-v2","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z"__VOID_FIELDS__,"actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[],__MACHINE_FIELDS__}}
+            """
+            .Replace("__EVENT_TYPE__", eventType, StringComparison.Ordinal)
+            .Replace("__VOID_FIELDS__", voidFields, StringComparison.Ordinal)
+            .Replace("__MACHINE_FIELDS__", machineFactJson, StringComparison.Ordinal);
+
+        Assert.Throws<JsonException>(() => eventKind == "voided"
+            ? JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(json, JsonOptions)
+            : JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("settled", 1, 2)]
+    [InlineData("settled", 2, 1)]
+    [InlineData("voided", 1, 2)]
+    [InlineData("voided", 2, 1)]
+    public void Actual_time_contract_type_rejects_the_other_wire_version(
+        string eventKind,
+        int contractVersion,
+        int wireVersion)
+    {
+        var voidFields = eventKind == "voided" ? ",\"voidedAtUtc\":\"2026-08-26T03:10:00Z\"" : string.Empty;
+        var machineFields = contractVersion == 2
+            ? ",\"deviceAssetId\":\"DEVICE-001\",\"machineTimeStatus\":\"available\",\"billableMachineTicks\":0,\"machineTimeBasisCode\":\"single-device-active-minus-explicit-pause-v1\""
+            : string.Empty;
+        var json = """
+            {"eventId":"evt-wrong-version","eventType":"mes.actual-time","eventVersion":__WIRE_VERSION__,"occurredAtUtc":"2026-08-26T03:10:00Z","sourceService":"business-mes","correlationId":"corr","causationId":"cause","organizationId":"org-001","environmentId":"env-dev","actor":"system:mes","idempotencyKey":"idem","payload":{"workOrderId":"WO-001","operationTaskId":"OP-001","workCenterId":"WC-001","settlementRevision":1,"completedAtUtc":"2026-08-26T03:00:00Z"__VOID_FIELDS__,"actualLaborTicks":0,"actualMachineTicks":0,"coveredProductionReportNos":[]__MACHINE_FIELDS__}}
+            """
+            .Replace("__WIRE_VERSION__", wireVersion.ToString(), StringComparison.Ordinal)
+            .Replace("__VOID_FIELDS__", voidFields, StringComparison.Ordinal)
+            .Replace("__MACHINE_FIELDS__", machineFields, StringComparison.Ordinal);
+
+        Assert.Throws<JsonException>(() => (eventKind, contractVersion) switch
+        {
+            ("settled", 1) => JsonSerializer.Deserialize<MesOperationActualTimeSettledIntegrationEvent>(json, JsonOptions),
+            ("settled", 2) => JsonSerializer.Deserialize<MesOperationActualTimeSettledV2IntegrationEvent>(json, JsonOptions),
+            ("voided", 1) => JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedIntegrationEvent>(json, JsonOptions),
+            _ => JsonSerializer.Deserialize<MesOperationActualTimeSettlementVoidedV2IntegrationEvent>(json, JsonOptions),
+        });
+    }
+
+    [Fact]
     public void Settlement_v1_json_preserves_revision_ticks_and_covered_report_numbers()
     {
         var completedAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
@@ -86,5 +329,9 @@ public sealed class MesActualTimeSettlementContractTests
         Assert.Equal(["PR-001", "PR-002"], roundTripped.Payload.CoveredProductionReportNos);
         Assert.Contains("\"voidedAtUtc\":\"2026-08-26T03:10:00+00:00\"", json, StringComparison.Ordinal);
         Assert.Contains("\"actualMachineTicks\":36000000000", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("deviceAssetId", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("machineTimeStatus", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("billableMachineTicks", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("machineTimeBasisCode", json, StringComparison.Ordinal);
     }
 }

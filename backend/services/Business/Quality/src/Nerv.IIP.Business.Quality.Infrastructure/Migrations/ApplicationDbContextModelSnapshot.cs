@@ -1627,6 +1627,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("inspection_plan_version")
                         .HasComment("Immutable matched inspection plan version.");
 
+                    b.Property<long>("LastGeneratedQuantityWindowSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_generated_quantity_window_sequence")
+                        .HasComment("Last atomically generated cumulative quantity-window sequence; zero before generation.");
+
                     b.Property<long>("LastGeneratedTimeWindowSequence")
                         .HasColumnType("bigint")
                         .HasColumnName("last_generated_time_window_sequence")
@@ -1660,6 +1665,16 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id frozen at context creation.");
+
+                    b.Property<DateTime?>("QuantityContinuationNextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quantity_continuation_next_attempt_at_utc")
+                        .HasComment("Persisted fair-scheduling time after which the pending quantity backlog may claim another bounded batch.");
+
+                    b.Property<DateTime?>("QuantityGenerationAnchorAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quantity_generation_anchor_at_utc")
+                        .HasComment("UTC triggering event time retained while bounded quantity-window continuation remains pending.");
 
                     b.Property<decimal>("QuantityHighWater")
                         .HasPrecision(18, 6)
@@ -1727,6 +1742,9 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OperationContextId");
 
+                    b.HasIndex("QuantityContinuationNextAttemptAtUtc", "Id")
+                        .HasDatabaseName("ix_periodic_inspection_runtime_quantity_continuation_due");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "NextTimeWindowAtUtc")
                         .HasDatabaseName("ix_periodic_inspection_runtime_scope_status_next_time");
 
@@ -1743,6 +1761,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_high_water", "quantity_high_water >= 0");
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_interval", "(time_interval_hours IS NOT NULL AND time_interval_hours > 0) OR (quantity_interval IS NOT NULL AND quantity_interval > 0)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_continuation", "(quantity_generation_anchor_at_utc IS NULL AND quantity_continuation_next_attempt_at_utc IS NULL) OR (quantity_generation_anchor_at_utc IS NOT NULL AND quantity_continuation_next_attempt_at_utc IS NOT NULL AND status IN ('active', 'closed') AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_watermark", "last_generated_quantity_window_sequence >= 0");
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_status", "(status = 'active' AND completed_at_utc IS NULL) OR (status = 'closed' AND completed_at_utc IS NOT NULL)");
 
@@ -1951,6 +1973,73 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("spc_control_charts", "quality", t =>
                         {
                             t.HasComment("Quality SPC control chart limit locks by SKU, characteristic and work center.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Processed integration event identifier.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("BusinessQuality integration event consumer name.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_id")
+                        .HasComment("Globally unique source event id used with consumer_name as the minimum inbox key.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_type")
+                        .HasComment("Integration event type.");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Publisher business idempotency key retained for traceability.");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_at_utc")
+                        .HasComment("UTC time when BusinessQuality accepted the event into its transactional inbox.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_service")
+                        .HasComment("Service that produced the integration event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_quality_processed_integration_events_consumer_event_id");
+
+                    b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
+                        .HasDatabaseName("ix_quality_processed_integration_events_source_type_processed_at");
+
+                    b.ToTable("processed_integration_events", "quality", t =>
+                        {
+                            t.HasComment("Integration events processed by BusinessQuality using the ADR 0011 event-id consumer inbox.");
                         });
                 });
 

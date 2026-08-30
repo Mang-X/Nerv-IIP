@@ -24,25 +24,18 @@ pnpm -C frontend --filter @nerv-iip/business-pda cap:sync   # 构建 + 同步 Ca
 1. vitest 组件/单元测试（`vp test`）
 2. Playwright **模拟端到端测试**（`e2e/`，真实 Chromium 移动视口，网关全部模拟）
 3. **真栈 e2e**（`e2e-live/`，真后端整栈）
-4. **真机** = 目标 PDA + APK + 实体扫码枪 —— 浏览器/模拟器里跑的只能叫
-   e2e，不能声称"真机验证"。
+4. **真机** = 目标 PDA + APK + 实体扫码枪 —— 浏览器/模拟器里跑的只能叫 e2e，不能声称"真机验证"。
 
-分层定义、spec 清单、冒烟命令：`docs/architecture/mobile-pda-testing-and-smoke.md`。
+长期证明边界：`docs/governance/testing/mobile-pda.md`；
+当前 spec/producer 导航：`docs/reference/testing/mobile-pda-inventory.md`；
+自动化、模拟器与真机 smoke：`docs/runbooks/testing/mobile-pda.md`；
 Capacitor 架构：`docs/architecture/mobile-pda-capacitor-architecture.md`；
 打包部署：`docs/runbooks/mobile-pda-deployment.md`。
 
 ## 硬性规则
 
-1. **测试 setup 已全局 `enableAutoUnmount(afterEach)`**（`src/test/setup.ts`）。
-   不要再手动 `unmount()`、不要加 afterEach 清 body —— 重复卸载会让
-   teleport 组件在 removeFragment 阶段崩掉整个测试文件。
-2. **写操作幂等键跨重试必须稳定。** `makeIdempotencyKey()` 每个操作意图只
-   生成一次（存 ref 复用，见 `pages/mes/*` 的 `operationKey` 模式）；传输层
-   超时重试（`src/api/request-timeout.ts`）不得重新生成幂等键。
-3. **api-client 定制只走 `configureApiClient({ fetch })` 唯一注入点**
-   （`src/api/`），一处覆盖全部 client；不要 patch `window.fetch`。
-4. **组件只用 `@nerv-iip/ui-mobile`**（`NvMobile*` / `Nv*` 移动专名）。PC 端
-   `@nerv-iip/ui` 组件不进 PDA 页面；跨表面需求 = 在 ui-mobile 建移动版。
-5. **数字/测量值录入复用 NvNumberKeyboard 模式**（只读单元格触发、防系统
-   键盘弹出）——参考 `components/quality/QualityExecuteStep.vue` 与
-   design-system 文档站 `mobile/number-keyboard`。
+1. **测试 setup 已全局 `enableAutoUnmount(afterEach)`**（`src/test/setup.ts`）。不要再手动 `unmount()`、不要加 afterEach 清 body —— 重复卸载会让 teleport 组件在 removeFragment 阶段崩掉整个测试文件。
+2. **写操作幂等键跨重试必须稳定。** `makeIdempotencyKey()` 每个操作意图只生成一次（存 ref 复用，见 `pages/mes/*` 的 `operationKey` 模式）；传输层超时重试（`src/api/request-timeout.ts`）不得重新生成幂等键。
+3. **api-client 定制只走 `configureApiClient({ fetch })` 唯一注入点**（`src/api/`），一处覆盖全部 client；不要 patch `window.fetch`。
+4. **组件只用 `@nerv-iip/ui-mobile`**（`NvMobile*` / `Nv*` 移动专名）。PC 端 `@nerv-iip/ui` 组件不进 PDA 页面；跨表面需求 = 在 ui-mobile 建移动版。
+5. **数字/测量值录入复用 NvNumberKeyboard 模式**（只读单元格触发、防系统键盘弹出）——参考 `components/quality/QualityExecuteStep.vue` 与 design-system 文档站 `mobile/number-keyboard`。

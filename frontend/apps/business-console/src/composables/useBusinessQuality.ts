@@ -17,7 +17,7 @@ import {
   type BusinessConsoleNcrCloseRequest,
   type BusinessConsoleNcrDispositionRequest,
   type BusinessConsoleQualityItem,
-  type BusinessConsoleQualityListEnvelope,
+  type BusinessConsoleQualityNcrItem,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
@@ -72,7 +72,12 @@ function toListQuery(filters: QualityListFilters) {
   }
 }
 
-function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {
+type QualityListEnvelope<TItem> = {
+  success?: boolean
+  data?: { items?: TItem[]; total?: number } | null
+}
+
+function listItems<TItem>(envelope: QualityListEnvelope<TItem> | undefined) {
   if (!envelope?.success) {
     return []
   }
@@ -80,7 +85,7 @@ function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {
   return envelope.data?.items ?? []
 }
 
-function listTotal(envelope: BusinessConsoleQualityListEnvelope | undefined) {
+function listTotal<TItem>(envelope: QualityListEnvelope<TItem> | undefined) {
   if (!envelope?.success) {
     return 0
   }
@@ -414,7 +419,7 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     closeNcrError,
     closeNcrPending,
     filters,
-    ncrs: computed<BusinessConsoleQualityItem[]>(() => listItems(ncrsQuery.data.value)),
+    ncrs: computed<BusinessConsoleQualityNcrItem[]>(() => listItems(ncrsQuery.data.value)),
     ncrsError: ncrsQuery.error,
     ncrsPending: ncrsQuery.isLoading,
     ncrsTotal: computed(() => listTotal(ncrsQuery.data.value)),

@@ -1123,6 +1123,215 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate.WorkCenterMachineOverheadReconciliation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Machine-overhead reconciliation revision id.");
+
+                    b.Property<string>("AbnormalDowntimeDisposition")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("abnormal_downtime_disposition")
+                        .HasComment("None, Pending, or PeriodExpense close disposition.");
+
+                    b.Property<decimal>("AbnormalDowntimeHours")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)")
+                        .HasColumnName("abnormal_downtime_hours")
+                        .HasComment("Display hours derived from abnormal downtime ticks.");
+
+                    b.Property<long>("AbnormalDowntimeTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("abnormal_downtime_ticks")
+                        .HasComment("Abnormal downtime ticks excluded from product allocation.");
+
+                    b.Property<string>("AccountingPeriodCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("accounting_period_code")
+                        .HasComment("Accounting period owning this reconciliation.");
+
+                    b.Property<decimal>("ActualFixedOverheadAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("actual_fixed_overhead_amount")
+                        .HasComment("Actual fixed manufacturing-overhead pool.");
+
+                    b.Property<decimal>("ActualTotalOverheadAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("actual_total_overhead_amount")
+                        .HasComment("Actual fixed plus variable manufacturing-overhead pool.");
+
+                    b.Property<decimal>("ActualVariableOverheadAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("actual_variable_overhead_amount")
+                        .HasComment("Actual variable manufacturing-overhead pool.");
+
+                    b.Property<decimal>("AppliedFixedAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("applied_fixed_amount")
+                        .HasComment("Fixed overhead already allocated by active settlements.");
+
+                    b.Property<decimal>("AppliedMachineHours")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)")
+                        .HasColumnName("applied_machine_hours")
+                        .HasComment("Display hours derived from active applied ticks.");
+
+                    b.Property<long>("AppliedMachineTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("applied_machine_ticks")
+                        .HasComment("Lossless active billable machine ticks allocated to products; abnormal downtime is excluded.");
+
+                    b.Property<decimal>("AppliedRoundingDifferenceAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("applied_rounding_difference_amount")
+                        .HasComment("Difference caused by independently rounded total versus fixed and variable applied amounts.");
+
+                    b.Property<decimal>("AppliedTotalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("applied_total_amount")
+                        .HasComment("Total overhead already allocated by active settlements.");
+
+                    b.Property<decimal>("AppliedVariableAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("applied_variable_amount")
+                        .HasComment("Variable overhead already allocated by active settlements.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency_code")
+                        .IsFixedLength()
+                        .HasComment("Currency shared by actual pool, rate, and applied settlements.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<decimal>("OverAppliedFixedOverheadAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("over_applied_fixed_overhead_amount")
+                        .HasComment("Positive reverse fixed variance when applied overhead exceeds the actual pool.");
+
+                    b.Property<int>("RateRevision")
+                        .HasColumnType("integer")
+                        .HasColumnName("rate_revision")
+                        .HasComment("Frozen predetermined rate revision number.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Business reason for this immutable revision.");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc")
+                        .HasComment("UTC instant when this revision was recorded.");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recorded_by")
+                        .HasComment("Canonical authenticated actor recording the actual pool.");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision")
+                        .HasComment("Monotonic append-only reconciliation revision within work center and period.");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("source_reference")
+                        .HasComment("Auditable source ledger, import, or worksheet reference.");
+
+                    b.Property<decimal>("UnallocatedFixedOverheadAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unallocated_fixed_overhead_amount")
+                        .HasComment("Positive fixed overhead left unallocated at low utilization.");
+
+                    b.Property<decimal>("UnderOverAppliedFixedAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("under_over_applied_fixed_amount")
+                        .HasComment("Signed actual-minus-applied fixed overhead variance.");
+
+                    b.Property<decimal>("UnderOverAppliedTotalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("under_over_applied_total_amount")
+                        .HasComment("Signed actual-minus-applied total overhead variance.");
+
+                    b.Property<decimal>("UnderOverAppliedVariableAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("under_over_applied_variable_amount")
+                        .HasComment("Signed actual-minus-applied variable overhead variance.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Work center whose actual pool is reconciled.");
+
+                    b.Property<Guid>("WorkCenterMachineOverheadRateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_center_machine_overhead_rate_id")
+                        .HasComment("Predetermined monthly rate revision used by this reconciliation.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AccountingPeriodCode", "WorkCenterId")
+                        .HasDatabaseName("ix_wc_machine_overhead_reconciliations_period");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
+                        .IsUnique()
+                        .IsDescending(false, false, false, false, true)
+                        .HasDatabaseName("ux_wc_machine_overhead_reconciliations_scope_revision");
+
+                    b.HasIndex("WorkCenterMachineOverheadRateId", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "RateRevision");
+
+                    b.ToTable("work_center_machine_overhead_reconciliations", "erp", t =>
+                        {
+                            t.HasComment("Append-only monthly work-center machine-overhead pool reconciliation and close readiness fact.");
+
+                            t.HasCheckConstraint("ck_wc_machine_overhead_reconciliations_amounts", "actual_fixed_overhead_amount >= 0 AND actual_variable_overhead_amount >= 0 AND actual_total_overhead_amount = actual_fixed_overhead_amount + actual_variable_overhead_amount AND applied_machine_ticks >= 0 AND applied_machine_hours = round(applied_machine_ticks / 36000000000.0, 12) AND applied_fixed_amount >= 0 AND applied_variable_amount >= 0 AND applied_total_amount >= 0 AND applied_rounding_difference_amount = applied_total_amount - applied_fixed_amount - applied_variable_amount AND under_over_applied_fixed_amount = actual_fixed_overhead_amount - applied_fixed_amount AND under_over_applied_variable_amount = actual_variable_overhead_amount - applied_variable_amount AND under_over_applied_total_amount = actual_total_overhead_amount - applied_total_amount AND unallocated_fixed_overhead_amount = greatest(under_over_applied_fixed_amount, 0) AND over_applied_fixed_overhead_amount = greatest(-under_over_applied_fixed_amount, 0)");
+
+                            t.HasCheckConstraint("ck_wc_machine_overhead_reconciliations_audit", "revision > 0 AND rate_revision > 0 AND currency_code ~ '^[A-Z]{3}$'");
+
+                            t.HasCheckConstraint("ck_wc_machine_overhead_reconciliations_downtime", "abnormal_downtime_hours = round(abnormal_downtime_ticks / 36000000000.0, 12) AND ((abnormal_downtime_ticks = 0 AND abnormal_downtime_disposition = 'None') OR (abnormal_downtime_ticks > 0 AND abnormal_downtime_disposition IN ('Pending', 'PeriodExpense')))");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate.Opportunity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3159,6 +3368,9 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("Id", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
+                        .HasName("ak_wc_machine_overhead_rates_hard_scope");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
                         .IsUnique()
                         .IsDescending(false, false, false, false, true)
@@ -3233,6 +3445,129 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.ToTable("operation_labor_covered_reports", "erp", t =>
                         {
                             t.HasComment("Permanent MES report lineage covered by one operation-level actual labor settlement.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationLaborReportSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Operation labor report snapshot id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<decimal>("GoodQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("good_quantity")
+                        .HasComment("Frozen reported good quantity before reversal sign normalization.");
+
+                    b.Property<bool>("HasValidNumericScale")
+                        .HasColumnType("boolean")
+                        .HasColumnName("has_valid_numeric_scale")
+                        .HasComment("Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion.");
+
+                    b.Property<bool>("IsReversal")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_reversal")
+                        .HasComment("Whether this report reverses a prior production report.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation-task public identifier.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("MES production-report business identifier.");
+
+                    b.Property<DateTimeOffset>("ReportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at_utc")
+                        .HasComment("Original MES production-report UTC timestamp.");
+
+                    b.Property<string>("ReversedReportNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reversed_report_no")
+                        .HasComment("Original MES report number for a reversal snapshot.");
+
+                    b.Property<decimal>("ReworkQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("rework_quantity")
+                        .HasComment("Frozen reported rework quantity; excluded from standard labor hours.");
+
+                    b.Property<decimal>("ScrapQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("scrap_quantity")
+                        .HasComment("Frozen reported scrap quantity; excluded from standard labor hours.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("MES event id that established this immutable snapshot.");
+
+                    b.Property<decimal?>("TheoreticalRatePerHour")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("theoretical_rate_per_hour")
+                        .HasComment("Frozen theoretical good-output rate per labor hour.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Frozen MES output unit of measure.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Frozen MES work-center identifier.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order public identifier.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_operation_labor_report_snapshots_scope_report");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
+                        .HasDatabaseName("ix_operation_labor_report_snapshots_work_order_operation");
+
+                    b.ToTable("operation_labor_report_snapshots", "erp", t =>
+                        {
+                            t.HasComment("ERP immutable MES production-report basis used for standard labor and efficiency variance.");
                         });
                 });
 
@@ -3562,6 +3897,398 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationMachineOverheadSettlement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Machine-overhead settlement snapshot id.");
+
+                    b.Property<string>("AccountingPeriodCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("accounting_period_code")
+                        .HasComment("Frozen accounting period selected by completion instant.");
+
+                    b.Property<decimal?>("ActualMachineHours")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)")
+                        .HasColumnName("actual_machine_hours")
+                        .HasComment("Display hours derived from ticks; pricing uses ticks directly.");
+
+                    b.Property<long?>("ActualMachineTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("actual_machine_ticks")
+                        .HasComment("Lossless billable machine duration in TimeSpan ticks.");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("amount")
+                        .HasComment("Total machine overhead independently rounded to six decimals with ToEven.");
+
+                    b.Property<string>("Applicability")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("applicability")
+                        .HasComment("Frozen applicable or explicitly not-applicable ERP rate status.");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("UTC completion instant used to select the accounting period.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency_code")
+                        .IsFixedLength()
+                        .HasComment("Frozen three-letter currency code.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Authoritative MES execution-device snapshot when machine time is available.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<decimal>("FixedAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("fixed_amount")
+                        .HasComment("Fixed machine overhead rounded to six decimals with ToEven.");
+
+                    b.Property<decimal>("FixedHourlyRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("fixed_hourly_rate")
+                        .HasComment("Frozen fixed machine-overhead hourly rate.");
+
+                    b.Property<string>("MachineTimeBasisCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("machine_time_basis_code")
+                        .HasComment("MES authoritative machine-time calculation basis.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation-task public identifier.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("payload_hash")
+                        .IsFixedLength()
+                        .HasComment("SHA-256 of canonical MES machine business fields.");
+
+                    b.Property<int>("RateRevision")
+                        .HasColumnType("integer")
+                        .HasColumnName("rate_revision")
+                        .HasComment("Frozen monthly machine-overhead rate revision number.");
+
+                    b.Property<long>("SettlementRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("settlement_revision")
+                        .HasComment("Monotonic MES actual-time settlement revision.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("First MES V2 event id that established the snapshot.");
+
+                    b.Property<decimal>("VariableAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("variable_amount")
+                        .HasComment("Variable machine overhead rounded to six decimals with ToEven.");
+
+                    b.Property<decimal>("VariableHourlyRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("variable_hourly_rate")
+                        .HasComment("Frozen variable machine-overhead hourly rate.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("MES work-center public identifier used for rate selection.");
+
+                    b.Property<Guid>("WorkCenterMachineOverheadRateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_center_machine_overhead_rate_id")
+                        .HasComment("Frozen monthly rate revision id.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order public identifier.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkCenterMachineOverheadRateId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .HasDatabaseName("ix_operation_machine_overhead_settlements_work_order");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "SettlementRevision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_op_machine_overhead_settlements_identity");
+
+                    b.ToTable("operation_machine_overhead_settlements", "erp", t =>
+                        {
+                            t.HasComment("Immutable ERP machine-overhead snapshot priced from authoritative MES machine time and a frozen monthly rate.");
+
+                            t.HasCheckConstraint("ck_operation_machine_overhead_settlements_fact", "(applicability = 'Applicable' AND device_asset_id IS NOT NULL AND actual_machine_ticks >= 0 AND actual_machine_hours IS NOT NULL AND machine_time_basis_code IS NOT NULL) OR (applicability = 'NotApplicable' AND device_asset_id IS NULL AND actual_machine_ticks IS NULL AND actual_machine_hours IS NULL AND machine_time_basis_code IS NULL AND fixed_hourly_rate = 0 AND variable_hourly_rate = 0 AND fixed_amount = 0 AND variable_amount = 0 AND amount = 0)");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationMachineOverheadSettlementState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Machine-overhead settlement state id.");
+
+                    b.Property<long?>("ActiveRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("active_revision")
+                        .HasComment("Currently active revision, or null after a void.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<long>("HighestRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("highest_revision")
+                        .HasComment("Highest settlement or void revision observed.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation-task public identifier.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_operation_machine_overhead_settlement_states_operation");
+
+                    b.ToTable("operation_machine_overhead_settlement_states", "erp", t =>
+                        {
+                            t.HasComment("Monotonic ERP machine-overhead processing watermark and active revision for one MES operation.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationMachineOverheadSettlementVoid", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Machine-overhead settlement void id.");
+
+                    b.Property<string>("AccountingPeriodCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("accounting_period_code")
+                        .HasComment("Frozen accounting period selected by completion instant.");
+
+                    b.Property<decimal?>("ActualMachineHours")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)")
+                        .HasColumnName("actual_machine_hours")
+                        .HasComment("Display hours derived from ticks; pricing uses ticks directly.");
+
+                    b.Property<long?>("ActualMachineTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("actual_machine_ticks")
+                        .HasComment("Lossless billable machine duration in TimeSpan ticks.");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("amount")
+                        .HasComment("Total machine overhead independently rounded to six decimals with ToEven.");
+
+                    b.Property<string>("Applicability")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("applicability")
+                        .HasComment("Frozen applicable or explicitly not-applicable ERP rate status.");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("UTC completion instant used to select the accounting period.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency_code")
+                        .IsFixedLength()
+                        .HasComment("Frozen three-letter currency code.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Authoritative MES execution-device snapshot when machine time is available.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<decimal>("FixedAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("fixed_amount")
+                        .HasComment("Fixed machine overhead rounded to six decimals with ToEven.");
+
+                    b.Property<decimal>("FixedHourlyRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("fixed_hourly_rate")
+                        .HasComment("Frozen fixed machine-overhead hourly rate.");
+
+                    b.Property<string>("MachineTimeBasisCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("machine_time_basis_code")
+                        .HasComment("MES authoritative machine-time calculation basis.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation-task public identifier.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("payload_hash")
+                        .IsFixedLength()
+                        .HasComment("SHA-256 of canonical MES machine business fields.");
+
+                    b.Property<int>("RateRevision")
+                        .HasColumnType("integer")
+                        .HasColumnName("rate_revision")
+                        .HasComment("Frozen monthly machine-overhead rate revision number.");
+
+                    b.Property<long>("SettlementRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("settlement_revision")
+                        .HasComment("Monotonic MES actual-time settlement revision.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("First MES V2 event id that established the snapshot.");
+
+                    b.Property<decimal>("VariableAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("variable_amount")
+                        .HasComment("Variable machine overhead rounded to six decimals with ToEven.");
+
+                    b.Property<decimal>("VariableHourlyRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("variable_hourly_rate")
+                        .HasComment("Frozen variable machine-overhead hourly rate.");
+
+                    b.Property<DateTimeOffset>("VoidedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("voided_at_utc")
+                        .HasComment("UTC MES void occurrence instant.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("MES work-center public identifier used for rate selection.");
+
+                    b.Property<Guid>("WorkCenterMachineOverheadRateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_center_machine_overhead_rate_id")
+                        .HasComment("Frozen monthly rate revision id.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order public identifier.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkCenterMachineOverheadRateId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "SettlementRevision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_op_machine_overhead_settlement_voids_identity");
+
+                    b.ToTable("operation_machine_overhead_settlement_voids", "erp", t =>
+                        {
+                            t.HasComment("Append-only exact reversal of an immutable operation machine-overhead snapshot.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.PendingMaterialCost", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3784,6 +4511,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsFixedLength()
                         .HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
 
+                    b.Property<string>("MachineOverheadCurrencyCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("machine_overhead_currency_code")
+                        .IsFixedLength()
+                        .HasComment("Frozen machine-overhead currency; it must match priced labor when both exist.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -3864,6 +4598,18 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("labor_lineage_id")
                         .HasComment("Stable MES report or operation-settlement lineage for auditable labor replacement and reversal.");
 
+                    b.Property<string>("MachineOverheadBasis")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("machine_overhead_basis")
+                        .HasComment("Machine-overhead basis: actual operation, explicit not-applicable, or append-only reversal/supersession.");
+
+                    b.Property<string>("MachineOverheadLineageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("machine_overhead_lineage_id")
+                        .HasComment("Stable MES operation-settlement lineage for machine-overhead audit.");
+
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("occurred_at_utc")
@@ -3873,13 +4619,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("quantity")
-                        .HasComment("Labor hours or material quantity.");
+                        .HasComment("Labor or machine hours, or material quantity.");
 
                     b.Property<decimal>("Rate")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("rate")
-                        .HasComment("Hourly rate or moving-average unit cost.");
+                        .HasComment("Labor or machine-overhead hourly rate, or moving-average material unit cost.");
 
                     b.Property<string>("ReportNo")
                         .HasMaxLength(100)
@@ -3899,7 +4645,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("cost_type")
-                        .HasComment("Labor or material cost type.");
+                        .HasComment("Labor, material, or machine-overhead cost type.");
 
                     b.Property<Guid>("WorkOrderCostId")
                         .HasColumnType("uuid")
@@ -3913,7 +4659,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.ToTable("work_order_cost_details", "erp", t =>
                         {
-                            t.HasComment("ERP auditable labor or material cost detail.");
+                            t.HasComment("ERP auditable labor, material, or machine-overhead cost detail.");
                         });
                 });
 
@@ -4408,6 +5154,16 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate.WorkCenterMachineOverheadReconciliation", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate.WorkCenterMachineOverheadRate", null)
+                        .WithMany()
+                        .HasForeignKey("WorkCenterMachineOverheadRateId", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "RateRevision")
+                        .HasPrincipalKey("Id", "OrganizationId", "EnvironmentId", "WorkCenterId", "AccountingPeriodCode", "Revision")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate.PaymentExecutionAllocation", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate.PaymentExecution", null)
@@ -4557,6 +5313,24 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkCenterCostRate", null)
                         .WithMany()
                         .HasForeignKey("WorkCenterCostRateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationMachineOverheadSettlement", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate.WorkCenterMachineOverheadRate", null)
+                        .WithMany()
+                        .HasForeignKey("WorkCenterMachineOverheadRateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationMachineOverheadSettlementVoid", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate.WorkCenterMachineOverheadRate", null)
+                        .WithMany()
+                        .HasForeignKey("WorkCenterMachineOverheadRateId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

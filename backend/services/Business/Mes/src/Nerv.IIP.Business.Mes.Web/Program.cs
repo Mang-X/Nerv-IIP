@@ -53,6 +53,12 @@ builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrationEventContextAccessor>();
+builder.Services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
+builder.Services.AddScoped<IMesActualTimeOutboxPublisher, CapMesActualTimeOutboxPublisher>();
+builder.Services.AddSingleton(new MesActualTimeTopicOptions(builder.Environment.EnvironmentName));
 var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");

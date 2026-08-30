@@ -108,6 +108,13 @@ public sealed class WorkCenterRateRevisionAllocator(
         CancellationToken cancellationToken)
     {
         await revisionLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+            scope.OrganizationId, scope.EnvironmentId, accountingPeriodCode.Value, cancellationToken);
+        await revisionLock.AcquireAsync(
+            ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
+            scope.OrganizationId, scope.EnvironmentId,
+            $"{accountingPeriodCode.Value}\n{scope.WorkCenterId}", cancellationToken);
+        await revisionLock.AcquireAsync(
             ErpAdvisoryLockDomain.WorkCenterMachineOverheadRate,
             scope.OrganizationId, scope.EnvironmentId, scope.WorkCenterId, cancellationToken);
         var state = await ReadMachineStateAsync(scope, accountingPeriodCode, cancellationToken);

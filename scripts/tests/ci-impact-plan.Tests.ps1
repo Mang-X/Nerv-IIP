@@ -645,7 +645,7 @@ Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/con
     docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture/script-automation-governance.md') -Flags @{
+Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/governance/script-automation.md') -Flags @{
     docs = $true; scripts = $true; backend = $false; frontend = $false
 }
 

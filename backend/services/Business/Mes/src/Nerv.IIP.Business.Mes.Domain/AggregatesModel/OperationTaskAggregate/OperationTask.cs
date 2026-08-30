@@ -79,6 +79,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long PausedDurationTicks { get; private set; }
     public long LaborTimeTicks { get; private set; }
     public long MachineTimeTicks { get; private set; }
+    public string? MachineTimeExecutionDeviceAssetId { get; private set; }
+    public bool MachineTimeEvidenceUnavailable { get; private set; } = true;
     public long ActualTimeSettlementRevision { get; private set; }
     public RowVersion RowVersion { get; private set; } = new(0);
     public string? AssignedUserId { get; private set; }
@@ -224,6 +226,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingStartUtc ??= startedAtUtc;
         ExistingEndUtc = null;
+        StartMachineTimeExecutionWindow();
     }
 
     public void MarkScheduleInvalidated(string? reasonCode = null)
@@ -343,6 +346,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         PausedDurationTicks = 0;
         LaborTimeTicks = 0;
         MachineTimeTicks = 0;
+        StartMachineTimeExecutionWindow();
         AddDomainEvent(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
     }
 
@@ -358,7 +362,15 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             ExistingEndUtc ?? throw new InvalidOperationException("Completed operation task must have an end time."),
             LaborTimeTicks,
             MachineTimeTicks,
-            coveredProductionReportNos.ToArray());
+            coveredProductionReportNos.ToArray(),
+            MachineTimeEvidenceUnavailable ? null : MachineTimeExecutionDeviceAssetId,
+            MachineTimeEvidenceUnavailable
+                ? MachineTimeFactStatus.Unavailable
+                : MachineTimeFactStatus.Available,
+            MachineTimeEvidenceUnavailable ? null : MachineTimeTicks,
+            MachineTimeEvidenceUnavailable
+                ? null
+                : MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
 
     private static string[] NormalizeCoveredProductionReportNos(
         IReadOnlyCollection<string> coveredProductionReportNos) =>
@@ -393,6 +405,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : null;
         var previousAssignedAtUtc = AssignedAtUtc;
         var normalizedDeviceAssetId = NormalizeOptional(deviceAssetId);
+        if (Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused &&
+            !string.Equals(MachineTimeExecutionDeviceAssetId, normalizedDeviceAssetId, StringComparison.Ordinal))
+        {
+            MachineTimeEvidenceUnavailable = true;
+        }
         var isManualDispatch = normalizedDeviceAssetId is not null && Duration > TimeSpan.Zero;
         var clearsManualDispatch = previousDeviceAssetId is not null && !isManualDispatch;
         var canonicalActor = isManualDispatch || clearsManualDispatch
@@ -602,6 +619,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     private bool HasLegacyUnknownManualDispatch =>
         ManualDispatchRevision == 0 && !HasActiveManualDispatch && DeviceAssetId is not null;
+
+    private void StartMachineTimeExecutionWindow()
+    {
+        MachineTimeExecutionDeviceAssetId = NormalizeOptional(DeviceAssetId);
+        MachineTimeEvidenceUnavailable = MachineTimeExecutionDeviceAssetId is null;
+    }
 
     private OperationTaskManualDispatchSnapshot CreateManualDispatchSnapshot(
         string resourceId,

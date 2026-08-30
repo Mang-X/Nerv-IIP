@@ -117,13 +117,14 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
 
+        var inspectionSourceDocumentId = task.InspectionRecordSourceDocumentId();
         var existing = await inspectionRecordRepository.FindBySourceDocumentAsync(
             task.OrganizationId,
             task.EnvironmentId,
             task.SourceType,
             task.SourceService,
             task.SkuCode,
-            task.SourceDocumentId,
+            inspectionSourceDocumentId,
             cancellationToken);
         if (existing is not null)
         {
@@ -155,7 +156,7 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             plan,
             task.SourceType,
             task.SourceService,
-            task.SourceDocumentId,
+            inspectionSourceDocumentId,
             task.SkuCode,
             task.Quantity,
             task.BatchNo,

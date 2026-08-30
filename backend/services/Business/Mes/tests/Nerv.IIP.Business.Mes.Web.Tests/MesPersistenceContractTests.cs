@@ -25,6 +25,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using System.Net;
@@ -2519,15 +2520,15 @@ public sealed class MesPersistenceContractTests
             recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
             .Handle(new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-TRACE-001"), CancellationToken.None);
 
-        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.OperatorNodeType);
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.Operator);
         Assert.Equal("user-emp-010", operatorNode.NodeId);
         Assert.Equal(reportedAtUtc, operatorNode.OccurredAtUtc);
 
-        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
+        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.DeviceAsset);
         Assert.Equal("DEV-CNC-01", deviceNode.NodeId);
         Assert.Equal(reportedAtUtc, deviceNode.OccurredAtUtc);
 
-        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
         Assert.Equal("DEF-TRACE-001", inspectionNode.NodeId);
         Assert.Equal("SCRAP-SURFACE", inspectionNode.DisplayName);
         Assert.Equal(DefectRecord.OpenStatus, inspectionNode.Status);
@@ -2605,10 +2606,10 @@ public sealed class MesPersistenceContractTests
             recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
             .Handle(new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-TRACE-WO"), CancellationToken.None);
 
-        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.OperatorNodeType);
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.Operator);
         Assert.Equal("user-emp-010", operatorNode.NodeId);
-        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
-        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.InspectionResultNodeType);
+        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
         Assert.Equal(3, traceability.Nodes.Count(x => x.NodeType == "ProductionReport"));
         Assert.All(
             traceability.Nodes.Where(x => x.NodeType == "ProductionReport"),
@@ -2697,9 +2698,9 @@ public sealed class MesPersistenceContractTests
             : await new GetBatchTraceabilityQueryHandler(dbContextForQuery)
                 .Handle(new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-CONSUME-A"), CancellationToken.None);
 
-        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.OperatorNodeType);
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.Operator);
         Assert.Equal("user-emp-020", operatorNode.NodeId);
-        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityProductionReportQueries.DeviceAssetNodeType);
+        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.DeviceAsset);
         Assert.Equal("DEV-CNC-02", deviceNode.NodeId);
         var reportNode = Assert.Single(traceability.Nodes, x => x.NodeType == "ProductionReport");
         Assert.Equal(now.AddMinutes(30), reportNode.OccurredAtUtc);

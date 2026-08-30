@@ -2,6 +2,10 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using BusinessOeeAggregateBucket = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucket;
+using BusinessOeeAggregateDimension = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDimension;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -56,6 +60,11 @@ public interface IBusinessIndustrialTelemetryClient
     Task<BusinessConsoleTelemetryOeeResponse> QueryOeeAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryOeeRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        BusinessOeeAggregateRequest request,
         CancellationToken cancellationToken);
 
     Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
@@ -504,6 +513,91 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public async Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        BusinessOeeAggregateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessOeeAggregateResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/oee/aggregates?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("dimension", OeeDimension(request.Dimension)),
+                ("windowStartUtc", request.WindowStartUtc),
+                ("windowEndUtc", request.WindowEndUtc),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("workCenterId", request.WorkCenterId),
+                ("shiftCode", request.ShiftCode),
+                ("lineCode", request.LineCode),
+                ("workshopCode", request.WorkshopCode),
+                ("businessDate", request.BusinessDate),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+        if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
+            || response.Dimension != request.Dimension
+            || response.WindowStartUtc != request.WindowStartUtc
+            || response.WindowEndUtc != request.WindowEndUtc
+            || response.Buckets is null
+            || response.TotalCount < response.Buckets.Count
+            || response.Skip != request.Skip
+            || response.Take != request.Take
+            || response.Buckets.Any(bucket =>
+                bucket is null
+                || bucket.Dimension != request.Dimension
+                || bucket.BucketEndUtc <= bucket.BucketStartUtc
+                || bucket.BucketStartUtc < request.WindowStartUtc
+                || bucket.BucketEndUtc > request.WindowEndUtc
+                || bucket.DeviceCount < 0
+                || bucket.StateSampleCount < 0
+                || bucket.ProductionFactCount < 0
+                || bucket.DegradedReasons is null
+                || !BucketMatchesRequest(bucket, request)))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return response;
+    }
+
+    private static bool BucketMatchesRequest(
+        BusinessOeeAggregateBucket bucket,
+        BusinessOeeAggregateRequest request) =>
+        MatchesRequested(bucket.DeviceAssetId, request.DeviceAssetId)
+        && MatchesRequested(bucket.WorkCenterId, request.WorkCenterId)
+        && MatchesRequested(bucket.ShiftCode, request.ShiftCode)
+        && MatchesRequested(bucket.LineCode, request.LineCode)
+        && MatchesRequested(bucket.WorkshopCode, request.WorkshopCode)
+        && (request.BusinessDate is null || bucket.BusinessDate == request.BusinessDate)
+        && (request.Dimension != BusinessOeeAggregateDimension.Device
+            || request.DeviceAssetId is null
+            || string.Equals(bucket.DeviceAssetId, request.DeviceAssetId, StringComparison.Ordinal))
+        && (request.Dimension != BusinessOeeAggregateDimension.WorkCenter
+            || request.WorkCenterId is null
+            || string.Equals(bucket.WorkCenterId, request.WorkCenterId, StringComparison.Ordinal))
+        && (request.Dimension != BusinessOeeAggregateDimension.Line
+            || request.LineCode is null
+            || string.Equals(bucket.LineCode, request.LineCode, StringComparison.Ordinal))
+        && (request.Dimension != BusinessOeeAggregateDimension.Workshop
+            || request.WorkshopCode is null
+            || string.Equals(bucket.WorkshopCode, request.WorkshopCode, StringComparison.Ordinal))
+        && (request.Dimension != BusinessOeeAggregateDimension.Shift
+            || request.ShiftCode is null
+            || string.Equals(bucket.ShiftCode, request.ShiftCode, StringComparison.Ordinal))
+        && (request.Dimension != BusinessOeeAggregateDimension.Day
+            || request.BusinessDate is null
+            || bucket.BusinessDate == request.BusinessDate);
+
+    private static bool MatchesRequested(string? actual, string? requested) =>
+        requested is null || string.Equals(actual, requested, StringComparison.Ordinal);
+
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAvailabilityRequest request,
@@ -915,6 +1009,17 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
 
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
+
+    private static string OeeDimension(BusinessOeeAggregateDimension dimension) => dimension switch
+    {
+        BusinessOeeAggregateDimension.Device => "device",
+        BusinessOeeAggregateDimension.WorkCenter => "workCenter",
+        BusinessOeeAggregateDimension.Line => "line",
+        BusinessOeeAggregateDimension.Workshop => "workshop",
+        BusinessOeeAggregateDimension.Shift => "shift",
+        BusinessOeeAggregateDimension.Day => "day",
+        _ => throw new ArgumentOutOfRangeException(nameof(dimension)),
+    };
 
     private static string FormatJsonScalar(JsonElement value) => value.ValueKind switch
     {

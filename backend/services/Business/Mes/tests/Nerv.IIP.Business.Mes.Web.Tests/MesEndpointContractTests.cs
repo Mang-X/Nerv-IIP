@@ -717,7 +717,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal("user-emp-010", sender.Command?.ReportedBy);
     }
 
-    // 幂等键为空的那条命令构造分支在 HTTP 上不可达：RecordProductionReportRequestValidator 先把它拒成 400。
+    // 幂等键是记录报工写面的硬前置：RecordProductionReportRequestValidator 先把缺失的幂等键拒成 400，命令不会发出。
     [Fact]
     public async Task Record_production_report_endpoint_rejects_a_missing_idempotency_key()
     {

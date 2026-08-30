@@ -11,6 +11,7 @@ public enum ErpAdvisoryLockDomain
 {
     WorkCenterLaborCostRate,
     WorkCenterMachineOverheadRate,
+    WorkCenterMachineOverheadReconciliation,
 }
 
 public interface IErpAdvisoryLockAllocator
@@ -76,6 +77,7 @@ public sealed class PostgreSqlErpAdvisoryLockAllocator(ApplicationDbContext dbCo
     {
         ErpAdvisoryLockDomain.WorkCenterLaborCostRate => "work-center-labor-cost-rate",
         ErpAdvisoryLockDomain.WorkCenterMachineOverheadRate => "work-center-machine-overhead-rate",
+        ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation => "work-center-machine-overhead-reconciliation",
         _ => throw new ArgumentOutOfRangeException(nameof(domain), domain, "Unknown ERP advisory-lock domain."),
     };
 

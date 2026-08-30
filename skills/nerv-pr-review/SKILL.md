@@ -25,7 +25,7 @@ description: 审 Nerv-IIP 的 PR、复审改动后的 head，或要派并行评�
 ```bash
 gh pr view <N> --json headRefOid,baseRefName,mergeable,files
 git fetch origin "pull/<N>/head:pr-<N>"
-git rev-parse "origin/<baseRefName>"    # baseRefName 是分支名；-BaseSha 只收 40 位全长 SHA
+git rev-parse "origin/<baseRefName>"
 pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <head>
 ```
 
@@ -37,8 +37,8 @@ pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <h
 
 再定位两轴的判据来源——**这一步归协调者，不是席位的活**。席位收到的应是成品清单，不是搜索任务：
 
-- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`（机械可算）；再从 `docs/governance/README.md`、`docs/architecture/README.md` 与 `docs/adr/README.md` 按改动面挑出相关的当前规则、架构和决策记录，**列成文件清单**。Reference 只在改动涉及其查询事实时加入，冻结 Report 不作为当前标准。
-- **规格来源**：票号取自 PR body 的 `Fixes #` / `Closes #`。取不到就问用户（票号常只在分支名或 commit 里）。仍然没有，就地判定**无规格可依**，规格轴席位不派。
+- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`；再从 `docs/governance/README.md`、`docs/architecture/README.md` 与 `docs/adr/README.md` 按改动面挑出相关的当前规则、架构和决策记录，列成文件清单。Reference 只在改动涉及其查询事实时加入，冻结 Report 不作为当前标准。
+- **规格来源**：票号取自 PR body 的 `Fixes #` / `Closes #`。取不到就问用户。仍然没有，就地判定**无规格可依**，规格轴席位不派。
 
 完成判据：head SHA、base SHA、改动路径清单、标准来源清单、规格来源（票号或「无规格可依」）都拿到。
 
@@ -66,23 +66,23 @@ done
 - 中间文件名带 PR 号——并行席位共享 scratchpad，同名文件会串台。
 - 席位自己不再派子代理。
 - 每轴 400 字以内，阻断项与建议分开写。
-- 质量轴的判据在下面写全了，它没有仓库内权威文档可链——**整段粘进提示词，不自行增删**。
+- 质量轴的判据在下面写全了，它没有仓库内权威文档可链——整段粘进提示词，不自行增删。
 
 ### 标准轴
 
 判据来源：Step 1 定位出的标准来源清单。**按清单读，不自行扩大搜索面**。
 
-报告改动违反了哪条已文档化的规则，每条给出规则所在的文件与行。区分硬违反（文档写了「必须」「不得」）与判断题。
+报告改动违反了哪条已文档化的规则，每条给出规则所在的文件与行。区分硬违反与判断题。
 
 **只报绿门禁拦不住的问题。** 门禁会红的事情不需要人看。
 
 ### 规格轴
 
-判据来源：Step 1 定位出的 GitHub Issue。本仓库的规格权威是**票**，不是目录——见 `docs/superpowers/AGENTS.md`：新 spec/plan 以对应 Issue 为唯一权威，本地 spec 文件只含一个指向 Issue 的永久链接。
+判据来源：Step 1 定位出的 GitHub Issue。本仓库的规格权威是**票**，不是目录——见 `docs/superpowers/AGENTS.md`。
 
 - 规格住在 Issue 正文的 `<!-- superpowers-spec:start -->` / `<!-- superpowers-spec:end -->` 受管区块内：`gh issue view <票号> --json body`
 - 走 plan 流程的票，Task 清单与完成态在索引评论里：`gh issue view <票号> --json comments`
-- `docs/superpowers/specs/` 与 `plans/` 下的既有文件**不迁移、不改写**，是历史件——**不要去那里找当前 PR 的规格**
+- `docs/superpowers/specs/` 与 `plans/` 下的既有文件不迁移、不改写，是历史件——不要去那里找当前 PR 的规格
 
 报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引原文。
 
@@ -90,7 +90,7 @@ done
 
 ### 证据轴
 
-判据来源：`docs/architecture/test-validity-governance.md` 的六类合同来源与审核清单，`docs/architecture/test-evidence-governance.md` 的执行证据口径。
+判据来源：`docs/governance/testing/validity.md` 的合同来源与审核清单，`docs/governance/testing/evidence.md` 的执行证据口径；涉及 determinism/provider/lane/PDA 时再从 `docs/governance/testing/README.md` 读取对应规则。
 
 报告：
 
@@ -116,13 +116,13 @@ done
 - 功能逻辑漏进通用模块，或明明有 canonical helper 却另写一个近似品
 - 明显可并行的独立工作被串行化，或相关更新会留下半应用状态
 
-**上报但不阻断**：已超 1000 行的文件继续增长。存量治理分批做，这里只记录、不拦——一次性拦截会让人绕过它。
+**上报但不阻断**：已超 1000 行的文件继续增长。存量治理分批做，这里只记录、不拦。
 
 优先级：结构性倒退 > 错过的大简化 > 分支复杂度增长 > 边界与契约问题 > 文件体量 > 可读性。**宁可少而准**，一条有证据的结构性阻断胜过一串外观意见。
 
 ## 3. 汇报
 
-四轴**分列**，各给各的最严重项。跨轴排名会重新制造遮蔽，那正是分轴要避免的。
+四轴**分列**，各给各的最严重项。
 
 ```markdown
 ## 标准
@@ -147,8 +147,8 @@ done
 
 - `AGENTS.md` 与目标路径上的各级 `AGENTS.md` —— 开工与交付纪律
 - `docs/governance/README.md` —— 当前工程规则总入口
-- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式（M2-H 迁移前路径）
-- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径（M2 对应 owner 迁移前路径）
+- `docs/governance/testing/validity.md` —— 合同来源、红绿验证、删弱化负向测试条件、PR 结论格式
+- `docs/governance/testing/evidence.md` —— 执行数量、CI 状态、actual/skipped 与产物口径
 - `docs/governance/docs/language.md` —— 协作文本发布规则
 - `docs/governance/decisions/records.md` —— PR 触及 ADR 时的分层判据与取代规则
 

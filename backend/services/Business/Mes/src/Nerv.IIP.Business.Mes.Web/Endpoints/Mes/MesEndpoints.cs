@@ -1322,40 +1322,25 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordProductionReportRequest req, CancellationToken ct)
     {
-        var command = string.IsNullOrWhiteSpace(req.IdempotencyKey)
-            ? new RecordProductionReportCommand(
-                req.OrganizationId,
-                req.EnvironmentId,
-                req.WorkOrderId,
-                req.OperationTaskId,
-                req.GoodQuantity,
-                req.ScrapQuantity,
-                req.CompletesOperation,
-                req.ReportedAtUtc,
-                req.ConsumedMaterialLots,
-                req.ReworkQuantity,
-                req.ScrapReasonCode,
-                req.DefectRecordNo,
-                req.ProducedLotNo,
-                req.SerialNo,
-                ReportedBy: req.ReportedBy)
-            : new RecordProductionReportCommand(
-                req.OrganizationId,
-                req.EnvironmentId,
-                req.WorkOrderId,
-                req.OperationTaskId,
-                req.GoodQuantity,
-                req.ScrapQuantity,
-                req.CompletesOperation,
-                req.ReportedAtUtc,
-                req.IdempotencyKey,
-                req.ConsumedMaterialLots,
-                req.ReworkQuantity,
-                req.ScrapReasonCode,
-                req.DefectRecordNo,
-                req.ProducedLotNo,
-                req.SerialNo,
-                ReportedBy: req.ReportedBy);
+        // IdempotencyKey 由 RecordProductionReportRequestValidator 的 NotEmpty() 守住，
+        // 空白幂等键在到达此处之前已被拒为 400，因此这里只走携带调用方幂等键的主构造函数。
+        var command = new RecordProductionReportCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.OperationTaskId,
+            req.GoodQuantity,
+            req.ScrapQuantity,
+            req.CompletesOperation,
+            req.ReportedAtUtc,
+            req.IdempotencyKey,
+            req.ConsumedMaterialLots,
+            req.ReworkQuantity,
+            req.ScrapReasonCode,
+            req.DefectRecordNo,
+            req.ProducedLotNo,
+            req.SerialNo,
+            ReportedBy: req.ReportedBy);
         var result = await sender.Send(command, ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }

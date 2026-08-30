@@ -280,7 +280,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
-                new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "done"),
                 CancellationToken.None));
 
         Assert.Equal("close-ncr", exception.Action);
@@ -302,12 +302,39 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
-                new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "done"),
                 CancellationToken.None));
 
         Assert.Contains("NCR-CLOSE-CAPA", exception.Message, StringComparison.Ordinal);
         Assert.Contains("CAPA", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
+    }
+
+    [Fact]
+    public async Task Close_rework_without_system_receipt_cannot_supply_an_equivalent_client_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var ncr = NewNcr("NCR-CLOSE-REWORK");
+        ncr.SubmitDisposition(
+            "rework",
+            "approval-chain-001",
+            [],
+            [MrbReviewInput.Approve("qa-manager", "approved", DateTimeOffset.Parse("2026-08-29T10:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync();
+        var handler = new CloseNonconformanceReportCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext),
+            new FixedIntegrationEventContextAccessor());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "client claims RW-FORGED is complete"),
+                CancellationToken.None));
+
+        Assert.Contains("尚未满足关闭条件", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+        Assert.Null(ncr.ReworkWorkOrderId);
     }
 
     [Fact]
@@ -327,7 +354,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
-                new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "done"),
                 CancellationToken.None));
 
         Assert.Equal("close-ncr", exception.Action);
@@ -604,7 +631,7 @@ public sealed class QualityLifecycleConflictTests
         ncr.SubmitDisposition("sort-and-screen", null, ["evidence-file"]);
         if (status == "closed")
         {
-            ncr.Close(null, null, null, "done", "user:qa-manager-001");
+            ncr.Close(null, null, "done", "user:qa-manager-001");
         }
     }
 

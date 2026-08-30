@@ -2448,8 +2448,6 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
         BusinessGatewayPermissions.MesTraceabilityRead)
     where TRequest : notnull
 {
-    public const string InspectionResultNodeType = "InspectionResult";
-
     protected abstract Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         TRequest request,
         CancellationToken cancellationToken);
@@ -2461,7 +2459,7 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
     {
         var response = await LoadTraceabilityAsync(request, cancellationToken);
         var inspectionNodeIds = response.Nodes
-            .Where(x => string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))
+            .Where(x => string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))
             .Select(x => x.NodeId)
             .ToHashSet(StringComparer.Ordinal);
         if (inspectionNodeIds.Count == 0)
@@ -2485,7 +2483,7 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
         }
 
         return new BusinessConsoleMesTraceabilityResponse(
-            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, InspectionResultNodeType, StringComparison.Ordinal))],
+            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
             [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))]);
     }
 }

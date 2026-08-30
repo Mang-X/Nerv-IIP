@@ -28,16 +28,30 @@ public sealed record BusinessGatewayAuthorizationResult(
     string? DenialReason,
     AuthorizationDataScope? DataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? ScopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? Roles = null)
+    IReadOnlyCollection<AuthorizationRole>? Roles = null,
+    string? AuthorizedOrganizationId = null,
+    string? AuthorizedEnvironmentId = null)
 {
     public static BusinessGatewayAuthorizationResult Allowed(
         string principalId,
         string principalType,
         string loginName,
+        string authorizedOrganizationId,
+        string authorizedEnvironmentId,
         AuthorizationDataScope? dataScope = null,
         IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
         IReadOnlyCollection<AuthorizationRole>? roles = null) =>
-        new(true, principalId, principalType, loginName, null, dataScope, scopeGrants, roles);
+        new(
+            true,
+            principalId,
+            principalType,
+            loginName,
+            null,
+            dataScope,
+            scopeGrants,
+            roles,
+            authorizedOrganizationId,
+            authorizedEnvironmentId);
 
     public static BusinessGatewayAuthorizationResult Forbidden(string reason) =>
         new(false, null, null, null, reason, null);
@@ -248,6 +262,8 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
                     body.PrincipalId!,
                     body.PrincipalType!,
                     body.LoginName!,
+                    requirement.OrganizationId,
+                    requirement.EnvironmentId,
                     body.DataScope,
                     body.ScopeGrants,
                     body.Roles)

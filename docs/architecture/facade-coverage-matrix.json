@@ -720,6 +720,30 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
+      "operationId": "listErpWorkCenterMachineOverheadReconciliations",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
+      "operationId": "reconcileErpWorkCenterMachineOverhead",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-order-costs/{workOrderId}",
+      "operationId": "getErpWorkOrderCostVariance",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issue #2277 intentionally exposes only the ERP service contract."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/month-end-checklist",
       "operationId": "getErpMonthEndChecklist",
       "classification": "exposed",
@@ -1482,6 +1506,19 @@
       ],
       "gatewayOperationIds": [
         "queryBusinessConsoleTelemetryOee"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/oee/aggregates",
+      "operationId": "queryBusinessIiotOeeAggregates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryOeeAggregates"
       ]
     },
     {

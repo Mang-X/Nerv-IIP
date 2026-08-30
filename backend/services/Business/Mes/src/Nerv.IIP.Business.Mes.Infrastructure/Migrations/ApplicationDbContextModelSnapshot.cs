@@ -694,10 +694,21 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("actual_machine_ticks")
                         .HasComment("Nonnegative actual machine duration in .NET ticks frozen by this settlement.");
 
+                    b.Property<long?>("BillableMachineTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("billable_machine_ticks")
+                        .HasComment("Nullable nonnegative billable machine duration; zero is authoritative only while status is Available.");
+
                     b.Property<DateTimeOffset>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
                         .HasComment("Operation completion time in UTC frozen by this settlement.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Single MasterData device asset frozen for available billable machine time; null otherwise.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -705,6 +716,19 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the settlement.");
+
+                    b.Property<string>("MachineTimeBasisCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("machine_time_basis_code")
+                        .HasComment("Governed calculation basis for available billable machine time; null for non-available facts.");
+
+                    b.Property<string>("MachineTimeStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("machine_time_status")
+                        .HasComment("Billable machine-time fact state: Available, NotApplicable, or Unavailable.");
 
                     b.Property<string>("OperationTaskId")
                         .IsRequired()
@@ -759,6 +783,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("operation_actual_time_settlements", "mes", t =>
                         {
                             t.HasComment("Immutable MES operation actual-time settlement revisions and their void lifecycle.");
+
+                            t.HasCheckConstraint("ck_operation_actual_time_settlements_machine_fact", "(machine_time_status = 'Available' AND device_asset_id IS NOT NULL AND billable_machine_ticks IS NOT NULL AND billable_machine_ticks >= 0 AND machine_time_basis_code IS NOT NULL AND machine_time_basis_code = 'single-device-active-minus-explicit-pause-v1') OR (machine_time_status IN ('NotApplicable', 'Unavailable') AND device_asset_id IS NULL AND billable_machine_ticks IS NULL AND machine_time_basis_code IS NULL)");
 
                             t.HasCheckConstraint("ck_operation_actual_time_settlements_revision_positive", "revision > 0");
 
@@ -922,6 +948,19 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDefaultValue(0L)
                         .HasColumnName("labor_time_ticks")
                         .HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
+
+                    b.Property<bool>("MachineTimeEvidenceUnavailable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("machine_time_evidence_unavailable")
+                        .HasComment("Whether the current execution window cannot produce billable machine ticks because device evidence was absent or changed.");
+
+                    b.Property<string>("MachineTimeExecutionDeviceAssetId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("machine_time_execution_device_asset_id")
+                        .HasComment("Single device asset frozen when the current execution window started; null when no authoritative device was present.");
 
                     b.Property<long>("MachineTimeTicks")
                         .ValueGeneratedOnAdd()
@@ -2971,6 +3010,53 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("sku_id")
                         .HasComment("MasterData SKU public id for the item being produced.");
 
+                    b.Property<string>("SourceDefectNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_defect_no")
+                        .HasComment("MES defect number that resolved the rework source work order and operation.");
+
+                    b.Property<string>("SourceLotNo")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_lot_no")
+                        .HasComment("Optional source lot from the Quality NCR rework request.");
+
+                    b.Property<string>("SourceNcrCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_ncr_code")
+                        .HasComment("Quality NCR business code retained for rework traceability.");
+
+                    b.Property<string>("SourceNcrId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_ncr_id")
+                        .HasComment("Quality NCR public id that requested the rework work order.");
+
+                    b.Property<string>("SourceOperationTaskId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_operation_task_id")
+                        .HasComment("Optional MES source operation task business id for a rework work order.");
+
+                    b.Property<DateTimeOffset?>("SourceReworkRequestedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("source_rework_requested_at_utc")
+                        .HasComment("UTC time carried by the Quality NCR rework request.");
+
+                    b.Property<string>("SourceSerialNo")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_serial_no")
+                        .HasComment("Optional source serial from the Quality NCR rework request.");
+
+                    b.Property<string>("SourceWorkOrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_work_order_id")
+                        .HasComment("MES source work order business id for a rework work order.");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -2999,6 +3085,15 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("work_order_id")
                         .HasComment("Business work order id unique within organization and environment.");
 
+                    b.Property<string>("WorkOrderType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("standard")
+                        .HasColumnName("work_order_type")
+                        .HasComment("Work order type: standard or rework.");
+
                     b.HasKey("Id");
 
                     b.HasAlternateKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
@@ -3007,12 +3102,19 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.HasIndex("WorkOrderIdValue")
                         .HasDatabaseName("ix_work_orders_work_order_id");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceNcrId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_orders_scope_source_ncr")
+                        .HasFilter("source_ncr_id IS NOT NULL");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SkuId", "DueUtc")
                         .HasDatabaseName("ix_work_orders_scope_sku_due");
 
                     b.ToTable("work_orders", "mes", t =>
                         {
                             t.HasComment("MES durable work orders created from business demand and ProductEngineering production version references.");
+
+                            t.HasCheckConstraint("ck_work_orders_rework_source", "(work_order_type = 'standard' AND source_work_order_id IS NULL AND source_operation_task_id IS NULL AND source_defect_no IS NULL AND source_ncr_id IS NULL AND source_ncr_code IS NULL AND source_lot_no IS NULL AND source_serial_no IS NULL AND source_rework_requested_at_utc IS NULL) OR (work_order_type = 'rework' AND source_work_order_id IS NOT NULL AND source_defect_no IS NOT NULL AND source_ncr_id IS NOT NULL AND source_ncr_code IS NOT NULL AND source_rework_requested_at_utc IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_work_orders_version_positive", "version > 0");
                         });

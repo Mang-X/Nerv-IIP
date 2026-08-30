@@ -16,6 +16,8 @@ using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Contracts.Inventory;
@@ -3354,6 +3356,10 @@ public sealed class BusinessGatewayProxyTests
 
     // 追溯图上的检验结论带出缺陷码与处置结论，属 authorization-matrix 里 business.mes.quality.read 的质量下钻内容；
     // 只持 traceability.read 的主体仍拿到整张执行图，但不含检验结论节点及其边。三个读面同一口径。
+    //
+    // 下面假下游响应与断言里的 "InspectionResult" 是**刻意保留的 wire 字面量**，不要改成
+    // MesTraceabilityNodeTypes.InspectionResult：本用例扮演的是下游 MES 发来的 JSON，用常量引用会让
+    // 夹具与被测代码引用同一符号、跟着一起改，从而对「gateway 与 MES wire 值漂移」零鉴别力（#2686 实测）。
     [Theory]
     [MemberData(nameof(TraceabilityRoutesByQualityRead))]
     public async Task Mes_traceability_facades_scope_inspection_verdicts_to_quality_read(string route, bool holdsQualityRead)
@@ -9481,6 +9487,8 @@ public sealed class BusinessGatewayProxyTests
                         defectQuantity = 1,
                         defectReason = "Defect",
                         status = "open",
+                        reworkWorkOrderCreationStatus = "created",
+                        reworkWorkOrderId = "RW-001",
                     },
                 },
             },
@@ -9497,11 +9505,53 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         Assert.Equal("ncr-001", response.Items.Single().Id);
+        Assert.Equal("created", response.Items.Single().ReworkWorkOrderCreationStatus);
+        Assert.Equal("RW-001", response.Items.Single().ReworkWorkOrderId);
         Assert.Equal(1, response.Total);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&keyword=NCR-001&skip=4&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_never_forwards_the_deprecated_close_work_order_field()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new { accepted = true },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+#pragma warning disable CS0618
+        await client.CloseNcrAsync(
+            "internal-token-001",
+            "ncr-001",
+            new BusinessConsoleNcrCloseRequest(
+                "ncr-001",
+                "org-001",
+                "env-dev",
+                "RW-FORGED",
+                null,
+                null,
+                "close"),
+            "user:qa-manager",
+            CancellationToken.None);
+#pragma warning restore CS0618
+
+        Assert.Single(handler.Requests);
+        using var body = JsonDocument.Parse(requestBody!);
+        Assert.False(body.RootElement.TryGetProperty("reworkWorkOrderId", out _));
+        Assert.Equal("close", body.RootElement.GetProperty("reason").GetString());
     }
 
     [Fact]
@@ -9830,6 +9880,7 @@ public sealed class BusinessGatewayProxyTests
                         defectQuantity = 3,
                         defectReason = "dimension-out-of-spec",
                         status = "open",
+                        reworkWorkOrderCreationStatus = "not-requested",
                     },
                 },
             },
@@ -9855,6 +9906,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SKU-001", item.SkuCode);
         Assert.Equal(3, item.DefectQuantity);
         Assert.Equal("dimension-out-of-spec", item.DefectReason);
+        Assert.Equal("not-requested", item.ReworkWorkOrderCreationStatus);
     }
 
     [Fact]
@@ -9883,6 +9935,7 @@ public sealed class BusinessGatewayProxyTests
                     createdAtUtc = "2026-07-14T01:00:00Z",
                     updatedAtUtc = "2026-07-14T01:00:00Z",
                     sourceInspectionRecordId = "rec-77",
+                    reworkWorkOrderCreationStatus = "requested",
                 },
                 success = true,
                 message = string.Empty,
@@ -9902,6 +9955,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("appearance", item.DefectReason);
         // 权威业务关系：来源检验记录回链来自服务端，而非客户端 query 参数。
         Assert.Equal("rec-77", item.SourceInspectionRecordId);
+        Assert.Equal("requested", item.ReworkWorkOrderCreationStatus);
+        Assert.Null(item.ReworkWorkOrderId);
         Assert.Equal("/api/business/v1/quality/ncrs/ncr-77", seen!.RequestUri!.AbsolutePath);
         var query = seen.RequestUri!.Query;
         Assert.Contains("organizationId=org-001", query);
@@ -14079,7 +14134,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
             ]));
     }
 
-    public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
+    public Task<BusinessConsoleQualityNcrListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken)
@@ -14087,23 +14142,21 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
         NcrListCallCount++;
         LastInternalToken = internalBearerToken;
         LastNcrListRequest = request;
-        return Task.FromResult(new BusinessConsoleQualityListResponse(
+        return Task.FromResult(new BusinessConsoleQualityNcrListResponse(
             [
-                new BusinessConsoleQualityItem(
+                new BusinessConsoleQualityNcrItem(
                     "ncr-001",
                     "NCR-001",
                     "open",
-                    null,
-                    "SKU-001",
-                    null,
-                    null,
-                    null,
-                    null,
                     "inspection",
                     "IR-001",
+                    "SKU-001",
                     1,
                     "Defect",
                     null,
+                    null,
+                    null,
+                    "not-requested",
                     null),
             ],
             NcrTotal ?? 1));
@@ -14155,7 +14208,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
             "Defect",
             null,
             null,
-            "inspection-record-001"));
+            "inspection-record-001",
+            "not-requested"));
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
@@ -16494,6 +16548,12 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             []));
     }
 
+    public Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        BusinessOeeAggregateRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAvailabilityRequest request,
@@ -17967,4 +18027,3 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([], 0));
     }
 }
-
