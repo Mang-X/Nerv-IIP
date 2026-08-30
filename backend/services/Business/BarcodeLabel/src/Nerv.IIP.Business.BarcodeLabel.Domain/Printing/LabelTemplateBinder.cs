@@ -5,21 +5,43 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
-public sealed record LabelReservedVariables(
-    string LabelValue,
-    Gs1BarcodeValue? Gs1Value,
-    int SequenceNo,
-    string SourceDocumentId);
+public enum PlainLabelBarcodeType
+{
+    Code128,
+    Qr,
+    DataMatrix,
+}
+
+public enum Gs1LabelBarcodeType
+{
+    Gs1128,
+    DataMatrix,
+}
+
+public abstract record LabelBarcodePayload
+{
+    private protected LabelBarcodePayload()
+    {
+    }
+}
+
+public sealed record PlainLabelBarcodePayload(PlainLabelBarcodeType Type, string Value)
+    : LabelBarcodePayload;
+
+public sealed record Gs1LabelBarcodePayload(Gs1LabelBarcodeType Type, Gs1BarcodeValue Value)
+    : LabelBarcodePayload;
 
 public sealed record LabelCompilationItem(
     string VariableValuesJson,
-    LabelReservedVariables ReservedVariables);
+    LabelBarcodePayload BarcodePayload,
+    int SequenceNo,
+    string SourceDocumentId);
 
 public sealed record BoundLabelField(LabelTemplateField Field, string Value);
 
 public sealed record BoundLabelDocument(
     LabelTemplateDocument Template,
-    LabelReservedVariables ReservedVariables,
+    LabelBarcodePayload BarcodePayload,
     ImmutableArray<BoundLabelField> Fields);
 
 public static class LabelTemplateBinder
@@ -76,10 +98,9 @@ public static class LabelTemplateBinder
         int itemIndex)
     {
         ArgumentNullException.ThrowIfNull(item);
-        ArgumentNullException.ThrowIfNull(item.ReservedVariables);
         var path = $"items[{itemIndex}]";
         var values = ParseBusinessValues(item.VariableValuesJson, definitions, path);
-        var reserved = BuildReservedValues(item.ReservedVariables, path);
+        var reserved = BuildReservedValues(item, path);
         var fields = ImmutableArray.CreateBuilder<BoundLabelField>(template.Fields.Length);
         foreach (var field in template.Fields)
         {
@@ -91,11 +112,11 @@ public static class LabelTemplateBinder
                 $"{path}.{field.Variable}",
                 allowGs1Separator: field is LabelBarcodeField
                     && field.Variable == "label.value"
-                    && item.ReservedVariables.Gs1Value is not null);
+                    && item.BarcodePayload is Gs1LabelBarcodePayload);
             fields.Add(new BoundLabelField(field, value));
         }
 
-        return new BoundLabelDocument(template, item.ReservedVariables, fields.MoveToImmutable());
+        return new BoundLabelDocument(template, item.BarcodePayload, fields.MoveToImmutable());
     }
 
     private static Dictionary<string, string> ParseBusinessValues(
@@ -161,30 +182,38 @@ public static class LabelTemplateBinder
         }
     }
 
-    private static Dictionary<string, string> BuildReservedValues(LabelReservedVariables reserved, string itemPath)
+    private static Dictionary<string, string> BuildReservedValues(LabelCompilationItem item, string itemPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(reserved.LabelValue);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reserved.SourceDocumentId);
-        if (reserved.SequenceNo <= 0)
+        ArgumentException.ThrowIfNullOrWhiteSpace(item.SourceDocumentId);
+        if (item.SequenceNo <= 0)
         {
             throw StrictJson.Contract($"{itemPath}.item.sequenceNo must be positive.");
         }
 
-        if (reserved.Gs1Value is not null
-            && !string.Equals(reserved.LabelValue, reserved.Gs1Value.ToAiString(), StringComparison.Ordinal))
+        string labelValue;
+        Gs1BarcodeValue? gs1Value;
+        if (item.BarcodePayload is PlainLabelBarcodePayload plainPayload)
         {
-            throw StrictJson.Contract($"{itemPath}.label.value does not match its GS1 value.");
+            ArgumentException.ThrowIfNullOrWhiteSpace(plainPayload.Value);
+            labelValue = plainPayload.Value;
+            gs1Value = null;
+        }
+        else
+        {
+            var gs1Payload = (Gs1LabelBarcodePayload)item.BarcodePayload;
+            labelValue = gs1Payload.Value.ToAiString();
+            gs1Value = gs1Payload.Value;
         }
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["label.value"] = reserved.LabelValue,
-            ["label.gtin"] = reserved.Gs1Value?.Gtin ?? string.Empty,
-            ["label.lotNo"] = reserved.Gs1Value?.LotNo ?? string.Empty,
-            ["label.serialNumber"] = reserved.Gs1Value?.SerialNumber ?? string.Empty,
-            ["label.epcUri"] = reserved.Gs1Value?.EpcUri ?? string.Empty,
-            ["item.sequenceNo"] = reserved.SequenceNo.ToString(CultureInfo.InvariantCulture),
-            ["batch.sourceDocumentId"] = reserved.SourceDocumentId,
+            ["label.value"] = labelValue,
+            ["label.gtin"] = gs1Value?.Gtin ?? string.Empty,
+            ["label.lotNo"] = gs1Value?.LotNo ?? string.Empty,
+            ["label.serialNumber"] = gs1Value?.SerialNumber ?? string.Empty,
+            ["label.epcUri"] = gs1Value?.EpcUri ?? string.Empty,
+            ["item.sequenceNo"] = item.SequenceNo.ToString(CultureInfo.InvariantCulture),
+            ["batch.sourceDocumentId"] = item.SourceDocumentId,
         };
 
         foreach (var (name, value) in values)
@@ -192,7 +221,7 @@ public static class LabelTemplateBinder
             EnsureSafeValue(
                 value,
                 $"{itemPath}.{name}",
-                allowGs1Separator: name == "label.value" && reserved.Gs1Value is not null);
+                allowGs1Separator: name == "label.value" && item.BarcodePayload is Gs1LabelBarcodePayload);
         }
 
         return values;

@@ -22,26 +22,16 @@ public static class ZplV1LabelCompiler
     public const string ContractVersion = "zpl-v1";
     public const int MaximumPayloadBytes = 262144;
 
-    private static readonly HashSet<string> SupportedBarcodeTypes =
-        ["code128", "gs1-128", "qr", "datamatrix", "gs1-datamatrix"];
-
     public static ImmutableArray<CompiledLabelDocument> CompileBatch(
         LabelTemplateDocument template,
         LabelVariableSchema schema,
-        string barcodeType,
         IReadOnlyCollection<LabelCompilationItem> items)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(barcodeType);
-        if (!SupportedBarcodeTypes.Contains(barcodeType))
-        {
-            throw StrictJson.Contract($"Barcode type '{barcodeType}' is not supported by {ContractVersion}.");
-        }
-
         var boundDocuments = LabelTemplateBinder.BindBatch(template, schema, items);
         var payloads = ImmutableArray.CreateBuilder<byte[]>(boundDocuments.Length);
         foreach (var document in boundDocuments)
         {
-            var payload = CompileDocument(document, barcodeType);
+            var payload = CompileDocument(document);
             if (payload.Length > MaximumPayloadBytes)
             {
                 throw StrictJson.Contract($"Compiled ZPL payload exceeds {MaximumPayloadBytes} UTF-8 bytes.");
@@ -59,7 +49,7 @@ public static class ZplV1LabelCompiler
         return result.MoveToImmutable();
     }
 
-    private static byte[] CompileDocument(BoundLabelDocument document, string barcodeType)
+    private static byte[] CompileDocument(BoundLabelDocument document)
     {
         var builder = new StringBuilder();
         builder.Append("^XA^PW")
@@ -86,7 +76,7 @@ public static class ZplV1LabelCompiler
                         .Append("^FS");
                     break;
                 case LabelBarcodeField barcodeField:
-                    AppendBarcode(builder, barcodeField, field.Value, document.ReservedVariables.Gs1Value, barcodeType);
+                    AppendBarcode(builder, barcodeField, field.Value, document.BarcodePayload);
                     break;
                 default:
                     throw StrictJson.Contract($"Unsupported template field kind '{field.Field.Kind}'.");
@@ -101,13 +91,28 @@ public static class ZplV1LabelCompiler
         StringBuilder builder,
         LabelBarcodeField field,
         string value,
-        Gs1BarcodeValue? gs1Value,
-        string barcodeType)
+        LabelBarcodePayload barcodePayload)
     {
         builder.Append("^BY").Append(field.ModuleWidth.ToString(CultureInfo.InvariantCulture));
+        if (barcodePayload is PlainLabelBarcodePayload plainPayload)
+        {
+            AppendPlainBarcode(builder, field, value, plainPayload.Type);
+            return;
+        }
+
+        var gs1Payload = (Gs1LabelBarcodePayload)barcodePayload;
+        AppendGs1Barcode(builder, field, gs1Payload);
+    }
+
+    private static void AppendPlainBarcode(
+        StringBuilder builder,
+        LabelBarcodeField field,
+        string value,
+        PlainLabelBarcodeType barcodeType)
+    {
         switch (barcodeType)
         {
-            case "code128":
+            case PlainLabelBarcodeType.Code128:
                 EnsureCode128Data(value, "Code 128");
                 builder.Append("^BCN,")
                     .Append(field.Height.ToString(CultureInfo.InvariantCulture))
@@ -115,35 +120,44 @@ public static class ZplV1LabelCompiler
                     .Append(value)
                     .Append("^FS");
                 return;
-            case "gs1-128":
-                builder.Append("^BCN,")
-                    .Append(field.Height.ToString(CultureInfo.InvariantCulture))
-                    .Append(",Y,N,N,A^FD>;>8")
-                    .Append(EncodeGs1ForCode128(RequiredGs1(gs1Value), ">8"))
-                    .Append("^FS");
-                return;
-            case "qr":
+            case PlainLabelBarcodeType.Qr:
                 builder.Append("^BQ,2,6,Q,7^FDQA,")
                     .Append(value)
                     .Append("^FS");
                 return;
-            case "datamatrix":
+            case PlainLabelBarcodeType.DataMatrix:
                 builder.Append("^BXN,6,200^FD")
                     .Append(value)
                     .Append("^FS");
                 return;
-            case "gs1-datamatrix":
-                builder.Append("^BXN,6,200^FH^FD_1")
-                    .Append(EncodeGs1ForDataMatrix(RequiredGs1(gs1Value), "_1"))
-                    .Append("^FS");
-                return;
             default:
-                throw StrictJson.Contract($"Barcode type '{barcodeType}' is not supported by {ContractVersion}.");
+                throw StrictJson.Contract($"Plain barcode type '{barcodeType}' is not supported by {ContractVersion}.");
         }
     }
 
-    private static Gs1BarcodeValue RequiredGs1(Gs1BarcodeValue? value) =>
-        value ?? throw StrictJson.Contract("A GS1 barcode type requires a Gs1BarcodeValue.");
+    private static void AppendGs1Barcode(
+        StringBuilder builder,
+        LabelBarcodeField field,
+        Gs1LabelBarcodePayload payload)
+    {
+        switch (payload.Type)
+        {
+            case Gs1LabelBarcodeType.Gs1128:
+                builder.Append("^BCN,")
+                    .Append(field.Height.ToString(CultureInfo.InvariantCulture))
+                    .Append(",Y,N,N,A^FD>;>8")
+                    .Append(EncodeGs1ForCode128(payload.Value, ">8"))
+                    .Append("^FS");
+                return;
+            case Gs1LabelBarcodeType.DataMatrix:
+                builder.Append("^BXN,6,200^FD_1")
+                    .Append(EncodeGs1ForDataMatrix(payload.Value, "_1"))
+                    .Append("^FS");
+                return;
+            default:
+                throw StrictJson.Contract($"GS1 barcode type '{payload.Type}' is not supported by {ContractVersion}.");
+        }
+    }
 
     private static string EncodeGs1ForCode128(Gs1BarcodeValue value, string separatorEscape) =>
         EncodeGs1(value, separatorEscape, segment =>
@@ -153,7 +167,7 @@ public static class ZplV1LabelCompiler
         });
 
     private static string EncodeGs1ForDataMatrix(Gs1BarcodeValue value, string separatorEscape) =>
-        EncodeGs1(value, separatorEscape, segment => segment.Replace("_", "_5F", StringComparison.Ordinal));
+        EncodeGs1(value, separatorEscape, segment => segment.Replace("_", "__", StringComparison.Ordinal));
 
     private static string EncodeGs1(
         Gs1BarcodeValue value,
@@ -168,37 +182,13 @@ public static class ZplV1LabelCompiler
         ValidateFixedDigits(value.Gtin, 14, "GTIN");
         ValidateFixedDigits(value.Sscc, 18, "SSCC");
 
-        var segments = new List<(string Value, bool VariableLength)>();
-        if (!string.IsNullOrWhiteSpace(value.Sscc))
-        {
-            segments.Add(($"00{value.Sscc}", false));
-        }
-
-        if (!string.IsNullOrWhiteSpace(value.Gtin))
-        {
-            segments.Add(($"01{value.Gtin}", false));
-        }
-
-        if (!string.IsNullOrWhiteSpace(value.LotNo))
-        {
-            segments.Add(($"10{value.LotNo}", true));
-        }
-
-        if (!string.IsNullOrWhiteSpace(value.SerialNumber))
-        {
-            segments.Add(($"21{value.SerialNumber}", true));
-        }
-
-        if (value.Quantity is not null)
-        {
-            segments.Add(($"30{value.Quantity.Value.ToString("0.#############################", CultureInfo.InvariantCulture)}", true));
-        }
-
+        var segments = value.GetApplicationIdentifierSegments();
         var builder = new StringBuilder();
-        for (var index = 0; index < segments.Count; index++)
+        for (var index = 0; index < segments.Length; index++)
         {
-            builder.Append(encodeData(segments[index].Value));
-            if (segments[index].VariableLength && index < segments.Count - 1)
+            builder.Append(encodeData(segments[index].Identifier))
+                .Append(encodeData(segments[index].Value));
+            if (segments[index].VariableLength && index < segments.Length - 1)
             {
                 builder.Append(separatorEscape);
             }

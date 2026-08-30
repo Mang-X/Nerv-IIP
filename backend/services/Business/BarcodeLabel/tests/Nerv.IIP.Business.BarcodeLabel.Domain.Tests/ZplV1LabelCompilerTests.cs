@@ -10,28 +10,27 @@ public sealed class ZplV1LabelCompilerTests
     [Theory]
     [MemberData(nameof(GoldenBarcodeCases))]
     public void Compile_emits_the_approved_zpl_v1_barcode_fragments(
-        string barcodeType,
         LabelCompilationItem item,
         string commandFragment,
         string dataFragment)
     {
-        var zpl = CompileText(barcodeType, item);
+        var zpl = CompileText(item);
 
         Assert.Contains(commandFragment, zpl, StringComparison.Ordinal);
         Assert.Contains(dataFragment, zpl, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("gs1-128", ">8", "^FD>;>8010950110153000310123456>821789012^FS")]
-    [InlineData("gs1-datamatrix", "_1", "^FD_1010950110153000310123456_121789012^FS")]
+    [InlineData(Gs1LabelBarcodeType.Gs1128, ">8", "^FD>;>8010950110153000310123456>821789012^FS")]
+    [InlineData(Gs1LabelBarcodeType.DataMatrix, "_1", "^FD_1010950110153000310123456_121789012^FS")]
     public void Compile_places_exactly_the_start_and_separator_fnc1_escapes(
-        string barcodeType,
+        Gs1LabelBarcodeType barcodeType,
         string fnc1Escape,
         string expectedDataFragment)
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", "123456", "789012", null);
 
-        var zpl = CompileText(barcodeType, Gs1Item(gs1));
+        var zpl = CompileText(Gs1Item(gs1, barcodeType));
 
         Assert.Contains(expectedDataFragment, zpl, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(zpl, fnc1Escape));
@@ -44,11 +43,19 @@ public sealed class ZplV1LabelCompilerTests
     [Fact]
     public void Compile_keeps_plain_barcode_types_free_of_fnc1_escapes()
     {
-        var code128 = CompileText("code128", PlainItem("MAT-0001"));
-        var dataMatrix = CompileText("datamatrix", PlainItem("DM-SN0001"));
+        var code128 = CompileText(PlainItem("MAT-0001", PlainLabelBarcodeType.Code128));
+        var dataMatrix = CompileText(PlainItem("DM-SN0001", PlainLabelBarcodeType.DataMatrix));
 
         Assert.DoesNotContain(">8", code128, StringComparison.Ordinal);
         Assert.DoesNotContain("_1", dataMatrix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_rejects_gs1_control_data_in_plain_code128()
+    {
+        var gs1 = new Gs1BarcodeValue("09501101530003", "LOT-001", "SN-001", null);
+
+        Assert.Throws<ArgumentException>(() => Compile(PlainItem(gs1.ToAiString(), PlainLabelBarcodeType.Code128)));
     }
 
     [Fact]
@@ -56,8 +63,8 @@ public sealed class ZplV1LabelCompilerTests
     {
         var item = PlainItem("MAT-0001");
 
-        var first = Compile("code128", item);
-        var second = Compile("code128", item);
+        var first = Compile(item);
+        var second = Compile(item);
 
         Assert.Equal(first.Payload.ToArray(), second.Payload.ToArray());
     }
@@ -66,11 +73,13 @@ public sealed class ZplV1LabelCompilerTests
     public async Task Compile_is_independent_of_the_process_culture()
     {
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
-        var item = Gs1Item(new Gs1BarcodeValue("09501101530003", "LOT-001", "SN-001", 1.5m));
+        var item = Gs1Item(
+            new Gs1BarcodeValue("09501101530003", "LOT-001", "SN-001", 1.5m),
+            Gs1LabelBarcodeType.Gs1128);
         globalState.UseCulture("en-US");
-        var english = Compile("gs1-128", item);
+        var english = Compile(item);
         globalState.UseCulture("fr-FR");
-        var french = Compile("gs1-128", item);
+        var french = Compile(item);
 
         Assert.Equal(english.Payload.ToArray(), french.Payload.ToArray());
     }
@@ -78,7 +87,7 @@ public sealed class ZplV1LabelCompilerTests
     [Fact]
     public void Compile_emits_media_and_text_layout_from_the_template()
     {
-        var zpl = CompileText("code128", PlainItem("MAT-0001"));
+        var zpl = CompileText(PlainItem("MAT-0001"));
 
         Assert.StartsWith("^XA^PW812^LL406", zpl, StringComparison.Ordinal);
         Assert.Contains("^FO10,20^A0N,30,30^FDSKU-001^FS", zpl, StringComparison.Ordinal);
@@ -224,7 +233,7 @@ public sealed class ZplV1LabelCompilerTests
     [InlineData("MAT>:INJECT")]
     public void Compiler_rejects_code128_control_sequences_in_barcode_data(string labelValue)
     {
-        Assert.Throws<ArgumentException>(() => Compile("code128", PlainItem(labelValue)));
+        Assert.Throws<ArgumentException>(() => Compile(PlainItem(labelValue)));
     }
 
     [Theory]
@@ -235,17 +244,18 @@ public sealed class ZplV1LabelCompilerTests
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", lotNo, serialNumber, null);
 
-        Assert.Throws<ArgumentException>(() => Compile("gs1-128", Gs1Item(gs1)));
+        Assert.Throws<ArgumentException>(() => Compile(Gs1Item(gs1, Gs1LabelBarcodeType.Gs1128)));
     }
 
     [Fact]
-    public void Compiler_hex_escapes_literal_underscores_in_gs1_datamatrix_data()
+    public void Compiler_uses_bx_fnc1_escapes_and_doubles_literal_underscores_in_gs1_datamatrix_data()
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", "LOT_A", "SN_001", null);
 
-        var zpl = CompileText("gs1-datamatrix", Gs1Item(gs1));
+        var zpl = CompileText(Gs1Item(gs1, Gs1LabelBarcodeType.DataMatrix));
 
-        Assert.Contains("^FD_1010950110153000310LOT_5FA_121SN_5F001^FS", zpl, StringComparison.Ordinal);
+        Assert.Contains("^BXN,6,200^FD_1010950110153000310LOT__A_121SN__001^FS", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("^FH", zpl, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(zpl, "_1"));
     }
 
@@ -256,20 +266,7 @@ public sealed class ZplV1LabelCompilerTests
     {
         var gs1 = new Gs1BarcodeValue(gtin, "LOT-A", "SN-001", null, Sscc: sscc);
 
-        Assert.Throws<ArgumentException>(() => Compile("gs1-128", Gs1Item(gs1)));
-    }
-
-    [Fact]
-    public void Compiler_rejects_an_unknown_barcode_type()
-    {
-        var template = LabelTemplateDocument.Parse(Template());
-        var schema = LabelVariableSchema.Parse(Schema());
-
-        Assert.Throws<ArgumentException>(() => ZplV1LabelCompiler.CompileBatch(
-            template,
-            schema,
-            "pdf417",
-            [PlainItem("MAT-0001")]));
+        Assert.Throws<ArgumentException>(() => Compile(Gs1Item(gs1, Gs1LabelBarcodeType.Gs1128)));
     }
 
     [Fact]
@@ -282,19 +279,23 @@ public sealed class ZplV1LabelCompilerTests
             VariableValuesJson = $$"""{"skuCode":"{{new string('A', 262144)}}"}""",
         };
 
-        Assert.Throws<ArgumentException>(() => ZplV1LabelCompiler.CompileBatch(template, schema, "code128", [item]));
+        Assert.Throws<ArgumentException>(() => ZplV1LabelCompiler.CompileBatch(template, schema, [item]));
     }
 
-    public static TheoryData<string, LabelCompilationItem, string, string> GoldenBarcodeCases()
+    public static TheoryData<LabelCompilationItem, string, string> GoldenBarcodeCases()
     {
+        // Contract sources, independent from the compiler implementation:
+        // - GitHub Issue #2065, approved specification revision 2, "minimum golden vectors".
+        // - Zebra ZPL Programming Guide P1099958-001 (2018-01-31), ^BC and ^BX quality 200.
+        // - GS1 DataMatrix Guideline release 2.5.1, sections 2.2.1 and 2.2.2.
         var gs1 = new Gs1BarcodeValue("09501101530003", "123456", "789012", null);
-        return new TheoryData<string, LabelCompilationItem, string, string>
+        return new TheoryData<LabelCompilationItem, string, string>
         {
-            { "code128", PlainItem("MAT-0001"), "^BCN,100,Y,N,N,A", "^FD>:MAT-0001^FS" },
-            { "gs1-128", Gs1Item(gs1), "^BCN,100,Y,N,N,A", "^FD>;>8010950110153000310123456>821789012^FS" },
-            { "qr", PlainItem("https://example.invalid/items/SN0001"), "^BQ,2,6,Q,7", "^FDQA,https://example.invalid/items/SN0001^FS" },
-            { "datamatrix", PlainItem("DM-SN0001"), "^BXN,6,200", "^FDDM-SN0001^FS" },
-            { "gs1-datamatrix", Gs1Item(gs1), "^BXN,6,200", "^FD_1010950110153000310123456_121789012^FS" },
+            { PlainItem("MAT-0001", PlainLabelBarcodeType.Code128), "^BCN,100,Y,N,N,A", "^FD>:MAT-0001^FS" },
+            { Gs1Item(gs1, Gs1LabelBarcodeType.Gs1128), "^BCN,100,Y,N,N,A", "^FD>;>8010950110153000310123456>821789012^FS" },
+            { PlainItem("https://example.invalid/items/SN0001", PlainLabelBarcodeType.Qr), "^BQ,2,6,Q,7", "^FDQA,https://example.invalid/items/SN0001^FS" },
+            { PlainItem("DM-SN0001", PlainLabelBarcodeType.DataMatrix), "^BXN,6,200", "^FDDM-SN0001^FS" },
+            { Gs1Item(gs1, Gs1LabelBarcodeType.DataMatrix), "^BXN,6,200", "^FD_1010950110153000310123456_121789012^FS" },
         };
     }
 
@@ -325,21 +326,31 @@ public sealed class ZplV1LabelCompilerTests
         Schema("""{"name":"skuCode","type":"string","maxLength":0}"""),
     };
 
-    private static CompiledLabelDocument Compile(string barcodeType, LabelCompilationItem item)
+    private static CompiledLabelDocument Compile(LabelCompilationItem item)
     {
         var template = LabelTemplateDocument.Parse(Template());
         var schema = LabelVariableSchema.Parse(Schema());
-        return Assert.Single(ZplV1LabelCompiler.CompileBatch(template, schema, barcodeType, [item]));
+        return Assert.Single(ZplV1LabelCompiler.CompileBatch(template, schema, [item]));
     }
 
-    private static string CompileText(string barcodeType, LabelCompilationItem item) =>
-        Encoding.UTF8.GetString(Compile(barcodeType, item).Payload.Span);
+    private static string CompileText(LabelCompilationItem item) =>
+        Encoding.UTF8.GetString(Compile(item).Payload.Span);
 
-    private static LabelCompilationItem PlainItem(string labelValue) =>
-        new("{\"skuCode\":\"SKU-001\"}", new LabelReservedVariables(labelValue, null, 1, "DOC-001"));
+    private static LabelCompilationItem PlainItem(
+        string labelValue,
+        PlainLabelBarcodeType barcodeType = PlainLabelBarcodeType.Code128) =>
+        new(
+            "{\"skuCode\":\"SKU-001\"}",
+            new PlainLabelBarcodePayload(barcodeType, labelValue),
+            1,
+            "DOC-001");
 
-    private static LabelCompilationItem Gs1Item(Gs1BarcodeValue gs1) =>
-        new("{\"skuCode\":\"SKU-001\"}", new LabelReservedVariables(gs1.ToAiString(), gs1, 1, "DOC-001"));
+    private static LabelCompilationItem Gs1Item(Gs1BarcodeValue gs1, Gs1LabelBarcodeType barcodeType) =>
+        new(
+            "{\"skuCode\":\"SKU-001\"}",
+            new Gs1LabelBarcodePayload(barcodeType, gs1),
+            1,
+            "DOC-001");
 
     private static string Schema(string? variables = null)
     {
