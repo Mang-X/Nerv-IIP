@@ -49,12 +49,15 @@ describe('reka 别名再导出的组件身份契约', () => {
 
   it.each(aliases)('%s 是 reka 组件的浅拷贝，不是原地改名', (_exportName, alias, source) => {
     // 原地改 `DialogRoot.name` 会让共用同一个 reka 组件的 NvDialog / NvSheet 互相覆盖。
+    // 这条不被上一条蕴含：被原地改名的那个别名自己的 `name` 是对的，只有这条能发现它
+    // 与 reka 源是同一个对象（实测见 PR 的 M2 变异）。
     expect(alias).not.toBe(source)
   })
 
-  it.each(aliases)('%s 的 reka 来源仍是对象式组件', (_exportName, _alias, source) => {
+  // 这条按 source 生效而不是按别名生效（9 个 source 被 12 个别名共用），故不展开成 12 条。
+  it('全部 reka 来源仍是对象式组件', () => {
     // `Object.assign({}, x)` 只搬得动对象式组件的选项。reka 若改成函数式组件，
     // 拷贝结果会是个没有渲染逻辑的空壳，而 `name` 照样设得上——这条断言是那次静默失效的唯一防线。
-    expect(typeof source).toBe('object')
+    for (const [, , source] of aliases) expect(typeof source).toBe('object')
   })
 })

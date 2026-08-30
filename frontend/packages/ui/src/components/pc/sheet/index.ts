@@ -39,13 +39,14 @@ export { default as NvSheetTitle } from './NvSheetTitle.vue'
 export { default as NvSheetDescription } from './NvSheetDescription.vue'
 export { default as NvSheetHeader } from './NvSheetHeader.vue'
 export { default as NvSheetFooter } from './NvSheetFooter.vue'
-// Root / trigger / close carry no styling — re-export reka under Nv names.
+// Root / trigger / close carry no styling. 与 dialog 共用同一批 reka 组件，
+// 故各自浅拷贝后补 `name`（见 `../dialog/index.ts`）。
 export const NvSheetClose = /* @__PURE__ */ Object.assign({}, DialogClose, {
   name: 'NvSheetClose',
-}) as typeof DialogClose
+})
 export const NvSheet = /* @__PURE__ */ Object.assign({}, DialogRoot, {
   name: 'NvSheet',
-}) as typeof DialogRoot
+})
 export const NvSheetTrigger = /* @__PURE__ */ Object.assign({}, DialogTrigger, {
   name: 'NvSheetTrigger',
-}) as typeof DialogTrigger
+})

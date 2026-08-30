@@ -387,7 +387,6 @@ const uiStubs = {
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   SelectTrigger: { template: '<button><slot /></button>' },
-  SelectValue: true,
   Sheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   SheetContent: { template: '<div><slot /></div>' },
   SheetDescription: { template: '<p><slot /></p>' },

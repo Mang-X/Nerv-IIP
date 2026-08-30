@@ -117,9 +117,7 @@ const alertDialogStubs = {
 const dialogStubs = {
   // NvDialog/NvDialogTrigger/NvDialogClose 是 reka-ui 原语再导出，组件名仍是 DialogRoot/DialogTrigger/DialogClose。
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -137,7 +135,6 @@ const selectStubs = {
   NvSelectTrigger: { template: '<span><slot /></span>' },
   // NvSelectValue 是 reka-ui SelectValue 再导出，组件名仍是 SelectValue。
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

@@ -15,6 +15,7 @@ export { default as NvDropdownMenuSub } from './NvDropdownMenuSub.vue'
 export { default as NvDropdownMenuSubContent } from './NvDropdownMenuSubContent.vue'
 export { default as NvDropdownMenuSubTrigger } from './NvDropdownMenuSubTrigger.vue'
 export { default as NvDropdownMenuTrigger } from './NvDropdownMenuTrigger.vue'
+// 浅拷贝补 `name` 的理由见 `../dialog/index.ts`。
 export const NvDropdownMenuPortal = /* @__PURE__ */ Object.assign({}, DropdownMenuPortal, {
   name: 'NvDropdownMenuPortal',
-}) as typeof DropdownMenuPortal
+})

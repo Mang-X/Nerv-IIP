@@ -70,7 +70,6 @@ const dialogStubs = {
   // SelectRoot（已被 NvSelect stub 抹平）而抛错。trigger 不吐 slot 即可自洽。
   NvSelectTrigger: { template: '<span />' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

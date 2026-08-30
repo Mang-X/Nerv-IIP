@@ -102,9 +102,7 @@ const calRowActionStubs = {
 }
 const dialogStubs = {
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -132,7 +130,6 @@ const dialogStubs = {
 // DialogRoot/DialogTrigger/DialogClose），NvSheetContent 等是真 .vue 包装（含 Teleport，就地渲染）。
 const sheetStubs = {
   NvSheet: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -157,7 +154,6 @@ const formSelectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -186,7 +182,6 @@ function findButtonsByText(wrapper: ReturnType<typeof mount>, label: string) {
 // 全部就地渲染避免崩溃（NvDialog/NvDialogTrigger 是 reka 再导出，根 DialogRoot/DialogTrigger 同样桩）。
 const dialogContentStubs = {
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
