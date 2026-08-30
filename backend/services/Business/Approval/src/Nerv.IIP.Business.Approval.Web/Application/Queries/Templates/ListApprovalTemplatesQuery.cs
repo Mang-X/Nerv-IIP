@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
+using Nerv.IIP.Business.Approval.Web.Application.Validation;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Queries.Templates;
 
@@ -35,6 +36,15 @@ public sealed record ApprovalTemplateStepResponse(
     string CompletionPolicy,
     string? ConditionExpression,
     ApprovalRoutingCondition? Condition);
+
+public sealed class ListApprovalTemplatesQueryValidator : AbstractValidator<ListApprovalTemplatesQuery>
+{
+    public ListApprovalTemplatesQueryValidator()
+    {
+        this.AddOptionalTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        this.AddOffsetPageRules(query => query.Skip, query => query.Take);
+    }
+}
 
 public sealed class ListApprovalTemplatesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListApprovalTemplatesQuery, ApprovalTemplateListResponse>
