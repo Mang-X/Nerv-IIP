@@ -243,6 +243,78 @@ describe('OEE aggregate presentation', () => {
     )
   })
 
+  it('breaks every candidate edge when spring DST histories converge on one bucket', () => {
+    const report = presentOeeReport({
+      dimension: 'day',
+      trendBuckets: [
+        bucket({
+          businessDate: '2026-03-08',
+          bucketStartUtc: '2026-03-08T04:00:00.000Z',
+          bucketEndUtc: '2026-03-09T04:00:00.000Z',
+          oeeRate: 0.2,
+        }),
+        bucket({
+          businessDate: '2026-03-08',
+          bucketStartUtc: '2026-03-08T05:00:00.000Z',
+          bucketEndUtc: '2026-03-09T04:00:00.000Z',
+          oeeRate: 0.9,
+        }),
+        bucket({
+          businessDate: '2026-03-09',
+          bucketStartUtc: '2026-03-09T04:00:00.000Z',
+          bucketEndUtc: '2026-03-10T04:00:00.000Z',
+          oeeRate: 0.5,
+        }),
+      ],
+      tableBuckets: [],
+      tableTotal: 3,
+    })
+
+    const segments = report.trendGroups[0]?.segments ?? []
+    expect(segments).toHaveLength(3)
+    expect(segments.flatMap((segment) => segment.runs)).toEqual([
+      expect.objectContaining({ displayMode: 'point' }),
+      expect.objectContaining({ displayMode: 'point' }),
+      expect.objectContaining({ displayMode: 'point' }),
+    ])
+  })
+
+  it('breaks every candidate edge when fall DST history diverges into two buckets', () => {
+    const report = presentOeeReport({
+      dimension: 'day',
+      trendBuckets: [
+        bucket({
+          businessDate: '2026-10-31',
+          bucketStartUtc: '2026-10-31T04:00:00.000Z',
+          bucketEndUtc: '2026-11-01T04:00:00.000Z',
+          oeeRate: 0.5,
+        }),
+        bucket({
+          businessDate: '2026-11-01',
+          bucketStartUtc: '2026-11-01T04:00:00.000Z',
+          bucketEndUtc: '2026-11-02T04:00:00.000Z',
+          oeeRate: 0.2,
+        }),
+        bucket({
+          businessDate: '2026-11-01',
+          bucketStartUtc: '2026-11-01T04:00:00.000Z',
+          bucketEndUtc: '2026-11-02T05:00:00.000Z',
+          oeeRate: 0.9,
+        }),
+      ],
+      tableBuckets: [],
+      tableTotal: 3,
+    })
+
+    const segments = report.trendGroups[0]?.segments ?? []
+    expect(segments).toHaveLength(3)
+    expect(segments.flatMap((segment) => segment.runs)).toEqual([
+      expect.objectContaining({ displayMode: 'point' }),
+      expect.objectContaining({ displayMode: 'point' }),
+      expect.objectContaining({ displayMode: 'point' }),
+    ])
+  })
+
   it('keeps missing buckets in the segment while breaking drawable runs', () => {
     const buckets = Array.from({ length: 5 }, (_, index) =>
       bucket({

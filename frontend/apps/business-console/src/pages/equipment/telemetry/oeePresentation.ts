@@ -169,11 +169,22 @@ function presentDayTrendGroups(
 function presentTrendSegments(
   orderedBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
 ): OeeTrendSegment[] {
+  const nextBucketByIndex = retainUnambiguousAdjacentEdges(orderedBuckets)
+  const previousBucketByIndex = new Map<number, number>()
+  for (const [sourceIndex, targetIndex] of nextBucketByIndex) {
+    previousBucketByIndex.set(targetIndex, sourceIndex)
+  }
+
   const segmentBuckets: BusinessConsoleTelemetryOeeAggregateBucket[][] = []
-  for (const bucket of orderedBuckets) {
-    const segment = segmentBuckets.find((candidate) => canContinueSegment(candidate, bucket))
-    if (segment) segment.push(bucket)
-    else segmentBuckets.push([bucket])
+  for (let startIndex = 0; startIndex < orderedBuckets.length; startIndex += 1) {
+    if (previousBucketByIndex.has(startIndex)) continue
+    const segment: BusinessConsoleTelemetryOeeAggregateBucket[] = []
+    let bucketIndex: number | undefined = startIndex
+    while (bucketIndex !== undefined) {
+      segment.push(orderedBuckets[bucketIndex]!)
+      bucketIndex = nextBucketByIndex.get(bucketIndex)
+    }
+    segmentBuckets.push(segment)
   }
 
   return segmentBuckets
@@ -181,32 +192,49 @@ function presentTrendSegments(
     .map((buckets, index) => presentTrendSegment(buckets, index + 1))
 }
 
-function canContinueSegment(
-  segment: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
-  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+function retainUnambiguousAdjacentEdges(
+  orderedBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
 ) {
-  const previous = segment.at(-1)
-  if (!previous || !isSameOrNextBusinessDate(previous.businessDate, bucket.businessDate)) {
-    return false
+  const successorCandidates = orderedBuckets.map(() => [] as number[])
+  const predecessorCandidateCounts = orderedBuckets.map(() => 0)
+
+  for (let sourceIndex = 0; sourceIndex < orderedBuckets.length; sourceIndex += 1) {
+    for (let targetIndex = sourceIndex + 1; targetIndex < orderedBuckets.length; targetIndex += 1) {
+      if (!areAdjacentBuckets(orderedBuckets[sourceIndex]!, orderedBuckets[targetIndex]!)) continue
+      successorCandidates[sourceIndex]!.push(targetIndex)
+      predecessorCandidateCounts[targetIndex] += 1
+    }
   }
-  if (
-    segment.some((existing) => nullable(existing.businessDate) === nullable(bucket.businessDate))
-  ) {
-    return false
+
+  const retainedEdges = new Map<number, number>()
+  for (let sourceIndex = 0; sourceIndex < successorCandidates.length; sourceIndex += 1) {
+    const candidates = successorCandidates[sourceIndex]!
+    const targetIndex = candidates[0]
+    if (
+      candidates.length === 1 &&
+      targetIndex !== undefined &&
+      predecessorCandidateCounts[targetIndex] === 1
+    ) {
+      retainedEdges.set(sourceIndex, targetIndex)
+    }
   }
-  const previousEnd = Date.parse(previous.bucketEndUtc ?? '')
-  const currentStart = Date.parse(bucket.bucketStartUtc ?? '')
-  return Number.isFinite(previousEnd) && previousEnd === currentStart
+
+  return retainedEdges
 }
 
-function isSameOrNextBusinessDate(previous?: string | null, current?: string | null) {
-  const previousDate = parseBusinessDate(previous)
-  const currentDate = parseBusinessDate(current)
+function areAdjacentBuckets(
+  source: BusinessConsoleTelemetryOeeAggregateBucket,
+  target: BusinessConsoleTelemetryOeeAggregateBucket,
+) {
+  const sourceDate = parseBusinessDate(source.businessDate)
+  const targetDate = parseBusinessDate(target.businessDate)
+  const sourceEnd = Date.parse(source.bucketEndUtc ?? '')
+  const targetStart = Date.parse(target.bucketStartUtc ?? '')
   return (
-    previousDate !== null &&
-    currentDate !== null &&
-    currentDate >= previousDate &&
-    currentDate <= previousDate + 24 * 60 * 60 * 1000
+    sourceDate !== null &&
+    targetDate === sourceDate + 24 * 60 * 60 * 1000 &&
+    Number.isFinite(sourceEnd) &&
+    sourceEnd === targetStart
   )
 }
 

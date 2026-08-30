@@ -81,13 +81,13 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText(/完整窗口共 65 个业务日聚合桶，按\s*2 个站点分别呈现/)).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '站点 SITE-WUXI', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '站点 SITE-DETROIT', exact: true })).toBeVisible()
   await expect(page.getByText('34 个桶，33 个完整率值点，1 个缺失点保留在核查表。')).toBeVisible()
   await expect(page.getByText('31 个桶，31 个完整率值点。', { exact: true })).toBeVisible()
   await expect(page.getByText('1 个桶缺少率值，未画成 0%')).toBeVisible()
   await expect(page.getByText('横轴使用业务日“月/日”短标签。')).toBeVisible()
   await expect(page.getByText('SITE-SUZHOU · OEE', { exact: true })).toHaveCount(3)
-  await expect(page.getByText('SITE-WUXI · OEE', { exact: true })).toHaveCount(1)
+  await expect(page.getByText('SITE-DETROIT · OEE', { exact: true })).toHaveCount(1)
   await expect(page.getByText('3/1', { exact: true })).toHaveCount(3)
   await expect(page.getByText('3/31', { exact: true })).toHaveCount(2)
   await expect(page.getByText('数据不完整', { exact: true })).toHaveCount(0)
@@ -96,24 +96,24 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   const suzhouPanel = page.locator('[data-oee-site="SITE-SUZHOU"]')
   await expect(suzhouPanel.locator('[data-oee-segment]')).toHaveCount(2)
   await expect(
-    suzhouPanel.getByText('首桶 UTC：2026-03-01 15:00:00 UTC – 2026-03-02 15:00:00 UTC', {
+    suzhouPanel.getByText('首桶 UTC：2026-02-28 15:00:00 UTC – 2026-03-01 15:00:00 UTC', {
       exact: true,
     }),
   ).toBeVisible()
   await expect(
-    suzhouPanel.getByText('首桶 UTC：2026-03-01 16:00:00 UTC – 2026-03-02 16:00:00 UTC', {
+    suzhouPanel.getByText('首桶 UTC：2026-02-28 16:00:00 UTC – 2026-03-01 16:00:00 UTC', {
       exact: true,
     }),
   ).toBeVisible()
 
-  const wuxiPanel = page.locator('[data-oee-site="SITE-WUXI"]')
-  await wuxiPanel.getByText('查看逐桶 UTC 窗口').click()
+  const detroitPanel = page.locator('[data-oee-site="SITE-DETROIT"]')
+  await detroitPanel.getByText('查看逐桶 UTC 窗口').click()
   await expect(
-    wuxiPanel.getByText('2026-03-08：2026-03-08 05:00:00 UTC – 2026-03-09 04:00:00 UTC', {
+    detroitPanel.getByText('2026-03-08：2026-03-08 05:00:00 UTC – 2026-03-09 04:00:00 UTC', {
       exact: true,
     }),
   ).toBeVisible()
-  await wuxiPanel.getByText('查看逐桶 UTC 窗口').click()
+  await detroitPanel.getByText('查看逐桶 UTC 窗口').click()
   await expect(suzhouPanel.locator('[data-oee-run]')).toHaveCount(3)
 
   const suzhouChart = page.locator('[data-oee-site="SITE-SUZHOU"]').getByRole('figure').first()
@@ -149,7 +149,7 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
     }),
   ).toBeVisible()
   await expect(
-    page.getByText('站点 SITE-WUXI › 车间 WORKSHOP-ASSEMBLY › 产线 LINE-FINAL', {
+    page.getByText('站点 SITE-DETROIT › 车间 WORKSHOP-ASSEMBLY › 产线 LINE-FINAL', {
       exact: true,
     }),
   ).toBeVisible()
@@ -186,14 +186,15 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
 function businessDayResponse(url: URL) {
   const primaryBuckets = Array.from({ length: 31 }, (_, index) => {
     const businessDate = `2026-03-${String(index + 1).padStart(2, '0')}`
+    const previousDate = isoDate(new Date(Date.UTC(2026, 2, index)))
     const nextDate = isoDate(new Date(Date.UTC(2026, 2, index + 2)))
     const suzhou = bucket('day', 'SITE-SUZHOU', businessDate, 0.781, 0.86, 0.93, 0.625, {
       siteCode: 'SITE-SUZHOU',
-      bucketStartUtc: `${businessDate}T16:00:00.000Z`,
-      bucketEndUtc: `${nextDate}T16:00:00.000Z`,
+      bucketStartUtc: `${previousDate}T16:00:00.000Z`,
+      bucketEndUtc: `${businessDate}T16:00:00.000Z`,
     })
-    const wuxi = bucket('day', 'SITE-WUXI', businessDate, 0.88, 0.91, 0.975, 0.781, {
-      siteCode: 'SITE-WUXI',
+    const detroit = bucket('day', 'SITE-DETROIT', businessDate, 0.88, 0.91, 0.975, 0.781, {
+      siteCode: 'SITE-DETROIT',
       bucketStartUtc: `${businessDate}T${index < 8 ? '05' : '04'}:00:00.000Z`,
       bucketEndUtc: `${nextDate}T${index < 7 ? '05' : '04'}:00:00.000Z`,
     })
@@ -206,17 +207,16 @@ function businessDayResponse(url: URL) {
             isDegraded: true,
             degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
           },
-          wuxi,
+          detroit,
         ]
-      : [suzhou, wuxi]
+      : [suzhou, detroit]
   }).flat()
   const tokyoHistory = Array.from({ length: 3 }, (_, index) => {
     const businessDate = `2026-03-0${index + 1}`
-    const nextDate = `2026-03-0${index + 2}`
     return bucket('day', 'SITE-SUZHOU', businessDate, 0.79, 0.88, 0.94, 0.654, {
       siteCode: 'SITE-SUZHOU',
-      bucketStartUtc: `${businessDate}T15:00:00.000Z`,
-      bucketEndUtc: `${nextDate}T15:00:00.000Z`,
+      bucketStartUtc: `${isoDate(new Date(Date.UTC(2026, 2, index)))}T15:00:00.000Z`,
+      bucketEndUtc: `${businessDate}T15:00:00.000Z`,
     })
   })
   const allBuckets = [...primaryBuckets, ...tokyoHistory]
@@ -232,12 +232,16 @@ function shiftResponse(url: URL) {
       workshopCode: 'WORKSHOP-MACHINING',
       lineCode: 'LINE-CNC',
       shiftCode: 'SHIFT-DAY',
+      bucketStartUtc: '2026-03-24T00:00:00.000Z',
+      bucketEndUtc: '2026-03-24T12:00:00.000Z',
     }),
     bucket('shift', 'SHIFT-DAY', '2026-03-24', 0.91, 0.868, 0.989, 0.781, {
-      siteCode: 'SITE-WUXI',
+      siteCode: 'SITE-DETROIT',
       workshopCode: 'WORKSHOP-ASSEMBLY',
       lineCode: 'LINE-FINAL',
       shiftCode: 'SHIFT-DAY',
+      bucketStartUtc: '2026-03-24T12:00:00.000Z',
+      bucketEndUtc: '2026-03-25T00:00:00.000Z',
     }),
   ])
 }
