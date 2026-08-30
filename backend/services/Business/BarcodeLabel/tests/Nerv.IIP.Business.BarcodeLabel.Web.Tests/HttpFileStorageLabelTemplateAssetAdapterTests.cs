@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 using Nerv.IIP.Contracts.FileStorage;
@@ -81,6 +82,21 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         metadata => metadata with { Checksum = $"sha256:{new string('g', 64)}" },
     };
 
+    public static TheoryData<Func<string, Exception>> FileStorageRequestFailures => new()
+    {
+        sensitive => new HttpRequestException(sensitive),
+        sensitive => new JsonException(sensitive),
+        sensitive => new InvalidOperationException(sensitive),
+        sensitive => new NotSupportedException(sensitive),
+        sensitive => new OperationCanceledException(sensitive),
+    };
+
+    public static TheoryData<Func<string, Exception>> DownloadStreamFailures => new()
+    {
+        sensitive => new IOException(sensitive),
+        sensitive => new HttpRequestException(sensitive),
+    };
+
     [Theory]
     [MemberData(nameof(InvalidMetadataCases))]
     public async Task GetVerifiedAsync_invalid_metadata_fails_before_grant_and_download(
@@ -98,38 +114,44 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         Assert.Equal(0, download.Calls);
     }
 
-    [Fact]
-    public async Task GetVerifiedAsync_grant_failure_does_not_download_or_retry()
+    [Theory]
+    [MemberData(nameof(FileStorageRequestFailures))]
+    public async Task GetVerifiedAsync_grant_failure_does_not_leak_diagnostics_download_or_retry(
+        Func<string, Exception> createFailure)
     {
+        const string sensitiveDiagnostic = "grant-request-url-header-secret-2837";
         var bytes = Encoding.UTF8.GetBytes(TemplateJson);
         var fileStorage = new RecordingFileStorageClient(
             CreateMetadata(bytes),
-            grantFailure: new HttpRequestException("grant-secret-url"));
+            grantFailure: createFailure(sensitiveDiagnostic));
         var download = new RecordingHttpMessageHandler(_ => throw new Xunit.Sdk.XunitException("Download must not run."));
         using var adapter = CreateAdapter(fileStorage, download);
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
-        Assert.DoesNotContain("grant-secret-url", exception.ToString(), StringComparison.Ordinal);
+        AssertDiagnosticDoesNotContain(exception, sensitiveDiagnostic);
         Assert.Equal(1, fileStorage.GrantCalls);
         Assert.Equal(0, download.Calls);
     }
 
-    [Fact]
-    public async Task GetVerifiedAsync_metadata_failure_does_not_request_grant_or_leak_diagnostics()
+    [Theory]
+    [MemberData(nameof(FileStorageRequestFailures))]
+    public async Task GetVerifiedAsync_metadata_failure_does_not_request_grant_or_leak_diagnostics(
+        Func<string, Exception> createFailure)
     {
+        const string sensitiveDiagnostic = "metadata-request-url-header-secret-2837";
         var bytes = Encoding.UTF8.GetBytes(TemplateJson);
         var fileStorage = new RecordingFileStorageClient(
             CreateMetadata(bytes),
-            metadataFailure: new HttpRequestException("metadata-sensitive-url"));
+            metadataFailure: createFailure(sensitiveDiagnostic));
         var download = new RecordingHttpMessageHandler(_ => throw new Xunit.Sdk.XunitException("Download must not run."));
         using var adapter = CreateAdapter(fileStorage, download);
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
-        Assert.DoesNotContain("metadata-sensitive-url", exception.ToString(), StringComparison.Ordinal);
+        AssertDiagnosticDoesNotContain(exception, sensitiveDiagnostic);
         Assert.Equal(1, fileStorage.MetadataCalls);
         Assert.Equal(0, fileStorage.GrantCalls);
         Assert.Equal(0, download.Calls);
@@ -139,6 +161,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     [InlineData("https://untrusted.invalid/api/files/v1/download-grants/grant-secret/content")]
     [InlineData("api/files/v1/download-grants/grant-secret/content")]
     [InlineData("//untrusted.invalid/api/files/v1/download-grants/grant-secret/content")]
+    [InlineData("/api/files/v1/download-grants/grant-secret\\content")]
     public async Task GetVerifiedAsync_untrusted_grant_url_is_rejected_before_download(string grantUrl)
     {
         var bytes = Encoding.UTF8.GetBytes(TemplateJson);
@@ -149,7 +172,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
-        Assert.DoesNotContain("grant-secret", exception.ToString(), StringComparison.Ordinal);
+        AssertDiagnosticDoesNotContain(exception, "grant-secret");
         Assert.Equal(0, download.Calls);
     }
 
@@ -169,19 +192,81 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     }
 
     [Fact]
-    public async Task GetVerifiedAsync_redirect_is_rejected_without_following_or_retrying()
+    public async Task GetVerifiedAsync_invalid_grant_header_is_rejected_without_leaking_key_or_value()
     {
+        const string sensitiveHeaderKey = "bad header-key-secret-2837";
+        const string sensitiveHeaderValue = "header-value-secret-2837";
         var bytes = Encoding.UTF8.GetBytes(TemplateJson);
-        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
-        var download = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Redirect)
+        var fileStorage = new RecordingFileStorageClient(
+            CreateMetadata(bytes),
+            grantHeaders: new Dictionary<string, string>
+            {
+                [sensitiveHeaderKey] = sensitiveHeaderValue,
+            });
+        var download = new RecordingHttpMessageHandler(_ => throw new Xunit.Sdk.XunitException("Download must not run."));
+        using var adapter = CreateAdapter(fileStorage, download);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+
+        AssertDiagnosticDoesNotContain(exception, sensitiveHeaderKey, sensitiveHeaderValue);
+        Assert.Equal(1, fileStorage.GrantCalls);
+        Assert.Equal(0, download.Calls);
+    }
+
+    [Fact]
+    public async Task GetVerifiedAsync_download_transport_failure_does_not_leak_grant_url_or_headers()
+    {
+        const string sensitiveGrantUrl = "download-url-secret-2837";
+        const string sensitiveHeaderValue = "download-header-secret-2837";
+        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+        var fileStorage = new RecordingFileStorageClient(
+            CreateMetadata(bytes),
+            grantUrl: $"/api/files/v1/download-grants/{sensitiveGrantUrl}/content",
+            grantHeaders: new Dictionary<string, string>
+            {
+                ["x-download-authorization"] = sensitiveHeaderValue,
+            });
+        var download = new RecordingHttpMessageHandler(request =>
         {
-            Headers = { Location = new Uri("https://redirect.invalid/template.json") }
+            var header = request.Headers.GetValues("x-download-authorization").Single();
+            throw new HttpRequestException($"{request.RequestUri} {header}");
         });
         using var adapter = CreateAdapter(fileStorage, download);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
+        AssertDiagnosticDoesNotContain(exception, sensitiveGrantUrl, sensitiveHeaderValue);
+        Assert.Equal(1, fileStorage.GrantCalls);
+        Assert.Equal(1, download.Calls);
+    }
+
+    [Fact]
+    public async Task GetVerifiedAsync_redirect_is_rejected_without_following_or_retrying()
+    {
+        const string sensitiveLocation = "redirect-location-secret-2837";
+        const string sensitiveHeaderValue = "redirect-header-secret-2837";
+        const string sensitiveBody = "redirect-body-secret-2837";
+        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
+        var download = new RecordingHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Redirect)
+            {
+                Content = new StringContent(sensitiveBody),
+            };
+            response.Headers.Location = new Uri(
+                $"https://redirect.invalid/{sensitiveLocation}/template.json");
+            response.Headers.TryAddWithoutValidation("x-sensitive-response", sensitiveHeaderValue);
+            return response;
+        });
+        using var adapter = CreateAdapter(fileStorage, download);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+
+        AssertDiagnosticDoesNotContain(exception, sensitiveLocation, sensitiveHeaderValue, sensitiveBody);
         Assert.Equal(1, fileStorage.GrantCalls);
         Assert.Equal(1, download.Calls);
     }
@@ -230,14 +315,27 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     [Fact]
     public async Task GetVerifiedAsync_non_success_response_is_rejected_without_retrying()
     {
+        const string sensitiveReason = "response-reason-secret-2837";
+        const string sensitiveHeaderValue = "response-header-secret-2837";
+        const string sensitiveBody = "response-body-secret-2837";
         var bytes = Encoding.UTF8.GetBytes(TemplateJson);
         var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
-        var download = new RecordingHttpMessageHandler(_ => Response(HttpStatusCode.ServiceUnavailable, bytes));
+        var download = new RecordingHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                ReasonPhrase = sensitiveReason,
+                Content = new StringContent(sensitiveBody),
+            };
+            response.Headers.TryAddWithoutValidation("x-sensitive-response", sensitiveHeaderValue);
+            return response;
+        });
         using var adapter = CreateAdapter(fileStorage, download);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
+        AssertDiagnosticDoesNotContain(exception, sensitiveReason, sensitiveHeaderValue, sensitiveBody);
         Assert.Equal(1, fileStorage.GrantCalls);
         Assert.Equal(1, download.Calls);
     }
@@ -249,12 +347,31 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
             "FileStorage adapter download timeout",
             async testCancellationToken =>
             {
+                const string sensitiveGrantUrl = "download-timeout-url-secret-2837";
+                const string sensitiveHeaderValue = "download-timeout-header-secret-2837";
                 var bytes = Encoding.UTF8.GetBytes(TemplateJson);
-                var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
-                var download = new RecordingHttpMessageHandler(async (_, cancellationToken) =>
+                var fileStorage = new RecordingFileStorageClient(
+                    CreateMetadata(bytes),
+                    grantUrl: $"/api/files/v1/download-grants/{sensitiveGrantUrl}/content",
+                    grantHeaders: new Dictionary<string, string>
+                    {
+                        ["x-download-authorization"] = sensitiveHeaderValue,
+                    });
+                var download = new RecordingHttpMessageHandler(async (request, cancellationToken) =>
                 {
-                    await PendingOperation.UntilCanceledAsync(cancellationToken);
-                    throw new InvalidOperationException("unreachable");
+                    try
+                    {
+                        await PendingOperation.UntilCanceledAsync(cancellationToken);
+                        throw new InvalidOperationException("unreachable");
+                    }
+                    catch (OperationCanceledException exception)
+                    {
+                        var header = request.Headers.GetValues("x-download-authorization").Single();
+                        throw new OperationCanceledException(
+                            $"{request.RequestUri} {header}",
+                            exception,
+                            cancellationToken);
+                    }
                 });
                 using var adapter = CreateAdapter(fileStorage, download, TimeSpan.FromMilliseconds(100));
 
@@ -262,9 +379,32 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
                     adapter.GetVerifiedAsync(CreateReference(), testCancellationToken));
 
                 Assert.Equal("FileStorage template download timed out.", exception.Message);
+                AssertDiagnosticDoesNotContain(exception, sensitiveGrantUrl, sensitiveHeaderValue);
                 Assert.Equal(1, download.Calls);
             },
             TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [MemberData(nameof(DownloadStreamFailures))]
+    public async Task GetVerifiedAsync_body_read_failure_does_not_leak_partial_content_or_transport_diagnostics(
+        Func<string, Exception> createFailure)
+    {
+        const string sensitivePartialContent = "partial-template-secret-2837";
+        const string sensitiveDiagnostic = "body-read-url-header-secret-2837";
+        var partialBytes = Encoding.UTF8.GetBytes(sensitivePartialContent);
+        var fileStorage = new RecordingFileStorageClient(CreateMetadata(partialBytes));
+        var stream = new FailAfterContentStream(partialBytes, () => createFailure(sensitiveDiagnostic));
+        var download = new RecordingHttpMessageHandler(_ =>
+            Response(HttpStatusCode.OK, new StreamContent(stream)));
+        using var adapter = CreateAdapter(fileStorage, download);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+
+        AssertDiagnosticDoesNotContain(exception, sensitivePartialContent, sensitiveDiagnostic);
+        Assert.Equal(1, fileStorage.GrantCalls);
+        Assert.Equal(1, download.Calls);
     }
 
     [Fact]
@@ -305,9 +445,11 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     [Fact]
     public async Task GetVerifiedAsync_unknown_length_body_above_limit_is_rejected()
     {
+        const string sensitiveTemplateContent = "overflow-template-secret-2837";
         var metadataBytes = Encoding.UTF8.GetBytes(TemplateJson);
         var fileStorage = new RecordingFileStorageClient(CreateMetadata(metadataBytes));
         var overflow = Enumerable.Repeat((byte)'a', MaximumAssetBytes + 1).ToArray();
+        Encoding.UTF8.GetBytes(sensitiveTemplateContent).CopyTo(overflow, 0);
         var download = new RecordingHttpMessageHandler(_ => Response(HttpStatusCode.OK, new UnknownLengthContent(overflow)));
         using var adapter = CreateAdapter(fileStorage, download);
 
@@ -315,6 +457,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
 
         Assert.Equal($"FileStorage template download exceeds {MaximumAssetBytes} bytes.", exception.Message);
+        AssertDiagnosticDoesNotContain(exception, sensitiveTemplateContent);
         Assert.Equal(1, download.Calls);
     }
 
@@ -344,22 +487,33 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     [Fact]
     public async Task GetVerifiedAsync_utf8_bom_is_rejected_after_size_and_digest_match()
     {
-        var body = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(TemplateJson)).ToArray();
-        await AssertRejectedBodyAsync(CreateMetadata(body), body);
+        const string sensitiveTemplateContent = "bom-template-secret-2837";
+        var body = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sensitiveTemplateContent)).ToArray();
+        var exception = await AssertRejectedBodyAsync(CreateMetadata(body), body);
+
+        AssertDiagnosticDoesNotContain(exception, sensitiveTemplateContent);
     }
 
     [Fact]
     public async Task GetVerifiedAsync_invalid_utf8_is_rejected_after_size_and_digest_match()
     {
-        byte[] body = [0xc3, 0x28];
-        await AssertRejectedBodyAsync(CreateMetadata(body), body);
+        const string sensitiveTemplateContent = "invalid-utf8-template-secret-2837";
+        byte[] body = [0xc3, 0x28, .. Encoding.UTF8.GetBytes(sensitiveTemplateContent)];
+        var exception = await AssertRejectedBodyAsync(CreateMetadata(body), body);
+
+        AssertDiagnosticDoesNotContain(exception, sensitiveTemplateContent);
     }
 
     [Fact]
     public async Task GetVerifiedAsync_size_mismatch_is_rejected()
     {
-        var body = Encoding.UTF8.GetBytes(TemplateJson);
-        await AssertRejectedBodyAsync(CreateMetadata(body) with { SizeBytes = body.Length - 1 }, body);
+        const string sensitiveTemplateContent = "size-mismatch-template-secret-2837";
+        var body = Encoding.UTF8.GetBytes(sensitiveTemplateContent);
+        var exception = await AssertRejectedBodyAsync(
+            CreateMetadata(body) with { SizeBytes = body.Length - 1 },
+            body);
+
+        AssertDiagnosticDoesNotContain(exception, sensitiveTemplateContent);
     }
 
     [Fact]
@@ -372,8 +526,17 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
 
         var exception = await AssertRejectedBodyAsync(CreateMetadata(expected), downloaded);
 
-        Assert.DoesNotContain(sensitiveTemplateContent, exception.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain("template-secret-2837", exception.ToString(), StringComparison.Ordinal);
+        AssertDiagnosticDoesNotContain(exception, sensitiveTemplateContent, "template-secret-2837");
+    }
+
+    private static void AssertDiagnosticDoesNotContain(
+        Exception exception,
+        params string[] sensitiveValues)
+    {
+        foreach (var sensitiveValue in sensitiveValues)
+        {
+            Assert.DoesNotContain(sensitiveValue, exception.ToString(), StringComparison.Ordinal);
+        }
     }
 
     private static async Task<InvalidDataException> AssertRejectedBodyAsync(
@@ -494,7 +657,8 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         Exception? metadataFailure = null,
         Exception? grantFailure = null,
         string grantUrl = "/api/files/v1/download-grants/grant-secret/content",
-        bool nullGrantHeaders = false) : IFileStorageClient
+        bool nullGrantHeaders = false,
+        IReadOnlyDictionary<string, string>? grantHeaders = null) : IFileStorageClient
     {
         public int MetadataCalls { get; private set; }
         public int GrantCalls { get; private set; }
@@ -523,7 +687,7 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
                         grantUrl,
                         nullGrantHeaders
                             ? null!
-                            : new Dictionary<string, string>
+                            : grantHeaders ?? new Dictionary<string, string>
                             {
                                 ["x-nerv-organization-id"] = request.OrganizationId,
                                 ["x-nerv-environment-id"] = request.EnvironmentId
@@ -595,6 +759,20 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         {
             length = Headers.ContentLength!.Value;
             return true;
+        }
+    }
+
+    private sealed class FailAfterContentStream(
+        byte[] bytes,
+        Func<Exception> createFailure) : MemoryStream(bytes, writable: false)
+    {
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            return Position < Length
+                ? base.ReadAsync(buffer, cancellationToken)
+                : ValueTask.FromException<int>(createFailure());
         }
     }
 }
