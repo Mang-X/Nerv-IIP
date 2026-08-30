@@ -311,7 +311,7 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
         organizationId,
         environmentId,
         skuCode: NERV1851_BASELINE.finishedSkuCode,
-        status: 'published',
+        status: 'Published',
         skip: 0,
         take: 100,
       }),
