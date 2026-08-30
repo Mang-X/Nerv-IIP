@@ -105,7 +105,9 @@ public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
     private static JsonSchema FindSchemaBySuffix(DocumentProcessorContext context, string suffix)
     {
         var matches = context.Document.Components.Schemas
-            .Where(x => x.Key.EndsWith(suffix, StringComparison.Ordinal))
+            .Where(x =>
+                x.Key.EndsWith(suffix, StringComparison.Ordinal) &&
+                !x.Key.StartsWith("NetCorePalExtensionsDtoResponseDataOf", StringComparison.Ordinal))
             .Select(x => x.Value)
             .ToArray();
 

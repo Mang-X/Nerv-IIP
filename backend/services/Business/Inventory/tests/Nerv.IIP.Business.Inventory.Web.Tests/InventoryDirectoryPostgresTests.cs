@@ -6,8 +6,11 @@ using System.Diagnostics;
 using Nerv.IIP.Business.Inventory.Domain;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
@@ -127,6 +130,80 @@ public sealed class InventoryDirectoryPostgresTests
             var scopedIndexName = await GetScopedLedgerIndexNameAsync(db);
             AssertNaturalScopedIndexPlan(batchPlan, scopedIndexName, InventoryDirectoryTypes.Batch);
             AssertNaturalScopedIndexPlan(serialPlan, scopedIndexName, InventoryDirectoryTypes.Serial);
+        }
+        finally
+        {
+            await DropInventorySchemaAsync(db);
+        }
+    }
+
+    [LineSideInventoryBalanceExternalPostgresFact]
+    public async Task Line_side_balance_grouping_and_age_completeness_execute_on_postgres()
+    {
+        await using var postgres = await DirectoryPostgresScope.CreateExternalAsync();
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddInventoryPostgreSqlPersistence(postgres.ConnectionString);
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await DropInventorySchemaAsync(db);
+
+        try
+        {
+            await db.Database.MigrateAsync();
+            db.StockLocations.AddRange(
+                StockLocation.CreateOrUpdate(
+                    null,
+                    "org-line-side-pg",
+                    "env-line-side-pg",
+                    "LINE-01",
+                    "line-side",
+                    "SITE-01",
+                    null,
+                    "active"),
+                StockLocation.CreateOrUpdate(
+                    null,
+                    "org-line-side-pg",
+                    "env-line-side-pg",
+                    "WH-01",
+                    "warehouse",
+                    "SITE-01",
+                    null,
+                    "active"),
+                StockLocation.CreateOrUpdate(
+                    null,
+                    "org-line-side-pg",
+                    "env-line-side-pg",
+                    "LINE-SITE-OTHER",
+                    "line-side",
+                    "SITE-02",
+                    null,
+                    "active"));
+            AddLineSideLedger(db, "LINE-01", "LOT-DATED", 8m, 2m, new DateOnly(2026, 8, 1));
+            AddLineSideLedger(db, "LINE-01", "LOT-UNKNOWN", 4m, 1m, null);
+            AddLineSideLedger(db, "WH-01", "LOT-WAREHOUSE", 99m, 0m, new DateOnly(2026, 7, 1));
+            AddLineSideLedger(db, "LINE-SITE-OTHER", "LOT-SITE-OTHER", 13m, 0m, new DateOnly(2026, 7, 1), "SITE-02");
+            await db.SaveChangesAsync();
+
+            var result = await new ListLineSideInventoryBalancesQueryHandler(db, TimeProvider.System).Handle(
+                new ListLineSideInventoryBalancesQuery(
+                    "org-line-side-pg",
+                    "env-line-side-pg",
+                    SiteCode: "SITE-01",
+                    AsOfDate: new DateOnly(2026, 8, 25)),
+                CancellationToken.None);
+
+            var item = Assert.Single(result.Items);
+            Assert.Equal("LINE-01", item.LocationCode);
+            Assert.Equal(12m, item.OnHandQuantity);
+            Assert.Equal(3m, item.ReservedQuantity);
+            Assert.Equal(9m, item.AvailableQuantity);
+            Assert.Equal(2, item.LotCount);
+            Assert.Equal(new DateOnly(2026, 8, 1), item.OldestProductionDate);
+            Assert.Equal(24, item.AgeDays);
+            Assert.Equal(LineSideInventoryAgeCompleteness.Partial, item.AgeCompleteness);
         }
         finally
         {
@@ -336,6 +413,62 @@ public sealed class InventoryDirectoryPostgresTests
         db.StockLedgers.Add(ledger);
     }
 
+    private static void AddLineSideLedger(
+        ApplicationDbContext db,
+        string locationCode,
+        string lotNo,
+        decimal onHandQuantity,
+        decimal reservedQuantity,
+        DateOnly? productionDate,
+        string siteCode = "SITE-01")
+    {
+        var ledger = StockLedger.Create(
+            "org-line-side-pg",
+            "env-line-side-pg",
+            "RM-001",
+            "EA",
+            siteCode,
+            locationCode,
+            lotNo,
+            null,
+            "unrestricted",
+            "company",
+            null,
+            productionDate);
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-line-side-pg",
+            "env-line-side-pg",
+            "inbound",
+            "line-side-pg-test",
+            $"DOC-{locationCode}-{lotNo}",
+            "1",
+            $"IDEM-{locationCode}-{lotNo}",
+            "RM-001",
+            "EA",
+            siteCode,
+            locationCode,
+            lotNo,
+            null,
+            "unrestricted",
+            "company",
+            null,
+            onHandQuantity,
+            ProductionDate: productionDate));
+        if (reservedQuantity > 0m)
+        {
+            var reservation = StockReservation.Reserve(
+                ledger,
+                "line-side-pg-test",
+                $"RES-{locationCode}-{lotNo}",
+                null,
+                $"RESERVE-{locationCode}-{lotNo}",
+                reservedQuantity);
+            ledger.Reserve(reservation);
+        }
+
+        db.StockLedgers.Add(ledger);
+    }
+
     private static async Task<string> ExplainScopedLedgerQueryAsync(
         ApplicationDbContext db,
         string directoryType,
@@ -440,4 +573,18 @@ public sealed class InventoryDirectoryExternalPostgresFactAttribute : FactAttrib
             Skip = "Set NERV_IIP_TEST_POSTGRES to run the Inventory directory external PostgreSQL test.";
         }
     }
+}
+
+public sealed class LineSideInventoryBalanceExternalPostgresFactAttribute : FactAttribute
+{
+    internal const string MissingPostgresReason =
+        "Set NERV_IIP_TEST_POSTGRES to run the Inventory line-side balance external PostgreSQL test.";
+
+    public LineSideInventoryBalanceExternalPostgresFactAttribute()
+    {
+        Skip = GetSkipReason(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"));
+    }
+
+    internal static string? GetSkipReason(string? connectionString) =>
+        string.IsNullOrWhiteSpace(connectionString) ? MissingPostgresReason : null;
 }

@@ -69,6 +69,8 @@ public sealed class SourcePlanReference
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
+    public const string StandardType = "standard";
+    public const string ReworkType = "rework";
     public const string CreatedStatus = "created";
     public const string ReleasedStatus = "released";
     public const string StartedStatus = "started";
@@ -77,6 +79,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public const string ClosedStatus = "closed";
     public const string CancelledStatus = "cancelled";
     public const string ScrappedStatus = "scrapped";
+    public const string SplitStatus = "split";
+    public const string MergedStatus = "merged";
     public const string MaterialRequirementSnapshotCapturedStatus = "captured";
     public const string MaterialRequirementSnapshotNoRequirementsStatus = "no-requirements";
 
@@ -95,7 +99,16 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         int priority,
         DateTimeOffset dueUtc,
         SourcePlanReference? sourcePlanReference,
-        decimal overReceiptTolerancePercent)
+        decimal overReceiptTolerancePercent,
+        string workOrderType,
+        string? sourceWorkOrderId = null,
+        string? sourceOperationTaskId = null,
+        string? sourceDefectNo = null,
+        string? sourceNcrId = null,
+        string? sourceNcrCode = null,
+        string? sourceLotNo = null,
+        string? sourceSerialNo = null,
+        DateTimeOffset? sourceReworkRequestedAtUtc = null)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -108,7 +121,17 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         DueUtc = dueUtc;
         SourcePlanReference = sourcePlanReference;
         OverReceiptTolerancePercent = DomainGuard.NonNegative(overReceiptTolerancePercent, nameof(overReceiptTolerancePercent));
+        WorkOrderType = DomainGuard.Required(workOrderType, nameof(workOrderType));
+        SourceWorkOrderId = string.IsNullOrWhiteSpace(sourceWorkOrderId) ? null : sourceWorkOrderId.Trim();
+        SourceOperationTaskId = string.IsNullOrWhiteSpace(sourceOperationTaskId) ? null : sourceOperationTaskId.Trim();
+        SourceDefectNo = string.IsNullOrWhiteSpace(sourceDefectNo) ? null : sourceDefectNo.Trim();
+        SourceNcrId = string.IsNullOrWhiteSpace(sourceNcrId) ? null : sourceNcrId.Trim();
+        SourceNcrCode = string.IsNullOrWhiteSpace(sourceNcrCode) ? null : sourceNcrCode.Trim();
+        SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
+        SourceSerialNo = string.IsNullOrWhiteSpace(sourceSerialNo) ? null : sourceSerialNo.Trim();
+        SourceReworkRequestedAtUtc = sourceReworkRequestedAtUtc;
         Status = CreatedStatus;
+        Version = 1;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -123,6 +146,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset DueUtc { get; private set; }
     public SourcePlanReference? SourcePlanReference { get; private set; }
     public string Status { get; private set; } = string.Empty;
+    public long Version { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public decimal ScrapQuantity { get; private set; }
@@ -136,6 +160,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? MaterialRequirementSnapshotStatus { get; private set; }
     public DateTimeOffset? MaterialRequirementSnapshotEvaluatedAtUtc { get; private set; }
     public string? MaterialRequirementSnapshotProductionVersionId { get; private set; }
+    public string WorkOrderType { get; private set; } = StandardType;
+    public string? SourceWorkOrderId { get; private set; }
+    public string? SourceOperationTaskId { get; private set; }
+    public string? SourceDefectNo { get; private set; }
+    public string? SourceNcrId { get; private set; }
+    public string? SourceNcrCode { get; private set; }
+    public string? SourceLotNo { get; private set; }
+    public string? SourceSerialNo { get; private set; }
+    public DateTimeOffset? SourceReworkRequestedAtUtc { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
 
@@ -163,8 +196,59 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             priority,
             dueUtc,
             sourcePlanReference,
-            overReceiptTolerancePercent);
+            overReceiptTolerancePercent,
+            StandardType);
         workOrder.AddDomainEvent(new WorkOrderCreatedDomainEvent(workOrder));
+        return workOrder;
+    }
+
+    public static WorkOrder CreateRework(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string skuId,
+        string? productionVersionId,
+        string? uomCode,
+        decimal quantity,
+        int priority,
+        DateTimeOffset dueUtc,
+        string sourceWorkOrderId,
+        string? sourceOperationTaskId,
+        string sourceDefectNo,
+        string sourceNcrId,
+        string sourceNcrCode,
+        string? sourceLotNo,
+        string? sourceSerialNo,
+        DateTimeOffset requestedAtUtc,
+        string correlationId,
+        string causationId)
+    {
+        var workOrder = new WorkOrder(
+            organizationId,
+            environmentId,
+            workOrderId,
+            skuId,
+            productionVersionId,
+            uomCode,
+            quantity,
+            priority,
+            dueUtc,
+            null,
+            0m,
+            ReworkType,
+            DomainGuard.Required(sourceWorkOrderId, nameof(sourceWorkOrderId)),
+            sourceOperationTaskId,
+            DomainGuard.Required(sourceDefectNo, nameof(sourceDefectNo)),
+            DomainGuard.Required(sourceNcrId, nameof(sourceNcrId)),
+            DomainGuard.Required(sourceNcrCode, nameof(sourceNcrCode)),
+            sourceLotNo,
+            sourceSerialNo,
+            requestedAtUtc);
+        workOrder.AddDomainEvent(new ReworkWorkOrderCreatedDomainEvent(
+            workOrder,
+            requestedAtUtc,
+            DomainGuard.Required(correlationId, nameof(correlationId)),
+            DomainGuard.Required(causationId, nameof(causationId))));
         return workOrder;
     }
 
@@ -199,6 +283,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
                 step.OperationCode))
             .ToList();
         Status = ReleasedStatus;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
         return tasks;
     }
@@ -208,6 +293,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ThrowIfCannotRelease();
 
         Status = ReleasedStatus;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
     }
 
@@ -222,6 +308,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ThrowIfCannotRelease();
 
         Status = ReleasedStatus;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks));
     }
 
@@ -239,7 +326,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order is already bound to a different production version.");
         }
 
-        ProductionVersionId = normalizedProductionVersionId;
+        if (ProductionVersionId is null)
+        {
+            ProductionVersionId = normalizedProductionVersionId;
+            AdvanceVersion();
+        }
     }
 
     public void RecordMaterialRequirementSnapshot(string status, DateTimeOffset evaluatedAtUtc)
@@ -263,6 +354,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         MaterialRequirementSnapshotStatus = normalizedStatus;
         MaterialRequirementSnapshotEvaluatedAtUtc = evaluatedAtUtc;
         MaterialRequirementSnapshotProductionVersionId = ProductionVersionId;
+        AdvanceVersion();
     }
 
     public void RebindProductionVersionForEngineeringChange(string productionVersionId)
@@ -274,9 +366,13 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         ProductionVersionId = normalizedProductionVersionId;
-        MaterialRequirementSnapshotStatus = null;
-        MaterialRequirementSnapshotEvaluatedAtUtc = null;
-        MaterialRequirementSnapshotProductionVersionId = null;
+        if (Status == CreatedStatus)
+        {
+            MaterialRequirementSnapshotStatus = null;
+            MaterialRequirementSnapshotEvaluatedAtUtc = null;
+            MaterialRequirementSnapshotProductionVersionId = null;
+        }
+        AdvanceVersion();
     }
 
     private void ThrowIfCannotRelease()
@@ -286,7 +382,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order has already been released.");
         }
 
-        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus)
+        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Work order is already in a closed state.");
         }
@@ -302,17 +398,19 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = StartedStatus;
         HoldReason = null;
+        AdvanceVersion();
     }
 
     public void Hold(string reason)
     {
-        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus)
+        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Closed work orders cannot be held.");
         }
 
         HoldReason = DomainGuard.Required(reason, nameof(reason));
         Status = HoldStatus;
+        AdvanceVersion();
     }
 
     public void ResolveEngineeringChangeHold(string statusBeforeHold)
@@ -330,11 +428,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = normalizedStatus;
         HoldReason = null;
+        AdvanceVersion();
     }
 
     public bool Cancel(string reason, DateTimeOffset cancelledAtUtc, IReadOnlyCollection<string>? materialIssueRequestNos = null)
     {
-        if (Status is CompletedStatus or ClosedStatus)
+        if (Status is CompletedStatus or ClosedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Completed work orders must be closed, not cancelled.");
         }
@@ -351,6 +450,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         CancelReason = DomainGuard.Required(reason, nameof(reason));
         Status = CancelledStatus;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderCancelledDomainEvent(
             this,
             cancelledAtUtc,
@@ -369,7 +469,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one progress quantity must be positive.");
         }
 
-        if (Status is CancelledStatus or ClosedStatus or ScrappedStatus)
+        if (Status is CancelledStatus or ClosedStatus or ScrappedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Work order is not executable.");
         }
@@ -393,6 +493,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ScrapQuantity += scrapQuantity;
         var wasCompleted = Status == CompletedStatus;
         Status = CompletedQuantity + ScrapQuantity >= Quantity ? CompletedStatus : StartedStatus;
+        AdvanceVersion();
         if (!wasCompleted && Status == CompletedStatus)
         {
             AddDomainEvent(new WorkOrderCompletedDomainEvent(this, reportedAtUtc));
@@ -404,6 +505,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         if (materialMovementCount < 0) throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
         CostReportCount++;
         MaterialMovementCount += materialMovementCount;
+        AdvanceVersion();
     }
 
     public void ApplyCapitalizedUnitCost(decimal unitCost)
@@ -415,6 +517,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         CapitalizedUnitCost = normalizedUnitCost;
+        AdvanceVersion();
     }
 
     public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)
@@ -432,7 +535,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("已关闭工单不允许冲销报工。");
         }
 
-        if (Status is CancelledStatus or ScrappedStatus)
+        if (Status is CancelledStatus or ScrappedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Work order is not executable.");
         }
@@ -448,6 +551,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         {
             Status = StartedStatus;
         }
+
+        AdvanceVersion();
     }
 
     public void Close(DateTimeOffset closedAtUtc)
@@ -459,6 +564,32 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ClosedStatus;
         ClosedAtUtc = closedAtUtc;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderClosedDomainEvent(this, closedAtUtc));
     }
+
+    public void MarkSplit()
+    {
+        EnsureTransformable();
+        Status = SplitStatus;
+        AdvanceVersion();
+    }
+
+    public void MarkMerged()
+    {
+        EnsureTransformable();
+        Status = MergedStatus;
+        AdvanceVersion();
+    }
+
+    private void EnsureTransformable()
+    {
+        if (Status is not CreatedStatus and not ReleasedStatus)
+        {
+            throw new InvalidOperationException(
+                $"状态为 {Status} 的工单不允许拆分或合并，仅 created/released 可执行。");
+        }
+    }
+
+    private void AdvanceVersion() => Version++;
 }

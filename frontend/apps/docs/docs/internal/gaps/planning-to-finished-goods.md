@@ -7,7 +7,11 @@
 - `/getting-started/planning-to-finished-goods`
 - `frontend/apps/business-console/src/pages/planning/index.vue`
 - `frontend/apps/business-console/src/pages/mes`
-- `docs/architecture/implementation-readiness.md` Scheduling、MES、Inventory/WMS 段落
+- `backend/services/Business/Scheduling/`
+- `backend/services/Business/Mes/`
+- `backend/services/Business/Inventory/`
+- `backend/services/Business/Wms/`
+- `docs/architecture/business-platform-domain-architecture.md`
 
 ## 建议 Issue 标题
 

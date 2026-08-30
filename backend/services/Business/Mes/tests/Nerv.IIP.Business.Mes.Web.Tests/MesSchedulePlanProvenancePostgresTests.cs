@@ -76,7 +76,17 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
             db.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 1, scheduledAt.AddHours(4), "PCS"));
-            var task = OperationTask.Queue("org-001", "env-dev", "WO-001", "OP-10", 10, "WC-OLD", [], scheduledAt, TimeSpan.FromHours(1));
+            var task = OperationTask.Queue(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                10,
+                "WC-OLD",
+                [],
+                scheduledAt,
+                TimeSpan.FromHours(1),
+                requiredSkillCode: "cnc-operation");
             task.ApplyScheduleAssignment("WC-1", "DEV-1", scheduledAt, scheduledAt.AddHours(1), scheduledAt, schedulePlanId: "plan-1", scheduleReleaseRevision: 1);
             db.OperationTasks.Add(task);
             db.ScheduleReleaseWatermarks.Add(new ScheduleReleaseWatermark(
@@ -91,6 +101,7 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             Assert.Equal("plan-1", task.SchedulePlanId);
             Assert.Equal(1, task.ScheduleReleaseRevision);
             Assert.Equal(scheduledAt, task.ScheduledAtUtc);
+            Assert.Equal("cnc-operation", task.RequiredSkillCode);
             watermark.RecordRevocation("plan-1", 1, scheduledAt);
             task.RevokeScheduleAssignment("plan-1", 1, "explicit");
             await db.SaveChangesAsync();
@@ -102,6 +113,7 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             Assert.Null(task.SchedulePlanId);
             Assert.Null(task.ScheduleReleaseRevision);
             Assert.Null(task.ScheduledAtUtc);
+            Assert.Equal("cnc-operation", task.RequiredSkillCode);
             Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
             var watermark = await db.ScheduleReleaseWatermarks.SingleAsync();
             Assert.Equal("plan-1", watermark.RevokedPlanId);

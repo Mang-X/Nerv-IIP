@@ -115,8 +115,16 @@ Invoke-GovernanceCase -Name 'direct-dotnet.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-start-job.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
 
-Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
-Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
+foreach ($tombstone in @(
+    'scripts/verify-first-slice.ps1',
+    'scripts/verify-second-slice-ops.ps1',
+    'scripts/verify-third-slice-console.ps1'
+)) {
+    $output = & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot $tombstone) 2>&1
+    if ($LASTEXITCODE -eq 0 -or -not (($output | Out-String).Contains('retired under #2157', [StringComparison]::Ordinal))) {
+        throw "Expected retired tombstone '$tombstone' to fail fast with its retirement diagnostic."
+    }
+}
 Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/update-backend-test-shard-timings.ps1'

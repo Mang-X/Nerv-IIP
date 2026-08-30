@@ -257,6 +257,51 @@ public sealed class CompleteInboundOrderCommandLock : ICommandLock<CompleteInbou
 
 public sealed record CompleteWmsMovementResult(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 
+internal static class InboundInventoryLocationResolver
+{
+    // Completion emits one inbound movement per line. Only one active task that
+    // covers the full line quantity gives that movement an unambiguous target;
+    // partial, split, cancelled, or failed putaway work stays at staging.
+    public static async Task<IReadOnlyDictionary<string, string>> ResolveAsync(
+        ApplicationDbContext dbContext,
+        InboundOrder inbound,
+        CancellationToken cancellationToken)
+    {
+        var locationsByLine = inbound.Lines.ToDictionary(
+            line => line.LineNo,
+            line => line.StagingLocationCode,
+            StringComparer.Ordinal);
+        var putawayTasks = await dbContext.WarehouseTasks
+            .AsNoTracking()
+            .Where(task => task.OrganizationId == inbound.OrganizationId
+                && task.EnvironmentId == inbound.EnvironmentId
+                && task.TaskType == WarehouseTaskType.Putaway
+                && task.SourceOrderNo == inbound.InboundOrderNo)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var line in inbound.Lines)
+        {
+            var lineTasks = putawayTasks
+                .Where(task => task.SourceOrderLineNo == line.LineNo
+                    && task.Status is (WarehouseTaskStatus.Open
+                        or WarehouseTaskStatus.InProgress
+                        or WarehouseTaskStatus.Completed))
+                .ToArray();
+            if (lineTasks.Length == 1
+                && lineTasks[0].SkuCode == line.SkuCode
+                && lineTasks[0].UomCode == line.UomCode
+                && lineTasks[0].SiteCode == inbound.SiteCode
+                && lineTasks[0].FromLocationCode == line.StagingLocationCode
+                && lineTasks[0].PlannedQuantity == line.ReceivedQuantity)
+            {
+                locationsByLine[line.LineNo] = lineTasks[0].ToLocationCode;
+            }
+        }
+
+        return locationsByLine;
+    }
+}
+
 public sealed class CompleteInboundOrderCommandHandler
     : ICommandHandler<CompleteInboundOrderCommand, CompleteWmsMovementResult>
 {
@@ -309,7 +354,11 @@ public sealed class CompleteInboundOrderCommandHandler
             .ToArrayAsync(cancellationToken);
         if (replayRequests.Length > 0)
         {
-            if (!HasSameCompletionFacts(inbound, request.Lines, replayKeysByLine, replayRequests))
+            if (!HasSameCompletionFacts(
+                    inbound,
+                    request.Lines,
+                    replayKeysByLine,
+                    replayRequests))
             {
                 throw new WmsIdempotencyConflictException();
             }
@@ -323,6 +372,10 @@ public sealed class CompleteInboundOrderCommandHandler
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
         }
 
+        var inventoryLocationsByLine = await InboundInventoryLocationResolver.ResolveAsync(
+            dbContext,
+            inbound,
+            cancellationToken);
         WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
             inbound.Version,
             request.ExpectedVersion,
@@ -333,7 +386,8 @@ public sealed class CompleteInboundOrderCommandHandler
             movementRequests = inbound.Complete(
                 baseIdempotencyKey,
                 request.ExpectedVersion,
-                request.Lines);
+                request.Lines,
+                inventoryLocationsByLine);
         }
         catch (ArgumentException exception)
         {
@@ -385,6 +439,8 @@ public sealed class CompleteInboundOrderCommandHandler
             }
         }
 
+        // A putaway task can progress or be cancelled after the movement request is
+        // persisted. The persisted request remains authoritative for an idempotent replay.
         foreach (var line in inbound.Lines)
         {
             if (!requestsByLine.TryGetValue(line.LineNo, out var replayRequest)
@@ -393,7 +449,6 @@ public sealed class CompleteInboundOrderCommandHandler
                 || replayRequest.SkuCode != line.SkuCode
                 || replayRequest.UomCode != line.UomCode
                 || replayRequest.SiteCode != inbound.SiteCode
-                || replayRequest.LocationCode != line.StagingLocationCode
                 || replayRequest.LotNo != line.LotNo
                 || replayRequest.SerialNo != line.SerialNo
                 || replayRequest.QualityStatus != line.ReceiptQualityStatus
@@ -459,7 +514,24 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
-        var movementRequests = inbound.RetryInventoryPosting(WmsText.IdempotencyKey(request.IdempotencyKey));
+        var postingAttempts = await dbContext.InventoryMovementRequests
+            .Where(x => x.OrganizationId == inbound.OrganizationId
+                && x.EnvironmentId == inbound.EnvironmentId
+                && x.MovementType == InventoryMovementTypes.Inbound
+                && x.SourceDocumentId == inbound.InboundOrderNo)
+            .ToArrayAsync(cancellationToken);
+        var failedRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingAttempts)
+            .Where(pair => pair.Value.Status == InventoryMovementRequestStatus.Failed)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        var failedLineNos = failedRequestsByLine.Keys.ToArray();
+        var retryLocationsByLine = failedRequestsByLine.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.LocationCode,
+            StringComparer.Ordinal);
+        var movementRequests = inbound.RetryInventoryPosting(
+            WmsText.IdempotencyKey(request.IdempotencyKey),
+            retryLocationsByLine,
+            failedLineNos);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }

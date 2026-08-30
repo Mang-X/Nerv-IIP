@@ -1310,7 +1310,7 @@ public sealed class QualityInspectionEndpointContractTests
             }));
 
         await closeHandler.Handle(
-            new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "Disposition completed"),
+            new CloseNonconformanceReportCommand(ncr.Id, null, null, "Disposition completed"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.ChangeTracker.Clear();
@@ -1573,7 +1573,6 @@ public sealed class QualityInspectionEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CloseNonconformanceReportCommand(
                 ncr.Id,
-                null,
                 "SM-FULL-001",
                 null,
                 "Disposition completed"),

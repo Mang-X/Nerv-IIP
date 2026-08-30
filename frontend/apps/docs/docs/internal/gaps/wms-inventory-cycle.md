@@ -7,7 +7,9 @@
 - `/getting-started/wms-inventory-cycle`
 - `frontend/apps/business-console/src/pages/wms`
 - `frontend/apps/business-console/src/pages/inventory`
-- `docs/architecture/implementation-readiness.md` WMS、Inventory、BarcodeLabel 段落
+- `backend/services/Business/Wms/`
+- `backend/services/Business/Inventory/`
+- `docs/architecture/business-platform-domain-architecture.md`
 
 ## 建议 Issue 标题
 

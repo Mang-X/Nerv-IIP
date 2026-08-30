@@ -88,6 +88,37 @@ public sealed class NcrDispositionDecidedIntegrationEventConverter(IQualityInteg
     }
 }
 
+public sealed class NcrReworkRequestedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<NonconformanceReportReworkRequestedDomainEvent, NcrReworkRequestedIntegrationEvent>
+{
+    public NcrReworkRequestedIntegrationEvent Convert(NonconformanceReportReworkRequestedDomainEvent domainEvent)
+    {
+        var ncr = domainEvent.NonconformanceReport;
+        var context = contextAccessor.GetContext();
+        return new NcrReworkRequestedIntegrationEvent(
+            EventIds.New(),
+            QualityIntegrationEventTypes.NcrReworkRequested,
+            QualityIntegrationEventVersions.V1,
+            domainEvent.RequestedAtUtc,
+            QualityIntegrationEventSources.BusinessQuality,
+            context.CorrelationId,
+            context.CausationId,
+            ncr.OrganizationId,
+            ncr.EnvironmentId,
+            context.Actor,
+            EventIds.Idempotency("ncr-rework-requested", ncr.OrganizationId, ncr.EnvironmentId, ncr.Id.ToString()),
+            new NcrReworkRequestedPayload(
+                ncr.Id.ToString(),
+                ncr.NcrCode,
+                ncr.SourceDocumentId,
+                ncr.SkuCode,
+                ncr.DefectQuantity,
+                ncr.BatchNo,
+                ncr.SerialNo,
+                domainEvent.RequestedAtUtc));
+    }
+}
+
 public sealed class NcrInventoryDispositionRequestedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<NonconformanceReportInventoryDispositionRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {

@@ -87,7 +87,7 @@ BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-da
 | BusinessApproval | `backend/services/Business/Approval` | `business_approval` | 审批模板、审批链、审批记录、业务审批状态 | Ops 运维任务、平台审计事实 | IAM、Notification |
 | ERP | `backend/services/Business/Erp` | `erp` | 采购、SRM-lite、销售、CRM-lite、OMS-lite、应收、应付、凭证、成本核算 | WMS 执行步骤、库存余额、完整总账月结 | MasterData、Planning、Inventory、WMS、MES |
 | WMS | `backend/services/Business/Wms` | `wms` | 收货通知、入库单、出库单、拣货、上架、复核包装、盘点执行、WCS 任务映射 | 库存余额、采购/销售/工单业务状态、WCS 内部调度 | MasterData、Inventory、Quality、BarcodeLabel |
-| MES | `backend/services/Business/Mes` | `mes` | 工单、工序任务、报工、排产结果、完工入库请求、生产日报 | 库存余额、WMS 入库单、设备维护事实 | ProductEngineering、Planning、Inventory、WMS、Quality、Telemetry、Maintenance |
+| MES | `backend/services/Business/Mes` | `mes` | 工单、工序任务、报工、排产结果、完工入库请求、生产日报 | 库存余额、WMS 入库单、设备维护事实 | MasterData、ProductEngineering、Planning、Inventory、WMS、Quality、Telemetry、Maintenance |
 | IndustrialTelemetry | `backend/services/Business/IndustrialTelemetry` | `industrial_telemetry` | tag 定义、采集点映射、设备状态快照、时序摘要、报警事件、OEE 输入事实 | PLC/DCS 控制、SCADA 画面、设备资产主数据 | Connector Host、MasterData、AppHub |
 | Maintenance | `backend/services/Business/Maintenance` | `maintenance` | 维修工单、保养计划、点检记录、故障、停机原因、备件需求 | 设备资产主数据、库存余额、生产工单状态 | MasterData、Telemetry、Inventory、MES |
 | BusinessGateway | `backend/gateway/BusinessGateway` | 无持久化默认值 | 业务页面聚合查询、业务前端 OpenAPI、上下文透传 | 领域规则、持久事实 | 业务服务 OpenAPI/Contracts、IAM |
@@ -266,7 +266,7 @@ WCS 不是首批业务服务。WMS 预留 adapter、任务号、回执和失败�
 | MES | `mes.WorkOrderReleased`、`mes.OperationReported`、`mes.FinishedGoodsReceiptRequested`、`mes.DowntimeRecorded` | WMS、Quality、ERP、Maintenance | 制造过程事实。 |
 | IndustrialTelemetry | `industrialTelemetry.DeviceStateChanged`、`industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` | Scheduling、Maintenance、Notification | 设备状态和报警事实；MES 当前消费标准化 availability/readiness 结果或维护可用性事件，不直接解释原始 `DeviceStateChanged`。 |
 | Maintenance | `maintenance.WorkOrderOpened`、`maintenance.WorkOrderCompleted`、`maintenance.AssetUnavailable`、`maintenance.AssetRestored` | MES、Planning、Notification | 维护和产能影响事实。 |
-| Quality | `quality.InspectionPassed`、`quality.InspectionConditionalReleased`、`quality.InspectionRejected`、`quality.NcrOpened`、`quality.DispositionDecided`、`quality.NcrClosed` | WMS、MES、ERP、Inventory、Notification | 质检与不合格处置结果；conditional-release 通过 Inventory consumer 转 `restricted`，reject 转 `blocked`；NCR 处置只发事件，不直接改库存、返工工单、退货或仓储任务。 |
+| Quality | `quality.InspectionPassed`、`quality.InspectionConditionalReleased`、`quality.InspectionRejected`、`quality.NcrOpened`、`quality.DispositionDecided`、`quality.NcrClosed` | WMS、MES、ERP、Inventory、Notification | 质检与不合格处置结果；conditional-release 通过 Inventory consumer 转 `restricted`，reject 转 `blocked`；NCR 处置只发事件，不直接改库存、返工工单、退货或仓储任务；返工工单由 MES 创建，Quality 仅消费 MES 回执绑定系统工单引用。 |
 | BusinessApproval | `businessApproval.ApprovalApproved`、`businessApproval.ApprovalRejected` | ERP、MES、Inventory、ProductEngineering、Maintenance | 业务审批结果。 |
 
 事件 payload 不携带 token、密码、完整附件内容、对象存储 key、PLC 控制指令或大体积时序数据。

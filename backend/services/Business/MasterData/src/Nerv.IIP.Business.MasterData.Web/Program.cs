@@ -16,6 +16,7 @@ using Newtonsoft.Json;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.MasterData.Web.Application.OpenApi;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Caching;
@@ -101,6 +102,7 @@ try
             {
                 s.Title = "Nerv IIP Business MasterData";
                 s.Version = "v1";
+                s.DocumentProcessors.Add(new ToolingAssetDirectoryOpenApiDocumentProcessor());
             };
         });
     builder.Services.Configure<JsonOptions>(o =>

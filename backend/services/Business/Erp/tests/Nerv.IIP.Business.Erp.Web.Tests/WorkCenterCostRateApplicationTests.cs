@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.Repositories;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
@@ -110,12 +111,16 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
-    public async Task Configure_assigns_monotonic_revision_inside_each_scope()
+    public async Task Configure_assigns_monotonic_revision_from_persisted_database_inside_each_scope()
     {
         await using var db = CreateDb();
-        var handler = new ConfigureWorkCenterCostRateCommandHandler(db, new PostgreSqlWorkCenterCostRateRevisionLock(db));
+        var handler = Handler(db);
 
         await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        handler = Handler(db);
+
         await handler.Handle(Command(" org-a ", " env-a ", 45m), CancellationToken.None);
         await handler.Handle(Command("org-b", "env-a", 50m), CancellationToken.None);
         await handler.Handle(Command("org-a", "env-b", 55m), CancellationToken.None);
@@ -130,14 +135,26 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
-    public async Task Configure_rejects_currency_changes_inside_an_existing_cost_rate_scope()
+    public async Task Configure_assigns_next_revision_against_an_unsaved_local_labor_revision()
     {
         await using var db = CreateDb();
-        var handler = new ConfigureWorkCenterCostRateCommandHandler(
-            db,
-            new PostgreSqlWorkCenterCostRateRevisionLock(db));
+        var handler = Handler(db);
+
+        await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+        await handler.Handle(Command("org-a", "env-a", 45m), CancellationToken.None);
+
+        Assert.Equal([1, 2], db.WorkCenterCostRates.Local.OrderBy(x => x.Revision).Select(x => x.Revision).ToArray());
+    }
+
+    [Fact]
+    public async Task Configure_rejects_currency_changes_from_a_persisted_cost_rate_scope()
+    {
+        await using var db = CreateDb();
+        var handler = Handler(db);
         await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
         await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        handler = Handler(db);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             Command("org-a", "env-a", 45m) with { CurrencyCode = "USD" },
@@ -148,17 +165,32 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
+    public async Task Configure_rejects_currency_changes_against_an_unsaved_local_labor_revision()
+    {
+        await using var db = CreateDb();
+        var handler = Handler(db);
+        await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            Command("org-a", "env-a", 45m) with { CurrencyCode = "USD" },
+            CancellationToken.None));
+
+        Assert.Contains("币种已固定", exception.Message, StringComparison.Ordinal);
+        Assert.Single(db.WorkCenterCostRates.Local);
+    }
+
+    [Fact]
     public async Task Advisory_lock_key_is_stable_for_normalized_scope_and_distinct_across_scope_axes()
     {
         await using var db = CreateDb();
-        var subject = new PostgreSqlWorkCenterCostRateRevisionLock(db);
-        var baseline = subject.GetLockKey("org-a", "env-a", "WC-01");
-        var normalized = subject.GetLockKey(" org-a ", " env-a ", " WC-01 ");
+        var subject = new PostgreSqlErpAdvisoryLockAllocator(db);
+        var baseline = subject.GetLockKey(ErpAdvisoryLockDomain.WorkCenterLaborCostRate, "org-a", "env-a", "WC-01");
+        var normalized = subject.GetLockKey(ErpAdvisoryLockDomain.WorkCenterLaborCostRate, " org-a ", " env-a ", " WC-01 ");
 
         Assert.Equal(baseline, normalized);
-        Assert.NotEqual(baseline, subject.GetLockKey("org-b", "env-a", "WC-01"));
-        Assert.NotEqual(baseline, subject.GetLockKey("org-a", "env-b", "WC-01"));
-        Assert.NotEqual(baseline, subject.GetLockKey("org-a", "env-a", "WC-02"));
+        Assert.NotEqual(baseline, subject.GetLockKey(ErpAdvisoryLockDomain.WorkCenterLaborCostRate, "org-b", "env-a", "WC-01"));
+        Assert.NotEqual(baseline, subject.GetLockKey(ErpAdvisoryLockDomain.WorkCenterLaborCostRate, "org-a", "env-b", "WC-01"));
+        Assert.NotEqual(baseline, subject.GetLockKey(ErpAdvisoryLockDomain.WorkCenterLaborCostRate, "org-a", "env-a", "WC-02"));
     }
 
     [Fact]
@@ -168,8 +200,8 @@ public sealed class WorkCenterCostRateApplicationTests
             .WithWebHostBuilder(builder => builder.UseEnvironment("Testing"));
         using var scope = factory.Services.CreateScope();
 
-        Assert.IsType<PostgreSqlWorkCenterCostRateRevisionLock>(
-            scope.ServiceProvider.GetRequiredService<IWorkCenterCostRateRevisionLock>());
+        Assert.IsType<PostgreSqlErpAdvisoryLockAllocator>(
+            scope.ServiceProvider.GetRequiredService<IErpAdvisoryLockAllocator>());
         Assert.Same(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             scope.ServiceProvider.GetRequiredService<ITransactionUnitOfWork>());
@@ -198,7 +230,9 @@ public sealed class WorkCenterCostRateApplicationTests
         await using var db = new ApplicationDbContext(options, new NoopMediator());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new PostgreSqlWorkCenterCostRateRevisionLock(db).AcquireAsync("org-a", "env-a", "WC-01", CancellationToken.None));
+            new PostgreSqlErpAdvisoryLockAllocator(db).AcquireAsync(
+                ErpAdvisoryLockDomain.WorkCenterLaborCostRate,
+                "org-a", "env-a", "WC-01", CancellationToken.None));
 
         Assert.Contains("transaction", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -243,7 +277,7 @@ public sealed class WorkCenterCostRateApplicationTests
         await db.SaveChangesAsync();
 
         await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-            db, new InMemoryIntegrationEventDeadLetterStore(), db).HandleAsync(Report("event-active", July1), CancellationToken.None);
+            db, new InMemoryIntegrationEventDeadLetterStore(), db, TestWorkOrderCostMutationLock.Instance).HandleAsync(Report("event-active", July1), CancellationToken.None);
         await db.SaveChangesAsync();
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -261,7 +295,7 @@ public sealed class WorkCenterCostRateApplicationTests
             Rate("org-001", "env-dev", "WC-01", 2, 60m, July1.AddDays(1), null));
         await db.SaveChangesAsync();
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
             .HandleAsync(Report("event-no-active", July1), CancellationToken.None);
 
         Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
@@ -279,12 +313,12 @@ public sealed class WorkCenterCostRateApplicationTests
         await using var db = CreateDb();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var report = Report("event-replay", July1);
-        var consumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
+        var consumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance);
 
         await consumer.HandleAsync(report, CancellationToken.None);
         Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
 
-        await new ConfigureWorkCenterCostRateCommandHandler(db, new PostgreSqlWorkCenterCostRateRevisionLock(db))
+        await Handler(db)
             .Handle(Command("org-001", "env-dev", 50m), CancellationToken.None);
         await db.SaveChangesAsync();
         await consumer.HandleAsync(report, CancellationToken.None);
@@ -341,6 +375,10 @@ public sealed class WorkCenterCostRateApplicationTests
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }
+
+    private static ConfigureWorkCenterCostRateCommandHandler Handler(ApplicationDbContext db) => new(
+        new WorkCenterCostRateRepository(db),
+        new WorkCenterRateRevisionAllocator(db, new PostgreSqlErpAdvisoryLockAllocator(db)));
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

@@ -72,6 +72,7 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
+    builder.Services.AddScoped<WmsWorkPoolMembershipSeedService>();
     builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
     builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
     builder.Services.AddNervIipCommandLocking(
@@ -157,6 +158,9 @@ try
     builder.Services.AddConfigurationServiceEndpointProvider();
 
     var app = builder.Build();
+    var wmsWorkPoolMembershipSeedEnabled = WmsWorkPoolMembershipSeedGate.ShouldSeed(
+        builder.Configuration,
+        app.Environment.IsDevelopment());
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
@@ -171,8 +175,24 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
+    if (wmsWorkPoolMembershipSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var report = await scope.ServiceProvider
+            .GetRequiredService<WmsWorkPoolMembershipSeedService>()
+            .SeedAsync(
+                builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+                builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+        app.Logger.LogInformation(
+            "WMS demo work-pool seed completed: {Pools} work pools, {Memberships} memberships, " +
+            "{Inbound} inbound orders written.",
+            report.WorkPoolsWritten,
+            report.WorkPoolMembershipsWritten,
+            report.InboundOrdersWritten);
+    }
+
     // 《工厂世界观设定集》L1 背景历史（仓储域侧）。校验器 fail-closed：对账不平就让启动失败。
-    // WMS 没有固定演示 seed，因此这里直接以 History 开关为准，并沿用「只在 Development 允许」的口径。
+    // 最小现场作业池 seed 已由上方独立 gate 控制；这里仍只处理完整 History，并沿用「只在 Development 允许」的口径。
     if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
     {
         if (!app.Environment.IsDevelopment())

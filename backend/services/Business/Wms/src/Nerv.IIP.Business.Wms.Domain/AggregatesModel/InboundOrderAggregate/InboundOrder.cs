@@ -177,7 +177,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public IReadOnlyCollection<InventoryMovementRequest> Complete(
         string idempotencyKey,
         long expectedVersion,
-        IReadOnlyCollection<InboundOrderLineCapture>? captures = null)
+        IReadOnlyCollection<InboundOrderLineCapture>? captures = null,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null)
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
@@ -205,7 +206,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                line.StagingLocationCode,
+                InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 line.ReceiptQualityStatus,
@@ -279,7 +280,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         Status = InboundOrderStatus.InventoryPostingFailed;
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(string idempotencyKey)
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,
+        IReadOnlyCollection<string>? failedLineNos = null)
     {
         if (Status != InboundOrderStatus.InventoryPostingFailed)
         {
@@ -288,9 +292,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        var retryLines = RetryLines(failedLineNos);
         Status = InboundOrderStatus.Completed;
         var singleLine = lines.Count == 1;
-        var requests = lines.Select(line => InventoryMovementRequest.Create(
+        var requests = retryLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,
                 "inbound",
@@ -300,7 +305,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                line.StagingLocationCode,
+                InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 line.ReceiptQualityStatus,
@@ -311,6 +316,45 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 ExpiryDate: line.ExpiryDate))
             .ToArray();
         return requests;
+    }
+
+    private IReadOnlyCollection<InboundOrderLine> RetryLines(IReadOnlyCollection<string>? failedLineNos)
+    {
+        if (failedLineNos is null)
+        {
+            return lines;
+        }
+
+        var requestedLineNos = failedLineNos
+            .Select(lineNo => WmsText.Required(lineNo, nameof(failedLineNos)))
+            .ToHashSet(StringComparer.Ordinal);
+        if (requestedLineNos.Count == 0)
+        {
+            throw new InvalidOperationException("At least one failed inbound line is required for Inventory posting retry.");
+        }
+
+        var retryLines = lines
+            .Where(line => requestedLineNos.Contains(line.LineNo))
+            .ToArray();
+        if (retryLines.Length != requestedLineNos.Count)
+        {
+            var unknownLineNo = requestedLineNos
+                .Except(retryLines.Select(line => line.LineNo), StringComparer.Ordinal)
+                .First();
+            throw new InvalidOperationException($"Inbound line '{unknownLineNo}' was not found.");
+        }
+
+        return retryLines;
+    }
+
+    private static string InventoryLocationFor(
+        InboundOrderLine line,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine)
+    {
+        return inventoryLocationByLine is not null
+            && inventoryLocationByLine.TryGetValue(line.LineNo, out var locationCode)
+            ? WmsText.Required(locationCode, nameof(inventoryLocationByLine))
+            : line.StagingLocationCode;
     }
 
     private InboundOrderLine FindLine(string lineNo)

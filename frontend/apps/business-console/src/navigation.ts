@@ -769,7 +769,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.iiotTelemetryRead],
         },
         {
-          title: 'OEE 与可用性',
+          title: 'OEE 趋势与横比',
           icon: GaugeIcon,
           to: { path: '/equipment/telemetry/oee' },
           requiredPermissions: [P.iiotTelemetryRead],

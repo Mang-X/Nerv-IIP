@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.ServiceAuth;
 using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
@@ -27,7 +28,8 @@ public sealed record MesMaterialRequirementSnapshotLine(
     string UomCode,
     decimal AvailableQuantity,
     decimal StagedQuantity,
-    string SourceSnapshotId);
+    string SourceSnapshotId,
+    IReadOnlyCollection<string> SubstituteMaterialIds);
 
 public enum MesMaterialRequirementSnapshotStatus
 {
@@ -80,6 +82,14 @@ public sealed class MesInventoryHttpClient(HttpClient httpClient)
     public HttpClient HttpClient { get; } = httpClient;
 }
 
+public sealed class MesInventoryHttpClientOptions
+{
+    public const string SectionName = "Mes:InventoryClient";
+
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
+}
+
 public sealed class MesMasterDataHttpClient(HttpClient httpClient)
 {
     public HttpClient HttpClient { get; } = httpClient;
@@ -104,6 +114,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
 {
     private const string ActiveProductionVersionStatus = ProductionEngineeringContractStatuses.Active;
     private const string PublishedEngineeringStatus = "published";
+    private const int MaxConcurrentInventoryAvailabilityRequests = 8;
     private readonly MesMaterialRequirementInventoryOptions inventoryOptions = inventoryOptions ?? new MesMaterialRequirementInventoryOptions();
 
     public HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
@@ -169,13 +180,20 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             {
                 var yieldRate = x.YieldRate <= 0m ? 1m : x.YieldRate;
                 var requiredQuantity = request.WorkOrderQuantity * x.Quantity * (1m + x.ScrapRate) / yieldRate;
-                return new MaterialRequirementLineDraft(x.SkuCode, x.UnitOfMeasureCode, requiredQuantity);
+                return new MaterialRequirementLineDraft(
+                    x.SkuCode,
+                    x.UnitOfMeasureCode,
+                    requiredQuantity,
+                    ParseSubstituteMaterialIds(x.SkuCode, x.SubstituteSkuCodes));
             })
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.UomCode.ToUpperInvariant()}", StringComparer.Ordinal)
             .Select(x => new MaterialRequirementLineDraft(
                 x.First().MaterialId,
                 x.First().UomCode,
-                x.Sum(y => y.RequiredQuantity)))
+                x.Sum(y => y.RequiredQuantity),
+                MaterialSubstituteCandidateNormalizer.Normalize(
+                    x.First().MaterialId,
+                    x.SelectMany(y => y.SubstituteMaterialIds))))
             .ToArray();
         if (requiredLines.Length == 0)
         {
@@ -183,16 +201,22 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         }
 
         var conversions = await GetUomConversionsAsync(request, requiredLines, cancellationToken);
-        var lines = new List<MesMaterialRequirementSnapshotLine>(requiredLines.Length);
-        foreach (var line in requiredLines)
+        using var inventoryThrottle = new SemaphoreSlim(MaxConcurrentInventoryAvailabilityRequests);
+        var lines = await Task.WhenAll(requiredLines.Select(async line =>
         {
+            var candidateMaterialIds = new[] { line.MaterialId }
+                .Concat(line.SubstituteMaterialIds)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             var availableQuantity = await GetAvailableQuantityAsync(
                 request,
-                line.MaterialId,
+                candidateMaterialIds,
                 line.UomCode,
                 conversions,
+                inventoryThrottle,
                 cancellationToken);
-            lines.Add(new MesMaterialRequirementSnapshotLine(
+
+            return new MesMaterialRequirementSnapshotLine(
                 null,
                 line.MaterialId,
                 null,
@@ -200,46 +224,53 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 line.UomCode,
                 availableQuantity,
                 0m,
-                $"{selectedVersion.MbomVersionId}:{line.MaterialId}"));
-        }
+                $"{selectedVersion.MbomVersionId}:{line.MaterialId}",
+                line.SubstituteMaterialIds);
+        }));
 
         return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}", lines);
     }
 
     private async Task<decimal> GetAvailableQuantityAsync(
         MesMaterialRequirementSnapshotRequest request,
-        string materialId,
+        IReadOnlyCollection<string> materialIds,
         string uomCode,
         IReadOnlyCollection<MesUomConversionSnapshot> conversions,
+        SemaphoreSlim inventoryThrottle,
         CancellationToken cancellationToken)
     {
-        var availableQuantity = 0m;
         var candidates = GetInventoryUomCandidates(uomCode, conversions);
         var siteCodes = GetSiteCodes();
-        // Availability currently uses Inventory's exact GET contract; batch API work is intentionally left out of this #460 fix.
-        foreach (var candidate in candidates)
-        {
-            foreach (var siteCode in siteCodes)
+        var quantities = await Task.WhenAll(materialIds.SelectMany(materialId =>
+            candidates.SelectMany(candidate => siteCodes.Select(async siteCode =>
             {
-                var availability = await SendAsync<StockAvailabilityResponse>(
-                    inventoryClient.HttpClient,
-                    "Inventory",
-                    "/api/inventory/v1/availability?" + Query(
-                        ("organizationId", request.OrganizationId),
-                        ("environmentId", request.EnvironmentId),
-                        ("skuCode", materialId),
-                        ("uomCode", candidate.InventoryUomCode),
-                        ("siteCode", siteCode)),
-                    cancellationToken);
-                availableQuantity += candidate.ToRequiredUom(Math.Max(0m, availability.AvailableQuantity));
-            }
-        }
+                await inventoryThrottle.WaitAsync(cancellationToken);
+                try
+                {
+                    var availability = await SendAsync<StockAvailabilityResponse>(
+                        inventoryClient.HttpClient,
+                        "Inventory",
+                        "/api/inventory/v1/availability?" + Query(
+                            ("organizationId", request.OrganizationId),
+                            ("environmentId", request.EnvironmentId),
+                            ("skuCode", materialId),
+                            ("uomCode", candidate.InventoryUomCode),
+                            ("siteCode", siteCode)),
+                        cancellationToken);
+                    return candidate.ToRequiredUom(Math.Max(0m, availability.AvailableQuantity));
+                }
+                finally
+                {
+                    inventoryThrottle.Release();
+                }
+            }))));
+        var availableQuantity = quantities.Sum();
 
         if (availableQuantity <= 0m)
         {
             logger?.LogWarning(
-                "MES material availability returned zero availability for material {MaterialId} required UOM {UomCode}; queried sites {SiteCodes} and inventory UOM candidates {InventoryUomCodes}.",
-                materialId,
+                "MES material availability returned zero availability for materials {MaterialIds} required UOM {UomCode}; queried sites {SiteCodes} and inventory UOM candidates {InventoryUomCodes}.",
+                string.Join(',', materialIds),
                 uomCode,
                 string.Join(',', siteCodes),
                 string.Join(',', candidates.Select(x => x.InventoryUomCode)));
@@ -464,6 +495,14 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         return standalone.Concat(selectedAlternates).ToArray();
     }
 
+    private static IReadOnlyCollection<string> ParseSubstituteMaterialIds(
+        string materialId,
+        string? substituteSkuCodes) =>
+        MaterialSubstituteCandidateNormalizer.Normalize(
+            materialId,
+            (substituteSkuCodes ?? string.Empty)
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
     private static bool TryParseVersionReference(string versionId, out string code, out string revision)
     {
         code = string.Empty;
@@ -542,7 +581,11 @@ internal sealed record ManufacturingBomRecipeLineItem(string ParameterCode, stri
 
 internal sealed record StockAvailabilityResponse(decimal AvailableQuantity);
 
-internal sealed record MaterialRequirementLineDraft(string MaterialId, string UomCode, decimal RequiredQuantity);
+internal sealed record MaterialRequirementLineDraft(
+    string MaterialId,
+    string UomCode,
+    decimal RequiredQuantity,
+    IReadOnlyCollection<string> SubstituteMaterialIds);
 
 internal sealed record MasterDataResourceListResponse(
     IReadOnlyCollection<MasterDataResourceListItem> Resources,

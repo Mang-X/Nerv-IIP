@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
+using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 using Nerv.IIP.Business.Inventory.Web.Application.Seed;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
 using Nerv.IIP.Localization;
@@ -42,6 +43,12 @@ try
         client.Timeout = TimeSpan.FromSeconds(2);
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    var mesBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    builder.Services.AddHttpClient<IInventoryUnitCostAuthorityResolver, HttpInventoryUnitCostAuthorityResolver>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+        client.Timeout = TimeSpan.FromSeconds(2);
+    }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
@@ -89,6 +96,7 @@ try
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IInventoryIntegrationEventContextAccessor, HttpInventoryIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -112,6 +120,7 @@ try
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseDashboard();
         });
     }

@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
@@ -672,7 +673,7 @@ public sealed class ErpBusinessGapClosureTests
             new OpenAccountingPeriodCommand("org-001", "env-dev", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new CloseAccountingPeriodCommandHandler(dbContext).Handle(
+        await new CloseAccountingPeriodCommandHandler(dbContext, new PostgreSqlErpAdvisoryLockAllocator(dbContext)).Handle(
             new CloseAccountingPeriodCommand("org-001", "env-dev", "2026-06", "u-controller", "month-end complete"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);

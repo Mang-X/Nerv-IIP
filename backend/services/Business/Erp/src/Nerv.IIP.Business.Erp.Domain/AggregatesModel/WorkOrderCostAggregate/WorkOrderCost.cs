@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
@@ -6,7 +7,23 @@ namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 public partial record WorkOrderCostId : IGuidStronglyTypedId;
 public partial record WorkOrderCostDetailId : IGuidStronglyTypedId;
 
-public enum WorkOrderCostDetailType { Labor, Material }
+public enum WorkOrderCostDetailType { Labor, Material, MachineOverhead }
+public enum LaborCostBasis
+{
+    TheoreticalReport,
+    TheoreticalReportReplacement,
+    ActualOperation,
+    ActualOperationVoid,
+    ActualOperationSuperseded,
+    UncostedReport,
+}
+public enum MachineOverheadCostBasis
+{
+    ActualOperation,
+    ActualOperationVoid,
+    ActualOperationSuperseded,
+    NotApplicable,
+}
 
 public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 {
@@ -24,6 +41,12 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public string WorkOrderId { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
+    public string? SourceNcrId { get; private set; }
+    public string? SourceNcrCode { get; private set; }
+    public string? SourceWorkOrderId { get; private set; }
+    public bool IsRework => SourceNcrId is not null;
+    public string? LaborCurrencyCode { get; private set; }
+    public string? MachineOverheadCurrencyCode { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public int ExpectedReportCount { get; private set; }
@@ -32,12 +55,15 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     public int ReceivedMaterialMovementCount { get; private set; }
     public bool CapitalizationPublished { get; private set; }
     public decimal CapitalizedQuantity { get; private set; }
+    public bool IsFullyCapitalized => CompletedQuantity > 0m
+        && CapitalizedQuantity >= CompletedQuantity - 0.000001m;
     public decimal WipClearedCost { get; private set; }
     public decimal CapitalizedCost { get; private set; }
     public decimal VarianceCost => TotalAccumulatedCost - CapitalizedCost;
     public decimal LaborCost => details.Where(x => x.Type == WorkOrderCostDetailType.Labor).Sum(x => x.Amount);
     public decimal MaterialCost => details.Where(x => x.Type == WorkOrderCostDetailType.Material).Sum(x => x.Amount);
-    public decimal TotalAccumulatedCost => LaborCost + MaterialCost;
+    public decimal MachineOverheadCost => details.Where(x => x.Type == WorkOrderCostDetailType.MachineOverhead).Sum(x => x.Amount);
+    public decimal TotalAccumulatedCost => LaborCost + MaterialCost + MachineOverheadCost;
     public IReadOnlyCollection<WorkOrderCostDetail> Details => details;
 
     public static WorkOrderCost Open(string organizationId, string environmentId, string workOrderId, string skuCode)
@@ -45,27 +71,280 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
 
     public void AssignSku(string skuCode) => SkuCode = ErpText.Required(skuCode, nameof(skuCode));
 
-    public void RecordLabor(string sourceDocumentId, string workCenterId, decimal hours, decimal hourlyRate, bool isReversal, DateTimeOffset occurredAtUtc)
+    public void AttributeRework(
+        string sourceNcrId,
+        string sourceNcrCode,
+        string sourceWorkOrderId,
+        string skuCode)
     {
+        var normalizedSourceNcrId = ErpText.Required(sourceNcrId, nameof(sourceNcrId));
+        var normalizedSourceNcrCode = ErpText.Required(sourceNcrCode, nameof(sourceNcrCode));
+        var normalizedSourceWorkOrderId = ErpText.Required(sourceWorkOrderId, nameof(sourceWorkOrderId));
+        var normalizedSkuCode = ErpText.Required(skuCode, nameof(skuCode));
+
+        if (SourceNcrId is not null)
+        {
+            if (!string.Equals(SourceNcrId, normalizedSourceNcrId, StringComparison.Ordinal)
+                || !string.Equals(SourceNcrCode, normalizedSourceNcrCode, StringComparison.Ordinal)
+                || !string.Equals(SourceWorkOrderId, normalizedSourceWorkOrderId, StringComparison.Ordinal)
+                || !string.Equals(SkuCode, normalizedSkuCode, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Work order '{WorkOrderId}' already has a different rework cost origin.");
+            }
+
+            return;
+        }
+
+        SourceNcrId = normalizedSourceNcrId;
+        SourceNcrCode = normalizedSourceNcrCode;
+        SourceWorkOrderId = normalizedSourceWorkOrderId;
+        SkuCode = normalizedSkuCode;
+    }
+
+    public bool TryFreezeLaborCurrency(string currencyCode)
+    {
+        var normalized = NormalizeLaborCurrency(currencyCode);
+        if (MachineOverheadCurrencyCode is not null
+            && !string.Equals(MachineOverheadCurrencyCode, normalized, StringComparison.Ordinal))
+            return false;
+        if (LaborCurrencyCode is not null)
+            return string.Equals(LaborCurrencyCode, normalized, StringComparison.Ordinal);
+        if (details.Any(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis != LaborCostBasis.UncostedReport
+                && x.Amount != 0m))
+            return false;
+        LaborCurrencyCode = normalized;
+        return true;
+    }
+
+    public bool TryFreezeMachineOverheadCurrency(string currencyCode)
+    {
+        var normalized = NormalizeLaborCurrency(currencyCode);
+        if (LaborCurrencyCode is not null
+            && !string.Equals(LaborCurrencyCode, normalized, StringComparison.Ordinal))
+            return false;
+        if (MachineOverheadCurrencyCode is not null)
+            return string.Equals(MachineOverheadCurrencyCode, normalized, StringComparison.Ordinal);
+        if (details.Any(x => x.Type == WorkOrderCostDetailType.MachineOverhead && x.Amount != 0m))
+            return false;
+        MachineOverheadCurrencyCode = normalized;
+        return true;
+    }
+
+    public void RecordLabor(string sourceDocumentId, string workCenterId, decimal hours, decimal hourlyRate, string currencyCode, bool isReversal, DateTimeOffset occurredAtUtc)
+    {
+        EnsureLaborCurrency(currencyCode);
         ErpText.Positive(hours, nameof(hours));
         ErpText.Positive(hourlyRate, nameof(hourlyRate));
-        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Labor, sourceDocumentId, workCenterId, hours, hourlyRate, isReversal ? -(hours * hourlyRate) : hours * hourlyRate, occurredAtUtc));
+        details.Add(WorkOrderCostDetail.CreateLabor(
+            sourceDocumentId,
+            workCenterId,
+            hours,
+            hourlyRate,
+            isReversal ? -(hours * hourlyRate) : hours * hourlyRate,
+            occurredAtUtc,
+            LaborCostBasis.TheoreticalReport,
+            sourceDocumentId));
         if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
     }
 
     public void RecordUncostedReport(string sourceDocumentId, bool isReversal, DateTimeOffset occurredAtUtc)
     {
-        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Labor, sourceDocumentId, "UNSPECIFIED", 0m, 0m, 0m, occurredAtUtc));
+        details.Add(WorkOrderCostDetail.CreateLabor(
+            sourceDocumentId,
+            "UNSPECIFIED",
+            0m,
+            0m,
+            0m,
+            occurredAtUtc,
+            LaborCostBasis.UncostedReport,
+            sourceDocumentId));
         if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
+    }
+
+    public void ReplaceTheoreticalLabor(
+        string reportNo,
+        string replacementSourceDocumentId,
+        DateTimeOffset occurredAtUtc)
+    {
+        if (details.Any(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis == LaborCostBasis.TheoreticalReportReplacement
+                && x.LaborLineageId == reportNo))
+            return;
+
+        var theoreticalDetails = details
+            .Where(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis == LaborCostBasis.TheoreticalReport
+                && x.SourceDocumentId == reportNo)
+            .ToArray();
+        foreach (var detail in theoreticalDetails)
+        {
+            details.Add(WorkOrderCostDetail.CreateLabor(
+                replacementSourceDocumentId,
+                detail.DimensionCode,
+                -detail.Quantity,
+                detail.Rate,
+                -detail.Amount,
+                occurredAtUtc,
+                LaborCostBasis.TheoreticalReportReplacement,
+                reportNo));
+        }
+    }
+
+    public void ReplaceAllTheoreticalLabor(string replacementScope, DateTimeOffset occurredAtUtc)
+    {
+        var activeReportNos = details
+            .Where(x => x.Type == WorkOrderCostDetailType.Labor
+                && x.LaborBasis == LaborCostBasis.TheoreticalReport)
+            .Select(x => x.SourceDocumentId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        foreach (var reportNo in activeReportNos)
+            ReplaceTheoreticalLabor(
+                reportNo,
+                $"{replacementScope}:replace:{reportNo}",
+                occurredAtUtc);
+    }
+
+    public void RecordActualLabor(OperationLaborSettlement settlement)
+    {
+        if (settlement.Amount != 0m)
+            EnsureLaborCurrency(settlement.CurrencyCode);
+        details.Add(WorkOrderCostDetail.CreateLabor(
+            ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, "settled"),
+            settlement.WorkCenterId,
+            settlement.ActualLaborHours,
+            settlement.HourlyRate,
+            settlement.Amount,
+            settlement.CompletedAtUtc,
+            LaborCostBasis.ActualOperation,
+            ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+        TryPublishCapitalization();
+    }
+
+    public void RecordActualLaborVoid(OperationLaborSettlementVoid settlementVoid)
+    {
+        if (settlementVoid.Amount != 0m)
+            EnsureLaborCurrency(settlementVoid.CurrencyCode);
+        details.Add(WorkOrderCostDetail.CreateLabor(
+            ActualLaborSourceId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision, "voided"),
+            settlementVoid.WorkCenterId,
+            -settlementVoid.ActualLaborHours,
+            settlementVoid.HourlyRate,
+            settlementVoid.Amount,
+            settlementVoid.VoidedAtUtc,
+            LaborCostBasis.ActualOperationVoid,
+            ActualLaborLineageId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision)));
+    }
+
+    public void RecordActualLaborSuperseded(OperationLaborSettlement settlement, long supersedingRevision, DateTimeOffset occurredAtUtc)
+    {
+        if (settlement.Amount != 0m)
+            EnsureLaborCurrency(settlement.CurrencyCode);
+        details.Add(WorkOrderCostDetail.CreateLabor(
+            ActualLaborSourceId(settlement.OperationTaskId, settlement.SettlementRevision, $"superseded-by-{supersedingRevision}"),
+            settlement.WorkCenterId,
+            -settlement.ActualLaborHours,
+            settlement.HourlyRate,
+            -settlement.Amount,
+            occurredAtUtc,
+            LaborCostBasis.ActualOperationSuperseded,
+            ActualLaborLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+    }
+
+    public void RecordMachineOverhead(OperationMachineOverheadSettlement settlement)
+    {
+        if (settlement.Amount != 0m)
+            EnsureMachineOverheadCurrency(settlement.CurrencyCode);
+        details.Add(WorkOrderCostDetail.CreateMachineOverhead(
+            MachineOverheadSourceId(settlement.OperationTaskId, settlement.SettlementRevision, "settled"),
+            settlement.WorkCenterId,
+            settlement.ActualMachineHours ?? 0m,
+            settlement.FixedHourlyRate + settlement.VariableHourlyRate,
+            settlement.Amount,
+            settlement.CompletedAtUtc,
+            settlement.Applicability == MachineOverheadApplicability.NotApplicable
+                ? MachineOverheadCostBasis.NotApplicable
+                : MachineOverheadCostBasis.ActualOperation,
+            MachineOverheadLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+        TryPublishCapitalization();
+    }
+
+    public void RecordMachineOverheadVoid(OperationMachineOverheadSettlementVoid settlementVoid)
+    {
+        if (settlementVoid.Amount != 0m)
+            EnsureMachineOverheadCurrency(settlementVoid.CurrencyCode);
+        details.Add(WorkOrderCostDetail.CreateMachineOverhead(
+            MachineOverheadSourceId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision, "voided"),
+            settlementVoid.WorkCenterId,
+            -(settlementVoid.ActualMachineHours ?? 0m),
+            settlementVoid.FixedHourlyRate + settlementVoid.VariableHourlyRate,
+            settlementVoid.Amount,
+            settlementVoid.VoidedAtUtc,
+            MachineOverheadCostBasis.ActualOperationVoid,
+            MachineOverheadLineageId(settlementVoid.OperationTaskId, settlementVoid.SettlementRevision)));
+    }
+
+    public void RecordMachineOverheadSuperseded(
+        OperationMachineOverheadSettlement settlement,
+        long supersedingRevision,
+        DateTimeOffset occurredAtUtc)
+    {
+        if (settlement.Amount != 0m)
+            EnsureMachineOverheadCurrency(settlement.CurrencyCode);
+        details.Add(WorkOrderCostDetail.CreateMachineOverhead(
+            MachineOverheadSourceId(settlement.OperationTaskId, settlement.SettlementRevision, $"superseded-by-{supersedingRevision}"),
+            settlement.WorkCenterId,
+            -(settlement.ActualMachineHours ?? 0m),
+            settlement.FixedHourlyRate + settlement.VariableHourlyRate,
+            -settlement.Amount,
+            occurredAtUtc,
+            MachineOverheadCostBasis.ActualOperationSuperseded,
+            MachineOverheadLineageId(settlement.OperationTaskId, settlement.SettlementRevision)));
+    }
+
+    private static string MachineOverheadLineageId(string operationTaskId, long revision)
+        => $"{operationTaskId}:r{revision}";
+
+    private static string MachineOverheadSourceId(string operationTaskId, long revision, string suffix)
+        => $"machine-overhead:{MachineOverheadLineageId(operationTaskId, revision)}:{suffix}";
+
+    private void EnsureMachineOverheadCurrency(string currencyCode)
+    {
+        if (!TryFreezeMachineOverheadCurrency(currencyCode))
+            throw new InvalidOperationException($"Work order '{WorkOrderId}' machine-overhead currency is incompatible with '{currencyCode}'.");
+    }
+
+    private static string ActualLaborLineageId(string operationTaskId, long revision)
+        => $"{operationTaskId}:r{revision}";
+
+    private static string ActualLaborSourceId(string operationTaskId, long revision, string suffix)
+        => $"actual-labor:{ActualLaborLineageId(operationTaskId, revision)}:{suffix}";
+
+    private void EnsureLaborCurrency(string currencyCode)
+    {
+        if (!TryFreezeLaborCurrency(currencyCode))
+            throw new InvalidOperationException($"Work order '{WorkOrderId}' labor currency is incompatible with '{currencyCode}'.");
+    }
+
+    private static string NormalizeLaborCurrency(string currencyCode)
+    {
+        var normalized = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
+        if (normalized.Length != 3)
+            throw new ArgumentOutOfRangeException(nameof(currencyCode), currencyCode, "Currency code must contain exactly three characters.");
+        return normalized;
     }
 
     public void RecordMaterial(string sourceDocumentId, string reportNo, string skuCode, decimal signedQuantity, decimal unitCost, DateTimeOffset occurredAtUtc)
     {
         if (signedQuantity == 0m) throw new ArgumentOutOfRangeException(nameof(signedQuantity));
         ErpText.Positive(unitCost, nameof(unitCost));
-        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Material, sourceDocumentId, skuCode, signedQuantity, unitCost, signedQuantity * unitCost, occurredAtUtc, reportNo));
+        details.Add(WorkOrderCostDetail.CreateMaterial(
+            sourceDocumentId, skuCode, signedQuantity, unitCost,
+            signedQuantity * unitCost, occurredAtUtc, reportNo));
         if (signedQuantity > 0m) ReceivedMaterialMovementCount++;
         TryPublishCapitalization();
     }
@@ -206,20 +485,102 @@ public sealed class PendingMaterialCost : Entity<PendingMaterialCostId>, IAggreg
 public sealed class WorkOrderCostDetail : Entity<WorkOrderCostDetailId>
 {
     private WorkOrderCostDetail() { }
-    private WorkOrderCostDetail(WorkOrderCostDetailType type, string sourceDocumentId, string dimensionCode, decimal quantity, decimal rate, decimal amount, DateTimeOffset occurredAtUtc, string? reportNo)
+    private WorkOrderCostDetail(
+        WorkOrderCostDetailType type,
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        string? reportNo,
+        LaborCostBasis? laborBasis,
+        string? laborLineageId,
+        MachineOverheadCostBasis? machineOverheadBasis,
+        string? machineOverheadLineageId)
     {
         Type = type; SourceDocumentId = ErpText.Required(sourceDocumentId, nameof(sourceDocumentId));
         DimensionCode = ErpText.Required(dimensionCode, nameof(dimensionCode)); Quantity = quantity; Rate = rate; Amount = amount;
-        OccurredAtUtc = occurredAtUtc; ReportNo = reportNo;
+        OccurredAtUtc = occurredAtUtc; ReportNo = reportNo; LaborBasis = laborBasis; LaborLineageId = laborLineageId;
+        MachineOverheadBasis = machineOverheadBasis; MachineOverheadLineageId = machineOverheadLineageId;
     }
     public WorkOrderCostDetailType Type { get; private set; }
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string DimensionCode { get; private set; } = string.Empty;
     public string? ReportNo { get; private set; }
+    public LaborCostBasis? LaborBasis { get; private set; }
+    public string? LaborLineageId { get; private set; }
+    public MachineOverheadCostBasis? MachineOverheadBasis { get; private set; }
+    public string? MachineOverheadLineageId { get; private set; }
     public decimal Quantity { get; private set; }
     public decimal Rate { get; private set; }
     public decimal Amount { get; private set; }
     public DateTimeOffset OccurredAtUtc { get; private set; }
-    internal static WorkOrderCostDetail Create(WorkOrderCostDetailType type, string sourceDocumentId, string dimensionCode, decimal quantity, decimal rate, decimal amount, DateTimeOffset occurredAtUtc, string? reportNo = null)
-        => new(type, sourceDocumentId, dimensionCode, quantity, rate, amount, occurredAtUtc, reportNo);
+    internal static WorkOrderCostDetail CreateLabor(
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        LaborCostBasis laborBasis,
+        string laborLineageId)
+        => new(
+            WorkOrderCostDetailType.Labor,
+            sourceDocumentId,
+            dimensionCode,
+            quantity,
+            rate,
+            amount,
+            occurredAtUtc,
+            null,
+            laborBasis,
+            ErpText.Required(laborLineageId, nameof(laborLineageId)),
+            null,
+            null);
+
+    internal static WorkOrderCostDetail CreateMaterial(
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        string reportNo)
+        => new(
+            WorkOrderCostDetailType.Material,
+            sourceDocumentId,
+            dimensionCode,
+            quantity,
+            rate,
+            amount,
+            occurredAtUtc,
+            ErpText.Required(reportNo, nameof(reportNo)),
+            null,
+            null,
+            null,
+            null);
+
+    internal static WorkOrderCostDetail CreateMachineOverhead(
+        string sourceDocumentId,
+        string dimensionCode,
+        decimal quantity,
+        decimal rate,
+        decimal amount,
+        DateTimeOffset occurredAtUtc,
+        MachineOverheadCostBasis basis,
+        string lineageId)
+        => new(
+            WorkOrderCostDetailType.MachineOverhead,
+            sourceDocumentId,
+            dimensionCode,
+            quantity,
+            rate,
+            amount,
+            occurredAtUtc,
+            null,
+            null,
+            null,
+            basis,
+            ErpText.Required(lineageId, nameof(lineageId)));
 }
