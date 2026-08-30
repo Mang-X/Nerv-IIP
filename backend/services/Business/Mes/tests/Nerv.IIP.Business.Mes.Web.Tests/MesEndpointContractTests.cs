@@ -1082,6 +1082,11 @@ public sealed class MesEndpointContractTests
             && x.OperationId == "listBusinessMesProductionReports");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/production-statistics"
+            && x.PermissionCode == MesPermissionCodes.ReportingRead
+            && x.OperationId == "queryBusinessMesProductionStatistics");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/production-reports/{reportNo}"
             && x.PermissionCode == MesPermissionCodes.ReportingRead
             && x.OperationId == "getBusinessMesProductionReport");
