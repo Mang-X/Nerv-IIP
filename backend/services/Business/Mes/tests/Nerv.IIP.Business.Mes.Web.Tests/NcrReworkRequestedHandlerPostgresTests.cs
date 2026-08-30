@@ -504,6 +504,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await HandleAsync(provider, CreateEvent());
 
         string reworkWorkOrderId;
+        string reworkOperationTaskId;
         string reportNo;
         await using (var executionScope = provider.CreateAsyncScope())
         {
@@ -513,6 +514,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             var firstTask = await db.OperationTasks
                 .OrderBy(x => x.OperationSequence)
                 .FirstAsync(x => x.WorkOrderId == reworkWorkOrderId);
+            reworkOperationTaskId = firstTask.OperationTaskIdValue;
             var reportedAtUtc = DateTimeOffset.Parse("2026-08-29T09:00:00Z");
             await new ChangeOperationTaskStateCommandHandler(db).Handle(
                 new ChangeOperationTaskStateCommand(
@@ -539,7 +541,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                         false,
                         reportedAtUtc,
                         "rework-trace:report",
-                        ProducedLotNo: "LOT-REWORK-001",
+                        ProducedLotNo: "LOT-001",
                         SerialNo: "SN-REWORK-001",
                         ReportedBy: "operator-rework"),
                     CancellationToken.None);
@@ -584,7 +586,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                     new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
                     CancellationToken.None),
                 await new GetBatchTraceabilityQueryHandler(db).Handle(
-                    new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-REWORK-001"),
+                    new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-REWORK-001"),
                     CancellationToken.None),
                 await new GetMaterialLotTraceabilityQueryHandler(db).Handle(
                     new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-001"),
@@ -592,6 +594,33 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             };
 
             Assert.All(graphs, graph => AssertReworkChain(graph, reworkWorkOrderId, reportNo, expectOutput: true));
+
+            var batchGraph = graphs[2];
+            Assert.Contains(batchGraph.Edges, x =>
+                x.FromNodeId == reportNo &&
+                x.ToNodeId == reworkOperationTaskId &&
+                x.RelationType == "reported-operation");
+            Assert.Contains(batchGraph.Edges, x =>
+                x.FromNodeId == reworkOperationTaskId &&
+                x.ToNodeId == reworkWorkOrderId &&
+                x.RelationType == "belongs-to-work-order");
+            Assert.DoesNotContain(batchGraph.Edges, x =>
+                x.FromNodeId == reworkWorkOrderId &&
+                x.ToNodeId == reworkOperationTaskId &&
+                x.RelationType == "has-operation");
+            Assert.DoesNotContain(batchGraph.Edges, x =>
+                x.FromNodeId == reworkOperationTaskId &&
+                x.ToNodeId == reportNo &&
+                x.RelationType == "has-report");
+
+            var missingBatch = await new GetBatchTraceabilityQueryHandler(db).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-NOT-FOUND"),
+                CancellationToken.None);
+            var unknownNode = Assert.Single(missingBatch.Nodes);
+            Assert.Equal("LOT-NOT-FOUND", unknownNode.NodeId);
+            Assert.Equal(MesTraceabilityNodeType.BatchOrSerial, unknownNode.NodeType);
+            Assert.Equal("Unknown", unknownNode.Status);
+            Assert.Empty(missingBatch.Edges);
         }
 
         await using (var reversalScope = provider.CreateAsyncScope())
@@ -615,10 +644,22 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
 
         await using var assertionScope = provider.CreateAsyncScope();
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var afterReversal = await new GetBatchTraceabilityQueryHandler(assertionDb).Handle(
-            new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
-            CancellationToken.None);
-        AssertReworkChain(afterReversal, reworkWorkOrderId, reportNo, expectOutput: false);
+        var afterReversalGraphs = new[]
+        {
+            await new GetWorkOrderTraceabilityQueryHandler(assertionDb).Handle(
+                new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-SOURCE-001"),
+                CancellationToken.None),
+            await new GetWorkOrderTraceabilityQueryHandler(assertionDb).Handle(
+                new GetWorkOrderTraceabilityQuery("org-001", "env-dev", reworkWorkOrderId),
+                CancellationToken.None),
+            await new GetBatchTraceabilityQueryHandler(assertionDb).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-001"),
+                CancellationToken.None),
+            await new GetMaterialLotTraceabilityQueryHandler(assertionDb).Handle(
+                new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-001"),
+                CancellationToken.None),
+        };
+        Assert.All(afterReversalGraphs, graph => AssertReworkChain(graph, reworkWorkOrderId, reportNo, expectOutput: false));
     }
 
     private static void AssertReworkChain(
@@ -635,8 +676,12 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             x.FromNodeId == "WO-SOURCE-001" &&
             x.ToNodeId == "ncr-001" &&
             x.RelationType == "raised-ncr");
+        var sourceLotNode = Assert.Single(graph.Nodes, x =>
+            x.DisplayName == "LOT-001" &&
+            x.NodeType == MesTraceabilityNodeType.ProducedLot &&
+            x.Status == "Source");
         Assert.Contains(graph.Edges, x =>
-            x.FromNodeId == "LOT-001" &&
+            x.FromNodeId == sourceLotNode.NodeId &&
             x.ToNodeId == "ncr-001" &&
             x.RelationType == "identified-in-ncr");
         Assert.Contains(graph.Edges, x =>
@@ -654,23 +699,65 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         Assert.Equal(
             graph.Edges.Count,
             graph.Edges.Select(x => new { x.FromNodeId, x.ToNodeId, x.RelationType }).Distinct().Count());
-        Assert.DoesNotContain(graph.Edges, x =>
-            graph.Edges.Any(reverse =>
-                reverse.FromNodeId == x.ToNodeId &&
-                reverse.ToNodeId == x.FromNodeId));
+        AssertAcyclic(graph.Edges);
 
         if (expectOutput)
         {
             Assert.Contains(graph.Edges, x =>
                 x.FromNodeId == reportNo &&
-                x.ToNodeId == "LOT-REWORK-001" &&
+                x.ToNodeId == "LOT-001" &&
                 x.RelationType == "produced-lot");
+            Assert.Contains(graph.Edges, x =>
+                x.FromNodeId == reportNo &&
+                x.ToNodeId == "SN-REWORK-001" &&
+                x.RelationType == "produced-serial");
         }
         else
         {
-            Assert.DoesNotContain(graph.Nodes, x => x.NodeId is "LOT-REWORK-001" or "SN-REWORK-001");
-            Assert.DoesNotContain(graph.Nodes, x => x.NodeId == reportNo);
+            Assert.Contains(graph.Nodes, x =>
+                x.NodeId == reportNo &&
+                x.NodeType == MesTraceabilityNodeType.ProductionReport);
+            Assert.DoesNotContain(graph.Edges, x =>
+                x.FromNodeId == reportNo &&
+                x.RelationType is "produced-lot" or "produced-serial");
         }
+    }
+
+    private static void AssertAcyclic(IReadOnlyCollection<MesTraceabilityEdge> edges)
+    {
+        var outgoing = edges
+            .GroupBy(x => x.FromNodeId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.ToNodeId).Distinct(StringComparer.Ordinal).ToArray(),
+                StringComparer.Ordinal);
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        bool HasCycle(string nodeId)
+        {
+            if (!visiting.Add(nodeId))
+            {
+                return true;
+            }
+
+            if (visited.Contains(nodeId))
+            {
+                visiting.Remove(nodeId);
+                return false;
+            }
+
+            if (outgoing.TryGetValue(nodeId, out var targets) && targets.Any(HasCycle))
+            {
+                return true;
+            }
+
+            visiting.Remove(nodeId);
+            visited.Add(nodeId);
+            return false;
+        }
+
+        Assert.DoesNotContain(outgoing.Keys, HasCycle);
     }
 
     private static Task<ServiceProvider> CreateMigratedProviderAsync() =>
