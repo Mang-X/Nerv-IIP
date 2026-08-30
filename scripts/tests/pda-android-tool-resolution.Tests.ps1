@@ -21,6 +21,7 @@ $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-pda-android-tools-$([G
 $sdkRoot = Join-Path $fixtureRoot 'android-sdk'
 $jdkRoot = Join-Path $fixtureRoot 'jdk-21'
 $avdManagerCapture = Join-Path $fixtureRoot 'avdmanager-arguments.log'
+$adbCapture = Join-Path $fixtureRoot 'adb-invocations.log'
 
 function Write-FakeTool {
     param(
@@ -52,6 +53,7 @@ try {
         $adbBody = @'
 #!/bin/sh
 printf 'PDA_ADB_MARKER\n'
+printf 'PDA_ADB_MARKER %s\n' "$*" >> "$NERV_PDA_FAKE_ADB_CAPTURE"
 case "$*" in *devices*) printf 'List of devices attached\n' ;; esac
 '@
         $emulatorBody = @'
@@ -75,7 +77,9 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
         ANDROID_SDK_ROOT = $null
         JAVA_HOME = $jdkRoot
         NERV_PDA_FAKE_AVDMANAGER_CAPTURE = $avdManagerCapture
+        NERV_PDA_FAKE_ADB_CAPTURE = $adbCapture
     } -ScriptBlock {
+        $buildAst = $null
         foreach ($parsePath in @(
             (Join-Path $pdaScripts 'PdaAndroidTools.ps1')
             (Join-Path $pdaScripts 'pda-apk-build.ps1')
@@ -85,14 +89,36 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
         )) {
             $tokens = $null
             $parseErrors = $null
-            [void] [Management.Automation.Language.Parser]::ParseInput(
+            $parsedAst = [Management.Automation.Language.Parser]::ParseInput(
                 [IO.File]::ReadAllText($parsePath),
                 [ref] $tokens,
                 [ref] $parseErrors)
             if ($parseErrors.Count -gt 0) {
                 throw "PowerShell parse failed for $parsePath`: $($parseErrors -join '; ')"
             }
+            if ([IO.Path]::GetFileName($parsePath) -eq 'pda-apk-build.ps1') {
+                $buildAst = $parsedAst
+            }
             Write-Host "PDA_PARSE_OK=$([IO.Path]::GetRelativePath($repoRoot, $parsePath))"
+        }
+
+        foreach ($buildResolverContract in @(
+            [pscustomobject]@{ Variable = 'androidHome'; Command = 'Resolve-PdaAndroidHome' }
+            [pscustomobject]@{ Variable = 'resolvedJavaHome'; Command = 'Resolve-PdaJavaHome21' }
+        )) {
+            $assignment = @($buildAst.EndBlock.Statements | Where-Object {
+                $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
+                $_.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+                $_.Left.VariablePath.UserPath -ceq $buildResolverContract.Variable
+            })
+            $command = $assignment.Count -eq 1 -and
+                $assignment[0].Right -is [Management.Automation.Language.PipelineAst] -and
+                $assignment[0].Right.PipelineElements.Count -eq 1 -and
+                $assignment[0].Right.PipelineElements[0] -is [Management.Automation.Language.CommandAst] ?
+                $assignment[0].Right.PipelineElements[0].GetCommandName() : $null
+            if ($command -cne $buildResolverContract.Command) {
+                throw "pda-apk-build must assign `$$($buildResolverContract.Variable) from $($buildResolverContract.Command); found '$command'."
+            }
         }
 
         if (-not [string]::Equals((Resolve-PdaAndroidHome), $sdkRoot, [StringComparison]::Ordinal)) {
@@ -136,8 +162,10 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
 
             $scanResult = Invoke-PwshScript -ScriptPath (Join-Path $pdaScripts 'pda-adb-scan.ps1') -Arguments @('-Code', 'NERV-1973', '-Serial', 'emulator-5554') -Name 'pda-adb-scan-tool-resolution' -WorkingDirectory $repoRoot -TimeoutSeconds 30
             $scanOutput = [IO.File]::ReadAllText($scanResult.StdoutPath)
-            if (-not $scanOutput.Contains("已向 emulator-5554 注入码值 'NERV-1973'", [StringComparison]::Ordinal)) {
-                throw "pda-adb-scan must invoke the platform-native adb name. Output: $scanOutput"
+            $scanAdbCapture = [IO.File]::ReadAllText($adbCapture)
+            if (-not $scanAdbCapture.Contains('PDA_ADB_MARKER', [StringComparison]::Ordinal) -or
+                -not $scanOutput.Contains("已向 emulator-5554 注入码值 'NERV-1973'", [StringComparison]::Ordinal)) {
+                throw "pda-adb-scan must invoke the platform-native adb name and report success. Output: $scanOutput; adb: $scanAdbCapture"
             }
         }
     }
