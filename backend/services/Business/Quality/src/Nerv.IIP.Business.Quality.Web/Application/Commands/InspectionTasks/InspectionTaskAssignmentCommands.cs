@@ -144,7 +144,7 @@ public sealed class AssignInspectionTaskCommandHandler(ApplicationDbContext dbCo
 
         var previousUser = task.AssignedUserId;
         var previousTeam = task.AssignedTeamId;
-        var changedAt = DateTimeOffset.UtcNow;
+        var changedAt = InspectionTaskAssignmentExecution.UtcNowForPersistence();
         try
         {
             task.Assign(
@@ -211,7 +211,7 @@ public sealed class ClaimInspectionTaskCommandHandler(ApplicationDbContext dbCon
 
         var previousUser = task.AssignedUserId;
         var previousTeam = task.AssignedTeamId;
-        var changedAt = DateTimeOffset.UtcNow;
+        var changedAt = InspectionTaskAssignmentExecution.UtcNowForPersistence();
         try
         {
             task.Claim(
@@ -252,6 +252,14 @@ public sealed class ClaimInspectionTaskCommandHandler(ApplicationDbContext dbCon
 
 internal static class InspectionTaskAssignmentExecution
 {
+    public static DateTimeOffset UtcNowForPersistence()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DateTimeOffset(
+            now.UtcTicks - (now.UtcTicks % TimeSpan.TicksPerMicrosecond),
+            TimeSpan.Zero);
+    }
+
     public static async Task<InspectionTaskAssignmentResult?> TryReplayAssignmentAsync(
         ApplicationDbContext dbContext,
         InspectionTask task,
