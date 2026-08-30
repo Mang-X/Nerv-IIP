@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import type { DateRange, NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import {
   makeIdempotencyKey,
   useMesDowntimeEvents,
@@ -18,6 +18,7 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   NvButton,
   NvDataTable,
+  NvDateRangePicker,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
@@ -85,7 +86,13 @@ const {
 const { keyword } = useMesKeywordFilter(filters)
 const { statusLabel } = useMesReferenceLabels()
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.status, () => filters.keyword, () => filters.reasonCode],
+  resetOn: [
+    () => filters.status,
+    () => filters.keyword,
+    () => filters.reasonCode,
+    () => filters.windowStartUtc,
+    () => filters.windowEndUtc,
+  ],
 })
 const statusFilter = shallowRef('all')
 const reasonFilter = shallowRef('all')
@@ -133,6 +140,30 @@ watch(statusFilter, (value) => {
 watch(reasonFilter, (value) => {
   filters.reasonCode = value === 'all' ? undefined : value
 })
+
+const windowRange = computed<DateRange>({
+  get: () => ({
+    start: toDateInput(filters.windowStartUtc),
+    end: toDateInput(filters.windowEndUtc),
+  }),
+  set: (range) => {
+    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
+    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
+  },
+})
+
+function toDateInput(value?: string) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
+}
+
+function fromDateInput(value: string, dayOffset: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year!, month! - 1, day! + dayOffset).toISOString()
+}
 
 // 停机读面只回设备编码，中文设备名在设备台账里，按编码 join 出来。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
@@ -531,7 +562,7 @@ function formatError(error: unknown) {
         :value="downtimeHoursTotal"
         unit="小时"
         :segments="downtimeHoursSegments"
-        foot-start="未恢复的停机按当前时刻仍在累计。"
+        foot-start="未恢复停机按窗口结束或当前时刻（取较早者）累计。"
       />
     </div>
 
@@ -569,6 +600,7 @@ function formatError(error: unknown) {
             >
           </NvSelectContent>
         </NvSelect>
+        <NvDateRangePicker v-model="windowRange" placeholder="选择统计窗口" />
       </template>
     </NvToolbar>
 

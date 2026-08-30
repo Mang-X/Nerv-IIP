@@ -1330,6 +1330,27 @@ describe('business MES composables', () => {
   })
 
   // #1947：停机读面要按原因显示、筛选与汇总。
+  it('defaults downtime reads to the latest 30 days and forwards an explicitly selected window', () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    const downtime = useMesDowntimeEvents()
+    const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+
+    expect(listOptions.mock.calls.at(-1)![0]!.query).toMatchObject({
+      windowStartUtc: '2026-07-31T08:00:00.000Z',
+      windowEndUtc: '2026-08-30T08:00:00.000Z',
+    })
+
+    downtime.filters.windowStartUtc = '2026-08-01T00:00:00.000Z'
+    downtime.filters.windowEndUtc = '2026-08-15T00:00:00.000Z'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+    expect(listOptions.mock.calls.at(-1)![0]!.query).toMatchObject({
+      windowStartUtc: '2026-08-01T00:00:00.000Z',
+      windowEndUtc: '2026-08-15T00:00:00.000Z',
+    })
+    vi.useRealTimers()
+  })
+
   it('forwards the selected downtime reason into the list query and leaves it out when unset', () => {
     const downtime = useMesDowntimeEvents()
     const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
@@ -1611,11 +1632,6 @@ describe('business MES composables', () => {
         id: 'listBusinessConsoleMesMaterialIssueRequests',
         options: listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
         composable: useMesMaterialIssueRequests,
-      },
-      {
-        id: 'listBusinessConsoleMesDowntimeEvents',
-        options: listBusinessConsoleMesDowntimeEventsQueryOptions,
-        composable: useMesDowntimeEvents,
       },
       {
         id: 'listBusinessConsoleMesShiftHandovers',

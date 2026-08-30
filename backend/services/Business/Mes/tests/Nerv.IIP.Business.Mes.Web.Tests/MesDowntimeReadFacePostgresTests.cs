@@ -52,18 +52,30 @@ public sealed class MesDowntimeReadFacePostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = await CreateMigratedDbContextAsync();
         await SeedReasonMixAsync(dbContext);
+        dbContext.WorkCenterUnavailabilities.Add(WorkCenterUnavailability.Open(
+            Org, Env, "DT-END-EXCLUDED", "WC-13",
+            DateTimeOffset.Parse("2026-07-30T10:15:00Z"), null, "DT-END", "EQ-013"));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
 
         var response = await CreateHandler(dbContext).Handle(
-            new ListDowntimeEventsQuery(Org, Env, null, null),
+            new ListDowntimeEventsQuery(
+                Org,
+                Env,
+                null,
+                null,
+                WindowStartUtc: DateTimeOffset.Parse("2026-07-30T08:00:00Z"),
+                WindowEndUtc: DateTimeOffset.Parse("2026-07-30T10:15:00Z")),
             CancellationToken.None);
 
-        // DT-MECH 与 DT-PM 都是 60 分钟：名次只能由原因码升序决定，落在写入顺序之后。
+        // windowStart 的三条 08:00 事件落入，windowEnd 的 DT-END 排除；列表和汇总共用同一窗口。
+        Assert.Equal(4, response.Total);
         Assert.Equal(
-            new[] { "DT-MECH", "DT-PM", "DT-ELEC" },
+            new[] { "DT-PM", "DT-MECH", "DT-ELEC" },
             response.ReasonSummary.Select(x => x.ReasonCode));
-        // DT-MECH：30 分钟已恢复 + 30 分钟仍在停机（10:00 → AsOfUtc 10:30）。
-        Assert.Equal(new[] { 60m, 60m, 20m }, response.ReasonSummary.Select(x => x.DurationMinutes));
-        Assert.Equal(new[] { 1, 0, 0 }, response.ReasonSummary.Select(x => x.OpenCount));
+        // DT-MECH：30 分钟已恢复 + 15 分钟仍在停机；查询时刻是 10:30，但历史窗口在 10:15 截断。
+        Assert.Equal(new[] { 60m, 45m, 20m }, response.ReasonSummary.Select(x => x.DurationMinutes));
+        Assert.Equal(new[] { 0, 1, 0 }, response.ReasonSummary.Select(x => x.OpenCount));
     }
 
     /// <summary>
@@ -100,6 +112,11 @@ public sealed class MesDowntimeReadFacePostgresTests
     private static async Task SeedReasonMixAsync(ApplicationDbContext dbContext)
     {
         dbContext.WorkCenterUnavailabilities.AddRange(
+            WorkCenterUnavailability.Open(
+                Org, Env, "DT-OLD-1", "WC-09",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+                DateTimeOffset.Parse("2026-06-03T08:00:00Z"),
+                "DT-OLD", "EQ-009"),
             WorkCenterUnavailability.Open(
                 Org, Env, "DT-ELEC-1", "WC-11",
                 DateTimeOffset.Parse("2026-07-30T08:00:00Z"),

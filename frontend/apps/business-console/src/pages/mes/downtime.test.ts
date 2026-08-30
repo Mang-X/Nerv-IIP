@@ -60,7 +60,16 @@ const filters = reactive<{
   status?: string
   keyword?: string
   reasonCode?: string
-}>({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 10 })
+  windowStartUtc: string
+  windowEndUtc: string
+}>({
+  organizationId: 'org',
+  environmentId: 'dev',
+  skip: 0,
+  take: 10,
+  windowStartUtc: '2026-07-31T00:00:00.000Z',
+  windowEndUtc: '2026-08-30T00:00:00.000Z',
+})
 const writeScope = ref({ kind: 'work-center', id: 'WC-01', displayName: '装配一线' })
 const operationTaskFixture = {
   operationTaskId: 'OP-001',
@@ -173,6 +182,12 @@ const stubs = {
   },
   NvMetricCard: { template: '<div />' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
+  NvDateRangePicker: {
+    props: ['modelValue', 'placeholder'],
+    emits: ['update:modelValue'],
+    template:
+      '<button type="button" data-testid="downtime-window" @click="$emit(\'update:modelValue\', { start: \'2026-08-01\', end: \'2026-08-15\' })">{{ placeholder }}</button>',
+  },
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -235,6 +250,9 @@ beforeEach(() => {
   filters.organizationId = 'org'
   filters.environmentId = 'dev'
   filters.reasonCode = undefined
+  filters.windowStartUtc = '2026-07-31T00:00:00.000Z'
+  filters.windowEndUtc = '2026-08-30T00:00:00.000Z'
+  filters.skip = 0
   downtimeRows.value = [openRow, recoveredRow]
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
@@ -441,6 +459,17 @@ describe('MES downtime recovery entry', () => {
 
 // #1947：停机读面必须能看见原因、按原因筛选、按原因看时长构成。
 describe('MES downtime reason read face', () => {
+  it('applies a calendar-day window and returns to the first page', async () => {
+    filters.skip = 20
+    const wrapper = mountPage()
+
+    await wrapper.get('[data-testid="downtime-window"]').trigger('click')
+
+    expect(filters.windowStartUtc).toBe(new Date(2026, 7, 1).toISOString())
+    expect(filters.windowEndUtc).toBe(new Date(2026, 7, 16).toISOString())
+    expect(filters.skip).toBe(0)
+  })
+
   it('renders the reason column from the facade-resolved name and keeps the raw code when unresolved', () => {
     const wrapper = mountPage({ NvDataTable: cellRenderingTable })
 
