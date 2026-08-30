@@ -46,6 +46,21 @@ const unreasonedRow = {
 }
 const downtimeRows = ref<Array<typeof openRow | typeof recoveredRow | typeof unreasonedRow>>([])
 
+// #2793：停机原因目录读失败的归因。真实通道抛的是「解析后的响应体 + 被 error 拦截器挂上去的
+// 原始 Response」——`error.response.status` 才是状态码来源（响应体里的 `code` 字段不算，
+// `errorStatusCode` 只认 status/statusCode）。这里照这个形状造夹具；该形状本身由
+// `src/composables/downtimeReasonDirectoryForbidden.contract.test.ts` 用真实客户端实证。
+function directoryFailure(status: number, message: string) {
+  const body = { success: false, message, code: status, data: null, errorData: [] }
+  Object.defineProperty(body, 'response', {
+    configurable: true,
+    enumerable: false,
+    value: new Response(JSON.stringify(body), { status }),
+  })
+  return body
+}
+const downtimeReasonsError = ref<unknown>(undefined)
+
 const recordDowntimeEvent = vi.fn()
 const recoverDowntimeEvent = vi.fn().mockResolvedValue(undefined)
 const refreshDowntimeEvents = vi.fn().mockResolvedValue(undefined)
@@ -60,7 +75,16 @@ const filters = reactive<{
   status?: string
   keyword?: string
   reasonCode?: string
-}>({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 10 })
+  windowStartUtc: string
+  windowEndUtc: string
+}>({
+  organizationId: 'org',
+  environmentId: 'dev',
+  skip: 0,
+  take: 10,
+  windowStartUtc: '2026-07-31T00:00:00.000Z',
+  windowEndUtc: '2026-08-30T08:00:00.000Z',
+})
 const writeScope = ref({ kind: 'work-center', id: 'WC-01', displayName: '装配一线' })
 const operationTaskFixture = {
   operationTaskId: 'OP-001',
@@ -109,7 +133,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       },
       { reasonCode: '换型调整', reasonName: null, openCount: 0, durationMinutes: 30 },
     ]),
-    downtimeReasonsError: ref(undefined),
+    downtimeReasonsError,
     downtimeReasonsPending: ref(false),
     downtimeWriteCoversWorkOrder: (
       candidate: { operationTasks?: Array<{ workCenterId?: string }> },
@@ -159,11 +183,17 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
   }
 })
 
-vi.mock('@/utils/notify', () => ({
-  inlineErrorMessage: () => '',
-  notifySuccess: notifyMocks.notifySuccess,
-  notifyOperationFailure: notifyMocks.notifyOperationFailure,
-}))
+vi.mock('@/utils/notify', async () => {
+  // isForbiddenError 必须用**真实实现**：给桩的话「403 走权限文案」就退化成
+  // 「桩返回 true 时走权限文案」的同义反复，抓不到归因被改错。
+  const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
+  return {
+    inlineErrorMessage: () => '',
+    isForbiddenError: actual.isForbiddenError,
+    notifySuccess: notifyMocks.notifySuccess,
+    notifyOperationFailure: notifyMocks.notifyOperationFailure,
+  }
+})
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -173,6 +203,12 @@ const stubs = {
   },
   NvMetricCard: { template: '<div />' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
+  NvDateRangePicker: {
+    props: ['modelValue', 'placeholder'],
+    emits: ['update:modelValue'],
+    template:
+      '<button type="button" data-testid="downtime-window" @click="$emit(\'update:modelValue\', { start: \'2026-08-01\', end: \'2026-08-15\' })">{{ modelValue.start }}~{{ modelValue.end }}</button>',
+  },
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -235,10 +271,14 @@ beforeEach(() => {
   filters.organizationId = 'org'
   filters.environmentId = 'dev'
   filters.reasonCode = undefined
+  filters.windowStartUtc = '2026-07-31T00:00:00.000Z'
+  filters.windowEndUtc = '2026-08-30T08:00:00.000Z'
+  filters.skip = 0
   downtimeRows.value = [openRow, recoveredRow]
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
   permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
+  downtimeReasonsError.value = undefined
   recordDowntimeEvent.mockReset()
   recordDowntimeEvent.mockResolvedValue({
     data: { accepted: true, downstreamDocumentId: 'DT-NEW-001' },
@@ -305,6 +345,66 @@ describe('MES downtime record entry', () => {
     filters.organizationId = ''
     await button!.trigger('click')
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
+  })
+
+  // #2793：真正要钉的是「403 → 权限文案 / 非 403 → 原文案」这个**映射**，不是文案长什么样。
+  // 三组用例共用同一套夹具，唯一变量是状态码；把归因里的 isForbiddenError 分流删掉
+  // （退回单一「读取失败」文案），403 组必红、503 组仍绿——鉴别力落在分流本身。
+  //
+  // 文案字面量只在**下面这一条锚点用例**里出现一次（归因文案的唯一登记处）；其它消费者
+  // 一律断言「关键语义 + 与锚点同一句话」，而不是把同一串文案抄 N 遍。抄 N 遍才是脆性来源：
+  // 改一次措辞会误红一片。锚点保留全等是有意的——这句文案是 UX 承重物，静默改写应当被复审看见。
+  it('attributes a forbidden downtime-reason directory read to permissions instead of dictionary setup', async () => {
+    // 可达性前提：此刻 downtime.manage 权限、组织/环境、写入范围、工序可见范围、工序列表、
+    // 原因目录 pending 全部就绪，所以 blocker 一定走到「目录读失败」这一条；且原因选项非空
+    // （默认桩给了两条），删掉本分支不会掉进「组织尚未配置」而变成另一种红。
+    downtimeReasonsError.value = directoryFailure(403, 'Forbidden.')
+    const wrapper = mountPage()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(button?.attributes('disabled')).toBeDefined()
+    expect(button?.attributes('title')).toBe('当前角色没有停机原因词表的读取权限，请联系管理员开通')
+  })
+
+  it('keeps a non-permission downtime-reason directory failure on the retry copy', async () => {
+    downtimeReasonsError.value = directoryFailure(503, 'Authorization service unavailable.')
+    const wrapper = mountPage()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(button?.attributes('disabled')).toBeDefined()
+    expect(button?.attributes('title')).toBe('停机原因读取失败，请刷新后重试')
+  })
+
+  // 同一修复必须覆盖两个消费者：读面此前对 403 完全沉默——原因筛选下拉静默只剩「全部原因」，
+  // 用户看不出是没权限还是真没配。读面与写面共用同一个归因 computed，这里连「是不是同一句话」
+  // 一起钉住：若有人再在 blocker 里内联一份分叉的文案，本断言必红。
+  it('explains a forbidden downtime-reason directory read on the read face too, with the same sentence', async () => {
+    downtimeReasonsError.value = directoryFailure(403, 'Forbidden.')
+    const wrapper = mountPage()
+
+    const message = wrapper.find('[data-testid="downtime-reasons-message"]')
+    expect(message.exists()).toBe(true)
+    expect(message.text()).toContain('权限')
+    // 反向：读面绝不能复述被本票推翻的那句误诊。
+    expect(message.text()).not.toContain('尚未配置')
+
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(message.text()).toBe(button?.attributes('title'))
+  })
+
+  it('reuses the retry copy on the read face for a non-permission failure', async () => {
+    downtimeReasonsError.value = directoryFailure(503, 'Authorization service unavailable.')
+    const wrapper = mountPage()
+
+    const message = wrapper.find('[data-testid="downtime-reasons-message"]')
+    expect(message.exists()).toBe(true)
+    expect(message.text()).toContain('刷新')
+    expect(message.text()).not.toContain('权限')
+  })
+
+  // 负向对照：目录读没出错时读面不得挂常驻错误条。缺了这条，上面两条「exists() 为真」
+  // 就可能寄生在一个恒渲染的段落上。
+  it('renders no downtime-reason banner when the directory read succeeds', async () => {
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="downtime-reasons-message"]').exists()).toBe(false)
   })
 
   it('does not populate the record form when the entry guard trips between render and click (isolated stale-DOM interleave)', async () => {
@@ -441,6 +541,19 @@ describe('MES downtime recovery entry', () => {
 
 // #1947：停机读面必须能看见原因、按原因筛选、按原因看时长构成。
 describe('MES downtime reason read face', () => {
+  it('applies a calendar-day window and returns to the first page', async () => {
+    filters.skip = 20
+    const wrapper = mountPage()
+
+    expect(wrapper.get('[data-testid="downtime-window"]').text()).toBe('2026-07-31~2026-08-30')
+    await wrapper.get('[data-testid="downtime-window"]').trigger('click')
+
+    expect(filters.windowStartUtc).toBe(new Date(2026, 7, 1).toISOString())
+    expect(filters.windowEndUtc).toBe(new Date(2026, 7, 16).toISOString())
+    expect(wrapper.get('[data-testid="downtime-window"]').text()).toBe('2026-08-01~2026-08-15')
+    expect(filters.skip).toBe(0)
+  })
+
   it('renders the reason column from the facade-resolved name and keeps the raw code when unresolved', () => {
     const wrapper = mountPage({ NvDataTable: cellRenderingTable })
 

@@ -59,6 +59,7 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             "business.maintenance.work-orders.read",
             "business.maintenance.work-orders.manage",
             "business.maintenance.plans.read",
+            "business.maintenance.downtime-reasons.read",
             "business.masterdata.resources.read",
         ]),
         (WarehouseRoleId, "仓储库管（PDA）",

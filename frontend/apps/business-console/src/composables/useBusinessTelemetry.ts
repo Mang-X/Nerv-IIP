@@ -6,7 +6,9 @@ import {
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
+  queryBusinessConsoleTelemetryOeeAggregates,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
+  queryBusinessConsoleTelemetryOeeAggregatesQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
   queryBusinessConsoleTelemetryRuntimeHours,
@@ -26,6 +28,10 @@ import {
   type BusinessConsoleTelemetryAlarmRuleListEnvelope,
   type BusinessConsoleTelemetryHistoryEnvelope,
   type BusinessConsoleTelemetryHistoryItem,
+  type BusinessConsoleTelemetryOeeAggregateBucket,
+  type BusinessConsoleTelemetryOeeAggregateDimension,
+  type BusinessConsoleTelemetryOeeAggregateEnvelope,
+  type BusinessConsoleTelemetryOeeAggregateResponse,
   type BusinessConsoleTelemetryOeeEnvelope,
   type BusinessConsoleTelemetryOeeResponse,
   type BusinessConsoleTelemetryTagItem,
@@ -55,6 +61,20 @@ export interface TelemetryWindowFilters {
   tagKey: string
   windowStartUtc: string
   windowEndUtc: string
+}
+
+export interface TelemetryOeeAggregateFilters {
+  dimension: BusinessConsoleTelemetryOeeAggregateDimension
+  windowStartUtc: string
+  windowEndUtc: string
+  deviceAssetId: string
+  workCenterId: string
+  shiftCode: string
+  lineCode: string
+  workshopCode: string
+  businessDate: string
+  skip: number
+  take: number
 }
 
 export type SaveTelemetryAlarmRuleInput = Omit<
@@ -136,6 +156,30 @@ export function describeTelemetryOeeLimitations() {
 
 export function describeTelemetryOeeDegradation(reason: string) {
   const labels: Record<string, string> = {
+    runtimeStateFactsMissing: '缺少设备运行状态事实',
+    runtimeStateCoverageIncomplete: '设备运行状态未覆盖完整窗口',
+    productionUomAmbiguous: '报工单位不一致，无法合并',
+    productionOutputMissing: '缺少可用于计算的报工产出',
+    theoreticalRateMissingOrAmbiguous: '缺少或存在冲突的工序标准速率',
+    productiveRuntimeMissing: '当前窗口没有有效的生产运行时长',
+    loadingRuntimeMissing: '当前窗口没有有效的负荷运行时长',
+    historicalDimensionLegacyUnresolved: '历史事实无法解析到所选聚合维度',
+    historicalHierarchyMissing: '历史事实缺少组织层级',
+    historicalTimezoneMissing: '历史事实缺少站点时区',
+    historicalTimezoneInvalid: '历史事实的站点时区无效',
+    historicalShiftDefinitionMissing: '历史事实缺少班次定义',
+    historicalShiftDefinitionInvalid: '历史事实的班次定义无效',
+    historicalReportOutsideShiftWindow: '历史报工不在已定义班次窗口内',
+    historicalLocalTimeInvalid: '历史事实的本地时间无效',
+    historicalLocalTimeAmbiguous: '历史事实的本地时间存在歧义',
+    siteDimensionMissing: '历史事实缺少站点维度',
+    workshopDimensionMissing: '历史事实缺少车间维度',
+    lineDimensionMissing: '历史事实缺少产线维度',
+    siteDimensionAmbiguous: '历史事实对应多个站点',
+    workshopDimensionAmbiguous: '历史事实对应多个车间',
+    lineDimensionAmbiguous: '历史事实对应多个产线',
+    siteTimezoneOrDayBoundaryMissing: '站点时区或业务日边界缺失',
+    shiftDefinitionOrBoundaryMissing: '班次定义或班次边界缺失',
     'runtime-state-facts-missing': '缺少设备运行状态事实',
     'production-facts-missing': '缺少 MES 报工事实',
     'production-uom-ambiguous': '报工单位不一致，无法合并',
@@ -144,6 +188,142 @@ export function describeTelemetryOeeDegradation(reason: string) {
     'productive-runtime-missing': '当前窗口没有有效的生产运行时长',
   }
   return labels[reason] ?? reason
+}
+
+export function useBusinessTelemetryOeeAggregates(
+  initialFilters: Partial<TelemetryOeeAggregateFilters> = {},
+) {
+  const businessContext = useBusinessContextStore()
+  const defaultWindow = defaultWindowFilters()
+  const filters = reactive<TelemetryOeeAggregateFilters>({
+    dimension: 'day',
+    windowStartUtc: defaultWindow.windowStartUtc,
+    windowEndUtc: defaultWindow.windowEndUtc,
+    deviceAssetId: '',
+    workCenterId: '',
+    shiftCode: '',
+    lineCode: '',
+    workshopCode: '',
+    businessDate: '',
+    skip: 0,
+    take: 20,
+    ...initialFilters,
+  })
+  const queryEnabled = computed(
+    () =>
+      hasBusinessContext(businessContext) &&
+      filters.windowStartUtc.trim().length > 0 &&
+      filters.windowEndUtc.trim().length > 0,
+  )
+  const aggregatesQuery = useQuery(() => ({
+    ...queryBusinessConsoleTelemetryOeeAggregatesQueryOptions({
+      query: {
+        ...toContextQuery(businessContext),
+        dimension: filters.dimension,
+        windowStartUtc: filters.windowStartUtc,
+        windowEndUtc: filters.windowEndUtc,
+        deviceAssetId: trimOptional(filters.deviceAssetId),
+        workCenterId: trimOptional(filters.workCenterId),
+        shiftCode: trimOptional(filters.shiftCode),
+        lineCode: trimOptional(filters.lineCode),
+        workshopCode: trimOptional(filters.workshopCode),
+        businessDate: trimOptional(filters.businessDate),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: queryEnabled.value,
+  }))
+  const response = computed<BusinessConsoleTelemetryOeeAggregateResponse | undefined>(() =>
+    unwrapData<BusinessConsoleTelemetryOeeAggregateResponse>(
+      aggregatesQuery.data.value as BusinessConsoleTelemetryOeeAggregateEnvelope | undefined,
+    ),
+  )
+
+  return {
+    aggregateBuckets: computed<BusinessConsoleTelemetryOeeAggregateBucket[]>(
+      () => response.value?.buckets ?? [],
+    ),
+    aggregateError: aggregatesQuery.error,
+    aggregatePending: aggregatesQuery.isLoading,
+    aggregateResponse: response,
+    aggregateTotal: computed(() => response.value?.totalCount ?? 0),
+    filters,
+    refreshAggregates: () => (queryEnabled.value ? aggregatesQuery.refetch() : Promise.resolve()),
+  }
+}
+
+export function useBusinessTelemetryOeeTrend(filters: TelemetryOeeAggregateFilters) {
+  const businessContext = useBusinessContextStore()
+  const queryEnabled = computed(
+    () =>
+      hasBusinessContext(businessContext) &&
+      filters.dimension === 'day' &&
+      filters.windowStartUtc.trim().length > 0 &&
+      filters.windowEndUtc.trim().length > 0,
+  )
+  const trendQuery = useQuery(() => ({
+    key: [
+      'business-telemetry-oee-complete-trend',
+      businessContext.organizationId,
+      businessContext.environmentId,
+      filters.windowStartUtc,
+      filters.windowEndUtc,
+      filters.deviceAssetId,
+      filters.workCenterId,
+      filters.shiftCode,
+      filters.lineCode,
+      filters.workshopCode,
+      filters.businessDate,
+    ],
+    query: async (context): Promise<BusinessConsoleTelemetryOeeAggregateBucket[]> => {
+      const buckets: BusinessConsoleTelemetryOeeAggregateBucket[] = []
+      const take = 100
+      let totalCount = 0
+
+      do {
+        const { data } = await queryBusinessConsoleTelemetryOeeAggregates({
+          query: {
+            ...toContextQuery(businessContext),
+            dimension: 'day',
+            windowStartUtc: filters.windowStartUtc,
+            windowEndUtc: filters.windowEndUtc,
+            deviceAssetId: trimOptional(filters.deviceAssetId),
+            workCenterId: trimOptional(filters.workCenterId),
+            shiftCode: trimOptional(filters.shiftCode),
+            lineCode: trimOptional(filters.lineCode),
+            workshopCode: trimOptional(filters.workshopCode),
+            businessDate: trimOptional(filters.businessDate),
+            skip: buckets.length,
+            take,
+          },
+          signal: context.signal,
+          throwOnError: true,
+        })
+        const page = unwrapData<BusinessConsoleTelemetryOeeAggregateResponse>(data)
+        if (!page) throw new Error('OEE 趋势查询未返回有效数据。')
+        const pageBuckets = page.buckets ?? []
+        const nextTotalCount = page.totalCount ?? 0
+        if (pageBuckets.length === 0 && buckets.length < nextTotalCount) {
+          throw new Error('OEE 趋势查询在完整窗口返回前意外结束。')
+        }
+        buckets.push(...pageBuckets)
+        totalCount = nextTotalCount
+      } while (buckets.length < totalCount)
+
+      return buckets
+    },
+    enabled: queryEnabled.value,
+  }))
+
+  return {
+    trendBuckets: computed<BusinessConsoleTelemetryOeeAggregateBucket[]>(
+      () => trendQuery.data.value ?? [],
+    ),
+    trendError: trendQuery.error,
+    trendPending: trendQuery.isLoading,
+    refreshTrend: () => (queryEnabled.value ? trendQuery.refetch() : Promise.resolve()),
+  }
 }
 
 export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFilters> = {}) {

@@ -158,6 +158,7 @@
 - `business.maintenance.work-orders.manage`
 - `business.maintenance.plans.read`
 - `business.maintenance.plans.manage`
+- `business.maintenance.downtime-reasons.read`
 
 ### Notification
 

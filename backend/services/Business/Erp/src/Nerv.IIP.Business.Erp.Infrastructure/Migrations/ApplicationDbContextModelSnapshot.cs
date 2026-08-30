@@ -4542,6 +4542,24 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("sku_code")
                         .HasComment("Finished-good SKU code.");
 
+                    b.Property<string>("SourceNcrCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_ncr_code")
+                        .HasComment("Quality NCR business code retained for rework cost readback.");
+
+                    b.Property<string>("SourceNcrId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_ncr_id")
+                        .HasComment("Quality NCR public id for a rework work-order cost; null for ordinary work orders.");
+
+                    b.Property<string>("SourceWorkOrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_work_order_id")
+                        .HasComment("MES source work-order public id for a rework work-order cost.");
+
                     b.Property<decimal>("WipClearedCost")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -4556,6 +4574,10 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasComment("MES work-order public identifier.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceNcrId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkOrderId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
                         .IsUnique();

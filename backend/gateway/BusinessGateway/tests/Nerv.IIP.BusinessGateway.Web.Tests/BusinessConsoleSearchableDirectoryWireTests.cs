@@ -430,8 +430,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         { "personnel", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"items\":[{\"userId\":\"\",\"employeeNo\":\"\",\"name\":\"\",\"departmentCode\":null,\"departmentName\":null,\"jobTitle\":null,\"employmentStatus\":\"active\",\"phone\":null,\"active\":true,\"teams\":[],\"skills\":[],\"snapshotVersion\":\"v1\"}],\"totalCount\":0,\"pageIndex\":2,\"pageSize\":20}" },
         { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"items\":null,\"total\":0}" },
         { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"items\":[{\"reasonCode\":\"\",\"reasonName\":\"\",\"groupName\":\"group\",\"severity\":\"minor\",\"defaultDisposition\":null,\"enabled\":true,\"snapshotVersion\":\"v1\"}],\"total\":0}" },
-        { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":null,\"skip\":0,\"take\":20,\"total\":0}" },
-        { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"\",\"description\":\"\",\"reasonCategory\":\"\",\"lossCategory\":\"\"}],\"skip\":1,\"take\":20,\"total\":0}" },
+        { "downtime-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead, "{\"items\":null,\"skip\":0,\"take\":20,\"total\":0}" },
+        { "downtime-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead, "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"\",\"description\":\"\",\"reasonCategory\":\"\",\"lossCategory\":\"\"}],\"skip\":1,\"take\":20,\"total\":0}" },
     };
 
     public static TheoryData<string, string, string> AuthoritativeFailureEnvelopeCases => new()

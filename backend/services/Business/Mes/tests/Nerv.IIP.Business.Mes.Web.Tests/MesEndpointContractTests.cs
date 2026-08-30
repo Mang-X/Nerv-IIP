@@ -680,9 +680,9 @@ public sealed class MesEndpointContractTests
         Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
     }
 
-    // 验收 1（#1948）：网关注入的报工人必须由 MES 写面端点转交给命令；这一段丢了，报工就没有操作人。
+    // 验收 #1948/#2694：MES 写面端点必须把网关注入的报工人和调用方幂等键原样转交给命令。
     [Fact]
-    public async Task Record_production_report_endpoint_forwards_the_injected_operator_to_the_command()
+    public async Task Record_production_report_endpoint_forwards_the_injected_operator_and_idempotency_key_to_the_command()
     {
         var sender = new ProductionReportWireShapeSender(Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689"));
         await using var factory = new WebApplicationFactory<Program>()
@@ -715,6 +715,7 @@ public sealed class MesEndpointContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user-emp-010", sender.Command?.ReportedBy);
+        Assert.Equal("wire-operator-001", sender.Command?.IdempotencyKey);
     }
 
     // 幂等键是记录报工写面的硬前置：RecordProductionReportRequestValidator 先把缺失的幂等键拒成 400，命令不会发出。
@@ -2025,7 +2026,13 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
-            new ListDowntimeEventsQuery("org-001", "env-dev", null, null),
+            new ListDowntimeEventsQuery(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                WindowStartUtc: from.AddDays(-1),
+                WindowEndUtc: from.AddDays(1)),
             CancellationToken.None);
 
         Assert.Equal(new[] { 60m, 60m }, response.ReasonSummary.Select(x => x.DurationMinutes));
@@ -2053,7 +2060,15 @@ public sealed class MesEndpointContractTests
             new ListMaterialIssueRequestsQuery("org-001", "env-dev", "WO-MAT", Skip: 1, Take: 1),
             CancellationToken.None);
         var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
-            new ListDowntimeEventsQuery("org-001", "env-dev", "WC-MIX", "ASSET-001", Skip: 1, Take: 1),
+            new ListDowntimeEventsQuery(
+                "org-001",
+                "env-dev",
+                "WC-MIX",
+                "ASSET-001",
+                Skip: 1,
+                Take: 1,
+                WindowStartUtc: now.AddDays(-1),
+                WindowEndUtc: now.AddDays(1)),
             CancellationToken.None);
         var capacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
             new ListCapacityImpactsQuery("org-001", "env-dev", "ASSET-001", Skip: 1, Take: 1),
@@ -2489,7 +2504,17 @@ public sealed class MesEndpointContractTests
             new ListRelatedQualityItemsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Keyword: "DEF-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
             CancellationToken.None);
         var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
-            new ListDowntimeEventsQuery("org-001", "env-dev", "WC-FILTER", "DEV-FILTER", Skip: 0, Take: 10, Keyword: "DOWNTIME-FILTER", ShiftId: "SHIFT-FILTER"),
+            new ListDowntimeEventsQuery(
+                "org-001",
+                "env-dev",
+                "WC-FILTER",
+                "DEV-FILTER",
+                Skip: 0,
+                Take: 10,
+                Keyword: "DOWNTIME-FILTER",
+                ShiftId: "SHIFT-FILTER",
+                WindowStartUtc: now.AddDays(-1),
+                WindowEndUtc: now.AddDays(1)),
             CancellationToken.None);
         var capacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
             new ListCapacityImpactsQuery("org-001", "env-dev", "DEV-FILTER", Skip: 0, Take: 10, WorkCenterId: "WC-FILTER", Keyword: "filter-reason", ShiftId: "SHIFT-FILTER"),
@@ -2507,7 +2532,16 @@ public sealed class MesEndpointContractTests
             new ListRelatedQualityItemsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "reworkPending"),
             CancellationToken.None);
         var nonMatchingDowntimeEvents = await new ListDowntimeEventsQueryHandler(dbContext, TimeProvider.System).Handle(
-            new ListDowntimeEventsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "recovered"),
+            new ListDowntimeEventsQuery(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                Skip: 0,
+                Take: 10,
+                Status: "recovered",
+                WindowStartUtc: now.AddDays(-1),
+                WindowEndUtc: now.AddDays(1)),
             CancellationToken.None);
         var nonMatchingCapacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
             new ListCapacityImpactsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "recovered"),

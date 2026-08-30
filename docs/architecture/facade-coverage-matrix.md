@@ -74,7 +74,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Approval            |      16 |      11 |        4 |        1 |
 | BarcodeLabel        |      13 |      10 |        0 |        3 |
 | DemandPlanning      |      16 |      16 |        0 |        0 |
-| Erp                 |      58 |      43 |       14 |        1 |
+| Erp                 |      59 |      43 |       15 |        1 |
 | IndustrialTelemetry |      28 |      25 |        1 |        2 |
 | Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
@@ -84,7 +84,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **433** | **358** |   **49** |   **26** |
+| **Total**           | **434** | **358** |   **50** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -160,6 +160,7 @@ BusinessGateway `listBusinessConsoleMesOperationTasks`、`listBusinessConsoleMes
 | Erp                 | POST   | `/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel`                                 | BusinessGateway facade 待交付；采购订单取消跟随 ERP 订单管理的 Business Console 菜单阶段。                                                                                          |
 | Erp                 | POST   | `/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}`                               | BusinessGateway facade 待交付；销售订单变更跟随 ERP 订单管理的 Business Console 菜单阶段。                                                                                          |
 | Erp                 | POST   | `/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel`                                       | BusinessGateway facade 待交付；销售订单取消跟随 ERP 订单管理的 Business Console 菜单阶段。                                                                                          |
+| Erp                 | GET    | `/api/business/v1/erp/finance/work-order-costs`                                                  | BusinessGateway facade 待交付；跟随后续 ERP 工单成本分析 Business Console 阶段；#2814 明确只交付服务端读回，不包含 Console/PDA 计算或 UI 变更。                                      |
 | Erp                 | GET    | `/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations`                     | BusinessGateway facade 待交付；跟随 ERP 财务月末机器制造费用核对的 Business Console 阶段；#2383 明确只交付服务 API，不包含 Gateway/UI。                                               |
 | Erp                 | POST   | `/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations`                     | BusinessGateway facade 待交付；跟随 ERP 财务月末机器制造费用核对的 Business Console 阶段；#2383 明确只交付服务 API，不包含 Gateway/UI。                                               |
 | Erp                 | GET    | `/api/business/v1/erp/finance/work-order-costs/{workOrderId}`                                  | BusinessGateway facade 与 generated client 由后续独立票交付；#2277 仅交付 ERP 服务只读契约。                                                                                       |
