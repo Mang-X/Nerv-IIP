@@ -226,7 +226,7 @@ public sealed class ScopedCallerAuthenticationTests
     }
 
     [Fact]
-    public async Task Generic_internal_service_accepts_its_token_and_ignores_a_foreign_jwt_bearer()
+    public async Task Internal_service_authorization_only_runs_for_its_named_policy()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -237,24 +237,24 @@ public sealed class ScopedCallerAuthenticationTests
         services.AddNervIipInternalServiceAuthorization(configuration, new StubHostEnvironment("Production"));
         await using var provider = services.BuildServiceProvider();
 
-        await using var matchingScope = provider.CreateAsyncScope();
-        var matchingResult = await Context(matchingScope.ServiceProvider, "Bearer internal.service.token")
-            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
-        await using var foreignJwtScope = provider.CreateAsyncScope();
-        var foreignJwtResult = await Context(foreignJwtScope.ServiceProvider, "Bearer header.payload.signature")
+        var defaultScheme = await provider.GetRequiredService<IAuthenticationSchemeProvider>()
+            .GetDefaultAuthenticateSchemeAsync();
+        await using var wrongTokenScope = provider.CreateAsyncScope();
+        var wrongTokenResult = await Context(wrongTokenScope.ServiceProvider, "Bearer internal.service.tokeX")
             .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
 
-        Assert.True(matchingResult.Succeeded);
-        Assert.False(foreignJwtResult.Succeeded);
-        Assert.True(foreignJwtResult.None);
-        Assert.Null(foreignJwtResult.Failure);
+        Assert.NotNull(defaultScheme);
+        Assert.NotEqual(InternalServiceAuthentication.SchemeName, defaultScheme.Name);
+        Assert.False(wrongTokenResult.Succeeded);
+        Assert.False(wrongTokenResult.None);
+        Assert.NotNull(wrongTokenResult.Failure);
     }
 
     [Fact]
     public async Task Generic_internal_service_provider_and_handler_share_one_credential_snapshot()
     {
-        const string sessionToken = "session-internal-token";
-        const string changedToken = "changed-after-provider-resolution";
+        const string sessionToken = "session.internal.token";
+        const string changedToken = "session.internal.tokeX";
         var configuration = new ConfigurationManager
         {
             ["InternalService:BearerToken"] = sessionToken

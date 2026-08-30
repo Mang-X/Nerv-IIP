@@ -61,12 +61,6 @@ internal static class InternalServiceBearerToken
         return CryptographicOperations.FixedTimeEquals(valueHash, expectedHash);
     }
 
-    public static bool HasJwtCompactSerializationShape(string token)
-    {
-        var segments = token.Split('.');
-        return segments.Length is 3 or 5 && segments.All(segment => segment.Length > 0);
-    }
-
     private static bool IsTokenCharacter(char character)
         => char.IsAsciiLetterOrDigit(character) || character is '-' or '.' or '_' or '~' or '+' or '/';
 }
