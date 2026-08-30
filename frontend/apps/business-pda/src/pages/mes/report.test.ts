@@ -350,6 +350,42 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).not.toContain('工序 10')
   })
 
+  it('marks rework work orders and tasks from server authority while standard rows stay unchanged', async () => {
+    const reworkAuthority = {
+      workOrderType: 'rework',
+      sourceWorkOrderId: 'WO-SOURCE-001',
+      sourceNcrId: 'ncr-001',
+      sourceNcrCode: 'NCR-2026-0001',
+    }
+    workOrdersRef.value = [{ ...defaultWorkOrders[0], ...reworkAuthority }, defaultWorkOrders[1]]
+    operationTasksRef.value = defaultOperationTasks.map((task) =>
+      task.workOrderId === defaultWorkOrders[0].workOrderId
+        ? { ...task, ...reworkAuthority }
+        : task,
+    )
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      ...reworkAuthority,
+      operationTasks: operationTasksRef.value.filter(
+        (task) => task.workOrderId === defaultWorkOrders[0].workOrderId,
+      ),
+    }
+    const wrapper = mount(ReportPage)
+
+    expect(wrapper.text()).toContain('返工 · WO-2026-0001')
+    expect(wrapper.text()).toContain('来源 NCR NCR-2026-0001（ncr-001） · 源工单 WO-SOURCE-001')
+    expect(wrapper.text()).toContain('WO-2026-0002')
+    expect(wrapper.text()).not.toContain('返工 · WO-2026-0002')
+
+    await selectWorkOrder(wrapper, 0)
+    expect(wrapper.text()).toContain('返工 · WO-2026-0001 · 工序 10')
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    await flushPromises()
+    expect(
+      document.body.querySelector('[data-testid="report-rework-source"]')?.textContent?.trim(),
+    ).toBe('来源 NCR NCR-2026-0001（ncr-001） · 源工单 WO-SOURCE-001')
+  })
+
   it('shows the missing-scope reason and keeps production reporting disabled', async () => {
     reportScopeReadyRef.value = false
     reportScopeMessageRef.value = '尚未选择已授权作业范围，当前操作已禁用。'

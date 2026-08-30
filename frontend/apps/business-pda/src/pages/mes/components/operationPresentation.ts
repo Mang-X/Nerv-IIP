@@ -4,6 +4,13 @@ import type { OperationActionContext } from '@/composables/useBusinessMes'
 
 export type OperationActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
+type ReworkAuthority = {
+  workOrderType?: string | null
+  sourceWorkOrderId?: string | null
+  sourceNcrId?: string | null
+  sourceNcrCode?: string | null
+}
+
 export type OperationResultState = {
   status: 'success' | 'error'
   title: string
@@ -63,7 +70,7 @@ export function taskDisplayReference(task: BusinessConsoleMesOperationTaskRow) {
 export function operationTaskRowTitle(task: BusinessConsoleMesOperationTaskRow) {
   const sequence = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
   const workOrder = workOrderLabel(task)
-  return sequence ? `${workOrder} · ${sequence}` : workOrder
+  return withReworkLabel(sequence ? `${workOrder} · ${sequence}` : workOrder, task)
 }
 
 export function operationTaskRowSubtitle(task: BusinessConsoleMesOperationTaskRow) {
@@ -71,7 +78,22 @@ export function operationTaskRowSubtitle(task: BusinessConsoleMesOperationTaskRo
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
   if (task.operationCode) parts.push(`工序 ${task.operationCode}`)
   if (task.assignedUserName) parts.push(`受派 ${task.assignedUserName}`)
+  const source = reworkSourceLabel(task)
+  if (source) parts.push(source)
   return parts.join(' · ')
+}
+
+export function isReworkWorkOrder(item: ReworkAuthority) {
+  return item.workOrderType === 'rework'
+}
+
+export function withReworkLabel(label: string, item: ReworkAuthority) {
+  return isReworkWorkOrder(item) ? `返工 · ${label}` : label
+}
+
+export function reworkSourceLabel(item: ReworkAuthority) {
+  if (!isReworkWorkOrder(item)) return ''
+  return `来源 NCR ${item.sourceNcrCode}（${item.sourceNcrId}） · 源工单 ${item.sourceWorkOrderId}`
 }
 
 export function formatOperationDate(value?: string | null) {

@@ -16,6 +16,7 @@ import {
   operationTaskLabel,
   operationTaskRowTitle,
   OPERATION_ACTION_LABELS,
+  reworkSourceLabel,
   type OperationActionKind,
   type OperationResultState,
   workOrderLabel,
@@ -125,6 +126,13 @@ const blockReasonDisplays = computed(() =>
       </dl>
       <p v-if="selected.assignedUserName" class="text-sm text-muted-foreground">
         受派工人：{{ selected.assignedUserName }}
+      </p>
+      <p
+        v-if="reworkSourceLabel(selected)"
+        data-testid="operation-rework-source"
+        class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground"
+      >
+        {{ reworkSourceLabel(selected) }}
       </p>
 
       <section

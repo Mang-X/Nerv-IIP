@@ -4522,7 +4522,11 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskItem> OperationTasks,
     string? WorkOrderNo = null,
     string? SkuCode = null,
-    bool HasActiveQualityHold = false);
+    bool HasActiveQualityHold = false,
+    string WorkOrderType = "standard",
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -4718,7 +4722,11 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks,
     BusinessConsoleMesSourcePlanReference? SourcePlanReference = null,
-    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? QualityHolds = null);
+    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? QualityHolds = null,
+    string WorkOrderType = "standard",
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
     string SourceService,
@@ -5053,7 +5061,11 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     [property: Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? ActualLaborHours = null,
     [property: Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
-    decimal? ActualMachineHours = null);
+    decimal? ActualMachineHours = null,
+    string WorkOrderType = "standard",
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,

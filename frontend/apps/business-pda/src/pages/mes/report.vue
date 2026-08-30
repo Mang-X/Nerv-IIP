@@ -43,6 +43,7 @@ import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
+import { reworkSourceLabel, withReworkLabel } from './components/operationPresentation'
 
 definePage({
   meta: {
@@ -308,12 +309,23 @@ const taskStatusLabel = operationTaskStatusLabel
 function taskTitle(task: Task) {
   const seq = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
   const wo = task.workOrderId ?? '无工单'
-  return seq ? `${wo} · ${seq}` : wo
+  return withReworkLabel(seq ? `${wo} · ${seq}` : wo, task)
 }
 function taskSubtitle(task: Task) {
   const parts = [taskStatusLabel(task.status)]
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
+  const source = reworkSourceLabel(task)
+  if (source) parts.push(source)
   return parts.join(' · ')
+}
+
+function reportWorkOrderTitle(workOrder: WorkOrder) {
+  return withReworkLabel(workOrderTitle(workOrder), workOrder)
+}
+
+function reportWorkOrderSubtitle(workOrder: WorkOrder) {
+  const source = reworkSourceLabel(workOrder)
+  return [workOrderSubtitle(workOrder), source].filter(Boolean).join(' · ')
 }
 
 const workScopeKindLabels: Record<string, string> = {
@@ -708,8 +720,8 @@ async function onScanAccepted(value: MesScanAccepted) {
           <NvListRow
             v-for="wo in workOrders"
             :key="wo.workOrderId"
-            :title="workOrderTitle(wo)"
-            :subtitle="workOrderSubtitle(wo)"
+            :title="reportWorkOrderTitle(wo)"
+            :subtitle="reportWorkOrderSubtitle(wo)"
             @select="chooseWorkOrder(wo)"
           />
         </div>
@@ -723,7 +735,7 @@ async function onScanAccepted(value: MesScanAccepted) {
           <div class="min-w-0">
             <p class="text-sm text-muted-foreground">当前工单</p>
             <p class="truncate text-base font-medium text-foreground">
-              {{ selectedWorkOrder ? workOrderTitle(selectedWorkOrder) : '' }}
+              {{ selectedWorkOrder ? reportWorkOrderTitle(selectedWorkOrder) : '' }}
             </p>
           </div>
           <button
@@ -796,6 +808,13 @@ async function onScanAccepted(value: MesScanAccepted) {
       <div v-if="selectedTask" class="space-y-4 pb-2">
         <p class="text-sm text-muted-foreground">
           当前状态：{{ taskStatusLabel(selectedTask.status) }}
+        </p>
+        <p
+          v-if="reworkSourceLabel(selectedTask)"
+          data-testid="report-rework-source"
+          class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground"
+        >
+          {{ reworkSourceLabel(selectedTask) }}
         </p>
 
         <MesScanPrevalidation

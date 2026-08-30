@@ -1963,7 +1963,25 @@ public sealed class BusinessGatewayOpenApiTests
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesWorkOrderItem",
-            "hasActiveQualityHold");
+            "hasActiveQualityHold",
+            "workOrderType",
+            "sourceWorkOrderId",
+            "sourceNcrId",
+            "sourceNcrCode");
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesWorkOrderDetailResponse",
+            "workOrderType",
+            "sourceWorkOrderId",
+            "sourceNcrId",
+            "sourceNcrCode");
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesOperationTaskRow",
+            "workOrderType",
+            "sourceWorkOrderId",
+            "sourceNcrId",
+            "sourceNcrCode");
     }
 
     private static void AssertMesDisplayProperties(JsonDocument document, string schemaNameSuffix, params string[] propertyNames)

@@ -699,7 +699,7 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   })
 })
 
-test('报工：router pair 切换、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({
+test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({
   page,
 }) => {
   let operationTaskDiscoveryCalls = 0
@@ -711,18 +711,60 @@ test('报工：router pair 切换、延迟旧请求与浏览器 back/forward 始
   const firstDetailRelease = new Promise<void>((resolve) => {
     resolveFirstDetailRelease = resolve
   })
-  let workOrderOneDetailCalls = 0
+  const reworkDetail = (suffix: 'A' | 'B') => ({
+    success: true,
+    data: {
+      workOrderId: `WO-RW-${suffix}`,
+      skuId: 'SKU-RW',
+      quantity: 3,
+      status: 'Released',
+      readinessStatus: 'Ready',
+      blockingReasons: [],
+      workOrderType: 'rework',
+      sourceWorkOrderId: `WO-SOURCE-${suffix}`,
+      sourceNcrId: `ncr-${suffix.toLowerCase()}`,
+      sourceNcrCode: `NCR-2026-000${suffix === 'A' ? '1' : '2'}`,
+      operationTasks: [
+        {
+          operationTaskId: `OP-RW-${suffix}`,
+          workOrderId: `WO-RW-${suffix}`,
+          status: 'InProgress',
+          operationSequence: suffix === 'A' ? 10 : 20,
+          workCenterId: 'WC-A',
+          qualityStatus: 'Pending',
+          allowedActions: ['report'],
+          blockReasons: [],
+          workOrderType: 'rework',
+          sourceWorkOrderId: `WO-SOURCE-${suffix}`,
+          sourceNcrId: `ncr-${suffix.toLowerCase()}`,
+          sourceNcrCode: `NCR-2026-000${suffix === 'A' ? '1' : '2'}`,
+        },
+      ],
+    },
+  })
+  let workOrderADetailCalls = 0
   await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
     operationTaskDiscoveryCalls += 1
     return routeBusinessConsoleApi(route)
   })
-  await page.route('**/api/business-console/v1/mes/work-orders/WO-1**', async (route) => {
-    workOrderOneDetailCalls += 1
-    if (workOrderOneDetailCalls === 1) {
+  await page.route('**/api/business-console/v1/mes/work-orders/WO-RW-A**', async (route) => {
+    workOrderADetailCalls += 1
+    if (workOrderADetailCalls === 1) {
       resolveFirstDetailStarted()
       await firstDetailRelease
     }
-    return routeBusinessConsoleApi(route)
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(reworkDetail('A')),
+    })
+  })
+  await page.route('**/api/business-console/v1/mes/work-orders/WO-RW-B**', (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(reworkDetail('B')),
+    })
   })
 
   try {
@@ -731,27 +773,39 @@ test('报工：router pair 切换、延迟旧请求与浏览器 back/forward 始
     await page.evaluate(async (target) => {
       const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
       await router.push(target)
-    }, '/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+    }, '/mes/report?workOrderId=WO-RW-A&operationTaskId=OP-RW-A')
     await firstDetailStarted
     await page.evaluate(async (target) => {
       const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
       await router.push(target)
-    }, '/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
+    }, '/mes/report?workOrderId=WO-RW-B&operationTaskId=OP-RW-B')
 
     await expect(page.getByText('当前工单')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '返工 · WO-RW-B · 工序 20', exact: true }),
+    ).toBeVisible()
+    await expect(page.getByTestId('report-rework-source')).toContainText(
+      '来源 NCR NCR-2026-0002（ncr-b） · 源工单 WO-SOURCE-B',
+    )
     await expect(page.getByTestId('good-quantity')).toBeVisible()
     await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
     resolveFirstDetailRelease()
-    await expect(page.getByText('WO-1 · 工序 10')).toHaveCount(0)
+    await expect(page.getByText(/WO-RW-A/)).toHaveCount(0)
     expect(operationTaskDiscoveryCalls).toBe(0)
 
     await page.goBack()
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '返工 · WO-RW-A · 工序 10', exact: true }),
+    ).toBeVisible()
+    await expect(page.getByTestId('report-rework-source')).toContainText(
+      '来源 NCR NCR-2026-0001（ncr-a） · 源工单 WO-SOURCE-A',
+    )
     await expect(page.getByTestId('good-quantity')).toBeVisible()
 
     await page.goForward()
-    await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '返工 · WO-RW-B · 工序 20', exact: true }),
+    ).toBeVisible()
     await expect(page.getByTestId('good-quantity')).toBeVisible()
   } finally {
     // Never leave the intercepted route pending when an assertion or navigation fails.

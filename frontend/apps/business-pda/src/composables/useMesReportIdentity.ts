@@ -44,6 +44,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
         quantity: detail.quantity,
         status: detail.status as WorkOrder['status'],
         operationTasks: detail.operationTasks,
+        workOrderType: detail.workOrderType,
+        sourceWorkOrderId: detail.sourceWorkOrderId,
+        sourceNcrId: detail.sourceNcrId,
+        sourceNcrCode: detail.sourceNcrCode,
       }
     }
     return null

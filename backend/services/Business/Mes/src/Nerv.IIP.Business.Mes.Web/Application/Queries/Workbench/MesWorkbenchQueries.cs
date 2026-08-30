@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
@@ -597,7 +598,11 @@ public sealed record MesWorkOrderDetailResponse(
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<MesOperationTaskRow> OperationTasks,
     MesSourcePlanReferenceResponse? SourcePlanReference = null,
-    IReadOnlyCollection<MesWorkOrderQualityHoldSummary>? QualityHolds = null);
+    IReadOnlyCollection<MesWorkOrderQualityHoldSummary>? QualityHolds = null,
+    string WorkOrderType = WorkOrder.StandardType,
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 // 工单质量保留（quality hold）投影,含活跃与已释放周期,供工单详情 hold 区块接时间线查询与人工强制释放。
 // IsActive 是「锁定/自动消失」的依据(列表锁定图标仅看活跃);已释放周期仍返回,使释放时间/方式与时间线在详情可见。
@@ -657,7 +662,22 @@ public sealed record MesOperationTaskRow(
     public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
 
     public DateTimeOffset EvaluatedAtUtc { get; init; }
+
+    public string WorkOrderType { get; init; } = WorkOrder.StandardType;
+
+    public string? SourceWorkOrderId { get; init; }
+
+    public string? SourceNcrId { get; init; }
+
+    public string? SourceNcrCode { get; init; }
 }
+
+internal sealed record MesWorkOrderAuthority(
+    string WorkOrderId,
+    string WorkOrderType,
+    string? SourceWorkOrderId,
+    string? SourceNcrId,
+    string? SourceNcrCode);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(
     ApplicationDbContext dbContext,
@@ -679,6 +699,10 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.ProductionVersionId,
                 x.Quantity,
                 x.Status,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode,
                 SourcePlanReference = x.SourcePlanReference == null
                     ? null
                     : new MesSourcePlanReferenceResponse(
@@ -705,7 +729,14 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         var taskReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
             .EvaluateManyAsync(operationTasks, evaluatedAtUtc, cancellationToken);
         var tasks = operationTasks
-            .Select(x => ToRow(x, taskReadiness[x.OperationTaskIdValue]))
+            .Select(x => WithWorkOrderAuthority(
+                ToRow(x, taskReadiness[x.OperationTaskIdValue]),
+                new MesWorkOrderAuthority(
+                    workOrder.WorkOrderIdValue,
+                    workOrder.WorkOrderType,
+                    workOrder.SourceWorkOrderId,
+                    workOrder.SourceNcrId,
+                    workOrder.SourceNcrCode)))
             .ToArray();
 
         // 返回该工单的全部质量保留周期(活跃 + 已释放)。锁定看 IsActive;已释放周期仍返回,
@@ -752,7 +783,11 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             [],
             tasks,
             workOrder.SourcePlanReference,
-            qualityHolds);
+            qualityHolds,
+            workOrder.WorkOrderType,
+            workOrder.SourceWorkOrderId,
+            workOrder.SourceNcrId,
+            workOrder.SourceNcrCode);
     }
 
     internal static IQueryable<MesOperationTaskRow> QueryOperationTasks(
@@ -981,6 +1016,41 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         };
     }
 
+    internal static async Task<IReadOnlyDictionary<string, MesWorkOrderAuthority>> LoadWorkOrderAuthoritiesAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> workOrderIds,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderIdValue))
+            .Select(x => new MesWorkOrderAuthority(
+                x.WorkOrderIdValue,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode))
+            .ToDictionaryAsync(x => x.WorkOrderId, StringComparer.Ordinal, cancellationToken);
+    }
+
+    internal static MesOperationTaskRow WithWorkOrderAuthority(
+        MesOperationTaskRow row,
+        MesWorkOrderAuthority? authority) =>
+        authority is null
+            ? row
+            : row with
+            {
+                WorkOrderType = authority.WorkOrderType,
+                SourceWorkOrderId = authority.SourceWorkOrderId,
+                SourceNcrId = authority.SourceNcrId,
+                SourceNcrCode = authority.SourceNcrCode,
+            };
+
     private static string[] SplitCanonicalCsv(string value)
     {
         return value
@@ -1057,8 +1127,16 @@ public sealed class ListOperationTasksQueryHandler(
                 tasks,
                 (timeProvider ?? TimeProvider.System).GetUtcNow(),
                 cancellationToken);
+        var workOrderAuthorities = await GetMesWorkOrderDetailQueryHandler.LoadWorkOrderAuthoritiesAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).ToArray(),
+            cancellationToken);
         var items = tasks
-            .Select(x => GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]))
+            .Select(x => GetMesWorkOrderDetailQueryHandler.WithWorkOrderAuthority(
+                GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]),
+                workOrderAuthorities.GetValueOrDefault(x.WorkOrderId)))
             .ToArray();
         return new MesOperationTaskListResponse(items, total);
     }
@@ -1123,8 +1201,16 @@ public sealed class ListReportableOperationTasksQueryHandler(
                 tasks,
                 (timeProvider ?? TimeProvider.System).GetUtcNow(),
                 cancellationToken);
+        var workOrderAuthorities = await GetMesWorkOrderDetailQueryHandler.LoadWorkOrderAuthoritiesAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).ToArray(),
+            cancellationToken);
         var items = tasks
-            .Select(x => GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]))
+            .Select(x => GetMesWorkOrderDetailQueryHandler.WithWorkOrderAuthority(
+                GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]),
+                workOrderAuthorities.GetValueOrDefault(x.WorkOrderId)))
             .ToArray();
         return new MesOperationTaskListResponse(items, total);
     }

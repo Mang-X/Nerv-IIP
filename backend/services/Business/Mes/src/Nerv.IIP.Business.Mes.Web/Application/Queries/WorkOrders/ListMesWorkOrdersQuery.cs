@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
@@ -40,7 +41,11 @@ public sealed record MesWorkOrderExecutionFact(
     string? SkuCode = null,
     // 工单当前是否存在活跃质量保留(quality hold);供列表锁定图标标记。与工单生命周期 Status 无关
     // (质量保留不改工单状态),故用独立标志而非从 Status 推断。
-    bool HasActiveQualityHold = false);
+    bool HasActiveQualityHold = false,
+    string WorkOrderType = WorkOrder.StandardType,
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record MesOperationTaskExecutionFact(
     string OperationTaskId,
@@ -155,6 +160,10 @@ public sealed class ListMesWorkOrdersQueryHandler(
                 x.Priority,
                 x.DueUtc,
                 x.Status,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode,
             })
             .ToListAsync(cancellationToken);
 
@@ -236,7 +245,11 @@ public sealed class ListMesWorkOrdersQueryHandler(
             tasksByWorkOrder.GetValueOrDefault(x.WorkOrderIdValue, []),
             x.WorkOrderIdValue,
             x.SkuId,
-            heldWorkOrderIdSet.Contains(x.WorkOrderIdValue))).ToArray();
+            heldWorkOrderIdSet.Contains(x.WorkOrderIdValue),
+            x.WorkOrderType,
+            x.SourceWorkOrderId,
+            x.SourceNcrId,
+            x.SourceNcrCode)).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }
