@@ -312,6 +312,20 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         closeNcrError: shallowRef(),
         closeNcrPending: shallowRef(false),
         filters,
+        ncrActionGate: (
+          _ncrId: string,
+          status: string | undefined,
+          dispositionType: string | undefined,
+          action: 'submit-disposition' | 'close',
+        ) => {
+          const normalizedStatus = status?.toLowerCase()
+          const executable =
+            (action === 'submit-disposition' && normalizedStatus === 'open') ||
+            (action === 'close' &&
+              normalizedStatus === 'disposition-in-progress' &&
+              Boolean(dispositionType))
+          return { executable }
+        },
         ncrs: computed(() => qualityState.ncrs),
         ncrsError: shallowRef(),
         ncrsPending: shallowRef(false),

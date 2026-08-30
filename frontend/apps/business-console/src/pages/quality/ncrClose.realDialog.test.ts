@@ -59,6 +59,7 @@ const spies = vi.hoisted(() => ({
 const state = vi.hoisted(() => ({}) as { closeNcrPending: { value: boolean } })
 
 vi.mock('@/composables/useBusinessQuality', async () => {
+  const { statusActionGate } = await import('@nerv-iip/business-core')
   const { computed, reactive, shallowRef } = await import('vue')
   state.closeNcrPending = shallowRef(false)
   return {
@@ -79,6 +80,17 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       ncrsError: shallowRef(),
       ncrsPending: shallowRef(false),
       ncrsTotal: computed(() => 1),
+      ncrActionGate: (
+        _ncrId: string,
+        status: string | null | undefined,
+        dispositionType: string | null | undefined,
+        action: 'submit-disposition' | 'close',
+      ) =>
+        statusActionGate({
+          domain: 'quality-ncr',
+          action,
+          facts: { status, dispositionType },
+        }),
       refreshNcrs: vi.fn(),
       submitDisposition: spies.submitDisposition,
       submitDispositionError: shallowRef(),

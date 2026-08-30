@@ -10354,38 +10354,11 @@ public sealed class BusinessGatewayProxyTests
     public async Task Quality_http_client_forwards_mrb_reviews_for_ncr_disposition()
     {
         string? requestBody = null;
-        var dispositionPosted = false;
         var postCount = 0;
         var handler = new RecordingHandler(request =>
         {
-            if (request.Method == HttpMethod.Get)
-            {
-                return JsonResponse(HttpStatusCode.OK, new
-                {
-                    data = new
-                    {
-                        ncrId = "ncr-001",
-                        ncrCode = "NCR-001",
-                        sourceType = "inspection-record",
-                        sourceDocumentId = "IR-001",
-                        skuCode = "SKU-001",
-                        defectQuantity = 1m,
-                        defectReason = "surface defect",
-                        batchNo = (string?)null,
-                        serialNo = (string?)null,
-                        status = dispositionPosted ? "disposition-in-progress" : "open",
-                        reworkWorkOrderCreationStatus = dispositionPosted ? "requested" : "not-requested",
-                        dispositionType = dispositionPosted ? "rework" : null,
-                        dispositionApprovalChainId = dispositionPosted ? "approval-chain-001" : null,
-                    },
-                    success = true,
-                    message = string.Empty,
-                    code = 0,
-                });
-            }
-
+            Assert.Equal(HttpMethod.Post, request.Method);
             postCount++;
-            dispositionPosted = true;
             requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
             return JsonResponse(HttpStatusCode.OK, new
             {
@@ -10431,12 +10404,51 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("approved", review.GetProperty("decision").GetString());
         Assert.Equal("release for rework", review.GetProperty("comment").GetString());
         Assert.Equal(reviewedAt, review.GetProperty("reviewedAtUtc").GetDateTimeOffset());
-        Assert.Equal(1, postCount);
+        Assert.Equal("ncr-rework-key-001", root.GetProperty("idempotencyKey").GetString());
+        Assert.Equal(2, postCount);
         Assert.Equal("ncr-rework-key-001", first.OperationReceipt?.IdempotencyKey);
         Assert.Equal(first.OperationReceipt, replay.OperationReceipt);
         Assert.Equal(
             "/api/business-console/v1/quality/ncrs/ncr-001?organizationId=org-001&environmentId=env-dev",
             first.OperationReceipt?.ReadbackPath);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_preserves_authoritative_rework_conflict()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            return JsonResponse(HttpStatusCode.Conflict, new
+            {
+                success = false,
+                message = "idempotency-conflict",
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.SubmitNcrDispositionAsync(
+                "internal-token-001",
+                "ncr-conflict",
+                new BusinessConsoleNcrDispositionRequest(
+                    "ncr-conflict",
+                    "org-001",
+                    "env-dev",
+                    "rework",
+                    "approval-chain-001",
+                    ["different-evidence"],
+                    [new BusinessConsoleMrbReview(
+                        "qa-lead",
+                        "approved",
+                        "different decision evidence",
+                        DateTimeOffset.Parse("2026-06-16T01:02:03Z", CultureInfo.InvariantCulture))],
+                    "ncr-rework-key-conflict"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+        Assert.Contains("idempotency-conflict", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

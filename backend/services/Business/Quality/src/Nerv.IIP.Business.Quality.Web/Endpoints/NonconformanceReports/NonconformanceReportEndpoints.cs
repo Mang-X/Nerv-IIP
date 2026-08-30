@@ -122,7 +122,8 @@ public sealed record SubmitNonconformanceReportDispositionRequest(
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds,
-    IReadOnlyCollection<MrbReviewInput>? MrbReviews);
+    IReadOnlyCollection<MrbReviewInput>? MrbReviews,
+    string? IdempotencyKey = null);
 
 public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
@@ -258,7 +259,8 @@ public sealed class SubmitNonconformanceReportDispositionEndpoint(ISender sender
             req.DispositionType,
             req.DispositionApprovalChainId,
             req.AttachmentFileIds ?? [],
-            req.MrbReviews ?? []), ct);
+            req.MrbReviews ?? [],
+            req.IdempotencyKey), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

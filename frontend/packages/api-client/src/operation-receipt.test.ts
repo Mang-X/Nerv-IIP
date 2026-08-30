@@ -329,6 +329,20 @@ describe('business operation receipt confirmation', () => {
         },
       }),
     ).toEqual({ state: 'confirmed-success' })
+    expect(
+      verifyBusinessConsoleOperationReadback(receipt, {
+        success: true,
+        data: {
+          id: 'ncr-1',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'failed',
+        },
+      }),
+    ).toEqual({
+      state: 'confirmed-business-failure',
+      message: '返工工单创建失败，请刷新后按最新状态处理',
+      failureCode: 'rework-work-order-creation-failed',
+    })
   })
 
   it('reports an accepted NCR rework as processing while the system work order remains requested', async () => {

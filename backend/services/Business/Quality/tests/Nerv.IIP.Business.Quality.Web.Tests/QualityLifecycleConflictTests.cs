@@ -197,7 +197,8 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approval,
-            automation);
+            automation,
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
@@ -225,7 +226,8 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
-            new RecordingCapaAutomationService());
+            new RecordingCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
@@ -247,7 +249,8 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
-            new RecordingCapaAutomationService());
+            new RecordingCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
@@ -257,6 +260,59 @@ public sealed class QualityLifecycleConflictTests
         Assert.Contains("NCR-SUBMIT-EVIDENCE", exception.Message, StringComparison.Ordinal);
         Assert.Contains("附件", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
+    }
+
+    [Fact]
+    public async Task Rework_disposition_replays_only_the_same_complete_intent()
+    {
+        await using var dbContext = CreateDbContext();
+        var ncr = NewNcr("NCR-REWORK-IDEMPOTENCY");
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync();
+        var approval = new RecordingApprovalClient();
+        var automation = new RecordingCapaAutomationService();
+        var handler = new SubmitNonconformanceReportDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            approval,
+            automation,
+            dbContext);
+        var reviewedAtUtc = DateTimeOffset.Parse("2026-08-29T10:00:00Z");
+        var command = new SubmitNonconformanceReportDispositionCommand(
+            ncr.Id,
+            "rework",
+            "approval-chain-001",
+            ["evidence-file-001"],
+            [MrbReviewInput.Approve("qa-manager-001", "approved", reviewedAtUtc)],
+            "quality-rework-idempotency-001");
+
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(1, approval.NcrCalls);
+        Assert.Equal(1, automation.Calls);
+        var storedKey = await dbContext.CodeIdempotencyKeys.SingleAsync();
+        Assert.Equal(ncr.Id.ToString(), storedKey.Code);
+        Assert.NotEmpty(storedKey.PayloadFingerprint);
+
+        await Assert.ThrowsAsync<QualityIdempotencyConflictException>(() => handler.Handle(
+            command with { DispositionApprovalChainId = "approval-chain-002" },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<QualityIdempotencyConflictException>(() => handler.Handle(
+            command with { AttachmentFileIds = ["evidence-file-002"] },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<QualityIdempotencyConflictException>(() => handler.Handle(
+            command with
+            {
+                MrbReviews = [MrbReviewInput.Approve("qa-manager-002", "approved", reviewedAtUtc)],
+            },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<QualityLifecycleConflictException>(() => handler.Handle(
+            command with { IdempotencyKey = "quality-rework-idempotency-002" },
+            CancellationToken.None));
+
+        Assert.Equal(1, approval.NcrCalls);
+        Assert.Equal(1, automation.Calls);
     }
 
     [Theory]

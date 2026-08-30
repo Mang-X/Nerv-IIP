@@ -334,7 +334,7 @@ describe('business quality composables', () => {
   })
 
   it('retries an unconfirmed rework with the same key and frozen MRB payload', async () => {
-    const { submitDisposition } = useQualityNcrs()
+    const { ncrActionGate, submitDisposition } = useQualityNcrs()
     lifecycleApi.getNcr
       .mockResolvedValueOnce({ success: true, data: { id: 'ncr-retry', status: 'Open' } })
       .mockResolvedValueOnce({
@@ -363,7 +363,7 @@ describe('business quality composables', () => {
     await expect(submitDisposition('ncr-retry', firstBody)).rejects.toMatchObject({
       code: 'business-operation-unconfirmed',
     })
-    await submitDisposition('ncr-retry', {
+    const retryBody = {
       ...firstBody,
       mrbReviews: [
         {
@@ -371,7 +371,17 @@ describe('business quality composables', () => {
           reviewedAtUtc: '2026-08-30T02:00:00Z',
         },
       ],
-    })
+    }
+    expect(
+      ncrActionGate(
+        'ncr-retry',
+        'Disposition-In-Progress',
+        'rework',
+        'submit-disposition',
+        retryBody,
+      ),
+    ).toMatchObject({ executable: true, reason: 'allowed' })
+    await submitDisposition('ncr-retry', retryBody)
 
     const calls = vi.mocked(submitBusinessConsoleQualityNcrDisposition).mock.calls
     expect(calls).toHaveLength(2)

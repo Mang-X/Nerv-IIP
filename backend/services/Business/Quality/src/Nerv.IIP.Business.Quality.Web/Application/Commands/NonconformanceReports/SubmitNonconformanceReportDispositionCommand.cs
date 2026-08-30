@@ -1,8 +1,14 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -13,7 +19,22 @@ public sealed record SubmitNonconformanceReportDispositionCommand(
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string> AttachmentFileIds,
-    IReadOnlyCollection<MrbReviewInput> MrbReviews) : ICommand;
+    IReadOnlyCollection<MrbReviewInput> MrbReviews,
+    string? IdempotencyKey = null) : ICommand;
+
+public sealed class SubmitNonconformanceReportDispositionCommandLock
+    : ICommandLock<SubmitNonconformanceReportDispositionCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        SubmitNonconformanceReportDispositionCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-quality:ncr-disposition:{command.NcrId}",
+            30));
+    }
+}
 
 public sealed class SubmitNonconformanceReportDispositionCommandValidator : AbstractValidator<SubmitNonconformanceReportDispositionCommand>
 {
@@ -22,19 +43,44 @@ public sealed class SubmitNonconformanceReportDispositionCommandValidator : Abst
         RuleFor(x => x.NcrId).NotEmpty();
         RuleFor(x => x.DispositionType).NotEmpty().MaximumLength(50);
         RuleFor(x => x.DispositionApprovalChainId).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey)
+            .NotEmpty()
+            .MaximumLength(150)
+            .When(x => string.Equals(
+                x.DispositionType,
+                QualityNcrDispositionTypes.Rework,
+                StringComparison.OrdinalIgnoreCase));
     }
 }
 
 public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     INonconformanceReportRepository repository,
     IApprovalChainStatusClient approvalChainStatusClient,
-    ICapaAutomationService capaAutomationService)
+    ICapaAutomationService capaAutomationService,
+    ApplicationDbContext dbContext)
     : ICommandHandler<SubmitNonconformanceReportDispositionCommand>
 {
+    private const string ReworkDispositionRuleKey = "ncr-rework-disposition";
+
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"找不到不合格报告 {request.NcrId}，请在不合格报告页确认单据存在后重试。");
+        var isRework = string.Equals(
+            request.DispositionType,
+            QualityNcrDispositionTypes.Rework,
+            StringComparison.OrdinalIgnoreCase);
+        var idempotencyKey = isRework ? request.IdempotencyKey!.Trim() : null;
+        var requestFingerprint = isRework ? Fingerprint(request) : null;
+        if (isRework && await IsReplayAsync(
+                ncr,
+                idempotencyKey!,
+                requestFingerprint!,
+                cancellationToken))
+        {
+            return;
+        }
+
         if (ncr.Status != "open")
         {
             throw new QualityLifecycleConflictException("submit-ncr-disposition", ncr.Status);
@@ -77,7 +123,81 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
         }
 
         await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
+        if (isRework)
+        {
+            dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+                ncr.OrganizationId,
+                ncr.EnvironmentId,
+                ReworkDispositionRuleKey,
+                idempotencyKey!,
+                ncr.Id.ToString(),
+                requestFingerprint!,
+                DateTimeOffset.UtcNow));
+        }
     }
+
+    private async Task<bool> IsReplayAsync(
+        NonconformanceReport ncr,
+        string idempotencyKey,
+        string requestFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var existing = dbContext.CodeIdempotencyKeys.Local.FirstOrDefault(x =>
+            x.OrganizationId == ncr.OrganizationId &&
+            x.EnvironmentId == ncr.EnvironmentId &&
+            x.RuleKey == ReworkDispositionRuleKey &&
+            x.IdempotencyKey == idempotencyKey)
+            ?? await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(
+                x => x.OrganizationId == ncr.OrganizationId &&
+                    x.EnvironmentId == ncr.EnvironmentId &&
+                    x.RuleKey == ReworkDispositionRuleKey &&
+                    x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (existing is null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(existing.Code, ncr.Id.ToString(), StringComparison.Ordinal)
+            || !string.Equals(existing.PayloadFingerprint, requestFingerprint, StringComparison.Ordinal))
+        {
+            throw new QualityIdempotencyConflictException();
+        }
+
+        return true;
+    }
+
+    internal static string Fingerprint(SubmitNonconformanceReportDispositionCommand request)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            ncrId = request.NcrId.ToString(),
+            dispositionType = request.DispositionType.Trim().ToLowerInvariant(),
+            dispositionApprovalChainId = Normalize(request.DispositionApprovalChainId),
+            attachmentFileIds = request.AttachmentFileIds
+                .Select(value => value.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            mrbReviews = request.MrbReviews
+                .Select(review => new
+                {
+                    reviewerId = review.ReviewerId.Trim(),
+                    decision = review.Decision.Trim().ToLowerInvariant(),
+                    comment = Normalize(review.Comment),
+                    reviewedAtUtc = review.ReviewedAtUtc.ToUniversalTime().ToString("O"),
+                })
+                .OrderBy(review => review.reviewerId, StringComparer.Ordinal)
+                .ThenBy(review => review.decision, StringComparer.Ordinal)
+                .ThenBy(review => review.comment, StringComparer.Ordinal)
+                .ThenBy(review => review.reviewedAtUtc, StringComparer.Ordinal)
+                .ToArray(),
+        });
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+    }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 public sealed record CompleteNonconformanceReportInventoryDispositionCommand(

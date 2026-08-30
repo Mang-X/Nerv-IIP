@@ -342,9 +342,9 @@ describe('statusActionGate', () => {
       {
         known: true,
         terminal: false,
-        executable: false,
-        legalNoop: true,
-        reason: 'already-applied-noop',
+        executable: true,
+        legalNoop: false,
+        reason: 'allowed',
       },
     ],
     [

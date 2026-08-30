@@ -4,7 +4,6 @@ import type {
   BusinessConsoleNcrDispositionRequest,
   BusinessConsoleQualityNcrItem,
 } from '@nerv-iip/api-client'
-import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
@@ -86,6 +85,7 @@ const {
   closeNcr,
   closeNcrPending,
   filters,
+  ncrActionGate,
   ncrs,
   ncrsError,
   ncrsPending,
@@ -208,6 +208,23 @@ const dispositionBlockers = computed(() => {
   }
   return blockers
 })
+function dispositionRequest(reviewedAtUtc: string): BusinessConsoleNcrDispositionRequest {
+  return {
+    dispositionType: dispositionForm.dispositionType.trim(),
+    dispositionApprovalChainId: optionalText(dispositionForm.dispositionApprovalChainId),
+    attachmentFileIds: splitCsv(dispositionForm.attachmentFileIds),
+    mrbReviews: requiresCentralApproval.value
+      ? [
+          {
+            reviewerId: mrbReviewerId.value,
+            decision: 'approved',
+            comment: optionalText(dispositionForm.mrbComment),
+            reviewedAtUtc,
+          },
+        ]
+      : undefined,
+  }
+}
 const canSubmitDisposition = computed(
   () =>
     hasBusinessContext(filters) &&
@@ -215,17 +232,13 @@ const canSubmitDisposition = computed(
     isNonEmpty(selectedNcrId.value) &&
     isNonEmpty(dispositionForm.dispositionType) &&
     dispositionBlockers.value.length === 0 &&
-    statusActionGate({
-      domain: 'quality-ncr',
-      action: 'submit-disposition',
-      facts: {
-        status: selectedNcr.value?.status,
-        dispositionType:
-          selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
-            ? 'recorded'
-            : undefined,
-      },
-    }).executable,
+    ncrActionGate(
+      selectedNcrId.value,
+      selectedNcr.value?.status,
+      dispositionForm.dispositionType,
+      'submit-disposition',
+      dispositionRequest(''),
+    ).executable,
 )
 const canCloseNcr = computed(
   () =>
@@ -233,17 +246,14 @@ const canCloseNcr = computed(
     canManageNcr.value &&
     isNonEmpty(selectedNcrId.value) &&
     isNonEmpty(closeForm.reason) &&
-    statusActionGate({
-      domain: 'quality-ncr',
-      action: 'close',
-      facts: {
-        status: selectedNcr.value?.status,
-        dispositionType:
-          selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
-            ? 'recorded'
-            : undefined,
-      },
-    }).executable,
+    ncrActionGate(
+      selectedNcrId.value,
+      selectedNcr.value?.status,
+      selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
+        ? 'recorded'
+        : undefined,
+      'close',
+    ).executable,
 )
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -284,22 +294,8 @@ async function submitNcrDisposition() {
     return
   }
   if (!canSubmitDisposition.value) return
-  const body: BusinessConsoleNcrDispositionRequest = {
-    dispositionType: dispositionForm.dispositionType.trim(),
-    dispositionApprovalChainId: optionalText(dispositionForm.dispositionApprovalChainId),
-    attachmentFileIds: splitCsv(dispositionForm.attachmentFileIds),
-    // 需中央审批的处置：后端要求 MRB 评审记录齐备且全部为 approved，缺这一段提交必 400（#1327）。
-    mrbReviews: requiresCentralApproval.value
-      ? [
-          {
-            reviewerId: mrbReviewerId.value,
-            decision: 'approved',
-            comment: optionalText(dispositionForm.mrbComment),
-            reviewedAtUtc: new Date().toISOString(),
-          },
-        ]
-      : undefined,
-  }
+  // 需中央审批的处置：后端要求 MRB 评审记录齐备且全部为 approved，缺这一段提交必 400（#1327）。
+  const body = dispositionRequest(new Date().toISOString())
   const label = selectedNcr.value?.code ?? selectedNcrId.value
   try {
     await submitDisposition(selectedNcrId.value, body)

@@ -255,7 +255,7 @@ function ncrGate(
       facts.idempotentReplay &&
       facts.dispositionType?.trim()
     ) {
-      return noop()
+      return allowed()
     }
     return status === 'open' ? allowed() : incompatible()
   }

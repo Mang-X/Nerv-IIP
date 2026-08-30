@@ -1030,7 +1030,8 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -1070,7 +1071,8 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -1112,7 +1114,8 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -1152,7 +1155,8 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(

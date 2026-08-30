@@ -791,50 +791,22 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         BusinessConsoleNcrDispositionRequest request,
         CancellationToken cancellationToken)
     {
+        var response = await SendNcrDispositionAsync(
+            internalBearerToken,
+            ncrId,
+            request,
+            cancellationToken);
         if (!string.Equals(request.DispositionType, "rework", StringComparison.OrdinalIgnoreCase))
         {
-            return await SendNcrDispositionAsync(internalBearerToken, ncrId, request, cancellationToken);
+            return response;
         }
 
-        var current = await GetNcrAsync(
-            internalBearerToken,
-            new BusinessConsoleQualityNcrDetailRequest(ncrId, request.OrganizationId, request.EnvironmentId),
-            cancellationToken);
-
-        if (string.Equals(current.Status, "open", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                var response = await SendNcrDispositionAsync(
-                    internalBearerToken,
-                    ncrId,
-                    request,
-                    cancellationToken);
-                if (!response.Accepted)
-                {
-                    throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                        HttpStatusCode.BadGateway,
-                        "downstream-invalid-response");
-                }
-
-                return AcceptedReworkResponse(ncrId, request);
-            }
-            catch (BusinessServiceProxyException exception) when (exception.StatusCode == HttpStatusCode.Conflict)
-            {
-                current = await GetNcrAsync(
-                    internalBearerToken,
-                    new BusinessConsoleQualityNcrDetailRequest(ncrId, request.OrganizationId, request.EnvironmentId),
-                    cancellationToken);
-            }
-        }
-
-        if (!MatchesReworkDisposition(current, request))
+        if (!response.Accepted)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.Conflict,
-                "ncr-disposition-conflict");
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
         }
-
         return AcceptedReworkResponse(ncrId, request);
     }
 
@@ -873,17 +845,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.DispositionType,
                 request.DispositionApprovalChainId,
                 request.AttachmentFileIds,
-                request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray()),
+                request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray(),
+                request.IdempotencyKey),
             cancellationToken);
-
-    private static bool MatchesReworkDisposition(
-        BusinessConsoleQualityNcrDetailResponse current,
-        BusinessConsoleNcrDispositionRequest request) =>
-        string.Equals(current.DispositionType, "rework", StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(
-            current.DispositionApprovalChainId?.Trim(),
-            request.DispositionApprovalChainId?.Trim(),
-            StringComparison.Ordinal);
 
     public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
         string internalBearerToken,
@@ -1234,7 +1198,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string DispositionType,
         string? DispositionApprovalChainId,
         IReadOnlyCollection<string>? AttachmentFileIds,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyCollection<DownstreamMrbReview>? MrbReviews);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyCollection<DownstreamMrbReview>? MrbReviews,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? IdempotencyKey);
 
     private sealed record DownstreamMrbReview(
         string ReviewerId,

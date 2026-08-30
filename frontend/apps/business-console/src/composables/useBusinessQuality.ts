@@ -24,6 +24,7 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  statusActionGate,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
@@ -341,6 +342,56 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
   const closeNcrPending = shallowRef(false)
   const closeNcrError = shallowRef<unknown>()
 
+  function reworkIntentScope(ncrId: string, body: BusinessConsoleNcrDispositionRequest) {
+    const fingerprintBody = {
+      ncrId,
+      dispositionType: body.dispositionType,
+      dispositionApprovalChainId: body.dispositionApprovalChainId,
+      attachmentFileIds: body.attachmentFileIds,
+      mrbReviews: body.mrbReviews?.map(({ reviewedAtUtc: _reviewedAtUtc, ...review }) => review),
+    }
+    return {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'quality.ncr.rework',
+      payloadFingerprint: JSON.stringify(fingerprintBody),
+    }
+  }
+
+  function ncrActionRequest(
+    ncrId: string,
+    status: string | null | undefined,
+    dispositionType: string | null | undefined,
+    action: 'submit-disposition' | 'close',
+    body?: BusinessConsoleNcrDispositionRequest,
+    idempotentReplay = false,
+  ) {
+    const hasPendingRework =
+      action === 'submit-disposition' &&
+      body?.dispositionType.trim().toLowerCase() === 'rework' &&
+      Boolean(peekPendingBusinessIntent(reworkIntentScope(ncrId, body)))
+    return {
+      domain: 'quality-ncr' as const,
+      action,
+      facts: {
+        status,
+        dispositionType,
+        idempotentReplay: idempotentReplay || hasPendingRework,
+      },
+    }
+  }
+
+  function ncrActionGate(
+    ncrId: string,
+    status: string | null | undefined,
+    dispositionType: string | null | undefined,
+    action: 'submit-disposition' | 'close',
+    body?: BusinessConsoleNcrDispositionRequest,
+  ) {
+    return statusActionGate(ncrActionRequest(ncrId, status, dispositionType, action, body))
+  }
+
   async function readNcr(
     ncrId: string,
     action: 'submit-disposition' | 'close',
@@ -358,11 +409,14 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     } as Parameters<typeof query.query>[0])
     const item = response?.success ? response.data : undefined
     return item
-      ? {
-          domain: 'quality-ncr' as const,
+      ? ncrActionRequest(
+          ncrId,
+          item.status,
+          item.dispositionType,
           action,
-          facts: { status: item.status, dispositionType: item.dispositionType, idempotentReplay },
-        }
+          undefined,
+          idempotentReplay,
+        )
       : undefined
   }
 
@@ -394,20 +448,7 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
         return result
       }
 
-      const fingerprintBody = {
-        ncrId,
-        dispositionType: body.dispositionType,
-        dispositionApprovalChainId: body.dispositionApprovalChainId,
-        attachmentFileIds: body.attachmentFileIds,
-        mrbReviews: body.mrbReviews?.map(({ reviewedAtUtc: _reviewedAtUtc, ...review }) => review),
-      }
-      const intentScope = {
-        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        operationType: 'quality.ncr.rework',
-        payloadFingerprint: JSON.stringify(fingerprintBody),
-      }
+      const intentScope = reworkIntentScope(ncrId, body)
       const restored = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(
         intentScope,
@@ -488,6 +529,7 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     closeNcrError,
     closeNcrPending,
     filters,
+    ncrActionGate,
     ncrs: computed<BusinessConsoleQualityNcrItem[]>(() => listItems(ncrsQuery.data.value)),
     ncrsError: ncrsQuery.error,
     ncrsPending: ncrsQuery.isLoading,
