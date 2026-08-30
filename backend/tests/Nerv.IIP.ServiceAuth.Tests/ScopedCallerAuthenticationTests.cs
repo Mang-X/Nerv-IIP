@@ -226,6 +226,31 @@ public sealed class ScopedCallerAuthenticationTests
     }
 
     [Fact]
+    public async Task Generic_internal_service_accepts_its_token_and_ignores_a_foreign_jwt_bearer()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["InternalService:BearerToken"] = "internal.service.token"
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNervIipInternalServiceAuthorization(configuration, new StubHostEnvironment("Production"));
+        await using var provider = services.BuildServiceProvider();
+
+        await using var matchingScope = provider.CreateAsyncScope();
+        var matchingResult = await Context(matchingScope.ServiceProvider, "Bearer internal.service.token")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+        await using var foreignJwtScope = provider.CreateAsyncScope();
+        var foreignJwtResult = await Context(foreignJwtScope.ServiceProvider, "Bearer header.payload.signature")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+
+        Assert.True(matchingResult.Succeeded);
+        Assert.False(foreignJwtResult.Succeeded);
+        Assert.True(foreignJwtResult.None);
+        Assert.Null(foreignJwtResult.Failure);
+    }
+
+    [Fact]
     public async Task Generic_internal_service_provider_and_handler_share_one_credential_snapshot()
     {
         const string sessionToken = "session-internal-token";
@@ -252,6 +277,8 @@ public sealed class ScopedCallerAuthenticationTests
         Assert.Equal(sessionToken, outboundToken);
         Assert.True(matchingResult.Succeeded);
         Assert.False(changedResult.Succeeded);
+        Assert.False(changedResult.None);
+        Assert.NotNull(changedResult.Failure);
     }
 
     [Fact]

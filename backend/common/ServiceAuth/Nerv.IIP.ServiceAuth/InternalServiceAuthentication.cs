@@ -141,7 +141,13 @@ public sealed class InternalServiceAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        if (!InternalServiceBearerToken.FixedTimeEquals(token, configuredToken))
+        var tokenMatches = InternalServiceBearerToken.FixedTimeEquals(token, configuredToken);
+        if (!tokenMatches && InternalServiceBearerToken.HasJwtCompactSerializationShape(token))
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        if (!tokenMatches)
         {
             return Task.FromResult(AuthenticateResult.Fail("Invalid internal service bearer token."));
         }
