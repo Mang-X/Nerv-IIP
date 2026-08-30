@@ -11,6 +11,7 @@ import {
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
+  queryBusinessConsoleTelemetryOeeAggregatesQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
 } from '@nerv-iip/api-client'
@@ -26,6 +27,8 @@ import {
   useBusinessTelemetryConnectorCoverage,
   useBusinessEquipmentHealth,
   useBusinessTelemetryHistory,
+  useBusinessTelemetryOeeAggregates,
+  useBusinessTelemetryOeeTrend,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
   useMaintenancePlanRuntimeRemaining,
@@ -35,7 +38,14 @@ import {
 const coladaState = vi.hoisted(() => ({
   mutationCalls: [] as unknown[],
   queryDataById: new Map<string, unknown>(),
-  queryOptionsById: new Map<string, { enabled?: boolean; autoRefetch?: () => number }>(),
+  queryOptionsById: new Map<
+    string,
+    {
+      enabled?: boolean
+      autoRefetch?: () => number
+      query?: (context: { signal?: AbortSignal }) => Promise<unknown>
+    }
+  >(),
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
@@ -51,7 +61,18 @@ const rtState = vi.hoisted(() => ({
     }),
 }))
 
+type AggregateOptions = { query: Record<string, unknown>; signal?: AbortSignal }
+const aggregateState = vi.hoisted(() => ({
+  calls: [] as AggregateOptions[],
+  impl: (_opts: AggregateOptions): Promise<unknown> =>
+    Promise.resolve({ data: { success: true, data: { buckets: [], totalCount: 0 } } }),
+}))
+
 vi.mock('@nerv-iip/api-client', () => ({
+  queryBusinessConsoleTelemetryOeeAggregates: (opts: AggregateOptions) => {
+    aggregateState.calls.push(opts)
+    return aggregateState.impl(opts)
+  },
   queryBusinessConsoleTelemetryRuntimeHours: (opts: RuntimeHoursOptions) => rtState.impl(opts),
   queryBusinessConsoleTelemetryRuntimeHoursQueryOptions: vi.fn(() => ({
     key: [{ _id: 'queryBusinessConsoleTelemetryRuntimeHours' }],
@@ -89,6 +110,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'queryBusinessConsoleTelemetryOee' }],
     query: vi.fn(),
   })),
+  queryBusinessConsoleTelemetryOeeAggregatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'queryBusinessConsoleTelemetryOeeAggregates' }],
+    query: vi.fn(),
+  })),
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'queryBusinessConsoleTelemetryRuntimeAvailability' }],
     query: vi.fn(),
@@ -108,7 +133,12 @@ vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((optionsFactory) => {
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
-    const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    const id =
+      typeof key === 'string'
+        ? key
+        : key && typeof key === 'object' && '_id' in key
+          ? String(key._id)
+          : ''
     const refetch = vi.fn()
     coladaState.queryOptionsById.set(id, options)
     coladaState.refetchById.set(id, refetch)
@@ -137,6 +167,9 @@ describe('business telemetry composables', () => {
       Promise.resolve({
         data: { success: true, data: { totalRuntimeHours: 0, hasRuntimeSamples: false } },
       })
+    aggregateState.calls = []
+    aggregateState.impl = () =>
+      Promise.resolve({ data: { success: true, data: { buckets: [], totalCount: 0 } } })
   })
 
   it('uses current business context and pagination for tag and alarm-rule lists', () => {
@@ -468,12 +501,120 @@ describe('business telemetry composables', () => {
     expect(oee.availabilityWindows.value).toHaveLength(1)
   })
 
+  it('queries the stable OEE aggregate client with server-owned scope and exposes paged buckets', () => {
+    coladaState.queryDataById.set('queryBusinessConsoleTelemetryOeeAggregates', {
+      success: true,
+      data: {
+        dimension: 'workCenter',
+        buckets: [
+          {
+            dimension: 'workCenter',
+            dimensionValue: 'WC-MACHINING',
+            oeeRate: 0.74,
+            isDegraded: false,
+          },
+        ],
+        totalCount: 26,
+        skip: 20,
+        take: 20,
+      },
+    })
+
+    const aggregates = useBusinessTelemetryOeeAggregates({
+      dimension: 'workCenter',
+      windowStartUtc: '2026-08-01T00:00:00.000Z',
+      windowEndUtc: '2026-08-08T00:00:00.000Z',
+      workCenterId: ' WC-MACHINING ',
+      lineCode: ' LINE-A ',
+      workshopCode: ' WORKSHOP-MACHINING ',
+      shiftCode: ' SHIFT-DAY ',
+      businessDate: '2026-08-06',
+      skip: 20,
+      take: 20,
+    })
+
+    expect(queryBusinessConsoleTelemetryOeeAggregatesQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        dimension: 'workCenter',
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-08T00:00:00.000Z',
+        deviceAssetId: undefined,
+        workCenterId: 'WC-MACHINING',
+        shiftCode: 'SHIFT-DAY',
+        lineCode: 'LINE-A',
+        workshopCode: 'WORKSHOP-MACHINING',
+        businessDate: '2026-08-06',
+        skip: 20,
+        take: 20,
+      },
+    })
+    expect(aggregates.aggregateBuckets.value).toEqual([
+      expect.objectContaining({ dimensionValue: 'WC-MACHINING', oeeRate: 0.74 }),
+    ])
+    expect(aggregates.aggregateTotal.value).toBe(26)
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOeeAggregates')?.enabled,
+    ).toBe(true)
+  })
+
+  it('reads every stable-client page for the complete day trend independently of table paging', async () => {
+    aggregateState.impl = async ({ query }) => {
+      const skip = Number(query.skip)
+      const length = skip === 0 ? 100 : 31
+      return {
+        data: {
+          success: true,
+          data: {
+            buckets: Array.from({ length }, (_, index) => ({
+              dimension: 'day',
+              businessDate: `day-${skip + index + 1}`,
+            })),
+            totalCount: 131,
+          },
+        },
+      }
+    }
+    const aggregates = useBusinessTelemetryOeeAggregates({
+      dimension: 'day',
+      windowStartUtc: '2026-08-01T00:00:00.000Z',
+      windowEndUtc: '2026-09-01T00:00:00.000Z',
+      deviceAssetId: ' DEV-CNC-01 ',
+      skip: 20,
+      take: 20,
+    })
+    useBusinessTelemetryOeeTrend(aggregates.filters)
+
+    const query = coladaState.queryOptionsById.get('business-telemetry-oee-complete-trend')?.query
+    const buckets = (await query?.({})) as unknown[]
+
+    expect(buckets).toHaveLength(131)
+    expect(aggregateState.calls.map((call) => call.query.skip)).toEqual([0, 100])
+    expect(aggregateState.calls).toEqual([
+      expect.objectContaining({
+        query: expect.objectContaining({
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          dimension: 'day',
+          deviceAssetId: 'DEV-CNC-01',
+          skip: 0,
+          take: 100,
+        }),
+      }),
+      expect.objectContaining({ query: expect.objectContaining({ skip: 100, take: 100 }) }),
+    ])
+  })
+
   it('formats OEE measures and explains degraded inputs in business language', () => {
     expect(formatOeeRate(0.876)).toBe('87.6%')
     expect(formatOeeRate(undefined)).toBe('无数据')
     expect(formatOeeQuantity(12.5, 'PCS')).toBe('12.5 PCS')
     expect(describeTelemetryOeeLimitations()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少 MES 报工事实')
+    expect(describeTelemetryOeeDegradation('historicalTimezoneMissing')).toBe(
+      '历史事实缺少站点时区',
+    )
   })
 
   // Hand out deferred runtime-hours reads so overlapping rounds and out-of-order completion can be driven.
