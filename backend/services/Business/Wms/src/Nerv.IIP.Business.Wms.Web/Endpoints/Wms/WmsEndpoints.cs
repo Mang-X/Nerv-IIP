@@ -360,14 +360,15 @@ public sealed class ListReceivingQualityGatesRequestValidator
 {
     public ListReceivingQualityGatesRequestValidator()
     {
-        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
-        RuleFor(x => x.OrganizationId).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
         RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
         RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
         RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.GateStatus).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.InboundOrderNo).MaximumLength(150);

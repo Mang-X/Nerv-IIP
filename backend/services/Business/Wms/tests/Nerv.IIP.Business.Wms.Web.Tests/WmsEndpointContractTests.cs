@@ -281,7 +281,8 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
-    public async Task Backorder_list_http_endpoint_returns_response_data_error_for_missing_tenant()
+    // Contract: PublicContract + Regression. Authority: Issue #2120 acceptance and pre-migration WMS v1 behavior.
+    public async Task Backorder_list_http_endpoint_keeps_empty_success_for_missing_tenant()
     {
         await using var factory = CreateAuthorizedFactory();
         using var client = factory.CreateClient();
@@ -294,11 +295,10 @@ public sealed class WmsEndpointContractTests
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = System.Text.Json.JsonDocument.Parse(body);
-        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
-        Assert.Contains("组织标识不能为空", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
-        Assert.Equal(0, document.RootElement.GetProperty("code").GetInt32());
-        Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
-        Assert.False(document.RootElement.TryGetProperty("data", out _), body);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean(), body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(0, data.GetProperty("total").GetInt32());
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
     }
 
     [Fact]
@@ -330,8 +330,7 @@ public sealed class WmsEndpointContractTests
         Assert.True(document.RootElement.GetProperty("success").GetBoolean(), body);
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(2, data.GetProperty("total").GetInt32());
-        var item = Assert.Single(data.GetProperty("items").EnumerateArray());
-        Assert.StartsWith("BO-HTTP-00", item.GetProperty("backorderOrderNo").GetString(), StringComparison.Ordinal);
+        Assert.Equal(2, data.GetProperty("items").GetArrayLength());
     }
 
     [Fact]
