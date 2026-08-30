@@ -16350,6 +16350,8 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         deviceAssetId?: string | null;
         workOrderId?: string | null;
         reasonCode?: string | null;
+        windowStartUtc?: string | null;
+        windowEndUtc?: string | null;
         skip?: number;
         take?: number;
     };
