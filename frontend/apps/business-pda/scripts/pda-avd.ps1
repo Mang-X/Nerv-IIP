@@ -2,8 +2,8 @@
 #   Category: verify
 #   SideEffects:
 #     - create: creates an Android Virtual Device (default name nerv-pda, pixel_5 profile,
-#       system-images;android-35;google_apis;x86_64) under the user AVD home
-#       (%USERPROFILE%\.android\avd); idempotent — when an AVD with the same name exists its
+#       Android 35 Google APIs image for the host architecture) under the user AVD home;
+#       idempotent — when an AVD with the same name exists its
 #       config.ini image.sysdir.1 is verified against the pinned system image (mismatch or
 #       unreadable config fails with exit 1 and a -Recreate hint); -Recreate deletes and
 #       recreates the AVD (destroys its disk images)
@@ -19,7 +19,7 @@
 #     - status: read-only (adb devices / avdmanager list avd / accel probe)
 #   Writes:
 #     - artifacts/script-logs/** (command logs + detached emulator stdout/stderr)
-#     - %USERPROFILE%\.android\avd\<AvdName>.avd/** (AVD disk images, created by create /
+#     - The user AVD home <AvdName>.avd/** (AVD disk images, created by create /
 #       mutated by the running emulator)
 #   Cleanup:
 #     - start does NOT stop the emulator on exit (that is the point — subsequent adb steps need
@@ -28,8 +28,8 @@
 #       avdmanager delete avd -n <name> if needed)
 #   Requires:
 #     - PowerShell 7
-#     - Android SDK at ANDROID_HOME with: emulator, platform-tools (adb),
-#       cmdline-tools\latest (avdmanager), system-images;android-35;google_apis;x86_64
+#     - Android SDK at ANDROID_HOME with emulator, platform-tools, cmdline-tools/latest,
+#       and the Android 35 Google APIs image for the host architecture
 #     - Hardware acceleration (WHPX/AEHD) for a usable boot; without it pass -NoAccel to
 #       run degraded (very slow) after the accel probe reports unavailable
 
@@ -76,6 +76,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 . (Join-Path $repoRoot 'scripts' 'lib' 'ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot 'PdaAndroidTools.ps1')
 
 # --- 注入面白名单校验：AvdName 会拼进 cmd /c 命令行（avdmanager 是 .bat，见
 #     Invoke-AvdManagerCommandLine 注释）与 AVD 目录路径，越界直接拒绝，不做任何转义补救。
@@ -89,92 +90,74 @@ if (-not [string]::IsNullOrWhiteSpace($Serial) -and $Serial -notmatch '^emulator
     exit 1
 }
 
-# --- Android SDK 定位：显式 ANDROID_HOME/ANDROID_SDK_ROOT 优先；未设时自动探测约定
-#     安装位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk），新终端/新会话
-#     零知识可跑；探测不到才报错。
-function Resolve-PdaAndroidHome {
-    $candidates = @(
-        $env:ANDROID_HOME
-        $env:ANDROID_SDK_ROOT
-        (Join-Path $env:USERPROFILE 'android-sdk')
-        (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
-    )
-    foreach ($candidate in $candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path (Join-Path $candidate 'platform-tools\adb.exe')) { return $candidate }
-    }
-    return $null
-}
-
 $sdkRoot = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($sdkRoot)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 未设，且约定位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk）均无 platform-tools\adb.exe。安装口径见 docs/architecture/mobile-pda-deployment.md。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md。'
     exit 1
 }
 $env:ANDROID_HOME = $sdkRoot
 Write-Diagnostic "ANDROID_HOME=$sdkRoot"
-# SDK 路径也会拼进 cmd /c 命令行（引号包裹）：含 cmd 元字符/引号的路径直接拒绝，
+# Windows SDK 路径会拼进 cmd /c 命令行（引号包裹）：含 cmd 元字符/引号的路径直接拒绝，
 # 而不是尝试转义（cmd 的引号语义无法与 .NET ArgumentList 转义可靠互通）。
-if ($sdkRoot -match '["&|<>^%]') {
+if ($IsWindows -and $sdkRoot -match '["&|<>^%]') {
     Write-Diagnostic -Level 'ERROR' -Message "ANDROID_HOME 含 cmd 元字符（引号或 & | < > ^ %）：$sdkRoot。请把 SDK 放在不含这些字符的路径下。"
     exit 1
 }
-$emulatorExe = Join-Path $sdkRoot 'emulator' 'emulator.exe'
-$adbExe = Join-Path $sdkRoot 'platform-tools' 'adb.exe'
-$avdManagerBat = Join-Path $sdkRoot 'cmdline-tools' 'latest' 'bin' 'avdmanager.bat'
-foreach ($tool in @($emulatorExe, $adbExe, $avdManagerBat)) {
+$emulatorExe = Join-Path $sdkRoot 'emulator' (Get-PdaPlatformToolName -Name 'emulator')
+$adbExe = Join-Path $sdkRoot 'platform-tools' (Get-PdaPlatformToolName -Name 'adb')
+$avdManager = Join-Path $sdkRoot 'cmdline-tools' 'latest' 'bin' (Get-PdaPlatformToolName -Name 'avdmanager' -WindowsSuffix '.bat')
+foreach ($tool in @($emulatorExe, $adbExe, $avdManager)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
-        Write-Diagnostic -Level 'ERROR' -Message "Android SDK 组件缺失：$tool。请用 sdkmanager 安装 emulator / platform-tools / cmdline-tools;latest（以及 system-images;android-35;google_apis;x86_64）。"
+        Write-Diagnostic -Level 'ERROR' -Message "Android SDK 组件缺失：$tool。请用 sdkmanager 安装 emulator / platform-tools / cmdline-tools;latest 与当前主机架构对应的 Android 35 Google APIs 系统镜像。"
         exit 1
     }
 }
 
-$systemImage = 'system-images;android-35;google_apis;x86_64'
+$isAppleSilicon = $IsMacOS -and [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [Runtime.InteropServices.Architecture]::Arm64
+$systemImageAbi = $isAppleSilicon ? 'arm64-v8a' : 'x86_64'
+$systemImage = "system-images;android-35;google_apis;$systemImageAbi"
 $deviceProfile = 'pixel_5'
 
-function Invoke-AvdManagerCommandLine {
-    # avdmanager 是 .bat，经 cmd /d /s /c "<整条命令行>" 调起（/s 剥外层引号、保留内层引号，
-    # 保证含分号的 -k 包 id 与含空格的 SDK 路径都完整传入 .bat）。
-    # create 会交互式问「Do you wish to create a custom hardware profile?」——经 stdin 灌 'no' 回答默认值。
-    #
-    # 为什么不走 ScriptAutomation 的 Invoke-NativeCommandOutput（本函数是显式包装层）：
-    # 1) .bat 不能由 ProcessStartInfo 可靠直启，须经 cmd；而 cmd /s 的引号语义与 .NET
-    #    ArgumentList 的 C 式转义（\"）互不兼容，整条命令行经 ArgumentList 传给 cmd /c
-    #    会被二次转义破坏（路径反斜杠 + 引号组合），无法安全 round-trip；
-    # 2) create 需要向 stdin 灌 'no' 回答交互提示，helper 无 stdin 通道。
-    # 注入面控制：拼进 $CommandLine 的变量只有白名单校验过的 $AvdName、元字符校验过的
-    # SDK 路径与脚本内写死的常量（$systemImage/$deviceProfile），调用点不得引入其他变量。
-    # avdmanager list/create/delete 均为秒级短命令，无 helper 超时通道的风险敞口有限；
-    # 这里补齐与 helper 同口径的调用日志。
+function Invoke-AvdManager {
+    # Windows 的 avdmanager.bat 仍经 cmd 调用；POSIX 直接执行无扩展名脚本。
+    # create 的固定 'no' 回答只用于 avdmanager 的自定义硬件 profile 提示。
     param(
         [Parameter(Mandatory)]
-        [string] $CommandLine,
+        [string[]] $Arguments,
 
         [switch] $AnswerNoToPrompts
     )
 
-    if ($CommandLine -match '[\r\n]') {
-        Write-Diagnostic -Level 'ERROR' -Message 'avdmanager 命令行含换行符，拒绝执行（防注入）。'
-        exit 1
+    if ($IsWindows) {
+        $quotedArguments = @($Arguments | ForEach-Object { "`"$_`"" })
+        $commandLine = (@("`"$avdManager`"") + $quotedArguments) -join ' '
+        Write-Diagnostic "Invoking avdmanager via cmd /d /s /c: $commandLine"
+        $output = if ($AnswerNoToPrompts) {
+            'no' | cmd /d /s /c $commandLine 2>&1
+        }
+        else {
+            cmd /d /s /c $commandLine 2>&1
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "avdmanager exited with $LASTEXITCODE`: $(@($output) -join ' | ')"
+        }
+        return [pscustomobject]@{
+            Output = @($output | ForEach-Object { "$_" })
+        }
     }
-    Write-Diagnostic "Invoking avdmanager via cmd /d /s /c: $CommandLine"
 
-    $output = if ($AnswerNoToPrompts) {
-        'no' | cmd /d /s /c $CommandLine 2>&1
+    $result = if ($AnswerNoToPrompts) {
+        Invoke-NativeCommandOutput -Command '/bin/sh' -Arguments (@('-c', 'printf "no\n" | "$@"', 'avdmanager', $avdManager) + $Arguments) -Name 'avdmanager'
     }
     else {
-        cmd /d /s /c $CommandLine 2>&1
+        Invoke-NativeCommandOutput -Command $avdManager -Arguments $Arguments -Name 'avdmanager'
     }
-
-    return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
-        Output = @($output | ForEach-Object { "$_" })
-    }
+    return [pscustomobject]@{ Output = @($result.Stdout -split "`r?`n") }
 }
 
 function Get-AvdConfiguredImage {
     # 读 AVD config.ini 的 image.sysdir.1（实测格式：
-    #   image.sysdir.1 = system-images\android-35\google_apis\x86_64\
+    #   image.sysdir.1 = system-images\android-35\google_apis\<abi>\
     # 分隔符/尾斜杠随平台浮动），归一化为正斜杠、无尾斜杠形态供与锁定镜像比对。
     # AVD 定义定位：优先 ANDROID_AVD_HOME，再读 <name>.ini 指针文件的 path=，兜底默认目录。
     param(
@@ -230,19 +213,11 @@ function Test-EmulatorAcceleration {
 
 switch ($Action) {
     'create' {
-        $listResult = Invoke-AvdManagerCommandLine -CommandLine "`"$avdManagerBat`" list avd -c"
-        if ($listResult.ExitCode -ne 0) {
-            Write-Diagnostic -Level 'ERROR' -Message "avdmanager list avd 失败（exit=$($listResult.ExitCode)）：$($listResult.Output -join ' | ')"
-            exit 1
-        }
+        $listResult = Invoke-AvdManager -Arguments @('list', 'avd', '-c')
         if (@($listResult.Output | Where-Object { $_.Trim() -eq $AvdName }).Count -gt 0) {
             if ($Recreate) {
                 Write-Diagnostic "按 -Recreate 删除既有 AVD '$AvdName'（含磁盘镜像）后重建……"
-                $deleteResult = Invoke-AvdManagerCommandLine -CommandLine "`"$avdManagerBat`" delete avd -n `"$AvdName`""
-                if ($deleteResult.ExitCode -ne 0) {
-                    Write-Diagnostic -Level 'ERROR' -Message "avdmanager delete avd 失败（exit=$($deleteResult.ExitCode)）：$($deleteResult.Output -join ' | ')"
-                    exit 1
-                }
+                Invoke-AvdManager -Arguments @('delete', 'avd', '-n', $AvdName) | Out-Null
             }
             else {
                 # 幂等不只认名字：核验既有 AVD 的 config.ini 系统镜像与锁定镜像一致，
@@ -264,11 +239,7 @@ switch ($Action) {
         }
 
         Write-Diagnostic "创建 AVD '$AvdName'（$systemImage / $deviceProfile）……"
-        $createResult = Invoke-AvdManagerCommandLine -AnswerNoToPrompts -CommandLine "`"$avdManagerBat`" create avd -n `"$AvdName`" -k `"$systemImage`" -d `"$deviceProfile`""
-        if ($createResult.ExitCode -ne 0) {
-            Write-Diagnostic -Level 'ERROR' -Message "avdmanager create avd 失败（exit=$($createResult.ExitCode)）：$($createResult.Output -join ' | ')"
-            exit 1
-        }
+        Invoke-AvdManager -AnswerNoToPrompts -Arguments @('create', 'avd', '-n', $AvdName, '-k', $systemImage, '-d', $deviceProfile) | Out-Null
         Write-Diagnostic "AVD '$AvdName' 创建完成。"
         exit 0
     }
@@ -449,7 +420,7 @@ switch ($Action) {
     'status' {
         $accel = Test-EmulatorAcceleration
         Write-Diagnostic "加速探测：$($accel.Usable ? '可用' : '不可用')——$($accel.Detail)"
-        $avdList = Invoke-AvdManagerCommandLine -CommandLine "`"$avdManagerBat`" list avd -c"
+        $avdList = Invoke-AvdManager -Arguments @('list', 'avd', '-c')
         Write-Diagnostic "已定义 AVD：$(@($avdList.Output | Where-Object { $_ -match '\S' }) -join ', ')"
         $devices = Invoke-NativeCommandOutput -Command $adbExe -Arguments @('devices', '-l') -Name 'adb-devices-l'
         Write-Host $devices.Stdout.Trim()
