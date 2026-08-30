@@ -467,7 +467,7 @@ public sealed class ListBackorderOrdersQueryHandler(ApplicationDbContext dbConte
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.BackorderOrders.AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
         if (WmsListQueryFilters.TryParseStatus<BackorderOrderStatus>(request.Status, out var status))
@@ -554,7 +554,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.InboundOrders
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)
@@ -707,7 +707,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.OutboundOrders
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)
@@ -950,7 +950,7 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.WarehouseTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)
@@ -1277,7 +1277,7 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.CountExecutions
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)
@@ -1438,7 +1438,7 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.WcsTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)
@@ -1552,7 +1552,7 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var orderQuery = dbContext.InboundOrders
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)
@@ -1725,7 +1725,7 @@ public sealed class ListSupplierReturnRequestsQueryHandler(ApplicationDbContext 
     {
         var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var page = OffsetPage.From(request.Skip, request.Take);
-        var keyword = SearchTerm.From(request.Keyword).Value;
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.SupplierReturnRequests
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId)

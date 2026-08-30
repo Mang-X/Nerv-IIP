@@ -1,13 +1,13 @@
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
-using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 public sealed class WmsListQueryCompositionTests
 {
+    // Contract: PublicContract + Regression. Authority: Issue #2120 acceptance and pre-migration WMS v1 behavior.
     [Theory]
-    [InlineData(-1, 0, 0, 1)]
+    [InlineData(-1, 0, 0, 100)]
     [InlineData(0, 501, 0, 500)]
     public void Offset_page_keeps_legacy_clamp_semantics(
         int skip,
@@ -27,26 +27,23 @@ public sealed class WmsListQueryCompositionTests
     [InlineData("   ")]
     public void Search_term_treats_blank_keywords_as_absent(string? keyword)
     {
-        Assert.Null(SearchTerm.From(keyword).Value);
+        Assert.Null(ListQueryCriteria.NormalizeKeyword(keyword));
     }
 
     [Fact]
-    public void Tenant_scope_trims_ids_and_rejects_missing_ids()
+    public void Tenant_scope_trims_ids_and_preserves_missing_scope_as_no_match()
     {
         var tenant = TenantScope.From(" org-001 ", " env-dev ");
+        var missing = TenantScope.From(" ", "env-dev");
 
         Assert.Equal("org-001", tenant.OrganizationId);
         Assert.Equal("env-dev", tenant.EnvironmentId);
-        Assert.Equal(
-            "组织标识不能为空。",
-            Assert.Throws<KnownException>(() => TenantScope.From(" ", "env-dev")).Message);
-        Assert.Equal(
-            "环境标识不能为空。",
-            Assert.Throws<KnownException>(() => TenantScope.From("org-001", " ")).Message);
+        Assert.Null(missing.OrganizationId);
+        Assert.Equal("env-dev", missing.EnvironmentId);
     }
 
     [Fact]
-    public void Receiving_quality_validator_delegates_page_bounds_and_keeps_domain_limits()
+    public void Receiving_quality_validator_keeps_page_and_domain_limits()
     {
         var request = new ListReceivingQualityGatesRequest(
             "org-001",
@@ -62,7 +59,8 @@ public sealed class WmsListQueryCompositionTests
 
         var result = validator.Validate(request);
 
-        Assert.DoesNotContain(result.Errors, error => error.PropertyName is nameof(request.Skip) or nameof(request.Take));
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(request.Skip));
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(request.Take));
         Assert.Contains(result.Errors, error => error.PropertyName == nameof(request.GateStatus));
     }
 }
