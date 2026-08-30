@@ -679,10 +679,13 @@ $excludedSelectors = @(
 # provider 证明只含真实 PostgreSQL 用例，整类交给 postgres lane；后续 machine-overhead provider 与
 # ERP 工序人工 Redis/CAP transport 类并入治理后，选择器总数增加到 71；#2604 的历史 OEE fact
 # provider 类同样只含真实 PostgreSQL 用例，因此选择器总数为 72；#2807 的 MES 返工工单并发
-# 验收类整类进入 real-postgres lane 后，当前选择器总数为 73。
-Assert-Contract ($excludedSelectors.Count -eq 73) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# 验收类整类进入 real-postgres lane 后为 73；#2072 将单一 Periodic Inspection provider
+# fixture 按三项业务职责拆分，原 1 个选择器替换为 3 个，因此当前总数为 75。
+Assert-Contract ($excludedSelectors.Count -eq 75) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
-Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests'))) 'The Quality periodic-inspection PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
+foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
+    Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."
+}
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests'))) 'The Quality scrap-reason PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests'))) 'The MES CAP save-boundary PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests'))) 'The MES material-substitute snapshot PostgreSQL class must be excluded from the fast shard and owned by the real PostgreSQL lane.'

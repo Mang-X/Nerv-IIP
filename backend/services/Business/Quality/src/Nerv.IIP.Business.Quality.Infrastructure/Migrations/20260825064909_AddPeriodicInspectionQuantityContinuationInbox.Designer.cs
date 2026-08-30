@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825064909_AddPeriodicInspectionQuantityContinuationInbox")]
+    partial class AddPeriodicInspectionQuantityContinuationInbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1666,11 +1669,6 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id frozen at context creation.");
 
-                    b.Property<DateTime?>("QuantityContinuationNextAttemptAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("quantity_continuation_next_attempt_at_utc")
-                        .HasComment("Persisted fair-scheduling time after which the pending quantity backlog may claim another bounded batch.");
-
                     b.Property<DateTime?>("QuantityGenerationAnchorAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("quantity_generation_anchor_at_utc")
@@ -1742,8 +1740,8 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OperationContextId");
 
-                    b.HasIndex("QuantityContinuationNextAttemptAtUtc", "Id")
-                        .HasDatabaseName("ix_periodic_inspection_runtime_quantity_continuation_due");
+                    b.HasIndex("Status", "QuantityGenerationAnchorAtUtc")
+                        .HasDatabaseName("ix_periodic_inspection_runtime_status_quantity_continuation");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "NextTimeWindowAtUtc")
                         .HasDatabaseName("ix_periodic_inspection_runtime_scope_status_next_time");
@@ -1762,7 +1760,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_interval", "(time_interval_hours IS NOT NULL AND time_interval_hours > 0) OR (quantity_interval IS NOT NULL AND quantity_interval > 0)");
 
-                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_continuation", "(quantity_generation_anchor_at_utc IS NULL AND quantity_continuation_next_attempt_at_utc IS NULL) OR (quantity_generation_anchor_at_utc IS NOT NULL AND quantity_continuation_next_attempt_at_utc IS NOT NULL AND status IN ('active', 'closed') AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_continuation", "quantity_generation_anchor_at_utc IS NULL OR (status = 'active' AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_watermark", "last_generated_quantity_window_sequence >= 0");
 
