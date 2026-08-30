@@ -137,13 +137,18 @@ public sealed class ErpDemoSeedStartupGovernanceTests
     public async Task Healthy_host_releases_its_provider_when_the_factory_stops_the_host()
     {
         var factory = new ProviderCleanupFactory();
-        using var client = factory.CreateClient();
-        using var response = await client.GetAsync("/health");
+        try
+        {
+            using var client = factory.CreateClient();
+            using var response = await client.GetAsync("/health");
 
-        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
-        Assert.False(factory.ProviderDisposed);
-
-        await factory.DisposeAsync();
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+            Assert.False(factory.ProviderDisposed);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+        }
 
         Assert.True(factory.ProviderDisposed);
     }
