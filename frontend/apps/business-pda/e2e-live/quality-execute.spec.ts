@@ -121,7 +121,7 @@ async function readBackCompletedTask(
   authorization: string,
   organizationId: string,
   environmentId: string,
-  scopeKind: string,
+  scopeKind: 'self',
   scopeId: string,
   inspectionTaskId: string,
   skuCode: string | undefined,
@@ -165,6 +165,7 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
   await loginViaUi(page)
   const authenticatedPrincipalId = await readAuthenticatedPrincipalId(page)
   expect(authenticatedPrincipalId.length).toBeGreaterThan(0)
+  const expectedScope = { scopeKind: 'self' as const, scopeId: authenticatedPrincipalId }
 
   // 收集列表 GET 响应（提交后按 inspectionTaskId 反查 skuCode，用于回读窄化过滤）。
   const listItems: InspectionTaskItem[] = []
@@ -388,17 +389,14 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
 
     // 状态回读：status=completed 列表中找到该任务，且回链 inspectionRecordId 与提交响应一致。
     const skuCode = listItems.find((t) => t.inspectionTaskId === inspectionTaskId)?.skuCode
-    expect(listScope, 'PDA 任务列表请求缺少 self scope').toEqual({
-      scopeKind: 'self',
-      scopeId: authenticatedPrincipalId,
-    })
+    expect(listScope, 'PDA 任务列表请求缺少 self scope').toEqual(expectedScope)
     const completedTask = await readBackCompletedTask(
       api,
       authorization,
       organizationId as string,
       environmentId as string,
-      listScope!.scopeKind,
-      listScope!.scopeId,
+      expectedScope.scopeKind,
+      expectedScope.scopeId,
       inspectionTaskId as string,
       skuCode,
     )
