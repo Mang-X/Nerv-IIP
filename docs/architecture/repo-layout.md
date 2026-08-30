@@ -61,7 +61,7 @@ Nerv-IIP/
 
 - services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。当前业务服务包括 MasterData、ProductEngineering、Inventory、Quality、Mes、DemandPlanning、BarcodeLabel、Approval、Wms、IndustrialTelemetry、Maintenance、Erp 和 Scheduling。
 - gateway：PlatformGateway、BusinessGateway 与前端聚合接口。PlatformGateway 只承载主平台控制面 facade；BusinessGateway 承载业务前端或业务移动端 facade。
-- common：窄共享库，如 Contracts、Sdk、Caching、Observability、Testing。
+- common：窄共享库，如 Contracts、Sdk、Caching、Observability、Web、Testing；其中 Web 只承载跨 Host 复用的 HTTP 基础设施，不承载端点或领域规则。
 - tests：后端测试项目与测试宿主。
 - backend 不承载 Connector Host 与 Connector。
 
