@@ -79,6 +79,33 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   expect(pageErrors).toEqual([])
 
   await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/完整窗口共 31 个业务日聚合桶，按\s*1 个站点分别呈现/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '站点 SITE-DETROIT', exact: true })).toHaveCount(0)
+  await expect(page.getByText('1 台', { exact: true }).first()).toBeVisible()
+  await expect(
+    page.getByText('首桶 UTC：2026-03-01 00:00:00 UTC – 2026-03-01 16:00:00 UTC', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
+  await page.screenshot({
+    path: testInfo.outputPath('issue-2819-oee-device-scope.png'),
+    fullPage: true,
+  })
+
+  const organizationTrendResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      url.pathname === '/api/business-console/v1/telemetry/oee/aggregates' &&
+      url.searchParams.get('dimension') === 'day' &&
+      url.searchParams.get('take') === '100' &&
+      !url.searchParams.has('deviceAssetId')
+    )
+  })
+  await page.getByPlaceholder('设备资产编号').fill('')
+  await organizationTrendResponse
+
   await expect(page.getByText(/完整窗口共 65 个业务日聚合桶，按\s*2 个站点分别呈现/)).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-DETROIT', exact: true })).toBeVisible()
@@ -91,17 +118,17 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await expect(page.getByText('3/1', { exact: true })).toHaveCount(3)
   await expect(page.getByText('3/31', { exact: true })).toHaveCount(2)
   await expect(page.getByText('数据不完整', { exact: true })).toHaveCount(0)
-  await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
+  await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('')
 
   const suzhouPanel = page.locator('[data-oee-site="SITE-SUZHOU"]')
   await expect(suzhouPanel.locator('[data-oee-segment]')).toHaveCount(2)
   await expect(
-    suzhouPanel.getByText('首桶 UTC：2026-02-28 15:00:00 UTC – 2026-03-01 15:00:00 UTC', {
+    suzhouPanel.getByText('首桶 UTC：2026-03-01 00:00:00 UTC – 2026-03-01 15:00:00 UTC', {
       exact: true,
     }),
   ).toBeVisible()
   await expect(
-    suzhouPanel.getByText('首桶 UTC：2026-02-28 16:00:00 UTC – 2026-03-01 16:00:00 UTC', {
+    suzhouPanel.getByText('首桶 UTC：2026-03-01 00:00:00 UTC – 2026-03-01 16:00:00 UTC', {
       exact: true,
     }),
   ).toBeVisible()
@@ -110,6 +137,11 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await detroitPanel.getByText('查看逐桶 UTC 窗口').click()
   await expect(
     detroitPanel.getByText('2026-03-08：2026-03-08 05:00:00 UTC – 2026-03-09 04:00:00 UTC', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    detroitPanel.getByText('2026-03-31：2026-03-31 04:00:00 UTC – 2026-04-01 00:00:00 UTC', {
       exact: true,
     }),
   ).toBeVisible()
@@ -220,9 +252,20 @@ function businessDayResponse(url: URL) {
     })
   })
   const allBuckets = [...primaryBuckets, ...tokyoHistory]
+  const deviceAssetId = url.searchParams.get('deviceAssetId')
+  const matchingBuckets = deviceAssetId
+    ? deviceAssetId === 'DEV-CNC-01'
+      ? primaryBuckets
+          .filter((item) => item.siteCode === 'SITE-SUZHOU')
+          .map((item) => ({ ...item, deviceAssetId, deviceCount: 1 }))
+      : []
+    : allBuckets
+  const windowBuckets = matchingBuckets
+    .filter((item) => bucketIntersectsWindow(item, url))
+    .map((item) => clipBucketToWindow(item, url))
   const skip = Number(url.searchParams.get('skip') ?? 0)
   const take = Number(url.searchParams.get('take') ?? 20)
-  return aggregateResponse(url, 'day', allBuckets.slice(skip, skip + take), allBuckets.length)
+  return aggregateResponse(url, 'day', windowBuckets.slice(skip, skip + take), windowBuckets.length)
 }
 
 function shiftResponse(url: URL) {
@@ -262,6 +305,28 @@ function aggregateResponse(
     totalCount,
     skip: Number(url.searchParams.get('skip') ?? 0),
     take: Number(url.searchParams.get('take') ?? 20),
+  }
+}
+
+function bucketIntersectsWindow(bucket: Record<string, unknown>, url: URL) {
+  const bucketStart = Date.parse(String(bucket.bucketStartUtc))
+  const bucketEnd = Date.parse(String(bucket.bucketEndUtc))
+  const windowStart = Date.parse(url.searchParams.get('windowStartUtc') ?? '')
+  const windowEnd = Date.parse(url.searchParams.get('windowEndUtc') ?? '')
+  return bucketStart < windowEnd && bucketEnd > windowStart
+}
+
+function clipBucketToWindow(bucket: Record<string, unknown>, url: URL) {
+  const windowStart = Date.parse(url.searchParams.get('windowStartUtc') ?? '')
+  const windowEnd = Date.parse(url.searchParams.get('windowEndUtc') ?? '')
+  return {
+    ...bucket,
+    bucketStartUtc: new Date(
+      Math.max(Date.parse(String(bucket.bucketStartUtc)), windowStart),
+    ).toISOString(),
+    bucketEndUtc: new Date(
+      Math.min(Date.parse(String(bucket.bucketEndUtc)), windowEnd),
+    ).toISOString(),
   }
 }
 
