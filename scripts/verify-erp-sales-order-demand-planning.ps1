@@ -177,10 +177,9 @@ function Stop-Man517PortOwner {
     try {
         if ($null -ne $Ownership.ManagedProcess) {
             $existing = Get-Process -Id $Ownership.ProcessId -ErrorAction SilentlyContinue
-            if ($null -ne $existing -and $existing.StartTime -ne $Ownership.ProcessStartTime) {
-                throw "managed owner PID $($Ownership.ProcessId) start time changed; refusing to stop an unowned process."
+            if ($null -eq $existing -or $existing.StartTime -eq $Ownership.ProcessStartTime) {
+                $Ownership.ManagedProcess.Stop.Invoke($Reason) | Out-Null
             }
-            $Ownership.ManagedProcess.Stop.Invoke($Reason) | Out-Null
         }
     }
     catch { $stopFailures.Add("managed root: $($_.Exception.Message)") }
