@@ -23,10 +23,12 @@ public sealed class ReworkWorkOrderCostApplicationTests
     {
         await using var db = CreateDb();
         var integrationEvent = ReworkCreated("evt-rework-created-001");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
             db,
             db,
-            TestWorkOrderCostMutationLock.Instance);
+            TestWorkOrderCostMutationLock.Instance,
+            deadLetters);
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
@@ -37,6 +39,31 @@ public sealed class ReworkWorkOrderCostApplicationTests
         Assert.Equal("ncr-001", cost.SourceNcrId);
         Assert.Equal("NCR-2026-0001", cost.SourceNcrCode);
         Assert.Equal("WO-SOURCE-001", cost.SourceWorkOrderId);
+    }
+
+    [Fact]
+    public async Task Unsupported_rework_event_version_is_dead_lettered_without_attributing_cost()
+    {
+        await using var db = CreateDb();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var integrationEvent = ReworkCreated("evt-rework-created-unsupported") with
+        {
+            EventVersion = MesIntegrationEventVersions.V1 + 1,
+        };
+        var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
+            db,
+            db,
+            TestWorkOrderCostMutationLock.Instance,
+            deadLetters);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Empty(db.WorkOrderCosts);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, deadLetter.FailureCode);
     }
 
     [Fact]
@@ -65,6 +92,32 @@ public sealed class ReworkWorkOrderCostApplicationTests
         Assert.Equal("WO-SOURCE-001", item.SourceWorkOrderId);
         Assert.Equal(0m, response.OrdinaryCostTotal);
         Assert.Equal(30m, response.ReworkCostTotal);
+    }
+
+    [Fact]
+    public async Task Cost_readback_filters_work_order_inside_the_requested_environment()
+    {
+        await using var db = CreateDb();
+        var occurredAtUtc = DateTimeOffset.Parse("2026-08-30T02:00:00Z");
+        var target = WorkOrderCost.Open("org-001", "env-dev", "WO-RW-001", "FG-001");
+        target.AttributeRework("ncr-001", "NCR-2026-0001", "WO-SOURCE-001", "FG-001");
+        target.RecordLabor("RPT-TARGET", "WC-01", 1m, 30m, "CNY", false, occurredAtUtc);
+        var otherWorkOrder = WorkOrderCost.Open("org-001", "env-dev", "WO-RW-OTHER", "FG-001");
+        otherWorkOrder.RecordLabor("RPT-OTHER-WO", "WC-01", 1m, 40m, "CNY", false, occurredAtUtc);
+        var otherEnvironment = WorkOrderCost.Open("org-001", "env-other", "WO-RW-001", "FG-001");
+        otherEnvironment.RecordLabor("RPT-OTHER-ENV", "WC-01", 1m, 50m, "CNY", false, occurredAtUtc);
+        db.WorkOrderCosts.AddRange(target, otherWorkOrder, otherEnvironment);
+        await db.SaveChangesAsync();
+
+        var response = await new ListWorkOrderCostsQueryHandler(db).Handle(
+            new ListWorkOrderCostsQuery("org-001", "env-dev", WorkOrderId: "WO-RW-001"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("WO-RW-001", item.WorkOrderId);
+        Assert.Equal(1, response.Total);
+        Assert.Equal(30m, response.ReworkCostTotal);
+        Assert.Equal(0m, response.OrdinaryCostTotal);
     }
 
     [Fact]
@@ -105,7 +158,7 @@ public sealed class ReworkWorkOrderCostApplicationTests
 
         var reworkCreated = ReworkCreated("evt-rework-created-closure");
         var attributionHandler = new ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
-            db, db, TestWorkOrderCostMutationLock.Instance);
+            db, db, TestWorkOrderCostMutationLock.Instance, deadLetters);
         await attributionHandler.HandleAsync(reworkCreated, CancellationToken.None);
         await attributionHandler.HandleAsync(reworkCreated, CancellationToken.None);
 

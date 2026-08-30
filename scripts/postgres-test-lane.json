@@ -314,6 +314,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_nonzero_machine_overhead_still_fails_closed_for_priced_labor_in_another_currency",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_partial_capitalization_settle_void_and_final_receipt_persist_balanced_vouchers",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_priced_labor_then_zero_not_applicable_machine_settle_and_void_do_not_freeze_machine_currency",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_rework_origin_arriving_after_cost_events_stays_isolated_and_queryable",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_rejects_duplicate_settlement_void_and_covered_report_without_half_commit",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_zero_available_machine_settle_and_void_do_not_poison_later_priced_labor_currency",

@@ -19,12 +19,26 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
     ApplicationDbContext dbContext,
     ITransactionUnitOfWork unitOfWork,
-    IWorkOrderCostMutationLock mutationLock)
+    IWorkOrderCostMutationLock mutationLock,
+    IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<ReworkWorkOrderCreatedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.rework-work-order-cost-origin";
 
+    private readonly IntegrationEventConsumerGuard<ReworkWorkOrderCreatedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MesIntegrationEventTypes.ReworkWorkOrderCreated,
+            MesIntegrationEventVersions.V1));
+
     public Task HandleAsync(
+        ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+        => consumerGuard.HandleAsync(integrationEvent, HandleValidAsync, cancellationToken);
+
+    private Task HandleValidAsync(
         ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {

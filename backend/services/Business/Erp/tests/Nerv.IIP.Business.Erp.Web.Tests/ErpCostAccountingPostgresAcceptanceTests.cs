@@ -75,7 +75,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await using (var attributionDb = new ApplicationDbContext(options, new NoopMediator()))
         {
             var handler = new ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
-                attributionDb, attributionDb, new PostgreSqlWorkOrderCostMutationLock(attributionDb));
+                attributionDb, attributionDb, new PostgreSqlWorkOrderCostMutationLock(attributionDb), deadLetters);
             await handler.HandleAsync(created, CancellationToken.None);
             await handler.HandleAsync(created, CancellationToken.None);
         }
