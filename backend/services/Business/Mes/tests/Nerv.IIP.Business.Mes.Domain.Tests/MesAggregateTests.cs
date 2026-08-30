@@ -13,6 +13,48 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 public sealed class MesAggregateTests
 {
     [Fact]
+    public void Rework_work_order_captures_quality_source_facts_and_creation_event()
+    {
+        var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
+
+        var workOrder = WorkOrder.CreateRework(
+            "org-001",
+            "env-dev",
+            "WO-RW-001",
+            "SKU-001",
+            "PV-001",
+            "PCS",
+            3m,
+            100,
+            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+            "WO-SOURCE-001",
+            "OP-SOURCE-10",
+            "DEF-001",
+            "ncr-001",
+            "NCR-2026-0001",
+            "LOT-001",
+            "SN-001",
+            requestedAtUtc,
+            "corr-001",
+            "evt-rework-requested-001");
+
+        Assert.Equal(WorkOrder.ReworkType, workOrder.WorkOrderType);
+        Assert.Equal("WO-SOURCE-001", workOrder.SourceWorkOrderId);
+        Assert.Equal("OP-SOURCE-10", workOrder.SourceOperationTaskId);
+        Assert.Equal("DEF-001", workOrder.SourceDefectNo);
+        Assert.Equal("ncr-001", workOrder.SourceNcrId);
+        Assert.Equal("NCR-2026-0001", workOrder.SourceNcrCode);
+        Assert.Equal("LOT-001", workOrder.SourceLotNo);
+        Assert.Equal("SN-001", workOrder.SourceSerialNo);
+        Assert.Equal(requestedAtUtc, workOrder.SourceReworkRequestedAtUtc);
+        var created = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Same(workOrder, created.WorkOrder);
+        Assert.Equal(requestedAtUtc, created.RequestedAtUtc);
+        Assert.Equal("corr-001", created.CorrelationId);
+        Assert.Equal("evt-rework-requested-001", created.CausationId);
+    }
+
+    [Fact]
     public void WorkOrder_references_ProductEngineering_production_version_by_public_id()
     {
         var workOrder = WorkOrder.Create(
@@ -27,6 +69,8 @@ public sealed class MesAggregateTests
 
         Assert.Equal("production-version-from-issue-95", workOrder.ProductionVersionId);
         Assert.Equal("SKU-001", workOrder.SkuId);
+        Assert.Equal(WorkOrder.StandardType, workOrder.WorkOrderType);
+        Assert.Null(workOrder.SourceNcrId);
     }
 
     [Fact]
@@ -180,6 +224,35 @@ public sealed class MesAggregateTests
         Assert.Equal("SN-FG-001", report.SerialNo);
         Assert.True(report.CompletesOperation);
         Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void ProductionReport_keeps_the_submitting_operator_and_carries_it_onto_the_reversal_row()
+    {
+        var report = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OP-001",
+            "WO-001",
+            "OP-10",
+            9m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-05-23T09:00:00Z"),
+            reportedBy: "  user-emp-010  ");
+
+        Assert.Equal("user-emp-010", report.ReportedBy);
+
+        var reversal = ProductionReport.Reverse(
+            report,
+            "PRPT-OP-001-R",
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            "reported on the wrong operation",
+            "user-supervisor");
+
+        // 冲销行是另一条报工事实，提交它的是执行冲销的人，不是原报工人。
+        Assert.Equal("user-supervisor", reversal.ReportedBy);
+        Assert.Equal("user-supervisor", reversal.ReversedBy);
     }
 
     [Fact]

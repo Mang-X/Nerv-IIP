@@ -35,7 +35,12 @@ pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <h
 - head SHA 双源交叉：`gh pr view` 与 `git ls-remote` 各取一次，对上再往下走。
 - retarget、force-push、合并 main 之后：本步重做。上一轮的行内锚点和结论随 history rewrite 一起失效。
 
-完成判据：head SHA、base SHA、改动路径清单三样都拿到且非空。
+再定位两轴的判据来源——**这一步归协调者，不是席位的活**。席位收到的应是成品清单，不是搜索任务：
+
+- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`（机械可算）；再从 `docs/governance/README.md`、`docs/architecture/README.md` 与 `docs/adr/README.md` 按改动面挑出相关的当前规则、架构和决策记录，**列成文件清单**。Reference 只在改动涉及其查询事实时加入，冻结 Report 不作为当前标准。
+- **规格来源**：票号取自 PR body 的 `Fixes #` / `Closes #`。取不到就问用户（票号常只在分支名或 commit 里）。仍然没有，就地判定**无规格可依**，规格轴席位不派。
+
+完成判据：head SHA、base SHA、改动路径清单、标准来源清单、规格来源（票号或「无规格可依」）都拿到。
 
 **这一步的产出本身就是发现来源。** 改动面里出现 `unclassified-path`、`rule-self-check` 之类的信号，是还没派席位就已经到手的阻断项——比席位早，也便宜得多。
 
@@ -56,6 +61,8 @@ done
 派单时：
 
 - **判据整段粘进提示词。** 席位读不到本技能文件，也读不到你的会话。
+- **席位收成品，不收搜索任务。** Step 1 定位出的文件清单、票号或已取回的规格正文，直接给它；不要让它自己去找。
+- 判定为「无规格可依」时**不派规格轴席位**，汇报里直接写该结论。
 - 中间文件名带 PR 号——并行席位共享 scratchpad，同名文件会串台。
 - 席位自己不再派子代理。
 - 每轴 400 字以内，阻断项与建议分开写。
@@ -63,7 +70,7 @@ done
 
 ### 标准轴
 
-判据来源：从仓库根到每个改动路径的全部 `AGENTS.md` 与 `AGENTS.override.md`，加 `docs/architecture/` 下相关治理文档与 ADR。
+判据来源：Step 1 定位出的标准来源清单。**按清单读，不自行扩大搜索面**。
 
 报告改动违反了哪条已文档化的规则，每条给出规则所在的文件与行。区分硬违反（文档写了「必须」「不得」）与判断题。
 
@@ -71,15 +78,15 @@ done
 
 ### 规格轴
 
-判据来源：`gh issue view <票号>`（票号取自 PR body 的 `Fixes #` / `Closes #`），以及 `docs/superpowers/specs/` 下对应规格。
+判据来源：Step 1 定位出的 GitHub Issue。本仓库的规格权威是**票**，不是目录——见 `docs/superpowers/AGENTS.md`：新 spec/plan 以对应 Issue 为唯一权威，本地 spec 文件只含一个指向 Issue 的永久链接。
 
-报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引 spec 原文。
+- 规格住在 Issue 正文的 `<!-- superpowers-spec:start -->` / `<!-- superpowers-spec:end -->` 受管区块内：`gh issue view <票号> --json body`
+- 走 plan 流程的票，Task 清单与完成态在索引评论里：`gh issue view <票号> --json comments`
+- `docs/superpowers/specs/` 与 `plans/` 下的既有文件**不迁移、不改写**，是历史件——**不要去那里找当前 PR 的规格**
 
-PR 没有关联票时按序找，找完仍无就明说「无规格可依」——实现本身不能当需求用：
+报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引原文。
 
-1. PR body 自己声明的交付范围
-2. base 树里被本 PR 声称关闭的欠账段或 TODO（`gh api repos/<owner>/<repo>/contents/<path>?ref=<base>`）
-3. `docs/superpowers/specs/` 下同主题规格
+实现本身不能当需求用——反推不出的就说没有。
 
 ### 证据轴
 
@@ -130,17 +137,20 @@ PR 没有关联票时按序找，找完仍无就明说「无规格可依」—�
 - 行内评论发完回读一次，确认锚在预期那行
 - 中文发布，见语言治理
 
-完成判据：每轴各有结论（含「本轴无发现」），且每条阻断项都能指到 head 树上的具体位置。
+末尾给一行汇总：**每轴各多少条发现，以及该轴内最严重的一条**。不跨轴挑冠军。
+
+完成判据：每轴各有结论（含「本轴无发现」或「无规格可依」），且每条阻断项都能指到 head 树上的具体位置。
 
 ## 权威来源（读，不要复述）
 
 路径均相对仓库根。技能的源目录（`skills/<name>/`）与安装目录（`.agents/skills/<name>/`）到根的深度差一层，文件相对写法必在一端解析错，所以这里不用 markdown 链接。
 
 - `AGENTS.md` 与目标路径上的各级 `AGENTS.md` —— 开工与交付纪律
-- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式
-- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径
-- `docs/architecture/document-language-governance.md` —— 协作文本发布门禁
-- `docs/architecture/decision-record-governance.md` —— PR 触及 ADR 时的分层判据与取代规则
+- `docs/governance/README.md` —— 当前工程规则总入口
+- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式（M2-H 迁移前路径）
+- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径（M2 对应 owner 迁移前路径）
+- `docs/governance/docs/language.md` —— 协作文本发布规则
+- `docs/governance/decisions/records.md` —— PR 触及 ADR 时的分层判据与取代规则
 
 ## 与其它技能的边界
 

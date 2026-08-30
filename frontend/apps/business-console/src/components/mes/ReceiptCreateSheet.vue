@@ -173,19 +173,6 @@ const contextItems = computed(() => [
             </p>
           </NvField>
           <NvField>
-            <NvFieldLabel for="receipt-unit-cost">单位成本</NvFieldLabel>
-            <NvInput
-              id="receipt-unit-cost"
-              v-model="form.unitCost"
-              inputmode="decimal"
-              min="0.000001"
-              step="0.000001"
-              required
-              type="number"
-              :data-invalid="showErrors && invalid.unitCost ? '' : undefined"
-            />
-          </NvField>
-          <NvField>
             <NvFieldLabel for="receipt-uom">单位</NvFieldLabel>
             <NvSearchSelect
               id="receipt-uom"

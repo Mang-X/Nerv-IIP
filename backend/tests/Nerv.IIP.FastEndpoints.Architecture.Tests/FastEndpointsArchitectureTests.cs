@@ -417,6 +417,26 @@ public sealed class FastEndpointsArchitectureTests
         Assert.DoesNotContain("localhost:5108", backfill);
     }
 
+    // Inventory 的权威成本读取回查 MES；MES 已等待 Inventory，回填必须使用动态服务发现且不反向等待。
+    [Fact]
+    public void Aspire_apphost_inventory_backfills_mes_authority_reference_without_waiting()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var backfill = Regex
+            .Matches(programText, @"businessInventory = businessInventory[^;]*;", RegexOptions.Singleline)
+            .Select(match => match.Value)
+            .Single(statement => statement.Contains("Mes__BaseUrl", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ".WithEnvironment(\"Mes__BaseUrl\", businessMes.GetEndpoint(\"http\"))",
+            backfill);
+        Assert.Contains(".WithReference(businessMes)", backfill);
+        Assert.DoesNotContain(".WaitFor(", backfill);
+        Assert.DoesNotContain("localhost:5111", backfill);
+    }
+
     [Fact]
     public void Aspire_apphost_scheduling_waits_for_mes_material_readiness_source()
     {
@@ -656,4 +676,5 @@ public sealed class FastEndpointsArchitectureTests
 
         throw new DirectoryNotFoundException("Repository root was not found.");
     }
+
 }

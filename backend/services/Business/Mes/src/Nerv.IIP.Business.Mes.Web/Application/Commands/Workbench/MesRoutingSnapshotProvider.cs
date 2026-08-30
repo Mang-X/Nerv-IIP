@@ -22,7 +22,8 @@ public sealed record MesRoutingOperationSnapshot(
     string WorkCenterId,
     IReadOnlyCollection<string> AlternativeWorkCenterIds,
     int StandardMinutes,
-    bool RequiresQualityInspection);
+    bool RequiresQualityInspection,
+    string? RequiredSkillCode = null);
 
 public enum MesRoutingSnapshotStatus
 {
@@ -158,7 +159,8 @@ public sealed class HttpMesProductEngineeringRoutingSnapshotProvider(
                 x.WorkCenterCode.Trim(),
                 [],
                 x.StandardMinutes,
-                x.RequiresQualityInspection))
+                x.RequiresQualityInspection,
+                string.IsNullOrWhiteSpace(x.RequiredSkillCode) ? null : x.RequiredSkillCode.Trim()))
             .ToArray();
 
         return MesRoutingSnapshotResult.Captured(
@@ -258,4 +260,5 @@ internal sealed record RoutingOperationResponse(
     string ControlKey,
     bool RequiresReporting,
     bool RequiresQualityInspection,
-    bool IsOutsourced);
+    bool IsOutsourced,
+    string? RequiredSkillCode = null);

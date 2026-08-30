@@ -7,8 +7,8 @@
 
 ## 开始前
 
-1. 先读根 `docs/architecture/implementation-readiness.md`（当前阶段、已交付服务、端口）。
-2. 再读所改业务域的**产品业务文档**（见本目录 AGENTS.md「文档及时性」一节），以它为业务 / IA / UX 的事实依据。
-3. 后端能力以**代码事实**为准（门面真实支持什么），不要凭旧知识假设。
+1. 先读当前 Issue/spec 与所改业务域的**产品业务文档**（见本目录 AGENTS.md「文档及时性」一节），以它们为业务 / IA / UX 的事实依据。
+2. 后端能力以 facade、生成客户端、公开契约和测试的当前事实为准，不凭旧状态文档假设。
+3. 发布、里程碑规划或跨域能力盘点时读取 `docs/status/current.md`；端口与 worktree 动态地址分别通过 `.\nerv.ps1 ports` 和 `.\nerv.ps1 describe <resource>` 获取。
 
 完整指引（三大支柱、目录定位、权限同步、工厂对接、门禁、Done 定义）见 [AGENTS.md](./AGENTS.md)。

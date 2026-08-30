@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Http;
 using Nerv.IIP.BusinessGateway.Web;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -141,6 +143,56 @@ public sealed class BusinessGatewayHttpClientResilienceTests
         Assert.Equal(invocations.Length, calls.Total);
     }
 
+    [Fact]
+    public async Task Quality_scrap_reason_read_client_uses_standard_resilience()
+    {
+        var calls = new DownstreamCallCounter();
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder =>
+            {
+                builder.UseSetting("Quality:BaseUrl", "http://quality.local");
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                        new QualityScrapReasonTransientHandlerFilter(calls)));
+            });
+
+        var response = await factory.Services
+            .GetRequiredService<IBusinessQualityScrapReasonCodeClient>()
+            .ListScrapQualityReasonCodesAsync(
+                "internal-token",
+                new BusinessConsoleScrapQualityReasonCodeListRequest("org-001", "env-dev"),
+                CancellationToken.None);
+
+        Assert.Empty(response.Items);
+        Assert.Equal(3, calls.Total);
+    }
+
+    [Fact]
+    public async Task Mes_material_prevalidation_read_uses_standard_resilience()
+    {
+        var calls = new DownstreamCallCounter();
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder =>
+            {
+                builder.UseSetting("Mes:BaseUrl", "http://mes.local");
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                        new MesMaterialPrevalidationTransientHandlerFilter(calls)));
+            });
+
+        var response = await factory.Services
+            .GetRequiredService<IBusinessMesMaterialPrevalidationClient>()
+            .PrevalidateAsync(
+                "internal-token",
+                "corr-001",
+                new MesMaterialScanPrevalidationRequest(
+                    "org-001", "env-dev", "MIR-001", "WO-001", "OP-10"),
+                CancellationToken.None);
+
+        Assert.Equal(MesMaterialScanDecision.Accepted, response.Decision);
+        Assert.Equal(3, calls.Total);
+    }
+
     [Theory]
     [InlineData(nameof(IBusinessGatewayAuthorizationClient), false)]
     [InlineData(nameof(IBusinessMasterDataClient), true)]
@@ -172,6 +224,8 @@ public sealed class BusinessGatewayHttpClientResilienceTests
         public int Total => callCount;
 
         public void Increment() => Interlocked.Increment(ref callCount);
+
+        public int IncrementAndGet() => Interlocked.Increment(ref callCount);
     }
 
     private sealed class DownstreamUnavailableHandlerFilter(DownstreamCallCounter calls)
@@ -196,6 +250,78 @@ public sealed class BusinessGatewayHttpClientResilienceTests
                     builder.PrimaryHandler = new DownstreamUnavailableHandler(calls);
                 }
             };
+    }
+
+    private sealed class QualityScrapReasonTransientHandlerFilter(DownstreamCallCounter calls)
+        : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
+            builder =>
+            {
+                next(builder);
+                if (builder.Name == nameof(IBusinessQualityScrapReasonCodeClient))
+                {
+                    builder.PrimaryHandler = new QualityScrapReasonTransientHandler(calls);
+                }
+            };
+    }
+
+    private sealed class QualityScrapReasonTransientHandler(DownstreamCallCounter calls) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var attempt = calls.IncrementAndGet();
+            if (attempt < 3)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"data\":{\"items\":[],\"total\":0}}",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        }
+    }
+
+    private sealed class MesMaterialPrevalidationTransientHandlerFilter(DownstreamCallCounter calls)
+        : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
+            builder =>
+            {
+                next(builder);
+                if (builder.Name == nameof(IBusinessMesMaterialPrevalidationClient))
+                {
+                    builder.PrimaryHandler = new MesMaterialPrevalidationTransientHandler(calls);
+                }
+            };
+    }
+
+    private sealed class MesMaterialPrevalidationTransientHandler(DownstreamCallCounter calls) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var attempt = calls.IncrementAndGet();
+            if (attempt < 3)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"data\":{\"decision\":\"accepted\",\"reasonCode\":\"material-scan-accepted\",\"materialIssueRequestId\":\"MIR-001\",\"workOrderId\":\"WO-001\",\"operationTaskId\":\"OP-10\",\"materialId\":\"MAT-001\",\"materialLotId\":\"LOT-001\",\"materialQualification\":\"primary\",\"evaluatedAtUtc\":\"2026-08-26T08:00:00Z\"}}",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        }
     }
 
     private sealed class DownstreamUnavailableHandler(DownstreamCallCounter calls) : HttpMessageHandler

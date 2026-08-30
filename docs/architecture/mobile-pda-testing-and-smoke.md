@@ -26,13 +26,23 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（6 个 spec / 57 个用例）
+### e2e spec 清单（8 个 spec / 68 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
   `a[href]` 提供可读名称、focus-visible、Enter 原生导航及 Space 保持链接语义；应用墙入口跳转作业页；
-  首页扫码 type+Enter 页内回显、不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心，
+  首页扫码 type+Enter 对 unknown 显示明确状态且不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心，
   核验可读角色与范围、键盘 Tab 焦点可见；退出清理 PDA 会话并回登录。
+- `e2e/barcode-navigation.spec.ts`（5）：375×812 mock Chromium 覆盖首页唯一 MES 双强 ID
+  直达并由目标页精确回读、歧义结果停留原页等待人工选择、未知码只展示授权服务端的未验证候选、
+  403 forbidden 留在扫码页，以及过期双强 ID 在目标页被当前主体授权范围拒绝；唯一结果用例同时
+  记录 Business Console mutation 请求清单，证明除只读语义的 `POST barcode/resolve` 外没有调用
+  扫码记录或业务写 endpoint。该层仍不证明真实后端、FullChain、真机或实体扫码枪。
+- `e2e/mes-scan-prevalidation.spec.ts`（3）：375×812 mock Chromium 覆盖 MES 四现场页的
+  歧义、未知、不支持和无权状态；报工物料/人员扫码只消费当前工单工序 pair 的服务端预校验，
+  错误扫码保持写门禁且业务写请求为零，正确物料扫码选择服务端核验批次并随报工 payload 提交；
+  领料连续扫码丢弃迟到结果，失败状态由后续正确扫码解除。该层不证明真实后端、FullChain、
+  真机或实体扫码枪。
 - `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；
@@ -56,7 +66,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
   通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
   默认并行度。
-- `e2e/equipment.spec.ts`（13）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
+- `e2e/equipment.spec.ts`（14）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
   `skip/take` 为安全整数且与请求精确一致；HTTP 200 + `success:false` 或错页响应显式错误与重试
   （不渲染空态、不保留旧行，也不缓存错页）、强 `workOrderId` 详情重校验与只读生命周期；工单设备引用可为
   设备公开 ID 或设备编码，设备位置查询只接收当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用
@@ -302,7 +312,8 @@ user_rotation`）后当前页三段布局（顶栏/内容/底栏）不错位、�
 > L3 模拟器可先挡上方「L3 人工勾验清单」各项，发版仍按本清单在实体机勾验。
 
 1. 安装 APK 启动，登录成功，首页三段（顶栏/内容/底栏）无遮挡，刘海/手势条不压内容。
-2. 硬件扫码枪扫一段条码 → 扫码条捕获并显示，焦点常驻、失焦自动回抢。
+2. 硬件扫码枪扫一段条码 → 扫码条捕获并进入解析状态；唯一 MES 强 ID 直达并由目标页重核验，
+   歧义码等待人工选择，未知/不支持/无权限码显示对应状态且不误跳；焦点常驻、失焦自动回抢。
 3. 应用墙触控目标够大、单手拇指可达；disabled 项不可点。
 4. 暗色 / 动态主色切换后整屏一致；横竖屏（若启用）无错位。
 5. 弱网 / 断网下写操作有清晰失败反馈（M2 起逐页验证）。

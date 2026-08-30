@@ -98,7 +98,8 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         decimal requestedQuantity,
         DateTimeOffset requestedAtUtc,
         bool isSupplementary,
-        string? originalMaterialIssueRequestNo)
+        string? originalMaterialIssueRequestNo,
+        string? substitutedMaterialId)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -106,6 +107,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
         OperationTaskId = string.IsNullOrWhiteSpace(operationTaskId) ? null : operationTaskId.Trim();
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
+        SubstitutedMaterialId = string.IsNullOrWhiteSpace(substitutedMaterialId)
+            ? null
+            : substitutedMaterialId.Trim();
         UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
         var normalizedOriginalRequestNo = string.IsNullOrWhiteSpace(originalMaterialIssueRequestNo)
             ? null
@@ -138,6 +142,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string WorkOrderId { get; private set; } = string.Empty;
     public string? OperationTaskId { get; private set; }
     public string MaterialId { get; private set; } = string.Empty;
+    public string? SubstitutedMaterialId { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
     public bool IsSupplementary { get; private set; }
     public string? OriginalMaterialIssueRequestNo { get; private set; }
@@ -218,7 +223,8 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         decimal requestedQuantity,
         DateTimeOffset requestedAtUtc,
         bool isSupplementary = false,
-        string? originalMaterialIssueRequestNo = null)
+        string? originalMaterialIssueRequestNo = null,
+        string? substitutedMaterialId = null)
     {
         var request = new MaterialIssueRequest(
             organizationId,
@@ -231,7 +237,8 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             requestedQuantity,
             requestedAtUtc,
             isSupplementary,
-            originalMaterialIssueRequestNo);
+            originalMaterialIssueRequestNo,
+            substitutedMaterialId);
         // The warehouse side only learns about a material issue through this event: it is the head of
         // the 领料 chain (MES -> WMS outbound/picking -> wmsRequestId 回写).
         request.AddDomainEvent(new MaterialIssueRequestCreatedDomainEvent(request));

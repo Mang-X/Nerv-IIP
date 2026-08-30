@@ -30,6 +30,7 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesMaterialIssueRequests,
@@ -38,6 +39,7 @@ import {
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionPlansQueryOptions,
@@ -48,14 +50,18 @@ import {
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
+  listBusinessConsoleSearchableDirectoryQueryOptions,
+  listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
-  recordBusinessConsoleMesDefectMutationOptions,
-  recordBusinessConsoleMesDowntimeEventMutationOptions,
+  mergeBusinessConsoleMesWorkOrdersMutationOptions,
+  recordBusinessConsoleMesDefectV2MutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
+  splitBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
@@ -70,9 +76,12 @@ import {
   type BusinessConsoleMesDispatchTaskRow,
   type BusinessConsoleMesDowntimeEventListEnvelope,
   type BusinessConsoleMesDowntimeEventRow,
+  type BusinessConsoleMesDowntimeReasonSummaryRow,
   type BusinessConsoleMesFoundationReadinessEnvelope,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
+  type BusinessConsoleMesLineSideInventoryBalanceItem,
+  type BusinessConsoleMesLineSideInventoryBalancesEnvelope,
   type BusinessConsoleMesMaterialReadinessEnvelope,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
@@ -91,8 +100,8 @@ import {
   type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
-  type BusinessConsoleMesRecordDefectRequest,
-  type BusinessConsoleMesRecordDowntimeEventRequest,
+  type BusinessConsoleMesRecordDefectV2Request,
+  type BusinessConsoleMesRecordDowntimeEventV2Request,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
   type BusinessConsoleMesRelatedQualityItemRow,
   type BusinessConsoleMesReceiptRequestListEnvelope,
@@ -124,10 +133,16 @@ import {
 import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
+  createServerPaginationState,
   formatWorkScopeKey,
+  isAvailableMaterialLot,
+  lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  reduceServerPagination,
+  serverPaginationIdentity,
 } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
@@ -142,6 +157,7 @@ import {
 } from './businessContextBinding'
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
+import { mesWorkOrderReleaseBlocker } from './mes/workOrderRelease'
 import {
   useListFreshness,
   useListResponseState,
@@ -208,6 +224,8 @@ export interface MesListFilters {
   assignedUserId?: string
   source?: string
   readinessStatus?: string
+  /** 停机原因码过滤（停机读面按原因筛选用）。 */
+  reasonCode?: string
   skip: number
   take: number
 }
@@ -261,10 +279,18 @@ function defaultContext(): MesContextFilters {
   )
 }
 
-interface MesSelectedWorkScope {
+export interface MesSelectedWorkScope {
   kind: string
   id: string
   displayName?: string
+}
+
+interface MesWorkOrderScopeCandidate {
+  operationTasks?: Array<{
+    assignedUserId?: string | null
+    teamId?: string | null
+    workCenterId?: string | null
+  }> | null
 }
 
 export interface MesWorkScopeOption {
@@ -434,8 +460,67 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
     return selection
   }
 
+  function coversWorkOrder(
+    candidate: MesWorkOrderScopeCandidate,
+    expectedSelection: MesSelectedWorkScope,
+  ) {
+    // 与 Gateway PrincipalWorkScopeResolver 的范围投影及工单 Any(task) 命中语义保持一致；
+    // 只使用 permission-aware work-context 返回的主体/授权子范围，不在客户端自行扩张授权。
+    const envelope = workContextQuery.data.value
+    const data = envelope?.success ? envelope.data : undefined
+    const currentSelection = data?.selectedScope
+    if (
+      !currentSelection ||
+      currentSelection.kind?.trim() !== expectedSelection.kind ||
+      currentSelection.id?.trim() !== expectedSelection.id
+    ) {
+      return false
+    }
+
+    const tasks = candidate.operationTasks ?? []
+    switch (expectedSelection.kind) {
+      case 'organization':
+        return expectedSelection.id === context.organizationId.trim()
+      case 'self': {
+        const principalId = data?.principal?.id?.trim()
+        return (
+          !!principalId &&
+          principalId === expectedSelection.id &&
+          tasks.some((task) => task.assignedUserId?.trim() === principalId)
+        )
+      }
+      case 'team':
+        return tasks.some((task) => task.teamId?.trim() === expectedSelection.id)
+      case 'work-center':
+        return tasks.some((task) => task.workCenterId?.trim() === expectedSelection.id)
+      case 'workshop': {
+        const authorizedWorkCenterIds = new Set(
+          (data?.authorizedScopes ?? [])
+            .filter((scope) => scope.kind?.trim() === 'work-center')
+            .map((scope) => scope.id?.trim())
+            .filter((id): id is string => !!id),
+        )
+        const coveredWorkCenterIds = new Set(
+          (data?.coveredWorkCenters ?? [])
+            .filter(
+              (workCenter) =>
+                workCenter.workshopId?.trim() === expectedSelection.id &&
+                authorizedWorkCenterIds.has(workCenter.id?.trim() ?? ''),
+            )
+            .map((workCenter) => workCenter.id?.trim())
+            .filter((id): id is string => !!id),
+        )
+        return tasks.some((task) => coveredWorkCenterIds.has(task.workCenterId?.trim() ?? ''))
+      }
+      default:
+        return false
+    }
+  }
+
   return {
+    coversWorkOrder,
     principalIdentity,
+    refreshScope: () => workContextQuery.refetch(),
     requireSelectedScope,
     selectedScope,
     scopeMessage,
@@ -698,6 +783,70 @@ export interface MesProductionQuantitySnapshot {
   reportedGoodQuantity: number
 }
 
+type AvailableMaterialLot = BusinessConsoleMesMaterialIssueRequestRow & AvailableMaterialLotFields
+
+export function useMesProductionMaterialLots(
+  context: () => { workOrderId?: string | null; operationTaskId?: string | null } | null,
+) {
+  const auth = useAuthStore()
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      workOrderId: '',
+      operationTaskId: '',
+      skip: 0,
+      take: 500,
+    }),
+  )
+  const materialsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.mes.materials.read'),
+  )
+
+  watch(
+    () => {
+      const current = context()
+      return [current?.workOrderId?.trim() ?? '', current?.operationTaskId?.trim() ?? '']
+    },
+    ([workOrderId, operationTaskId]) => {
+      filters.workOrderId = workOrderId
+      filters.operationTaskId = operationTaskId
+    },
+    { immediate: true },
+  )
+
+  const enabled = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      materialsReadPermission.value &&
+      Boolean(filters.workOrderId && filters.operationTaskId),
+  )
+  const materialLotsQuery = useQuery(() => ({
+    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        workOrderId: filters.workOrderId,
+        operationTaskId: filters.operationTaskId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    materialsReadPermission,
+    materialLotsPending: materialLotsQuery.isLoading,
+    materialLotsError: materialLotsQuery.error,
+    availableMaterialLots: computed<AvailableMaterialLot[]>(() => {
+      if (!materialLotsQuery.data.value?.success) return []
+      return (materialLotsQuery.data.value.data?.items ?? []).filter(isAvailableMaterialLot)
+    }),
+    refreshMaterialLots: () => (enabled.value ? materialLotsQuery.refetch() : Promise.resolve()),
+  }
+}
+
 export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()
@@ -942,6 +1091,32 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     },
   })
 
+  async function readReleaseCandidate(
+    workOrderId: string,
+    selectedReadScope: MesSelectedWorkScope,
+    selectedManageScope: MesSelectedWorkScope,
+  ) {
+    const query = getBusinessConsoleMesWorkOrderDetailQueryOptions({
+      path: { workOrderId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        scopeKind: selectedReadScope.kind,
+        scopeId: selectedReadScope.id,
+      },
+    })
+    const response = await query.query({
+      signal: new AbortController().signal,
+    } as Parameters<typeof query.query>[0])
+    if (response?.success !== true || !response.data) {
+      throw new Error(response?.message ?? '未取得当前读取范围内的工单详情')
+    }
+    if (!workOrderManageScope.coversWorkOrder(response.data, selectedManageScope)) {
+      throw new Error('当前工单不在所选管理范围内，不能下达')
+    }
+    return response.data
+  }
+
   return {
     createRushWorkOrder: (body: BusinessConsoleCreateRushWorkOrderRequest) =>
       createRushMutation.mutateAsync({ body }),
@@ -953,6 +1128,11 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     recordProductionReportPending: reporting.recordProductionReportPending,
     refreshWorkOrders: () =>
       workOrdersScopeReady.value ? workOrdersQuery.refetch() : Promise.resolve(),
+    readWorkOrderForRelease: async (workOrderId: string) => {
+      const selectedReadScope = workOrderReadScope.requireSelectedScope()
+      const selectedManageScope = workOrderManageScope.requireSelectedScope()
+      return readReleaseCandidate(workOrderId, selectedReadScope, selectedManageScope)
+    },
     releaseWorkOrder: async (
       workOrderId: string,
       body: {
@@ -962,14 +1142,18 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
         idempotencyKey: string
       },
     ) => {
-      const selectedScope = workOrderManageScope.requireSelectedScope()
+      const selectedReadScope = workOrderReadScope.requireSelectedScope()
+      const selectedManageScope = workOrderManageScope.requireSelectedScope()
+      const latest = await readReleaseCandidate(workOrderId, selectedReadScope, selectedManageScope)
+      const blocker = mesWorkOrderReleaseBlocker(latest)
+      if (blocker) throw new Error(blocker)
       return releaseMutation.mutateAsync({
         path: { workOrderId },
         query: {
           organizationId: body.organizationId,
           environmentId: body.environmentId,
-          scopeKind: selectedScope.kind,
-          scopeId: selectedScope.id,
+          scopeKind: selectedManageScope.kind,
+          scopeId: selectedManageScope.id,
         },
         body,
       })
@@ -990,9 +1174,178 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
+    workOrderManageScope: workOrderManageScope.selectedScope,
     workOrderManageScopeMessage: workOrderManageScope.scopeMessage,
     workOrderManageScopePending: workOrderManageScope.scopePending,
     workOrderManageScopeReady: workOrderManageScope.scopeReady,
+  }
+}
+
+export interface MesWorkOrderTransformationMutation {
+  accepted: boolean
+  transformationId: string
+  type: string
+  sourceWorkOrderIds: string[]
+  targetWorkOrderIds: string[]
+  isIdempotentReplay: boolean
+}
+
+export interface MesWorkOrderTransformationLine {
+  sourceWorkOrderId: string
+  targetWorkOrderId: string
+  quantity: number
+  uomCode: string
+  sourceStatus: string
+  targetStatus: string
+  sourceVersion: number
+  targetVersion: number
+}
+
+export interface MesWorkOrderTransformationReadback {
+  transformationId: string
+  type: string
+  idempotencyKey: string
+  actor: string
+  reason: string
+  occurredAtUtc: string
+  lines: MesWorkOrderTransformationLine[]
+}
+
+export interface MesWorkOrderTransformationResult {
+  mutation: MesWorkOrderTransformationMutation
+  readback?: MesWorkOrderTransformationReadback
+  readbackError?: unknown
+}
+
+export interface MesWorkOrderTransformationContext {
+  filters: Pick<BusinessContextFields, 'organizationId' | 'environmentId'>
+  readScope: { value: MesSelectedWorkScope | undefined }
+  manageScope: { value: MesSelectedWorkScope | undefined }
+}
+
+type WorkOrderTransformationMutationEnvelope = {
+  success?: boolean
+  message?: string
+  data?: MesWorkOrderTransformationMutation | null
+}
+
+type WorkOrderTransformationReadbackEnvelope = {
+  success?: boolean
+  message?: string
+  data?: MesWorkOrderTransformationReadback | null
+}
+
+export function useMesWorkOrderTransformations(context: MesWorkOrderTransformationContext) {
+  const queryCache = useQueryCache()
+  const splitMutation = useMutation({
+    ...splitBusinessConsoleMesWorkOrderMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesDispatchTasks',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+  const mergeMutation = useMutation({
+    ...mergeBusinessConsoleMesWorkOrdersMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesDispatchTasks',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+
+  function requireScope(scope: { value: MesSelectedWorkScope | undefined }) {
+    if (!scope.value) throw new Error(MES_WORK_SCOPE_REQUIRED_MESSAGE)
+    return scope.value
+  }
+
+  function scopedQuery(scope: MesSelectedWorkScope) {
+    return {
+      organizationId: context.filters.organizationId,
+      environmentId: context.filters.environmentId,
+      scopeKind: scope.kind,
+      scopeId: scope.id,
+    }
+  }
+
+  async function readTransformation(transformationId: string) {
+    const scope = requireScope(context.readScope)
+    const query = getBusinessConsoleMesWorkOrderTransformationQueryOptions({
+      path: { transformationId },
+      query: scopedQuery(scope),
+    })
+    const response = (await query.query({
+      signal: new AbortController().signal,
+    } as Parameters<typeof query.query>[0])) as WorkOrderTransformationReadbackEnvelope
+    if (response.success !== true || !response.data) {
+      throw new Error(response.message ?? '工单拆分或合并已受理，但回读结果暂不可用。')
+    }
+    return response.data
+  }
+
+  async function readAfterAccepted(mutation: MesWorkOrderTransformationMutation) {
+    try {
+      return { readback: await readTransformation(mutation.transformationId) }
+    } catch (readbackError) {
+      return { readbackError }
+    }
+  }
+
+  async function splitWorkOrder(
+    workOrderId: string,
+    body: {
+      targets: Array<{ workOrderId: string; quantity: number }>
+      reason: string
+      idempotencyKey: string
+    },
+  ): Promise<MesWorkOrderTransformationResult> {
+    const scope = requireScope(context.manageScope)
+    const response = (await splitMutation.mutateAsync({
+      path: { workOrderId },
+      query: scopedQuery(scope),
+      body,
+    })) as WorkOrderTransformationMutationEnvelope
+    if (response.success !== true || !response.data?.accepted || !response.data.transformationId) {
+      throw new Error(response.message ?? '拆分结果未确认，请先刷新工单核实。')
+    }
+    return { mutation: response.data, ...(await readAfterAccepted(response.data)) }
+  }
+
+  async function mergeWorkOrders(body: {
+    sourceWorkOrderIds: string[]
+    targetWorkOrderId: string
+    reason: string
+    idempotencyKey: string
+  }): Promise<MesWorkOrderTransformationResult> {
+    const scope = requireScope(context.manageScope)
+    const response = (await mergeMutation.mutateAsync({
+      query: scopedQuery(scope),
+      body,
+    })) as WorkOrderTransformationMutationEnvelope
+    if (response.success !== true || !response.data?.accepted || !response.data.transformationId) {
+      throw new Error(response.message ?? '合并结果未确认，请先刷新工单核实。')
+    }
+    return { mutation: response.data, ...(await readAfterAccepted(response.data)) }
+  }
+
+  return {
+    mergeWorkOrders,
+    mergeWorkOrdersError: mergeMutation.error,
+    mergeWorkOrdersPending: mergeMutation.isLoading,
+    readTransformation,
+    splitWorkOrder,
+    splitWorkOrderError: splitMutation.error,
+    splitWorkOrderPending: splitMutation.isLoading,
   }
 }
 
@@ -1460,6 +1813,7 @@ export function useMesWorkOrderDetail() {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
+    workOrderManageScope: workOrderManageScope.selectedScope,
     workOrderManageScopeMessage: workOrderManageScope.scopeMessage,
     workOrderManageScopePending: workOrderManageScope.scopePending,
     workOrderManageScopeReady: workOrderManageScope.scopeReady,
@@ -1843,6 +2197,183 @@ export function useMesMaterialIssueRequests() {
   }
 }
 
+export function useMesLineSideInventoryBalances() {
+  const pageSize = 200
+  const filters = defaultContext()
+  const queryCache = useQueryCache()
+  const scopeIdentity = computed(() =>
+    hasBusinessContext(filters)
+      ? `${filters.organizationId.trim()}:${filters.environmentId.trim()}`
+      : '',
+  )
+  const pagination = shallowRef(createServerPaginationState(pageSize, scopeIdentity.value))
+  const page = computed(() => pagination.value.page)
+  watch(
+    scopeIdentity,
+    (identity) => {
+      pagination.value = reduceServerPagination(pagination.value, {
+        type: 'scope-changed',
+        scopeIdentity: identity,
+      })
+    },
+    { flush: 'sync' },
+  )
+  const responseIdentity = computed(() => serverPaginationIdentity(scopeIdentity.value, page.value))
+  function queryOptions(targetPage: number) {
+    const requestIdentity = serverPaginationIdentity(scopeIdentity.value, targetPage)
+    const { key, query: executeQuery } =
+      listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          page: targetPage,
+          pageSize,
+        },
+      })
+    return withBusinessContextEnabled(
+      {
+        key: [...key, `scope-page:${requestIdentity}`],
+        query: async (context: Parameters<typeof executeQuery>[0]) => ({
+          identity: requestIdentity,
+          response: await executeQuery(context),
+        }),
+      },
+      filters,
+    )
+  }
+  const query = useQuery(() => queryOptions(page.value))
+  const currentResponse = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== responseIdentity.value) return undefined
+    const response = scopedResponse.response
+    if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
+    return response
+  })
+  const responsePageMismatch = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== responseIdentity.value) return false
+    const response = scopedResponse.response
+    return response?.success === true && (response.data?.page ?? 1) !== page.value
+  })
+  watch(
+    currentResponse,
+    (response) => {
+      if (response?.success === true) {
+        const nextPagination = reduceServerPagination(pagination.value, {
+          type: 'response-succeeded',
+          identity: responseIdentity.value,
+          responsePage: response.data?.page ?? 1,
+          total: response.data?.totalCount ?? 0,
+        })
+        if (nextPagination.page !== pagination.value.page) {
+          // A correction can return to a still-fresh cached page. Mark only that target stale,
+          // then let the reactive key transition remain the single fetch trigger.
+          void queryCache.invalidateQueries(
+            { key: queryOptions(nextPagination.page).key, exact: true },
+            false,
+          )
+        }
+        pagination.value = nextPagination
+      }
+    },
+    { flush: 'sync', immediate: true },
+  )
+  const pending = computed(() => query.isLoading.value || pagination.value.navigationPending)
+  const state = businessReadState(
+    { data: currentResponse, error: query.error, isLoading: pending },
+    () => hasBusinessContext(filters),
+  )
+  const failure = computed(() =>
+    query.error.value != null
+      ? query.error.value
+      : responsePageMismatch.value
+        ? new Error('线边库存响应页码与请求不一致，请重试。')
+        : currentResponse.value !== undefined && currentResponse.value.success !== true
+          ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
+          : null,
+  )
+  const total = computed(() => pagination.value.lastSuccessfulTotal)
+  const pageCount = computed(() => lastPageForTotal(total.value, pageSize))
+  const hasPreviousPage = computed(() => page.value > 1)
+  const hasNextPage = computed(
+    () => currentResponse.value?.success === true && page.value < pageCount.value,
+  )
+
+  watch(
+    [page, currentResponse, responsePageMismatch, () => query.error.value],
+    ([currentPage, response, pageMismatch, error]) => {
+      if (
+        error != null ||
+        pageMismatch ||
+        (response !== undefined &&
+          (response.success !== true || (response.data?.page ?? 1) === currentPage))
+      ) {
+        pagination.value = reduceServerPagination(pagination.value, {
+          type: 'response-failed',
+          identity: responseIdentity.value,
+        })
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  function previousPage() {
+    if (pending.value || !hasPreviousPage.value) return
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage: page.value - 1,
+      pageCount: pageCount.value,
+    })
+  }
+
+  function nextPage() {
+    if (pending.value || !hasNextPage.value) return
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage: page.value + 1,
+      pageCount: pageCount.value,
+    })
+  }
+
+  function goToPage(targetPage: number) {
+    if (
+      pending.value ||
+      !Number.isInteger(targetPage) ||
+      targetPage < 1 ||
+      targetPage > pageCount.value ||
+      targetPage === page.value
+    )
+      return
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage,
+      pageCount: pageCount.value,
+    })
+  }
+
+  return {
+    lineSideInventoryBalances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesLineSideInventoryBalanceItem,
+        BusinessConsoleMesLineSideInventoryBalancesEnvelope
+      >(currentResponse.value),
+    ),
+    lineSideInventoryTotal: total,
+    lineSideInventoryPage: page,
+    lineSideInventoryPageSize: pageSize,
+    lineSideInventoryPageCount: pageCount,
+    lineSideInventoryHasPreviousPage: hasPreviousPage,
+    lineSideInventoryHasNextPage: hasNextPage,
+    lineSideInventoryPending: pending,
+    lineSideInventoryError: failure,
+    lineSideInventoryReady: computed(() => state.value === 'ready'),
+    previousLineSideInventoryPage: previousPage,
+    nextLineSideInventoryPage: nextPage,
+    goToLineSideInventoryPage: goToPage,
+    refreshLineSideInventory: () => refetchWithBusinessContext(filters, query),
+  }
+}
+
 export function useMesDispatchTasks() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
@@ -1923,6 +2454,50 @@ export function useMesWipSummary() {
       ),
     ),
     wipTotal: computed(() => envelopeTotal(wipQuery.data.value)),
+  }
+}
+
+/**
+ * 报废原因码只消费 Quality 域已发布的 scrap 专用目录；不在 MES/PDA 侧维护字典。
+ * 调用方通过 shouldLoad 将读取限定在确有报废数量的报工场景，且权限或业务上下文不满足时不发请求。
+ */
+export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
+  const auth = useAuthStore()
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: 100,
+    }),
+  )
+  const qualityInspectionRecordsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-records.read'),
+  )
+  const enabled = computed(
+    () =>
+      hasBusinessContext(filters) && qualityInspectionRecordsReadPermission.value && shouldLoad(),
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleQualityScrapReasonCodesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending: query.isLoading,
+    scrapReasonCodesError: query.error,
+    scrapReasonCodes: computed(() =>
+      query.data.value?.success ? (query.data.value.data?.items ?? []) : [],
+    ),
+    refreshScrapReasonCodes: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }
 
@@ -2193,8 +2768,22 @@ export function useMesFinishedGoodsReceipts() {
   const retryingRequestNos = reactive(new Set<string>())
 
   return {
-    createReceiptRequest: (body: BusinessConsoleMesCreateReceiptRequest) =>
-      createReceiptMutation.mutateAsync({ body }),
+    createReceiptRequest: (body: BusinessConsoleMesCreateReceiptRequest) => {
+      // 只组装公共写契约字段，旧运行时对象中的未知字段不会进入请求体。
+      const safeBody: BusinessConsoleMesCreateReceiptRequest = {
+        organizationId: body.organizationId,
+        environmentId: body.environmentId,
+        workOrderId: body.workOrderId,
+        skuId: body.skuId,
+        quantity: body.quantity,
+        uomCode: body.uomCode,
+        requestedAtUtc: body.requestedAtUtc,
+        idempotencyKey: body.idempotencyKey,
+        producedLotNo: body.producedLotNo,
+        serialNo: body.serialNo,
+      }
+      return createReceiptMutation.mutateAsync({ body: safeBody })
+    },
     createReceiptRequestError: createReceiptMutation.error,
     createReceiptRequestPending: createReceiptMutation.isLoading,
     retryInventoryPosting: async (requestNo: string) => {
@@ -2325,11 +2914,14 @@ export function useMesQualityContext() {
     ),
   )
   const defectMutation = useMutation({
-    ...recordBusinessConsoleMesDefectMutationOptions(),
+    ...recordBusinessConsoleMesDefectV2MutationOptions(),
     onSuccess: () =>
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesRelatedQualityItems']).catch(
-        ignoreBackgroundError,
-      ),
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesRelatedQualityItems',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesWorkOrderDetail',
+      ]).catch(ignoreBackgroundError),
   })
 
   return {
@@ -2344,8 +2936,31 @@ export function useMesQualityContext() {
     qualityItemsPending: qualityQuery.isLoading,
     qualityItemsState: businessReadState(qualityQuery, () => hasBusinessContext(filters)),
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
-    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) =>
-      defectMutation.mutateAsync({ body }),
+    recordDefect: async (
+      body: Omit<BusinessConsoleMesRecordDefectV2Request, 'organizationId' | 'environmentId'>,
+    ) => {
+      // 页面只提交缺陷事实和已核验的写范围选择；组织与环境取当前 Business Context，
+      // 不接受调用方覆盖。Gateway 仍会用主体令牌实时核验该目标上下文与工单范围。
+      const organizationId = filters.organizationId.trim()
+      const environmentId = filters.environmentId.trim()
+      if (!organizationId || !environmentId) {
+        throw new Error('尚未进入有效组织与环境，不能登记缺陷。')
+      }
+      const operationTaskId = body.operationTaskId?.trim()
+      const safeBody: BusinessConsoleMesRecordDefectV2Request = {
+        organizationId,
+        environmentId,
+        workOrderId: body.workOrderId,
+        ...(operationTaskId ? { operationTaskId } : {}),
+        defectCode: body.defectCode,
+        quantity: body.quantity,
+        recordedAtUtc: body.recordedAtUtc,
+        idempotencyKey: body.idempotencyKey,
+        scopeKind: body.scopeKind,
+        scopeId: body.scopeId,
+      }
+      return defectMutation.mutateAsync({ body: safeBody })
+    },
     recordDefectPending: defectMutation.isLoading,
     refreshQualityItems: () => refetchWithBusinessContext(filters, qualityQuery),
   }
@@ -2356,16 +2971,30 @@ export const useMesRelatedQualityItems = useMesQualityContext
 export function useMesDowntimeEvents() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
+  const downtimeWriteScope = useMesPrincipalWorkScope(filters, 'business.mes.downtime.manage')
   const downtimeQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesDowntimeEventsQueryOptions({
-        query: toListQuery(filters),
+        query: { ...toListQuery(filters), ...optionalQuery('reasonCode', filters.reasonCode) },
       }),
       filters,
     ),
   )
+  const downtimeReasonsQuery = useQuery(() => ({
+    ...listBusinessConsoleSearchableDirectoryQueryOptions({
+      path: { directoryType: 'downtime-reason' },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        pageIndex: 1,
+        pageSize: 100,
+        rankingMode: 'default',
+      },
+    }),
+    enabled: hasBusinessContext(filters),
+  }))
   const recordMutation = useMutation({
-    ...recordBusinessConsoleMesDowntimeEventMutationOptions(),
+    ...recordBusinessConsoleMesDowntimeEventV2MutationOptions(),
     onSuccess: () =>
       void invalidateMesQueries(queryCache, [
         'listBusinessConsoleMesDowntimeEvents',
@@ -2392,9 +3021,62 @@ export function useMesDowntimeEvents() {
     downtimeEventsPending: downtimeQuery.isLoading,
     downtimeEventsState: businessReadState(downtimeQuery, () => hasBusinessContext(filters)),
     downtimeEventsTotal: computed(() => envelopeTotal(downtimeQuery.data.value)),
+    // 汇总由读面随列表一起返回，且不受 reasonCode 过滤影响，所以选中某个原因后仍能看到全部原因。
+    downtimeReasonSummary: computed<BusinessConsoleMesDowntimeReasonSummaryRow[]>(() => {
+      const envelope = downtimeQuery.data.value
+      if (envelope?.success !== true) return []
+      return envelope.data?.reasonSummary ?? []
+    }),
+    // `label` 是登记弹窗既有的「名称（码）」口径；`name` 是同一条目的纯名称，供只读面用
+    // （读面不把工程码打在界面上，见 business-console AGENTS「UI 不暴露工程语言」）。
+    // 没有名称时两者都回落成码——那是「字典没给名字」的实情，不编名字。
+    downtimeReasonOptions: computed(() => {
+      const envelope = downtimeReasonsQuery.data.value
+      if (envelope?.success !== true || envelope.data?.status === 'unavailable') return []
+      return (envelope.data?.items ?? [])
+        .map((item) => {
+          const value = item.code?.trim()
+          if (!value) return undefined
+          const name = item.displayName?.trim()
+          return { value, label: name ? `${name}（${value}）` : value, name: name || value }
+        })
+        .filter(
+          (item): item is { value: string; label: string; name: string } => item !== undefined,
+        )
+    }),
+    downtimeReasonsError: downtimeReasonsQuery.error,
+    downtimeReasonsPending: downtimeReasonsQuery.isLoading,
+    downtimeWriteCoversWorkOrder: downtimeWriteScope.coversWorkOrder,
+    downtimeWriteScope: downtimeWriteScope.selectedScope,
+    downtimeWriteScopeMessage: downtimeWriteScope.scopeMessage,
+    downtimeWriteScopePending: downtimeWriteScope.scopePending,
+    downtimeWriteScopeReady: downtimeWriteScope.scopeReady,
     filters,
-    recordDowntimeEvent: (body: BusinessConsoleMesRecordDowntimeEventRequest) =>
-      recordMutation.mutateAsync({ body }),
+    recordDowntimeEvent: (
+      body: Omit<
+        BusinessConsoleMesRecordDowntimeEventV2Request,
+        'organizationId' | 'environmentId'
+      >,
+    ) => {
+      const organizationId = filters.organizationId.trim()
+      const environmentId = filters.environmentId.trim()
+      const selectedScope = downtimeWriteScope.requireSelectedScope()
+      if (!organizationId || !environmentId) {
+        throw new Error('尚未进入有效组织与环境，不能登记停机。')
+      }
+      if (body.scopeKind !== selectedScope.kind || body.scopeId !== selectedScope.id) {
+        throw new Error('停机登记范围已变化，请重新选择工单与工序。')
+      }
+      return recordMutation.mutateAsync({
+        body: {
+          ...body,
+          organizationId,
+          environmentId,
+          scopeKind: selectedScope.kind,
+          scopeId: selectedScope.id,
+        },
+      })
+    },
     recordDowntimeEventPending: recordMutation.isLoading,
     recoverDowntimeEvent: (
       downtimeEventId: string,
@@ -2411,6 +3093,7 @@ export function useMesDowntimeEvents() {
         body,
       }),
     recoverDowntimeEventPending: recoverMutation.isLoading,
+    refreshDowntimeWriteScope: downtimeWriteScope.refreshScope,
     refreshDowntimeEvents: () => refetchWithBusinessContext(filters, downtimeQuery),
   }
 }
