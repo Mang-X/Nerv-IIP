@@ -79,12 +79,12 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      50 |      41 |        5 |        4 |
-| Mes                 |      63 |      62 |        0 |        1 |
+| Mes                 |      64 |      62 |        1 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      42 |      30 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **435** | **359** |   **50** |   **26** |
+| **Total**           | **436** | **359** |   **51** |   **26** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -178,6 +178,7 @@ BusinessGateway `listBusinessConsoleMesOperationTasks`、`listBusinessConsoleMes
 | Maintenance         | POST   | `/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started`                         | BusinessGateway facade 待交付；维修开始操作跟随 CMMS 执行的 Business Console 菜单阶段。                                                                                               |
 | MasterData          | GET    | `/api/business/v1/master-data/tooling-assets`                                                   | BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。                                                                                                                           |
 | Mes                 | POST   | `/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns`                    | 已通过 BusinessGateway `returnBusinessConsoleMesLineSideMaterial` 暴露，供 Console/PDA 线边退料入口使用。                                                                                   |
+| Mes                 | GET    | `/api/business/v1/mes/production-statistics`                                                    | 生产日报父能力 #1952 的后续 Gateway 契约子票交付 BusinessGateway facade 与 generated client；#2855 只建立 MES 权威聚合读契约。                                                         |
 | Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/close`                                          | BusinessGateway facade 待交付；MES 工单关闭跟随工作台关闭操作菜单阶段（暂挂/取消已通过 #833 暴露）。                                                                                   |
 | Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions`                   | BusinessGateway facade 待交付；工单工程变更决策跟随工单 ECO 菜单阶段。                                                                                                                |
 | Quality             | POST   | `/api/business/v1/quality/capas`                                                                | BusinessGateway CAPA 管理 facade 由 #677 跟踪，并解锁前端 #804。                                                                                                                       |
