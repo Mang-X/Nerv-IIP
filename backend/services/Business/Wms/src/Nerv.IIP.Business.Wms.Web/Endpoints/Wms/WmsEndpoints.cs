@@ -82,7 +82,7 @@ public sealed record ListInboundOrdersRequest(
     string ScopeKind,
     string ScopeId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? Keyword = null,
     InboundOrderId? InboundOrderId = null,
@@ -104,7 +104,7 @@ public sealed record ListWarehouseTasksRequest(
     string ScopeKind,
     string ScopeId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
@@ -220,14 +220,14 @@ public sealed record ListOutboundOrdersRequest(
     string ScopeKind,
     string ScopeId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? Keyword = null,
     OutboundOrderId? OutboundOrderId = null,
     string? LocationCode = null,
     string? LotNo = null,
     string? SiteCode = null);
-public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = OffsetPage.DefaultTake, string? Status = null, string? Keyword = null);
 public sealed record CloseBackorderOrderRequest(BackorderOrderId BackorderOrderId, string Reason);
 public sealed record CreatePickingTaskRequest(
     OutboundOrderId OutboundOrderId,
@@ -279,7 +279,7 @@ public sealed record ListCountExecutionsRequest(
     string ScopeKind,
     string ScopeId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
@@ -360,15 +360,14 @@ public sealed class ListReceivingQualityGatesRequestValidator
 {
     public ListReceivingQualityGatesRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
         RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
         RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
         RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.GateStatus).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.InboundOrderNo).MaximumLength(150);
@@ -466,7 +465,7 @@ public sealed record ListWcsTasksRequest(
     string? ExternalTaskId = null,
     WarehouseTaskId? WarehouseTaskId = null,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     bool? Failed = null,
     string? Keyword = null);
@@ -480,12 +479,12 @@ public sealed record ListReceivingQualityGatesRequest(
     string ScopeKind,
     string ScopeId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? GateStatus = null,
     string? Keyword = null,
     bool IncludeNotRequired = false,
     string? InboundOrderNo = null);
-public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = OffsetPage.DefaultTake, string? Status = null, string? Keyword = null);
 public sealed record ProvisionWarehouseWorkPoolRequest(
     string OrganizationId,
     string EnvironmentId,
