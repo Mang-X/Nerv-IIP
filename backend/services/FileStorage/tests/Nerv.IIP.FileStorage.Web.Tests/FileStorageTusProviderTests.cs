@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -60,7 +61,7 @@ public sealed class FileStorageTusProviderTests
     public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
@@ -73,7 +74,7 @@ public sealed class FileStorageTusProviderTests
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
         Assert.Null(result.Value);
-        Assert.Equal("Tus upload store is unavailable.", result.Error?.Message);
+        Assert.Equal("Tus 上传存储暂不可用。", result.Error?.Message);
     }
 
     [Fact]
@@ -309,7 +310,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task DownloadGrantContentEndpoint_AvailableFileWithTenantHeaders_ReturnsUploadedBytesOnce()
+    public async Task DownloadGrantContentEndpoint_VerifiedSeam_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -334,16 +335,13 @@ public sealed class FileStorageTusProviderTests
 
             using var firstRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
             AddTransferHeaders(firstRequest, grant.Download.Headers);
-
             var first = await client.SendAsync(firstRequest);
-
             first.EnsureSuccessStatusCode();
             Assert.Equal(uploadedBytes, await first.Content.ReadAsByteArrayAsync());
 
             using var secondRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
             AddTransferHeaders(secondRequest, grant.Download.Headers);
             var second = await client.SendAsync(secondRequest);
-
             Assert.Equal(StatusCodes.Status404NotFound, (int)second.StatusCode);
         }
         finally
@@ -376,7 +374,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_CompleteWithChecksumMismatch_ReturnsBadRequest()
+    public async Task TusUploadEndpoint_VerifiedChecksumDifferentFromIntent_FailsClosed()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -384,12 +382,16 @@ public sealed class FileStorageTusProviderTests
             await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
             var bytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length);
+            var expectedChecksum = $"sha256:{new string('d', 64)}";
+            var created = await CreateTusUploadSessionAsync(
+                client,
+                expectedSizeBytes: bytes.Length,
+                request: CreateUploadRequest() with { Checksum = expectedChecksum });
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, bytes);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:bad", bytes.Length));
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", expectedChecksum, bytes.Length));
 
             Assert.Equal(StatusCodes.Status400BadRequest, (int)completeResponse.StatusCode);
         }
@@ -400,7 +402,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task DownloadGrantContentEndpoint_MissingLocalBytes_ReturnsNotFound()
+    public async Task DownloadGrantContentEndpoint_VerifiedSeamThenMissingLocalBytes_ReturnsNotFound()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -428,7 +430,6 @@ public sealed class FileStorageTusProviderTests
             Assert.NotNull(grant);
 
             var downloadResponse = await client.GetAsync(grant.Download.Url);
-
             Assert.Equal(StatusCodes.Status404NotFound, (int)downloadResponse.StatusCode);
         }
         finally
@@ -460,7 +461,7 @@ public sealed class FileStorageTusProviderTests
     public async Task PostgreSqlCreateUploadSession_WithTusProvider_PersistsTusProvider()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
@@ -497,6 +498,14 @@ public sealed class FileStorageTusProviderTests
                 {
                     builder.ConfigureServices(services => services.AddSingleton(clock));
                 }
+
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IUploadCommitStorage>();
+                    services.AddSingleton<IUploadCommitStorage>(provider =>
+                        new VerifiedTusTestCommitStorage(
+                            provider.GetRequiredService<ILocalTusFileStoreAccessor>()));
+                });
             });
     }
 
@@ -556,7 +565,11 @@ public sealed class FileStorageTusProviderTests
     {
         var response = await client.PostAsJsonAsync(
             "/api/files/v1/upload-sessions",
-            (request ?? CreateUploadRequest()) with { ExpectedSizeBytes = expectedSizeBytes, Checksum = null });
+            (request ?? CreateUploadRequest()) with
+            {
+                ExpectedSizeBytes = expectedSizeBytes,
+                Checksum = request?.Checksum
+            });
         Assert.True(
             response.IsSuccessStatusCode,
             $"Upload session creation returned {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
@@ -605,6 +618,34 @@ public sealed class FileStorageTusProviderTests
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
         return client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+    }
+
+    private sealed class VerifiedTusTestCommitStorage(ILocalTusFileStoreAccessor accessor) : IUploadCommitStorage
+    {
+        public async Task<UploadCommitStorageResult> CommitAsync(
+            UploadCommitIntent intent,
+            CancellationToken cancellationToken)
+        {
+            if (!accessor.TryGet(out var store) || !store.Exists(intent.UploadSessionId))
+            {
+                return UploadCommitStorageResult.RetryableUnavailable();
+            }
+
+            var size = store.GetOffset(intent.UploadSessionId);
+            if (size != intent.ExpectedSizeBytes)
+            {
+                return new UploadCommitStorageResult(
+                    false,
+                    size,
+                    null,
+                    StatusCodes.Status400BadRequest,
+                    "final-size-mismatch",
+                    "已验证的存储大小与上传会话不匹配。");
+            }
+
+            var checksum = await store.ComputeSha256HexAsync(intent.UploadSessionId, cancellationToken);
+            return UploadCommitStorageResult.Verified(size, $"sha256:{checksum}");
+        }
     }
 
     private static long GetUploadOffset(HttpResponseMessage response)
