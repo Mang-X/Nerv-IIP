@@ -188,6 +188,8 @@ public sealed class MasterDataIntegrationEventContextTests
     [InlineData("User ID=changed;Initial Catalog=next;Server=db")]
     [InlineData("postgresql://svc:pass@db/prod")]
     [InlineData("POSTGRES://other:changed@next/catalog")]
+    [InlineData("postgresql:///prod?host=/var/run/postgresql")]
+    [InlineData("dsn=postgresql://svc:pass@db/prod")]
     [InlineData("planned\u0001service")]
     public void Tooling_admission_rejects_bounded_sensitive_text_categories(string value)
     {

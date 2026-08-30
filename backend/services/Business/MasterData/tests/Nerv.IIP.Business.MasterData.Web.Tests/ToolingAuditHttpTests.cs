@@ -188,7 +188,7 @@ public sealed class ToolingAuditHttpTests
     [Fact]
     public async Task Sensitive_status_reason_fails_before_business_change_and_audit_append()
     {
-        const string reason = "postgresql://svc:pass@db/prod";
+        const string reason = "postgresql:///prod?host=/var/run/postgresql";
         await using var factory = new ToolingAuditHttpTestFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "tooling-audit-test-token");

@@ -251,7 +251,7 @@ public sealed record ToolingOperationAuditContext
 
             private static bool ContainsConnectionString(string value)
             {
-                if (ContainsPostgreSqlConnectionUri(value)) return true;
+                if (ContainsPostgreSqlConnectionUri(value) || ContainsPostgreSqlDsnAssignment(value)) return true;
                 if (!value.Contains(';') || !value.Contains('=')) return false;
 
                 try
@@ -267,10 +267,21 @@ public sealed record ToolingOperationAuditContext
                 }
             }
 
-            private static bool ContainsPostgreSqlConnectionUri(string value) =>
-                Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) &&
+            private static bool ContainsPostgreSqlConnectionUri(string value)
+            {
+                var candidate = value.Trim();
+                return Uri.TryCreate(candidate, UriKind.Absolute, out var uri) &&
                 PostgreSqlConnectionUriSchemes.Contains(uri.Scheme) &&
-                !string.IsNullOrWhiteSpace(uri.Host);
+                    candidate.StartsWith($"{uri.Scheme}://", StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static bool ContainsPostgreSqlDsnAssignment(string value)
+            {
+                var separator = value.IndexOf('=');
+                return separator > 0 &&
+                    string.Equals(value[..separator].Trim(), "dsn", StringComparison.OrdinalIgnoreCase) &&
+                    ContainsPostgreSqlConnectionUri(value[(separator + 1)..]);
+            }
 
             private static bool ContainsCompactJwt(string value)
             {
