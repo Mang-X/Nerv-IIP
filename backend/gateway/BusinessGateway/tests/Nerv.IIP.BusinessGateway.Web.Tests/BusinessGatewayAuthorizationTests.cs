@@ -15,6 +15,15 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayAuthorizationTests
 {
     [Fact]
+    public void MaintenanceDowntimeReasonsRead_matches_adr_0029_naming()
+    {
+        // ADR 0029 决策 1/4：换绑前的 B2 阶段只落权限码本身，尚无端点消费（B3 才接线到
+        // BusinessConsoleSearchableDirectoryPolicy）。这里只钉住 IAM 与 Gateway 两处
+        // producer 字面值必须一致，命名形态必须是 business.<owner域>.<词表复数-kebab>.read。
+        Assert.Equal("business.maintenance.downtime-reasons.read", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
