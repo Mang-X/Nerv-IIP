@@ -42,12 +42,13 @@ function Get-Nerv1860ProcessEnvironmentValue {
         [Parameter(Mandatory)] [string] $Name
     )
 
-    $command = Invoke-NativeCommandOutput `
+    $commandResult = Invoke-NativeCommandOutput `
         -Command '/bin/ps' `
         -Arguments @('eww', '-p', "$ProcessId", '-o', 'command=') `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 30 `
         -Name "nerv-1860-process-$ProcessId-environment"
+    $command = [string] $commandResult.Stdout
     $match = [regex]::Match(
         $command,
         "(?:^| )$([regex]::Escape($Name))=([^ ]+)",
@@ -62,12 +63,13 @@ function Get-Nerv1860ProcessEnvironmentValue {
 function Get-Nerv1860ExactProcess {
     param([Parameter(Mandatory)] [string] $ExecutablePath)
 
-    $processTable = Invoke-NativeCommandOutput `
+    $processTableResult = Invoke-NativeCommandOutput `
         -Command '/bin/ps' `
         -Arguments @('-axo', 'pid=,command=') `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 30 `
         -Name 'nerv-1860-process-table'
+    $processTable = [string] $processTableResult.Stdout
     $pattern = "^\s*(?<pid>\d+)\s+$([regex]::Escape([System.IO.Path]::GetFullPath($ExecutablePath)))(?:\s|$)"
     $exactProcesses = @(
         $processTable -split '\r?\n' | ForEach-Object {
@@ -315,8 +317,10 @@ try {
         throw "Internal bearer counterexample failed: wrong=$($wrongToken.StatusCode), correct=$($correctToken.StatusCode)."
     }
 
-    $headSha = (Invoke-NativeCommandOutput -Command 'git' -Arguments @('rev-parse', 'HEAD') -WorkingDirectory $repoRoot -Name 'nerv-1860-head').Trim()
-    $baseSha = (Invoke-NativeCommandOutput -Command 'git' -Arguments @('rev-parse', 'origin/main') -WorkingDirectory $repoRoot -Name 'nerv-1860-base').Trim()
+    $headResult = Invoke-NativeCommandOutput -Command 'git' -Arguments @('rev-parse', 'HEAD') -WorkingDirectory $repoRoot -Name 'nerv-1860-head'
+    $baseResult = Invoke-NativeCommandOutput -Command 'git' -Arguments @('rev-parse', 'origin/main') -WorkingDirectory $repoRoot -Name 'nerv-1860-base'
+    $headSha = ([string] $headResult.Stdout).Trim()
+    $baseSha = ([string] $baseResult.Stdout).Trim()
     $runtimeEvidence = [ordered]@{
         schemaVersion = 2
         ticket = 'NERV-1860'
