@@ -113,12 +113,18 @@ public sealed class MaintenanceListQueryCompositionTests
     public async Task Public_list_endpoints_apply_composed_defaults_bounds_and_keywords()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        db.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEVICE-PUMP", "high", "reporter"));
-        db.MaintenancePlans.Add(MaintenancePlan.Create(
-            "org-001", "env-dev", "DEVICE-PUMP", "PM-PUMP", "P7D", new DateOnly(2026, 8, 1), "maintenance"));
-        db.DowntimeReasons.Add(DowntimeReason.Create(
-            "org-001", "env-dev", "PUMP-01", "Pump failure", "breakdown", "availability"));
+        db.MaintenanceWorkOrders.AddRange(
+            MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-01", "high", "reporter"),
+            MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-02", "high", "reporter"),
+            MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-OTHER", "high", "reporter"));
+        db.MaintenancePlans.AddRange(
+            MaintenancePlan.Create("org-001", "env-dev", "DEVICE-PUMP", "PM-PUMP-01", "P7D", new DateOnly(2026, 8, 1), "maintenance"),
+            MaintenancePlan.Create("org-001", "env-dev", "DEVICE-PUMP", "PM-PUMP-02", "P7D", new DateOnly(2026, 8, 1), "maintenance"),
+            MaintenancePlan.Create("org-001", "env-dev", "DEVICE-OTHER", "PM-OTHER", "P7D", new DateOnly(2026, 8, 1), "maintenance"));
+        db.DowntimeReasons.AddRange(
+            DowntimeReason.Create("org-001", "env-dev", "PUMP-01", "Pump failure", "breakdown", "availability"),
+            DowntimeReason.Create("org-001", "env-dev", "PUMP-02", "Pump sensor", "breakdown", "availability"),
+            DowntimeReason.Create("org-001", "env-dev", "OTHER-01", "Other failure", "other", "other"));
         await db.SaveChangesAsync();
 
         var sender = new QueryHandlerListSender(db);
@@ -126,41 +132,70 @@ public sealed class MaintenanceListQueryCompositionTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
-        (string DefaultPath, string LowerBoundPath, string UpperBoundPath, string ItemProperty, string ItemValue)[] lists =
+        (string DefaultPath, string FilteredPath, string SkippedPath, string LowerBoundPath, string UpperBoundPath, string ItemProperty, string[] MatchingValues, string NonMatchingValue)[] lists =
         [
             (
                 "/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&keyword=%20%20",
+                "/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=1&keyword=%20%20pump%20%20",
+                "/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=1&take=1&keyword=%20%20pump%20%20",
                 "/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=-1&take=0&keyword=%20%20pump%20%20",
                 "/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=201&keyword=%20%20pump%20%20",
                 "deviceAssetId",
-                "DEVICE-PUMP"),
+                ["DEVICE-PUMP-01", "DEVICE-PUMP-02"],
+                "DEVICE-OTHER"),
             (
                 "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev",
-                "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&skip=-1&take=0",
-                "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&skip=0&take=201",
+                "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&skip=0&take=1&deviceAssetId=DEVICE-PUMP",
+                "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&skip=1&take=1&deviceAssetId=DEVICE-PUMP",
+                "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&skip=-1&take=0&deviceAssetId=DEVICE-PUMP",
+                "/api/business/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&skip=0&take=201&deviceAssetId=DEVICE-PUMP",
                 "planCode",
-                "PM-PUMP"),
+                ["PM-PUMP-01", "PM-PUMP-02"],
+                "PM-OTHER"),
             (
                 "/api/business/v1/maintenance/downtime-reasons?organizationId=org-001&environmentId=env-dev&keyword=%20%20",
+                "/api/business/v1/maintenance/downtime-reasons?organizationId=org-001&environmentId=env-dev&skip=0&take=1&keyword=%20%20pump%20%20",
+                "/api/business/v1/maintenance/downtime-reasons?organizationId=org-001&environmentId=env-dev&skip=1&take=1&keyword=%20%20pump%20%20",
                 "/api/business/v1/maintenance/downtime-reasons?organizationId=org-001&environmentId=env-dev&skip=-1&take=0&keyword=%20%20pump%20%20",
                 "/api/business/v1/maintenance/downtime-reasons?organizationId=org-001&environmentId=env-dev&skip=0&take=201&keyword=%20%20pump%20%20",
                 "reasonCode",
-                "PUMP-01"),
+                ["PUMP-01", "PUMP-02"],
+                "OTHER-01"),
         ];
 
         foreach (var list in lists)
         {
             var defaultResponse = await client.GetAsync(list.DefaultPath);
             Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
-            await AssertListPageAsync(defaultResponse, list.ItemProperty, list.ItemValue, 0, 100);
+            var defaultValues = await AssertListPageAsync(defaultResponse, list.ItemProperty, 0, 100, 3, 3);
+            Assert.Equal(
+                list.MatchingValues.Append(list.NonMatchingValue).OrderBy(value => value),
+                defaultValues.OrderBy(value => value));
+
+            var filteredResponse = await client.GetAsync(list.FilteredPath);
+            Assert.Equal(HttpStatusCode.OK, filteredResponse.StatusCode);
+            var filteredValues = await AssertListPageAsync(filteredResponse, list.ItemProperty, 0, 1, 2, 1);
+            Assert.Contains(filteredValues.Single(), list.MatchingValues);
+            Assert.DoesNotContain(list.NonMatchingValue, filteredValues);
+
+            var skippedResponse = await client.GetAsync(list.SkippedPath);
+            Assert.Equal(HttpStatusCode.OK, skippedResponse.StatusCode);
+            var skippedValues = await AssertListPageAsync(skippedResponse, list.ItemProperty, 1, 1, 2, 1);
+            Assert.Contains(skippedValues.Single(), list.MatchingValues);
+            Assert.DoesNotContain(list.NonMatchingValue, skippedValues);
+            Assert.NotEqual(filteredValues.Single(), skippedValues.Single());
 
             var lowerBoundResponse = await client.GetAsync(list.LowerBoundPath);
             Assert.Equal(HttpStatusCode.OK, lowerBoundResponse.StatusCode);
-            await AssertListPageAsync(lowerBoundResponse, list.ItemProperty, list.ItemValue, 0, 1);
+            var lowerBoundValues = await AssertListPageAsync(lowerBoundResponse, list.ItemProperty, 0, 1, 2, 1);
+            Assert.Contains(lowerBoundValues.Single(), list.MatchingValues);
+            Assert.DoesNotContain(list.NonMatchingValue, lowerBoundValues);
 
             var upperBoundResponse = await client.GetAsync(list.UpperBoundPath);
             Assert.Equal(HttpStatusCode.OK, upperBoundResponse.StatusCode);
-            await AssertListPageAsync(upperBoundResponse, list.ItemProperty, list.ItemValue, 0, 200);
+            var upperBoundValues = await AssertListPageAsync(upperBoundResponse, list.ItemProperty, 0, 200, 2, 2);
+            Assert.Equal(list.MatchingValues.OrderBy(value => value), upperBoundValues.OrderBy(value => value));
+            Assert.DoesNotContain(list.NonMatchingValue, upperBoundValues);
         }
     }
 
@@ -231,19 +266,25 @@ public sealed class MaintenanceListQueryCompositionTests
             });
     }
 
-    private static async Task AssertListPageAsync(
+    private static async Task<string[]> AssertListPageAsync(
         HttpResponseMessage response,
         string itemProperty,
-        string itemValue,
         int expectedSkip,
-        int expectedTake)
+        int expectedTake,
+        int expectedTotal,
+        int expectedItemCount)
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(expectedSkip, data.GetProperty("skip").GetInt32());
         Assert.Equal(expectedTake, data.GetProperty("take").GetInt32());
-        Assert.Equal(1, data.GetProperty("total").GetInt32());
-        Assert.Equal(itemValue, Assert.Single(data.GetProperty("items").EnumerateArray()).GetProperty(itemProperty).GetString());
+        Assert.Equal(expectedTotal, data.GetProperty("total").GetInt32());
+        var values = data.GetProperty("items")
+            .EnumerateArray()
+            .Select(item => item.GetProperty(itemProperty).GetString()!)
+            .ToArray();
+        Assert.Equal(expectedItemCount, values.Length);
+        return values;
     }
 
     private sealed class QueryHandlerListSender(ApplicationDbContext dbContext) : ISender
