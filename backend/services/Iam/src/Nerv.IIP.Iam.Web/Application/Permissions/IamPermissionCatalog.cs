@@ -112,7 +112,8 @@ public static class IamPermissionCatalog
         ["business.maintenance.work-orders.read"] = "Read maintenance work orders and downtime facts.",
         ["business.maintenance.work-orders.manage"] = "Create, update and complete maintenance work orders.",
         ["business.maintenance.plans.read"] = "Read maintenance plans and inspections.",
-        ["business.maintenance.plans.manage"] = "Create and manage maintenance plans and inspections."
+        ["business.maintenance.plans.manage"] = "Create and manage maintenance plans and inspections.",
+        ["business.maintenance.downtime-reasons.read"] = "Read the maintenance downtime reason reference vocabulary."
     };
 
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);
