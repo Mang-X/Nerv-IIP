@@ -3036,10 +3036,16 @@ public sealed class BusinessGatewayProxyTests
         BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
-            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev&reasonCode=DT-MECH");
+            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev&reasonCode=DT-MECH&windowStartUtc=2026-07-01T00%3A00%3A00Z&windowEndUtc=2026-08-01T00%3A00%3A00Z");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("DT-MECH", mes.LastDowntimeEventListRequest!.ReasonCode);
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+            mes.LastDowntimeEventListRequest.WindowStartUtc);
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            mes.LastDowntimeEventListRequest.WindowEndUtc);
         // 跨域取名必须按当前请求的租户/环境查目录：串了范围就会拿别的组织的词表解名。
         Assert.Equal("org-001", maintenance.LastDowntimeReasonDirectoryRequest!.OrganizationId);
         Assert.Equal("env-dev", maintenance.LastDowntimeReasonDirectoryRequest!.EnvironmentId);
@@ -10647,10 +10653,21 @@ public sealed class BusinessGatewayProxyTests
         var materialRequest = new BusinessConsoleMesMaterialIssueRequestListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var requestWithoutStatus = new BusinessConsoleMesListWithoutStatusRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var dispatchRequest = new BusinessConsoleMesDispatchTaskListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", AssignedUserId: "user-emp-010", Skip: 4, Take: 12);
-        var downtimeRequest = new BusinessConsoleMesDowntimeEventListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", ReasonCode: "DT-MECH", Skip: 4, Take: 12);
+        var downtimeRequest = new BusinessConsoleMesDowntimeEventListRequest(
+            "org-001",
+            "env-dev",
+            Keyword: "filter",
+            WorkCenterId: "WC-FILTER",
+            ShiftId: "SHIFT-FILTER",
+            DeviceAssetId: "DEV-FILTER",
+            ReasonCode: "DT-MECH",
+            WindowStartUtc: DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+            WindowEndUtc: DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            Skip: 4,
+            Take: 12);
         var expectedQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12";
         var expectedDispatchQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&assignedUserId=user-emp-010&skip=4&take=12";
-        var expectedDowntimeQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&reasonCode=DT-MECH&skip=4&take=12";
+        var expectedDowntimeQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&reasonCode=DT-MECH&windowStartUtc=2026-07-01T00%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-08-01T00%3A00%3A00.0000000%2B00%3A00&skip=4&take=12";
 
         var cases = new (string Path, Func<Task<int>> Invoke)[]
         {

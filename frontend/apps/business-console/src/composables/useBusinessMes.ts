@@ -226,6 +226,8 @@ export interface MesListFilters {
   readinessStatus?: string
   /** 停机原因码过滤（停机读面按原因筛选用）。 */
   reasonCode?: string
+  windowStartUtc?: string
+  windowEndUtc?: string
   skip: number
   take: number
 }
@@ -2970,12 +2972,21 @@ export const useMesRelatedQualityItems = useMesQualityContext
 
 export function useMesDowntimeEvents() {
   const filters = defaultFilters()
+  const windowEnd = new Date()
+  const windowStart = new Date(windowEnd.getTime() - 30 * 24 * 60 * 60 * 1000)
+  filters.windowStartUtc = windowStart.toISOString()
+  filters.windowEndUtc = windowEnd.toISOString()
   const queryCache = useQueryCache()
   const downtimeWriteScope = useMesPrincipalWorkScope(filters, 'business.mes.downtime.manage')
   const downtimeQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesDowntimeEventsQueryOptions({
-        query: { ...toListQuery(filters), ...optionalQuery('reasonCode', filters.reasonCode) },
+        query: {
+          ...toListQuery(filters),
+          ...optionalQuery('reasonCode', filters.reasonCode),
+          ...optionalQuery('windowStartUtc', filters.windowStartUtc),
+          ...optionalQuery('windowEndUtc', filters.windowEndUtc),
+        },
       }),
       filters,
     ),
