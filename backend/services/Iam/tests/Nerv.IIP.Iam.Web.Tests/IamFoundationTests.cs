@@ -309,7 +309,15 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.read"
             && item.Domain == "business"
             && item.Seeded);
-        // ADR 0029 决策 1：参考数据专用读权限码必须出现在管理读面，并提供可显示的描述。
+        // ADR 0029 决策 1：参考数据专用读权限码必须出现在管理读面，并提供可显示的描述
+        // （IamPermissionCatalog.Descriptions 漏收该 code 时 GetValueOrDefault 会回落成
+        // code 本身，此断言会红）。
+        //
+        // 未采纳「升级为对 NervIipSeedPermissions.All 的全量完备性契约」建议：实测发现
+        // engineering/masterdata 段有 20 个既有码（如 business.engineering.boms.read、
+        // business.masterdata.products.read）当前就没有 Descriptions 条目，全量断言会立即
+        // 因这些与本 PR 无关的既有缺口变红。这是真实的既有 gap，但补齐 20 条不在 B2/B3
+        // 范围内，不顺手扩大本 PR 改动面；只保留对本次新码的点检。
         Assert.Contains(catalog.Items, item => item.Code == "business.maintenance.downtime-reasons.read"
             && item.Domain == "business"
             && item.Seeded
