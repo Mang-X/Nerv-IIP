@@ -680,9 +680,9 @@ public sealed class MesEndpointContractTests
         Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
     }
 
-    // 验收 1（#1948）：网关注入的报工人必须由 MES 写面端点转交给命令；这一段丢了，报工就没有操作人。
+    // 验收 #1948/#2694：MES 写面端点必须把网关注入的报工人和调用方幂等键原样转交给命令。
     [Fact]
-    public async Task Record_production_report_endpoint_forwards_the_injected_operator_to_the_command()
+    public async Task Record_production_report_endpoint_forwards_the_injected_operator_and_idempotency_key_to_the_command()
     {
         var sender = new ProductionReportWireShapeSender(Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689"));
         await using var factory = new WebApplicationFactory<Program>()
@@ -715,6 +715,7 @@ public sealed class MesEndpointContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user-emp-010", sender.Command?.ReportedBy);
+        Assert.Equal("wire-operator-001", sender.Command?.IdempotencyKey);
     }
 
     // 幂等键是记录报工写面的硬前置：RecordProductionReportRequestValidator 先把缺失的幂等键拒成 400，命令不会发出。
