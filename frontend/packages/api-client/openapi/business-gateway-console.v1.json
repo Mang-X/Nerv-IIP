@@ -12839,6 +12839,34 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
           }
         ],
         "responses": {
@@ -43976,7 +44004,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDemandSourceListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -44417,6 +44445,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse": {
         "allOf": [

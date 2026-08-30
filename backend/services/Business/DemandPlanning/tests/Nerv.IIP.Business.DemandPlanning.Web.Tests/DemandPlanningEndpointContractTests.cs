@@ -871,6 +871,120 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Demand_source_list_keeps_legacy_call_and_defaults_to_one_hundred_items()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DemandSources.AddRange(Enumerable.Range(1, 101).Select(index => DemandSource.Create(
+                "org-001",
+                "env-dev",
+                "manual",
+                $"DEMAND-{index:D3}",
+                $"SKU-{index:D3}",
+                "pcs",
+                "SITE-01",
+                index,
+                new DateOnly(2026, 6, 1).AddDays(index))));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(100, document.RootElement.GetProperty("data").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Demand_source_list_normalizes_tenant_and_keyword_before_stable_paging()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DemandSources.AddRange(
+                DemandSource.Create("org-001", "env-dev", "manual", "PUMP-002", "SKU-OTHER", "pcs", "SITE-01", 2m, new DateOnly(2026, 6, 2)),
+                DemandSource.Create("org-001", "env-dev", "manual", "PUMP-001", "SKU-OTHER", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+                DemandSource.Create("org-001", "env-dev", "manual", "OTHER-001", "SKU-PUMP", "pcs", "SITE-01", 3m, new DateOnly(2026, 6, 3)),
+                DemandSource.Create("other-org", "env-dev", "manual", "CROSS-ORG-PUMP", "SKU-OTHER", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 4)),
+                DemandSource.Create("org-001", "other-env", "manual", "CROSS-ENV-PUMP", "SKU-OTHER", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 5)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var firstResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=%20org-001%20&environmentId=%20env-dev%20&keyword=%20PuMp%20&skip=0&take=1");
+        var secondResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=%20org-001%20&environmentId=%20env-dev%20&keyword=%20PuMp%20&skip=1&take=1");
+        var allResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=%20org-001%20&environmentId=%20env-dev%20&keyword=%20PuMp%20&skip=0&take=500");
+
+        Assert.Equal(["PUMP-001"], await DemandSourceReferencesAsync(firstResponse));
+        Assert.Equal(["PUMP-002"], await DemandSourceReferencesAsync(secondResponse));
+        Assert.Equal(["PUMP-001", "PUMP-002", "OTHER-001"], await DemandSourceReferencesAsync(allResponse));
+    }
+
+    [Fact]
+    public async Task Demand_source_list_clamps_legacy_page_bounds_and_treats_blank_keyword_as_absent()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DemandSources.AddRange(Enumerable.Range(1, 501).Select(index => DemandSource.Create(
+                "org-001",
+                "env-dev",
+                "manual",
+                $"BOUND-{index:D3}",
+                $"SKU-{index:D3}",
+                "pcs",
+                "SITE-01",
+                index,
+                new DateOnly(2026, 1, 1).AddDays(index))));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var lowerResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev&keyword=%20%20&skip=-1&take=0");
+        var upperResponse = await client.GetAsync(
+            "/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev&keyword=%20%20&skip=0&take=501");
+
+        Assert.Single(await DemandSourceReferencesAsync(lowerResponse));
+        Assert.Equal(500, (await DemandSourceReferencesAsync(upperResponse)).Length);
+    }
+
+    [Theory]
+    [InlineData("/api/business/v1/planning/demands?environmentId=env-dev", "组织标识不能为空")]
+    [InlineData("/api/business/v1/planning/demands?organizationId=org-001", "环境标识不能为空")]
+    public async Task Demand_source_list_returns_existing_error_envelope_when_tenant_is_missing(
+        string path,
+        string expectedMessage)
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.GetAsync(path);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+        Assert.Contains(expectedMessage, document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Array, document.RootElement.GetProperty("errorData").ValueKind);
+    }
+
+    [Fact]
     public async Task DemandPlanning_http_endpoints_reject_anonymous_callers_before_persistence()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -953,6 +1067,17 @@ public sealed class DemandPlanningEndpointContractTests
     private static CreateOrUpdateDemandSourceCommand NewDemandCommand()
     {
         return new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "DEMAND-001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1));
+    }
+
+    private static async Task<string[]> DemandSourceReferencesAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("data")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("sourceReference").GetString()!)
+            .ToArray();
     }
 
     private sealed class DemandPlanningLiveHttpTestFactory : WebApplicationFactory<Program>

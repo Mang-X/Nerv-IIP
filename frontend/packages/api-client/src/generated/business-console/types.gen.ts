@@ -3530,7 +3530,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleD
     dueDate?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDemandSourceListRequest = {
     [key: string]: never;
 };
 
@@ -3639,6 +3639,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inputCoverageStart?: string | null;
     inputCoverageEnd?: string | null;
     failureReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -13909,6 +13913,9 @@ export type ListBusinessConsolePlanningDemandsData = {
     query: {
         organizationId: string;
         environmentId: string;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/planning/demands';
 };
