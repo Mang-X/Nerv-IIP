@@ -189,6 +189,11 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        if ($path.StartsWith('docs/governance/testing/', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
         if ([string]::Equals($path, 'docs/governance/script-automation.md', [StringComparison]::Ordinal)) {
             foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
             continue
