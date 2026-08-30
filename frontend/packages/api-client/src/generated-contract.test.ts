@@ -82,6 +82,12 @@ import type {
   BusinessConsoleClaimQualityInspectionTaskRequest,
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMesOperationTaskActionRequest,
+  BusinessConsoleMesProductionStatisticsBucket,
+  BusinessConsoleMesProductionStatisticsDegradedReason,
+  BusinessConsoleMesProductionStatisticsDimension,
+  BusinessConsoleMesProductionStatisticsRequest,
+  BusinessConsoleMesProductionStatisticsResolutionStatus,
+  BusinessConsoleMesProductionStatisticsResponse,
   BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleCompleteWmsWarehouseTaskRequest,
   BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
@@ -100,6 +106,7 @@ import type {
   BusinessConsoleWorkScopeAuthorizationPath,
   CancelBusinessConsolePlanningDemandData,
   QueryBusinessConsoleTelemetryOeeAggregatesData,
+  QueryBusinessConsoleMesProductionStatisticsData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
   CreateOrUpdateBusinessConsolePlanningForecastData,
@@ -190,6 +197,7 @@ import {
   listBusinessConsoleMesReportableOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  queryBusinessConsoleMesProductionStatisticsQueryOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -1101,6 +1109,35 @@ describe('generated API client contract', () => {
     for (const functionName of expectedFunctions) {
       expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
     }
+  })
+
+  it('exports MES production statistics through the stable api-client entry point (#2856)', () => {
+    expect(businessConsoleClient.queryBusinessConsoleMesProductionStatistics).toBeTypeOf('function')
+    expect(queryBusinessConsoleMesProductionStatisticsQueryOptions).toBeTypeOf('function')
+    expectTypeOf<BusinessConsoleMesProductionStatisticsRequest>().toEqualTypeOf<
+      QueryBusinessConsoleMesProductionStatisticsData['query']
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsDimension>().toEqualTypeOf<
+      'day' | 'shift' | 'workCenter' | 'sku'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsResolutionStatus>().toEqualTypeOf<
+      'resolved' | 'degraded'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsDegradedReason>().toEqualTypeOf<
+      | 'historicalDimensionLegacyUnresolved'
+      | 'historicalTimezoneMissing'
+      | 'historicalTimezoneInvalid'
+      | 'historicalShiftDefinitionMissing'
+      | 'historicalShiftDefinitionInvalid'
+      | 'historicalReportOutsideShiftWindow'
+      | 'historicalLocalTimeInvalid'
+      | 'historicalLocalTimeAmbiguous'
+      | 'historicalDimensionSnapshotDegraded'
+      | 'workCenterMissing'
+      | 'nonPositiveTotalOutput'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsBucket>().toBeObject()
   })
 
   it('exports line-side inventory balances through the stable Business Console entry point (#2228)', () => {

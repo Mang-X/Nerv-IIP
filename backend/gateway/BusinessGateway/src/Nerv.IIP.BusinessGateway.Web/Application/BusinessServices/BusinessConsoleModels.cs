@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
@@ -4409,6 +4410,89 @@ public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string? DeviceAssetId = null,
     int Skip = 0,
     int Take = 100);
+
+[JsonConverter(typeof(BusinessConsoleMesProductionStatisticsDimensionJsonConverter))]
+public enum BusinessConsoleMesProductionStatisticsDimension
+{
+    Day,
+    Shift,
+    WorkCenter,
+    Sku,
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsDimensionJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesProductionStatisticsDimension>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+[JsonConverter(typeof(BusinessConsoleMesProductionStatisticsResolutionStatusJsonConverter))]
+public enum BusinessConsoleMesProductionStatisticsResolutionStatus
+{
+    Resolved,
+    Degraded,
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsResolutionStatusJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesProductionStatisticsResolutionStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+[JsonConverter(typeof(BusinessConsoleMesProductionStatisticsDegradedReasonJsonConverter))]
+public enum BusinessConsoleMesProductionStatisticsDegradedReason
+{
+    HistoricalDimensionLegacyUnresolved,
+    HistoricalTimezoneMissing,
+    HistoricalTimezoneInvalid,
+    HistoricalShiftDefinitionMissing,
+    HistoricalShiftDefinitionInvalid,
+    HistoricalReportOutsideShiftWindow,
+    HistoricalLocalTimeInvalid,
+    HistoricalLocalTimeAmbiguous,
+    HistoricalDimensionSnapshotDegraded,
+    WorkCenterMissing,
+    NonPositiveTotalOutput,
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsDegradedReasonJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesProductionStatisticsDegradedReason>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+public sealed record BusinessConsoleMesProductionStatisticsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    BusinessConsoleMesProductionStatisticsDimension Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    DateOnly? BusinessDate = null,
+    string? ShiftCode = null,
+    string? WorkCenterId = null,
+    string? SkuId = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleMesProductionStatisticsResponse(
+    [property: Required] string OrganizationId,
+    [property: Required] string EnvironmentId,
+    [property: Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
+    [property: Required] DateTimeOffset WindowStartUtc,
+    [property: Required] DateTimeOffset WindowEndUtc,
+    [property: Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsBucket> Items,
+    [property: Required] int TotalCount,
+    [property: Required] int Skip,
+    [property: Required] int Take);
+
+public sealed record BusinessConsoleMesProductionStatisticsBucket(
+    [property: Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
+    string? DimensionValue,
+    DateOnly? BusinessDate,
+    string? ShiftCode,
+    string? WorkCenterId,
+    string? SkuId,
+    [property: Required] decimal GoodQuantity,
+    [property: Required] decimal ScrapQuantity,
+    [property: Required] decimal ReworkQuantity,
+    [property: Required] decimal TotalOutputQuantity,
+    decimal? GoodRate,
+    decimal? ScrapRate,
+    decimal? ReworkRate,
+    [property: Required] int ProductionReportCount,
+    [property: Required] BusinessConsoleMesProductionStatisticsResolutionStatus ResolutionStatus,
+    [property: Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsDegradedReason> DegradedReasons);
 
 public sealed record BusinessConsoleMesProductionPlanListRequest(
     string OrganizationId,

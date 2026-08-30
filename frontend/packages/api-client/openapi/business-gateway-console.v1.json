@@ -18103,6 +18103,149 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/production-statistics": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "queryBusinessConsoleMesProductionStatistics",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dimension",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension"
+                }
+              ]
+            }
+          },
+          {
+            "name": "windowStartUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "windowEndUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "businessDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "nullable": true
+            }
+          },
+          {
+            "name": "shiftCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workCenterId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skuId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionStatisticsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/production-reports/{reportNo}": {
       "get": {
         "tags": [
@@ -47631,6 +47774,229 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionStatisticsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "dimension",
+          "windowStartUtc",
+          "windowEndUtc",
+          "items",
+          "totalCount",
+          "skip",
+          "take"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "environmentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dimension": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension"
+          },
+          "windowStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "windowEndUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skip": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "take": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Day",
+          "Shift",
+          "WorkCenter",
+          "Sku"
+        ],
+        "enum": [
+          "day",
+          "shift",
+          "workCenter",
+          "sku"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dimension",
+          "goodQuantity",
+          "scrapQuantity",
+          "reworkQuantity",
+          "totalOutputQuantity",
+          "productionReportCount",
+          "resolutionStatus",
+          "degradedReasons"
+        ],
+        "properties": {
+          "dimension": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension"
+          },
+          "dimensionValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "shiftCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuId": {
+            "type": "string",
+            "nullable": true
+          },
+          "goodQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scrapQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reworkQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "totalOutputQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "goodRate": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "scrapRate": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "reworkRate": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "productionReportCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resolutionStatus": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus"
+          },
+          "degradedReasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Resolved",
+          "Degraded"
+        ],
+        "enum": [
+          "resolved",
+          "degraded"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "HistoricalDimensionLegacyUnresolved",
+          "HistoricalTimezoneMissing",
+          "HistoricalTimezoneInvalid",
+          "HistoricalShiftDefinitionMissing",
+          "HistoricalShiftDefinitionInvalid",
+          "HistoricalReportOutsideShiftWindow",
+          "HistoricalLocalTimeInvalid",
+          "HistoricalLocalTimeAmbiguous",
+          "HistoricalDimensionSnapshotDegraded",
+          "WorkCenterMissing",
+          "NonPositiveTotalOutput"
+        ],
+        "enum": [
+          "historicalDimensionLegacyUnresolved",
+          "historicalTimezoneMissing",
+          "historicalTimezoneInvalid",
+          "historicalShiftDefinitionMissing",
+          "historicalShiftDefinitionInvalid",
+          "historicalReportOutsideShiftWindow",
+          "historicalLocalTimeInvalid",
+          "historicalLocalTimeAmbiguous",
+          "historicalDimensionSnapshotDegraded",
+          "workCenterMissing",
+          "nonPositiveTotalOutput"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsRequest": {
         "type": "object",
         "additionalProperties": false
       },

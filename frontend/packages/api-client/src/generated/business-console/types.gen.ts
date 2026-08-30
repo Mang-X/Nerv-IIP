@@ -4503,6 +4503,51 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionStatisticsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse = {
+    organizationId: string;
+    environmentId: string;
+    dimension: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension;
+    windowStartUtc: string;
+    windowEndUtc: string;
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket>;
+    totalCount: number;
+    skip: number;
+    take: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension = 'day' | 'shift' | 'workCenter' | 'sku';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket = {
+    dimension: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension;
+    dimensionValue?: string | null;
+    businessDate?: string | null;
+    shiftCode?: string | null;
+    workCenterId?: string | null;
+    skuId?: string | null;
+    goodQuantity: number;
+    scrapQuantity: number;
+    reworkQuantity: number;
+    totalOutputQuantity: number;
+    goodRate?: number | null;
+    scrapRate?: number | null;
+    reworkRate?: number | null;
+    productionReportCount: number;
+    resolutionStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus;
+    degradedReasons: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus = 'resolved' | 'degraded';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason = 'historicalDimensionLegacyUnresolved' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'historicalDimensionSnapshotDegraded' | 'workCenterMissing' | 'nonPositiveTotalOutput';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportDetailResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse | null;
 };
@@ -16023,6 +16068,51 @@ export type RecordBusinessConsoleMesProductionReportResponses = {
 };
 
 export type RecordBusinessConsoleMesProductionReportResponse = RecordBusinessConsoleMesProductionReportResponses[keyof RecordBusinessConsoleMesProductionReportResponses];
+
+export type QueryBusinessConsoleMesProductionStatisticsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        dimension: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension;
+        windowStartUtc: string;
+        windowEndUtc: string;
+        businessDate?: string | null;
+        shiftCode?: string | null;
+        workCenterId?: string | null;
+        skuId?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/mes/production-statistics';
+};
+
+export type QueryBusinessConsoleMesProductionStatisticsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleMesProductionStatisticsError = QueryBusinessConsoleMesProductionStatisticsErrors[keyof QueryBusinessConsoleMesProductionStatisticsErrors];
+
+export type QueryBusinessConsoleMesProductionStatisticsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionStatisticsResponse;
+};
+
+export type QueryBusinessConsoleMesProductionStatisticsResponse = QueryBusinessConsoleMesProductionStatisticsResponses[keyof QueryBusinessConsoleMesProductionStatisticsResponses];
 
 export type GetBusinessConsoleMesProductionReportData = {
     body?: never;
