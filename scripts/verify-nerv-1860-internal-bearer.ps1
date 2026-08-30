@@ -157,8 +157,8 @@ function Get-Nerv1860LogCount {
     )
 
     $count = 0
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        $record = $line | ConvertFrom-Json
+    $document = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
+    foreach ($record in @($document.logs)) {
         if ($Predicate.Invoke($record)) {
             $count++
         }
