@@ -580,6 +580,12 @@ public sealed class BusinessGatewayAuthorizationTests
             environmentId = "env-dev",
             reason = "authorization test",
         },
+        "/api/business-console/v1/quality/ncrs/ncr-001/disposition" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            dispositionType = "use-as-is",
+        },
         "/api/business-console/v1/planning/demands" => new
         {
             organizationId = "org-001",
