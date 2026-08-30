@@ -13,6 +13,7 @@ public sealed class WmsKnownExceptionMessageArchitectureTests
         $"{WmsDomainRoot}/AggregatesModel/OutboundOrderAggregate/OutboundOrder.cs",
         $"{WmsWebRoot}/Application/Commands/WmsCommands.cs",
         $"{WmsWebRoot}/Application/Inventory/WmsInventoryReservationClient.cs",
+        $"{WmsWebRoot}/Application/Queries/ListQueryCriteria.cs",
     ];
 
     private static readonly IReadOnlyCollection<WmsKnownExceptionSite> ExpectedSites =
@@ -44,6 +45,7 @@ public sealed class WmsKnownExceptionMessageArchitectureTests
         Target($"{WmsWebRoot}/Application/Inventory/WmsInventoryReservationClient.cs", "HttpWmsInventoryReservationClient", "RenewAsync", 1),
         Target($"{WmsWebRoot}/Application/Inventory/WmsInventoryReservationClient.cs", "HttpWmsInventoryReservationClient", "CreateCountTaskAsync", 1),
         Target($"{WmsWebRoot}/Application/Inventory/WmsInventoryReservationClient.cs", "HttpWmsInventoryReservationClient", "ConfirmCountAdjustmentAsync", 1),
+        Target($"{WmsWebRoot}/Application/Queries/ListQueryCriteria.cs", "TenantScope", "From", 2),
     ];
 
     [Fact]
@@ -71,7 +73,7 @@ public sealed class WmsKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(31, ExpectedSites.Where(site => site.Kind == WmsKnownExceptionSiteKind.Target)
+        Assert.Equal(33, ExpectedSites.Where(site => site.Kind == WmsKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(9, ExpectedSites.Where(site => site.Kind == WmsKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
