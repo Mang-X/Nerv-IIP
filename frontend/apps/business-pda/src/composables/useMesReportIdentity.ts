@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import { computed, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { hasCompleteReworkAuthority } from '@/composables/mes/mesWorkOrderAuthority'
 
 type WorkOrder = BusinessConsoleMesWorkOrderItem
 type Task = BusinessConsoleMesOperationTaskRow
@@ -24,6 +25,13 @@ function queryId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function canReport(task: Task) {
+  return (
+    hasCompleteReworkAuthority(task) &&
+    task.allowedActions?.some((action) => action.trim().toLowerCase() === 'report') === true
+  )
+}
+
 export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
   const route = useRoute()
   const router = useRouter()
@@ -36,7 +44,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     if (!workOrderId) return null
     if (options.workOrderDetailError.value) return null
     const detail = options.workOrderDetail.value
-    if (detail?.workOrderId === workOrderId) {
+    if (detail?.workOrderId === workOrderId && hasCompleteReworkAuthority(detail)) {
       return {
         workOrderId: detail.workOrderId,
         skuId: detail.skuId,
@@ -53,7 +61,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     return null
   })
 
-  const visibleOperationTasks = computed(() => {
+  const workOrderOperationTasks = computed(() => {
     const workOrderId = selectedWorkOrder.value?.workOrderId
     const detail = options.workOrderDetail.value
     if (!workOrderId || options.workOrderDetailPending.value) {
@@ -66,11 +74,13 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     )
   })
 
+  const visibleOperationTasks = computed(() => workOrderOperationTasks.value.filter(canReport))
+
   const selectedTask = computed<Task | null>(() => {
     const operationTaskId = requestedOperationTaskId.value
     const workOrderId = selectedWorkOrder.value?.workOrderId
     if (!operationTaskId || !workOrderId) return null
-    const detailTask = visibleOperationTasks.value.find(
+    const detailTask = workOrderOperationTasks.value.find(
       (task) => task.operationTaskId === operationTaskId,
     )
     if (detailTask) return detailTask
@@ -82,8 +92,9 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
 
   const pair = computed(() => {
     const workOrderId = selectedWorkOrder.value?.workOrderId
-    const operationTaskId = selectedTask.value?.operationTaskId
-    if (!workOrderId || !operationTaskId || selectedTask.value?.workOrderId !== workOrderId) {
+    const task = selectedTask.value
+    const operationTaskId = task?.operationTaskId
+    if (!workOrderId || !operationTaskId || task?.workOrderId !== workOrderId || !canReport(task)) {
       return null
     }
     return { workOrderId, operationTaskId }
@@ -98,8 +109,25 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     if (workOrderId && options.workOrderDetailError.value) {
       return `工单 ${workOrderId} 详情加载失败，已阻止报工，请重试。`
     }
+    const detail = options.workOrderDetail.value
+    if (
+      workOrderId &&
+      !options.workOrderDetailPending.value &&
+      detail?.workOrderId === workOrderId &&
+      !hasCompleteReworkAuthority(detail)
+    ) {
+      return `工单 ${workOrderId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
+    }
     if (workOrderId && !options.workOrderDetailPending.value && !selectedWorkOrder.value) {
       return `未找到工单 ${workOrderId}，已阻止报工。`
+    }
+    if (workOrderId && operationTaskId && selectedWorkOrder.value && selectedTask.value) {
+      if (!hasCompleteReworkAuthority(selectedTask.value)) {
+        return `工序任务 ${operationTaskId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
+      }
+      if (!canReport(selectedTask.value)) {
+        return `工序任务 ${operationTaskId} 当前不可报工，服务端未开放 report 动作。`
+      }
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
       if (!options.exactOperationTaskScopeReady.value) {

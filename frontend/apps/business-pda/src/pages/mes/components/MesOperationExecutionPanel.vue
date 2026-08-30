@@ -7,6 +7,7 @@ import { describeMesReadinessReasons, operationTaskStatusLabel } from '@nerv-iip
 import RetryableListError from '@/components/RetryableListError.vue'
 import { NvBottomSheet, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
+import { hasCompleteReworkAuthority } from '@/composables/mes/mesWorkOrderAuthority'
 
 import {
   actionsForOperationTask,
@@ -51,6 +52,9 @@ const emit = defineEmits<{
 }>()
 
 const availableActions = computed(() => actionsForOperationTask(props.selected))
+const authorityComplete = computed(
+  () => props.selected === null || hasCompleteReworkAuthority(props.selected),
+)
 const blockReasonDisplays = computed(() =>
   describeMesReadinessReasons(props.selected?.blockReasons),
 )
@@ -134,6 +138,14 @@ const blockReasonDisplays = computed(() =>
       >
         {{ reworkSourceLabel(selected) }}
       </p>
+      <p
+        v-if="!authorityComplete"
+        data-testid="operation-rework-authority-error"
+        class="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        role="alert"
+      >
+        返工来源信息不完整，已阻止工序操作，请刷新后重试。
+      </p>
 
       <section
         v-if="blockReasonDisplays.length"
@@ -206,7 +218,7 @@ const blockReasonDisplays = computed(() =>
         </template>
       </section>
 
-      <div v-if="confirmingComplete" class="space-y-3">
+      <div v-if="confirmingComplete && authorityComplete" class="space-y-3">
         <p class="text-sm text-foreground">完成后该工序将进入终态，确认完成？</p>
         <NvMobileButton
           type="button"
@@ -234,7 +246,7 @@ const blockReasonDisplays = computed(() =>
 
       <div v-else class="space-y-2">
         <NvMobileButton
-          v-if="canClaim"
+          v-if="canClaim && authorityComplete"
           type="button"
           data-testid="action-claim"
           :disabled="actionPending || !operationScopeReady"

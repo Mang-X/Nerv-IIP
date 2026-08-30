@@ -1,15 +1,13 @@
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { operationTaskStatusLabel } from '@nerv-iip/business-core'
 import type { OperationActionContext } from '@/composables/useBusinessMes'
+import {
+  hasCompleteReworkAuthority,
+  isReworkWorkOrder,
+  type MesWorkOrderAuthority,
+} from '@/composables/mes/mesWorkOrderAuthority'
 
 export type OperationActionKind = 'start' | 'pause' | 'resume' | 'complete'
-
-type ReworkAuthority = {
-  workOrderType?: string | null
-  sourceWorkOrderId?: string | null
-  sourceNcrId?: string | null
-  sourceNcrCode?: string | null
-}
 
 export type OperationResultState = {
   status: 'success' | 'error'
@@ -41,7 +39,7 @@ export const OPERATION_SUCCESS_TITLES: Record<OperationActionKind, string> = {
 export function actionsForOperationTask(
   task: BusinessConsoleMesOperationTaskRow | null,
 ): OperationActionKind[] {
-  if (!task?.allowedActions) return []
+  if (!task?.allowedActions || !hasCompleteReworkAuthority(task)) return []
   return task.allowedActions.flatMap((value) => {
     const normalized = value.trim().toLowerCase() as OperationActionKind
     return recognizedActions.has(normalized) ? [normalized] : []
@@ -83,17 +81,13 @@ export function operationTaskRowSubtitle(task: BusinessConsoleMesOperationTaskRo
   return parts.join(' · ')
 }
 
-export function isReworkWorkOrder(item: ReworkAuthority) {
-  return item.workOrderType === 'rework'
+export function withReworkLabel(label: string, item: MesWorkOrderAuthority) {
+  return isReworkWorkOrder(item) && hasCompleteReworkAuthority(item) ? `返工 · ${label}` : label
 }
 
-export function withReworkLabel(label: string, item: ReworkAuthority) {
-  return isReworkWorkOrder(item) ? `返工 · ${label}` : label
-}
-
-export function reworkSourceLabel(item: ReworkAuthority) {
-  if (!isReworkWorkOrder(item)) return ''
-  return `来源 NCR ${item.sourceNcrCode}（${item.sourceNcrId}） · 源工单 ${item.sourceWorkOrderId}`
+export function reworkSourceLabel(item: MesWorkOrderAuthority) {
+  if (!isReworkWorkOrder(item) || !hasCompleteReworkAuthority(item)) return ''
+  return `来源 NCR ${item.sourceNcrCode!.trim()}（${item.sourceNcrId!.trim()}） · 源工单 ${item.sourceWorkOrderId!.trim()}`
 }
 
 export function formatOperationDate(value?: string | null) {

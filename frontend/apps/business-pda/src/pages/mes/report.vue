@@ -122,7 +122,7 @@ const {
   exactOperationTaskScopeMessage,
 })
 
-const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
+const { recordReport, confirmReport, reportScopeMessage, reportScopePending, reportScopeReady } =
   useMesProductionReports()
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
@@ -220,7 +220,7 @@ const quantityValid = computed(
 
 // 录数量面板：选中工序后打开
 const sheetOpen = computed({
-  get: () => selectedTask.value !== null && result.value === null,
+  get: () => pair.value !== null && result.value === null,
   set: (open) => {
     if (!open) closeSheet()
   },
@@ -247,6 +247,7 @@ interface ReportIntent {
     completesOperation: boolean
   }
   status: 'pending' | 'success' | 'error'
+  receipt: { reportNo: string; productionReportId: string } | null
   result: ResultState | null
 }
 const intents = reactive(new Map<string, ReportIntent>())
@@ -436,6 +437,7 @@ async function submit() {
         completesOperation: completesOperation.value,
       },
       status: 'pending',
+      receipt: null,
       result: null,
     }
     intents.set(key, intent)
@@ -449,22 +451,27 @@ async function submit() {
   if (!intent) return
   const attempt = intent.attempt
   try {
-    const receiptEnvelope = await recordReport({
-      workOrderId,
-      operationTaskId,
-      ...intent.payload,
-      idempotencyKey: intent.intentKey,
-    })
+    if (!intent.receipt) {
+      const receiptEnvelope = await recordReport({
+        workOrderId,
+        operationTaskId,
+        ...intent.payload,
+        idempotencyKey: intent.intentKey,
+      })
+      if (intent.attempt !== attempt) return
+      if (!receiptEnvelope?.success) {
+        throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
+      }
+      const reportNo = receiptEnvelope.data?.reportNo?.trim()
+      const productionReportId = receiptEnvelope.data?.productionReportId?.trim()
+      if (!reportNo || !productionReportId) {
+        throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
+      }
+      intent.receipt = { reportNo, productionReportId }
+    }
+    const { reportNo, productionReportId } = intent.receipt
+    await confirmReport({ reportNo, productionReportId, workOrderId, operationTaskId })
     if (intent.attempt !== attempt) return
-    if (!receiptEnvelope?.success) {
-      throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
-    }
-    const receipt = receiptEnvelope.data
-    const reportNo = receipt?.reportNo?.trim()
-    const productionReportId = receipt?.productionReportId?.trim()
-    if (!reportNo || !productionReportId) {
-      throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
-    }
     const description = [`${workOrderId} · ${operationTaskId}`]
     description.push(`报工单号 ${reportNo}`)
     description.push(`回执 ID ${productionReportId}`)

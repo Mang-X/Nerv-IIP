@@ -26,6 +26,7 @@ type Task = {
   operationTaskId: string
   workOrderId: string
   status: 'Ready'
+  allowedActions: string[]
   operationSequence: number
   workCenterId: string
   qualityStatus: string
@@ -160,6 +161,7 @@ function task(workOrderId: string, sequence: number): Task {
     operationTaskId: `OP-${sequence}`,
     workOrderId,
     status: 'Ready',
+    allowedActions: ['report'],
     operationSequence: sequence,
     workCenterId: 'WC-1',
     qualityStatus: 'Pending',

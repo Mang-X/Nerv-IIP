@@ -10,6 +10,7 @@ import {
   getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryKey,
+  getBusinessConsoleMesProductionReport,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
@@ -44,6 +45,7 @@ import {
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
   type BusinessConsoleMesProductionReportListEnvelope,
+  type BusinessConsoleMesProductionReportDetail,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesReceiptRequestListEnvelope,
@@ -1514,6 +1516,37 @@ export function useMesProductionReports() {
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,
+    confirmReport: async (input: {
+      reportNo: string
+      productionReportId: string
+      workOrderId: string
+      operationTaskId: string
+    }): Promise<BusinessConsoleMesProductionReportDetail> => {
+      const reportNo = input.reportNo.trim()
+      if (!hasScope(filters) || !reportNo) {
+        throw new Error('报工公开回读上下文无效，尚不能确认成功。')
+      }
+      let report: BusinessConsoleMesProductionReportDetail | undefined
+      try {
+        const { data } = await getBusinessConsoleMesProductionReport({
+          path: { reportNo },
+          query: scopeQuery(filters),
+          throwOnError: true,
+        })
+        report = data?.success ? data.data?.report : undefined
+      } catch {
+        throw new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。')
+      }
+      if (
+        report?.reportNo?.trim() !== reportNo ||
+        report.productionReportId?.trim() !== input.productionReportId.trim() ||
+        report.workOrderId?.trim() !== input.workOrderId.trim() ||
+        report.operationTaskId?.trim() !== input.operationTaskId.trim()
+      ) {
+        throw new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。')
+      }
+      return report
+    },
     recordReport: async (input: RecordReportInput) => {
       const selectedScope = reportScope.requireSelectedScope()
       const { idempotencyKey: suppliedKey, ...payload } = input
@@ -1545,32 +1578,40 @@ export function useMesProductionReports() {
           `mes-report-${Date.now()}-${Math.random()}`,
         currentPayload,
       )
-      if (input.completesOperation) {
-        try {
-          const workOrderId = input.workOrderId?.trim()
-          const operationTaskId = input.operationTaskId?.trim()
-          const authoritative = operationTaskId
-            ? await readExactOperationTask(
-                filters,
-                operationTaskId,
-                selectedScope,
-                workOrderId,
-                'reportable',
-              )
-            : undefined
+      try {
+        const workOrderId = input.workOrderId?.trim()
+        const operationTaskId = input.operationTaskId?.trim()
+        const authoritative = operationTaskId
+          ? await readExactOperationTask(
+              filters,
+              operationTaskId,
+              selectedScope,
+              workOrderId,
+              'reportable',
+            )
+          : undefined
+        const samePair =
+          authoritative?.workOrderId === workOrderId &&
+          authoritative?.operationTaskId === operationTaskId
+        const reportAllowed = authoritative?.allowedActions?.some(
+          (action) => action.trim().toLowerCase() === 'report',
+        )
+        if (input.completesOperation) {
           assertLifecycleActionExecutable({
             domain: 'mes-operation-task',
             action: 'report-complete',
             facts: {
-              status:
-                authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
+              status: samePair ? authoritative?.status : undefined,
               idempotentReplay: isReplay,
             },
           })
-        } catch (error) {
-          if (!isReplay) clearPendingBusinessIntent(scope)
-          throw error
         }
+        if (!isReplay && (!samePair || !reportAllowed)) {
+          throw new Error('当前工序不可报工，服务端未开放 report 动作。')
+        }
+      } catch (error) {
+        if (!isReplay) clearPendingBusinessIntent(scope)
+        throw error
       }
       const frozenPayload =
         pending.payloadSnapshot !== undefined

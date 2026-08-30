@@ -642,6 +642,33 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
 
 test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结果', async ({ page }) => {
   let submittedReport: Record<string, unknown> | undefined
+  let readbackCount = 0
+  await page.route(
+    '**/api/business-console/v1/mes/production-reports/RPT-E2E-0001**',
+    async (route) => {
+      readbackCount += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            report: {
+              productionReportId: '019f-e2e-production-report',
+              reportNo: 'RPT-E2E-0001',
+              workOrderId: 'WO-1',
+              operationTaskId: 'OP-1',
+              goodQuantity: 5,
+              scrapQuantity: 0,
+              reworkQuantity: 0,
+            },
+            consumedMaterialLots: [],
+            laborAllocations: [],
+          },
+        }),
+      })
+    },
+  )
   await page.route('**/api/business-console/v1/mes/production-reports', async (route) => {
     if (route.request().method() !== 'POST') {
       return routeBusinessConsoleApi(route)
@@ -692,11 +719,60 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   await expect(result.getByText('报工成功')).toBeVisible()
   await expect(result).toContainText('RPT-E2E-0001')
   await expect(result).toContainText('019f-e2e-production-report')
+  expect(readbackCount).toBe(1)
   expect(submittedReport).toMatchObject({
     workOrderId: 'WO-1',
     operationTaskId: 'OP-1',
     goodQuantity: 5,
   })
+})
+
+test('报工：POST confirmed 但公开 GET 回读错实体时不得显示成功', async ({ page }) => {
+  await page.route('**/api/business-console/v1/mes/production-reports/RPT-E2E-WRONG**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          report: {
+            productionReportId: '019f-e2e-wrong',
+            reportNo: 'RPT-E2E-WRONG',
+            workOrderId: 'WO-OTHER',
+            operationTaskId: 'OP-OTHER',
+          },
+        },
+      }),
+    }),
+  )
+  await page.route('**/api/business-console/v1/mes/production-reports', async (route) => {
+    if (route.request().method() !== 'POST') return routeBusinessConsoleApi(route)
+    const submitted = route.request().postDataJSON() as Record<string, unknown>
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          productionReportId: '019f-e2e-wrong',
+          reportNo: 'RPT-E2E-WRONG',
+          operationReceipt: productionReportReceipt(
+            '019f-e2e-wrong',
+            String(submitted.idempotencyKey ?? ''),
+          ),
+        },
+      }),
+    })
+  })
+
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await page.getByTestId('good-quantity').fill('1')
+  await page.getByTestId('submit-report').click()
+
+  const result = page.locator('[data-result][data-status="error"]')
+  await expect(result).toBeVisible()
+  await expect(result).toContainText('尚未回读到同一工单与工序')
+  await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
 })
 
 test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({

@@ -65,6 +65,7 @@ const receiptState = vi.hoisted(() => ({
   confirm: vi.fn(),
 }))
 const lineSideInventoryFetch = vi.hoisted(() => vi.fn())
+const productionReportFetch = vi.hoisted(() => vi.fn())
 
 const authState = vi.hoisted(() => ({
   principal: undefined as
@@ -119,6 +120,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesMaterialIssueRequests: vi.fn(),
   listBusinessConsoleMesOperationTasks: vi.fn(),
   listBusinessConsoleMesReportableOperationTasks: vi.fn(),
+  getBusinessConsoleMesProductionReport: (...args: unknown[]) => productionReportFetch(...args),
   listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesOperationTasks',
   ),
@@ -297,6 +299,7 @@ describe('pda useBusinessMes composables', () => {
     lineSideInventoryFetch.mockReset().mockResolvedValue({
       data: { success: true, data: { items: [], totalCount: 0, page: 1, pageSize: 200 } },
     })
+    productionReportFetch.mockReset()
     coladaState.queryDataById.clear()
     coladaState.queryDataRefById.clear()
     coladaState.queryErrorRefById.clear()
@@ -411,6 +414,7 @@ describe('pda useBusinessMes composables', () => {
                     operationTaskId: query.keyword,
                     workOrderId: query.workOrderId ?? 'wo-1',
                     status: 'InProgress',
+                    allowedActions: ['report'],
                   },
                 ],
                 total: 1,
@@ -1238,6 +1242,77 @@ describe('pda useBusinessMes composables', () => {
     )
   })
 
+  it('confirms a production report only when public GET returns the same report and pair', async () => {
+    productionReportFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          report: {
+            productionReportId: 'report-id-1',
+            reportNo: 'RPT-1',
+            workOrderId: 'wo-1',
+            operationTaskId: 'ot-1',
+          },
+        },
+      },
+    })
+    const { confirmReport } = useMesProductionReports()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-1',
+        productionReportId: 'report-id-1',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+      }),
+    ).resolves.toMatchObject({ reportNo: 'RPT-1', workOrderId: 'wo-1', operationTaskId: 'ot-1' })
+    expect(productionReportFetch).toHaveBeenCalledWith({
+      path: { reportNo: 'RPT-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      throwOnError: true,
+    })
+  })
+
+  it('rejects a production report public GET that returns another operation pair', async () => {
+    productionReportFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          report: {
+            productionReportId: 'report-id-1',
+            reportNo: 'RPT-1',
+            workOrderId: 'wo-other',
+            operationTaskId: 'ot-other',
+          },
+        },
+      },
+    })
+    const { confirmReport } = useMesProductionReports()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-1',
+        productionReportId: 'report-id-1',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+      }),
+    ).rejects.toThrow('尚未回读到同一工单与工序')
+  })
+
+  it('rejects a production report when public GET is not yet visible', async () => {
+    productionReportFetch.mockRejectedValueOnce({ status: 404 })
+    const { confirmReport } = useMesProductionReports()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-NOT-VISIBLE',
+        productionReportId: 'report-id-pending',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+      }),
+    ).rejects.toThrow('尚未回读到同一工单与工序')
+  })
+
   it('does not send a production report when no reporting scope is selected', async () => {
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
@@ -1258,6 +1333,39 @@ describe('pda useBusinessMes composables', () => {
       }),
       // 响应成功但授权清单为空 = 「一个授权范围都没有」，与「还没选」是两回事（#1297）。
     ).rejects.toThrow(MES_WORK_SCOPE_UNAVAILABLE_MESSAGE)
+    expect(mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('does not send a production report when the authoritative task omits report action', async () => {
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'ot-done',
+              workOrderId: 'wo-1',
+              status: 'Completed',
+              allowedActions: [],
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const { recordReport } = useMesProductionReports()
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+
+    await expect(
+      recordReport({
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-done',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'report-done',
+      }),
+    ).rejects.toThrow('服务端未开放 report 动作')
     expect(mutateAsync).not.toHaveBeenCalled()
   })
 

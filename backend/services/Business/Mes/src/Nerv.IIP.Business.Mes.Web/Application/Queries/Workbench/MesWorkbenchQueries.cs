@@ -679,6 +679,44 @@ internal sealed record MesWorkOrderAuthority(
     string? SourceNcrId,
     string? SourceNcrCode);
 
+internal static class MesWorkOrderAuthorityProjection
+{
+    internal static async Task<IReadOnlyDictionary<string, MesWorkOrderAuthority>> LoadAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> workOrderIds,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderIdValue))
+            .Select(x => new MesWorkOrderAuthority(
+                x.WorkOrderIdValue,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode))
+            .ToDictionaryAsync(x => x.WorkOrderId, StringComparer.Ordinal, cancellationToken);
+    }
+
+    internal static MesOperationTaskRow Apply(
+        MesOperationTaskRow row,
+        MesWorkOrderAuthority? authority) =>
+        authority is null
+            ? row
+            : row with
+            {
+                WorkOrderType = authority.WorkOrderType,
+                SourceWorkOrderId = authority.SourceWorkOrderId,
+                SourceNcrId = authority.SourceNcrId,
+                SourceNcrCode = authority.SourceNcrCode,
+            };
+}
+
 public sealed class GetMesWorkOrderDetailQueryHandler(
     ApplicationDbContext dbContext,
     TimeProvider? timeProvider = null)
@@ -729,7 +767,7 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         var taskReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
             .EvaluateManyAsync(operationTasks, evaluatedAtUtc, cancellationToken);
         var tasks = operationTasks
-            .Select(x => WithWorkOrderAuthority(
+            .Select(x => MesWorkOrderAuthorityProjection.Apply(
                 ToRow(x, taskReadiness[x.OperationTaskIdValue]),
                 new MesWorkOrderAuthority(
                     workOrder.WorkOrderIdValue,
@@ -1016,41 +1054,6 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         };
     }
 
-    internal static async Task<IReadOnlyDictionary<string, MesWorkOrderAuthority>> LoadWorkOrderAuthoritiesAsync(
-        ApplicationDbContext dbContext,
-        string organizationId,
-        string environmentId,
-        IReadOnlyCollection<string> workOrderIds,
-        CancellationToken cancellationToken)
-    {
-        return await dbContext.WorkOrders
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderIdValue))
-            .Select(x => new MesWorkOrderAuthority(
-                x.WorkOrderIdValue,
-                x.WorkOrderType,
-                x.SourceWorkOrderId,
-                x.SourceNcrId,
-                x.SourceNcrCode))
-            .ToDictionaryAsync(x => x.WorkOrderId, StringComparer.Ordinal, cancellationToken);
-    }
-
-    internal static MesOperationTaskRow WithWorkOrderAuthority(
-        MesOperationTaskRow row,
-        MesWorkOrderAuthority? authority) =>
-        authority is null
-            ? row
-            : row with
-            {
-                WorkOrderType = authority.WorkOrderType,
-                SourceWorkOrderId = authority.SourceWorkOrderId,
-                SourceNcrId = authority.SourceNcrId,
-                SourceNcrCode = authority.SourceNcrCode,
-            };
-
     private static string[] SplitCanonicalCsv(string value)
     {
         return value
@@ -1127,14 +1130,14 @@ public sealed class ListOperationTasksQueryHandler(
                 tasks,
                 (timeProvider ?? TimeProvider.System).GetUtcNow(),
                 cancellationToken);
-        var workOrderAuthorities = await GetMesWorkOrderDetailQueryHandler.LoadWorkOrderAuthoritiesAsync(
+        var workOrderAuthorities = await MesWorkOrderAuthorityProjection.LoadAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).ToArray(),
             cancellationToken);
         var items = tasks
-            .Select(x => GetMesWorkOrderDetailQueryHandler.WithWorkOrderAuthority(
+            .Select(x => MesWorkOrderAuthorityProjection.Apply(
                 GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]),
                 workOrderAuthorities.GetValueOrDefault(x.WorkOrderId)))
             .ToArray();
@@ -1201,14 +1204,14 @@ public sealed class ListReportableOperationTasksQueryHandler(
                 tasks,
                 (timeProvider ?? TimeProvider.System).GetUtcNow(),
                 cancellationToken);
-        var workOrderAuthorities = await GetMesWorkOrderDetailQueryHandler.LoadWorkOrderAuthoritiesAsync(
+        var workOrderAuthorities = await MesWorkOrderAuthorityProjection.LoadAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).ToArray(),
             cancellationToken);
         var items = tasks
-            .Select(x => GetMesWorkOrderDetailQueryHandler.WithWorkOrderAuthority(
+            .Select(x => MesWorkOrderAuthorityProjection.Apply(
                 GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]),
                 workOrderAuthorities.GetValueOrDefault(x.WorkOrderId)))
             .ToArray();

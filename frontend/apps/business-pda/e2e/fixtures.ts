@@ -1010,6 +1010,29 @@ export async function routeBusinessConsoleApi(route: Route) {
     }
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
+  const productionReportDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/production-reports\/([^/]+)$/,
+  )
+  if (method === 'GET' && productionReportDetailMatch) {
+    const reportNo = decodeURIComponent(productionReportDetailMatch[1])
+    return fulfillJson(
+      route,
+      envelope({
+        report: {
+          productionReportId: '019f-e2e-production-report',
+          reportNo,
+          workOrderId: 'WO-1',
+          operationTaskId: 'OP-1',
+          goodQuantity: 5,
+          scrapQuantity: 0,
+          reworkQuantity: 0,
+          reportedAtUtc: nowUtc,
+        },
+        consumedMaterialLots: [],
+        laborAllocations: [],
+      }),
+    )
+  }
   if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
