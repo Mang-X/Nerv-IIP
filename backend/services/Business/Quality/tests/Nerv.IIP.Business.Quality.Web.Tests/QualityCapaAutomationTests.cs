@@ -50,11 +50,14 @@ public sealed class QualityCapaAutomationTests
                     Dispositions = [QualityNcrDispositionTypes.Rework, QualityNcrDispositionTypes.Scrap],
                     OwnerUserId = "qa-manager-001",
                     DueDays = 14,
-                })));
+                })),
+            db);
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 QualityNcrDispositionTypes.Scrap,
                 "approval-chain-approved",
                 [],
@@ -102,15 +105,19 @@ public sealed class QualityCapaAutomationTests
                     Dispositions = [QualityNcrDispositionTypes.Rework, QualityNcrDispositionTypes.Scrap],
                     OwnerUserId = "qa-manager-001",
                     DueDays = 14,
-                })));
+                })),
+            db);
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 QualityNcrDispositionTypes.Rework,
                 "approval-chain-approved",
                 [],
-                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-07-07T08:00:00Z"))]),
+                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-07-07T08:00:00Z"))],
+                "quality-capa-rework-001"),
             CancellationToken.None);
 
         Assert.Empty(db.CorrectiveActions);

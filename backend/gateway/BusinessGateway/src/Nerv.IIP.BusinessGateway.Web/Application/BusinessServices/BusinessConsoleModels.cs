@@ -2166,7 +2166,8 @@ public sealed record BusinessConsoleNcrDispositionRequest(
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds,
-    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null);
+    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMrbReview(
     string ReviewerId,

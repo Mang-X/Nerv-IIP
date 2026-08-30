@@ -1,6 +1,7 @@
 export { configureApiClient } from './transport/client-config'
 export {
   BusinessOperationFailedError,
+  BusinessOperationPendingError,
   BusinessOperationUnconfirmedError,
   confirmBusinessConsoleOperation,
   readBusinessConsoleOperationState,
