@@ -532,22 +532,57 @@ function Get-Man517RemainingProcessNames {
     return $remaining.ToArray()
 }
 
+function Wait-Man517ComposeObservationCadence {
+    param(
+        [Parameter(Mandatory)] [object] $Clock,
+        [Parameter(Mandatory)] [ValidateRange(1, 250)] [int] $Milliseconds
+    )
+
+    [System.Threading.Tasks.Task]::Delay($Milliseconds).GetAwaiter().GetResult()
+}
+
 function Wait-Man517OwnedComposeServicesStopped {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $OwnedServices,
         [Parameter(Mandatory)] [string] $ComposeFile,
-        [Parameter(Mandatory)] [ValidateRange(1, 60000)] [int] $DeadlineMilliseconds
+        [Parameter(Mandatory)] [ValidateRange(1000, 60000)] [int] $DeadlineMilliseconds,
+        [object] $Clock = [System.Diagnostics.Stopwatch]::StartNew()
     )
 
     $owned = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($service in $OwnedServices) { [void]$owned.Add($service) }
 
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $attempts = 0
     $lastObservation = 'unavailable'
+    $lastRemainingNames = [string[]]@($owned)
+    [Array]::Sort($lastRemainingNames, [StringComparer]::Ordinal)
+    $lastQuery = $null
+    $lastLogPath = $null
     while ($true) {
+        $elapsedMilliseconds = [long]$Clock.ElapsedMilliseconds
+        if ($elapsedMilliseconds -ge $DeadlineMilliseconds) {
+            return [pscustomobject]@{
+                status = 'timed-out'
+                converged = $false
+                deadlineMilliseconds = $DeadlineMilliseconds
+                attempts = $attempts
+                elapsedMilliseconds = $elapsedMilliseconds
+                remainingNames = $lastRemainingNames
+                lastObservation = $lastObservation
+                query = $lastQuery
+                logPath = $lastLogPath
+            }
+        }
+
+        $remainingDeadlineMilliseconds = $DeadlineMilliseconds - [int]$elapsedMilliseconds
+        # Invoke-NativeCommandOutput 的命令 timeout 以整秒计。剩余不足 1 秒时不再启动
+        # 一个可能越过真实 deadline 的查询，只等待受同一 deadline 限定的下一观测边沿。
+        if ($remainingDeadlineMilliseconds -lt 1000) {
+            Wait-Man517ComposeObservationCadence -Clock $Clock -Milliseconds ([Math]::Min(250, $remainingDeadlineMilliseconds))
+            continue
+        }
+
         $attempts++
-        $remainingDeadlineMilliseconds = [Math]::Max(1, $DeadlineMilliseconds - [int]$stopwatch.ElapsedMilliseconds)
         try {
             $observation = Get-Man517ComposeRunningServicesObservation `
                 -ComposeFile $ComposeFile `
@@ -555,7 +590,7 @@ function Wait-Man517OwnedComposeServicesStopped {
                 -RemainingDeadlineMilliseconds $remainingDeadlineMilliseconds
         }
         catch {
-            $elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
+            $elapsedMilliseconds = [long]$Clock.ElapsedMilliseconds
             $failure = [InvalidOperationException]::new(
                 "Compose cleanup state query failed: deadlineMilliseconds=$DeadlineMilliseconds; attempts=$attempts; elapsedMilliseconds=$elapsedMilliseconds; lastObservation=$lastObservation; $($_.Exception.Message)",
                 $_.Exception)
@@ -574,8 +609,11 @@ function Wait-Man517OwnedComposeServicesStopped {
         }
         $remainingNames = [string[]]@($remaining)
         [Array]::Sort($remainingNames, [StringComparer]::Ordinal)
-        $elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
+        $elapsedMilliseconds = [long]$Clock.ElapsedMilliseconds
         $lastObservation = "observedAtUtc=$($observation.observedAtUtc); running=[$(@($observation.runningServices) -join ',')]; ownedRemaining=[$($remainingNames -join ',')]; query=$($observation.query); log=$($observation.logPath)"
+        $lastRemainingNames = $remainingNames
+        $lastQuery = $observation.query
+        $lastLogPath = $observation.logPath
 
         if ($remainingNames.Count -eq 0 -and $elapsedMilliseconds -le $DeadlineMilliseconds) {
             return [pscustomobject]@{
@@ -590,18 +628,10 @@ function Wait-Man517OwnedComposeServicesStopped {
                 logPath = $observation.logPath
             }
         }
-        if ($elapsedMilliseconds -ge $DeadlineMilliseconds) {
-            return [pscustomobject]@{
-                status = 'timed-out'
-                converged = $false
-                deadlineMilliseconds = $DeadlineMilliseconds
-                attempts = $attempts
-                elapsedMilliseconds = $elapsedMilliseconds
-                remainingNames = $remainingNames
-                lastObservation = $lastObservation
-                query = $observation.query
-                logPath = $observation.logPath
-            }
+        if ($elapsedMilliseconds -lt $DeadlineMilliseconds) {
+            Wait-Man517ComposeObservationCadence `
+                -Clock $Clock `
+                -Milliseconds ([Math]::Min(250, $DeadlineMilliseconds - [int]$elapsedMilliseconds))
         }
     }
 }
@@ -610,7 +640,7 @@ function Get-Man517ComposeRunningServicesObservation {
     param(
         [Parameter(Mandatory)] [string] $ComposeFile,
         [Parameter(Mandatory)] [ValidateRange(1, 100000)] [int] $Attempt,
-        [Parameter(Mandatory)] [ValidateRange(1, 60000)] [int] $RemainingDeadlineMilliseconds
+        [Parameter(Mandatory)] [ValidateRange(1000, 60000)] [int] $RemainingDeadlineMilliseconds
     )
 
     $queryArguments = @('compose', '-f', $ComposeFile, 'ps', '--services', '--status', 'running')
@@ -619,7 +649,7 @@ function Get-Man517ComposeRunningServicesObservation {
     $logPath = Join-Path $logDirectory 'observation.json'
     [System.IO.Directory]::CreateDirectory($logDirectory) | Out-Null
     try {
-        $queryTimeoutSeconds = [Math]::Max(1, [int][Math]::Ceiling($RemainingDeadlineMilliseconds / 1000.0))
+        $queryTimeoutSeconds = [int][Math]::Floor($RemainingDeadlineMilliseconds / 1000.0)
         $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments $queryArguments -WorkingDirectory $root -TimeoutSeconds $queryTimeoutSeconds -Name "man517-verify-infrastructure-stopped-$Attempt"
         $runningServices = [string[]]@("$($result.Stdout)" -split '\r?\n' |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
@@ -1025,7 +1055,7 @@ finally {
                 -DeadlineMilliseconds $composeCleanupDeadlineMilliseconds
             $remainingOwnedServices = [string[]]@($composeCleanupResult.remainingNames)
             if (-not $composeCleanupResult.converged) {
-                $cleanupFailures.Add("script-owned compose services still running: $($remainingOwnedServices -join ', '); deadlineMilliseconds=$($composeCleanupResult.deadlineMilliseconds); attempts=$($composeCleanupResult.attempts); elapsedMilliseconds=$($composeCleanupResult.elapsedMilliseconds); lastObservation=$($composeCleanupResult.lastObservation)")
+                $cleanupFailures.Add("script-owned compose cleanup did not converge before deadline: remaining=[$($remainingOwnedServices -join ',')]; deadlineMilliseconds=$($composeCleanupResult.deadlineMilliseconds); attempts=$($composeCleanupResult.attempts); elapsedMilliseconds=$($composeCleanupResult.elapsedMilliseconds); lastObservation=$($composeCleanupResult.lastObservation)")
                 [void]$cleanupErrorCodes.Add('owned-resource-cleanup-failed')
             }
         }
