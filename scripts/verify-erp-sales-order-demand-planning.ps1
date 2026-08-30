@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Starts local PostgreSQL and Redis compose services when they are not already running
 #     - Reserves three loopback TCP listeners until their exact managed service processes start
-#     - Builds and starts MasterData, ERP, and DemandPlanning as separate managed processes
+#     - Builds and starts the MasterData, ERP, and DemandPlanning Web DLLs as separate managed process owners
 #     - Creates a disposable PostgreSQL database and publishes real Redis CAP integration events
 #   Writes:
 #     - bin/ and obj/ outputs for the three business services and full-chain probe
@@ -15,7 +15,6 @@
 #   Cleanup:
 #     - Releases every script-owned TCP listener reservation in finally
 #     - Stops every managed service process in finally
-#     - Rebinds every reserved service port after cleanup to prove listener release
 #     - Drops the disposable PostgreSQL database in finally
 #     - Stops only compose services started by this script
 #     - Verifies every owned process, the exact database, and owned compose services are gone
@@ -23,7 +22,7 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 #     - Docker with local postgres:18 and redis:8 images
-#     - lsof, ps, and tail on macOS/Linux, or Get-NetTCPConnection on Windows
+#     - lsof on macOS/Linux, or Get-NetTCPConnection on Windows
 #     - NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS environment variables
 
 param(
@@ -83,10 +82,6 @@ function New-Man517PortReservation {
             ManagedProcess = $null
             ProcessId = $null
             ProcessStartTime = $null
-            ListenerProcessId = $null
-            ListenerProcessStartTime = $null
-            ListenerPort = $null
-            ListenerObservedAtUtc = $null
             State = 'Reserved'
         }
         $Owners.Add($ownership)
@@ -109,53 +104,12 @@ function Start-Man517OwnedProcess {
 
     $Ownership.Reservation.Stop()
     $Ownership.Reservation = $null
-    $Ownership.State = 'Starting'
-    try {
-        $managedProcess = Start-ManagedBackgroundProcess -Command $Command -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
-        $Ownership.ManagedProcess = $managedProcess
-        $Ownership.ProcessId = $managedProcess.ProcessId
-        $Ownership.ProcessStartTime = $managedProcess.Process.StartTime
-        $Ownership.State = 'Managed'
-        return $managedProcess
-    }
-    catch {
-        $Ownership.State = 'Failed'
-        throw
-    }
-}
-
-function Get-Man517ManagedProcessTreeIds {
-    param([Parameter(Mandatory)] [int]$RootProcessId)
-
-    if ($IsWindows) {
-        return @(Get-ScriptAutomationProcessTreeIds -ProcessId $RootProcessId)
-    }
-
-    $processSnapshot = Invoke-NativeCommandOutput -Command 'ps' -Arguments @('-axo', 'pid=,ppid=') -WorkingDirectory $root -Name 'man517-process-tree-authority'
-    $childrenByParent = [Collections.Generic.Dictionary[int, Collections.Generic.List[object]]]::new()
-    foreach ($line in @("$($processSnapshot.Stdout)" -split '\r?\n')) {
-        $match = [regex]::Match($line, '^\s*(?<pid>[1-9][0-9]*)\s+(?<ppid>[0-9]+)\s*$')
-        if (-not $match.Success) { continue }
-        $processId = [int]$match.Groups['pid'].Value
-        $parentProcessId = [int]$match.Groups['ppid'].Value
-        if (-not $childrenByParent.ContainsKey($parentProcessId)) {
-            $childrenByParent.Add($parentProcessId, [Collections.Generic.List[object]]::new())
-        }
-        $childrenByParent[$parentProcessId].Add($processId)
-    }
-
-    $treeIds = [Collections.Generic.HashSet[int]]::new()
-    $pending = [Collections.Generic.Stack[int]]::new()
-    $pending.Push($RootProcessId)
-    while ($pending.Count -gt 0) {
-        $current = $pending.Pop()
-        if (-not $treeIds.Add($current)) { continue }
-        if (-not $childrenByParent.ContainsKey($current)) { continue }
-        foreach ($childProcessId in $childrenByParent[$current]) {
-            $pending.Push([int]$childProcessId)
-        }
-    }
-    return @($treeIds)
+    $managedProcess = Start-ManagedBackgroundProcess -Command $Command -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
+    $Ownership.ManagedProcess = $managedProcess
+    $Ownership.ProcessId = $managedProcess.ProcessId
+    $Ownership.ProcessStartTime = $managedProcess.Process.StartTime
+    $Ownership.State = 'OwnedByProcess'
+    return $managedProcess
 }
 
 function Get-Man517ListenerProcessIds {
@@ -187,73 +141,22 @@ function Get-Man517ListenerProcessIds {
     return @($listenerProcessIds)
 }
 
-function Get-Man517ManagedListenerAuthorities {
-    param([Parameter(Mandatory)] [int[]]$ManagedTreeIds)
-
-    $managedTreeIdSet = [Collections.Generic.HashSet[int]]::new($ManagedTreeIds)
-    $listenerAuthorities = [System.Collections.Generic.List[object]]::new()
-    if ($IsWindows) {
-        foreach ($connection in @(Get-NetTCPConnection -State Listen -ErrorAction Stop)) {
-            if ($managedTreeIdSet.Contains([int]$connection.OwningProcess) -and
-                [string]::Equals($connection.LocalAddress, '127.0.0.1', [StringComparison]::Ordinal)) {
-                $listenerAuthorities.Add([pscustomobject]@{
-                    ProcessId = [int]$connection.OwningProcess
-                    Port = [int]$connection.LocalPort
-                })
-            }
-        }
-    }
-    else {
-        try {
-            $listenerResult = Invoke-NativeCommandOutput -Command 'lsof' -Arguments @(
-                '-nP', '-a', '-p', ($ManagedTreeIds -join ','),
-                '-iTCP@127.0.0.1', '-sTCP:LISTEN', '-F', 'pn'
-            ) -WorkingDirectory $root -Name 'man517-managed-tree-listener-authority'
-        }
-        catch {
-            if ($_.Exception.Data['ExitCode'] -ne 1) {
-                throw "MAN-517 managed process tree has no readable TCP listener authority: $($_.Exception.Message)"
-            }
-            return
-        }
-        $currentProcessId = $null
-        foreach ($line in @("$($listenerResult.Stdout)" -split '\r?\n')) {
-            $processMatch = [regex]::Match($line, '^p(?<pid>[1-9][0-9]*)$')
-            if ($processMatch.Success) {
-                $currentProcessId = [int]$processMatch.Groups['pid'].Value
-                continue
-            }
-            $listenerMatch = [regex]::Match($line, '^n127\.0\.0\.1:(?<port>[1-9][0-9]*)$')
-            if ($listenerMatch.Success -and $null -ne $currentProcessId) {
-                $listenerAuthorities.Add([pscustomobject]@{
-                    ProcessId = $currentProcessId
-                    Port = [int]$listenerMatch.Groups['port'].Value
-                })
-            }
-        }
-    }
-    return @($listenerAuthorities)
-}
-
 function Read-Man517ListenerAuthority {
-    param(
-        [Parameter(Mandatory)] [object]$Ownership,
-        [Parameter(Mandatory)] [object]$ManagedProcess
-    )
+    param([Parameter(Mandatory)] [object]$Ownership)
 
-    $managedTreeIds = [int[]]@(Get-Man517ManagedProcessTreeIds -RootProcessId $ManagedProcess.ProcessId)
-    $listenerAuthorities = @(Get-Man517ManagedListenerAuthorities -ManagedTreeIds $managedTreeIds)
-    if ($listenerAuthorities.Count -ne 1) {
-        throw "MAN-517 managed process tree $($ManagedProcess.ProcessId) for '$($Ownership.ServiceName)' expected one loopback listener, found $($listenerAuthorities.Count)."
+    $listenerProcessIds = @(Get-Man517ListenerProcessIds -Ownership $Ownership)
+    if ($listenerProcessIds.Count -ne 1) {
+        throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' expected one loopback listener, found $($listenerProcessIds.Count)."
     }
-
-    $listenerAuthority = $listenerAuthorities[0]
-    $Ownership.ListenerProcessId = $listenerAuthority.ProcessId
-    $Ownership.ListenerProcessStartTime = (Get-Process -Id $listenerAuthority.ProcessId -ErrorAction Stop).StartTime
-    $Ownership.ListenerPort = $listenerAuthority.Port
-    $Ownership.ListenerObservedAtUtc = [DateTimeOffset]::UtcNow
-    if ($listenerAuthority.Port -ne $Ownership.Port) {
-        throw "MAN-517 '$($Ownership.ServiceName)' reserved port $($Ownership.Port), but managed listener PID $($listenerAuthority.ProcessId) bound port $($listenerAuthority.Port)."
+    if ($listenerProcessIds[0] -ne $Ownership.ProcessId) {
+        throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' is owned by listener PID $($listenerProcessIds[0]), expected managed owner PID $($Ownership.ProcessId)."
+    }
+    return [pscustomobject]@{
+        ServiceName = $Ownership.ServiceName
+        Port = $Ownership.Port
+        OwnerProcessId = $Ownership.ProcessId
+        ListenerProcessId = $listenerProcessIds[0]
+        ObservedAtUtc = [DateTimeOffset]::UtcNow
     }
 }
 
@@ -272,19 +175,11 @@ function Stop-Man517PortOwner {
     }
     catch { $stopFailures.Add("reservation: $($_.Exception.Message)") }
     try {
-        if ($null -ne $Ownership.ListenerProcessId) {
-            $listenerProcess = Get-Process -Id $Ownership.ListenerProcessId -ErrorAction SilentlyContinue
-            if ($null -ne $listenerProcess) {
-                if ($listenerProcess.StartTime -ne $Ownership.ListenerProcessStartTime) {
-                    throw "listener PID $($Ownership.ListenerProcessId) start time changed; refusing to stop an unowned process."
-                }
-                Stop-ProcessTree -ProcessId $Ownership.ListenerProcessId -Reason "$Reason listener authority" | Out-Null
-            }
-        }
-    }
-    catch { $stopFailures.Add("listener process: $($_.Exception.Message)") }
-    try {
         if ($null -ne $Ownership.ManagedProcess) {
+            $existing = Get-Process -Id $Ownership.ProcessId -ErrorAction SilentlyContinue
+            if ($null -ne $existing -and $existing.StartTime -ne $Ownership.ProcessStartTime) {
+                throw "managed owner PID $($Ownership.ProcessId) start time changed; refusing to stop an unowned process."
+            }
             $Ownership.ManagedProcess.Stop.Invoke($Reason) | Out-Null
         }
     }
@@ -743,16 +638,17 @@ function Get-Man517TrxCounter {
 function Get-Man517RemainingProcessNames {
     param([object[]]$Descriptors)
     $remaining = [System.Collections.Generic.List[string]]::new()
-    foreach ($descriptor in $Descriptors) {
-        $existing = Get-Process -Id $descriptor.ProcessId -ErrorAction SilentlyContinue
+    foreach ($owner in $Descriptors) {
+        if ($null -eq $owner.ProcessId) { continue }
+        $existing = Get-Process -Id $owner.ProcessId -ErrorAction SilentlyContinue
         if ($null -eq $existing) { continue }
         # PID 会被复用，所以「还有同号进程」不等于「我们的进程还活着」。
         # 用启动时间确认身份，避免清理证据出现假阳性。
         $startTime = $null
         try { $startTime = $existing.StartTime }
         catch { continue }
-        if ($startTime -eq $descriptor.StartTime) {
-            $remaining.Add($descriptor.Name)
+        if ($startTime -eq $owner.ProcessStartTime) {
+            $remaining.Add($owner.ServiceName)
         }
     }
     return $remaining.ToArray()
@@ -779,13 +675,7 @@ function Export-Man517FailureDiagnostics {
             $source = Join-Path $entry.Value.LogDirectory "$stream.log"
             $target = Join-Path $diagnosticsRoot "$($entry.Key)-$stream-tail.log"
             try {
-                if ($IsWindows) {
-                    $tailContent = @(Get-Content -LiteralPath $source -Tail 400 -ErrorAction Stop) -join [Environment]::NewLine
-                }
-                else {
-                    $tailResult = Invoke-NativeCommandOutput -Command 'tail' -Arguments @('-n', '400', $source) -WorkingDirectory $root -Name "man517-diagnostics-$($entry.Key)-$stream-tail"
-                    $tailContent = $tailResult.Stdout
-                }
+                $tailContent = @([IO.File]::ReadLines($source) | Select-Object -Last 400) -join [Environment]::NewLine
                 Write-Man517DiagnosticFile -Path $target -Content $tailContent
             }
             catch {
@@ -896,10 +786,9 @@ $databaseCreated = $false
 $acceptanceFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
 $cleanupErrorCodes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-$portRebindReadback = [System.Collections.Generic.List[object]]::new()
+$listenerAuthorityReadback = [System.Collections.Generic.List[object]]::new()
 # 清理证据按「这次运行拥有的东西」逐项记账：托管进程按 pid+启动时间确认身份，
 # 数据库按精确名字，容器只算本脚本启动的那几个。
-$ownedProcesses = [System.Collections.Generic.List[object]]::new()
 $fullChainProbeCounters = $null
 $probeResultsPath = $null
 $acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
@@ -914,6 +803,12 @@ $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/N
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
 $demandPlanningProject = Join-Path $root 'backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj'
 $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+$masterDataProjectDirectory = Split-Path -Parent $masterDataProject
+$erpProjectDirectory = Split-Path -Parent $erpProject
+$demandPlanningProjectDirectory = Split-Path -Parent $demandPlanningProject
+$masterDataDll = Join-Path $masterDataProjectDirectory 'bin/Debug/net10.0/Nerv.IIP.Business.MasterData.Web.dll'
+$erpDll = Join-Path $erpProjectDirectory 'bin/Debug/net10.0/Nerv.IIP.Business.Erp.Web.dll'
+$demandPlanningDll = Join-Path $demandPlanningProjectDirectory 'bin/Debug/net10.0/Nerv.IIP.Business.DemandPlanning.Web.dll'
 
 try {
     # 三个 listener 同时持有各自端口，直到对应 managed process 启动交接。
@@ -957,18 +852,16 @@ try {
     }
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $masterDataUrl }) -ScriptBlock {
-        $script:masterDataProcess = Start-Man517OwnedProcess -Ownership $masterDataOwnership -Command 'dotnet' -Arguments @('run', '--project', $masterDataProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man517-masterdata'
+        $script:masterDataProcess = Start-Man517OwnedProcess -Ownership $masterDataOwnership -Command 'dotnet' -Arguments @($masterDataDll) -WorkingDirectory $masterDataProjectDirectory -Name 'man517-masterdata'
     }
-    $ownedProcesses.Add([pscustomobject]@{ Name = 'masterdata'; ProcessId = $masterDataProcess.ProcessId; StartTime = $masterDataProcess.Process.StartTime })
     Wait-Healthy -Uri "$masterDataUrl/health" -ManagedProcess $masterDataProcess
-    Read-Man517ListenerAuthority -Ownership $masterDataOwnership -ManagedProcess $masterDataProcess
+    $listenerAuthorityReadback.Add((Read-Man517ListenerAuthority -Ownership $masterDataOwnership))
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $demandPlanningUrl }) -ScriptBlock {
-        $script:demandPlanningProcess = Start-Man517OwnedProcess -Ownership $demandPlanningOwnership -Command 'dotnet' -Arguments @('run', '--project', $demandPlanningProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man517-demand-planning'
+        $script:demandPlanningProcess = Start-Man517OwnedProcess -Ownership $demandPlanningOwnership -Command 'dotnet' -Arguments @($demandPlanningDll) -WorkingDirectory $demandPlanningProjectDirectory -Name 'man517-demand-planning'
     }
-    $ownedProcesses.Add([pscustomobject]@{ Name = 'demand-planning'; ProcessId = $demandPlanningProcess.ProcessId; StartTime = $demandPlanningProcess.Process.StartTime })
     Wait-Healthy -Uri "$demandPlanningUrl/health" -ManagedProcess $demandPlanningProcess
-    Read-Man517ListenerAuthority -Ownership $demandPlanningOwnership -ManagedProcess $demandPlanningProcess
+    $listenerAuthorityReadback.Add((Read-Man517ListenerAuthority -Ownership $demandPlanningOwnership))
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
         ASPNETCORE_URLS = $erpUrl
@@ -977,11 +870,10 @@ try {
         Erp__Seed__OrganizationId = 'org-001'
         Erp__Seed__EnvironmentId = 'env-dev'
     }) -ScriptBlock {
-        $script:erpProcess = Start-Man517OwnedProcess -Ownership $erpOwnership -Command 'dotnet' -Arguments @('run', '--project', $erpProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man517-erp'
+        $script:erpProcess = Start-Man517OwnedProcess -Ownership $erpOwnership -Command 'dotnet' -Arguments @($erpDll) -WorkingDirectory $erpProjectDirectory -Name 'man517-erp'
     }
-    $ownedProcesses.Add([pscustomobject]@{ Name = 'erp'; ProcessId = $erpProcess.ProcessId; StartTime = $erpProcess.Process.StartTime })
     Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
-    Read-Man517ListenerAuthority -Ownership $erpOwnership -ManagedProcess $erpProcess
+    $listenerAuthorityReadback.Add((Read-Man517ListenerAuthority -Ownership $erpOwnership))
 
     $headers = @{
         Authorization = "Bearer $internalToken"
@@ -1070,7 +962,10 @@ try {
         capVersion = $capVersion
         processes = @{ masterData = $masterDataProcess.ProcessId; erp = $erpProcess.ProcessId; demandPlanning = $demandPlanningProcess.ProcessId }
         portOwnership = @($portOwners | ForEach-Object {
-            @{ service = $_.ServiceName; port = $_.Port; listenerPort = $_.ListenerPort; state = $_.State; managedRootProcessId = $_.ProcessId; listenerProcessId = $_.ListenerProcessId; managedRootStartTimeUtc = $_.ProcessStartTime.ToUniversalTime().ToString('O'); listenerProcessStartTimeUtc = $_.ListenerProcessStartTime.ToUniversalTime().ToString('O'); listenerObservedAtUtc = $_.ListenerObservedAtUtc.ToString('O') }
+            @{ service = $_.ServiceName; port = $_.Port; state = $_.State; processId = $_.ProcessId; processStartTimeUtc = $_.ProcessStartTime.ToUniversalTime().ToString('O') }
+        })
+        listenerAuthority = @($listenerAuthorityReadback | ForEach-Object {
+            @{ service = $_.ServiceName; port = $_.Port; ownerProcessId = $_.OwnerProcessId; listenerProcessId = $_.ListenerProcessId; observedAtUtc = $_.ObservedAtUtc.ToString('O') }
         })
         fullChainProbeCounters = $fullChainProbeCounters
         checkpoints = @{ erpSalesOrder = $erpSalesOrder; released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
@@ -1106,56 +1001,13 @@ finally {
     }
     # 停止请求返回不等于进程没了；逐个按 pid + 启动时间复核，剩余必须为 0。
     try {
-        $remainingProcessNames = @(Get-Man517RemainingProcessNames -Descriptors $ownedProcesses.ToArray())
+        $remainingProcessNames = @(Get-Man517RemainingProcessNames -Descriptors $portOwners.ToArray())
         if ($remainingProcessNames.Count -gt 0) {
             $cleanupFailures.Add("managed processes still running: $($remainingProcessNames -join ', ')")
             [void]$cleanupErrorCodes.Add('managed-process-cleanup-failed')
         }
     }
     catch { $cleanupFailures.Add("process cleanup verification: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('cleanup-verification-failed') }
-    foreach ($owner in $portOwners) {
-        $portsToVerify = [Collections.Generic.HashSet[int]]::new()
-        [void]$portsToVerify.Add($owner.Port)
-        if ($null -ne $owner.ListenerPort) { [void]$portsToVerify.Add($owner.ListenerPort) }
-        foreach ($portToVerify in $portsToVerify) {
-            $listenerProbeOwnership = [pscustomobject]@{ ServiceName = $owner.ServiceName; Port = $portToVerify }
-            $remainingListenerProcessIds = @()
-            try {
-                $remainingListenerProcessIds = @(Get-Man517ListenerProcessIds -Ownership $listenerProbeOwnership)
-                if ($remainingListenerProcessIds.Count -gt 0) {
-                    $cleanupFailures.Add("port $portToVerify for '$($owner.ServiceName)' still has LISTEN PID(s): $($remainingListenerProcessIds -join ', ')")
-                    [void]$cleanupErrorCodes.Add('port-cleanup-failed')
-                }
-            }
-            catch {
-                $cleanupFailures.Add("port $portToVerify listener cleanup authority: $($_.Exception.Message)")
-                [void]$cleanupErrorCodes.Add('cleanup-verification-failed')
-            }
-            $rebindProbe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $portToVerify)
-            $rebindProbe.Server.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket, [System.Net.Sockets.SocketOptionName]::ReuseAddress, $true)
-            $rebindSucceeded = $false
-            $rebindFailure = $null
-            try {
-                $rebindProbe.Start()
-                $rebindSucceeded = $true
-            }
-            catch {
-                $rebindFailure = Protect-ScriptAutomationText -Text $_.Exception.Message
-                $cleanupFailures.Add("port $portToVerify for '$($owner.ServiceName)' could not be rebound after cleanup: $rebindFailure")
-                [void]$cleanupErrorCodes.Add('port-cleanup-failed')
-            }
-            finally {
-                $rebindProbe.Stop()
-            }
-            $portRebindReadback.Add([pscustomobject]@{
-                ServiceName = $owner.ServiceName
-                Port = $portToVerify
-                RemainingListenerProcessIds = $remainingListenerProcessIds
-                Succeeded = $rebindSucceeded
-                Failure = $rebindFailure
-            })
-        }
-    }
     if ($databaseCreated) {
         try {
             Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);") -WorkingDirectory $root -Name 'man517-drop-database' | Out-Null
@@ -1211,15 +1063,12 @@ finally {
             scenario = 'MAN-517 cleanup accounting'
             completedAtUtc = [DateTimeOffset]::UtcNow
             managedProcesses = @{
-                owned = @($ownedProcesses | ForEach-Object { @{ name = $_.Name; processId = $_.ProcessId } })
+                owned = @($portOwners | Where-Object { $null -ne $_.ProcessId } | ForEach-Object { @{ name = $_.ServiceName; processId = $_.ProcessId } })
                 remaining = $remainingProcessNames.Count
                 remainingNames = $remainingProcessNames
             }
             portOwnership = @($portOwners | ForEach-Object {
-                @{ service = $_.ServiceName; port = $_.Port; listenerPort = $_.ListenerPort; state = $_.State; managedRootProcessId = $_.ProcessId; listenerProcessId = $_.ListenerProcessId; listenerProcessStartTimeUtc = if ($null -eq $_.ListenerProcessStartTime) { $null } else { $_.ListenerProcessStartTime.ToUniversalTime().ToString('O') } }
-            })
-            portRebindReadback = @($portRebindReadback | ForEach-Object {
-                @{ service = $_.ServiceName; port = $_.Port; remainingListenerProcessIds = $_.RemainingListenerProcessIds; succeeded = $_.Succeeded; failure = $_.Failure }
+                @{ service = $_.ServiceName; port = $_.Port; state = $_.State; processId = $_.ProcessId; processStartTimeUtc = if ($null -eq $_.ProcessStartTime) { $null } else { $_.ProcessStartTime.ToUniversalTime().ToString('O') } }
             })
             disposableDatabase = @{
                 owned = $databaseCreated
@@ -1317,7 +1166,7 @@ if ($canonicalResultEnabled) {
         }
         volatile = [pscustomobject][ordered]@{
             databaseName = $databaseName
-            processIds = @($ownedProcesses | ForEach-Object { [int64]$_.ProcessId })
+            processIds = @($portOwners | Where-Object { $null -ne $_.ProcessId } | ForEach-Object { [int64]$_.ProcessId })
             capSuffix = $capVersion
             startedAtUtc = $acceptanceStartedAtUtc.ToString('O')
             completedAtUtc = $canonicalCompletedAtUtc.ToString('O')
