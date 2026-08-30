@@ -14,6 +14,11 @@ public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId,
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
 
+public sealed record PeriodicInspectionQuantityWindow(
+    long Sequence,
+    decimal ThresholdQuantity,
+    DateTime GeneratedAtUtc);
+
 public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOperationId>, IAggregateRoot
 {
     private PeriodicInspectionOperation()
@@ -372,6 +377,8 @@ public sealed class PeriodicInspectionProductionReport : Entity<PeriodicInspecti
 
 public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspectionRuntimeContextId>
 {
+    public const long MaximumSupportedPendingQuantityWindows = 10_000;
+
     private PeriodicInspectionRuntimeContext()
     {
     }
@@ -426,6 +433,9 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     public string? UomCode { get; private set; }
     public decimal CumulativeGoodQuantity { get; private set; }
     public decimal QuantityHighWater { get; private set; }
+    public long LastGeneratedQuantityWindowSequence { get; private set; }
+    public DateTime? QuantityGenerationAnchorAtUtc { get; private set; }
+    public DateTime? QuantityContinuationNextAttemptAtUtc { get; private set; }
     public DateTime? TimeScheduleAnchorAtUtc { get; private set; }
     public long LastGeneratedTimeWindowSequence { get; private set; }
     public DateTime? NextTimeWindowAtUtc { get; private set; }
@@ -524,6 +534,97 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         }
 
         return windows;
+    }
+
+    public IReadOnlyList<PeriodicInspectionQuantityWindow> TakeDueQuantityWindows(
+        DateTime occurredAtUtc,
+        int maxWindows,
+        DateTime? continuationNextAttemptAtUtc = null)
+    {
+        if (occurredAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Quantity generation trigger time must be UTC.", nameof(occurredAtUtc));
+        }
+
+        if (maxWindows <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWindows), "Maximum windows must be positive.");
+        }
+
+        if (continuationNextAttemptAtUtc.HasValue
+            && continuationNextAttemptAtUtc.Value.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException(
+                "Quantity continuation next-attempt time must be UTC.",
+                nameof(continuationNextAttemptAtUtc));
+        }
+
+        if ((Status != "active" && !(Status == "closed" && QuantityGenerationAnchorAtUtc.HasValue))
+            || !QuantityInterval.HasValue
+            || UomCode is null
+            || QuantityHighWater <= 0m)
+        {
+            return [];
+        }
+
+        var targetSequenceValue = decimal.Floor(QuantityHighWater / QuantityInterval.Value);
+        var pendingSequenceValue = targetSequenceValue - LastGeneratedQuantityWindowSequence;
+        if (pendingSequenceValue > MaximumSupportedPendingQuantityWindows)
+        {
+            throw new InvalidOperationException(
+                $"Quantity backlog {pendingSequenceValue} exceeds the supported pending-window limit "
+                + $"{MaximumSupportedPendingQuantityWindows}; the source event must fail closed before partial generation.");
+        }
+
+        if (targetSequenceValue > long.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Quantity window target {targetSequenceValue} exceeds the supported sequence limit {long.MaxValue}.");
+        }
+
+        var targetSequence = decimal.ToInt64(targetSequenceValue);
+        if (targetSequence <= LastGeneratedQuantityWindowSequence)
+        {
+            QuantityGenerationAnchorAtUtc = null;
+            QuantityContinuationNextAttemptAtUtc = null;
+            return [];
+        }
+
+        QuantityGenerationAnchorAtUtc ??= occurredAtUtc;
+        QuantityContinuationNextAttemptAtUtc = continuationNextAttemptAtUtc ?? occurredAtUtc;
+        var windows = new List<PeriodicInspectionQuantityWindow>(
+            (int)Math.Min(maxWindows, targetSequence - LastGeneratedQuantityWindowSequence));
+        for (var sequence = checked(LastGeneratedQuantityWindowSequence + 1);
+             sequence <= targetSequence && windows.Count < maxWindows;
+             sequence = checked(sequence + 1))
+        {
+            windows.Add(new PeriodicInspectionQuantityWindow(
+                sequence,
+                checked(sequence * QuantityInterval.Value),
+                QuantityGenerationAnchorAtUtc.Value));
+        }
+
+        LastGeneratedQuantityWindowSequence = windows[^1].Sequence;
+        if (LastGeneratedQuantityWindowSequence == targetSequence)
+        {
+            QuantityGenerationAnchorAtUtc = null;
+            QuantityContinuationNextAttemptAtUtc = null;
+        }
+
+        return windows;
+    }
+
+    public void DeferQuantityContinuation(DateTime nextAttemptAtUtc)
+    {
+        if (nextAttemptAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Quantity continuation next-attempt time must be UTC.", nameof(nextAttemptAtUtc));
+        }
+
+        if (QuantityGenerationAnchorAtUtc.HasValue)
+        {
+            QuantityContinuationNextAttemptAtUtc = nextAttemptAtUtc;
+        }
     }
 
     private long GetIntervalTicks()

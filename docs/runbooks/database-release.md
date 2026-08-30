@@ -139,6 +139,15 @@ docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv 
 - seed 部分失败且未声明允许部分成功：停止发布。
 - 每次恢复记录 release ID、数据库、恢复点、执行人、开始/结束时间和结果。
 
+### 6.1 Quality 数量巡检 migrations
+
+Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`、`AddPeriodicInspectionQuantityContinuationInbox` 与 `AddPeriodicInspectionQuantityContinuationFairness`。执行前除本节外仍须满足第 2 节的备份、版本冻结与失败停止条件。
+
+1. 开始生成数量任务后，不执行 `AddPeriodicInspectionQuantityWatermark.Down`。该降级会丢失数量水位，再升级时既有任务唯一键会使后续消费者事务失败；使用补救 migration 前滚修复。
+2. 开始写入 `processed_integration_events`、数量续批锚点或恢复进度后，不执行 `AddPeriodicInspectionQuantityContinuationInbox.Down`。该降级会丢失消费去重事实与恢复进度；使用补救 migration 前滚修复。
+3. 开始写入 `quantity_continuation_next_attempt_at_utc` 或出现 closed + pending 上下文后，不执行 `AddPeriodicInspectionQuantityContinuationFairness.Down`。旧约束不能表达终态欠桶，且降级会丢失公平游标；使用补救 migration 前滚修复。
+4. 如果上述 migration 已应用但新版本健康检查失败，保留现有 schema 和数据，停止新版本服务，按第 6 节从批准恢复点恢复，或发布包含补救 migration 的前滚版本；不得手工删除水位、inbox、锚点或公平游标。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
