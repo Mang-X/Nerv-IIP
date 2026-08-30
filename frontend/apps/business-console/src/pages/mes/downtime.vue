@@ -44,7 +44,12 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES } from '@/permissions'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  isForbiddenError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -319,7 +324,15 @@ const recordEntryBlocker = computed(() => {
   }
   if (operationTasksPending.value) return '正在读取可登记停机的工序'
   if (downtimeReasonsPending.value) return '正在读取停机原因'
-  if (downtimeReasonsError.value) return '停机原因读取失败，请刷新后重试'
+  // 目录读失败必须先分清是「没权限看」还是「真读挂了」：网关在缺少停机原因词表读权限时
+  // 回 403（ADR 0029 换绑后的权限码，见 BusinessConsoleSearchableDirectoryPolicy），
+  // 而生成客户端在 throwOnError 下把它抛成 query error。若笼统说成「读取失败，请刷新」，
+  // 运维会一直刷新；若再往下掉到「组织尚未配置」，运维会去配字典——两条都指错了地方。
+  if (downtimeReasonsError.value) {
+    return isForbiddenError(downtimeReasonsError.value)
+      ? '当前角色没有停机原因词表的读取权限，请联系管理员开通后再登记'
+      : '停机原因读取失败，请刷新后重试'
+  }
   if (downtimeReasonOptions.value.length === 0) return '当前组织尚未配置可用停机原因'
   if (eligibleDowntimeTargets.value.length === 0) {
     return '当前授权范围内暂无同时具备工作中心与设备上下文的工序'

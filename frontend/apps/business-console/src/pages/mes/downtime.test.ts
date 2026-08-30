@@ -46,6 +46,21 @@ const unreasonedRow = {
 }
 const downtimeRows = ref<Array<typeof openRow | typeof recoveredRow | typeof unreasonedRow>>([])
 
+// #2793：停机原因目录读失败的归因。真实通道抛的是「解析后的响应体 + 被 error 拦截器挂上去的
+// 原始 Response」——`error.response.status` 才是状态码来源（响应体里的 `code` 字段不算，
+// `errorStatusCode` 只认 status/statusCode）。这里照这个形状造夹具；该形状本身由
+// `src/composables/downtimeReasonDirectoryForbidden.contract.test.ts` 用真实客户端实证。
+function directoryFailure(status: number, message: string) {
+  const body = { success: false, message, code: status, data: null, errorData: [] }
+  Object.defineProperty(body, 'response', {
+    configurable: true,
+    enumerable: false,
+    value: new Response(JSON.stringify(body), { status }),
+  })
+  return body
+}
+const downtimeReasonsError = ref<unknown>(undefined)
+
 const recordDowntimeEvent = vi.fn()
 const recoverDowntimeEvent = vi.fn().mockResolvedValue(undefined)
 const refreshDowntimeEvents = vi.fn().mockResolvedValue(undefined)
@@ -118,7 +133,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       },
       { reasonCode: '换型调整', reasonName: null, openCount: 0, durationMinutes: 30 },
     ]),
-    downtimeReasonsError: ref(undefined),
+    downtimeReasonsError,
     downtimeReasonsPending: ref(false),
     downtimeWriteCoversWorkOrder: (
       candidate: { operationTasks?: Array<{ workCenterId?: string }> },
@@ -168,11 +183,17 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
   }
 })
 
-vi.mock('@/utils/notify', () => ({
-  inlineErrorMessage: () => '',
-  notifySuccess: notifyMocks.notifySuccess,
-  notifyOperationFailure: notifyMocks.notifyOperationFailure,
-}))
+vi.mock('@/utils/notify', async () => {
+  // isForbiddenError 必须用**真实实现**：给桩的话「403 走权限文案」就退化成
+  // 「桩返回 true 时走权限文案」的同义反复，抓不到归因被改错。
+  const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
+  return {
+    inlineErrorMessage: () => '',
+    isForbiddenError: actual.isForbiddenError,
+    notifySuccess: notifyMocks.notifySuccess,
+    notifyOperationFailure: notifyMocks.notifyOperationFailure,
+  }
+})
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -257,6 +278,7 @@ beforeEach(() => {
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
   permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
+  downtimeReasonsError.value = undefined
   recordDowntimeEvent.mockReset()
   recordDowntimeEvent.mockResolvedValue({
     data: { accepted: true, downstreamDocumentId: 'DT-NEW-001' },
@@ -323,6 +345,30 @@ describe('MES downtime record entry', () => {
     filters.organizationId = ''
     await button!.trigger('click')
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
+  })
+
+  // #2793：真正要钉的是「403 → 权限文案 / 非 403 → 原文案」这个**映射**，不是文案长什么样。
+  // 两条用例共用同一套夹具，唯一变量是状态码；把 recordEntryBlocker 里的 isForbiddenError
+  // 分流删掉（退回单一「读取失败」文案），第一条必红、第二条仍绿——鉴别力落在分流本身。
+  it('attributes a forbidden downtime-reason directory read to permissions instead of dictionary setup', async () => {
+    // 负向对照的可达性前提：此刻 downtime.manage 权限、组织/环境、写入范围、工序可见范围、
+    // 工序列表、原因目录 pending 全部就绪，所以 blocker 一定走到「目录读失败」这一条；
+    // 且原因选项非空（默认桩给了两条），删掉本分支不会掉进「组织尚未配置」而变成另一种红。
+    downtimeReasonsError.value = directoryFailure(403, 'Forbidden.')
+    const wrapper = mountPage()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(button?.attributes('disabled')).toBeDefined()
+    expect(button?.attributes('title')).toBe(
+      '当前角色没有停机原因词表的读取权限，请联系管理员开通后再登记',
+    )
+  })
+
+  it('keeps a non-permission downtime-reason directory failure on the retry copy', async () => {
+    downtimeReasonsError.value = directoryFailure(503, 'Authorization service unavailable.')
+    const wrapper = mountPage()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('登记停机'))
+    expect(button?.attributes('disabled')).toBeDefined()
+    expect(button?.attributes('title')).toBe('停机原因读取失败，请刷新后重试')
   })
 
   it('does not populate the record form when the entry guard trips between render and click (isolated stale-DOM interleave)', async () => {
