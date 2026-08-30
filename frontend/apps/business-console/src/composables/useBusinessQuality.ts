@@ -1,6 +1,7 @@
 import {
   activateBusinessConsoleQualityInspectionPlanMutationOptions,
   closeBusinessConsoleQualityNcr,
+  confirmBusinessConsoleOperation,
   createBusinessConsoleQualityInspectionPlanMutationOptions,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
   getBusinessConsoleQualityNcrQueryOptions,
@@ -19,6 +20,12 @@ import {
   type BusinessConsoleQualityItem,
   type BusinessConsoleQualityNcrItem,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
 import {
@@ -320,6 +327,7 @@ export function useQualityFirstArticlePlanActions(defaultContext?: BusinessConte
 export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const queryCache = useQueryCache()
+  const auth = useAuthStore()
 
   const ncrsQuery = useQuery(() => ({
     ...listBusinessConsoleQualityNcrsQueryOptions({
@@ -333,7 +341,11 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
   const closeNcrPending = shallowRef(false)
   const closeNcrError = shallowRef<unknown>()
 
-  async function readNcr(ncrId: string, action: 'submit-disposition' | 'close') {
+  async function readNcr(
+    ncrId: string,
+    action: 'submit-disposition' | 'close',
+    idempotentReplay = false,
+  ) {
     const query = getBusinessConsoleQualityNcrQueryOptions({
       path: { ncrId },
       query: {
@@ -349,7 +361,7 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
       ? {
           domain: 'quality-ncr' as const,
           action,
-          facts: { status: item.status, dispositionType: item.dispositionType },
+          facts: { status: item.status, dispositionType: item.dispositionType, idempotentReplay },
         }
       : undefined
   }
@@ -364,23 +376,80 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     submitDispositionPending.value = true
     submitDispositionError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: () => readNcr(ncrId, 'submit-disposition'),
-        command: () =>
-          submitBusinessConsoleQualityNcrDisposition({
-            path: { ncrId },
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-            },
-            body,
-            throwOnError: false,
-          }),
+      if (body.dispositionType.trim().toLowerCase() !== 'rework') {
+        const result = await executeLifecycleAction({
+          readLatest: () => readNcr(ncrId, 'submit-disposition'),
+          command: () =>
+            submitBusinessConsoleQualityNcrDisposition({
+              path: { ncrId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body,
+              throwOnError: false,
+            }),
+        })
+        await refreshNcrActions()
+        return result
+      }
+
+      const fingerprintBody = {
+        ncrId,
+        dispositionType: body.dispositionType,
+        dispositionApprovalChainId: body.dispositionApprovalChainId,
+        attachmentFileIds: body.attachmentFileIds,
+        mrbReviews: body.mrbReviews?.map(({ reviewedAtUtc: _reviewedAtUtc, ...review }) => review),
+      }
+      const intentScope = {
+        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationType: 'quality.ncr.rework',
+        payloadFingerprint: JSON.stringify(fingerprintBody),
+      }
+      const restored = peekPendingBusinessIntent(intentScope)
+      const pending = acquirePendingBusinessIntent(
+        intentScope,
+        () => `ncr-rework-${globalThis.crypto.randomUUID()}`,
+        body,
+      )
+      if (!pending.payloadSnapshot || typeof pending.payloadSnapshot !== 'object') {
+        throw new Error('返工处置缺少冻结的待处理载荷，请保留当前页面并人工核实。')
+      }
+      const stableBody = pending.payloadSnapshot as BusinessConsoleNcrDispositionRequest
+      const result = await completePendingBusinessIntent(intentScope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: () =>
+            readNcr(
+              ncrId,
+              'submit-disposition',
+              restored?.idempotencyKey === pending.idempotencyKey,
+            ),
+          command: () =>
+            submitBusinessConsoleQualityNcrDisposition({
+              path: { ncrId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body: { ...stableBody, idempotencyKey: pending.idempotencyKey },
+              throwOnError: false,
+            }),
+        })
+        if (!envelope) throw new Error('返工处置未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'quality.ncr.rework',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: ncrId,
+        })
+        return envelope
       })
       await refreshNcrActions()
       return result
     } catch (error) {
       submitDispositionError.value = error
+      await refreshNcrActions()
       throw error
     } finally {
       submitDispositionPending.value = false

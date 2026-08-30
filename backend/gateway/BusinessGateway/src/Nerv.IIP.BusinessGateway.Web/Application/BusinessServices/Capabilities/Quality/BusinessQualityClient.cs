@@ -785,7 +785,81 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             request with { ReasonCode = reasonCode },
             cancellationToken);
 
-    public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
+    public async Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
+        string internalBearerToken,
+        string ncrId,
+        BusinessConsoleNcrDispositionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.DispositionType, "rework", StringComparison.OrdinalIgnoreCase))
+        {
+            return await SendNcrDispositionAsync(internalBearerToken, ncrId, request, cancellationToken);
+        }
+
+        var current = await GetNcrAsync(
+            internalBearerToken,
+            new BusinessConsoleQualityNcrDetailRequest(ncrId, request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
+
+        if (string.Equals(current.Status, "open", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var response = await SendNcrDispositionAsync(
+                    internalBearerToken,
+                    ncrId,
+                    request,
+                    cancellationToken);
+                if (!response.Accepted)
+                {
+                    throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                        HttpStatusCode.BadGateway,
+                        "downstream-invalid-response");
+                }
+
+                return AcceptedReworkResponse(ncrId, request);
+            }
+            catch (BusinessServiceProxyException exception) when (exception.StatusCode == HttpStatusCode.Conflict)
+            {
+                current = await GetNcrAsync(
+                    internalBearerToken,
+                    new BusinessConsoleQualityNcrDetailRequest(ncrId, request.OrganizationId, request.EnvironmentId),
+                    cancellationToken);
+            }
+        }
+
+        if (!MatchesReworkDisposition(current, request))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "ncr-disposition-conflict");
+        }
+
+        return AcceptedReworkResponse(ncrId, request);
+    }
+
+    private static BusinessConsoleAcceptedResponse AcceptedReworkResponse(
+        string ncrId,
+        BusinessConsoleNcrDispositionRequest request)
+    {
+        var readbackPath = $"/api/business-console/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}?" + Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId));
+        return new BusinessConsoleAcceptedResponse(
+            Accepted: true,
+            DownstreamService: "quality",
+            DownstreamDocumentType: "ncr",
+            DownstreamDocumentId: ncrId,
+            OperationReceipt: BusinessConsoleOperationReceipts.Accepted(
+                operationType: "quality.ncr.rework",
+                authority: "quality",
+                resourceType: "ncr",
+                resourceId: ncrId,
+                readbackPath,
+                request.IdempotencyKey!));
+    }
+
+    private Task<BusinessConsoleAcceptedResponse> SendNcrDispositionAsync(
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrDispositionRequest request,
@@ -801,6 +875,15 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.AttachmentFileIds,
                 request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray()),
             cancellationToken);
+
+    private static bool MatchesReworkDisposition(
+        BusinessConsoleQualityNcrDetailResponse current,
+        BusinessConsoleNcrDispositionRequest request) =>
+        string.Equals(current.DispositionType, "rework", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            current.DispositionApprovalChainId?.Trim(),
+            request.DispositionApprovalChainId?.Trim(),
+            StringComparison.Ordinal);
 
     public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
         string internalBearerToken,

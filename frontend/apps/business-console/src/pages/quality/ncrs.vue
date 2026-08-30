@@ -31,6 +31,7 @@ import {
   notifyError,
   notifyOperationFailure,
   notifySuccess,
+  notifyWarning,
 } from '@/utils/notify'
 import {
   NvAlertDialog,
@@ -99,6 +100,7 @@ const { page, pageSize } = usePagedList(filters, {
 
 const selectedNcr = shallowRef<BusinessConsoleQualityNcrItem>()
 const detailOpen = shallowRef(false)
+const reworkSubmissionOutcome = shallowRef<'idle' | 'processing' | 'failed' | 'unknown'>('idle')
 /**
  * 关闭不合格品的二次确认框。原先是**非受控**（只靠 `NvAlertDialogTrigger` 开、
  * `NvAlertDialogAction` 关），关框时机因此完全落在组件里：点确认即无条件关框
@@ -143,6 +145,19 @@ const locatedTargetId = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(ncrsError.value))
 const selectedNcrId = computed(() => selectedNcr.value?.id ?? '')
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+const canManageNcr = computed(() => permissionCodes.value.includes('business.quality.ncr.manage'))
+const canReadMesWorkOrders = computed(() =>
+  permissionCodes.value.includes('business.mes.work-orders.read'),
+)
+const reworkWorkOrderLink = computed(() => {
+  const ncr = selectedNcr.value
+  return canReadMesWorkOrders.value &&
+    ncr?.reworkWorkOrderCreationStatus?.toLowerCase() === 'created' &&
+    ncr.reworkWorkOrderId?.trim()
+    ? `/mes/work-orders/${encodeURIComponent(ncr.reworkWorkOrderId)}`
+    : ''
+})
 // 带出式录入：所选 NCR 行已有的事实一律只读呈现，不做成看起来还能改的输入位。
 const ncrContextItems = computed(() => {
   const ncr = selectedNcr.value
@@ -196,6 +211,7 @@ const dispositionBlockers = computed(() => {
 const canSubmitDisposition = computed(
   () =>
     hasBusinessContext(filters) &&
+    canManageNcr.value &&
     isNonEmpty(selectedNcrId.value) &&
     isNonEmpty(dispositionForm.dispositionType) &&
     dispositionBlockers.value.length === 0 &&
@@ -214,6 +230,7 @@ const canSubmitDisposition = computed(
 const canCloseNcr = computed(
   () =>
     hasBusinessContext(filters) &&
+    canManageNcr.value &&
     isNonEmpty(selectedNcrId.value) &&
     isNonEmpty(closeForm.reason) &&
     statusActionGate({
@@ -257,6 +274,7 @@ function openNcr(ncr: BusinessConsoleQualityNcrItem) {
   dispositionForm.mrbComment = ''
   closeForm.reason = ''
   closeConfirmOpen.value = false
+  reworkSubmissionOutcome.value = 'idle'
   detailOpen.value = true
 }
 
@@ -286,6 +304,17 @@ async function submitNcrDisposition() {
   try {
     await submitDisposition(selectedNcrId.value, body)
   } catch (error) {
+    const outcome = error && typeof error === 'object' ? (error as Record<string, unknown>) : {}
+    if (outcome.pending === true) {
+      reworkSubmissionOutcome.value = 'processing'
+      notifyWarning('返工请求已受理，系统工单仍在创建中；请刷新查看最新状态。')
+      return
+    }
+    if (outcome.code === 'business-operation-unconfirmed') {
+      reworkSubmissionOutcome.value = 'unknown'
+      notifyWarning('返工结果暂未确认；请刷新核实，重试会沿用同一操作意图。')
+      return
+    }
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
@@ -298,9 +327,11 @@ async function submitNcrDisposition() {
     ) {
       return
     }
+    reworkSubmissionOutcome.value = 'failed'
     notifyOperationFailure('处置提交失败', error, '处置提交失败，请稍后重试。')
     return
   }
+  reworkSubmissionOutcome.value = 'idle'
   notifySuccess(`不合格品 ${label} 处置已提交。`)
   detailOpen.value = false
 }
@@ -384,6 +415,11 @@ function isPresent(value: string | undefined | null): value is string {
 
 watch(detailOpen, (open) => {
   if (!open) selectedNcr.value = undefined
+})
+
+watch(ncrs, (items) => {
+  if (!selectedNcr.value) return
+  selectedNcr.value = items.find((item) => item.id === selectedNcr.value?.id) ?? selectedNcr.value
 })
 
 // 带 ncrId 进入时使用后端 keyword 定位，避免目标 NCR 因分页、筛选或排序不在当前页。
@@ -487,7 +523,9 @@ watch(
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`NCR 操作 ${row.code ?? ''}`">
-          <NvDropdownMenuItem @click="openNcr(row)">打开处置</NvDropdownMenuItem>
+          <NvDropdownMenuItem @click="openNcr(row)">{{
+            canManageNcr ? '打开处置' : '查看详情'
+          }}</NvDropdownMenuItem>
         </NvRowActions>
       </template>
     </NvDataTable>
@@ -513,8 +551,35 @@ watch(
 
           <CarriedContextSummary label="不合格品信息" :items="ncrContextItems" />
 
-          <form class="grid gap-3 rounded-lg border p-3" @submit.prevent="submitNcrDisposition">
+          <NvButton v-if="reworkWorkOrderLink" type="button" variant="outline" as-child>
+            <RouterLink :to="reworkWorkOrderLink">
+              查看返工工单 {{ selectedNcr?.reworkWorkOrderId }}
+            </RouterLink>
+          </NvButton>
+
+          <p v-if="!canManageNcr" class="text-sm text-muted-foreground" role="status">
+            当前账号只有 NCR 查看权限，不能提交处置或关闭 NCR。
+          </p>
+
+          <form
+            v-if="canManageNcr"
+            class="grid gap-3 rounded-lg border p-3"
+            @submit.prevent="submitNcrDisposition"
+          >
             <h2 class="text-base font-semibold text-foreground">提交处置</h2>
+            <p
+              v-if="reworkSubmissionOutcome !== 'idle'"
+              class="text-sm text-muted-foreground"
+              role="status"
+            >
+              {{
+                reworkSubmissionOutcome === 'processing'
+                  ? '返工请求处理中：系统工单尚未创建完成，请刷新查看。'
+                  : reworkSubmissionOutcome === 'unknown'
+                    ? '返工结果未知：请先刷新核实；再次提交会沿用原操作意图。'
+                    : '返工请求失败：系统没有返回成功回执，可按错误提示修正后重试。'
+              }}
+            </p>
             <NvFieldGroup class="grid gap-3">
               <NvField>
                 <NvFieldLabel>处置类型</NvFieldLabel>
@@ -603,7 +668,7 @@ watch(
             </div>
           </form>
 
-          <form class="grid gap-3 rounded-lg border p-3" @submit.prevent>
+          <form v-if="canManageNcr" class="grid gap-3 rounded-lg border p-3" @submit.prevent>
             <h2 class="text-base font-semibold text-foreground">关闭不合格品</h2>
             <NvFieldGroup class="grid gap-3">
               <NvField>

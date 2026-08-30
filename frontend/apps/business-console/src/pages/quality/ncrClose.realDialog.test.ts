@@ -4,6 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NcrsPage from './ncrs.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      principalId: 'qa-user-001',
+      loginName: 'qa-user',
+      permissionCodes: [
+        'business.quality.ncr.read',
+        'business.quality.ncr.manage',
+        'business.mes.work-orders.read',
+      ],
+    },
+  }),
+}))
+
 /**
  * **不 stub `NvAlertDialog*`** 的一组用例（#1613 子项 d · quality 域）。
  *

@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   closeBusinessConsoleQualityNcr,
+  confirmBusinessConsoleOperation,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
@@ -37,6 +38,7 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars,
     })),
   })),
+  confirmBusinessConsoleOperation: vi.fn(async (envelope) => envelope),
   createBusinessConsoleQualityInspectionRecordMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -302,6 +304,7 @@ describe('business quality composables', () => {
       body: {
         dispositionType: 'rework',
         dispositionApprovalChainId: 'chain-1',
+        idempotencyKey: expect.stringMatching(/^ncr-rework-/),
       },
       throwOnError: false,
     })
@@ -320,6 +323,62 @@ describe('business quality composables', () => {
       throwOnError: false,
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
+    expect(confirmBusinessConsoleOperation).toHaveBeenCalledWith(
+      { success: true },
+      expect.objectContaining({
+        expectedOperationType: 'quality.ncr.rework',
+        expectedResourceId: 'ncr-1',
+        expectedIdempotencyKey: expect.stringMatching(/^ncr-rework-/),
+      }),
+    )
+  })
+
+  it('retries an unconfirmed rework with the same key and frozen MRB payload', async () => {
+    const { submitDisposition } = useQualityNcrs()
+    lifecycleApi.getNcr
+      .mockResolvedValueOnce({ success: true, data: { id: 'ncr-retry', status: 'Open' } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'ncr-retry',
+          status: 'Disposition-In-Progress',
+          dispositionType: 'rework',
+        },
+      })
+    vi.mocked(confirmBusinessConsoleOperation)
+      .mockRejectedValueOnce({ code: 'business-operation-unconfirmed' })
+      .mockResolvedValueOnce({ success: true } as never)
+    const firstBody = {
+      dispositionType: 'rework',
+      dispositionApprovalChainId: 'chain-retry',
+      mrbReviews: [
+        {
+          reviewerId: 'qa-1',
+          decision: 'approved',
+          reviewedAtUtc: '2026-08-30T01:00:00Z',
+        },
+      ],
+    }
+
+    await expect(submitDisposition('ncr-retry', firstBody)).rejects.toMatchObject({
+      code: 'business-operation-unconfirmed',
+    })
+    await submitDisposition('ncr-retry', {
+      ...firstBody,
+      mrbReviews: [
+        {
+          ...firstBody.mrbReviews[0]!,
+          reviewedAtUtc: '2026-08-30T02:00:00Z',
+        },
+      ],
+    })
+
+    const calls = vi.mocked(submitBusinessConsoleQualityNcrDisposition).mock.calls
+    expect(calls).toHaveLength(2)
+    const firstSubmittedBody = calls[0]![0].body
+    const retrySubmittedBody = calls[1]![0].body
+    expect(retrySubmittedBody.idempotencyKey).toBe(firstSubmittedBody.idempotencyKey)
+    expect(retrySubmittedBody.mrbReviews?.[0]?.reviewedAtUtc).toBe('2026-08-30T01:00:00Z')
   })
 
   it('submits inspection records through the generated mutation option', async () => {
