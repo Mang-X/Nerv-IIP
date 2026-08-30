@@ -39,6 +39,7 @@ import {
   NvDropdownMenuItem,
   NvEntityPicker,
   NvField,
+  NvFieldDescription,
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
@@ -197,6 +198,7 @@ const createForm = reactive({
   sourceAlarmId: '',
   assignedTechnicianUserId: '',
   estimatedLaborMinutes: '',
+  assetUnavailableReason: '',
 })
 const createError = shallowRef('')
 
@@ -373,6 +375,7 @@ function openCreate(prefill: Partial<typeof createForm> = {}) {
   createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
   createForm.assignedTechnicianUserId = ''
   createForm.estimatedLaborMinutes = ''
+  createForm.assetUnavailableReason = ''
   createError.value = ''
   createOpen.value = true
 }
@@ -394,6 +397,7 @@ async function submitCreate() {
     openedBy: personLabel(createForm.openedByUserId),
     sourceAlarmId: createForm.sourceAlarmId.trim() || undefined,
     assignedTechnicianUserId: createForm.assignedTechnicianUserId || undefined,
+    assetUnavailableReason: createForm.assetUnavailableReason.trim() || undefined,
     ...(estimatedLaborMinutes !== undefined ? { estimatedLaborMinutes } : {}),
   }
   try {
@@ -770,6 +774,19 @@ watch(
                 step="1"
                 placeholder="可选"
               />
+            </NvField>
+            <NvField class="sm:col-span-2">
+              <NvFieldLabel for="mwo-asset-unavailable-reason">设备占用原因</NvFieldLabel>
+              <NvInput
+                id="mwo-asset-unavailable-reason"
+                v-model="createForm.assetUnavailableReason"
+                maxlength="200"
+                autocomplete="off"
+                placeholder="设备停下来了才填，如：主轴异响，无法运转"
+              />
+              <NvFieldDescription>
+                填写后从建单时刻登记该设备不可用，工单完工时自动释放；留空则只建工单、不登记占用。
+              </NvFieldDescription>
             </NvField>
           </NvFieldGroup>
 
