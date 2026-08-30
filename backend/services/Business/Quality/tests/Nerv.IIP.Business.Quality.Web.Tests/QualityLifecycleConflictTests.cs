@@ -197,12 +197,15 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approval,
-            automation);
+            automation,
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
                 new SubmitNonconformanceReportDispositionCommand(
                     ncr.Id,
+                    "org-001",
+                    "env-dev",
                     "scrap",
                     "approval-chain-001",
                     [],
@@ -225,11 +228,19 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
-            new RecordingCapaAutomationService());
+            new RecordingCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
-                new SubmitNonconformanceReportDispositionCommand(ncr.Id, "scrap", null, [], []),
+                new SubmitNonconformanceReportDispositionCommand(
+                    ncr.Id,
+                    "org-001",
+                    "env-dev",
+                    "scrap",
+                    null,
+                    [],
+                    []),
                 CancellationToken.None));
 
         Assert.Contains("NCR-SUBMIT-APPROVAL", exception.Message, StringComparison.Ordinal);
@@ -247,11 +258,19 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
-            new RecordingCapaAutomationService());
+            new RecordingCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
-                new SubmitNonconformanceReportDispositionCommand(ncr.Id, "sort-and-screen", null, [], []),
+                new SubmitNonconformanceReportDispositionCommand(
+                    ncr.Id,
+                    "org-001",
+                    "env-dev",
+                    "sort-and-screen",
+                    null,
+                    [],
+                    []),
                 CancellationToken.None));
 
         Assert.Contains("NCR-SUBMIT-EVIDENCE", exception.Message, StringComparison.Ordinal);

@@ -185,6 +185,9 @@ try
         ICommandLock<ClaimInspectionTaskCommand>,
         ClaimInspectionTaskCommandLock>();
     builder.Services.AddScoped<
+        ICommandLock<SubmitNonconformanceReportDispositionCommand>,
+        SubmitNonconformanceReportDispositionCommandLock>();
+    builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,
         QualityPersistenceConflictClassifier>();
 
