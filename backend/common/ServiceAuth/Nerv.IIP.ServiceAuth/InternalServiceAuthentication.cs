@@ -60,9 +60,12 @@ public static class InternalServiceAuthentication
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(InternalServiceAuthenticationSchemeRegistration)))
         {
             services.TryAddSingleton<InternalServiceAuthenticationSchemeRegistration>();
+            services.AddOptions<InternalServiceAuthenticationOptions>(SchemeName)
+                .Configure<IInternalServiceTokenProvider>((options, tokenProvider) =>
+                    options.BearerToken = tokenProvider.BearerToken);
             builder.AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
                 SchemeName,
-                options => options.BearerToken = ResolveBearerToken(configuration, environment));
+                _ => { });
         }
 
         AddInternalServicePolicy(services);

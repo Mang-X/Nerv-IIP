@@ -226,6 +226,35 @@ public sealed class ScopedCallerAuthenticationTests
     }
 
     [Fact]
+    public async Task Generic_internal_service_provider_and_handler_share_one_credential_snapshot()
+    {
+        const string sessionToken = "session-internal-token";
+        const string changedToken = "changed-after-provider-resolution";
+        var configuration = new ConfigurationManager
+        {
+            ["InternalService:BearerToken"] = sessionToken
+        };
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNervIipInternalServiceAuthentication(configuration, new StubHostEnvironment("Production"));
+        await using var provider = services.BuildServiceProvider();
+
+        var outboundToken = provider.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+        configuration["InternalService:BearerToken"] = changedToken;
+
+        await using var matchingScope = provider.CreateAsyncScope();
+        var matchingResult = await Context(matchingScope.ServiceProvider, $"Bearer {outboundToken}")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+        await using var changedScope = provider.CreateAsyncScope();
+        var changedResult = await Context(changedScope.ServiceProvider, $"Bearer {changedToken}")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+
+        Assert.Equal(sessionToken, outboundToken);
+        Assert.True(matchingResult.Succeeded);
+        Assert.False(changedResult.Succeeded);
+    }
+
+    [Fact]
     public void Duplicate_scoped_caller_scheme_fails_closed_when_the_scheme_provider_is_resolved()
     {
         var services = new ServiceCollection();
