@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 
@@ -13,7 +14,7 @@ public sealed record ListProductionReportsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -197,20 +198,21 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
 {
     public async Task<ListProductionReportsResponse> Handle(ListProductionReportsQuery request, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.ProductionReports
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
             // Keep this provider-neutral for the EF InMemory contract tests; Npgsql-specific ILike would need a separate test path.
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.ReportNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
@@ -225,8 +227,8 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.OperationTaskIdValue == x.OperationTaskId &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
@@ -236,8 +238,8 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.ReportedAtUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .SelectFacts(dbContext)
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
@@ -328,7 +330,7 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -366,10 +368,12 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
 {
     public async Task<ListFinishedGoodsReceiptRequestsResponse> Handle(ListFinishedGoodsReceiptRequestsQuery request, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.FinishedGoodsReceiptRequests
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
@@ -382,9 +386,8 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             query = query.Where(x => x.RequestNo == requestNo);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.RequestNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
@@ -405,8 +408,8 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkOrderId == x.WorkOrderId &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
@@ -416,8 +419,8 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RequestedAtUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new FinishedGoodsReceiptRequestFact(
                 x.Id.ToString(),
                 x.RequestNo,
@@ -448,7 +451,7 @@ public sealed record ListCapacityImpactsQuery(
     string EnvironmentId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? WorkCenterId = null,
     string? Keyword = null,
     string? ShiftId = null,
@@ -476,10 +479,12 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<ListCapacityImpactsResponse> Handle(ListCapacityImpactsQuery request, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.WorkCenterUnavailabilities
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.DeviceAssetId))
         {
@@ -491,9 +496,8 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.WorkCenterId == request.WorkCenterId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.DowntimeEventNo.ToLower().Contains(keyword) ||
                 x.WorkCenterId.ToLower().Contains(keyword) ||
@@ -516,8 +520,8 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
         {
             var shiftId = request.ShiftId.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkCenterId == x.WorkCenterId &&
                 task.ShiftId == shiftId &&
                 (x.DeviceAssetId == null || task.DeviceAssetId == x.DeviceAssetId)));
@@ -526,8 +530,8 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.FromUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new CapacityImpactFact(
                 x.DowntimeEventNo,
                 x.WorkCenterId,
