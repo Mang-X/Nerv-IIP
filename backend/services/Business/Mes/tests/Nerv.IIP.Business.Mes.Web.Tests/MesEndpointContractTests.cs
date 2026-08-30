@@ -2427,9 +2427,13 @@ public sealed class MesEndpointContractTests
         // 明细是交班时点快照：这些工单号在 work_orders 里根本不存在，读面仍须原样回吐，
         // 证明详情不是回 join 工单表重算出来的。
         // 三类明细条数刻意取 2/4/3 互不相同，计数字段轮换赋值即可被发现。
-        // 遗留问题按「类别升序、严重度降序」排：Equipment 组内 High 必须排在 Medium 前面。
-        // 两条 Equipment 的描述序数序刻意与严重度序相反（"三号机气压偏低" U+4E09 < "主轴异响" U+4E3B），
-        // 所以删掉严重度降序退到描述兜底、或把 Severity 当字符串排（Medium > High），都会翻成另一种顺序。
+        // 遗留问题按「类别升序、严重度降序」排。Equipment 组刻意放满 High/Medium/Low 三档，
+        // 因为只有 High+Medium 时「升序字典序」("High" < "Medium") 与严重度降序同序，
+        // 把排序下推进 EF（Severity 是字符串列）这种最自然的重构就杀不掉；
+        // 补上 Low 之后升序字典序给出 High/Low/Medium，与期望的 High/Medium/Low 不同。
+        // 三条 Equipment 的描述序数序又与严重度序相反（三 U+4E09 < 主 U+4E3B < 刀 U+5200），
+        // 所以删掉严重度键退到描述兜底同样会翻序；Quality 组同理（尾 U+5C3E < 终 U+7EC8）。
+        // 三类明细条数保持 2/4/5 互不相同，任意两个计数字段对调都能被发现。
         var created = await new CreateShiftHandoverCommandHandler(dbContext).Handle(
             new CreateShiftHandoverCommand(
                 "org-001",
@@ -2454,6 +2458,8 @@ public sealed class MesEndpointContractTests
                 [
                     new ShiftHandoverOpenIssueInput("quality", "low", "尾工序外观待复判", null),
                     new ShiftHandoverOpenIssueInput("equipment", "medium", "三号机气压偏低", null),
+                    new ShiftHandoverOpenIssueInput("equipment", "low", "刀具磨损待更换", null),
+                    new ShiftHandoverOpenIssueInput("quality", "high", "终检记录待补录", null),
                     new ShiftHandoverOpenIssueInput("equipment", "high", "主轴异响，二号机", "DT-0001"),
                 ]),
             CancellationToken.None);
@@ -2488,7 +2494,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal(40m, firstUnfinished.CompletedQuantity);
         Assert.Equal("released", firstUnfinished.WorkOrderStatus);
         Assert.Equal(
-            [("Equipment", "High"), ("Equipment", "Medium"), ("Quality", "Low")],
+            [("Equipment", "High"), ("Equipment", "Medium"), ("Equipment", "Low"), ("Quality", "High"), ("Quality", "Low")],
             detail.OpenIssues.Select(x => (x.Category, x.Severity)));
         var firstIssue = detail.OpenIssues.First();
         Assert.Equal("主轴异响，二号机", firstIssue.Description);
@@ -2500,7 +2506,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal(0, listed.OpenIssueCount);
         Assert.Equal(2, listed.WipItemCount);
         Assert.Equal(4, listed.UnfinishedWorkOrderCount);
-        Assert.Equal(3, listed.OpenIssueDetailCount);
+        Assert.Equal(5, listed.OpenIssueDetailCount);
         Assert.Equal("张三", listed.OutgoingUserName);
         Assert.Equal("李四", listed.IncomingUserName);
         Assert.Equal(now.AddHours(8), listed.AcceptedAtUtc);
