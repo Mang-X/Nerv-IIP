@@ -172,7 +172,7 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListPurchaseRequisitionsQueryHandler(dbContext).Handle(
-            new ListPurchaseRequisitionsQuery("org-001", "env-dev", "Open", "PR-002", 0, 1),
+            new ListPurchaseRequisitionsQuery(" org-001 ", " env-dev ", "Open", " pr-002 ", 0, 1),
             CancellationToken.None);
         var unknownStatus = await new ListPurchaseRequisitionsQueryHandler(dbContext).Handle(
             new ListPurchaseRequisitionsQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
@@ -216,7 +216,7 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
-            new ListRequestsForQuotationQuery("org-001", "env-dev", "Open", "SUP-002", 0, 1),
+            new ListRequestsForQuotationQuery(" org-001 ", " env-dev ", "Open", " sup-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -259,7 +259,7 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.All(bySupplier.Items, item => Assert.Equal("SUP-001", item.SupplierCode));
 
         var byKeyword = await handler.Handle(
-            new ListSupplierQuotationsQuery("org-001", "env-dev", Keyword: "SKU-RM-2000"),
+            new ListSupplierQuotationsQuery(" org-001 ", " env-dev ", Keyword: " sku-rm-2000 "),
             CancellationToken.None);
         var quoted = Assert.Single(byKeyword.Items);
         Assert.Equal("SQ-003", quoted.QuotationNo);
@@ -483,7 +483,7 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
-            new ListPurchaseOrdersQuery("org-001", "env-dev", "PendingApproval", "SUP-002", 0, 1),
+            new ListPurchaseOrdersQuery(" org-001 ", " env-dev ", "PendingApproval", " sup-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);

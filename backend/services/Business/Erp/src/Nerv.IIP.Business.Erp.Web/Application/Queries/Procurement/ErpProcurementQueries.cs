@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 
@@ -12,6 +13,14 @@ public sealed record ListRequestsForQuotationQuery(
     string? Keyword = null,
     int Skip = 0,
     int Take = 100) : IQuery<ListRequestsForQuotationResponse>;
+
+public sealed class ListRequestsForQuotationQueryValidator : AbstractValidator<ListRequestsForQuotationQuery>
+{
+    public ListRequestsForQuotationQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record ListRequestsForQuotationResponse(IReadOnlyCollection<RequestForQuotationResponse> Items, int Total);
 
@@ -30,25 +39,17 @@ public sealed record RequestForQuotationLineResponse(
     string SiteCode,
     DateOnly RequiredDate);
 
-internal static class ErpProcurementListPaging
-{
-    public const int DefaultTake = 100;
-    public const int MaxTake = 500;
-
-    public static int NormalizeTake(int take)
-    {
-        return Math.Min(take <= 0 ? DefaultTake : take, MaxTake);
-    }
-}
-
 public sealed class ListRequestsForQuotationQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListRequestsForQuotationQuery, ListRequestsForQuotationResponse>
 {
     public async Task<ListRequestsForQuotationResponse> Handle(ListRequestsForQuotationQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.RequestForQuotations
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Status)
             && Enum.TryParse<RequestForQuotationStatus>(request.Status.Trim(), ignoreCase: true, out var status))
@@ -60,24 +61,21 @@ public sealed class ListRequestsForQuotationQueryHandler(ApplicationDbContext db
             query = query.Where(x => false);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword != null)
         {
-            var keyword = request.Keyword.Trim();
             query = query.Where(x =>
-                x.RfqNo.Contains(keyword)
-                || x.Suppliers.Any(supplier => supplier.SupplierCode.Contains(keyword))
+                x.RfqNo.ToLower().Contains(keyword)
+                || x.Suppliers.Any(supplier => supplier.SupplierCode.ToLower().Contains(keyword))
                 || x.Lines.Any(line =>
-                    line.SkuCode.Contains(keyword)
-                    || line.SiteCode.Contains(keyword)));
+                    line.SkuCode.ToLower().Contains(keyword)
+                    || line.SiteCode.ToLower().Contains(keyword)));
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var skip = Math.Max(request.Skip, 0);
-        var take = ErpProcurementListPaging.NormalizeTake(request.Take);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new RequestForQuotationResponse(
                 x.RfqNo,
                 x.Status.ToString(),
@@ -118,6 +116,14 @@ public sealed record ListSupplierQuotationsQuery(
     int Skip = 0,
     int Take = 100) : IQuery<ListSupplierQuotationsResponse>;
 
+public sealed class ListSupplierQuotationsQueryValidator : AbstractValidator<ListSupplierQuotationsQuery>
+{
+    public ListSupplierQuotationsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
+
 public sealed record ListSupplierQuotationsResponse(IReadOnlyCollection<SupplierQuotationResponse> Items, int Total);
 
 public sealed record SupplierQuotationResponse(
@@ -142,9 +148,12 @@ public sealed class ListSupplierQuotationsQueryHandler(ApplicationDbContext dbCo
 {
     public async Task<ListSupplierQuotationsResponse> Handle(ListSupplierQuotationsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.SupplierQuotations
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.RfqNo))
         {
@@ -158,24 +167,21 @@ public sealed class ListSupplierQuotationsQueryHandler(ApplicationDbContext dbCo
             query = query.Where(x => x.SupplierCode == supplierCode);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword != null)
         {
-            var keyword = request.Keyword.Trim();
             query = query.Where(x =>
-                x.QuotationNo.Contains(keyword)
-                || x.RfqNo.Contains(keyword)
-                || x.SupplierCode.Contains(keyword)
-                || x.Lines.Any(line => line.SkuCode.Contains(keyword)));
+                x.QuotationNo.ToLower().Contains(keyword)
+                || x.RfqNo.ToLower().Contains(keyword)
+                || x.SupplierCode.ToLower().Contains(keyword)
+                || x.Lines.Any(line => line.SkuCode.ToLower().Contains(keyword)));
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var skip = Math.Max(request.Skip, 0);
-        var take = ErpProcurementListPaging.NormalizeTake(request.Take);
         var items = await query
             .OrderByDescending(x => x.ReceivedAtUtc)
             .ThenBy(x => x.QuotationNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new SupplierQuotationResponse(
                 x.QuotationNo,
                 x.RfqNo,
@@ -207,6 +213,14 @@ public sealed record ListPurchaseRequisitionsQuery(
     int Skip = 0,
     int Take = 100) : IQuery<ListPurchaseRequisitionsResponse>;
 
+public sealed class ListPurchaseRequisitionsQueryValidator : AbstractValidator<ListPurchaseRequisitionsQuery>
+{
+    public ListPurchaseRequisitionsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
+
 public sealed record ListPurchaseRequisitionsResponse(IReadOnlyCollection<PurchaseRequisitionResponse> Items, int Total);
 
 public sealed record PurchaseRequisitionResponse(
@@ -228,9 +242,12 @@ public sealed class ListPurchaseRequisitionsQueryHandler(ApplicationDbContext db
 {
     public async Task<ListPurchaseRequisitionsResponse> Handle(ListPurchaseRequisitionsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.PurchaseRequisitions
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Status)
             && Enum.TryParse<PurchaseRequisitionStatus>(request.Status.Trim(), ignoreCase: true, out var status))
@@ -242,23 +259,20 @@ public sealed class ListPurchaseRequisitionsQueryHandler(ApplicationDbContext db
             query = query.Where(x => false);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword != null)
         {
-            var keyword = request.Keyword.Trim();
             query = query.Where(x =>
-                x.RequisitionNo.Contains(keyword)
-                || x.SuggestionId.Contains(keyword)
-                || x.SkuCode.Contains(keyword)
-                || x.SiteCode.Contains(keyword));
+                x.RequisitionNo.ToLower().Contains(keyword)
+                || x.SuggestionId.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword)
+                || x.SiteCode.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var skip = Math.Max(request.Skip, 0);
-        var take = ErpProcurementListPaging.NormalizeTake(request.Take);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new PurchaseRequisitionResponse(
                 x.Id.ToString(),
                 x.RequisitionNo,
@@ -285,6 +299,14 @@ public sealed record ListPurchaseOrdersQuery(
     string? Keyword = null,
     int Skip = 0,
     int Take = 100) : IQuery<ListPurchaseOrdersResponse>;
+
+public sealed class ListPurchaseOrdersQueryValidator : AbstractValidator<ListPurchaseOrdersQuery>
+{
+    public ListPurchaseOrdersQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record ListPurchaseOrdersResponse(IReadOnlyCollection<PurchaseOrderResponse> Items, int Total);
 
@@ -318,9 +340,12 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
 {
     public async Task<ListPurchaseOrdersResponse> Handle(ListPurchaseOrdersQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.PurchaseOrders
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Status)
             && Enum.TryParse<Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus>(request.Status.Trim(), ignoreCase: true, out var status))
@@ -332,23 +357,20 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
             query = query.Where(x => false);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword != null)
         {
-            var keyword = request.Keyword.Trim();
             query = query.Where(x =>
-                x.PurchaseOrderNo.Contains(keyword)
-                || x.SupplierCode.Contains(keyword)
-                || x.SiteCode.Contains(keyword)
-                || x.Lines.Any(line => line.SkuCode.Contains(keyword)));
+                x.PurchaseOrderNo.ToLower().Contains(keyword)
+                || x.SupplierCode.ToLower().Contains(keyword)
+                || x.SiteCode.ToLower().Contains(keyword)
+                || x.Lines.Any(line => line.SkuCode.ToLower().Contains(keyword)));
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var skip = Math.Max(request.Skip, 0);
-        var take = ErpProcurementListPaging.NormalizeTake(request.Take);
         var orders = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new PurchaseOrderResponse(
                 x.PurchaseOrderNo,
                 x.SupplierCode,

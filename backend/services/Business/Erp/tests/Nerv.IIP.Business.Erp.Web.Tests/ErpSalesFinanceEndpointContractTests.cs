@@ -109,7 +109,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListOpportunitiesQueryHandler(dbContext).Handle(
-            new ListOpportunitiesQuery("org-001", "env-dev", "open", "product", 0, 1),
+            new ListOpportunitiesQuery(" org-001 ", " env-dev ", "open", " PRODUCT ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -130,7 +130,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await CreateQuotationAsync(dbContext, "QUO-003", "CUST-002", "SKU-FG-003", "org-other");
 
         var response = await new ListQuotationsQueryHandler(dbContext).Handle(
-            new ListQuotationsQuery("org-001", "env-dev", "Draft", "SKU-FG-002", 0, 1),
+            new ListQuotationsQuery(" org-001 ", " env-dev ", "Draft", " sku-fg-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -159,7 +159,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListDeliveryOrdersQueryHandler(dbContext).Handle(
-            new ListDeliveryOrdersQuery("org-001", "env-dev", "released", "CUST-002", 0, 1),
+            new ListDeliveryOrdersQuery(" org-001 ", " env-dev ", "released", " cust-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -207,7 +207,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListJournalVouchersQueryHandler(dbContext).Handle(
-            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "6001", 0, 1),
+            new ListJournalVouchersQuery(" org-001 ", " env-dev ", "posted", " 6001 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -322,7 +322,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await CreateReleasedSalesOrderAsync(dbContext, "SO-003", "QUO-003", "CUS-002", "SKU-FG-003", "org-other");
 
         var response = await new ListSalesOrdersQueryHandler(dbContext).Handle(
-            new ListSalesOrdersQuery("org-001", "env-dev", "Released", "CUS-002", 0, 1),
+            new ListSalesOrdersQuery(" org-001 ", " env-dev ", "Released", " cus-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -604,13 +604,13 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var payables = await new ListAccountPayablesQueryHandler(dbContext).Handle(
-            new ListAccountPayablesQuery("org-001", "env-dev", "open", "SUP-002", 0, 1),
+            new ListAccountPayablesQuery(" org-001 ", " env-dev ", "open", " sup-002 ", 0, 1),
             CancellationToken.None);
         var receivables = await new ListAccountReceivablesQueryHandler(dbContext).Handle(
-            new ListAccountReceivablesQuery("org-001", "env-dev", "open", "CUS-001", 0, 10),
+            new ListAccountReceivablesQuery(" org-001 ", " env-dev ", "open", " cus-001 ", 0, 10),
             CancellationToken.None);
         var costs = await new ListCostCandidatesQueryHandler(dbContext).Handle(
-            new ListCostCandidatesQuery("org-001", "env-dev", "pending", "production", 0, 10),
+            new ListCostCandidatesQuery(" org-001 ", " env-dev ", "pending", " PRODUCTION ", 0, 10),
             CancellationToken.None);
 
         Assert.Equal(1, payables.Total);
