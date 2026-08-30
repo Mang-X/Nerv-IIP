@@ -9,6 +9,7 @@ using Nerv.IIP.Sdk.FileStorage;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class FileStorageHttpClientConfigurationTests
 {
     [Fact]
