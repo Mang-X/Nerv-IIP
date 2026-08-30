@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 
@@ -99,7 +100,7 @@ public sealed class ListWorkOrderCostsQueryHandler(ApplicationDbContext dbContex
                 x.Id.ToString(),
                 x.WorkOrderId,
                 x.SkuCode,
-                x.SourceNcrId == null ? "ordinary" : "rework",
+                x.SourceNcrId == null ? "ordinary" : QualityNcrDispositionTypes.Rework,
                 x.SourceNcrId,
                 x.SourceNcrCode,
                 x.SourceWorkOrderId,
