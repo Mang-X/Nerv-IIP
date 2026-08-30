@@ -233,6 +233,10 @@ public sealed class BusinessGatewayWorkbenchTests
         var health = await client.GetStringAsync("/health");
         Assert.Contains("Degraded", health, StringComparison.Ordinal);
         Assert.Contains("Notification", health, StringComparison.Ordinal);
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.Equal("Healthy", await client.GetStringAsync("/health"));
     }
 
     [Fact]
