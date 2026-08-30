@@ -40,6 +40,7 @@ public sealed class FileStorageHttpClientConfigurationTests
         Assert.Equal("test-internal-token", metadataClient.DefaultRequestHeaders.Authorization?.Parameter);
         var metadataHandler = Assert.IsType<SocketsHttpHandler>(capture.GetHandler(nameof(IFileStorageClient)));
         Assert.Equal(TimeSpan.FromMilliseconds(250), metadataHandler.ConnectTimeout);
+        Assert.False(metadataHandler.AllowAutoRedirect);
 
         Assert.Equal(new Uri("http://localhost:5104"), downloadClient.BaseAddress);
         Assert.Equal(Timeout.InfiniteTimeSpan, downloadClient.Timeout);

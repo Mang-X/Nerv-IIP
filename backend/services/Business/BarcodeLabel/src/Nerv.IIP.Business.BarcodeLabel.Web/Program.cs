@@ -96,6 +96,7 @@ try
         })
         .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
         {
+            AllowAutoRedirect = false,
             ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
         })
         .UseHttpClientMetrics();

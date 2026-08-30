@@ -45,6 +45,22 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         Assert.Equal(new CreateDownloadGrantRequest("org-001", "prod"), fileStorage.LastGrantRequest);
     }
 
+    [Fact]
+    public async Task GetVerifiedAsync_consecutive_reads_create_a_fresh_grant_each_time()
+    {
+        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
+        var download = new RecordingHttpMessageHandler(_ => Response(HttpStatusCode.OK, bytes));
+        using var adapter = CreateAdapter(fileStorage, download);
+
+        await adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None);
+        await adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None);
+
+        Assert.Equal(2, fileStorage.MetadataCalls);
+        Assert.Equal(2, fileStorage.GrantCalls);
+        Assert.Equal(2, download.Calls);
+    }
+
     public static TheoryData<Func<FileMetadataResponse, FileMetadataResponse>> InvalidMetadataCases => new()
     {
         metadata => metadata with { OrganizationId = "other-org" },
@@ -229,20 +245,26 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     [Fact]
     public async Task GetVerifiedAsync_download_timeout_is_rejected_without_retrying()
     {
-        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
-        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
-        var download = new RecordingHttpMessageHandler(async (_, cancellationToken) =>
-        {
-            await PendingOperation.UntilCanceledAsync(cancellationToken);
-            throw new InvalidOperationException("unreachable");
-        });
-        using var adapter = CreateAdapter(fileStorage, download, TimeSpan.FromMilliseconds(100));
+        await TestTimeout.RunAsync(
+            "FileStorage adapter download timeout",
+            async testCancellationToken =>
+            {
+                var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+                var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
+                var download = new RecordingHttpMessageHandler(async (_, cancellationToken) =>
+                {
+                    await PendingOperation.UntilCanceledAsync(cancellationToken);
+                    throw new InvalidOperationException("unreachable");
+                });
+                using var adapter = CreateAdapter(fileStorage, download, TimeSpan.FromMilliseconds(100));
 
-        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
+                var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                    adapter.GetVerifiedAsync(CreateReference(), testCancellationToken));
 
-        Assert.Equal("FileStorage template download timed out.", exception.Message);
-        Assert.Equal(1, download.Calls);
+                Assert.Equal("FileStorage template download timed out.", exception.Message);
+                Assert.Equal(1, download.Calls);
+            },
+            TimeSpan.FromSeconds(5));
     }
 
     [Fact]
