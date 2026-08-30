@@ -173,6 +173,8 @@ public sealed class ApprovalEndpointContractTests
             new ListApprovalChainsQuery("org-001", "", null, null, null, null, null, 0, 100)).IsValid);
         Assert.False(new ListPendingApprovalTasksQueryValidator().Validate(
             new ListPendingApprovalTasksQuery("org-001", "", "user", "u-reviewer", 0, 100)).IsValid);
+        Assert.False(new ListPendingApprovalTasksQueryValidator().Validate(
+            new ListPendingApprovalTasksQuery("", "env-dev", "user", "u-reviewer", 0, 100)).IsValid);
     }
 
     [Fact]
