@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
 using Nerv.IIP.Contracts.Mes;
@@ -16,6 +17,7 @@ using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -174,11 +176,22 @@ internal static class PeriodicInspectionClosurePostgresScenario
                     "env-dev"),
             };
 
+            var submittedRecordIds = new List<InspectionRecordId>();
             foreach (var submission in submissions)
             {
                 var result = await sender.Send(submission, CancellationToken.None);
                 var replay = await sender.Send(submission, CancellationToken.None);
                 Assert.Equal(result, replay);
+                submittedRecordIds.Add(result.InspectionRecordId);
+            }
+
+            foreach (var recordId in submittedRecordIds)
+            {
+                var readback = await sender.Send(
+                    new GetInspectionRecordQuery(recordId, "org-001", "env-dev"),
+                    CancellationToken.None);
+                Assert.Equal(recordId, readback.InspectionRecordId);
+                Assert.NotEmpty(readback.ResultLines);
             }
 
             var resultEvents = publisher.Published.OfType<InspectionResultIntegrationEvent>().ToArray();
@@ -226,6 +239,12 @@ internal static class PeriodicInspectionClosurePostgresScenario
                 CancellationToken.None);
             Assert.Equal([10.2m, 10.4m], chart.DataPoints.Select(point => point.MeasuredValue));
             Assert.Single(chart.Subgroups);
+            await Assert.ThrowsAsync<KnownException>(() =>
+                new QuerySpcControlChartQueryHandler(dbContext).Handle(
+                    new QuerySpcControlChartQuery(
+                        "org-001", "env-dev", "SKU-FG-1000", "appearance", "WC-001",
+                        SubgroupSize: 2, Take: 20),
+                    CancellationToken.None));
             Assert.Equal(
                 3,
                 await dbContext.InspectionRecords

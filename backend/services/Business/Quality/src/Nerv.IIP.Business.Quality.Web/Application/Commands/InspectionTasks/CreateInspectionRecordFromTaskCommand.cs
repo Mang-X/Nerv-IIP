@@ -117,7 +117,7 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
 
-        var inspectionSourceDocumentId = ResolveInspectionSourceDocumentId(task);
+        var inspectionSourceDocumentId = task.InspectionRecordSourceDocumentId();
         var existing = await inspectionRecordRepository.FindBySourceDocumentAsync(
             task.OrganizationId,
             task.EnvironmentId,
@@ -300,12 +300,6 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
 
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static string ResolveInspectionSourceDocumentId(InspectionTask task) =>
-        task.TriggerIdempotencyKey.StartsWith("quality:periodic-time:", StringComparison.Ordinal)
-        || task.TriggerIdempotencyKey.StartsWith("quality:periodic-quantity:", StringComparison.Ordinal)
-            ? task.SourceDocumentLineId!
-            : task.SourceDocumentId;
 
     private static string? CanonicalDecimal(decimal? value) =>
         value?.ToString("G29", System.Globalization.CultureInfo.InvariantCulture);
