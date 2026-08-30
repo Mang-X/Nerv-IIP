@@ -82,12 +82,10 @@ public sealed class BarcodeLabelListHttpTests
     }
 
     [Theory]
-    [InlineData("skip=-1&take=0", "FG-PUMP-A", 1)]
-    [InlineData("skip=0&take=501", "FG-PUMP-A", 2)]
-    public async Task List_rules_http_endpoint_keeps_composed_page_bounds(
-        string paging,
-        string expectedFirstRuleCode,
-        int expectedCount)
+    [InlineData("skip=-1&take=1")]
+    [InlineData("skip=0&take=0")]
+    [InlineData("skip=0&take=501")]
+    public async Task List_rules_http_endpoint_rejects_legacy_invalid_page_bounds(string paging)
     {
         await using var factory = CreateFactory();
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -106,10 +104,11 @@ public sealed class BarcodeLabelListHttpTests
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(body);
-        Assert.True(document.RootElement.GetProperty("success").GetBoolean(), body);
-        var rules = document.RootElement.GetProperty("data").GetProperty("rules").EnumerateArray().ToArray();
-        Assert.Equal(expectedCount, rules.Length);
-        Assert.Equal(expectedFirstRuleCode, rules[0].GetProperty("ruleCode").GetString());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean(), body);
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.GetProperty("errorData").ValueKind);
+        Assert.NotEmpty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        Assert.False(document.RootElement.TryGetProperty("data", out _), body);
     }
 
     [Theory]

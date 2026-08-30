@@ -38,6 +38,8 @@ public sealed class ListScansQueryValidator : AbstractValidator<ListScansQuery>
         RuleFor(x => x.ScannedValue).MaximumLength(200);
         RuleFor(x => x.SourceWorkflow).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 

@@ -31,7 +31,8 @@ public sealed class ResolveBarcodeQueryValidator : AbstractValidator<ResolveBarc
         RuleFor(x => x.OrganizationId).MaximumLength(100);
         RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.ScannedValue).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Take).LessThanOrEqualTo(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 100);
     }
 }
 

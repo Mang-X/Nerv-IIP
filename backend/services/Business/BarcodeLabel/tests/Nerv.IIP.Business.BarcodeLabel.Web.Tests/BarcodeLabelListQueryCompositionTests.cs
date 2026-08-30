@@ -86,4 +86,16 @@ public sealed class BarcodeLabelListQueryCompositionTests
             new string('x', 101));
         Assert.False(new ListBarcodeRulesQueryValidator().Validate(oversizedKeyword).IsValid);
     }
+
+    [Fact]
+    public void List_query_validators_keep_legacy_page_boundaries()
+    {
+        var validator = new ListBarcodeRulesQueryValidator();
+
+        Assert.True(validator.Validate(new ListBarcodeRulesQuery("org-001", "env-dev", null, null, 0, 1)).IsValid);
+        Assert.True(validator.Validate(new ListBarcodeRulesQuery("org-001", "env-dev", null, null, 0, 500)).IsValid);
+        Assert.False(validator.Validate(new ListBarcodeRulesQuery("org-001", "env-dev", null, null, -1, 1)).IsValid);
+        Assert.False(validator.Validate(new ListBarcodeRulesQuery("org-001", "env-dev", null, null, 0, 0)).IsValid);
+        Assert.False(validator.Validate(new ListBarcodeRulesQuery("org-001", "env-dev", null, null, 0, 501)).IsValid);
+    }
 }
