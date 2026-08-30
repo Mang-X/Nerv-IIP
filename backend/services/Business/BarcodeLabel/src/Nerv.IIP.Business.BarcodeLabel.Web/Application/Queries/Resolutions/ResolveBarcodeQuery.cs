@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 
@@ -26,8 +27,9 @@ public sealed class ResolveBarcodeQueryValidator : AbstractValidator<ResolveBarc
 {
     public ResolveBarcodeQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.ScannedValue).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 100);
@@ -41,11 +43,13 @@ public sealed class ResolveBarcodeQueryHandler(ApplicationDbContext dbContext)
         ResolveBarcodeQuery request,
         CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var matches =
                 from item in dbContext.LabelPrintItems
                 join batch in dbContext.LabelPrintBatches on item.LabelPrintBatchId equals batch.Id
-                where batch.OrganizationId == request.OrganizationId
-                    && batch.EnvironmentId == request.EnvironmentId
+                where batch.OrganizationId == tenant.OrganizationId
+                    && batch.EnvironmentId == tenant.EnvironmentId
                     && item.LabelValue == request.ScannedValue
                 select new
                 {
@@ -74,8 +78,8 @@ public sealed class ResolveBarcodeQueryHandler(ApplicationDbContext dbContext)
             : await distinctMatches
                 .OrderBy(candidate => candidate.SourceDocumentType)
                 .ThenBy(candidate => candidate.SourceDocumentId)
-                .Skip(request.Skip)
-                .Take(request.Take)
+                .Skip(page.Skip)
+                .Take(page.Take)
                 .ToArrayAsync(cancellationToken);
         var candidates = candidateRows
             .Select(candidate => new ResolvedBarcodeCandidate(
@@ -96,8 +100,8 @@ public sealed class ResolveBarcodeQueryHandler(ApplicationDbContext dbContext)
         }
 
         var activeRules = await dbContext.BarcodeRules
-            .Where(rule => rule.OrganizationId == request.OrganizationId
-                && rule.EnvironmentId == request.EnvironmentId
+            .Where(rule => rule.OrganizationId == tenant.OrganizationId
+                && rule.EnvironmentId == tenant.EnvironmentId
                 && rule.Status == BarcodeRule.ActiveStatus)
             .Select(rule => new { rule.BarcodeType, rule.Prefix, rule.Length })
             .ToArrayAsync(cancellationToken);
