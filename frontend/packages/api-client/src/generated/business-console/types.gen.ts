@@ -2563,10 +2563,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrDispositionRequest = {
-    dispositionType?: string;
+    dispositionType: string;
     dispositionApprovalChainId?: string | null;
     attachmentFileIds?: Array<string> | null;
     mrbReviews?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview> | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview = {
@@ -12318,6 +12319,9 @@ export type SubmitBusinessConsoleQualityNcrDispositionErrors = {
      */
     403: unknown;
     409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
 };
 
 export type SubmitBusinessConsoleQualityNcrDispositionError = SubmitBusinessConsoleQualityNcrDispositionErrors[keyof SubmitBusinessConsoleQualityNcrDispositionErrors];

@@ -246,6 +246,7 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.False(submitProperties.TryGetProperty("inspectorUserId", out _));
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
+        AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}", "get", "getBusinessConsoleQualityNcr");
         AssertOperationId(paths, "/api/business-console/v1/quality/measuring-devices", "get", "listBusinessConsoleQualityMeasuringDevices");
         AssertOperationId(paths, "/api/business-console/v1/quality/calibration-records", "get", "listBusinessConsoleQualityCalibrationRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/capas", "get", "listBusinessConsoleQualityCapas");
@@ -261,6 +262,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "put", "updateBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}/archive", "post", "archiveBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "submitBusinessConsoleQualityNcrDisposition");
+        AssertResponseStatuses(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "400", "409", "502", "503", "504");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "idempotencyKey");
+        AssertStringBodyPropertyMaxLength(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "closeBusinessConsoleQualityNcr");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "reason", 500);
         AssertDeprecatedOptionalBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "reworkWorkOrderId");
