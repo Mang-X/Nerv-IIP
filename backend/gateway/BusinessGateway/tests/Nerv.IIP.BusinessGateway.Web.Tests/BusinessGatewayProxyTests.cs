@@ -10398,6 +10398,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.NotNull(requestBody);
         using var document = JsonDocument.Parse(requestBody);
         var root = document.RootElement;
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
         Assert.Equal("rework", root.GetProperty("dispositionType").GetString());
         var review = root.GetProperty("mrbReviews")[0];
         Assert.Equal("qa-lead", review.GetProperty("reviewerId").GetString());

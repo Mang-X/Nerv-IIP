@@ -16,6 +16,8 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceRepor
 
 public sealed record SubmitNonconformanceReportDispositionCommand(
     NonconformanceReportId NcrId,
+    string OrganizationId,
+    string EnvironmentId,
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string> AttachmentFileIds,
@@ -31,7 +33,7 @@ public sealed class SubmitNonconformanceReportDispositionCommandLock
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new CommandLockSettings(
-            $"business-quality:ncr-disposition:{command.NcrId}",
+            $"business-quality:ncr-disposition:{command.OrganizationId}:{command.EnvironmentId}:{command.NcrId}",
             30));
     }
 }
@@ -41,6 +43,8 @@ public sealed class SubmitNonconformanceReportDispositionCommandValidator : Abst
     public SubmitNonconformanceReportDispositionCommandValidator()
     {
         RuleFor(x => x.NcrId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DispositionType).NotEmpty().MaximumLength(50);
         RuleFor(x => x.DispositionApprovalChainId).MaximumLength(150);
         RuleFor(x => x.IdempotencyKey)
@@ -64,8 +68,12 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
 
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
     {
-        var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
-            ?? throw new KnownException($"找不到不合格报告 {request.NcrId}，请在不合格报告页确认单据存在后重试。");
+        var ncr = await repository.GetScopedAsync(
+                request.NcrId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken)
+            ?? throw QualityAuthorizationException.Forbidden("ncr-tenant-mismatch");
         var isRework = string.Equals(
             request.DispositionType,
             QualityNcrDispositionTypes.Rework,
@@ -172,6 +180,8 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
         var payload = JsonSerializer.Serialize(new
         {
             ncrId = request.NcrId.ToString(),
+            organizationId = request.OrganizationId,
+            environmentId = request.EnvironmentId,
             dispositionType = request.DispositionType.Trim().ToLowerInvariant(),
             dispositionApprovalChainId = Normalize(request.DispositionApprovalChainId),
             attachmentFileIds = request.AttachmentFileIds

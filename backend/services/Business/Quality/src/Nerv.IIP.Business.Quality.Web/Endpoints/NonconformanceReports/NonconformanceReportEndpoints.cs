@@ -119,6 +119,8 @@ public sealed record GetNonconformanceReportRequest(
 
 public sealed record SubmitNonconformanceReportDispositionRequest(
     NonconformanceReportId NcrId,
+    string OrganizationId,
+    string EnvironmentId,
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds,
@@ -256,6 +258,8 @@ public sealed class SubmitNonconformanceReportDispositionEndpoint(ISender sender
     {
         await sender.Send(new SubmitNonconformanceReportDispositionCommand(
             req.NcrId,
+            req.OrganizationId,
+            req.EnvironmentId,
             req.DispositionType,
             req.DispositionApprovalChainId,
             req.AttachmentFileIds ?? [],

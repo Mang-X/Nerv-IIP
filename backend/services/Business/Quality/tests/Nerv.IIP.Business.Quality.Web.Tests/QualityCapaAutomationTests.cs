@@ -56,6 +56,8 @@ public sealed class QualityCapaAutomationTests
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 QualityNcrDispositionTypes.Scrap,
                 "approval-chain-approved",
                 [],
@@ -109,6 +111,8 @@ public sealed class QualityCapaAutomationTests
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 QualityNcrDispositionTypes.Rework,
                 "approval-chain-approved",
                 [],

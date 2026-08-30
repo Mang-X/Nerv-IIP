@@ -842,6 +842,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             $"/api/business/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}/disposition",
             new DownstreamSubmitNcrDispositionRequest(
                 ncrId,
+                request.OrganizationId,
+                request.EnvironmentId,
                 request.DispositionType,
                 request.DispositionApprovalChainId,
                 request.AttachmentFileIds,
@@ -1195,6 +1197,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,
+        string OrganizationId,
+        string EnvironmentId,
         string DispositionType,
         string? DispositionApprovalChainId,
         IReadOnlyCollection<string>? AttachmentFileIds,

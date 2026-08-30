@@ -1036,6 +1036,8 @@ public sealed class QualityInspectionEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "scrap",
                 "approval-chain-pending",
                 [],
@@ -1077,6 +1079,8 @@ public sealed class QualityInspectionEndpointContractTests
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "scrap",
                 "approval-chain-approved",
                 [],
@@ -1120,6 +1124,8 @@ public sealed class QualityInspectionEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "scrap",
                 "approval-chain-other-document",
                 [],
@@ -1161,6 +1167,8 @@ public sealed class QualityInspectionEndpointContractTests
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "sort-and-screen",
                 null,
                 ["file-screening-result-001"],
