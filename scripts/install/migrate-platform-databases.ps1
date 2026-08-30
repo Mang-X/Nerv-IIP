@@ -119,35 +119,54 @@ function Assert-TargetDatabaseExists {
     if (-not [string]::Equals($observedDatabase, $ExpectedDatabase, [StringComparison]::Ordinal)) {
         throw "PostgreSQL database existence preflight for service '$ServiceName' connected to '$observedDatabase' instead of allowlisted database '$ExpectedDatabase'."
     }
-    $historySchemaProbe = Invoke-WithScopedEnvironment -Variables $preflightEnvironment -ScriptBlock {
-        Invoke-NativeCommandWithTimeout `
-            -Command 'psql' `
-            -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', "SELECT schemaname FROM pg_tables WHERE tablename = '__EFMigrationsHistory' ORDER BY schemaname LIMIT 1;") `
-            -WorkingDirectory $root `
-            -TimeoutSeconds 30 `
-            -Name "$ManifestProfile-migration-history-schema-$ServiceName-$ReleaseId"
+    return $preflight
+}
+
+function Get-DbContextMigrationState {
+    param(
+        [Parameter(Mandatory)] [object] $Entry,
+        [Parameter(Mandatory)] [string] $ConnectionString,
+        [Parameter(Mandatory)] [string] $Phase,
+        [switch] $NoBuild
+    )
+
+    $arguments = @(
+        'tool', 'run', 'dotnet-ef',
+        'migrations', 'list',
+        '--json', '--prefix-output',
+        '--project', [string]$Entry.project,
+        '--startup-project', [string]$Entry.startupProject,
+        '--context', [string]$Entry.context
+    )
+    if ($NoBuild) {
+        $arguments += '--no-build'
     }
-    $historySchemaOutput = Get-Content -LiteralPath $historySchemaProbe.StdoutPath -Raw
-    $historySchema = if ($null -eq $historySchemaOutput) { '' } else { $historySchemaOutput.Trim() }
-    $migrationId = 'none'
-    $historyLogDirectory = $historySchemaProbe.LogDirectory
-    if (-not [string]::IsNullOrWhiteSpace($historySchema)) {
-        $quotedHistorySchema = $historySchema.Replace('"', '""')
-        $historyQuery = 'SELECT COALESCE(MAX("MigrationId"), ''none'') FROM "{0}"."__EFMigrationsHistory";' -f $quotedHistorySchema
-        $historyProbe = Invoke-WithScopedEnvironment -Variables $preflightEnvironment -ScriptBlock {
-            Invoke-NativeCommandWithTimeout `
-                -Command 'psql' `
-                -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', $historyQuery) `
-                -WorkingDirectory $root `
-                -TimeoutSeconds 30 `
-                -Name "$ManifestProfile-migration-history-version-$ServiceName-$ReleaseId"
-        }
-        $migrationId = (Get-Content -LiteralPath $historyProbe.StdoutPath -Raw).Trim()
-        $historyLogDirectory = $historyProbe.LogDirectory
+    $arguments += @('--connection', $ConnectionString)
+    $connectionArgumentIndex = $arguments.Count - 1
+    $migrationList = Invoke-DotNet `
+        -Arguments $arguments `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 900 `
+        -Name "$ManifestProfile-migration-history-$Phase-$($Entry.service)-$ReleaseId" `
+        -SensitiveArgumentIndexes @($connectionArgumentIndex) `
+        -SensitiveValues @($ConnectionString)
+
+    $jsonLines = @(Get-Content -LiteralPath $migrationList.StdoutPath |
+        Where-Object { $_.StartsWith('data:', [StringComparison]::Ordinal) } |
+        ForEach-Object { $_.Substring(5) })
+    if ($jsonLines.Count -eq 0) {
+        throw "dotnet-ef returned no JSON migration state for service '$($Entry.service)'. Logs: $($migrationList.LogDirectory)"
+    }
+    $migrations = @(($jsonLines -join [Environment]::NewLine) | ConvertFrom-Json)
+    $appliedMigrations = @($migrations | Where-Object { $_.applied -eq $true })
+    $migrationId = if ($appliedMigrations.Count -eq 0) {
+        'none'
+    }
+    else {
+        [string]$appliedMigrations[-1].id
     }
     return [pscustomobject]@{
-        LogDirectory = $preflight.LogDirectory
-        HistoryLogDirectory = $historyLogDirectory
+        LogDirectory = $migrationList.LogDirectory
         MigrationId = $migrationId
     }
 }
@@ -289,12 +308,17 @@ $restore = Invoke-DotNet `
 
 foreach ($item in $validated) {
     $entry = $item.Entry
+    $migrationStateBefore = Get-DbContextMigrationState `
+        -Entry $entry `
+        -ConnectionString ([string]$item.ConnectionString) `
+        -Phase 'before'
     $migrationArguments = @(
         'tool', 'run', 'dotnet-ef',
         'database', 'update',
         '--project', [string]$entry.project,
         '--startup-project', [string]$entry.startupProject,
         '--context', [string]$entry.context,
+        '--no-build',
         '--connection', [string]$item.ConnectionString
     )
     $connectionArgumentIndex = $migrationArguments.Count - 1
@@ -306,10 +330,11 @@ foreach ($item in $validated) {
         -SensitiveArgumentIndexes @($connectionArgumentIndex) `
         -SensitiveValues @([string]$item.ConnectionString)
 
-    $postflight = Assert-TargetDatabaseExists `
+    $migrationStateAfter = Get-DbContextMigrationState `
+        -Entry $entry `
         -ConnectionString ([string]$item.ConnectionString) `
-        -ExpectedDatabase ([string]$item.TargetDatabase) `
-        -ServiceName ([string]$entry.service)
+        -Phase 'after' `
+        -NoBuild
 
-    Write-Diagnostic "$ManifestProfile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) migrationFrom=$($item.DatabasePreflight.MigrationId) migrationTo=$($postflight.MigrationId) durationMs=$([long]$migration.Duration.TotalMilliseconds) correlationId=$CorrelationId databasePreflightLog=$($item.DatabasePreflight.LogDirectory) migrationHistoryLog=$($postflight.HistoryLogDirectory) restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
+    Write-Diagnostic "$ManifestProfile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) migrationFrom=$($migrationStateBefore.MigrationId) migrationTo=$($migrationStateAfter.MigrationId) durationMs=$([long]$migration.Duration.TotalMilliseconds) correlationId=$CorrelationId databasePreflightLog=$($item.DatabasePreflight.LogDirectory) migrationFromLog=$($migrationStateBefore.LogDirectory) migrationToLog=$($migrationStateAfter.LogDirectory) restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
 }

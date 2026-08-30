@@ -311,6 +311,25 @@ try {
 #!/bin/sh
 printf '%s ' "$@"
 printf '\n'
+if printf '%s' "$*" | grep -q 'migrations list'; then
+  for required in --project --startup-project --context --connection --json --prefix-output; do
+    if ! printf '%s' "$*" | grep -q -- "$required"; then
+      printf 'missing context-bound migration list argument: %s\n' "$required" >&2
+      exit 2
+    fi
+  done
+  if [ -f "$NERV_IIP_FAKE_MIGRATION_MARKER" ]; then
+    applied=true
+    migration_id=202608300002_After
+  else
+    applied=false
+    migration_id=202608300001_Before
+  fi
+  printf 'data: [\n'
+  printf 'data:   {"id":"%s","name":"fixture","safeName":"fixture","applied":%s}\n' "$migration_id" "$applied"
+  printf 'data: ]\n'
+  exit 0
+fi
 if printf '%s' "$*" | grep -q 'database update'; then
   : > "$NERV_IIP_FAKE_MIGRATION_MARKER"
 fi
@@ -324,17 +343,9 @@ if [ "$NERV_IIP_FAKE_PSQL_MISSING" = '1' ]; then
 fi
 case "$*" in
   *current_database*) printf '%s\n' "$PGDATABASE" ;;
-  *pg_tables*)
-    if [ -f "$NERV_IIP_FAKE_MIGRATION_MARKER" ]; then
-      printf 'public\n'
-    fi
-    ;;
-  *MigrationId*)
-    if [ -f "$NERV_IIP_FAKE_MIGRATION_MARKER" ]; then
-      printf '202608300002_After\n'
-    else
-      printf '202608300001_Before\n'
-    fi
+  *pg_tables*|*MigrationId*)
+    printf 'migration history must be queried through the selected DbContext\n' >&2
+    exit 91
     ;;
   *) printf '%s\n' "$PGDATABASE" ;;
 esac
