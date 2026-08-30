@@ -575,13 +575,6 @@ function Wait-Man517OwnedComposeServicesStopped {
         }
 
         $remainingDeadlineMilliseconds = $DeadlineMilliseconds - [int]$elapsedMilliseconds
-        # Invoke-NativeCommandOutput 的命令 timeout 以整秒计。剩余不足 1 秒时不再启动
-        # 一个可能越过真实 deadline 的查询，只等待受同一 deadline 限定的下一观测边沿。
-        if ($remainingDeadlineMilliseconds -lt 1000) {
-            Wait-Man517ComposeObservationCadence -Clock $Clock -Milliseconds ([Math]::Min(250, $remainingDeadlineMilliseconds))
-            continue
-        }
-
         $attempts++
         try {
             $observation = Get-Man517ComposeRunningServicesObservation `
@@ -636,11 +629,26 @@ function Wait-Man517OwnedComposeServicesStopped {
     }
 }
 
+function Start-Man517ComposeStatusQuery {
+    param(
+        [Parameter(Mandatory)] [string[]] $Arguments,
+        [Parameter(Mandatory)] [string] $LogDirectory,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    return Start-ManagedBackgroundProcess `
+        -Command 'docker' `
+        -Arguments $Arguments `
+        -WorkingDirectory $root `
+        -LogDirectory $LogDirectory `
+        -Name $Name
+}
+
 function Get-Man517ComposeRunningServicesObservation {
     param(
         [Parameter(Mandatory)] [string] $ComposeFile,
         [Parameter(Mandatory)] [ValidateRange(1, 100000)] [int] $Attempt,
-        [Parameter(Mandatory)] [ValidateRange(1000, 60000)] [int] $RemainingDeadlineMilliseconds
+        [Parameter(Mandatory)] [ValidateRange(1, 60000)] [int] $RemainingDeadlineMilliseconds
     )
 
     $queryArguments = @('compose', '-f', $ComposeFile, 'ps', '--services', '--status', 'running')
@@ -648,10 +656,27 @@ function Get-Man517ComposeRunningServicesObservation {
     $logDirectory = Join-Path $root "artifacts/script-logs/man517-verify-infrastructure-stopped/attempt-$Attempt"
     $logPath = Join-Path $logDirectory 'observation.json'
     [System.IO.Directory]::CreateDirectory($logDirectory) | Out-Null
+    $queryProcess = $null
     try {
-        $queryTimeoutSeconds = [int][Math]::Floor($RemainingDeadlineMilliseconds / 1000.0)
-        $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments $queryArguments -WorkingDirectory $root -TimeoutSeconds $queryTimeoutSeconds -Name "man517-verify-infrastructure-stopped-$Attempt"
-        $runningServices = [string[]]@("$($result.Stdout)" -split '\r?\n' |
+        $queryProcess = Start-Man517ComposeStatusQuery `
+            -Arguments $queryArguments `
+            -LogDirectory $logDirectory `
+            -Name "man517-verify-infrastructure-stopped-$Attempt"
+        if (-not $queryProcess.Process.WaitForExit($RemainingDeadlineMilliseconds)) {
+            $queryProcess.Stop.Invoke("MAN-517 Compose status query exceeded its remaining ${RemainingDeadlineMilliseconds}ms deadline") | Out-Null
+            throw [TimeoutException]::new("Compose status query exceeded its remaining ${RemainingDeadlineMilliseconds}ms deadline; query=$query; log=$logDirectory")
+        }
+
+        $exitCode = $queryProcess.Process.ExitCode
+        $queryProcess.Stop.Invoke('MAN-517 Compose status query completed') | Out-Null
+        $stdout = Get-Content -LiteralPath $queryProcess.StdoutPath -Raw
+        $stderr = Get-Content -LiteralPath $queryProcess.StderrPath -Raw
+        if ($exitCode -ne 0) {
+            $safeOutput = Protect-ScriptAutomationText -Text (($stdout, $stderr) -join [Environment]::NewLine)
+            throw [InvalidOperationException]::new("Compose status query exited with $exitCode; query=$query; log=$logDirectory; output=$safeOutput")
+        }
+
+        $runningServices = [string[]]@("$stdout" -split '\r?\n' |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
             ForEach-Object { $_.Trim() })
         $observedAtUtc = [DateTimeOffset]::UtcNow
@@ -676,6 +701,11 @@ function Get-Man517ComposeRunningServicesObservation {
             failure = $safeFailure
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $logPath -Encoding utf8
         throw [InvalidOperationException]::new("Compose status query failed; query=$query; log=$logPath; failure=$safeFailure", $_.Exception)
+    }
+    finally {
+        if ($null -ne $queryProcess) {
+            $queryProcess.Stop.Invoke('MAN-517 Compose status query final cleanup') | Out-Null
+        }
     }
 }
 
