@@ -199,14 +199,17 @@ async function captureSessionCredential(page: Page): Promise<string> {
   const businessRequest = page.waitForRequest(
     (request) => {
       const pathname = new URL(request.url()).pathname
-      return pathname === '/api/business-console/v1/master-data/skus' &&
+      return (
+        pathname === '/api/business-console/v1/master-data/skus' &&
         Boolean(request.headers().authorization)
+      )
     },
     { timeout: 120_000 },
   )
   await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
   const credential = (await businessRequest).headers().authorization
-  if (!credential) throw new Error('Authenticated public business request had no bearer credential.')
+  if (!credential)
+    throw new Error('Authenticated public business request had no bearer credential.')
   return credential
 }
 
@@ -264,12 +267,19 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
       method: 'GET',
       path: new URL(url).pathname + new URL(url).search,
       status: response.status(),
-      correlationId: response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
+      correlationId:
+        response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
     }
     const evidence = { request: summary, response: publicJson(payload) }
     calls.push(evidence)
     if (!response.ok()) {
-      throw new PublicCallError('GET', summary.path, response.status(), summary, publicJson(payload))
+      throw new PublicCallError(
+        'GET',
+        summary.path,
+        response.status(),
+        summary,
+        publicJson(payload),
+      )
     }
     return { payload, summary, publicPayload: publicJson(payload) }
   }
@@ -338,17 +348,23 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
     )
     const detail = asRecord(dataOf(detailCall.payload))
     if (
-      requiredText(detail, 'bomCode', 'MBOM detail response') !== NERV1851_BASELINE.manufacturingBomCode ||
+      requiredText(detail, 'bomCode', 'MBOM detail response') !==
+        NERV1851_BASELINE.manufacturingBomCode ||
       requiredText(detail, 'revision', 'MBOM detail response') !== NERV1851_BASELINE.revision ||
-      requiredText(detail, 'skuCode', 'MBOM detail response') !== NERV1851_BASELINE.finishedSkuCode ||
+      requiredText(detail, 'skuCode', 'MBOM detail response') !==
+        NERV1851_BASELINE.finishedSkuCode ||
       requiredText(detail, 'status', 'MBOM detail response').toLowerCase() !== 'published'
     ) {
-      throw new Error('MBOM detail response did not preserve the expected published business identity.')
+      throw new Error(
+        'MBOM detail response did not preserve the expected published business identity.',
+      )
     }
     const detailLines = parseMbomLines(detail, 'MBOM detail response')
     assertExpectedMaterialSkuCodes(detailLines)
     if (materialLineFingerprint(listLines) !== materialLineFingerprint(detailLines)) {
-      throw new Error('MBOM list and detail public reads disagree on concrete material requirements.')
+      throw new Error(
+        'MBOM list and detail public reads disagree on concrete material requirements.',
+      )
     }
 
     const context = {
@@ -389,7 +405,11 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
         totalCount =
           movementData.totalCount === null || movementData.totalCount === undefined
             ? pageRows.length
-            : requiredNumber(movementData, 'totalCount', `Inventory movements ${requirement.skuCode}`)
+            : requiredNumber(
+                movementData,
+                'totalCount',
+                `Inventory movements ${requirement.skuCode}`,
+              )
         movements.push(
           ...pageRows
             .map(parseMovement)
@@ -403,7 +423,9 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
         if (pageRows.length === 0 || movements.length >= totalCount) break
         pageNumber += 1
         if (pageNumber > 100) {
-          throw new Error(`Inventory movements ${requirement.skuCode} exceeded the bounded page window.`)
+          throw new Error(
+            `Inventory movements ${requirement.skuCode} exceeded the bounded page window.`,
+          )
         }
       } while (true)
 
@@ -436,14 +458,14 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
 
     report.materials = materials
     report.missingSupplyFacts = materials.flatMap((material) =>
-      (Array.isArray(material.missingSupplyFacts) ? material.missingSupplyFacts : []).map((fact) => ({
-        skuCode: asRecord(material.requirement).skuCode,
-        fact,
-      })),
+      (Array.isArray(material.missingSupplyFacts) ? material.missingSupplyFacts : []).map(
+        (fact) => ({
+          skuCode: asRecord(material.requirement).skuCode,
+          fact,
+        }),
+      ),
     )
-    report.businessState = materials.some(
-      (material) => material.state === 'shortage',
-    )
+    report.businessState = materials.some((material) => material.state === 'shortage')
       ? 'shortage'
       : 'sufficient'
     report.conclusion = 'runtime-confirmed'
