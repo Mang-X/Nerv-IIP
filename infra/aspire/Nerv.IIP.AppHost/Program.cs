@@ -552,9 +552,12 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.A
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessBarcodeLabelDatabase, "PostgreSQL")
-    .WaitFor(businessBarcodeLabelDatabase);
+    .WithReference(fileStorage)
+    .WaitFor(businessBarcodeLabelDatabase)
+    .WaitFor(fileStorage);
 businessBarcodeLabel = WithRedisMessagingTransport(businessBarcodeLabel);
 if (rabbitmq is not null)
 {
