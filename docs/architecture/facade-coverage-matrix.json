@@ -2998,6 +2998,20 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim",
+      "operationId": "claimBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "claimBusinessConsoleMesOperationTask"
+      ],
+      "note": "exposed：BusinessGateway 将领取主体绑定为当前认证用户，只允许在已授权的 work-center 范围内领取 Queued 且未指派任务，并以 MasterData 在岗人员目录核验当前工作中心归属。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/complete",
       "operationId": "completeBusinessMesOperationTask",
       "classification": "exposed",

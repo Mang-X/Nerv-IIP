@@ -450,6 +450,37 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
     }
 
+    public void Claim(
+        string assignedUserId,
+        string assignedUserName,
+        string? deviceAssetId,
+        string? shiftId,
+        DateTimeOffset assignedAtUtc,
+        string actor,
+        string? teamId = null,
+        string? teamName = null)
+    {
+        if (Status != OperationTaskLifecycleStatus.Queued)
+        {
+            throw new KnownException("只有待领取的工序任务可以领取。");
+        }
+
+        if (AssignedUserId is not null)
+        {
+            throw new KnownException("该工序任务已被领取。");
+        }
+
+        Assign(
+            assignedUserId,
+            deviceAssetId,
+            shiftId,
+            assignedAtUtc,
+            actor,
+            assignedUserName,
+            teamId,
+            teamName);
+    }
+
     public void Cancel(DateTimeOffset cancelledAtUtc, string actor = "system:mes")
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
