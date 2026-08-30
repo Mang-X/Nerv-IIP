@@ -1,0 +1,41 @@
+using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
+
+namespace Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
+
+public sealed record GetWorkOrderCostVarianceRequest(
+    string WorkOrderId,
+    int PageNumber = 1,
+    int PageSize = 50);
+
+public sealed class GetWorkOrderCostVarianceEndpoint(
+    ISender sender,
+    IErpMachineOverheadInternalScopeAuthorizer scopeAuthorizer)
+    : ErpEndpoint<GetWorkOrderCostVarianceRequest, ResponseData<WorkOrderCostVarianceResponse>>
+{
+    public override void Configure()
+        => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetWorkOrderCostVarianceEndpoint>());
+
+    public override async Task HandleAsync(GetWorkOrderCostVarianceRequest req, CancellationToken ct)
+    {
+        var authorization = scopeAuthorizer.ResolveAuthorizedScope(HttpContext);
+        if (authorization is ErpInternalServiceScopeAuthorization.MissingRequiredHeader)
+        {
+            await ErpMachineOverheadEndpointResults.WriteMissingScopeHeadersAsync(HttpContext, ct);
+            return;
+        }
+        if (authorization is ErpInternalServiceScopeAuthorization.Forbidden)
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
+        var scope = ((ErpInternalServiceScopeAuthorization.Authorized)authorization).Scope;
+        var response = await sender.Send(new GetWorkOrderCostVarianceQuery(
+            scope.OrganizationId,
+            scope.EnvironmentId,
+            req.WorkOrderId,
+            req.PageNumber,
+            req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}

@@ -53,6 +53,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReturnLineSideMaterialCommandHandler", "Handle", 3, "line-side returns deferred 排除"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "WorkOrderCancellationOrchestrator", "CancelAsync", 2, "dynamic exception.Message 透传，属于动态消息盲区，非本层静态目标"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "WorkOrderLifecycleCommandGuards", "GetWorkOrderAsync", 1, "已有中文静态消息，非本层英文候选"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.cs", "NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder", "HandleScopedAsync", 1, "稳定错误码 MATERIAL_REQUIREMENT_SNAPSHOT_MISSING"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesFinishedGoodsReceiptLocationResolver.cs", "ConfiguredMesFinishedGoodsReceiptLocationResolver", "Resolve", 1, "稳定错误码 FINISHED_GOODS_LOCATION_UNCONFIGURED"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/MasterData/MesSkuAvailabilityGate.cs", "DisabledMesSkuException", ".ctor", 1, "同步公开新建 MES 工单闸门"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/ProductEngineering/MesEngineeringChangeCommands.cs", "MesArchivedProductionVersionGuard", "ThrowIfArchivedAsync", 1, "Engineering Change deferred 排除"),
@@ -75,9 +76,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(61, discovered.Count);
-        Assert.Equal(144, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(140, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(62, discovered.Count);
+        Assert.Equal(145, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(141, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);

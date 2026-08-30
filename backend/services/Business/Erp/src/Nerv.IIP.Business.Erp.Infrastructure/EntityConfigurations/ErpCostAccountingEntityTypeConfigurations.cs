@@ -129,6 +129,36 @@ public sealed class OperationLaborSettlementEntityTypeConfiguration : IEntityTyp
     }
 }
 
+public sealed class OperationLaborReportSnapshotEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborReportSnapshot>
+{
+    public void Configure(EntityTypeBuilder<OperationLaborReportSnapshot> builder)
+    {
+        builder.ToTable("operation_labor_report_snapshots", table => table.HasComment("ERP immutable MES production-report basis used for standard labor and efficiency variance."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Operation labor report snapshot id.");
+        GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation-task public identifier.");
+        builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("Frozen MES work-center identifier.");
+        builder.Property(x => x.ReportNo).HasColumnName("report_no").IsRequired().HasMaxLength(100).HasComment("MES production-report business identifier.");
+        builder.Property(x => x.GoodQuantity).HasColumnName("good_quantity").HasPrecision(18, 6).HasComment("Frozen reported good quantity before reversal sign normalization.");
+        builder.Property(x => x.ScrapQuantity).HasColumnName("scrap_quantity").HasPrecision(18, 6).HasComment("Frozen reported scrap quantity; excluded from standard labor hours.");
+        builder.Property(x => x.ReworkQuantity).HasColumnName("rework_quantity").HasPrecision(18, 6).HasComment("Frozen reported rework quantity; excluded from standard labor hours.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(30).HasComment("Frozen MES output unit of measure.");
+        builder.Property(x => x.TheoreticalRatePerHour).HasColumnName("theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Frozen theoretical good-output rate per labor hour.");
+        builder.Property(x => x.HasValidNumericScale).HasColumnName("has_valid_numeric_scale").HasComment("Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion.");
+        builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").HasComment("Original MES production-report UTC timestamp.");
+        builder.Property(x => x.IsReversal).HasColumnName("is_reversal").HasComment("Whether this report reverses a prior production report.");
+        builder.Property(x => x.ReversedReportNo).HasColumnName("reversed_report_no").HasMaxLength(100).HasComment("Original MES report number for a reversal snapshot.");
+        builder.Property(x => x.SourceEventId).HasColumnName("source_event_id").IsRequired().HasMaxLength(256).HasComment("MES event id that established this immutable snapshot.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
+            .IsUnique()
+            .HasDatabaseName("ux_operation_labor_report_snapshots_scope_report");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationTaskId })
+            .HasDatabaseName("ix_operation_labor_report_snapshots_work_order_operation");
+    }
+}
+
 public sealed class OperationLaborSettlementVoidEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborSettlementVoid>
 {
     public void Configure(EntityTypeBuilder<OperationLaborSettlementVoid> builder)

@@ -736,6 +736,14 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-order-costs/{workOrderId}",
+      "operationId": "getErpWorkOrderCostVariance",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issue #2277 intentionally exposes only the ERP service contract."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/month-end-checklist",
       "operationId": "getErpMonthEndChecklist",
       "classification": "exposed",
@@ -1505,8 +1513,13 @@
       "method": "GET",
       "route": "/api/business/v1/iiot/oee/aggregates",
       "operationId": "queryBusinessIiotOeeAggregates",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade、generated client 与 Business Console OEE 看板由 #2232 交付。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryOeeAggregates"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
