@@ -92,6 +92,7 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 | 技能 | 做什么 |
 |---|---|
 | [`nerv-pr-review`](nerv-pr-review/SKILL.md) | 审本仓库的 PR：钉住 PR 事实源，按标准 / 规格 / 证据 / 质量四轴各派一个隔离席位，结论分列不合并 |
+| [`nerv-task-delivery`](nerv-task-delivery/SKILL.md) | 独立会话把 issue / Linear 任务推到合并：一任务一树一 PR，实施与审核席位分离，三轮不收敛熔断转根因 |
 
 ## 安装通道
 

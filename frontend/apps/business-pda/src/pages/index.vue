@@ -31,11 +31,11 @@ import {
   NvMobileAvatar,
   NvMobileGrid,
   NvMobileTag,
-  NvScanBar,
   type GridItem,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import PdaBarcodeResolver from '@/components/barcode/PdaBarcodeResolver.vue'
 
 definePage({
   meta: {
@@ -53,14 +53,6 @@ const inspection = usePendingInspectionSummary()
 // 与「查看报警」入口联动（确认/搁置后经查询失效自动回落）。仅有报警读权限时查询。
 const canSeeAlarms = computed(() => identity.can(HOME_PERMISSIONS.alarms))
 const { unacknowledgedCount } = useUnacknowledgedAlarmCount(canSeeAlarms)
-
-const lastScan = ref('')
-
-function onScan(value: string) {
-  // TODO(M5): 扫码直达（/scan 路由 + 扫码解析端点）落地后改为按解析结果导航。
-  // 现阶段 /scan 尚不存在，只做诚实的页内反馈，不做假跳转。
-  lastScan.value = value
-}
 
 /** 首页身份行：岗位 · 班组（都有才拼接，缺失不占位）。 */
 const identitySubtitle = computed(() => {
@@ -172,11 +164,7 @@ function openRoute(route: string) {
     </template>
 
     <div class="space-y-5 p-4">
-      <NvScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="onScan" />
-
-      <p v-if="lastScan" data-testid="last-scan" class="-mt-2 text-sm text-foreground">
-        已扫码：{{ lastScan }}
-      </p>
+      <PdaBarcodeResolver />
 
       <!-- 仓储任务（有 WMS 读权限的仓储角色可见） -->
       <section v-if="warehouse.enabled.value" data-testid="home-warehouse">

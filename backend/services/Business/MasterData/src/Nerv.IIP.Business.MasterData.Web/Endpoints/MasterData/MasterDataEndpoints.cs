@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.MasterData;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
@@ -61,7 +62,7 @@ public sealed record ListMasterDataResourcesRequest(
     string ResourceType,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? CodeSet = null,
     string? ParentCode = null,
     string? SiteCode = null,
@@ -75,7 +76,8 @@ public sealed record ListMasterDataResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -148,7 +150,8 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
                 req.ShiftCode,
                 req.UserId,
                 req.SkillCode,
-                req.WorkshopCode),
+                req.WorkshopCode,
+                req.DeviceAssetId),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -1327,7 +1330,7 @@ public sealed record ListProductCategoriesRequest(
     string? Search = null,
     string? ParentCode = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ProductCategoryRequest(
     string OrganizationId,
@@ -1364,7 +1367,7 @@ public sealed record ListSkillsRequest(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record SkillRequest(
     string OrganizationId,

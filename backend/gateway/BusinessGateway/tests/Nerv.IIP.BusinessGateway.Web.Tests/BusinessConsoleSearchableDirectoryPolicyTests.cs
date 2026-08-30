@@ -19,8 +19,8 @@ public sealed class BusinessConsoleSearchableDirectoryPolicyTests
     [InlineData("serial", BusinessGatewayPermissions.InventoryLedgerRead)]
     [InlineData("defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead)]
     [InlineData("scrap-reason", BusinessGatewayPermissions.QualityInspectionRecordsRead)]
-    [InlineData("downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead)]
-    [InlineData("maintenance-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead)]
+    [InlineData("downtime-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead)]
+    [InlineData("maintenance-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead)]
     public void Directory_type_resolves_only_its_owner_permission(string directoryType, string permission)
     {
         var definition = BusinessConsoleSearchableDirectoryPolicy.Require(directoryType);

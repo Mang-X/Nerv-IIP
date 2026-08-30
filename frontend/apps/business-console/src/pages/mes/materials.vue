@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
+import {
+  useMesLineSideInventoryBalances,
+  useMesMaterialIssueRequests,
+} from '@/composables/useBusinessMes'
+import LineSideInventoryBalancesPanel from '@/components/mes/LineSideInventoryBalancesPanel.vue'
 import {
   mesMaterialIssueStatusOptions,
   useMesReferenceLabels,
@@ -42,6 +46,18 @@ const {
   materialIssueRequestsTotal,
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
+const {
+  lineSideInventoryBalances,
+  lineSideInventoryError,
+  lineSideInventoryPage,
+  lineSideInventoryPageCount,
+  lineSideInventoryPageSize,
+  lineSideInventoryPending,
+  lineSideInventoryReady,
+  lineSideInventoryTotal,
+  goToLineSideInventoryPage,
+  refreshLineSideInventory,
+} = useMesLineSideInventoryBalances()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
 const { statusLabel } = useMesReferenceLabels()
@@ -152,6 +168,19 @@ function formatError(error: unknown) {
         @action="router.push({ path: '/wms/outbound' })"
       />
     </div>
+
+    <LineSideInventoryBalancesPanel
+      :items="lineSideInventoryBalances"
+      :page="lineSideInventoryPage"
+      :page-count="lineSideInventoryPageCount"
+      :page-size="lineSideInventoryPageSize"
+      :total="lineSideInventoryTotal"
+      :pending="lineSideInventoryPending"
+      :error="lineSideInventoryError"
+      :ready="lineSideInventoryReady"
+      @update-page="goToLineSideInventoryPage"
+      @refresh="refreshLineSideInventory"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>

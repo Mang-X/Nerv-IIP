@@ -64,7 +64,7 @@ POST /api/files/v1/files/{fileId}/download-grants
 
 ## 已批准目标，尚未实现
 
-以下是已接受的目标架构，不是当前 API、配置、schema、脚本、生产就绪或真实基础设施证明；实现进度仍以 `docs/architecture/implementation-readiness.md`、对应交付和运行证据为准。
+以下是已接受的目标架构，不是当前 API、配置、schema、脚本、生产就绪或真实基础设施证明；实现进度仍以当前代码、配置、公开契约、测试及对应交付和运行证据为准。
 
 ### 上传协议、代理和提交
 

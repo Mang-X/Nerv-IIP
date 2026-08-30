@@ -6,7 +6,8 @@
 
 - `/processes/`
 - `docs/architecture/frontend-structure.md`
-- `docs/architecture/implementation-readiness.md`
+- `docs/architecture/frontend-navigation-map.md`
+- `frontend/apps/business-console/src/navigation.ts`
 
 ## 建议 Issue 标题
 
@@ -28,8 +29,8 @@
 
 ### 术语不清
 
-- 质量审批、设备维护和条码追溯流程覆盖的是当前已暴露链路，完整质量处置工作台、跨域工作流、CMMS 体验、移动扫码解释和跨域追溯图谱仍需要后续产品化，页面需要继续避免把目标链路写成已完整交付。
+- 质量审批、设备维护和条码追溯流程覆盖的是当前已暴露链路；移动端已交付键盘楔入扫码的只读解释和 MES 强 ID 直达，完整质量处置工作台、跨域工作流、CMMS 体验、相机/离线解析、更多对象直达和跨域追溯图谱仍需要后续产品化，页面需要继续避免把目标链路写成已完整交付。
 
 ### 反馈不足
 
-- 后续可从路由表和实施就绪事实生成页面入口矩阵，减少文档漂移，并在构建时提示入口缺失。
+- 后续可从路由事实、公开契约与对应产品文档生成页面入口矩阵，减少文档漂移，并在构建时提示入口缺失。

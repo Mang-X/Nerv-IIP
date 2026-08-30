@@ -992,6 +992,66 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Inventory.Infrastructure.InventoryAuthorityResolutionPendingAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Guid v7 identity of the authority-pending audit fact.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_id")
+                        .HasComment("Integration event id that was kept pending.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Producer idempotency key bound to the pending event.");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("observed_at_utc")
+                        .HasComment("UTC time when Inventory observed the authority pending result.");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("reason_code")
+                        .HasComment("Formal unit-cost authority pending reason code.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status")
+                        .HasComment("Pending audit lifecycle status; only Pending is valid for this seam.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_authority_resolution_pending_audits_event_id");
+
+                    b.ToTable("authority_resolution_pending_audits", "inventory", t =>
+                        {
+                            t.HasComment("Inventory event-bound audit facts for unit-cost authority pending deliveries; one immutable fact per event id.");
+
+                            t.HasCheckConstraint("ck_authority_resolution_pending_audits_event_id", "length(event_id) > 0");
+
+                            t.HasCheckConstraint("ck_authority_resolution_pending_audits_idempotency_key", "length(idempotency_key) > 0");
+
+                            t.HasCheckConstraint("ck_authority_resolution_pending_audits_reason_code", "length(reason_code) > 0");
+
+                            t.HasCheckConstraint("ck_authority_resolution_pending_audits_status", "status = 'Pending'");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetter", b =>
                 {
                     b.Property<Guid>("Id")

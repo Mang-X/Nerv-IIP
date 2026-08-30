@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.FacadeCoverage.Tests;
 
@@ -12,7 +13,8 @@ namespace Nerv.IIP.FacadeCoverage.Tests;
 /// bound to the published routing key and they silently consumed nothing under a real broker.
 ///
 /// This test reflects every <c>ICapSubscribe</c> handler and asserts the <c>[CapSubscribe]</c> topic
-/// equals the short name of the consumed event type. Use <c>nameof(TEvent)</c> in handlers.
+/// equals the short name of the consumed event type, except for a versioned canonical template
+/// declared by the owning Contracts package and shared with its producer.
 /// </summary>
 public sealed class CapSubscribeTopicConventionTests
 {
@@ -50,8 +52,8 @@ public sealed class CapSubscribeTopicConventionTests
 
                 foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
                 {
-                    var topic = ReadCapSubscribeTopic(method);
-                    if (topic is null)
+                    var topics = ReadCapSubscribeTopics(method);
+                    if (topics.Count == 0)
                     {
                         continue;
                     }
@@ -63,12 +65,17 @@ public sealed class CapSubscribeTopicConventionTests
                     }
 
                     var eventShortName = parameters[0].ParameterType.Name;
-                    checkedCount++;
-                    if (!string.Equals(topic, eventShortName, StringComparison.Ordinal))
+                    var canonicalTemplate = MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(parameters[0].ParameterType);
+                    foreach (var topic in topics)
                     {
-                        violations.Add(
-                            $"{assemblyName} :: {type.Name}.{method.Name} subscribes to topic \"{topic}\" " +
-                            $"but the event type short name is \"{eventShortName}\" — use nameof({eventShortName}).");
+                        checkedCount++;
+                        if (!string.Equals(topic, eventShortName, StringComparison.Ordinal)
+                            && !string.Equals(topic, canonicalTemplate, StringComparison.Ordinal))
+                        {
+                            violations.Add(
+                                $"{assemblyName} :: {type.Name}.{method.Name} subscribes to topic \"{topic}\" " +
+                                $"but the event type short name is \"{eventShortName}\" and its Contracts authority does not declare that canonical template.");
+                        }
                     }
                 }
             }
@@ -88,8 +95,9 @@ public sealed class CapSubscribeTopicConventionTests
     private static bool ImplementsCapSubscribe(Type type) =>
         type.GetInterfaces().Any(i => string.Equals(i.Name, "ICapSubscribe", StringComparison.Ordinal));
 
-    private static string? ReadCapSubscribeTopic(MethodInfo method)
+    private static IReadOnlyList<string> ReadCapSubscribeTopics(MethodInfo method)
     {
+        var topics = new List<string>();
         foreach (var attribute in method.GetCustomAttributes())
         {
             if (!string.Equals(attribute.GetType().Name, "CapSubscribeAttribute", StringComparison.Ordinal))
@@ -98,11 +106,11 @@ public sealed class CapSubscribeTopicConventionTests
             }
 
             // CapSubscribeAttribute exposes the topic via its "Name" property.
-            var value = attribute.GetType().GetProperty("Name")?.GetValue(attribute) as string;
-            return value;
+            if (attribute.GetType().GetProperty("Name")?.GetValue(attribute) is string value)
+                topics.Add(value);
         }
 
-        return null;
+        return topics;
     }
 
     private static Assembly LoadAssembly(string name)

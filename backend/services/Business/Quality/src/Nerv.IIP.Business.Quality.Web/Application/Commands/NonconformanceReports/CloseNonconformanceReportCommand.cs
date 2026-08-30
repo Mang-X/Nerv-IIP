@@ -7,7 +7,6 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceRepor
 
 public sealed record CloseNonconformanceReportCommand(
     NonconformanceReportId NcrId,
-    string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
     string Reason) : ICommand;
@@ -17,7 +16,6 @@ public sealed class CloseNonconformanceReportCommandValidator : AbstractValidato
     public CloseNonconformanceReportCommandValidator()
     {
         RuleFor(x => x.NcrId).NotEmpty();
-        RuleFor(x => x.ReworkWorkOrderId).MaximumLength(150);
         RuleFor(x => x.ScrapMovementId).MaximumLength(150);
         RuleFor(x => x.ReturnDocumentId).MaximumLength(150);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
@@ -53,7 +51,6 @@ public sealed class CloseNonconformanceReportCommandHandler(
         try
         {
             ncr.Close(
-                request.ReworkWorkOrderId,
                 request.ScrapMovementId,
                 request.ReturnDocumentId,
                 request.Reason,

@@ -20,7 +20,6 @@ import {
   NvMobileButton,
   NvMobileInput,
   NvMobileToast,
-  NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -33,10 +32,17 @@ import {
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
+import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
+import { useProductionReportScrapReason } from '@/composables/mes/useProductionReportScrapReason'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -122,6 +128,11 @@ const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
 const telemetryOperationTaskId = ref('')
 const telemetryDismissReason = ref('')
+const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
+const scanGuarded = scanGate.guarded
+const validatedDeviceAssetId = ref('')
+const validatedPersonnelId = ref('')
 function resetTelemetryAction() {
   telemetryWorkOrderId.value = ''
   telemetryOperationTaskId.value = ''
@@ -138,6 +149,7 @@ async function promoteTelemetryCandidate(candidate: {
   workOrderId?: string | null
   operationTaskId?: string | null
 }) {
+  if (scanPending.value) return
   if (!candidate.candidateId) return
   const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
   const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
@@ -147,6 +159,7 @@ async function promoteTelemetryCandidate(candidate: {
   resetTelemetryAction()
 }
 async function dismissTelemetryCandidate(candidateId?: string) {
+  if (scanPending.value) return
   if (!candidateId || !telemetryDismissReason.value.trim()) return
   await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
   telemetryCandidateId.value = null
@@ -167,13 +180,41 @@ const progress = computed(() => productionReportFlow.progress(ctx))
 // --- 数量录入 ---
 const goodQuantity = ref(0)
 const scrapQuantity = ref(0)
+const reworkQuantity = ref(0)
 const completesOperation = ref(false)
+const {
+  qualityInspectionRecordsReadPermission,
+  scrapReasonCodesPending,
+  scrapReasonCodesError,
+  scrapReasonCodes,
+  scrapReasonCode,
+  invalidScrapReasonCode,
+  scrapReasonValidationMessage,
+  refreshScrapReasonCodes,
+} = useProductionReportScrapReason(scrapQuantity)
+const {
+  materialsReadPermission,
+  materialLotsPending,
+  materialLotsError,
+  availableMaterialLots,
+  refreshMaterialLots,
+  consumedMaterialLots,
+  invalidMaterialLots,
+  materialValidationMessage,
+  resetMaterialSelections,
+  materialSelected,
+  materialQuantity,
+  setMaterialSelected,
+  setMaterialQuantity,
+  materialRemaining,
+} = useProductionReportMaterials(pair, scrapQuantity)
 
 const quantityValid = computed(
   () =>
     goodQuantity.value >= 0 &&
     scrapQuantity.value >= 0 &&
-    goodQuantity.value + scrapQuantity.value > 0,
+    reworkQuantity.value >= 0 &&
+    goodQuantity.value + scrapQuantity.value + reworkQuantity.value > 0,
 )
 
 // 录数量面板：选中工序后打开
@@ -194,6 +235,14 @@ interface ReportIntent {
   payload: {
     goodQuantity: number
     scrapQuantity: number
+    reworkQuantity: number
+    consumedMaterialLots: Array<{
+      materialId: string
+      materialLotId: string
+      consumedQuantity: number
+      materialIssueRequestNo: string
+    }>
+    scrapReasonCode: string | undefined
     completesOperation: boolean
   }
   status: 'pending' | 'success' | 'error'
@@ -225,7 +274,12 @@ watch(
     if (workOrderId !== previousWorkOrderId || operationTaskId !== previousOperationTaskId) {
       goodQuantity.value = 0
       scrapQuantity.value = 0
+      reworkQuantity.value = 0
+      scrapReasonCode.value = ''
       completesOperation.value = false
+      resetMaterialSelections()
+      validatedDeviceAssetId.value = ''
+      validatedPersonnelId.value = ''
       ctx.quantityEntered = false
       ctx.recorded = currentIntent.value?.status === 'success'
     }
@@ -297,10 +351,12 @@ const operationTaskEmptyExplanation = computed(
 
 // --- 步骤操作 ---
 function chooseWorkOrder(wo: WorkOrder) {
+  scanGate.clear('list')
   void bindWorkOrder(wo)
 }
 
 function chooseTask(task: Task) {
+  scanGate.clear('list')
   void bindTask(task)
 }
 
@@ -317,6 +373,9 @@ function resetReportIntent() {
   if (pairKey.value) intents.delete(pairKey.value)
   goodQuantity.value = 0
   scrapQuantity.value = 0
+  reworkQuantity.value = 0
+  scrapReasonCode.value = ''
+  resetMaterialSelections()
   completesOperation.value = false
   ctx.quantityEntered = false
   ctx.recorded = false
@@ -330,6 +389,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function submit() {
+  if (scanGuarded.value) return
   if (!reportScopeReady.value) return
   const identity = pair.value
   const task = selectedTask.value
@@ -349,7 +409,7 @@ async function submit() {
   let intent = intents.get(key)
   if (intent?.status === 'pending' || intent?.status === 'success') return
   if (!intent) {
-    if (!quantityValid.value) return
+    if (!quantityValid.value || invalidMaterialLots.value || invalidScrapReasonCode.value) return
     intent = {
       attempt: Symbol('mes-report-attempt'),
       workOrderId,
@@ -358,6 +418,9 @@ async function submit() {
       payload: {
         goodQuantity: goodQuantity.value,
         scrapQuantity: scrapQuantity.value,
+        reworkQuantity: reworkQuantity.value,
+        scrapReasonCode: scrapQuantity.value > 0 ? scrapReasonCode.value.trim() : undefined,
+        consumedMaterialLots: consumedMaterialLots.value,
         completesOperation: completesOperation.value,
       },
       status: 'pending',
@@ -371,6 +434,7 @@ async function submit() {
     intent.result = null
   }
   ctx.quantityEntered = true
+  if (!intent) return
   const attempt = intent.attempt
   try {
     const receiptEnvelope = await recordReport({
@@ -420,8 +484,31 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
-function onScanWorkOrder(value: string) {
-  workOrderFilters.keyword = value
+async function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind === 'work-order') {
+    workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = value.workOrderId
+    await router.replace({ path: '/mes/report', query: { workOrderId: value.workOrderId } })
+    return
+  }
+  if (value.kind === 'operation-task') {
+    await router.replace({
+      path: '/mes/report',
+      query: { workOrderId: value.workOrderId, operationTaskId: value.operationTaskId },
+    })
+    return
+  }
+  if (value.kind === 'material') {
+    setMaterialSelected(value.materialIssueRequestId, true)
+    return
+  }
+  if (value.kind === 'device') {
+    validatedDeviceAssetId.value = value.scannedObjectId
+    return
+  }
+  if (value.kind === 'personnel') {
+    validatedPersonnelId.value = value.scannedObjectId
+  }
 }
 </script>
 
@@ -563,11 +650,14 @@ function onScanWorkOrder(value: string) {
             />
             <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
             <div class="grid grid-cols-2 gap-2">
-              <NvMobileButton variant="primary" @click="promoteTelemetryCandidate(candidate)"
+              <NvMobileButton
+                variant="primary"
+                @click="promoteTelemetryCandidate(candidate)"
+                :disabled="scanPending"
                 >确认转正</NvMobileButton
               ><NvMobileButton
                 variant="outline"
-                :disabled="!telemetryDismissReason.trim()"
+                :disabled="!telemetryDismissReason.trim() || scanPending"
                 @click="dismissTelemetryCandidate(candidate.candidateId)"
                 >忽略</NvMobileButton
               >
@@ -577,7 +667,17 @@ function onScanWorkOrder(value: string) {
       </section>
       <!-- 步骤 1：选工单 -->
       <template v-if="currentStep === 'selectWorkOrder'">
-        <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
+        <MesScanPrevalidation
+          :organization-id="workOrderFilters.organizationId"
+          :environment-id="workOrderFilters.environmentId"
+          :work-order-id="pair?.workOrderId"
+          :operation-task-id="pair?.operationTaskId"
+          placeholder="扫描工单或工序"
+          :active="scanActive"
+          :accepted-kinds="['work-order', 'operation-task']"
+          @accepted="onScanAccepted"
+          @status-change="scanGate.set('list', $event)"
+        />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
         <ListScopeMeta
           :scope="workOrderScope"
@@ -698,6 +798,32 @@ function onScanWorkOrder(value: string) {
           当前状态：{{ taskStatusLabel(selectedTask.status) }}
         </p>
 
+        <MesScanPrevalidation
+          :organization-id="workOrderFilters.organizationId"
+          :environment-id="workOrderFilters.environmentId"
+          :work-order-id="pair?.workOrderId"
+          :operation-task-id="pair?.operationTaskId"
+          placeholder="扫描物料批次 / 工序 / 设备 / 工牌"
+          :active="!submitting"
+          :accepted-kinds="['operation-task', 'device', 'personnel', 'material']"
+          @accepted="onScanAccepted"
+          @status-change="scanGate.set('context', $event)"
+        />
+        <p
+          v-if="validatedDeviceAssetId"
+          data-testid="report-validated-device"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序设备
+        </p>
+        <p
+          v-if="validatedPersonnelId"
+          data-testid="report-validated-personnel"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序人员
+        </p>
+
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">良品数</span>
           <input
@@ -722,6 +848,31 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
+        <ProductionReportScrapReasonField
+          v-if="scrapQuantity > 0"
+          v-model="scrapReasonCode"
+          :quality-inspection-records-read-permission="qualityInspectionRecordsReadPermission"
+          :scrap-reason-codes-pending="scrapReasonCodesPending"
+          :scrap-reason-codes-error="scrapReasonCodesError"
+          :scrap-reason-codes="scrapReasonCodes"
+          :scrap-reason-validation-message="scrapReasonValidationMessage"
+          :submitting="submitting || scanGuarded"
+          :report-scope-ready="reportScopeReady"
+          :refresh-scrap-reason-codes="refreshScrapReasonCodes"
+        />
+
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">返修数</span>
+          <input
+            v-model.number="reworkQuantity"
+            data-testid="rework-quantity"
+            type="number"
+            inputmode="numeric"
+            min="0"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
+          />
+        </label>
+
         <label
           class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-3"
         >
@@ -739,14 +890,43 @@ function onScanWorkOrder(value: string) {
           当前工序可报数量；仅执行中的工序可同时完工。
         </p>
 
+        <ProductionReportMaterialLots
+          v-if="materialsReadPermission"
+          :available-material-lots="availableMaterialLots"
+          :material-lots-pending="materialLotsPending"
+          :material-lots-error="materialLotsError"
+          :submitting="submitting || scanGuarded"
+          :material-validation-message="materialValidationMessage"
+          :refresh-material-lots="refreshMaterialLots"
+          :material-selected="materialSelected"
+          :material-quantity="materialQuantity"
+          :set-material-selected="setMaterialSelected"
+          :set-material-quantity="setMaterialQuantity"
+          :material-remaining="materialRemaining"
+        />
+        <p v-else data-testid="material-permission-message" class="text-sm text-muted-foreground">
+          当前账号没有材料读取权限，耗料批次选择已禁用。
+        </p>
+
         <p v-if="!quantityValid" class="text-sm text-muted-foreground">
-          良品数与次品数须为非负数，且合计大于 0。
+          良品数、次品数与返修数须为非负数，且合计大于 0。
+        </p>
+        <p v-else-if="scrapReasonValidationMessage" class="text-sm text-destructive" role="alert">
+          {{ scrapReasonValidationMessage }}
         </p>
 
         <button
           type="button"
           data-testid="submit-report"
-          :disabled="!quantityValid || submitting || reportScopePending || !reportScopeReady"
+          :disabled="
+            !quantityValid ||
+            invalidMaterialLots ||
+            invalidScrapReasonCode ||
+            submitting ||
+            scanGuarded ||
+            reportScopePending ||
+            !reportScopeReady
+          "
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submit"
         >

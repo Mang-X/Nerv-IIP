@@ -24,6 +24,7 @@ param(
     [int] $PlanningRunAttempt = $RunAttempt,
     [string] $ManifestRepositoryPath = 'scripts/acceptance-scenario-matrix.json',
     [ValidateSet('pull_request', 'push', 'schedule', 'workflow_dispatch')] [string] $Event = $env:GITHUB_EVENT_NAME,
+    [string] $ScenarioId = 'sales-order-demand',
     [Parameter(Mandatory)] [string] $V1ResultPath,
     [int] $V1RunAttempt = $RunAttempt,
     [Parameter(Mandatory)] [string] $ShadowResultPath,
@@ -49,6 +50,7 @@ Invoke-NervAcceptanceScenarioMatrixEquivalence `
     -PlanningRunAttempt $PlanningRunAttempt `
     -ManifestRepositoryPath $ManifestRepositoryPath `
     -Event $Event `
+    -ScenarioId $ScenarioId `
     -V1ResultPath $V1ResultPath `
     -V1RunAttempt $V1RunAttempt `
     -ShadowResultPath $ShadowResultPath `

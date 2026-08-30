@@ -67,23 +67,3 @@ command = "pwsh scripts/export-gateway-openapi.ps1"
 name = "生成前端API Client"
 icon = "tool"
 command = "pnpm -C frontend generate:api"
-
-[[actions]]
-name = "验证第一阶段纵切"
-icon = "tool"
-command = "pwsh scripts/verify-first-slice.ps1"
-
-[[actions]]
-name = "验证第二阶段运维闭环"
-icon = "tool"
-command = "pwsh scripts/verify-second-slice-ops.ps1"
-
-[[actions]]
-name = "验证第三阶段控制台"
-icon = "tool"
-command = "pwsh scripts/verify-third-slice-console.ps1"
-
-[[actions]]
-name = "验证第四阶段真实基础设施"
-icon = "tool"
-command = "pwsh scripts/verify-fourth-slice-real-infra.ps1"

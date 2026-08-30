@@ -46,6 +46,7 @@ builder.Services
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new BusinessGatewayErrorResponseOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>
@@ -68,6 +69,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();
 builder.Services.AddScoped<BusinessGatewayDataScopeFilter>();
+builder.Services.AddScoped<IBusinessOeeAggregateCapability, BusinessOeeAggregateCapability>();
 var iamBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 var inventoryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
@@ -101,6 +103,10 @@ builder.Services.AddHttpClient<IBusinessQualityClient, HttpBusinessQualityClient
 {
     client.BaseAddress = qualityBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessQualityScrapReasonCodeClient, HttpBusinessQualityScrapReasonCodeClient>(client =>
+{
+    client.BaseAddress = qualityBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessProductEngineeringClient, HttpBusinessProductEngineeringClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
@@ -125,6 +131,10 @@ builder.Services.AddHttpClient<IBusinessBarcodeLabelClient, HttpBusinessBarcodeL
 {
     client.BaseAddress = barcodeLabelBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessBarcodeResolverClient, HttpBusinessBarcodeResolverClient>(client =>
+{
+    client.BaseAddress = barcodeLabelBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessNotificationClient, HttpBusinessNotificationClient>(client =>
 {
     client.BaseAddress = notificationBaseAddress;
@@ -137,6 +147,18 @@ builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client
 {
     client.BaseAddress = mesBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesWorkOrderTransformationClient, HttpBusinessMesWorkOrderTransformationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesMaterialPrevalidationClient, HttpBusinessMesMaterialPrevalidationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessMesContextPrevalidationClient, HttpBusinessMesContextPrevalidationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessSchedulingClient, HttpBusinessSchedulingClient>(client =>
 {
     client.BaseAddress = schedulingBaseAddress;

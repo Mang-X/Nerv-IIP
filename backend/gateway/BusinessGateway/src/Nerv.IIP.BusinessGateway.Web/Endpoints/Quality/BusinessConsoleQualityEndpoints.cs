@@ -8,6 +8,18 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Quality;
 
+public sealed class BusinessConsoleNcrCloseRequestValidator : Validator<BusinessConsoleNcrCloseRequest>
+{
+    public BusinessConsoleNcrCloseRequestValidator()
+    {
+#pragma warning disable CS0618
+        RuleFor(x => x.ReworkWorkOrderId)
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage("ReworkWorkOrderId is bound only from the MES rework-work-order-created receipt.");
+#pragma warning restore CS0618
+    }
+}
+
 public sealed class BusinessConsoleQualityReasonListRequestValidator : Validator<BusinessConsoleQualityReasonListRequest>
 {
     public BusinessConsoleQualityReasonListRequestValidator()
@@ -16,6 +28,19 @@ public sealed class BusinessConsoleQualityReasonListRequestValidator : Validator
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Search).MaximumLength(200);
         RuleFor(x => x.GroupName).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleScrapQualityReasonCodeListRequestValidator
+    : Validator<BusinessConsoleScrapQualityReasonCodeListRequest>
+{
+    public BusinessConsoleScrapQualityReasonCodeListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Search).MaximumLength(200);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
@@ -1034,7 +1059,7 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityNcrListResponse>(
         auth,
         BusinessGatewayPermissions.QualityNcrRead)
 {
@@ -1042,7 +1067,7 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleQualityListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleQualityListResponse> ForwardAsync(
+    protected override Task<BusinessConsoleQualityNcrListResponse> ForwardAsync(
         BusinessConsoleQualityListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
@@ -1289,6 +1314,28 @@ public sealed class ListBusinessConsoleQualityReasonCodesEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListQualityReasonsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/scrap-reason-codes")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityScrapReasonCodes")]
+public sealed class ListBusinessConsoleQualityScrapReasonCodesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityScrapReasonCodeClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleScrapQualityReasonCodeListRequest, BusinessConsoleQualityReasonListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleScrapQualityReasonCodeListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleScrapQualityReasonCodeListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityReasonListResponse> ForwardAsync(
+        BusinessConsoleScrapQualityReasonCodeListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListScrapQualityReasonCodesAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Quality")]

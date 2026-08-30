@@ -12,11 +12,18 @@ public sealed record ProcessedIntegrationEventInboxRecord(
     string IdempotencyKey,
     DateTimeOffset ProcessedAtUtc);
 
+public enum ProcessedIntegrationEventInboxIdentity
+{
+    IdempotencyKey,
+    EventId,
+}
+
 public static class ProcessedIntegrationEventInbox
 {
     public const string UniqueIndexName = "ux_processed_integration_events_consumer_idempotency_key";
 
     private const string ConsumerNameProperty = nameof(ProcessedIntegrationEventInboxRecord.ConsumerName);
+    private const string EventIdProperty = nameof(ProcessedIntegrationEventInboxRecord.EventId);
     private const string IdempotencyKeyProperty = nameof(ProcessedIntegrationEventInboxRecord.IdempotencyKey);
 
     public static async Task<bool> TryRecordAsync<TEntity>(
@@ -25,6 +32,26 @@ public static class ProcessedIntegrationEventInbox
         string consumerName,
         IIntegrationEventEnvelope integrationEvent,
         Func<ProcessedIntegrationEventInboxRecord, TEntity> entityFactory,
+        CancellationToken cancellationToken)
+        where TEntity : class
+        => await TryRecordAsync(
+            dbContext,
+            dbSet,
+            consumerName,
+            integrationEvent,
+            entityFactory,
+            ProcessedIntegrationEventInboxIdentity.IdempotencyKey,
+            acquireIdentityLockAsync: null,
+            cancellationToken);
+
+    public static async Task<bool> TryRecordAsync<TEntity>(
+        DbContext dbContext,
+        DbSet<TEntity> dbSet,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        Func<ProcessedIntegrationEventInboxRecord, TEntity> entityFactory,
+        ProcessedIntegrationEventInboxIdentity identity,
+        Func<DbContext, string, string, CancellationToken, Task>? acquireIdentityLockAsync,
         CancellationToken cancellationToken)
         where TEntity : class
     {
@@ -38,8 +65,24 @@ public static class ProcessedIntegrationEventInbox
         var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
         var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
         var idempotencyKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+        var (identityProperty, identityValue) = identity switch
+        {
+            ProcessedIntegrationEventInboxIdentity.IdempotencyKey => (IdempotencyKeyProperty, idempotencyKey),
+            ProcessedIntegrationEventInboxIdentity.EventId => (EventIdProperty, eventId),
+            _ => throw new ArgumentOutOfRangeException(nameof(identity), identity, "Unsupported inbox identity."),
+        };
 
-        if (dbSet.Local.Any(entity => HasProcessedKey(dbContext, entity, consumerName, idempotencyKey)))
+        if (acquireIdentityLockAsync is not null)
+        {
+            await acquireIdentityLockAsync(dbContext, consumerName, identityValue, cancellationToken);
+        }
+
+        if (dbSet.Local.Any(entity => HasProcessedKey(
+                dbContext,
+                entity,
+                consumerName,
+                identityProperty,
+                identityValue)))
         {
             return false;
         }
@@ -47,7 +90,7 @@ public static class ProcessedIntegrationEventInbox
         if (await dbSet.AnyAsync(
             entity =>
                 EF.Property<string>(entity, ConsumerNameProperty) == consumerName &&
-                EF.Property<string>(entity, IdempotencyKeyProperty) == idempotencyKey,
+                EF.Property<string>(entity, identityProperty) == identityValue,
             cancellationToken))
         {
             return false;
@@ -129,12 +172,13 @@ public static class ProcessedIntegrationEventInbox
         DbContext dbContext,
         TEntity entity,
         string consumerName,
-        string idempotencyKey)
+        string identityProperty,
+        string identityValue)
         where TEntity : class
     {
         var entry = dbContext.Entry(entity);
         return string.Equals(entry.Property<string>(ConsumerNameProperty).CurrentValue, consumerName, StringComparison.Ordinal) &&
-            string.Equals(entry.Property<string>(IdempotencyKeyProperty).CurrentValue, idempotencyKey, StringComparison.Ordinal);
+            string.Equals(entry.Property<string>(identityProperty).CurrentValue, identityValue, StringComparison.Ordinal);
     }
 
     private static bool HasPendingProcessedRecord<TEntity>(DbContext dbContext)

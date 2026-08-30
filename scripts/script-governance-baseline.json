@@ -9,15 +9,6 @@
         "DynamicInvocation",
         "ForbiddenProcessStart"
       ]
-    },
-    {
-      "path": "scripts/verify-second-slice-ops.ps1",
-      "rules": [
-        "MissingHelper",
-        "ForbiddenCommand",
-        "DynamicInvocation",
-        "ForbiddenProcessStart"
-      ]
     }
   ]
 }

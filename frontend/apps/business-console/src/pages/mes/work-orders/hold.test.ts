@@ -59,6 +59,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(false),
+    materialLotsPending: ref(false),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref([]),
+    refreshMaterialLots: vi.fn(),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(false),
+    scrapReasonCodesPending: ref(false),
+    scrapReasonCodesError: ref(undefined),
+    scrapReasonCodes: ref([]),
+    refreshScrapReasonCodes: vi.fn(),
+  }),
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   useMesWorkOrderDetail: () => ({
     activateCancelPreview: vi.fn(),
@@ -131,6 +145,17 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
+    workOrderManageScope: ref({ kind: 'work-center', id: 'WC-A', displayName: '精加工一线' }),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopePending: ref(false),
+    workOrderManageScopeReady: ref(true),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 

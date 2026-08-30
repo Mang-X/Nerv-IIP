@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -38,6 +39,17 @@ public sealed class QualityOpenApiTests
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
 
+        foreach (var contract in QualityReasonEndpointContracts.All)
+        {
+            Assert.Equal(
+                contract.OperationId,
+                GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
+        }
+
+        Assert.Equal(
+            "listBusinessQualityScrapReasonCodes",
+            GetOperationId(document, "/api/business/v1/quality/scrap-reason-codes", "get"));
+
         foreach (var contract in QualityInspectionEndpointContracts.All)
         {
             Assert.Equal(
@@ -45,7 +57,27 @@ public sealed class QualityOpenApiTests
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
 
+        var scrapReasonOperation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v1/quality/scrap-reason-codes")
+            .GetProperty("get");
+        AssertQueryParameter(scrapReasonOperation, "organizationId", required: true);
+        AssertQueryParameter(scrapReasonOperation, "environmentId", required: true);
+        AssertQueryParameter(scrapReasonOperation, "search", required: false);
+        AssertQueryParameter(scrapReasonOperation, "skip", required: false);
+        AssertQueryParameter(scrapReasonOperation, "take", required: false);
+
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
+        AssertRequestSchemaDeprecatedProperty(
+            document,
+            "/api/business/v1/quality/ncrs/{ncrId}/close",
+            "post",
+            "reworkWorkOrderId");
+        AssertSchemaProperties(
+            document,
+            "NervIIPBusinessQualityWebEndpointsNonconformanceReportsNonconformanceReportDto",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
         AssertSchemaProperties(
             document,
             "NervIIPBusinessQualityWebEndpointsInspectionPlansCreateInspectionPlanRequest",
@@ -82,6 +114,34 @@ public sealed class QualityOpenApiTests
             .GetProperty(schemaRef.Split('/')[^1]);
         Assert.Contains("reason", schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertRequestSchemaDeprecatedProperty(
+        JsonDocument document,
+        string route,
+        string method,
+        string propertyName)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var property = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaRef.Split('/')[^1]).GetProperty("properties").GetProperty(propertyName);
+
+        Assert.True(property.GetProperty("deprecated").GetBoolean());
+    }
+
+    private static void AssertQueryParameter(JsonElement operation, string name, bool required)
+    {
+        var parameter = operation.GetProperty("parameters")
+            .EnumerateArray()
+            .SingleOrDefault(item => item.GetProperty("name").GetString() == name);
+
+        Assert.False(parameter.ValueKind == JsonValueKind.Undefined, $"Missing query parameter '{name}'.");
+        var actualRequired = parameter.TryGetProperty("required", out var requiredProperty)
+            && requiredProperty.ValueKind != JsonValueKind.Null
+            && requiredProperty.GetBoolean();
+        Assert.Equal(required, actualRequired);
     }
 
     private static async Task<JsonDocument> GetOpenApiDocumentAsync(HttpClient client)

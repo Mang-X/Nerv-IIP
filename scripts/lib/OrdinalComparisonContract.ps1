@@ -34,6 +34,8 @@
     and reading it as "the strict one" is what put these operators in the tree in the first place.
 #>
 
+. (Join-Path $PSScriptRoot 'ScriptVariableBinding.ps1')
+
 # These are functions rather than `$script:` arrays for the same reason Add-NervOrdinalContractFinding
 # is a function rather than a closure: *this library*, dot-sourced the way its two contract tests
 # dot-source it, was measured failing that way on the CI runner — the sibling function could not be
@@ -581,11 +583,12 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
         [Parameter(Mandatory)] [string] $Name
     )
 
+    if (Test-NervScriptVariableItemCommandWritesName -Command $Command -Name $Name) { return $true }
+
     $commandName = [string] $Command.GetCommandName()
     $kind = $null
     foreach ($entry in @(
-        [pscustomobject]@{ Kind = 'path'; Names = @('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si', 'Clear-Item', 'Microsoft.PowerShell.Management\Clear-Item', 'cli', 'Remove-Item', 'Microsoft.PowerShell.Management\Remove-Item', 'ri', 'rm', 'del', 'erase', 'rd', 'rmdir', 'Rename-Item', 'Microsoft.PowerShell.Management\Rename-Item', 'rni', 'ren') },
-        [pscustomobject]@{ Kind = 'new-item'; Names = @('New-Item', 'Microsoft.PowerShell.Management\New-Item', 'ni') },
+        [pscustomobject]@{ Kind = 'path'; Names = @('Clear-Item', 'Microsoft.PowerShell.Management\Clear-Item', 'cli', 'Remove-Item', 'Microsoft.PowerShell.Management\Remove-Item', 'ri', 'rm', 'del', 'erase', 'rd', 'rmdir', 'Rename-Item', 'Microsoft.PowerShell.Management\Rename-Item', 'rni', 'ren') },
         [pscustomobject]@{ Kind = 'source-and-destination'; Names = @('Move-Item', 'Microsoft.PowerShell.Management\Move-Item', 'mi', 'mv', 'move') },
         [pscustomobject]@{ Kind = 'destination'; Names = @('Copy-Item', 'Microsoft.PowerShell.Management\Copy-Item', 'cpi', 'cp', 'copy') }
     )) {
@@ -602,8 +605,6 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
     $elements = @($Command.CommandElements)
     $positionals = [Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
     $namedTargets = [Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
-    $newItemPaths = [Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
-    $newItemName = $null
     $hasNamedSource = $false
     $hasNamedDestination = $false
     for ($index = 1; $index -lt $elements.Count; $index++) {
@@ -623,24 +624,12 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
         $isSourcePath = [string]::Equals($parameterName, 'Path', [StringComparison]::OrdinalIgnoreCase) -or
             [string]::Equals($parameterName, 'LiteralPath', [StringComparison]::OrdinalIgnoreCase)
         $isDestination = [string]::Equals($parameterName, 'Destination', [StringComparison]::OrdinalIgnoreCase)
-        $isName = [string]::Equals($parameterName, 'Name', [StringComparison]::OrdinalIgnoreCase)
-        if ([string]::Equals($kind, 'new-item', [StringComparison]::Ordinal)) {
-            if ($isSourcePath) { $newItemPaths.Add($argument) }
-            if ($isName) { $newItemName = $argument }
-        }
         if (($isSourcePath -and -not [string]::Equals($kind, 'destination', [StringComparison]::Ordinal)) -or
             ($isDestination -and -not [string]::Equals($kind, 'path', [StringComparison]::Ordinal))) {
             $namedTargets.Add($argument)
             if ($isSourcePath) { $hasNamedSource = $true }
             if ($isDestination) { $hasNamedDestination = $true }
         }
-    }
-
-    if ([string]::Equals($kind, 'new-item', [StringComparison]::Ordinal)) {
-        $path = if ($newItemPaths.Count -gt 0) { $newItemPaths[0] }
-        elseif ($positionals.Count -gt 0) { $positionals[0] }
-        else { $null }
-        return Test-NervOrdinalContractNewItemMayWriteVariable -Path $path -ItemName $newItemName -Name $Name
     }
 
     foreach ($candidate in $namedTargets) {
@@ -662,26 +651,6 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
     if ($hasNamedDestination) { return $false }
     return $positionals.Count -ge 2 -and
         (Test-NervOrdinalContractVariableProviderPathMayMatch -Candidate $positionals[1] -Name $Name)
-}
-
-function Test-NervOrdinalContractNewItemMayWriteVariable {
-    param(
-        [AllowNull()] [System.Management.Automation.Language.Ast] $Path,
-        [AllowNull()] [System.Management.Automation.Language.Ast] $ItemName,
-        [Parameter(Mandatory)] [string] $Name
-    )
-
-    # Dynamic provider paths remain the registered provider-path blind spot. With an explicit
-    # variable: provider root, however, a dynamic item name can be the protected binding and must
-    # invalidate the proof.
-    if ($Path -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $false }
-    $providerPath = [string] $Path.Value
-    if (-not $providerPath.StartsWith('variable:', [StringComparison]::OrdinalIgnoreCase)) { return $false }
-    $variablePath = $providerPath.Substring('variable:'.Length).TrimStart('/', '\')
-    if (-not [string]::IsNullOrEmpty($variablePath)) {
-        return Test-NervOrdinalContractVariablePathTextMayMatch -CandidateName $variablePath -Name $Name
-    }
-    return Test-NervOrdinalContractVariablePathMayMatch -Candidate $ItemName -Name $Name
 }
 
 function Test-NervOrdinalContractVariableProviderPathMayMatch {

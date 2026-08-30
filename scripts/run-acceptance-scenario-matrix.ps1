@@ -1,11 +1,11 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Invokes the governed ERP sales-order demand verifier once after runtime preflight succeeds
+#     - Invokes the governed verifier for the caller-selected supported scenario after runtime preflight succeeds
 #     - Preserves a caller-supplied in-process acceptance scenario action for pure contract tests
 #   Writes:
 #     - A caller-declared runtime summary through atomic file replacement
-#     - A caller-selected canonical sales-order-demand result through the governed verifier
+#     - A caller-selected canonical acceptance result through the governed verifier
 #     - Existing verifier evidence, cleanup evidence, diagnostics, and script logs
 #   Cleanup:
 #     - Delegates exact owned-resource cleanup evidence to the injected action and validates zero remaining resources
@@ -33,6 +33,7 @@ param(
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/runtime-summary.json'),
     [string] $CanonicalResultPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/sales-order-demand-result.json'),
     [string] $TrackIdentifier = 'shadow',
+    [string] $ScenarioId = 'sales-order-demand',
     [scriptblock] $RuntimeAction
 )
 
@@ -67,12 +68,46 @@ function Invoke-NervAcceptanceScenarioMatrixSalesOrderAction {
     return (Read-NervAcceptanceRuntimeJsonSnapshot -Path $canonicalResultPath -Context 'sales-order-demand canonical runtime result').value
 }
 
+function Invoke-NervAcceptanceScenarioMatrixWmsDeliveryAction {
+    param(
+        [Parameter(Mandatory)] [object] $Contract,
+        [Parameter(Mandatory)] [string] $ResultPath,
+        [Parameter(Mandatory)] [string] $Track
+    )
+
+    $canonicalResultPath = [IO.Path]::GetFullPath($ResultPath)
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $canonicalResultPath)) | Out-Null
+    Invoke-PwshScript `
+        -ScriptPath (Join-Path $PSScriptRoot 'verify-erp-wms-delivery-completion.ps1') `
+        -Arguments @(
+            '-CanonicalResultPath', $canonicalResultPath,
+            '-TrackIdentifier', $Track,
+            '-Repository', [string]$Contract.provenance.repository,
+            '-RunId', [string]$Contract.provenance.runId,
+            '-RunAttempt', [string]$Contract.provenance.runAttempt,
+            '-TestedSha', [string]$Contract.provenance.testedSha,
+            '-ManifestDigest', [string]$Contract.provenance.manifestDigest,
+            '-ScenarioId', [string]$Contract.provenance.scenarioId
+        ) `
+        -WorkingDirectory $RepositoryRoot `
+        -TimeoutSeconds ([int]$Contract.requiredSeconds) `
+        -Name 'acceptance-scenario-matrix-wms-delivery-erp' | Out-Null
+    return (Read-NervAcceptanceRuntimeJsonSnapshot -Path $canonicalResultPath -Context 'wms-delivery-erp canonical runtime result').value
+}
+
 $effectiveRuntimeAction = $RuntimeAction
 if ($null -eq $effectiveRuntimeAction) {
     $salesOrderAction = ${function:Invoke-NervAcceptanceScenarioMatrixSalesOrderAction}
+    $wmsDeliveryAction = ${function:Invoke-NervAcceptanceScenarioMatrixWmsDeliveryAction}
     $effectiveRuntimeAction = {
         param([object] $Contract)
-        $salesOrderAction.Invoke($Contract, $CanonicalResultPath, $TrackIdentifier)
+        if ([string]::Equals([string]$Contract.scenario.id, 'sales-order-demand', [StringComparison]::Ordinal)) {
+            return $salesOrderAction.Invoke($Contract, $CanonicalResultPath, $TrackIdentifier)
+        }
+        if ([string]::Equals([string]$Contract.scenario.id, 'wms-delivery-erp', [StringComparison]::Ordinal)) {
+            return $wmsDeliveryAction.Invoke($Contract, $CanonicalResultPath, $TrackIdentifier)
+        }
+        throw 'Runtime scenario has no governed verifier adapter.'
     }.GetNewClosure()
 }
 
@@ -93,5 +128,6 @@ Invoke-NervAcceptanceScenarioRuntime `
     -WorkflowPath $WorkflowPath `
     -WorkflowJobName $WorkflowJobName `
     -WorkflowStepName $WorkflowStepName `
+    -ScenarioId $ScenarioId `
     -SummaryPath $SummaryPath `
     -RuntimeAction $effectiveRuntimeAction

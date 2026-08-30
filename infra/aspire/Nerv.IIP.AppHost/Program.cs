@@ -98,6 +98,10 @@ var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secre
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
 // 可选：PDA 演示工人统一口令（缺省为空 = 不开通演示工人账号），不建为必填 Parameter 以免阻塞常规启动。
 var iamSeedDemoWorkerPassword = builder.Configuration["Parameters:iam-seed-demo-worker-password"] ?? string.Empty;
+// 仅向 WMS 下发非敏感的显式种子开关；工人口令仍只提供给 IAM。
+var wmsWorkPoolSeedEnabled = builder.Configuration.GetValue(
+    "LeaderDemo:Wms:WorkPoolSeed:Enabled",
+    !string.IsNullOrWhiteSpace(iamSeedDemoWorkerPassword));
 var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
@@ -453,15 +457,18 @@ var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
+    .WithReference(businessQuality)
     .WaitFor(businessMesDatabase)
     .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
-    .WaitFor(businessInventory);
+    .WaitFor(businessInventory)
+    .WaitFor(businessQuality);
 // 站点/库位必须与主线产品配置事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
 // NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到主线种子事实（SITE-001 + loc-*），其他环境
 // 只下发部署方显式配置的真实值，未配置就不下发（#2008）。
@@ -499,6 +506,12 @@ if (rabbitmq is not null)
         .WithReference(rabbitmq)
         .WaitFor(rabbitmq);
 }
+
+// Inventory 的成品入库权威成本读取回查 MES；MES 已等待 Inventory，反向只回填服务发现，
+// 不加 WaitFor，避免 Aspire 资源依赖成环并避免 ephemeral 会话回落到固定端口 5111。
+businessInventory = businessInventory
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
+    .WithReference(businessMes);
 
 var businessDemandPlanning = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5112, name: "http")
@@ -593,6 +606,7 @@ var businessWms = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
+    .WithEnvironment("LeaderDemo__Wms__WorkPoolSeed__Enabled", wmsWorkPoolSeedEnabled ? "true" : "false")
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessWmsDatabase, "PostgreSQL")
