@@ -1,28 +1,23 @@
+using System.Data.Common;
+using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.Extensions.Primitives;
-using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 public sealed record ToolingOperationAuditContext
 {
-    private readonly string[] forbiddenCredentials;
-
     private ToolingOperationAuditContext(
         string actor,
         string correlationId,
         string causationId,
-        string operationId,
-        IReadOnlyCollection<string>? forbiddenCredentials)
+        string operationId)
     {
-        this.forbiddenCredentials = forbiddenCredentials?
-            .Where(credential => !string.IsNullOrWhiteSpace(credential))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray() ?? [];
-        Actor = ValidateActor(actor, this.forbiddenCredentials);
-        CorrelationId = ValidateIdentity(correlationId, "correlationId", this.forbiddenCredentials);
-        CausationId = ValidateIdentity(causationId, "causationId", this.forbiddenCredentials);
-        OperationId = ValidateIdentity(operationId, "operationId", this.forbiddenCredentials);
+        Actor = actor;
+        CorrelationId = correlationId;
+        CausationId = causationId;
+        OperationId = operationId;
     }
 
     public string Actor { get; }
@@ -36,63 +31,37 @@ public sealed record ToolingOperationAuditContext
         string causationId,
         string operationId,
         IReadOnlyCollection<string>? forbiddenCredentials = null) => new(
-            actor,
-            correlationId,
-            causationId,
-            operationId,
-            forbiddenCredentials);
+            ToolingAuditContentAdmission.RequireActor(actor, forbiddenCredentials),
+            ToolingAuditContentAdmission.RequireIdentity(correlationId, "correlationId", forbiddenCredentials),
+            ToolingAuditContentAdmission.RequireIdentity(causationId, "causationId", forbiddenCredentials),
+            ToolingAuditContentAdmission.RequireIdentity(operationId, "operationId", forbiddenCredentials));
+}
 
-    internal string RequireAuditableText(string value, string fieldName)
-    {
-        var normalized = value?.Trim();
-        if (!ToolingAuditIdentityPolicy.IsValidAuditText(normalized, forbiddenCredentials))
-        {
-            throw new KnownException($"工装写操作的 {fieldName} 不能包含凭据或敏感内容。");
-        }
+public sealed record ToolingAuditSafeText
+{
+    private ToolingAuditSafeText(string value) => Value = value;
 
-        return normalized!;
-    }
+    public string Value { get; }
 
-    private static string ValidateActor(string value, IReadOnlyCollection<string> forbiddenCredentials)
-    {
-        if (!ToolingAuditIdentityPolicy.IsValidActor(value, forbiddenCredentials))
-        {
-            throw new KnownException("工装写操作需要合法的已授权用户主体标识。");
-        }
-
-        return value;
-    }
-
-    private static string ValidateIdentity(
+    internal static ToolingAuditSafeText CreateFromTrustedBoundary(
         string value,
         string fieldName,
-        IReadOnlyCollection<string> forbiddenCredentials)
-    {
-        if (!ToolingAuditIdentityPolicy.IsValidOpaqueIdentity(value, forbiddenCredentials))
-        {
-            throw new KnownException($"工装写操作需要合法且不含敏感内容的 {fieldName}。");
-        }
-
-        return value;
-    }
+        IReadOnlyCollection<string>? forbiddenCredentials = null) => new(
+            ToolingAuditContentAdmission.RequireAuditText(value, fieldName, forbiddenCredentials));
 }
 
-public interface IToolingOperationAuditContextAccessor
+public interface IToolingOperationAdmission
 {
     ToolingOperationAuditContext GetRequiredContext();
+    ToolingAuditSafeText RequireAuditSafeText(string value, string fieldName);
 }
 
-public sealed class HttpToolingOperationAuditContextAccessor(IHttpContextAccessor httpContextAccessor)
-    : IToolingOperationAuditContextAccessor
+public sealed class HttpToolingOperationAdmission(IHttpContextAccessor httpContextAccessor)
+    : IToolingOperationAdmission
 {
     public ToolingOperationAuditContext GetRequiredContext()
     {
-        var httpContext = httpContextAccessor.HttpContext;
-        if (httpContext?.User.Identity?.IsAuthenticated != true)
-        {
-            throw new KnownException("工装写操作需要已认证的调用主体。");
-        }
-
+        var httpContext = GetAuthenticatedHttpContext();
         var actor = string.Equals(
             httpContext.User.FindFirstValue("token_type"),
             "internal_service",
@@ -105,6 +74,23 @@ public sealed class HttpToolingOperationAuditContextAccessor(IHttpContextAccesso
             ReadRequiredHeader(httpContext.Request.Headers, "X-Causation-Id"),
             ReadRequiredHeader(httpContext.Request.Headers, "X-Idempotency-Key"),
             ReadAuthorizationCredentials(httpContext.Request.Headers));
+    }
+
+    public ToolingAuditSafeText RequireAuditSafeText(string value, string fieldName)
+    {
+        var httpContext = GetAuthenticatedHttpContext();
+        return ToolingAuditSafeText.CreateFromTrustedBoundary(
+            value,
+            fieldName,
+            ReadAuthorizationCredentials(httpContext.Request.Headers));
+    }
+
+    private HttpContext GetAuthenticatedHttpContext()
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        return httpContext?.User.Identity?.IsAuthenticated == true
+            ? httpContext
+            : throw new KnownException("工装写操作需要已认证的调用主体。");
     }
 
     private static string ResolveAuthenticatedUser(ClaimsPrincipal user)
@@ -132,7 +118,7 @@ public sealed class HttpToolingOperationAuditContextAccessor(IHttpContextAccesso
     private static string[] ReadAuthorizationCredentials(IHeaderDictionary headers)
     {
         if (!headers.TryGetValue("Authorization", out var values) || values.Count != 1 ||
-            !System.Net.Http.Headers.AuthenticationHeaderValue.TryParse(values[0], out var authorization) ||
+            !AuthenticationHeaderValue.TryParse(values[0], out var authorization) ||
             !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrWhiteSpace(authorization.Parameter))
         {
@@ -140,5 +126,185 @@ public sealed class HttpToolingOperationAuditContextAccessor(IHttpContextAccesso
         }
 
         return [authorization.Parameter];
+    }
+}
+
+internal static class ToolingAuditContentAdmission
+{
+    private const int MaxIdentityLength = 200;
+    private const int MaxAuditTextLength = 1000;
+    private const string UserActorPrefix = "user:";
+    private static readonly HashSet<string> CredentialAssignmentKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "authorization",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+    };
+    private static readonly HashSet<string> ConnectionEndpointKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "host",
+        "server",
+        "data source",
+        "address",
+        "addr",
+        "network address",
+    };
+    private static readonly HashSet<string> ConnectionContextKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "database",
+        "initial catalog",
+        "username",
+        "user id",
+        "uid",
+        "port",
+        "integrated security",
+        "trusted_connection",
+        "ssl mode",
+    };
+
+    public static string RequireActor(string value, IReadOnlyCollection<string>? forbiddenCredentials)
+    {
+        if (value is null ||
+            value.Length <= UserActorPrefix.Length ||
+            value.Length > MaxIdentityLength ||
+            !value.StartsWith(UserActorPrefix, StringComparison.Ordinal) ||
+            !IsCanonicalToken(value.AsSpan(UserActorPrefix.Length)) ||
+            ContainsSensitiveContent(value, forbiddenCredentials))
+        {
+            throw new KnownException("工装写操作需要合法的已授权用户主体标识。");
+        }
+
+        return value;
+    }
+
+    public static string RequireIdentity(
+        string value,
+        string fieldName,
+        IReadOnlyCollection<string>? forbiddenCredentials)
+    {
+        if (value is null ||
+            value.Length is <= 0 or > MaxIdentityLength ||
+            !IsCanonicalToken(value.AsSpan()) ||
+            ContainsSensitiveContent(value, forbiddenCredentials))
+        {
+            throw new KnownException($"工装写操作需要合法且不含敏感内容的 {fieldName}。");
+        }
+
+        return value;
+    }
+
+    public static string RequireAuditText(
+        string value,
+        string fieldName,
+        IReadOnlyCollection<string>? forbiddenCredentials)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) ||
+            normalized.Length > MaxAuditTextLength ||
+            normalized.Any(char.IsControl) ||
+            ContainsSensitiveContent(normalized, forbiddenCredentials))
+        {
+            throw new KnownException($"工装写操作的 {fieldName} 不能包含凭据或敏感内容。");
+        }
+
+        return normalized;
+    }
+
+    private static bool IsCanonicalToken(ReadOnlySpan<char> value)
+    {
+        if (value.IsEmpty || !IsAsciiAlphaNumeric(value[0])) return false;
+        foreach (var character in value)
+        {
+            if (IsAsciiAlphaNumeric(character) || character is '-' or '_' or '.' or '/') continue;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsAsciiAlphaNumeric(char value) =>
+        value is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9';
+
+    private static bool ContainsSensitiveContent(
+        string value,
+        IReadOnlyCollection<string>? forbiddenCredentials) =>
+        ContainsBearerCredential(value) ||
+        ContainsCredentialAssignment(value) ||
+        ContainsCompactJwt(value) ||
+        ContainsConnectionString(value) ||
+        (forbiddenCredentials?.Any(credential =>
+            !string.IsNullOrEmpty(credential) &&
+            (string.Equals(value, credential, StringComparison.Ordinal) ||
+                string.Equals(value, $"{UserActorPrefix}{credential}", StringComparison.Ordinal))) == true);
+
+    private static bool ContainsBearerCredential(string value) =>
+        AuthenticationHeaderValue.TryParse(value.Trim(), out var authorization) &&
+        string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(authorization.Parameter);
+
+    private static bool ContainsCredentialAssignment(string value)
+    {
+        foreach (var segment in value.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = segment.IndexOfAny(['=', ':']);
+            if (separator <= 0 || separator == segment.Length - 1) continue;
+            if (CredentialAssignmentKeys.Contains(segment[..separator].Trim())) return true;
+        }
+
+        return false;
+    }
+
+    private static bool ContainsConnectionString(string value)
+    {
+        if (!value.Contains(';') || !value.Contains('=')) return false;
+
+        try
+        {
+            var builder = new DbConnectionStringBuilder { ConnectionString = value };
+            var keys = builder.Keys.Cast<string>().ToArray();
+            return keys.Any(ConnectionEndpointKeys.Contains) &&
+                keys.Any(ConnectionContextKeys.Contains);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsCompactJwt(string value)
+    {
+        char[] separators = [' ', '\t', '\r', '\n', ':', '=', '"', '\'', ',', ';', '(', ')', '[', ']', '<', '>'];
+        return value.Split(separators, StringSplitOptions.RemoveEmptyEntries)
+            .Any(IsCompactJwt);
+    }
+
+    private static bool IsCompactJwt(string candidate)
+    {
+        var segments = candidate.Split('.');
+        if (segments.Length != 3 || segments.Any(string.IsNullOrEmpty)) return false;
+        try
+        {
+            var headerBytes = Convert.FromBase64String(ToBase64(segments[0]));
+            using var header = JsonDocument.Parse(headerBytes);
+            return header.RootElement.ValueKind == JsonValueKind.Object &&
+                header.RootElement.TryGetProperty("alg", out _);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string ToBase64(string value)
+    {
+        var normalized = value.Replace('-', '+').Replace('_', '/');
+        return normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
     }
 }

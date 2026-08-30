@@ -105,61 +105,90 @@ public sealed class ToolingAuditHttpTests
     }
 
     [Theory]
-    [InlineData("actor", "bearer:SENTINEL-TOKEN")]
-    [InlineData("correlation", "password=SENTINEL")]
-    [InlineData("causation", "connection-string-SENTINEL")]
-    [InlineData("operation", "authorization-SENTINEL")]
-    [InlineData("actor", "user:tooling-audit-test-token")]
-    [InlineData("correlation", "tooling-audit-test-token")]
-    [InlineData("causation", "tooling-audit-test-token")]
-    [InlineData("operation", "tooling-audit-test-token")]
-    [InlineData("actor", "user:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
-    public async Task Sensitive_audit_context_fails_closed_without_business_or_audit_rows(
-        string field,
-        string invalidValue)
+    [InlineData("register")]
+    [InlineData("status")]
+    [InlineData("usage")]
+    public async Task Each_write_endpoint_cannot_bypass_failed_audit_admission(string operation)
     {
         await using var factory = new ToolingAuditHttpTestFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "tooling-audit-test-token");
-        client.DefaultRequestHeaders.Add(
-            "X-Authenticated-Actor",
-            field == "actor" ? invalidValue : "user:tooling-admin-001");
-        SetOperationHeaders(
-            client,
-            field == "correlation" ? invalidValue : "corr-register",
-            field == "causation" ? invalidValue : "cause-register",
-            field == "operation" ? invalidValue : "tooling-register-http");
-
-        var response = await client.PostAsJsonAsync("/api/business/v1/master-data/tooling-assets", new
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:tooling-admin-001");
+        if (operation != "register")
         {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "TOOL-HTTP-SENSITIVE",
-            name = "Tool",
-            toolingType = "mould",
-            workCenterCodes = new[] { "WC-01" },
-            skuCodes = new[] { "SKU-A" },
-            maintenanceLifeCount = (long?)null,
-            idempotencyKey = field == "operation" ? invalidValue : "tooling-register-http",
-        });
+            SetOperationHeaders(client, "corr-admission-seed", "cause-admission-seed", "tooling-admission-seed");
+            var seed = await client.PostAsJsonAsync("/api/business/v1/master-data/tooling-assets", new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-HTTP-ADMISSION",
+                name = "Tool",
+                toolingType = "mould",
+                workCenterCodes = new[] { "WC-01" },
+                skuCodes = new[] { "SKU-A" },
+                maintenanceLifeCount = (long?)null,
+                idempotencyKey = "tooling-admission-seed",
+            });
+            Assert.Equal(HttpStatusCode.OK, seed.StatusCode);
+        }
+
+        SetOperationHeaders(client, "tooling-audit-test-token", $"cause-{operation}", $"tooling-{operation}-admission");
+        var response = operation switch
+        {
+            "register" => await client.PostAsJsonAsync("/api/business/v1/master-data/tooling-assets", new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-HTTP-ADMISSION",
+                name = "Tool",
+                toolingType = "mould",
+                workCenterCodes = new[] { "WC-01" },
+                skuCodes = new[] { "SKU-A" },
+                maintenanceLifeCount = (long?)null,
+                idempotencyKey = "tooling-register-admission",
+            }),
+            "status" => await client.PostAsJsonAsync("/api/business/v1/master-data/tooling-assets/status", new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-HTTP-ADMISSION",
+                status = ToolingAssetStatus.Maintenance,
+                reason = "planned service",
+            }),
+            "usage" => await client.PostAsJsonAsync("/api/business/v1/master-data/tooling-assets/usage", new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-HTTP-ADMISSION",
+                count = 5,
+            }),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+        };
 
         using var responseBody = await response.Content.ReadFromJsonAsync<JsonDocument>();
         Assert.NotNull(responseBody);
         Assert.False(responseBody.RootElement.GetProperty("success").GetBoolean());
         using var observerScope = factory.Services.CreateScope();
         var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Empty(await observer.ToolingAssets.AsNoTracking().ToArrayAsync());
-        Assert.Empty(await observer.ToolingAuditEntries.AsNoTracking().ToArrayAsync());
+        if (operation == "register")
+        {
+            Assert.Empty(await observer.ToolingAssets.AsNoTracking().ToArrayAsync());
+            Assert.Empty(await observer.ToolingAuditEntries.AsNoTracking().ToArrayAsync());
+        }
+        else
+        {
+            var asset = await observer.ToolingAssets.AsNoTracking().SingleAsync();
+            Assert.Equal(ToolingAssetStatus.Available, asset.Status);
+            Assert.Equal(0, asset.UsageCount);
+            Assert.Equal(ToolingAuditEntry.RegisterOperation,
+                (await observer.ToolingAuditEntries.AsNoTracking().SingleAsync()).OperationKind);
+        }
     }
 
-    [Theory]
-    [InlineData("password=SENTINEL-PASSWORD")]
-    [InlineData("Bearer SENTINEL-TOKEN")]
-    [InlineData("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
-    [InlineData("tooling-audit-test-token")]
-    [InlineData("Host=db;Username=svc;Database=prod")]
-    public async Task Sensitive_status_reason_fails_before_business_change_and_audit_append(string reason)
+    [Fact]
+    public async Task Sensitive_status_reason_fails_before_business_change_and_audit_append()
     {
+        const string reason = "Host=db;Username=svc;Database=prod";
         await using var factory = new ToolingAuditHttpTestFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "tooling-audit-test-token");

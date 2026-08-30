@@ -94,7 +94,7 @@ public sealed class MasterDataIntegrationEventContextTests
                 ],
                 "test"))
         };
-        var accessor = new HttpToolingOperationAuditContextAccessor(new HttpContextAccessor
+        var accessor = new HttpToolingOperationAdmission(new HttpContextAccessor
         {
             HttpContext = httpContext
         });
@@ -124,8 +124,6 @@ public sealed class MasterDataIntegrationEventContextTests
     [InlineData("actor", "bearer:SENTINEL-TOKEN")]
     [InlineData("actor", "user:valid\u0001suffix")]
     [InlineData("correlation", "password=SENTINEL")]
-    [InlineData("causation", "connection-string-SENTINEL")]
-    [InlineData("operation", "authorization-SENTINEL")]
     [InlineData("actor", "user:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
     [InlineData("correlation", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
     public void Tooling_context_rejects_unapproved_actor_or_sensitive_identity(string field, string invalidValue)
@@ -166,5 +164,48 @@ public sealed class MasterDataIntegrationEventContextTests
             field == "causation" ? credential : "cause-001",
             field == "operation" ? credential : "operation-001",
             [credential]));
+    }
+
+    [Fact]
+    public void Tooling_admission_allows_plain_language_that_only_mentions_sensitive_terms()
+    {
+        _ = ToolingOperationAuditContext.CreateFromTrustedBoundary(
+            "user:password-rotation",
+            "authorization-plan",
+            "secret-review",
+            "bearer-migration");
+
+        Assert.Equal(
+            "password rotation planned",
+            ToolingAuditSafeText.CreateFromTrustedBoundary(
+                " password rotation planned ",
+                "reason").Value);
+    }
+
+    [Theory]
+    [InlineData("PASSWORD : changed-value")]
+    [InlineData("token=another-value")]
+    [InlineData("bEaReR another-opaque-value")]
+    [InlineData("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
+    [InlineData("Database=next;HOST=db;Username=changed")]
+    [InlineData("User ID=changed;Initial Catalog=next;Server=db")]
+    [InlineData("planned\u0001service")]
+    public void Tooling_admission_rejects_bounded_sensitive_text_categories(string value)
+    {
+        Assert.Throws<KnownException>(() =>
+            ToolingAuditSafeText.CreateFromTrustedBoundary(value, "reason"));
+    }
+
+    [Fact]
+    public void Tooling_admission_rejects_actual_bearer_and_overlong_audit_text()
+    {
+        const string credential = "opaque-current-credential-7ff1";
+        Assert.Throws<KnownException>(() => ToolingAuditSafeText.CreateFromTrustedBoundary(
+            credential,
+            "reason",
+            [credential]));
+        Assert.Throws<KnownException>(() => ToolingAuditSafeText.CreateFromTrustedBoundary(
+            new string('x', 1001),
+            "reason"));
     }
 }

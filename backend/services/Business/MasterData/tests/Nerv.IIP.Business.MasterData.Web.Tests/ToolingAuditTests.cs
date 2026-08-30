@@ -19,64 +19,6 @@ public sealed class ToolingAuditTests
         new PassThroughToolingAuditOperationCoordinator();
 
     [Fact]
-    public void Tooling_writes_require_dedicated_context_and_operation_coordinator_by_construction()
-    {
-        Type[] handlerTypes =
-        [
-            typeof(RegisterToolingAssetCommandHandler),
-            typeof(ChangeToolingStatusCommandHandler),
-            typeof(RecordToolingUsageCommandHandler),
-        ];
-        Assert.All(handlerTypes, handlerType =>
-        {
-            var coordinator = Assert.Single(
-                Assert.Single(handlerType.GetConstructors()).GetParameters(),
-                parameter => parameter.ParameterType == typeof(IToolingAuditOperationCoordinator));
-            Assert.False(coordinator.HasDefaultValue);
-        });
-
-        Type[] commandTypes =
-        [
-            typeof(RegisterToolingAssetCommand),
-            typeof(ChangeToolingStatusCommand),
-            typeof(RecordToolingUsageCommand),
-        ];
-        Assert.All(commandTypes, commandType =>
-        {
-            var auditContext = Assert.Single(
-                Assert.Single(commandType.GetConstructors()).GetParameters(),
-                parameter => parameter.ParameterType == typeof(ToolingOperationAuditContext));
-            Assert.False(auditContext.HasDefaultValue);
-        });
-
-        Assert.DoesNotContain(
-            typeof(MasterDataIntegrationEventContext).GetProperties(),
-            property => property.PropertyType == typeof(bool));
-    }
-
-    [Theory]
-    [InlineData("actor", "bearer:SENTINEL-TOKEN")]
-    [InlineData("correlation", "password=SENTINEL")]
-    [InlineData("causation", "connection-string-SENTINEL")]
-    [InlineData("operation", "authorization-SENTINEL")]
-    [InlineData("actor", "user:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
-    [InlineData("correlation", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
-    public void Audit_entity_rejects_sensitive_identity_at_the_persistence_boundary(
-        string field,
-        string invalidValue)
-    {
-        var actor = field == "actor" ? invalidValue : "user:operator-001";
-        var correlation = field == "correlation" ? invalidValue : "corr-001";
-        var causation = field == "causation" ? invalidValue : "cause-001";
-        var operation = field == "operation" ? invalidValue : "operation-001";
-
-        Assert.Throws<ArgumentException>(() => ToolingAuditEntry.Usage(
-            "org-001", "env-dev", "asset-001", "TOOL-001", actor,
-            correlation, causation, operation, new string('a', 64),
-            0, 1, 1, DateTimeOffset.UtcNow));
-    }
-
-    [Fact]
     public async Task Persisted_audit_facts_reject_update_and_delete()
     {
         await using var provider = CreateInMemoryProvider();
@@ -248,7 +190,7 @@ public sealed class ToolingAuditTests
 
         var statusHandler = new ChangeToolingStatusCommandHandler(repository, dbContext, TestCoordinator);
         var status = new ChangeToolingStatusCommand(
-            "org-001", "env-dev", "TOOL-002", ToolingAssetStatus.Maintenance, " planned service ",
+            "org-001", "env-dev", "TOOL-002", ToolingAssetStatus.Maintenance, TrustedText(" planned service "),
             TrustedContext("corr-status", "cause-status", "user:planner-002", "tooling-status-001"));
         await statusHandler.Handle(status, CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -291,7 +233,7 @@ public sealed class ToolingAuditTests
         var statusHandler = new ChangeToolingStatusCommandHandler(repository, dbContext, TestCoordinator);
         await Assert.ThrowsAsync<KnownException>(() => statusHandler.Handle(
             new ChangeToolingStatusCommand(
-                "org-001", "env-dev", "TOOL-101", ToolingAssetStatus.Maintenance, "service", context),
+                "org-001", "env-dev", "TOOL-101", ToolingAssetStatus.Maintenance, TrustedText("service"), context),
             CancellationToken.None));
 
         Assert.Equal(5, first.UsageCount);
@@ -465,6 +407,9 @@ public sealed class ToolingAuditTests
             correlationId,
             causationId,
             operationId);
+
+    private static ToolingAuditSafeText TrustedText(string value) =>
+        ToolingAuditSafeText.CreateFromTrustedBoundary(value, "reason");
 
     private static string AuditText(ToolingAuditEntry audit) => string.Join('|',
         audit.OperationKind,

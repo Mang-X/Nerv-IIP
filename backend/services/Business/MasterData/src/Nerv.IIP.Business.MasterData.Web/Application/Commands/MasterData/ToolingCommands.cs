@@ -125,7 +125,7 @@ public sealed record ChangeToolingStatusCommand(
     string EnvironmentId,
     string Code,
     ToolingAssetStatus Status,
-    string Reason,
+    ToolingAuditSafeText Reason,
     ToolingOperationAuditContext AuditContext) : ICommand;
 
 public sealed class ChangeToolingStatusCommandHandler(
@@ -137,7 +137,7 @@ public sealed class ChangeToolingStatusCommandHandler(
     {
         var context = request.AuditContext;
         var operationId = context.OperationId;
-        var reason = context.RequireAuditableText(request.Reason, "reason");
+        var reason = request.Reason.Value;
         var fingerprint = ToolingAuditCommand.Fingerprint(
             ToolingAuditEntry.StatusOperation,
             ToolingAuditCommand.NormalizeRequiredCode(request.Code),
