@@ -127,9 +127,7 @@ export function calculateRequiredQuantity(
   assertFiniteNumber('MBOM material yieldRate', yieldRate)
   if (yieldRate <= 0) throw new Error('MBOM material yieldRate must be positive')
 
-  return roundedQuantity(
-    (productionQuantity * line.quantity * (1 + line.scrapRate)) / yieldRate,
-  )
+  return roundedQuantity((productionQuantity * line.quantity * (1 + line.scrapRate)) / yieldRate)
 }
 
 /**
@@ -150,13 +148,14 @@ export function selectConcreteMaterialLines(
     alternates.set(normalizedCode(group), existing)
   }
 
-  const selectedAlternates = [...alternates.values()].map((group) =>
-    [...group].sort(
-      (left, right) =>
-        (left.alternatePriority ?? Number.MAX_SAFE_INTEGER) -
-          (right.alternatePriority ?? Number.MAX_SAFE_INTEGER) ||
-        normalizedCode(left.skuCode).localeCompare(normalizedCode(right.skuCode)),
-    )[0],
+  const selectedAlternates = [...alternates.values()].map(
+    (group) =>
+      [...group].sort(
+        (left, right) =>
+          (left.alternatePriority ?? Number.MAX_SAFE_INTEGER) -
+            (right.alternatePriority ?? Number.MAX_SAFE_INTEGER) ||
+          normalizedCode(left.skuCode).localeCompare(normalizedCode(right.skuCode)),
+      )[0],
   )
   return [...standalone, ...selectedAlternates]
 }
@@ -171,7 +170,12 @@ export function assertExpectedMaterialSkuCodes(
   const expectedSet = new Set(expected)
   const missing = expected.filter((sku) => !actualSet.has(sku))
   const unexpected = actual.filter((sku) => !expectedSet.has(sku))
-  if (actual.length !== actualSet.size || actual.length !== expected.length || missing.length || unexpected.length) {
+  if (
+    actual.length !== actualSet.size ||
+    actual.length !== expected.length ||
+    missing.length ||
+    unexpected.length
+  ) {
     throw new Error(
       `MBOM material set differs (missing=${missing.join(',') || 'none'}, unexpected=${unexpected.join(',') || 'none'}, actualCount=${actual.length}, expectedCount=${expected.length})`,
     )
@@ -180,7 +184,14 @@ export function assertExpectedMaterialSkuCodes(
 
 export function assertInventoryAvailabilityFact(
   fact: InventoryAvailabilityFact,
-  expectedContext?: Readonly<Partial<Pick<InventoryAvailabilityFact, 'organizationId' | 'environmentId' | 'skuCode' | 'uomCode' | 'siteCode'>>>,
+  expectedContext?: Readonly<
+    Partial<
+      Pick<
+        InventoryAvailabilityFact,
+        'organizationId' | 'environmentId' | 'skuCode' | 'uomCode' | 'siteCode'
+      >
+    >
+  >,
 ): void {
   assertNonEmpty('Inventory organizationId', fact.organizationId)
   assertNonEmpty('Inventory environmentId', fact.environmentId)
@@ -224,7 +235,8 @@ export function summarizeInventoryMovements(
     assertNonEmpty('Inventory movement sourceDocumentId', movement.sourceDocumentId)
     assertFiniteNumber('Inventory movement quantity', movement.quantity)
     if (movement.quantity < 0) throw new Error('Inventory movement quantity must not be negative')
-    if (movement.movementType.trim().toLowerCase() !== 'inbound' || movement.quantity === 0) continue
+    if (movement.movementType.trim().toLowerCase() !== 'inbound' || movement.quantity === 0)
+      continue
 
     receivedQuantity += movement.quantity
     receivedMovementCount += 1
@@ -259,27 +271,40 @@ export function summarizeInventoryMovements(
 
 function assertMovementScope(
   movement: InventoryMovementFact,
-  expected: Readonly<Pick<InventoryAvailabilityFact, 'organizationId' | 'environmentId' | 'skuCode' | 'uomCode' | 'siteCode'>>,
+  expected: Readonly<
+    Pick<
+      InventoryAvailabilityFact,
+      'organizationId' | 'environmentId' | 'skuCode' | 'uomCode' | 'siteCode'
+    >
+  >,
 ): void {
   // Movement rows do not repeat tenant fields in the public contract; the query scope carries them.
   if (normalizedCode(movement.skuCode) !== normalizedCode(expected.skuCode)) {
-    throw new Error(`Inventory movement skuCode differs (expected=${expected.skuCode}, actual=${movement.skuCode})`)
+    throw new Error(
+      `Inventory movement skuCode differs (expected=${expected.skuCode}, actual=${movement.skuCode})`,
+    )
   }
   if (normalizedCode(movement.uomCode) !== normalizedCode(expected.uomCode)) {
-    throw new Error(`Inventory movement uomCode differs (expected=${expected.uomCode}, actual=${movement.uomCode})`)
+    throw new Error(
+      `Inventory movement uomCode differs (expected=${expected.uomCode}, actual=${movement.uomCode})`,
+    )
   }
   if (normalizedCode(movement.siteCode) !== normalizedCode(expected.siteCode)) {
-    throw new Error(`Inventory movement siteCode differs (expected=${expected.siteCode}, actual=${movement.siteCode})`)
+    throw new Error(
+      `Inventory movement siteCode differs (expected=${expected.siteCode}, actual=${movement.siteCode})`,
+    )
   }
 }
 
-export function buildMaterialBaselineFact(input: Readonly<{
-  context: MaterialBaselineContext
-  requirement: MbomMaterialLineFact
-  productionQuantity: number
-  availability: InventoryAvailabilityFact
-  movements: readonly InventoryMovementFact[]
-}>): MaterialBaselineFact {
+export function buildMaterialBaselineFact(
+  input: Readonly<{
+    context: MaterialBaselineContext
+    requirement: MbomMaterialLineFact
+    productionQuantity: number
+    availability: InventoryAvailabilityFact
+    movements: readonly InventoryMovementFact[]
+  }>,
+): MaterialBaselineFact {
   const expectedUom = input.requirement.unitOfMeasureCode
   assertInventoryAvailabilityFact(input.availability, {
     organizationId: input.context.organizationId,
