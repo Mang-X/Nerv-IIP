@@ -286,8 +286,11 @@ public sealed class ZplV1LabelCompilerTests
     {
         // Contract sources, independent from the compiler implementation:
         // - GitHub Issue #2065, approved specification revision 2, "minimum golden vectors".
-        // - Zebra ZPL Programming Guide P1099958-001 (2018-01-31), ^BC and ^BX quality 200.
+        // - Zebra ZPL Programming Guide P1099958-001 (2018-01-31), ^BC, ^BX quality 200, and ^FH.
         // - GS1 DataMatrix Guideline release 2.5.1, sections 2.2.1 and 2.2.2.
+        // The vectors are direct ASCII ZPL fragments compared with ordinal semantics; no compiler output
+        // or generated snapshot is used to derive them. The GS1 Data Matrix vector uses ^BX-native _1
+        // FNC1 escapes and omits ^FH, whose hexadecimal preprocessing would consume the following AI digits.
         var gs1 = new Gs1BarcodeValue("09501101530003", "123456", "789012", null);
         return new TheoryData<LabelCompilationItem, string, string>
         {
