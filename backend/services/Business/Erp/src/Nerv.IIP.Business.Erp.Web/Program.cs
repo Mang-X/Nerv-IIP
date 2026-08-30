@@ -133,16 +133,17 @@ try
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
-    await using var app = builder.Build();
-    app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
-    if (autoMigrate && !app.Environment.IsDevelopment())
+    if (autoMigrate && !builder.Environment.IsDevelopment())
     {
         throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessERP in Development. Use an explicit migrator, release script or migration bundle outside Development.");
     }
 
-    // 演示种子 fail-closed：非 Development 开启种子开关直接拒绝启动，且必须早于任何迁移与监听。
-    ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(builder.Configuration, app.Environment);
+    // 演示种子 fail-closed：在创建 host/provider 前拒绝无效配置，避免失败路径与 deferred start 争夺释放所有权。
+    ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(builder.Configuration, builder.Environment);
+
+    await using var app = builder.Build();
+    app.UseNervIipCorrelation();
 
     if (autoMigrate)
     {
