@@ -663,7 +663,7 @@ function Start-NervFullStackSession {
 
 try {
     if ([string]::Equals([string]($Action), [string]('help'), [StringComparison]::OrdinalIgnoreCase)) { Write-NervFullStackHelp }
-elseif ([string]::Equals([string]($Action), [string]('start'), [StringComparison]::OrdinalIgnoreCase)) { Start-NervFullStackSession }
+elseif ([string]::Equals([string]($Action), [string]('start'), [StringComparison]::OrdinalIgnoreCase)) { Start-NervFullStackSession -EnableWmsDemoWorker:$EnableWmsDemoWorker }
 elseif ([string]::Equals([string]($Action), [string]('list'), [StringComparison]::OrdinalIgnoreCase)) {
             foreach ($manifest in Get-NervFullStackManifests) {
                 Write-Output "$($manifest.sessionId) state=$($manifest.state) worktree=$($manifest.worktreeRoot) lease=$($manifest.leaseExpiresAtUtc)"

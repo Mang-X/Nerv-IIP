@@ -93,6 +93,7 @@ foreach ($expected in @(
     '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
     '[string]::Equals([string]($GuardianMode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
     '[string]::Equals([string]("$($latest.state)"), [string](''Failed''), [StringComparison]::OrdinalIgnoreCase)',
+    'Start-NervFullStackSession -EnableWmsDemoWorker:$EnableWmsDemoWorker',
     'elseif ([string]::Equals([string]($Scenario), [string](''leader-demo-equipment-branch''), [StringComparison]::OrdinalIgnoreCase))'
 )) {
     if (-not $fullStackSessionText.Contains($expected, [StringComparison]::Ordinal)) {
