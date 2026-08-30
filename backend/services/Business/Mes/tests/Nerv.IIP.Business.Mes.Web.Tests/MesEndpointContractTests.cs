@@ -715,6 +715,7 @@ public sealed class MesEndpointContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user-emp-010", sender.Command?.ReportedBy);
+        Assert.Equal("wire-operator-001", sender.Command?.IdempotencyKey);
     }
 
     // 幂等键是记录报工写面的硬前置：RecordProductionReportRequestValidator 先把缺失的幂等键拒成 400，命令不会发出。
