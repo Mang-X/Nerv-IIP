@@ -248,6 +248,14 @@ public static class FirstArticleInspection
     public const decimal SampleQuantity = 1m;
 
     /// <summary>
+    /// 首件检验记录的来源单据身份。<c>InspectionRecord</c> 没有来源行字段，其唯一键
+    /// <c>ux_inspection_records_source_attempt</c> 也不含工序，所以首件必须把工序编进来源单据身份里；
+    /// 否则同一工单同一 SKU 的两道工序会共用一条检验记录——后判定的那道工序会静默复用前一道的结论。
+    /// </summary>
+    public static string SourceDocumentId(string workOrderId, string operationId) =>
+        $"{workOrderId}:{operationId}";
+
+    /// <summary>
     /// 按「工单 + 工序」构成，不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务；
     /// 它同时是 <c>ux_inspection_tasks_scope_trigger_key</c> 上的读面定位键。
     /// </summary>
@@ -319,7 +327,7 @@ public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateF
             integrationEvent.EnvironmentId,
             sourceType: FirstArticleInspection.SourceType,
             sourceService: FirstArticleInspection.SourceService,
-            sourceDocumentId: payload.WorkOrderId,
+            sourceDocumentId: FirstArticleInspection.SourceDocumentId(payload.WorkOrderId, payload.OperationTaskId),
             sourceDocumentLineId: payload.OperationTaskId,
             skuCode: skuCode,
             quantity: FirstArticleInspection.SampleQuantity,

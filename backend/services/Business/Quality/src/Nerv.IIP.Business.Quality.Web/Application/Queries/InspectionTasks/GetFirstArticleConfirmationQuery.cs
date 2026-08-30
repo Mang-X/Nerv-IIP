@@ -52,7 +52,8 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
     {
         var workOrderId = request.WorkOrderId.Trim();
         var operationId = request.OperationId.Trim();
-        // 写面按同一个键建任务，读面不另写一份等价谓词；该键上有唯一索引 ux_inspection_tasks_scope_trigger_key。
+        // 写面按同一个键建任务，读面不另写一份等价谓词。键串里已含 org/env，下面仍带这两个谓词不是二次校验，
+        // 而是 ux_inspection_tasks_scope_trigger_key 是 (org, env, key) 复合索引，少了前缀列就走不到索引。
         var triggerIdempotencyKey = FirstArticleInspection.TriggerIdempotencyKey(
             request.OrganizationId,
             request.EnvironmentId,
@@ -68,8 +69,6 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
             {
                 x.Id,
                 x.InspectionRecordId,
-                x.SourceDocumentId,
-                x.SkuCode,
             })
             .SingleOrDefaultAsync(cancellationToken);
         if (task is null)
@@ -90,25 +89,7 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
                 null);
         }
 
-        // 复检新建 attempt N 记录且不回写任务，因此结论取该来源身份下 attempt 最大的一次，
-        // 否则返工复检合格后本契约会永远回吐初检的不合格结论。
-        var latest = await dbContext.InspectionRecords
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.SourceType == FirstArticleInspection.SourceType
-                && x.SourceService == FirstArticleInspection.SourceService
-                && x.SourceDocumentId == task.SourceDocumentId
-                && x.SkuCode == task.SkuCode)
-            .OrderByDescending(x => x.AttemptNumber)
-            .Select(x => new
-            {
-                x.Id,
-                x.Result,
-                x.AttemptNumber,
-            })
-            .FirstAsync(cancellationToken);
+        var latest = await ResolveLatestAttemptAsync(task.InspectionRecordId, cancellationToken);
         return new FirstArticleConfirmationResponse(
             workOrderId,
             operationId,
@@ -118,6 +99,38 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
             task.Id,
             latest.Id);
     }
+
+    /// <summary>
+    /// 复检新建 attempt N 记录且不回写任务，因此结论沿谱系链取。链只按
+    /// <c>ReinspectionOfInspectionRecordId</c> 走（每条记录最多一个直接后继，由唯一索引保证），
+    /// 不按来源身份重查——来源身份表达不了工序，重查会串到同工单另一道工序的记录上。
+    /// </summary>
+    private async Task<InspectionAttempt> ResolveLatestAttemptAsync(
+        InspectionRecordId inspectionRecordId,
+        CancellationToken cancellationToken)
+    {
+        var current = await dbContext.InspectionRecords
+            .AsNoTracking()
+            .Where(x => x.Id == inspectionRecordId)
+            .Select(x => new InspectionAttempt(x.Id, x.Result, x.AttemptNumber))
+            .SingleAsync(cancellationToken);
+        while (true)
+        {
+            var next = await dbContext.InspectionRecords
+                .AsNoTracking()
+                .Where(x => x.ReinspectionOfInspectionRecordId == current.Id)
+                .Select(x => new InspectionAttempt(x.Id, x.Result, x.AttemptNumber))
+                .SingleOrDefaultAsync(cancellationToken);
+            if (next is null)
+            {
+                return current;
+            }
+
+            current = next;
+        }
+    }
+
+    private sealed record InspectionAttempt(InspectionRecordId Id, string Result, int AttemptNumber);
 
     /// <summary>
     /// 没有首件任务时区分「本工序无需首件」与「应开未开」：只有 Quality 已掌握该工序的 SKU/工作中心

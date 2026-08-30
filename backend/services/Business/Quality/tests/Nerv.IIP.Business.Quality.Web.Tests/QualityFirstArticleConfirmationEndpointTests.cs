@@ -168,10 +168,6 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
         dbContext.InspectionPlans.Add(plan);
         dbContext.InspectionRecords.Add(record);
         dbContext.InspectionTasks.Add(task);
-        // 同工单同 SKU 的别的环节/别的来源服务的检验记录不得被当成首件结论；
-        // 对照链已复检到 attempt 2，任一来源谓词缺失都会让它盖过本工序的初检结论。
-        dbContext.InspectionRecords.AddRange(ReinspectedControlChain(sourceType: "operation", sourceService: "mes"));
-        dbContext.InspectionRecords.AddRange(ReinspectedControlChain(sourceType: "first-article", sourceService: "wms"));
         await dbContext.SaveChangesAsync();
 
         var confirmation = await HandleAsync(dbContext, "WO-001", "OP-10");
@@ -210,6 +206,63 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
         Assert.Equal(QualityInspectionDispositionStatuses.Passed, confirmation.Result);
         Assert.Equal(2, confirmation.AttemptNumber);
         Assert.Equal(reinspection.Id, confirmation.InspectionRecordId);
+    }
+
+    [Fact]
+    public async Task Each_operation_of_the_same_work_order_reports_its_own_result()
+    {
+        await using var dbContext = CreateDbContext(nameof(Each_operation_of_the_same_work_order_reports_its_own_result));
+        var plan = FirstArticlePlan();
+        var firstOperationTask = FirstArticleTask("WO-001", "OP-10", plan.Id);
+        var firstOperationRecord = FirstArticleRecord(plan.Id, InspectionLineResults.Failed);
+        var secondOperationTask = FirstArticleTask("WO-001", "OP-20", plan.Id);
+        var secondOperationRecord = FirstArticleRecord(plan.Id, InspectionLineResults.Passed, "OP-20");
+        firstOperationTask.Start("inspector-001", DateTimeOffset.Parse("2026-07-05T09:00:00Z"));
+        firstOperationTask.Complete(firstOperationRecord.Id, DateTimeOffset.Parse("2026-07-05T09:30:00Z"));
+        secondOperationTask.Start("inspector-001", DateTimeOffset.Parse("2026-07-05T10:00:00Z"));
+        secondOperationTask.Complete(secondOperationRecord.Id, DateTimeOffset.Parse("2026-07-05T10:30:00Z"));
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionRecords.AddRange(firstOperationRecord, secondOperationRecord);
+        dbContext.InspectionTasks.AddRange(firstOperationTask, secondOperationTask);
+        await dbContext.SaveChangesAsync();
+
+        var firstOperation = await HandleAsync(dbContext, "WO-001", "OP-10");
+        var secondOperation = await HandleAsync(dbContext, "WO-001", "OP-20");
+
+        // 首件判定结论必须落到工序：不合格的 OP-10 不得因为同工单 OP-20 合格而被放行。
+        Assert.Equal(QualityInspectionDispositionStatuses.Rejected, firstOperation.Result);
+        Assert.Equal(firstOperationRecord.Id, firstOperation.InspectionRecordId);
+        Assert.Equal(QualityInspectionDispositionStatuses.Passed, secondOperation.Result);
+        Assert.Equal(secondOperationRecord.Id, secondOperation.InspectionRecordId);
+    }
+
+    [Fact]
+    public async Task Reinspection_of_another_operation_does_not_supersede_this_operation_result()
+    {
+        await using var dbContext = CreateDbContext(nameof(Reinspection_of_another_operation_does_not_supersede_this_operation_result));
+        var plan = FirstArticlePlan();
+        var task = FirstArticleTask("WO-001", "OP-10", plan.Id);
+        var record = FirstArticleRecord(plan.Id, InspectionLineResults.Failed);
+        task.Start("inspector-001", DateTimeOffset.Parse("2026-07-05T09:00:00Z"));
+        task.Complete(record.Id, DateTimeOffset.Parse("2026-07-05T09:30:00Z"));
+        // 同工单另一道工序复检到 attempt 2 并判合格，不得盖过本工序仍未合格的结论。
+        var otherOperationRecord = FirstArticleRecord(plan.Id, InspectionLineResults.Failed, "OP-20");
+        var otherOperationReinspection = InspectionRecord.Reinspect(
+            otherOperationRecord,
+            plan,
+            [new InspectionResultLineInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+            null,
+            []);
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionRecords.AddRange(record, otherOperationRecord, otherOperationReinspection);
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var confirmation = await HandleAsync(dbContext, "WO-001", "OP-10");
+
+        Assert.Equal(QualityInspectionDispositionStatuses.Rejected, confirmation.Result);
+        Assert.Equal(1, confirmation.AttemptNumber);
+        Assert.Equal(record.Id, confirmation.InspectionRecordId);
     }
 
     private static Task<FirstArticleConfirmationResponse> HandleAsync(
@@ -263,7 +316,7 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
         return plan;
     }
 
-    private static InspectionRecord FirstArticleRecord(InspectionPlanId planId, string lineResult)
+    private static InspectionRecord FirstArticleRecord(InspectionPlanId planId, string lineResult, string operationId = "OP-10")
     {
         return InspectionRecord.Create(
             "org-001",
@@ -271,7 +324,7 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
             planId,
             "first-article",
             "mes",
-            "WO-001",
+            FirstArticleInspection.SourceDocumentId("WO-001", operationId),
             "SKU-FG-1000",
             1m,
             null,
@@ -279,31 +332,6 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
             [new InspectionResultLineInput("appearance", "ok", null, lineResult, "surface", 1m, [])],
             "首件判定留档",
             []);
-    }
-
-    private static InspectionRecord[] ReinspectedControlChain(string sourceType, string sourceService)
-    {
-        var initial = InspectionRecord.Create(
-            "org-001",
-            "env-dev",
-            null,
-            sourceType,
-            sourceService,
-            "WO-001",
-            "SKU-FG-1000",
-            1m,
-            null,
-            null,
-            [new InspectionResultLineInput("appearance", "ng", null, InspectionLineResults.Failed, "surface", 1m, [])],
-            "对照记录",
-            []);
-        var reinspection = InspectionRecord.Reinspect(
-            initial,
-            null,
-            [new InspectionResultLineInput("appearance", "ok", null, InspectionLineResults.ConditionalRelease, "surface", 1m, [])],
-            "对照复检",
-            []);
-        return [initial, reinspection];
     }
 
     private static InspectionTask FirstArticleTask(string workOrderId, string operationId, InspectionPlanId? planId = null)
@@ -314,7 +342,7 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
             planId ?? new InspectionPlanId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b201")),
             FirstArticleInspection.SourceType,
             FirstArticleInspection.SourceService,
-            workOrderId,
+            FirstArticleInspection.SourceDocumentId(workOrderId, operationId),
             operationId,
             "SKU-FG-1000",
             1m,

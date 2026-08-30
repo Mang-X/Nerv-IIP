@@ -895,7 +895,8 @@ public sealed class QualityInspectionTaskWorkflowTests
             // SKU 反查少任何一条谓词都会取到错误 SKU 或命中多行。
             ReleasedOperation("WO-001", "OP-20", "SKU-FG-2000", "WC-MIX"),
             ReleasedOperation("WO-002", "OP-10", "SKU-FG-2000", "WC-MIX"),
-            ReleasedOperation("WO-001", "OP-10", "SKU-FG-2000", "WC-MIX", organizationId: "org-002"));
+            ReleasedOperation("WO-001", "OP-10", "SKU-FG-2000", "WC-MIX", organizationId: "org-002"),
+            ReleasedOperation("WO-001", "OP-10", "SKU-FG-2000", "WC-MIX", environmentId: "env-prod"));
         await dbContext.SaveChangesAsync();
         var handler = CreateMesFirstArticleHandler(dbContext);
 
@@ -906,7 +907,8 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal(plan.Id, task.InspectionPlanId);
         Assert.Equal("first-article", task.SourceType);
         Assert.Equal("mes", task.SourceService);
-        Assert.Equal("WO-001", task.SourceDocumentId);
+        // 检验记录的唯一键不含工序，所以首件的来源单据身份必须把工序编进来。
+        Assert.Equal("WO-001:OP-10", task.SourceDocumentId);
         Assert.Equal("OP-10", task.SourceDocumentLineId);
         Assert.Equal("SKU-FG-1000", task.SkuCode);
         // 首件取样数量恒为 1，不随本次报工良品数（8）变动。
@@ -1005,6 +1007,72 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
     }
 
+    [Fact]
+    public async Task First_article_submissions_of_two_operations_do_not_share_one_inspection_record()
+    {
+        await using var dbContext = CreateDbContext(nameof(First_article_submissions_of_two_operations_do_not_share_one_inspection_record));
+        dbContext.InspectionPlans.AddRange(
+            ActivePlan("PLAN-FA-1000", "first-article", "SKU-FG-1000", "WC-MIX"),
+            ActivePlan("PLAN-FA-1000-ASSY", "first-article", "SKU-FG-1000", "WC-ASSY"));
+        dbContext.PeriodicInspectionOperations.AddRange(
+            ReleasedOperation("WO-001", "OP-10", "SKU-FG-1000", "WC-MIX"),
+            ReleasedOperation("WO-001", "OP-20", "SKU-FG-1000", "WC-ASSY"));
+        await dbContext.SaveChangesAsync();
+        var triggerHandler = CreateMesFirstArticleHandler(dbContext);
+        await triggerHandler.HandleAsync(MesProductionReportRecorded("RPT-001", "WO-001", "OP-10", "WC-MIX", 1m), CancellationToken.None);
+        await triggerHandler.HandleAsync(MesProductionReportRecorded("RPT-002", "WO-001", "OP-20", "WC-ASSY", 1m), CancellationToken.None);
+        var submissionHandler = CreateTaskSubmissionHandler(dbContext);
+        var firstOperationTaskId = dbContext.InspectionTasks.Local.Single(x => x.SourceDocumentLineId == "OP-10").Id;
+        var secondOperationTaskId = dbContext.InspectionTasks.Local.Single(x => x.SourceDocumentLineId == "OP-20").Id;
+
+        // OP-10 判合格在先；OP-20 若复用了 OP-10 的记录，它提交的不合格结论会被静默丢弃。
+        await submissionHandler.Handle(
+            SubmitFirstArticle(firstOperationTaskId, InspectionLineResults.Passed, "fa-submit-op-10"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var secondResult = await submissionHandler.Handle(
+            SubmitFirstArticle(secondOperationTaskId, InspectionLineResults.Failed, "fa-submit-op-20"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(InspectionRecordResults.Rejected, secondResult.Result);
+        var records = await dbContext.InspectionRecords.OrderBy(x => x.SourceDocumentId).ToListAsync();
+        Assert.Equal(["WO-001:OP-10", "WO-001:OP-20"], records.Select(x => x.SourceDocumentId));
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.SourceDocumentLineId).ToListAsync();
+        Assert.Equal(
+            records.Select(x => x.Id),
+            tasks.Select(x => x.InspectionRecordId));
+        Assert.Equal(
+            [InspectionRecordResults.Passed, InspectionRecordResults.Rejected],
+            records.Select(x => x.Result));
+    }
+
+    private static CreateInspectionRecordFromTaskCommand SubmitFirstArticle(
+        InspectionTaskId inspectionTaskId,
+        string lineResult,
+        string idempotencyKey)
+    {
+        var passed = string.Equals(lineResult, InspectionLineResults.Passed, StringComparison.Ordinal);
+        return new CreateInspectionRecordFromTaskCommand(
+            inspectionTaskId,
+            "qa-user-001",
+            [
+                new InspectionResultLineCommandInput(
+                    "appearance",
+                    passed ? "ok" : "ng",
+                    null,
+                    lineResult,
+                    passed ? null : "surface",
+                    passed ? null : 1m,
+                    [])
+            ],
+            passed ? null : "首件判定留档",
+            [],
+            idempotencyKey,
+            "org-001",
+            "env-dev");
+    }
+
     private static MesProductionReportRecordedIntegrationEventHandlerForCreateFirstArticleInspectionTask CreateMesFirstArticleHandler(
         ApplicationDbContext dbContext)
     {
@@ -1018,9 +1086,10 @@ public sealed class QualityInspectionTaskWorkflowTests
         string operationId,
         string skuCode,
         string workCenterId,
-        string organizationId = "org-001")
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
     {
-        var operation = PeriodicInspectionOperation.CreatePending(organizationId, "env-dev", workOrderId, operationId);
+        var operation = PeriodicInspectionOperation.CreatePending(organizationId, environmentId, workOrderId, operationId);
         operation.ApplyRelease(skuCode, 10, workCenterId, DateTime.Parse("2026-07-05T07:00:00Z").ToUniversalTime(), []);
         return operation;
     }
