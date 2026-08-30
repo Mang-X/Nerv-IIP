@@ -27,11 +27,16 @@ public sealed class QualityNcrDispositionPostgresProfileTests
     public async Task Pipeline_scopes_and_persists_rework_disposition_idempotency_per_tenant()
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();
-        await using var provider = CreateProvider();
+        var lockStore = new ObservedRedisCommandLockStore(new InMemoryRedisCommandLockStore(TimeProvider.System));
+        var approval = new ControlledApprovalClient();
+        var automation = new RecordingCapaAutomationService();
+        var integrationEvents = new RecordingIntegrationEventPublisher();
+        await using var firstProvider = CreateProvider(lockStore, approval, automation, integrationEvents);
+        await using var secondProvider = CreateProvider(lockStore, approval, automation, integrationEvents);
         NonconformanceReportId firstNcrId;
         NonconformanceReportId secondNcrId;
 
-        using (var scope = provider.CreateScope())
+        using (var scope = firstProvider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
@@ -46,39 +51,53 @@ public sealed class QualityNcrDispositionPostgresProfileTests
 
         var reviewedAtUtc = DateTimeOffset.Parse("2026-08-29T10:00:00Z");
         var firstCommand = ReworkCommand(firstNcrId, "org-a", "env-a", reviewedAtUtc);
-        await SendInNewScopeAsync(provider, firstCommand);
-        await SendInNewScopeAsync(provider, firstCommand);
+        var firstSend = SendInNewScopeAsync(firstProvider, firstCommand);
+        await approval.FirstCallEntered.WaitAsync(TimeSpan.FromSeconds(5));
+        var secondSend = SendInNewScopeAsync(secondProvider, firstCommand);
+        try
+        {
+            var competingAttempt = await lockStore.SecondAttempt.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal($"business-quality:ncr-disposition:org-a:env-a:{firstNcrId}", competingAttempt.Key);
+            Assert.False(competingAttempt.Acquired);
+            Assert.False(secondSend.IsCompleted);
+            Assert.Equal(1, approval.NcrCalls);
+        }
+        finally
+        {
+            approval.ReleaseFirstCall();
+        }
 
-        var approval = provider.GetRequiredService<RecordingApprovalClient>();
-        var automation = provider.GetRequiredService<RecordingCapaAutomationService>();
+        await Task.WhenAll(firstSend, secondSend);
+
         Assert.Equal(1, approval.NcrCalls);
         Assert.Equal(1, automation.Calls);
+        Assert.Equal(1, integrationEvents.ReworkRequestedCalls);
 
         await Assert.ThrowsAsync<QualityIdempotencyConflictException>(() => SendInNewScopeAsync(
-            provider,
+            firstProvider,
             firstCommand with { DispositionApprovalChainId = "approval-chain-002" }));
         await Assert.ThrowsAsync<QualityIdempotencyConflictException>(() => SendInNewScopeAsync(
-            provider,
+            firstProvider,
             firstCommand with { AttachmentFileIds = ["evidence-file-002"] }));
         await Assert.ThrowsAsync<QualityIdempotencyConflictException>(() => SendInNewScopeAsync(
-            provider,
+            firstProvider,
             firstCommand with
             {
                 MrbReviews = [MrbReviewInput.Approve("qa-manager-002", "approved", reviewedAtUtc)],
             }));
         await Assert.ThrowsAsync<QualityLifecycleConflictException>(() => SendInNewScopeAsync(
-            provider,
+            firstProvider,
             firstCommand with { IdempotencyKey = "quality-rework-other-001" }));
 
         var secondCommand = ReworkCommand(secondNcrId, "org-b", "env-b", reviewedAtUtc);
-        await SendInNewScopeAsync(provider, secondCommand);
+        await SendInNewScopeAsync(secondProvider, secondCommand);
 
         var tenantMismatch = await Assert.ThrowsAsync<QualityAuthorizationException>(() => SendInNewScopeAsync(
-            provider,
+            firstProvider,
             secondCommand with { OrganizationId = "org-a", EnvironmentId = "env-a" }));
         Assert.Equal("ncr-tenant-mismatch", tenantMismatch.Reason);
 
-        using (var scope = provider.CreateScope())
+        using (var scope = firstProvider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var first = await db.NonconformanceReports.AsNoTracking().SingleAsync(x => x.Id == firstNcrId);
@@ -102,16 +121,20 @@ public sealed class QualityNcrDispositionPostgresProfileTests
 
         Assert.Equal(2, approval.NcrCalls);
         Assert.Equal(2, automation.Calls);
-        var distributedLock = provider.GetRequiredService<RecordingDistributedLock>();
+        Assert.Equal(2, integrationEvents.ReworkRequestedCalls);
         Assert.Contains(
             $"business-quality:ncr-disposition:org-a:env-a:{firstNcrId}",
-            distributedLock.AcquiredKeys);
+            lockStore.AcquiredKeys);
         Assert.Contains(
             $"business-quality:ncr-disposition:org-b:env-b:{secondNcrId}",
-            distributedLock.AcquiredKeys);
+            lockStore.AcquiredKeys);
     }
 
-    private static ServiceProvider CreateProvider()
+    private static ServiceProvider CreateProvider(
+        ObservedRedisCommandLockStore lockStore,
+        ControlledApprovalClient approval,
+        RecordingCapaAutomationService automation,
+        RecordingIntegrationEventPublisher integrationEvents)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -127,18 +150,13 @@ public sealed class QualityNcrDispositionPostgresProfileTests
         services.AddQualityPostgreSqlPersistence(QualityPostgresLaneDatabase.ConnectionString);
         services.AddIntegrationEvents(typeof(Program));
         services.AddSingleton<IQualityIntegrationEventContextAccessor, FixedIntegrationEventContextAccessor>();
-        services.AddSingleton<RecordingIntegrationEventPublisher>();
-        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
-            serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
-        services.AddSingleton<RecordingApprovalClient>();
-        services.AddSingleton<IApprovalChainStatusClient>(serviceProvider =>
-            serviceProvider.GetRequiredService<RecordingApprovalClient>());
-        services.AddSingleton<RecordingCapaAutomationService>();
-        services.AddSingleton<ICapaAutomationService>(serviceProvider =>
-            serviceProvider.GetRequiredService<RecordingCapaAutomationService>());
-        services.AddSingleton<RecordingDistributedLock>();
-        services.AddSingleton<IDistributedLock>(serviceProvider =>
-            serviceProvider.GetRequiredService<RecordingDistributedLock>());
+        services.AddSingleton(integrationEvents);
+        services.AddSingleton<IIntegrationEventPublisher>(integrationEvents);
+        services.AddSingleton(approval);
+        services.AddSingleton<IApprovalChainStatusClient>(approval);
+        services.AddSingleton(automation);
+        services.AddSingleton<ICapaAutomationService>(automation);
+        services.AddSingleton<IDistributedLock>(new RedisCommandDistributedLock(lockStore, TimeProvider.System));
         return services.BuildServiceProvider();
     }
 
@@ -179,11 +197,19 @@ public sealed class QualityNcrDispositionPostgresProfileTests
             null,
             []);
 
-    private sealed class RecordingApprovalClient : IApprovalChainStatusClient
+    private sealed class ControlledApprovalClient : IApprovalChainStatusClient
     {
-        public int NcrCalls { get; private set; }
+        private readonly TaskCompletionSource firstCallEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource releaseFirstCall = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int ncrCalls;
 
-        public Task<bool> IsApprovedForNcrDispositionAsync(
+        public Task FirstCallEntered => firstCallEntered.Task;
+
+        public int NcrCalls => Volatile.Read(ref ncrCalls);
+
+        public void ReleaseFirstCall() => releaseFirstCall.TrySetResult();
+
+        public async Task<bool> IsApprovedForNcrDispositionAsync(
             string chainId,
             string organizationId,
             string environmentId,
@@ -191,8 +217,13 @@ public sealed class QualityNcrDispositionPostgresProfileTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            NcrCalls++;
-            return Task.FromResult(true);
+            if (Interlocked.Increment(ref ncrCalls) == 1)
+            {
+                firstCallEntered.TrySetResult();
+                await releaseFirstCall.Task.WaitAsync(cancellationToken);
+            }
+
+            return true;
         }
 
         public Task<bool> IsApprovedForCapaClosureAsync(
@@ -206,60 +237,79 @@ public sealed class QualityNcrDispositionPostgresProfileTests
 
     private sealed class RecordingCapaAutomationService : ICapaAutomationService
     {
-        public int Calls { get; private set; }
+        private int calls;
+
+        public int Calls => Volatile.Read(ref calls);
 
         public Task OpenForDispositionIfRequiredAsync(
             NonconformanceReport ncr,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Calls++;
+            Interlocked.Increment(ref calls);
             return Task.CompletedTask;
         }
     }
 
-    private sealed class RecordingDistributedLock : IDistributedLock
+    private sealed class ObservedRedisCommandLockStore(IRedisCommandLockStore inner) : IRedisCommandLockStore
     {
-        public List<string> AcquiredKeys { get; } = [];
+        private readonly object syncRoot = new();
+        private readonly Dictionary<string, int> attempts = new(StringComparer.Ordinal);
+        private readonly List<string> acquiredKeys = [];
+        private readonly TaskCompletionSource<LockAttempt> secondAttempt =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public ILockSynchronizationHandler? TryAcquire(
-            string key,
-            TimeSpan timeout,
-            CancellationToken cancellationToken) =>
-            TryAcquireAsync(key, timeout, cancellationToken).AsTask().GetAwaiter().GetResult();
+        public Task<LockAttempt> SecondAttempt => secondAttempt.Task;
 
-        public ILockSynchronizationHandler Acquire(
-            string key,
-            TimeSpan? timeout,
-            CancellationToken cancellationToken) =>
-            AcquireAsync(key, timeout, cancellationToken).AsTask().GetAwaiter().GetResult();
+        public IReadOnlyCollection<string> AcquiredKeys
+        {
+            get
+            {
+                lock (syncRoot)
+                {
+                    return acquiredKeys.ToArray();
+                }
+            }
+        }
 
-        public ValueTask<ILockSynchronizationHandler?> TryAcquireAsync(
+        public async Task<bool> TryAcquireAsync(
             string key,
-            TimeSpan timeout,
+            string token,
+            TimeSpan leaseTime,
             CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            AcquiredKeys.Add(key);
-            return ValueTask.FromResult<ILockSynchronizationHandler?>(new RecordingLockHandle());
+            var acquired = await inner.TryAcquireAsync(key, token, leaseTime, cancellationToken);
+            lock (syncRoot)
+            {
+                attempts.TryGetValue(key, out var attemptCount);
+                attemptCount++;
+                attempts[key] = attemptCount;
+                if (acquired)
+                {
+                    acquiredKeys.Add(key);
+                }
+
+                if (attemptCount == 2)
+                {
+                    secondAttempt.TrySetResult(new LockAttempt(key, acquired));
+                }
+            }
+
+            return acquired;
         }
 
-        public async ValueTask<ILockSynchronizationHandler> AcquireAsync(
+        public Task<bool> RenewAsync(
             string key,
-            TimeSpan? timeout,
+            string token,
+            TimeSpan leaseTime,
             CancellationToken cancellationToken) =>
-            await TryAcquireAsync(key, timeout ?? TimeSpan.FromSeconds(30), cancellationToken)
-                ?? throw new TimeoutException($"Could not acquire {key}.");
+            inner.RenewAsync(key, token, leaseTime, cancellationToken);
 
-        private sealed class RecordingLockHandle : ILockSynchronizationHandler
-        {
-            public CancellationToken HandleLostToken => CancellationToken.None;
-
-            public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
-
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-        }
+        public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken) =>
+            inner.ReleaseAsync(key, token, cancellationToken);
     }
+
+    private sealed record LockAttempt(string Key, bool Acquired);
 
     private sealed class FixedIntegrationEventContextAccessor : IQualityIntegrationEventContextAccessor
     {
@@ -269,11 +319,20 @@ public sealed class QualityNcrDispositionPostgresProfileTests
 
     private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
     {
+        private int reworkRequestedCalls;
+
+        public int ReworkRequestedCalls => Volatile.Read(ref reworkRequestedCalls);
+
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
             TIntegrationEvent integrationEvent,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (integrationEvent is NcrReworkRequestedIntegrationEvent)
+            {
+                Interlocked.Increment(ref reworkRequestedCalls);
+            }
+
             return Task.CompletedTask;
         }
     }
