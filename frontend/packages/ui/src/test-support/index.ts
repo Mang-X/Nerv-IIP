@@ -2,9 +2,12 @@
  * `@nerv-iip/ui/test-support`：只给**测试环境**用的东西（#2014 / #2022）——vitest
  * `setupFiles` 的支撑件，以及跨 app 共享的契约门禁本体。
  *
- * 刻意不从 `src/index.ts` 主桶导出——这些东西会改 unovis 原型、装全局桩，
- * 不属于组件库的运行时公共边界，也不受 NvUI 命名契约约束。消费方只在 vitest 的
- * `setupFiles` 里引用；子入口边界见 `frontend/DESIGN/governance.md` 的「包子入口边界」。
+ * 刻意不从 `src/index.ts` 主桶导出——这些东西会改 unovis 原型、装全局桩，或者
+ * （`dialogStubs`）依赖 `@vue/test-utils` 的 stub 匹配机制，都不属于组件库的运行时
+ * 公共边界，也不受 NvUI 命名契约约束。`disableUnovisTooltipThrottle` 只在 vitest 的
+ * `setupFiles` 里引用；`dialogStubs` 由各测试文件直接按需导入、传进
+ * `global.stubs`，不走 setupFiles。子入口边界见 `frontend/DESIGN/governance.md`
+ * 的「包子入口边界」。
  *
  * 接入方式（`apps/console` / `apps/screen` / `apps/business-pda` 目前未挂 unovis 图表，
  * 因此暂未接入；哪天挂了就照 `apps/business-console/src/test/setup.ts` 加一行）：
@@ -16,6 +19,12 @@
  *    **之前**——对象别名按声明序做前缀匹配，否则会被拼成 `.../src/index.ts/test-support`。
  */
 export { disableUnovisTooltipThrottle } from './unovisTooltipTimers'
+/**
+ * `NvDialog` / `NvSheet` 共享 stub 映射（#2847）。按 reka-ui `DialogRoot` 等
+ * 真实 `__name` 建键，供业务测试 `global.stubs = { ...dialogStubs }` 直接使用，
+ * 详见 `dialogStubs.ts` 顶部注释。
+ */
+export { dialogStubs } from './dialogStubs'
 /**
  * NvUI import hygiene 门禁的唯一实现（#2022）。四个 app 的
  * `src/nvui-imports.contract.test.ts` 只是调用壳，规则改这里。
