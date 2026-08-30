@@ -363,21 +363,28 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
     }
 
     [Fact]
-    public async Task GetVerifiedAsync_checksum_mismatch_is_rejected()
+    public async Task GetVerifiedAsync_checksum_mismatch_is_rejected_without_leaking_template_content()
     {
-        var body = Encoding.UTF8.GetBytes(TemplateJson);
-        var downloaded = body.ToArray();
-        downloaded[^1] ^= 1;
-        await AssertRejectedBodyAsync(CreateMetadata(body), downloaded);
+        const string sensitiveTemplateContent = """{"secret":"template-secret-2837"}""";
+        var downloaded = Encoding.UTF8.GetBytes(sensitiveTemplateContent);
+        var expected = downloaded.ToArray();
+        expected[^2] ^= 1;
+
+        var exception = await AssertRejectedBodyAsync(CreateMetadata(expected), downloaded);
+
+        Assert.DoesNotContain(sensitiveTemplateContent, exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("template-secret-2837", exception.ToString(), StringComparison.Ordinal);
     }
 
-    private static async Task AssertRejectedBodyAsync(FileMetadataResponse metadata, byte[] body)
+    private static async Task<InvalidDataException> AssertRejectedBodyAsync(
+        FileMetadataResponse metadata,
+        byte[] body)
     {
         var fileStorage = new RecordingFileStorageClient(metadata);
         var download = new RecordingHttpMessageHandler(_ => Response(HttpStatusCode.OK, body));
         using var adapter = CreateAdapter(fileStorage, download);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        return await Assert.ThrowsAsync<InvalidDataException>(() =>
             adapter.GetVerifiedAsync(CreateReference(), CancellationToken.None));
     }
 
