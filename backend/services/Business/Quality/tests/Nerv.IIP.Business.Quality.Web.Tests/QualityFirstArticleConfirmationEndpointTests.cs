@@ -209,6 +209,43 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
     }
 
     [Fact]
+    public async Task Latest_attempt_of_a_three_step_reinspection_chain_wins()
+    {
+        await using var dbContext = CreateDbContext(nameof(Latest_attempt_of_a_three_step_reinspection_chain_wins));
+        var plan = FirstArticlePlan();
+        var task = FirstArticleTask("WO-001", "OP-10", plan.Id);
+        var attempt1 = FirstArticleRecord(plan.Id, InspectionLineResults.Failed);
+        task.Start("inspector-001", DateTimeOffset.Parse("2026-07-05T09:00:00Z"));
+        task.Complete(attempt1.Id, DateTimeOffset.Parse("2026-07-05T09:30:00Z"));
+        // 两次复检都不回写任务：任务停在 attempt 1，谱系链只走一跳会停在 attempt 2 的不合格结论上。
+        var attempt2 = InspectionRecord.Reinspect(
+            attempt1,
+            plan,
+            [new InspectionResultLineInput("appearance", "ng", null, InspectionLineResults.Failed, "surface", 1m, [])],
+            "二次判定仍不合格",
+            []);
+        var attempt3 = InspectionRecord.Reinspect(
+            attempt2,
+            plan,
+            [new InspectionResultLineInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+            null,
+            []);
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionRecords.AddRange(attempt1, attempt2, attempt3);
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(attempt1.Id, task.InspectionRecordId);
+        Assert.Equal(3, attempt3.AttemptNumber);
+
+        var confirmation = await HandleAsync(dbContext, "WO-001", "OP-10");
+
+        Assert.Equal(QualityFirstArticleConfirmationStatuses.Decided, confirmation.Status);
+        Assert.Equal(QualityInspectionDispositionStatuses.Passed, confirmation.Result);
+        Assert.Equal(3, confirmation.AttemptNumber);
+        Assert.Equal(attempt3.Id, confirmation.InspectionRecordId);
+    }
+
+    [Fact]
     public async Task Each_operation_of_the_same_work_order_reports_its_own_result()
     {
         await using var dbContext = CreateDbContext(nameof(Each_operation_of_the_same_work_order_reports_its_own_result));
