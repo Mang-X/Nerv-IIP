@@ -20,6 +20,22 @@ public sealed class BusinessConsoleNcrCloseRequestValidator : Validator<Business
     }
 }
 
+public sealed class BusinessConsoleNcrDispositionRequestValidator
+    : Validator<BusinessConsoleNcrDispositionRequest>
+{
+    public BusinessConsoleNcrDispositionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DispositionType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DispositionApprovalChainId).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey)
+            .NotEmpty()
+            .MaximumLength(150)
+            .When(x => string.Equals(x.DispositionType, "rework", StringComparison.OrdinalIgnoreCase));
+    }
+}
+
 public sealed class BusinessConsoleQualityReasonListRequestValidator : Validator<BusinessConsoleQualityReasonListRequest>
 {
     public BusinessConsoleQualityReasonListRequestValidator()
@@ -1074,9 +1090,8 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
         quality.ListNcrsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
-// PDA 检验结果页「已触发 NCR」→ 打开 NCR 详情的互链读端点。按 inspection-records.read 门控（检验员
-// 可读由其检验触发的 NCR，与 reason-codes/SPC 同权限口径）；代理真实详情端点并随查询下传 org/env，
-// 由 Quality 服务端做租户过滤（越权 id 与不存在同为 not found）。
+// NCR 详情是判定返工后的权威回读面，统一按 quality.ncr.read 门控；代理真实详情端点并随查询下传
+// org/env，由 Quality 服务端做租户过滤（越权 id 与不存在同为 not found）。
 [Tags("Business Console Quality")]
 [HttpGet("/api/business-console/v1/quality/ncrs/{ncrId}")]
 [BusinessGatewayOperationId("getBusinessConsoleQualityNcr")]
@@ -1086,7 +1101,7 @@ public sealed class GetBusinessConsoleQualityNcrEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityNcrDetailRequest, BusinessConsoleQualityNcrDetailResponse>(
         auth,
-        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+        BusinessGatewayPermissions.QualityNcrRead)
 {
     protected override string OrganizationId(BusinessConsoleQualityNcrDetailRequest request) => request.OrganizationId;
 
@@ -1452,6 +1467,9 @@ public sealed class ArchiveBusinessConsoleQualityReasonCodeEndpoint(
 [BusinessGatewayOperationId("submitBusinessConsoleQualityNcrDisposition")]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
 public sealed class SubmitBusinessConsoleQualityNcrDispositionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,

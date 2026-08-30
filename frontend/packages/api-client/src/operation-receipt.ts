@@ -1,4 +1,5 @@
 import {
+  getBusinessConsoleQualityNcr,
   getBusinessConsoleMesProductionReport,
   listBusinessConsoleEquipmentAlarms,
   listBusinessConsoleWmsCountExecutions,
@@ -63,6 +64,16 @@ export class BusinessOperationUnconfirmedError extends Error {
   }
 }
 
+export class BusinessOperationPendingError extends BusinessOperationUnconfirmedError {
+  readonly pending = true
+  readonly indeterminate = true
+
+  constructor(operationType?: string, readbackPath?: string) {
+    super('返工请求已受理，系统工单仍在创建中。请刷新查看最新状态。', operationType, readbackPath)
+    this.name = 'BusinessOperationPendingError'
+  }
+}
+
 export class BusinessOperationFailedError extends Error {
   readonly code = 'business-operation-failed'
   readonly indeterminate = false
@@ -79,6 +90,7 @@ export class BusinessOperationFailedError extends Error {
 export type BusinessConsoleOperationReadbackVerdict =
   | { state: 'confirmed-success' }
   | { state: 'confirmed-business-failure'; message: string; failureCode?: string }
+  | { state: 'pending' }
   | { state: 'indeterminate' }
 
 type JsonRecord = Record<string, unknown>
@@ -212,6 +224,26 @@ export function verifyBusinessConsoleOperationReadback(
     return text(report?.productionReportId) === resourceId
       ? { state: 'confirmed-success' }
       : { state: 'indeterminate' }
+  }
+
+  if (operationType === 'quality.ncr.rework') {
+    const item = envelopeData(payload)
+    if (text(item?.id) !== resourceId || normalized(item?.dispositionType) !== 'rework') {
+      return { state: 'indeterminate' }
+    }
+    const creationStatus = normalized(item?.reworkWorkOrderCreationStatus)
+    if (creationStatus === 'created' && requiredText(item?.reworkWorkOrderId)) {
+      return { state: 'confirmed-success' }
+    }
+    if (creationStatus === 'requested') return { state: 'pending' }
+    if (creationStatus === 'failed') {
+      return {
+        state: 'confirmed-business-failure',
+        message: '返工工单创建失败，请刷新后按最新状态处理',
+        failureCode: 'rework-work-order-creation-failed',
+      }
+    }
+    return { state: 'indeterminate' }
   }
 
   if (operationType === 'wms.inbound-order.complete') {
@@ -431,6 +463,21 @@ export async function readBusinessConsoleOperationState(
     }
   }
 
+  if (operationType === 'quality.ncr.rework') {
+    const match = url.pathname.match(/^\/api\/business-console\/v1\/quality\/ncrs\/([^/]+)$/)
+    if (match) {
+      const ncrId = decodeURIComponent(match[1]!)
+      if (ncrId !== resourceId) throw new Error('回读地址的 NCR 与操作资源不一致')
+      return (
+        await getBusinessConsoleQualityNcr({
+          path: { ncrId },
+          query: { organizationId, environmentId },
+          throwOnError: true,
+        })
+      ).data
+    }
+  }
+
   if (
     ['iiot.alarm.acknowledge', 'iiot.alarm.shelve', 'iiot.alarm.unshelve'].includes(
       operationType,
@@ -520,6 +567,7 @@ export async function confirmBusinessConsoleOperation<
   const retryDelayMs = Math.max(0, options.retryDelayMs ?? 200)
   const readback = options.readback ?? readBusinessConsoleOperationState
   let lastError: unknown
+  let lastReadbackWasPending = false
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     let verdict: BusinessConsoleOperationReadbackVerdict | undefined
@@ -533,7 +581,12 @@ export async function confirmBusinessConsoleOperation<
     if (verdict?.state === 'confirmed-business-failure') {
       throw new BusinessOperationFailedError(verdict.message, verdict.failureCode)
     }
+    lastReadbackWasPending = verdict?.state === 'pending'
     if (attempt + 1 < attempts && retryDelayMs > 0) await wait(retryDelayMs)
+  }
+
+  if (lastReadbackWasPending) {
+    throw new BusinessOperationPendingError(receipt.operationType, path)
   }
 
   const detail = lastError instanceof Error ? `（${lastError.message}）` : ''

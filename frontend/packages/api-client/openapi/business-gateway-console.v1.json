@@ -9480,6 +9480,36 @@
           "x-position": 1
         },
         "responses": {
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "409": {
             "description": "",
             "content": {
@@ -40486,12 +40516,20 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrDispositionRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "dispositionType"
+        ],
         "properties": {
           "dispositionType": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "dispositionApprovalChainId": {
             "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
             "nullable": true
           },
           "attachmentFileIds": {
@@ -40507,6 +40545,12 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
