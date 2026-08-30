@@ -690,7 +690,7 @@ foreach ($sharedCase in @(
 }
 
 $backendCommonDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend/common') -Directory | ForEach-Object { $_.Name })
-Assert-Contract ($backendCommonDirectories.Count -eq 11) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
+Assert-Contract ($backendCommonDirectories.Count -eq 12) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
 foreach ($commonDirectory in $backendCommonDirectories) {
     $plan = Get-NervCiImpactPlan -ChangedPaths @("backend/common/$commonDirectory/ObservedChange.cs")
     Assert-ImpactFlag -Plan $plan -Name 'backend' -Expected $true
