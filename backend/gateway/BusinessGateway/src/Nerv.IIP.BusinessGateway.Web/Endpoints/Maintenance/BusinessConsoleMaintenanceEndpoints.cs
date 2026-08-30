@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
@@ -930,7 +931,8 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
                 new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
                 cancellationToken);
         }
-        catch (BusinessServiceProxyException exception) when (IsUnavailableDeviceAssetDetail(exception.StatusCode))
+        catch (BusinessServiceProxyException exception) when (
+            BusinessConsoleReadEnrichmentFailurePolicy.CanDegrade(exception.StatusCode))
         {
             return null;
         }
@@ -943,10 +945,6 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
             return null;
         }
     }
-
-    private static bool IsUnavailableDeviceAssetDetail(System.Net.HttpStatusCode statusCode) =>
-        statusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.RequestTimeout
-        || (int)statusCode >= 500;
 
     private static string WarrantyStatus(DateOnly? warrantyExpiresOn)
     {
