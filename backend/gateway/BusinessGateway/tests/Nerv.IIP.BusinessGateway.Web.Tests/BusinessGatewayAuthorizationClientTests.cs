@@ -217,7 +217,7 @@ public sealed class BusinessGatewayAuthorizationClientTests
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
             new MemoryAppCache(),
             Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }),
-            new BusinessGatewayDownstreamHealthState());
+            new BusinessGatewayDownstreamHealthState(TimeProvider.System));
 
     private static HttpResponseMessage AuthorizationResponse(HttpStatusCode statusCode, bool allowed)
     {
