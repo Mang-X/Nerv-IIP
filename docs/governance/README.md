@@ -19,7 +19,7 @@
 | ReferenceData / CodeSet | [`data/reference-data.md`](data/reference-data.md) |
 | 集成事件消费分类 | [`integration/event-consumption.md`](integration/event-consumption.md) |
 | 脚本与自动化 | [`script-automation.md`](script-automation.md) |
-| 测试有效性、证据与真实依赖 | M2-H 迁移完成前仍从 `docs/architecture/test-validity-governance.md`、`test-evidence-governance.md`、`real-dependency-test-lanes.md` 路由 |
+| 测试有效性、确定性、证据、真实依赖与 PDA | [`testing/README.md`](testing/README.md) |
 
 ## 使用纪律
 

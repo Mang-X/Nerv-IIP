@@ -10,9 +10,9 @@
 
 完整 M2-G 前正文可从 Git `26e88a62e2223ba7da2443c6471b34d971d4ad28:docs/architecture/script-automation-governance.md` 追溯。历史 ADR、Superpowers spec/plan 和冻结报告中的旧链接可在 M2 迁移期继续通过本页导航；最终删除条件由 M2-M/M4 收口。
 
-## M2-H 冻结兼容锚
+## TestEvidence 冻结兼容锚
 
-> 下列内容**不是当前脚本 Governance，也不是可维护 registry**。`scripts/tests/test-evidence.Tests.ps1` 在 M2-H 尚未迁移前仍以这些旧自然语言/迁移表片段作为合同输入；M2-G 不越权削弱 TestEvidence 合同，因此只冻结保留它实际读取的最小字面量。任何脚本新增、分类变化或 ordinal 规则变化都不得修改本节；消费者移除与本节删除由 M2-H 原子完成。
+> 下列内容**不是当前脚本 Governance，也不是可维护 registry**。`scripts/tests/test-evidence.Tests.ps1` 仍读取这些 pre-M2-G 自描述字面；#2400 的 Scope Gate 明确 M2-H 不修改测试代码，因此本轮只保留既有测试真正读取的最小冻结锚，不把它们迁回 canonical Governance。任何脚本新增、分类变化或 ordinal 规则变化都不得修改本节；移除这组历史字面耦合应由专门拥有该测试合同的后续清理完成，兼容页本身最终由 M2-M/M4 收口。
 
 兼容路径锚：
 
