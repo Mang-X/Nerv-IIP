@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Route } from '@playwright/test'
 
 const STORAGE_KEY = 'nerv-iip.business-console.auth'
 const principal = {
@@ -73,27 +73,50 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await page.route('**/api/business-console/v1/**', routeApi)
 
   await page.goto(
-    '/equipment/telemetry/oee?deviceAssetId=DEV-CNC-01&windowStartUtc=2026-08-01T00:00:00.000Z&windowEndUtc=2026-09-01T00:00:00.000Z',
+    '/equipment/telemetry/oee?deviceAssetId=DEV-CNC-01&windowStartUtc=2026-03-01T00:00:00.000Z&windowEndUtc=2026-04-01T00:00:00.000Z',
     { waitUntil: 'domcontentloaded' },
   )
   expect(pageErrors).toEqual([])
 
   await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(/完整窗口共 62 个业务日聚合桶，按\s*2 个站点分别呈现/)).toBeVisible()
+  await expect(page.getByText(/完整窗口共 65 个业务日聚合桶，按\s*2 个站点分别呈现/)).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-WUXI', exact: true })).toBeVisible()
-  await expect(page.getByText('31 个桶，30 个完整率值点，1 个缺失点保留在核查表。')).toBeVisible()
-  await expect(page.getByText('31 个桶，31 个完整率值点。')).toBeVisible()
+  await expect(page.getByText('34 个桶，33 个完整率值点，1 个缺失点保留在核查表。')).toBeVisible()
+  await expect(page.getByText('31 个桶，31 个完整率值点。', { exact: true })).toBeVisible()
   await expect(page.getByText('1 个桶缺少率值，未画成 0%')).toBeVisible()
   await expect(page.getByText('横轴使用业务日“月/日”短标签。')).toBeVisible()
-  await expect(page.getByText('SITE-SUZHOU · OEE', { exact: true })).toBeVisible()
-  await expect(page.getByText('SITE-WUXI · OEE', { exact: true })).toBeVisible()
-  await expect(page.getByText('8/1', { exact: true })).toHaveCount(2)
-  await expect(page.getByText('8/31', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('SITE-SUZHOU · OEE', { exact: true })).toHaveCount(3)
+  await expect(page.getByText('SITE-WUXI · OEE', { exact: true })).toHaveCount(1)
+  await expect(page.getByText('3/1', { exact: true })).toHaveCount(3)
+  await expect(page.getByText('3/31', { exact: true })).toHaveCount(2)
   await expect(page.getByText('数据不完整', { exact: true })).toHaveCount(0)
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
 
-  const suzhouChart = page.locator('[data-oee-site="SITE-SUZHOU"]').getByRole('figure')
+  const suzhouPanel = page.locator('[data-oee-site="SITE-SUZHOU"]')
+  await expect(suzhouPanel.locator('[data-oee-segment]')).toHaveCount(2)
+  await expect(
+    suzhouPanel.getByText('首桶 UTC：2026-03-01 15:00:00 UTC – 2026-03-02 15:00:00 UTC', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    suzhouPanel.getByText('首桶 UTC：2026-03-01 16:00:00 UTC – 2026-03-02 16:00:00 UTC', {
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  const wuxiPanel = page.locator('[data-oee-site="SITE-WUXI"]')
+  await wuxiPanel.getByText('查看逐桶 UTC 窗口').click()
+  await expect(
+    wuxiPanel.getByText('2026-03-08：2026-03-08 05:00:00 UTC – 2026-03-09 04:00:00 UTC', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await wuxiPanel.getByText('查看逐桶 UTC 窗口').click()
+  await expect(suzhouPanel.locator('[data-oee-run]')).toHaveCount(3)
+
+  const suzhouChart = page.locator('[data-oee-site="SITE-SUZHOU"]').getByRole('figure').first()
   for (const xRatio of [0.15, 0.35, 0.55, 0.75]) {
     const chartBox = await suzhouChart.boundingBox()
     expect(chartBox).not.toBeNull()
@@ -112,7 +135,7 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
 
   await page.getByRole('button', { name: '第 3 页', exact: true }).click()
   await expect(page.getByText('缺少或存在冲突的工序标准速率')).toBeVisible()
-  await expect(page.getByText('2026-08-26', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('2026-03-26', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
 
   await page.getByRole('combobox', { name: '报表视角' }).click()
@@ -161,13 +184,18 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
 })
 
 function businessDayResponse(url: URL) {
-  const allBuckets = Array.from({ length: 31 }, (_, index) => {
-    const businessDate = `2026-08-${String(index + 1).padStart(2, '0')}`
+  const primaryBuckets = Array.from({ length: 31 }, (_, index) => {
+    const businessDate = `2026-03-${String(index + 1).padStart(2, '0')}`
+    const nextDate = isoDate(new Date(Date.UTC(2026, 2, index + 2)))
     const suzhou = bucket('day', 'SITE-SUZHOU', businessDate, 0.781, 0.86, 0.93, 0.625, {
       siteCode: 'SITE-SUZHOU',
+      bucketStartUtc: `${businessDate}T16:00:00.000Z`,
+      bucketEndUtc: `${nextDate}T16:00:00.000Z`,
     })
     const wuxi = bucket('day', 'SITE-WUXI', businessDate, 0.88, 0.91, 0.975, 0.781, {
       siteCode: 'SITE-WUXI',
+      bucketStartUtc: `${businessDate}T${index < 8 ? '05' : '04'}:00:00.000Z`,
+      bucketEndUtc: `${nextDate}T${index < 7 ? '05' : '04'}:00:00.000Z`,
     })
     return index === 25
       ? [
@@ -182,6 +210,16 @@ function businessDayResponse(url: URL) {
         ]
       : [suzhou, wuxi]
   }).flat()
+  const tokyoHistory = Array.from({ length: 3 }, (_, index) => {
+    const businessDate = `2026-03-0${index + 1}`
+    const nextDate = `2026-03-0${index + 2}`
+    return bucket('day', 'SITE-SUZHOU', businessDate, 0.79, 0.88, 0.94, 0.654, {
+      siteCode: 'SITE-SUZHOU',
+      bucketStartUtc: `${businessDate}T15:00:00.000Z`,
+      bucketEndUtc: `${nextDate}T15:00:00.000Z`,
+    })
+  })
+  const allBuckets = [...primaryBuckets, ...tokyoHistory]
   const skip = Number(url.searchParams.get('skip') ?? 0)
   const take = Number(url.searchParams.get('take') ?? 20)
   return aggregateResponse(url, 'day', allBuckets.slice(skip, skip + take), allBuckets.length)
@@ -189,13 +227,13 @@ function businessDayResponse(url: URL) {
 
 function shiftResponse(url: URL) {
   return aggregateResponse(url, 'shift', [
-    bucket('shift', 'SHIFT-DAY', '2026-08-24', 0.846, 0.904, 0.975, 0.746, {
+    bucket('shift', 'SHIFT-DAY', '2026-03-24', 0.846, 0.904, 0.975, 0.746, {
       siteCode: 'SITE-SUZHOU',
       workshopCode: 'WORKSHOP-MACHINING',
       lineCode: 'LINE-CNC',
       shiftCode: 'SHIFT-DAY',
     }),
-    bucket('shift', 'SHIFT-DAY', '2026-08-24', 0.91, 0.868, 0.989, 0.781, {
+    bucket('shift', 'SHIFT-DAY', '2026-03-24', 0.91, 0.868, 0.989, 0.781, {
       siteCode: 'SITE-WUXI',
       workshopCode: 'WORKSHOP-ASSEMBLY',
       lineCode: 'LINE-FINAL',
@@ -233,7 +271,7 @@ function bucket(
   oeeRate: number | null,
   overrides: Record<string, unknown> = {},
 ) {
-  const day = businessDate ?? '2026-08-24'
+  const day = businessDate ?? '2026-03-24'
   return {
     dimension,
     dimensionValue,
@@ -245,7 +283,7 @@ function bucket(
     shiftCode: null,
     businessDate,
     bucketStartUtc: `${day}T00:00:00.000Z`,
-    bucketEndUtc: `${day}T23:59:59.000Z`,
+    bucketEndUtc: `${isoDate(new Date(`${day}T00:00:00.000Z`).getTime() + 86_400_000)}T00:00:00.000Z`,
     deviceCount: dimension === 'workCenter' ? 3 : 9,
     stateSampleCount: 864,
     productionFactCount: 36,
@@ -262,6 +300,10 @@ function bucket(
     degradedReasons: [],
     ...overrides,
   }
+}
+
+function isoDate(value: Date | number) {
+  return new Date(value).toISOString().slice(0, 10)
 }
 
 function envelope<T>(data: T) {

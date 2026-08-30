@@ -350,20 +350,102 @@ function refreshReport() {
                 >。
               </p>
             </div>
-            <div
-              v-if="group.points.length === 0"
-              class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
-            >
-              本站点当前窗口没有可绘制的完整率值；缺失事实仍保留在下方核查表中。
+            <div class="grid gap-3">
+              <section
+                v-for="segment in group.segments"
+                :key="segment.key"
+                class="grid gap-3 rounded-lg border bg-muted/20 p-3"
+                :data-oee-segment="segment.key"
+              >
+                <div class="grid gap-1">
+                  <h4 class="text-sm font-medium text-foreground">
+                    历史窗口段 {{ segment.ordinal }}
+                  </h4>
+                  <p class="text-xs text-muted-foreground">
+                    业务日 {{ segment.businessDateStartLabel }} 至
+                    {{ segment.businessDateEndLabel }}；{{ segment.bucketCount }} 个桶，{{
+                      segment.pointCount
+                    }}
+                    个完整率值点<span v-if="segment.omittedCount > 0"
+                      >，{{ segment.omittedCount }} 个缺失点</span
+                    >。
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    首桶 UTC：{{ segment.firstWindowLabel }}
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    末桶 UTC：{{ segment.lastWindowLabel }}
+                  </p>
+                  <details class="text-xs text-muted-foreground">
+                    <summary class="cursor-pointer">查看逐桶 UTC 窗口</summary>
+                    <ul class="mt-2 grid gap-1 pl-4">
+                      <li v-for="bucket in segment.buckets" :key="bucket.key">
+                        {{ bucket.businessDateLabel }}：{{ bucket.windowLabel
+                        }}<span v-if="!bucket.hasCompleteRates">（率值缺失）</span>
+                      </li>
+                    </ul>
+                  </details>
+                </div>
+                <div
+                  v-if="segment.runs.length === 0"
+                  class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+                >
+                  本历史窗口段没有可绘制的完整率值；全部缺失事实仍保留在下方核查表中。
+                </div>
+                <template v-else>
+                  <div
+                    v-for="(run, runIndex) in segment.runs"
+                    :key="run.key"
+                    class="grid gap-2"
+                    :data-oee-run="run.key"
+                  >
+                    <p v-if="segment.runs.length > 1" class="text-xs text-muted-foreground">
+                      连续趋势 {{ runIndex + 1 }} / {{ segment.runs.length }}
+                    </p>
+                    <NvLineChart
+                      v-if="run.displayMode === 'line'"
+                      :data="run.chartData"
+                      x-key="time"
+                      :series="group.series"
+                      :height="280"
+                      value-suffix="%"
+                    />
+                    <div
+                      v-else
+                      class="grid gap-2 rounded-lg border bg-card p-3"
+                      data-oee-discrete-point
+                    >
+                      <div>
+                        <h5 class="text-sm font-medium text-foreground">
+                          离散桶 · {{ run.points[0]?.businessDateLabel }}
+                        </h5>
+                        <p class="text-xs text-muted-foreground">
+                          UTC：{{ run.points[0]?.windowLabel }}
+                        </p>
+                      </div>
+                      <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                        <div>
+                          <dt class="text-muted-foreground">OEE</dt>
+                          <dd>{{ run.points[0]?.oee }}%</dd>
+                        </div>
+                        <div>
+                          <dt class="text-muted-foreground">可用率</dt>
+                          <dd>{{ run.points[0]?.availability }}%</dd>
+                        </div>
+                        <div>
+                          <dt class="text-muted-foreground">性能率</dt>
+                          <dd>{{ run.points[0]?.performance }}%</dd>
+                        </div>
+                        <div>
+                          <dt class="text-muted-foreground">质量率</dt>
+                          <dd>{{ run.points[0]?.quality }}%</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </div>
+                </template>
+              </section>
             </div>
-            <NvLineChart
-              v-else
-              :data="group.points"
-              x-key="time"
-              :series="group.series"
-              :height="280"
-              value-suffix="%"
-            />
           </section>
         </div>
       </template>

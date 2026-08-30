@@ -750,36 +750,44 @@ describe('equipment telemetry pages', () => {
   it('keeps missing aggregate rates out of the trend and explains the degraded bucket', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('1 SITE-SUZHOU · OEE')
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
+    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('离散桶 · 2026-07-01')
+    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('70%')
     expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
     expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
     expect(wrapper.text()).toContain('—')
-    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('70/82/90/95')
-    expect(wrapper.get('[data-testid="line-chart"]').text()).not.toContain('76')
+    expect(wrapper.text()).toContain('1 个完整率值点，1 个缺失点')
   })
 
   it('renders the complete 31-day trend independently from the 20-row audit page', () => {
     const template = telemetryPageMocks.aggregateBuckets[0]!
-    telemetryPageMocks.trendBuckets = Array.from({ length: 31 }, (_, index) => ({
-      ...template,
-      businessDate: `2026-07-${String(index + 1).padStart(2, '0')}`,
-      bucketStartUtc: `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
-      ...(index === 20
-        ? {
-            isDegraded: true,
-            oeeRate: null,
-            performanceRate: null,
-            degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
-          }
-        : {}),
-    }))
+    telemetryPageMocks.trendBuckets = Array.from({ length: 31 }, (_, index) => {
+      const start = new Date(Date.UTC(2026, 6, index + 1))
+      const end = new Date(Date.UTC(2026, 6, index + 2))
+      return {
+        ...template,
+        businessDate: `2026-07-${String(index + 1).padStart(2, '0')}`,
+        bucketStartUtc: start.toISOString(),
+        bucketEndUtc: end.toISOString(),
+        ...(index === 20
+          ? {
+              isDegraded: true,
+              oeeRate: null,
+              performanceRate: null,
+              degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+            }
+          : {}),
+      }
+    })
     telemetryPageMocks.aggregateBuckets = telemetryPageMocks.trendBuckets.slice(0, 20)
     telemetryPageMocks.aggregateTotal = 31
 
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    const chartText = wrapper.get('[data-testid="line-chart"]').text()
-    expect(chartText).toContain('30 SITE-SUZHOU · OEE')
+    const charts = wrapper.findAll('[data-testid="line-chart"]')
+    const chartText = charts.map((chart) => chart.text()).join(' ')
+    expect(charts).toHaveLength(2)
+    expect(charts.map((chart) => Number(chart.text().split(' ')[0]))).toEqual([20, 10])
     expect(chartText).toContain('7/1')
     expect(chartText).toContain('7/31')
     expect(chartText).toContain('SITE-SUZHOU · OEE')
@@ -809,14 +817,54 @@ describe('equipment telemetry pages', () => {
     telemetryPageMocks.aggregateTotal = 2
 
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
-    const charts = wrapper.findAll('[data-testid="line-chart"]')
+    const points = wrapper.findAll('[data-oee-discrete-point]')
 
-    expect(charts).toHaveLength(2)
-    expect(charts[0]?.text()).toContain('1 SITE-SUZHOU · OEE')
-    expect(charts[1]?.text()).toContain('1 SITE-WUXI · OEE')
-    expect(charts[0]?.text()).not.toContain('SITE-WUXI')
-    expect(charts[1]?.text()).not.toContain('SITE-SUZHOU')
+    expect(points).toHaveLength(2)
+    expect(wrapper.findAll('[data-oee-site]')).toHaveLength(2)
     expect(wrapper.text()).toContain('按 2 个站点分别呈现')
+  })
+
+  it('renders equal site and business date windows as distinct precise segments', () => {
+    telemetryPageMocks.trendBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        businessDate: '2026-07-01',
+        bucketStartUtc: '2026-06-30T15:00:00.000Z',
+        bucketEndUtc: '2026-07-01T15:00:00.000Z',
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        businessDate: '2026-07-01',
+        bucketStartUtc: '2026-06-30T16:00:00.000Z',
+        bucketEndUtc: '2026-07-01T16:00:00.000Z',
+      },
+    ]
+    telemetryPageMocks.aggregateBuckets = [...telemetryPageMocks.trendBuckets]
+    telemetryPageMocks.aggregateTotal = 2
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    expect(wrapper.findAll('[data-oee-segment]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-oee-discrete-point]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('2026-06-30 15:00:00 UTC – 2026-07-01 15:00:00 UTC')
+    expect(wrapper.text()).toContain('2026-06-30 16:00:00 UTC – 2026-07-01 16:00:00 UTC')
+  })
+
+  it('shows an explicit all-missing segment state', () => {
+    telemetryPageMocks.trendBuckets = telemetryPageMocks.aggregateBuckets.map((bucket) => ({
+      ...bucket,
+      oeeRate: null,
+      performanceRate: null,
+    }))
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
+    expect(wrapper.find('[data-oee-discrete-point]').exists()).toBe(false)
+    expect(wrapper.text()).toContain(
+      '本历史窗口段没有可绘制的完整率值；全部缺失事实仍保留在下方核查表中。',
+    )
   })
 
   it('keeps equal shift codes in different sites and hierarchy readable with distinct row keys', () => {

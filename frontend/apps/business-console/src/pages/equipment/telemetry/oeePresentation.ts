@@ -33,7 +33,19 @@ export interface OeeTableRow {
   degradedReasons: string[]
 }
 
-export interface OeeTrendPoint extends Record<string, string | number> {
+export interface OeeTrendPoint {
+  key: string
+  identity: OeeBucketIdentity
+  time: string
+  businessDateLabel: string
+  windowLabel: string
+  oee: number
+  availability: number
+  performance: number
+  quality: number
+}
+
+export interface OeeTrendChartRow extends Record<string, string | number> {
   time: string
   oee: number
   availability: number
@@ -53,8 +65,37 @@ export interface OeeTrendGroup {
   bucketCount: number
   pointCount: number
   omittedCount: number
-  points: OeeTrendPoint[]
+  segments: OeeTrendSegment[]
   series: OeeTrendSeries[]
+}
+
+export interface OeeTrendRun {
+  key: string
+  displayMode: 'line' | 'point'
+  points: OeeTrendPoint[]
+  chartData: OeeTrendChartRow[]
+}
+
+export interface OeeTrendBucketDetail {
+  key: string
+  identity: OeeBucketIdentity
+  businessDateLabel: string
+  windowLabel: string
+  hasCompleteRates: boolean
+}
+
+export interface OeeTrendSegment {
+  key: string
+  ordinal: number
+  businessDateStartLabel: string
+  businessDateEndLabel: string
+  firstWindowLabel: string
+  lastWindowLabel: string
+  bucketCount: number
+  pointCount: number
+  omittedCount: number
+  buckets: OeeTrendBucketDetail[]
+  runs: OeeTrendRun[]
 }
 
 export interface OeeReportPresentation {
@@ -107,21 +148,15 @@ function presentDayTrendGroups(
       const orderedBuckets = siteBuckets.slice().sort(compareTrendBuckets)
       const siteCode = nullable(orderedBuckets[0]?.siteCode)
       const siteLabel = siteCode?.trim() || '未解析站点'
-      const completeBuckets = orderedBuckets.filter(hasCompleteRates)
+      const segments = presentTrendSegments(orderedBuckets)
       return {
         key,
         siteCode,
         siteLabel,
         bucketCount: orderedBuckets.length,
-        pointCount: completeBuckets.length,
-        omittedCount: orderedBuckets.length - completeBuckets.length,
-        points: completeBuckets.map((bucket) => ({
-          time: shortBusinessDate(bucket),
-          oee: percentNumber(bucket.oeeRate),
-          availability: percentNumber(bucket.availabilityRate),
-          performance: percentNumber(bucket.performanceRate),
-          quality: percentNumber(bucket.qualityRate),
-        })),
+        pointCount: segments.reduce((total, segment) => total + segment.pointCount, 0),
+        omittedCount: segments.reduce((total, segment) => total + segment.omittedCount, 0),
+        segments,
         series: trendSeries(siteLabel),
       }
     })
@@ -129,6 +164,141 @@ function presentDayTrendGroups(
       (left, right) =>
         compareOrdinal(left.siteCode, right.siteCode) || compareOrdinal(left.key, right.key),
     )
+}
+
+function presentTrendSegments(
+  orderedBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+): OeeTrendSegment[] {
+  const segmentBuckets: BusinessConsoleTelemetryOeeAggregateBucket[][] = []
+  for (const bucket of orderedBuckets) {
+    const segment = segmentBuckets.find((candidate) => canContinueSegment(candidate, bucket))
+    if (segment) segment.push(bucket)
+    else segmentBuckets.push([bucket])
+  }
+
+  return segmentBuckets
+    .sort((left, right) => compareTrendBuckets(left[0]!, right[0]!))
+    .map((buckets, index) => presentTrendSegment(buckets, index + 1))
+}
+
+function canContinueSegment(
+  segment: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+) {
+  const previous = segment.at(-1)
+  if (!previous || !isSameOrNextBusinessDate(previous.businessDate, bucket.businessDate)) {
+    return false
+  }
+  if (
+    segment.some((existing) => nullable(existing.businessDate) === nullable(bucket.businessDate))
+  ) {
+    return false
+  }
+  const previousEnd = Date.parse(previous.bucketEndUtc ?? '')
+  const currentStart = Date.parse(bucket.bucketStartUtc ?? '')
+  return Number.isFinite(previousEnd) && previousEnd === currentStart
+}
+
+function isSameOrNextBusinessDate(previous?: string | null, current?: string | null) {
+  const previousDate = parseBusinessDate(previous)
+  const currentDate = parseBusinessDate(current)
+  return (
+    previousDate !== null &&
+    currentDate !== null &&
+    currentDate >= previousDate &&
+    currentDate <= previousDate + 24 * 60 * 60 * 1000
+  )
+}
+
+function parseBusinessDate(value?: string | null) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return null
+  const parsed = Date.parse(`${value}T00:00:00.000Z`)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function presentTrendSegment(
+  buckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+  ordinal: number,
+): OeeTrendSegment {
+  const runs = presentTrendRuns(buckets)
+  const pointCount = runs.reduce((total, run) => total + run.points.length, 0)
+  const identities = buckets.map(bucketIdentity)
+  return {
+    key: JSON.stringify(['day-segment', identities]),
+    ordinal,
+    businessDateStartLabel: displayBusinessDate(buckets[0]?.businessDate),
+    businessDateEndLabel: displayBusinessDate(buckets.at(-1)?.businessDate),
+    firstWindowLabel: formatExactUtcWindow(buckets[0]?.bucketStartUtc, buckets[0]?.bucketEndUtc),
+    lastWindowLabel: formatExactUtcWindow(
+      buckets.at(-1)?.bucketStartUtc,
+      buckets.at(-1)?.bucketEndUtc,
+    ),
+    bucketCount: buckets.length,
+    pointCount,
+    omittedCount: buckets.length - pointCount,
+    buckets: buckets.map(presentTrendBucketDetail),
+    runs,
+  }
+}
+
+function presentTrendBucketDetail(
+  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+): OeeTrendBucketDetail {
+  const identity = bucketIdentity(bucket)
+  return {
+    key: JSON.stringify(identity),
+    identity,
+    businessDateLabel: displayBusinessDate(bucket.businessDate),
+    windowLabel: formatExactUtcWindow(bucket.bucketStartUtc, bucket.bucketEndUtc),
+    hasCompleteRates: hasCompleteRates(bucket),
+  }
+}
+
+function presentTrendRuns(
+  buckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+): OeeTrendRun[] {
+  const bucketRuns: BusinessConsoleTelemetryOeeAggregateBucket[][] = []
+  let currentRun: BusinessConsoleTelemetryOeeAggregateBucket[] = []
+  for (const bucket of buckets) {
+    if (!hasCompleteRates(bucket)) {
+      if (currentRun.length > 0) bucketRuns.push(currentRun)
+      currentRun = []
+      continue
+    }
+    currentRun.push(bucket)
+  }
+  if (currentRun.length > 0) bucketRuns.push(currentRun)
+
+  return bucketRuns.map((run) => {
+    const points = run.map(presentTrendPoint)
+    return {
+      key: JSON.stringify(['day-run', run.map(bucketIdentity)]),
+      displayMode: run.length >= 2 ? 'line' : 'point',
+      points,
+      chartData: points.map(({ time, oee, availability, performance, quality }) => ({
+        time,
+        oee,
+        availability,
+        performance,
+        quality,
+      })),
+    }
+  })
+}
+
+function presentTrendPoint(bucket: BusinessConsoleTelemetryOeeAggregateBucket): OeeTrendPoint {
+  const identity = bucketIdentity(bucket)
+  return {
+    key: JSON.stringify(identity),
+    identity,
+    time: shortBusinessDate(bucket),
+    businessDateLabel: displayBusinessDate(bucket.businessDate),
+    windowLabel: formatExactUtcWindow(bucket.bucketStartUtc, bucket.bucketEndUtc),
+    oee: percentNumber(bucket.oeeRate),
+    availability: percentNumber(bucket.availabilityRate),
+    performance: percentNumber(bucket.performanceRate),
+    quality: percentNumber(bucket.qualityRate),
+  }
 }
 
 function presentTableRow(bucket: BusinessConsoleTelemetryOeeAggregateBucket): OeeTableRow {
@@ -240,6 +410,21 @@ function shortBusinessDate(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
   if (!bucket.bucketStartUtc) return '—'
   const date = new Date(bucket.bucketStartUtc)
   return Number.isNaN(date.getTime()) ? '—' : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
+}
+
+function displayBusinessDate(value?: string | null) {
+  return value?.trim() || '未解析业务日'
+}
+
+function formatExactUtcWindow(start?: string | null, end?: string | null) {
+  return `${formatExactUtc(start)} – ${formatExactUtc(end)}`
+}
+
+function formatExactUtc(value?: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`
 }
 
 function formatWindow(start?: string | null, end?: string | null) {
