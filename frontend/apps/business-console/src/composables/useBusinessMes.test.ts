@@ -1330,6 +1330,51 @@ describe('business MES composables', () => {
   })
 
   // #1947：停机读面要按原因显示、筛选与汇总。
+  it('defaults downtime reads to the latest 30 days and forwards an explicitly selected window', () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    const downtime = useMesDowntimeEvents()
+    const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+
+    expect(listOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 100,
+        windowStartUtc: '2026-07-31T08:00:00.000Z',
+        windowEndUtc: '2026-08-30T08:00:00.000Z',
+      },
+    })
+
+    downtime.filters.keyword = 'filter'
+    downtime.filters.workCenterId = 'WC-FILTER'
+    downtime.filters.shiftId = 'SHIFT-FILTER'
+    downtime.filters.deviceAssetId = 'DEV-FILTER'
+    downtime.filters.reasonCode = 'DT-MECH'
+    downtime.filters.skip = 5
+    downtime.filters.take = 25
+    downtime.filters.windowStartUtc = '2026-08-01T00:00:00.000Z'
+    downtime.filters.windowEndUtc = '2026-08-15T00:00:00.000Z'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+    expect(listOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: 'filter',
+        workCenterId: 'WC-FILTER',
+        shiftId: 'SHIFT-FILTER',
+        deviceAssetId: 'DEV-FILTER',
+        skip: 5,
+        take: 25,
+        reasonCode: 'DT-MECH',
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-15T00:00:00.000Z',
+      },
+    })
+    vi.useRealTimers()
+  })
+
   it('forwards the selected downtime reason into the list query and leaves it out when unset', () => {
     const downtime = useMesDowntimeEvents()
     const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
@@ -1611,11 +1656,6 @@ describe('business MES composables', () => {
         id: 'listBusinessConsoleMesMaterialIssueRequests',
         options: listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
         composable: useMesMaterialIssueRequests,
-      },
-      {
-        id: 'listBusinessConsoleMesDowntimeEvents',
-        options: listBusinessConsoleMesDowntimeEventsQueryOptions,
-        composable: useMesDowntimeEvents,
       },
       {
         id: 'listBusinessConsoleMesShiftHandovers',

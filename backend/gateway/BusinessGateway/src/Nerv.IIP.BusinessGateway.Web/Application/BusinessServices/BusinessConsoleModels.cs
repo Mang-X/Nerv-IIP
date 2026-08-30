@@ -4290,6 +4290,8 @@ public sealed record BusinessConsoleMesDowntimeEventListRequest(
     string? DeviceAssetId = null,
     string? WorkOrderId = null,
     string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null,
     int Skip = 0,
     int Take = 100);
 

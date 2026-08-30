@@ -434,7 +434,9 @@ public sealed record ListDowntimeEventsRequest(
     string? Keyword = null,
     string? ShiftId = null,
     string? Status = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -1564,7 +1566,9 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Keyword,
             req.ShiftId,
             req.Status,
-            req.ReasonCode), ct);
+            req.ReasonCode,
+            req.WindowStartUtc,
+            req.WindowEndUtc), ct);
         await Send.OkAsync(response, ct);
     }
 }
