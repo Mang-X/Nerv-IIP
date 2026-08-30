@@ -23,6 +23,7 @@ public sealed class ManualDispatchConcurrencyTests
 {
     [Theory]
     [InlineData(typeof(AssignDispatchTaskCommand))]
+    [InlineData(typeof(ClaimDispatchTaskCommand))]
     [InlineData(typeof(CancelWorkOrderCommand))]
     [InlineData(typeof(ChangeOperationTaskStateCommand))]
     [InlineData(typeof(RecordProductionReportCommand))]

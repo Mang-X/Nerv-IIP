@@ -4394,6 +4394,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sharePercent?: number;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesClaimOperationTaskRequest = {
+    idempotencyKey: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskListResponse | null;
 };
@@ -15561,6 +15565,46 @@ export type AssignBusinessConsoleMesDispatchTaskResponses = {
 };
 
 export type AssignBusinessConsoleMesDispatchTaskResponse = AssignBusinessConsoleMesDispatchTaskResponses[keyof AssignBusinessConsoleMesDispatchTaskResponses];
+
+export type ClaimBusinessConsoleMesOperationTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesClaimOperationTaskRequest;
+    path: {
+        operationTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind: string;
+        scopeId: string;
+    };
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/claim';
+};
+
+export type ClaimBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ClaimBusinessConsoleMesOperationTaskError = ClaimBusinessConsoleMesOperationTaskErrors[keyof ClaimBusinessConsoleMesOperationTaskErrors];
+
+export type ClaimBusinessConsoleMesOperationTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ClaimBusinessConsoleMesOperationTaskResponse = ClaimBusinessConsoleMesOperationTaskResponses[keyof ClaimBusinessConsoleMesOperationTaskResponses];
 
 export type ListBusinessConsoleMesOperationTasksData = {
     body?: never;

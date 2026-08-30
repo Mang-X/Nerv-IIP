@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -55,6 +56,135 @@ public sealed class MesWorkerSkillQualificationCommandTests
         var task = await dbContext.OperationTasks.SingleAsync();
         Assert.Equal("worker-001", task.AssignedUserId);
         Assert.Equal("操作员甲", task.AssignedUserName);
+    }
+
+    // Break caught: self-claim must traverse the same frozen-skill gate and persist claimant/time.
+    [Fact]
+    public async Task Qualified_worker_can_self_claim_an_unassigned_task()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSingleTask(dbContext, assignedUserId: null, requiredSkillCode: "cnc-operation");
+        await dbContext.SaveChangesAsync();
+        var handler = new ClaimDispatchTaskCommandHandler(dbContext, ExactQualificationGate.Instance);
+
+        var response = await handler.Handle(
+            new ClaimDispatchTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "worker-001",
+                "操作员甲",
+                null,
+                "SHIFT-A",
+                Now,
+                "user:worker-001",
+                "claim-qualified-001",
+                "TEAM-A",
+                "甲班"),
+            CancellationToken.None);
+
+        Assert.Equal("OP-10", response.ReferenceId);
+        var task = await dbContext.OperationTasks.SingleAsync();
+        Assert.Equal("worker-001", task.AssignedUserId);
+        Assert.Equal("操作员甲", task.AssignedUserName);
+        Assert.Equal("SHIFT-A", task.ShiftId);
+        Assert.Equal("TEAM-A", task.TeamId);
+        Assert.Equal(Now, task.AssignedAtUtc);
+    }
+
+    [Fact]
+    public async Task Self_claim_rejects_unqualified_worker_without_mutating_assignment_or_receipt()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSingleTask(dbContext, assignedUserId: null, requiredSkillCode: "cnc-operation");
+        await dbContext.SaveChangesAsync();
+        var handler = new ClaimDispatchTaskCommandHandler(dbContext, RejectingGate.Instance);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ClaimDispatchTaskCommand(
+                "org-001", "env-dev", "OP-10", "worker-001", "操作员甲", null,
+                "SHIFT-A", Now, "user:worker-001", "claim-unqualified-001"),
+            CancellationToken.None));
+
+        Assert.Contains("技能已过期", exception.Message, StringComparison.Ordinal);
+        Assert.Null((await dbContext.OperationTasks.SingleAsync()).AssignedUserId);
+        Assert.Empty(await dbContext.CodeIdempotencyKeys.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Same_claim_key_replays_across_resolved_context_changes_and_rejects_a_different_intent()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSingleTask(dbContext, assignedUserId: null, requiredSkillCode: "cnc-operation");
+        await dbContext.SaveChangesAsync();
+        var handler = new ClaimDispatchTaskCommandHandler(dbContext, ExactQualificationGate.Instance);
+        var first = new ClaimDispatchTaskCommand(
+            "org-001", "env-dev", "OP-10", "worker-001", "操作员甲", null,
+            "SHIFT-A", Now, "user:worker-001", "claim-replay-001");
+
+        var accepted = await handler.Handle(first, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var replay = await handler.Handle(first with
+        {
+            AssignedUserName = "操作员甲（新姓名）",
+            DeviceAssetId = "device-B",
+            ShiftId = "SHIFT-B",
+            AssignedAtUtc = Now.AddMinutes(1),
+            Actor = "user:worker-001-refreshed",
+            TeamId = "TEAM-B",
+            TeamName = "乙班",
+        }, CancellationToken.None);
+
+        Assert.Equal(accepted.ReferenceId, replay.ReferenceId);
+        Assert.Equal(accepted.AcceptedAtUtc, replay.AcceptedAtUtc);
+        var persistedTask = await dbContext.OperationTasks.SingleAsync();
+        Assert.Equal("操作员甲", persistedTask.AssignedUserName);
+        Assert.Null(persistedTask.DeviceAssetId);
+        Assert.Equal("SHIFT-A", persistedTask.ShiftId);
+        Assert.Null(persistedTask.TeamId);
+        Assert.Equal(Now, persistedTask.AssignedAtUtc);
+        var participant = Assert.Single(await dbContext.OperationTaskParticipants.ToArrayAsync());
+        Assert.Equal("worker-001", participant.WorkerId);
+        Assert.Equal("操作员甲", participant.WorkerName);
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            first with { AssignedUserId = "worker-002", AssignedUserName = "操作员乙" },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            first with { OperationTaskId = "OP-11" },
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Claim_intent_fingerprint_preserves_ordinal_field_boundaries()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(ReleasedWorkOrder("WO-001"));
+        dbContext.OperationTasks.Add(NewTask("WO-001", "A|B", 10, null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ClaimDispatchTaskCommandHandler(dbContext);
+        var first = new ClaimDispatchTaskCommand(
+            "org-001", "env-dev", "A|B", "C", "操作员甲", null,
+            null, Now, "user:C", "claim-boundary-001");
+
+        await handler.Handle(first, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            first with { OperationTaskId = "A", AssignedUserId = "B|C" },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            first with { OperationTaskId = "a|b" },
+            CancellationToken.None));
     }
 
     [Fact]
