@@ -119,7 +119,37 @@ function Assert-TargetDatabaseExists {
     if (-not [string]::Equals($observedDatabase, $ExpectedDatabase, [StringComparison]::Ordinal)) {
         throw "PostgreSQL database existence preflight for service '$ServiceName' connected to '$observedDatabase' instead of allowlisted database '$ExpectedDatabase'."
     }
-    return $preflight
+    $historySchemaProbe = Invoke-WithScopedEnvironment -Variables $preflightEnvironment -ScriptBlock {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'psql' `
+            -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', "SELECT schemaname FROM pg_tables WHERE tablename = '__EFMigrationsHistory' ORDER BY schemaname LIMIT 1;") `
+            -WorkingDirectory $root `
+            -TimeoutSeconds 30 `
+            -Name "$ManifestProfile-migration-history-schema-$ServiceName-$ReleaseId"
+    }
+    $historySchemaOutput = Get-Content -LiteralPath $historySchemaProbe.StdoutPath -Raw
+    $historySchema = if ($null -eq $historySchemaOutput) { '' } else { $historySchemaOutput.Trim() }
+    $migrationId = 'none'
+    $historyLogDirectory = $historySchemaProbe.LogDirectory
+    if (-not [string]::IsNullOrWhiteSpace($historySchema)) {
+        $quotedHistorySchema = $historySchema.Replace('"', '""')
+        $historyQuery = 'SELECT COALESCE(MAX("MigrationId"), ''none'') FROM "{0}"."__EFMigrationsHistory";' -f $quotedHistorySchema
+        $historyProbe = Invoke-WithScopedEnvironment -Variables $preflightEnvironment -ScriptBlock {
+            Invoke-NativeCommandWithTimeout `
+                -Command 'psql' `
+                -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', $historyQuery) `
+                -WorkingDirectory $root `
+                -TimeoutSeconds 30 `
+                -Name "$ManifestProfile-migration-history-version-$ServiceName-$ReleaseId"
+        }
+        $migrationId = (Get-Content -LiteralPath $historyProbe.StdoutPath -Raw).Trim()
+        $historyLogDirectory = $historyProbe.LogDirectory
+    }
+    return [pscustomobject]@{
+        LogDirectory = $preflight.LogDirectory
+        HistoryLogDirectory = $historyLogDirectory
+        MigrationId = $migrationId
+    }
 }
 
 if ($ReleaseId -notmatch '^[A-Za-z0-9._-]+$') {
@@ -221,18 +251,16 @@ foreach ($entry in $selected) {
         throw "$connectionVariable must be set in the current process before migrating '$($entry.service)'."
     }
 
-    $databaseMatch = [regex]::Match($connectionString, '(?i)(?:^|;)\s*Database\s*=\s*([^;]+)')
-    if (-not $databaseMatch.Success -or [string]::IsNullOrWhiteSpace($databaseMatch.Groups[1].Value)) {
-        throw "$connectionVariable must include a non-empty Database field."
-    }
-
-    $targetDatabase = $databaseMatch.Groups[1].Value.Trim()
+    $connectionBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    $connectionBuilder.set_ConnectionString($connectionString)
+    $targetDatabase = Get-ConnectionStringField -Builder $connectionBuilder -Names @('Database') -Required
+    $targetDatabase = $targetDatabase.Trim()
     if (-not $targetDatabase.Equals([string]$entry.expectedDatabase, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Target database '$targetDatabase' for service '$($entry.service)' does not match allowlisted database '$($entry.expectedDatabase)'."
     }
 
     $validationLogDirectory = New-ScriptAutomationLogDirectory -Name "$ManifestProfile-migration-$($entry.service)-validation"
-    Write-Diagnostic "releaseId=$ReleaseId service=$($entry.service) dbProfile=PostgreSQL targetDatabase=$targetDatabase migrationFrom=database-current migrationTo=repository-latest seedStep=none correlationId=$CorrelationId logPath=$validationLogDirectory"
+    Write-Diagnostic "releaseId=$ReleaseId service=$($entry.service) dbProfile=PostgreSQL targetDatabase=$targetDatabase migrationFrom=not-queried migrationTo=not-queried seedStep=none correlationId=$CorrelationId logPath=$validationLogDirectory"
     $validated.Add([pscustomobject]@{
         Entry = $entry
         ConnectionString = $connectionString
@@ -275,7 +303,13 @@ foreach ($item in $validated) {
         -WorkingDirectory $root `
         -TimeoutSeconds 900 `
         -Name "$ManifestProfile-migration-apply-$($entry.service)-$ReleaseId" `
-        -SensitiveArgumentIndexes @($connectionArgumentIndex)
+        -SensitiveArgumentIndexes @($connectionArgumentIndex) `
+        -SensitiveValues @([string]$item.ConnectionString)
 
-    Write-Diagnostic "$ManifestProfile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) correlationId=$CorrelationId databasePreflightLog=$($item.DatabasePreflight.LogDirectory) restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
+    $postflight = Assert-TargetDatabaseExists `
+        -ConnectionString ([string]$item.ConnectionString) `
+        -ExpectedDatabase ([string]$item.TargetDatabase) `
+        -ServiceName ([string]$entry.service)
+
+    Write-Diagnostic "$ManifestProfile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) migrationFrom=$($item.DatabasePreflight.MigrationId) migrationTo=$($postflight.MigrationId) durationMs=$([long]$migration.Duration.TotalMilliseconds) correlationId=$CorrelationId databasePreflightLog=$($item.DatabasePreflight.LogDirectory) migrationHistoryLog=$($postflight.HistoryLogDirectory) restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
 }

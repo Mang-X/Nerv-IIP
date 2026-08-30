@@ -121,6 +121,11 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    foreach ($sensitiveValue in $SensitiveValues) {
+        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
+            $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
+        }
+    }
     $redacted = [regex]::Replace(
         $redacted,
         '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
@@ -144,12 +149,6 @@ function Protect-ScriptAutomationText {
 
     foreach ($pattern in $patterns) {
         $redacted = [regex]::Replace($redacted, $pattern, '$1<redacted>')
-    }
-
-    foreach ($sensitiveValue in $SensitiveValues) {
-        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
-            $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
-        }
     }
 
     return $redacted
@@ -825,10 +824,12 @@ function Invoke-DotNet {
 
         [string] $Name = 'dotnet',
 
-        [int[]] $SensitiveArgumentIndexes = @()
+        [int[]] $SensitiveArgumentIndexes = @(),
+
+        [string[]] $SensitiveValues = @()
     )
 
-    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes
+    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes -SensitiveValues $SensitiveValues
 }
 
 function Invoke-NativeCommandOutput {

@@ -128,8 +128,9 @@ foreach ($entry in $manifest) {
     $environment[[string]$entry.connectionEnvironmentVariable] = "Host=localhost;Database=$($entry.expectedDatabase);Username=nerv;Password=$secretMarker"
 }
 
-$valid = Invoke-MigratorProbe -Environment $environment -Arguments @('-ValidateOnly', '-ReleaseId', 'business-release-test', '-CorrelationId', 'business-correlation-test')
-foreach ($expected in @('validation completed for 13 service(s)', 'releaseId=business-release-test', 'service=business-master-data', 'dbProfile=PostgreSQL', 'migrationFrom=database-current', 'migrationTo=repository-latest', 'seedStep=none', 'correlationId=business-correlation-test', 'logPath=')) {
+$validReleaseId = "business-release-test-$([Guid]::NewGuid().ToString('N'))"
+$valid = Invoke-MigratorProbe -Environment $environment -Arguments @('-ValidateOnly', '-ReleaseId', $validReleaseId, '-CorrelationId', 'business-correlation-test')
+foreach ($expected in @('validation completed for 13 service(s)', "releaseId=$validReleaseId", 'service=business-master-data', 'dbProfile=PostgreSQL', 'migrationFrom=not-queried', 'migrationTo=not-queried', 'seedStep=none', 'correlationId=business-correlation-test', 'logPath=')) {
     if ($valid.ExitCode -ne 0 -or -not $valid.Output.Contains($expected, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Expected wrapper-visible business migration diagnostic '$expected'. Output: $($valid.Output)"
     }
@@ -138,7 +139,7 @@ if ($valid.Output.Contains($secretMarker, [StringComparison]::Ordinal)) {
     throw 'Business ValidateOnly diagnostics leaked the connection password.'
 }
 $wrapperLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
-    Where-Object { $_.FullName.Contains('business-release-migration-business-release-test', [StringComparison]::Ordinal) })
+    Where-Object { $_.FullName.Contains("business-release-migration-$validReleaseId", [StringComparison]::Ordinal) })
 if ($wrapperLogs.Count -lt 2 -or -not ($wrapperLogs | Where-Object Length -GT 0)) {
     throw 'Business wrapper must persist independent child stdout/stderr logs on the successful ValidateOnly path.'
 }
@@ -265,17 +266,24 @@ if ($unknown.ExitCode -eq 0 -or -not $unknown.Output.Contains('Unknown migration
     throw "Expected an unknown business service to fail closed. Output: $($unknown.Output)"
 }
 
+$wrongReleaseId = "business-release-wrong-database-$([Guid]::NewGuid().ToString('N'))"
 $wrong = Invoke-MigratorProbe -Environment @{
     ([string]$first.connectionEnvironmentVariable) = "Host=localhost;Database=neighbor_database;Password=$secretMarker"
-} -Arguments @('-ValidateOnly', '-Service', [string]$first.service, '-ReleaseId', 'business-release-wrong-database')
+} -Arguments @('-ValidateOnly', '-Service', [string]$first.service, '-ReleaseId', $wrongReleaseId)
 if ($wrong.ExitCode -eq 0 -or -not $wrong.Output.Contains('allowlisted database', [StringComparison]::OrdinalIgnoreCase)) {
     throw "Expected wrong business database validation to fail closed with the child cause visible. Output: $($wrong.Output)"
+}
+$duplicateDatabase = Invoke-MigratorProbe -Environment @{
+    ([string]$first.connectionEnvironmentVariable) = "Host=localhost;Database=$($first.expectedDatabase);Database=neighbor_database;Password=$secretMarker"
+} -Arguments @('-ValidateOnly', '-Service', [string]$first.service, '-ReleaseId', "business-release-duplicate-database-$([Guid]::NewGuid().ToString('N'))")
+if ($duplicateDatabase.ExitCode -eq 0 -or -not $duplicateDatabase.Output.Contains('allowlisted database', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "A duplicate Database key whose effective value is not allowlisted must fail closed. Output: $($duplicateDatabase.Output)"
 }
 if ($wrong.Output.Contains($secretMarker, [StringComparison]::Ordinal)) {
     throw 'Wrong business database diagnostics leaked the connection password.'
 }
 $wrongDatabaseLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
-    Where-Object { $_.FullName.Contains('business-release-migration-business-release-wrong-database', [StringComparison]::Ordinal) })
+    Where-Object { $_.FullName.Contains("business-release-migration-$wrongReleaseId", [StringComparison]::Ordinal) })
 if ($wrongDatabaseLogs.Count -lt 2 -or -not ($wrongDatabaseLogs | Where-Object Length -GT 0)) {
     throw 'Business wrapper must persist child logs when the executor exits nonzero.'
 }
@@ -301,19 +309,11 @@ try {
         $fakeDotNet = Join-Path $fakeCommandDirectory 'dotnet'
         Set-Content -LiteralPath $fakeDotNet -Value @'
 #!/bin/sh
-redact_next=0
-for argument in "$@"; do
-  if [ "$redact_next" -eq 1 ]; then
-    printf '<redacted> '
-    redact_next=0
-  else
-    printf '%s ' "$argument"
-    if [ "$argument" = '--connection' ]; then
-      redact_next=1
-    fi
-  fi
-done
+printf '%s ' "$@"
 printf '\n'
+if printf '%s' "$*" | grep -q 'database update'; then
+  : > "$NERV_IIP_FAKE_MIGRATION_MARKER"
+fi
 '@ -Encoding utf8NoBOM
         $fakePsql = Join-Path $fakeCommandDirectory 'psql'
         Set-Content -LiteralPath $fakePsql -Value @'
@@ -322,7 +322,22 @@ if [ "$NERV_IIP_FAKE_PSQL_MISSING" = '1' ]; then
   printf 'database does not exist\n' >&2
   exit 1
 fi
-printf '%s\n' "$PGDATABASE"
+case "$*" in
+  *current_database*) printf '%s\n' "$PGDATABASE" ;;
+  *pg_tables*)
+    if [ -f "$NERV_IIP_FAKE_MIGRATION_MARKER" ]; then
+      printf 'public\n'
+    fi
+    ;;
+  *MigrationId*)
+    if [ -f "$NERV_IIP_FAKE_MIGRATION_MARKER" ]; then
+      printf '202608300002_After\n'
+    else
+      printf '202608300001_Before\n'
+    fi
+    ;;
+  *) printf '%s\n' "$PGDATABASE" ;;
+esac
 '@ -Encoding utf8NoBOM
         & chmod 700 $fakeDotNet $fakePsql
         if ($LASTEXITCODE -ne 0) {
@@ -330,14 +345,21 @@ printf '%s\n' "$PGDATABASE"
         }
     }
 
-    $applyReleaseId = 'business-release-apply-redaction'
+    $applyReleaseId = "business-release-apply-redaction-$([Guid]::NewGuid().ToString('N'))"
+    $migrationMarker = Join-Path $fakeCommandDirectory 'migration-applied'
     $apply = Invoke-MigratorProbe -Environment @{
         # Username is intentionally used for the marker: the generic Password= redactor
         # cannot satisfy this assertion, so only whole-argument sensitivity kills M9.
         ([string]$first.connectionEnvironmentVariable) = "Host=localhost;Database=$($first.expectedDatabase);Username=$secretMarker;Password=redacted-by-generic-filter"
+        NERV_IIP_FAKE_MIGRATION_MARKER = $migrationMarker
     } -Arguments @('-Service', [string]$first.service, '-ReleaseId', $applyReleaseId) -PathOverride $fakeCommandDirectory
     if ($apply.ExitCode -ne 0 -or -not $apply.Output.Contains('migration completed', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Expected the fake apply path to complete through the business wrapper. Output: $($apply.Output)"
+    }
+    foreach ($evidence in @('migrationFrom=none', 'migrationTo=202608300002_After', 'durationMs=')) {
+        if (-not $apply.Output.Contains($evidence, [StringComparison]::Ordinal)) {
+            throw "Business apply diagnostics must include actual migration evidence '$evidence'. Output: $($apply.Output)"
+        }
     }
     $applyLogText = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
         Where-Object { $_.FullName.Contains($applyReleaseId, [StringComparison]::Ordinal) } |
@@ -347,8 +369,17 @@ printf '%s\n' "$PGDATABASE"
             throw "Business fake apply logs must prove the '$requiredArgument' migration preflight or dotnet argument."
         }
     }
-    if (($apply.Output + $applyLogText).Contains($secretMarker, [StringComparison]::Ordinal)) {
-        throw 'Business apply diagnostics or command logs leaked a sensitive connection value.'
+    if ($apply.Output.Contains($secretMarker, [StringComparison]::Ordinal)) {
+        throw "Business apply diagnostics leaked a sensitive connection value. Output: $($apply.Output)"
+    }
+    if ($applyLogText.Contains($secretMarker, [StringComparison]::Ordinal)) {
+        $leakingLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
+            Where-Object { $_.FullName.Contains($applyReleaseId, [StringComparison]::Ordinal) } |
+            Where-Object {
+                $logContent = Get-Content -LiteralPath $_.FullName -Raw
+                -not [string]::IsNullOrEmpty($logContent) -and $logContent.Contains($secretMarker, [StringComparison]::Ordinal)
+            })
+        throw "Business apply command logs leaked a sensitive connection value: $(@($leakingLogs.FullName) -join ', ')."
     }
 
     $missingDatabase = Invoke-MigratorProbe -Environment @{
