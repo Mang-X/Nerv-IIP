@@ -67,6 +67,19 @@ public sealed class QualityOpenApiTests
         AssertQueryParameter(scrapReasonOperation, "skip", required: false);
         AssertQueryParameter(scrapReasonOperation, "take", required: false);
 
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/inspection-records",
+            hasKeyword: false);
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/inspection-tasks",
+            hasKeyword: true);
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/spc/control-charts",
+            hasKeyword: true);
+
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
         AssertRequestSchemaDeprecatedProperty(
             document,
@@ -143,6 +156,27 @@ public sealed class QualityOpenApiTests
             && requiredProperty.GetBoolean();
         Assert.Equal(required, actualRequired);
     }
+
+    private static void AssertListQueryContract(JsonDocument document, string route, bool hasKeyword)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty("get");
+        AssertQueryParameter(operation, "organizationId", required: true);
+        AssertQueryParameter(operation, "environmentId", required: true);
+        AssertQueryParameter(operation, "skip", required: false);
+        AssertQueryParameter(operation, "take", required: false);
+        if (hasKeyword)
+        {
+            AssertQueryParameter(operation, "keyword", required: false);
+        }
+
+        Assert.Equal(0, GetQueryParameter(operation, "skip").GetProperty("schema").GetProperty("default").GetInt32());
+        Assert.Equal(100, GetQueryParameter(operation, "take").GetProperty("schema").GetProperty("default").GetInt32());
+    }
+
+    private static JsonElement GetQueryParameter(JsonElement operation, string name) =>
+        operation.GetProperty("parameters")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == name);
 
     private static async Task<JsonDocument> GetOpenApiDocumentAsync(HttpClient client)
     {
