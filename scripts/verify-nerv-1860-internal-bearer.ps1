@@ -285,7 +285,7 @@ try {
         throw "MBOM list did not contain exactly one $bomCode/$bomRevision record; HTTP $($list.StatusCode)."
     }
 
-    $detailUri = "$businessGatewayBaseUrl/api/business-console/v1/engineering/manufacturing-boms/$bomCode/$bomRevision?organizationId=$organizationId&environmentId=$environmentId"
+    $detailUri = "$businessGatewayBaseUrl/api/business-console/v1/engineering/manufacturing-boms/$bomCode/${bomRevision}?organizationId=$organizationId&environmentId=$environmentId"
     $detail = Invoke-Nerv1860Http -Method 'GET' -Uri $detailUri -Headers $userHeaders
     Write-Nerv1860ResponseSource -Path (Join-Path $httpSourceDirectory 'mbom-detail.json') -Response $detail
     $materialLine = @($detail.Json.data.materialLines | Where-Object { $_.isPhantom -ne $true }) | Select-Object -First 1
@@ -305,7 +305,7 @@ try {
         throw "Inventory public chain failed: availability=$($availability.StatusCode), movements=$($movements.StatusCode)."
     }
 
-    $directUri = "$productEngineeringBaseUrl/api/business/v1/engineering/manufacturing-boms/$bomCode/$bomRevision?organizationId=$organizationId&environmentId=$environmentId"
+    $directUri = "$productEngineeringBaseUrl/api/business/v1/engineering/manufacturing-boms/$bomCode/${bomRevision}?organizationId=$organizationId&environmentId=$environmentId"
     $wrongToken = Invoke-Nerv1860Http -Method 'GET' -Uri $directUri -Headers @{ Authorization = 'Bearer deliberately-wrong-nerv-1860' }
     $correctToken = Invoke-Nerv1860Http -Method 'GET' -Uri $directUri -Headers @{ Authorization = "Bearer $internalToken" }
     Write-Nerv1860ResponseSource -Path (Join-Path $httpSourceDirectory 'wrong-token.json') -Response $wrongToken
