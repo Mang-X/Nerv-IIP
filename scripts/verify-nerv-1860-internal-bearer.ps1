@@ -19,7 +19,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidatePattern('^nerv-[a-z0-9]+-[a-z0-9]+$')]
+    [ValidatePattern('^nerv-[a-f0-9]{4}-[a-f0-9]{6}$')]
     [string] $SessionId,
 
     [int] $StartupTimeoutSeconds = 300,
