@@ -160,12 +160,18 @@ printf '%s\n' "$*" >> "$NERV_PDA_FAKE_AVDMANAGER_CAPTURE"
                 throw "pda-avd create did not select $expectedPackage. Output: $createOutput; captured: $capturedArguments"
             }
 
+            [IO.File]::WriteAllText($adbCapture, '', [Text.UTF8Encoding]::new($false))
             $scanResult = Invoke-PwshScript -ScriptPath (Join-Path $pdaScripts 'pda-adb-scan.ps1') -Arguments @('-Code', 'NERV-1973', '-Serial', 'emulator-5554') -Name 'pda-adb-scan-tool-resolution' -WorkingDirectory $repoRoot -TimeoutSeconds 30
             $scanOutput = [IO.File]::ReadAllText($scanResult.StdoutPath)
-            $scanAdbCapture = [IO.File]::ReadAllText($adbCapture)
-            if (-not $scanAdbCapture.Contains('PDA_ADB_MARKER', [StringComparison]::Ordinal) -or
+            $scanAdbInvocations = @([IO.File]::ReadAllLines($adbCapture))
+            $expectedScanAdbInvocations = @(
+                'PDA_ADB_MARKER -s emulator-5554 shell input text NERV-1973'
+                'PDA_ADB_MARKER -s emulator-5554 shell input keyevent 66'
+            )
+            if ($scanAdbInvocations.Count -ne $expectedScanAdbInvocations.Count -or
+                [string]::Join("`n", $scanAdbInvocations) -cne [string]::Join("`n", $expectedScanAdbInvocations) -or
                 -not $scanOutput.Contains("已向 emulator-5554 注入码值 'NERV-1973'", [StringComparison]::Ordinal)) {
-                throw "pda-adb-scan must invoke the platform-native adb name and report success. Output: $scanOutput; adb: $scanAdbCapture"
+                throw "pda-adb-scan must invoke exactly the text and Enter adb commands and report success. Output: $scanOutput; adb: $($scanAdbInvocations -join '; ')"
             }
         }
     }
