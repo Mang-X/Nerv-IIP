@@ -463,16 +463,12 @@ describe('MES downtime reason read face', () => {
     filters.skip = 20
     const wrapper = mountPage()
 
-    expect(wrapper.get('[data-testid="downtime-window"]').text()).toBe(
-      '2026-07-31~2026-08-30',
-    )
+    expect(wrapper.get('[data-testid="downtime-window"]').text()).toBe('2026-07-31~2026-08-30')
     await wrapper.get('[data-testid="downtime-window"]').trigger('click')
 
     expect(filters.windowStartUtc).toBe(new Date(2026, 7, 1).toISOString())
     expect(filters.windowEndUtc).toBe(new Date(2026, 7, 16).toISOString())
-    expect(wrapper.get('[data-testid="downtime-window"]').text()).toBe(
-      '2026-08-01~2026-08-15',
-    )
+    expect(wrapper.get('[data-testid="downtime-window"]').text()).toBe('2026-08-01~2026-08-15')
     expect(filters.skip).toBe(0)
   })
 
