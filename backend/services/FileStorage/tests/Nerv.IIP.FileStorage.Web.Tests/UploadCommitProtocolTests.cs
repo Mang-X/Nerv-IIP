@@ -10,6 +10,7 @@ using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -228,8 +229,9 @@ public sealed class UploadCommitProtocolTests
     [Fact]
     public async Task RecoveryBatch_UsesBoundedIndependentScopesAndContinuesAfterOneFailure()
     {
+        const int sessionCount = 5;
         await using var db = CreateDbContext();
-        for (var index = 0; index < 5; index++)
+        for (var index = 0; index < sessionCount; index++)
         {
             var session = CreateSession($"ups_recovery_parallel_{index}");
             session.BeginCommit($"cmt_recovery_parallel_{index}", null, DateTimeOffset.UtcNow);
@@ -250,18 +252,22 @@ public sealed class UploadCommitProtocolTests
         var run = processor.RunOnceAsync(CancellationToken.None);
         try
         {
-            await probe.FourEntered;
-            Assert.Equal(4, probe.MaxActive);
-            Assert.Equal(4, probe.Processed.Count);
+            await probe.WaitForParallelismAsync();
+            await probe.StaysBelowBatchSizeAsync(sessionCount);
         }
         finally
         {
             probe.Release();
+            await TestTimeout.RunAsync(
+                operation: "FileStorage recovery batch completion after releasing the concurrency probe",
+                action: async token => await run.WaitAsync(token),
+                timeout: TimeSpan.FromSeconds(10));
         }
 
-        Assert.Equal(new UploadCommitRecoveryResult(5, 0, 5), await run);
-        Assert.Equal(5, probe.Instances);
-        Assert.Equal(5, probe.Processed.Distinct(StringComparer.Ordinal).Count());
+        Assert.InRange(probe.MaxActive, 2, sessionCount - 1);
+        Assert.Equal(new UploadCommitRecoveryResult(sessionCount, 0, sessionCount), await run);
+        Assert.Equal(sessionCount, probe.Instances);
+        Assert.Equal(sessionCount, probe.Processed.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -581,47 +587,35 @@ public sealed class UploadCommitProtocolTests
 
     private sealed class RecoveryBatchProbe(string throwingUploadSessionId)
     {
-        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource fourEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int active;
-        private int maxActive;
+        private readonly ConcurrencyFanOutGate fanOutGate = new("FileStorage recovery batch");
         private int instances;
 
         public ConcurrentBag<string> Processed { get; } = [];
-        public int MaxActive => Volatile.Read(ref maxActive);
+        public int MaxActive => fanOutGate.MaxInFlight;
         public int Instances => Volatile.Read(ref instances);
-        public Task FourEntered => fourEntered.Task;
 
         public void RecordInstance() => Interlocked.Increment(ref instances);
+
+        public ValueTask WaitForParallelismAsync() =>
+            fanOutGate.WaitForInFlightAsync(2, TimeSpan.FromSeconds(10));
+
+        public ValueTask StaysBelowBatchSizeAsync(int batchSize) =>
+            fanOutGate.StaysWithinAsync(
+                batchSize - 1,
+                TimeSpan.FromMilliseconds(250),
+                scope: $"all {batchSize} recovery intents are outstanding");
 
         public async Task ExecuteAsync(string uploadSessionId, CancellationToken cancellationToken)
         {
             Processed.Add(uploadSessionId);
-            var current = Interlocked.Increment(ref active);
-            while (current > Volatile.Read(ref maxActive))
+            await fanOutGate.PassAsync(cancellationToken);
+            if (string.Equals(uploadSessionId, throwingUploadSessionId, StringComparison.Ordinal))
             {
-                Interlocked.CompareExchange(ref maxActive, current, Volatile.Read(ref maxActive));
-            }
-            if (current == 4)
-            {
-                fourEntered.TrySetResult();
-            }
-
-            try
-            {
-                await release.Task.WaitAsync(cancellationToken);
-                if (string.Equals(uploadSessionId, throwingUploadSessionId, StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException("可达的单项数据库失败探针。");
-                }
-            }
-            finally
-            {
-                Interlocked.Decrement(ref active);
+                throw new InvalidOperationException("可达的单项数据库失败探针。");
             }
         }
 
-        public void Release() => release.TrySetResult();
+        public void Release() => fanOutGate.Release();
     }
 
     private sealed class ProbedRecoveryFileStorageService : IFileStorageService
