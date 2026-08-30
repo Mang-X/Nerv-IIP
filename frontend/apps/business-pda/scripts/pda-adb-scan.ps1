@@ -48,26 +48,30 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 
 # 显式 ANDROID_HOME/ANDROID_SDK_ROOT 优先；未设时自动探测约定安装位置，零知识可跑。
 function Resolve-PdaAndroidHome {
-    $candidates = @(
-        $env:ANDROID_HOME
-        $env:ANDROID_SDK_ROOT
-        (Join-Path $env:USERPROFILE 'android-sdk')
-        (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
-    )
+    $adbName = $IsWindows ? 'adb.exe' : 'adb'
+    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    if ($IsWindows) {
+        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $candidates += Join-Path $env:USERPROFILE 'android-sdk' }
+        if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $candidates += Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
+    }
+    else {
+        $candidates += Join-Path $HOME 'Library/Android/sdk'
+        $candidates += Join-Path $HOME 'Android/Sdk'
+    }
     foreach ($candidate in $candidates) {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path (Join-Path $candidate 'platform-tools\adb.exe')) { return $candidate }
+        if (Test-Path -LiteralPath (Join-Path $candidate 'platform-tools' $adbName) -PathType Leaf) { return $candidate }
     }
     return $null
 }
 
 $resolvedSdk = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($resolvedSdk)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 未设，且约定位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk）均无 platform-tools\adb.exe。安装口径见 docs/architecture/mobile-pda-deployment.md。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md。'
     exit 1
 }
 $env:ANDROID_HOME = $resolvedSdk
-$adbExe = Join-Path $env:ANDROID_HOME 'platform-tools' 'adb.exe'
+$adbExe = Join-Path $env:ANDROID_HOME 'platform-tools' ($IsWindows ? 'adb.exe' : 'adb')
 
 # --- 码值校验：adb shell input text 对特殊字符没有可靠的跨版本转义通道——
 #     空格须编码为 %s；& | ( ) < > ; * ~ ' " \ $ 会被设备端 shell 解析（破坏码值甚至注入命令）；

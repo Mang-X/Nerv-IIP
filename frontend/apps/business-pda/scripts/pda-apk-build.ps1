@@ -74,33 +74,37 @@ $androidDir = Join-Path $appDir 'android'
 #     用户目录但不设全局 env 时（本仓开发机现状），新终端/新会话零知识也能直接跑；
 #     探测不到才失败，不静默降级）。
 function Resolve-PdaAndroidHome {
-    $candidates = @(
-        $env:ANDROID_HOME
-        $env:ANDROID_SDK_ROOT
-        (Join-Path $env:USERPROFILE 'android-sdk')
-        (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
-    )
+    $adbName = $IsWindows ? 'adb.exe' : 'adb'
+    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    if ($IsWindows) {
+        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $candidates += Join-Path $env:USERPROFILE 'android-sdk' }
+        if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $candidates += Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
+    }
+    else {
+        $candidates += Join-Path $HOME 'Library/Android/sdk'
+        $candidates += Join-Path $HOME 'Android/Sdk'
+    }
     foreach ($candidate in $candidates) {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path (Join-Path $candidate 'platform-tools\adb.exe')) { return $candidate }
+        if (Test-Path -LiteralPath (Join-Path $candidate 'platform-tools' $adbName) -PathType Leaf) { return $candidate }
     }
     return $null
 }
 
 $androidHome = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($androidHome)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 未设，且约定位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk）均无 platform-tools\adb.exe。安装口径见 docs/architecture/mobile-pda-deployment.md（sdkmanager 装 platform-tools/build-tools/platforms/emulator/系统镜像）。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md（sdkmanager 装 platform-tools/build-tools/platforms/emulator/系统镜像）。'
     exit 1
 }
 $env:ANDROID_HOME = $androidHome
 Write-Diagnostic "ANDROID_HOME=$androidHome"
 
-# JDK 解析：显式 JAVA_HOME 若满足 21+ 直接用；不满足（未设/缺 java.exe/主版本<21）则
-# 探测约定位置（%USERPROFILE%\.jdks、Eclipse Adoptium 安装目录）里主版本最高的 21+ JDK。
+# JDK 解析：显式 JAVA_HOME 若满足 21+ 直接用；否则从 PATH 与当前平台约定位置探测。
 # Capacitor 8 的 android 库 sourceCompatibility=21，JDK 17 会报「无效的源发行版：21」。
 function Get-PdaJdkMajor([string] $jdkHome) {
+    $javaName = $IsWindows ? 'java.exe' : 'java'
     $releaseFile = Join-Path $jdkHome 'release'
-    if (-not (Test-Path (Join-Path $jdkHome 'bin\java.exe')) -or -not (Test-Path $releaseFile)) { return 0 }
+    if (-not (Test-Path -LiteralPath (Join-Path $jdkHome 'bin' $javaName) -PathType Leaf) -or -not (Test-Path -LiteralPath $releaseFile -PathType Leaf)) { return 0 }
     $m = (Select-String -LiteralPath $releaseFile -Pattern '^JAVA_VERSION="([^"]+)"').Matches
     if ($m.Count -eq 0) { return 0 }
     return [int] (($m[0].Groups[1].Value) -split '\.')[0]
@@ -114,7 +118,24 @@ function Resolve-PdaJavaHome21 {
     }
     $best = $null
     $bestMajor = 0
-    foreach ($root in @((Join-Path $env:USERPROFILE '.jdks'), 'C:\Program Files\Eclipse Adoptium', 'C:\Program Files\Java')) {
+    $roots = @()
+    if (-not [string]::IsNullOrWhiteSpace($HOME)) { $roots += Join-Path $HOME '.jdks' }
+    if ($IsWindows) {
+        $roots += 'C:\Program Files\Eclipse Adoptium'
+        $roots += 'C:\Program Files\Java'
+    }
+    else {
+        $javaCommand = Get-Command 'java' -ErrorAction SilentlyContinue
+        if ($javaCommand -and (Test-Path -LiteralPath $javaCommand.Source -PathType Leaf)) {
+            $javaFile = Get-Item -LiteralPath $javaCommand.Source
+            $resolvedJavaFile = $javaFile.ResolveLinkTarget($true)
+            $javaPath = $null -eq $resolvedJavaFile ? $javaFile.FullName : $resolvedJavaFile.FullName
+            $commandJdkHome = Split-Path -Parent (Split-Path -Parent $javaPath)
+            $commandMajor = Get-PdaJdkMajor $commandJdkHome
+            if ($commandMajor -ge 21 -and $commandMajor -le 24) { return $commandJdkHome }
+        }
+    }
+    foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
         foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory)) {
             $major = Get-PdaJdkMajor $dir.FullName
@@ -128,7 +149,7 @@ function Resolve-PdaJavaHome21 {
 
 $resolvedJavaHome = Resolve-PdaJavaHome21
 if ([string]::IsNullOrWhiteSpace($resolvedJavaHome)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 JDK 21+：JAVA_HOME 未设或版本不足，且约定位置（%USERPROFILE%\.jdks、Program Files\Eclipse Adoptium/Java）未探测到 21+ JDK。Capacitor 8 的 android 库 sourceCompatibility=21（JDK 17 会报「无效的源发行版：21」）。安装口径见 docs/architecture/mobile-pda-deployment.md。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少兼容 JDK：JAVA_HOME、PATH 中的 java 与当前平台约定位置均未探测到 JDK 21–24。Capacitor 8 的 android 库 sourceCompatibility=21。安装口径见 docs/architecture/mobile-pda-deployment.md。'
     exit 1
 }
 $env:JAVA_HOME = $resolvedJavaHome
