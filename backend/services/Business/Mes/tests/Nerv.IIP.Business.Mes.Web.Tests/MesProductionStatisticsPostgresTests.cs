@@ -1,3 +1,4 @@
+using FluentValidation.TestHelper;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
@@ -22,34 +23,84 @@ public sealed class MesProductionStatisticsPostgresTests
 
         AddReport(db, "org-001", "env-dev", "A", "SKU-A", "WC-A", "EARLY", windowStart.AddHours(1), 8m, 1m, 1m);
         AddReport(db, "org-001", "env-dev", "B", "SKU-B", "WC-B", "EARLY", windowStart.AddHours(2), 3m, 1m, 0m);
+        AddReportWithSnapshot(
+            db,
+            "org-001",
+            "env-dev",
+            "C",
+            "SKU-C",
+            windowStart.AddHours(1).AddMinutes(30),
+            20m,
+            5m,
+            5m,
+            ProductionReportOeeDimensionSnapshot.Resolved(
+                "DEV-C",
+                "WC-Z",
+                "SITE-LA",
+                "WS-02",
+                "LINE-02",
+                "America/Los_Angeles",
+                "LATE",
+                new TimeOnly(18, 0),
+                new TimeOnly(20, 0),
+                false,
+                120,
+                0));
+        AddReportWithSnapshot(
+            db,
+            "org-001",
+            "env-dev",
+            "D",
+            "SKU-D",
+            windowStart.AddHours(7),
+            1m,
+            0m,
+            1m,
+            ProductionReportOeeDimensionSnapshot.Resolved(
+                "DEV-D",
+                "WC-C",
+                "SITE-SH",
+                "WS-03",
+                "LINE-03",
+                "Asia/Shanghai",
+                "LATE",
+                new TimeOnly(14, 0),
+                new TimeOnly(18, 0),
+                false,
+                240,
+                0));
         AddReport(db, "org-other", "env-dev", "A", "SKU-A", "WC-A", "EARLY", windowStart.AddHours(1), 900m, 0m, 0m);
         AddReport(db, "org-001", "env-other", "A", "SKU-A", "WC-A", "EARLY", windowStart.AddHours(1), 800m, 0m, 0m);
         await db.SaveChangesAsync();
 
         var handler = new QueryProductionStatisticsQueryHandler(db);
-        var day = Assert.Single((await Query(handler, ProductionStatisticsDimension.Day, windowStart, windowEnd)).Items);
+        var days = await Query(handler, ProductionStatisticsDimension.Day, windowStart, windowEnd);
+        Assert.Equal([new DateOnly(2026, 8, 28), new DateOnly(2026, 8, 29)], days.Items.Select(x => x.BusinessDate));
+        Assert.Equal([30m, 16m], days.Items.Select(x => x.TotalOutputQuantity));
+        var day = days.Items.Single(x => x.BusinessDate == new DateOnly(2026, 8, 29));
         Assert.Equal(new DateOnly(2026, 8, 29), day.BusinessDate);
-        Assert.Equal(11m, day.GoodQuantity);
+        Assert.Equal(12m, day.GoodQuantity);
         Assert.Equal(2m, day.ScrapQuantity);
-        Assert.Equal(1m, day.ReworkQuantity);
-        Assert.Equal(14m, day.TotalOutputQuantity);
-        Assert.Equal(0.785714m, day.GoodRate);
-        Assert.Equal(0.142857m, day.ScrapRate);
-        Assert.Equal(0.071429m, day.ReworkRate);
+        Assert.Equal(2m, day.ReworkQuantity);
+        Assert.Equal(16m, day.TotalOutputQuantity);
+        Assert.Equal(0.75m, day.GoodRate);
+        Assert.Equal(0.125m, day.ScrapRate);
+        Assert.Equal(0.125m, day.ReworkRate);
 
-        var shift = Assert.Single((await Query(handler, ProductionStatisticsDimension.Shift, windowStart, windowEnd)).Items);
-        Assert.Equal("EARLY", shift.ShiftCode);
-        Assert.Equal(new DateOnly(2026, 8, 29), shift.BusinessDate);
-        Assert.Equal(14m, shift.TotalOutputQuantity);
+        var shifts = await Query(handler, ProductionStatisticsDimension.Shift, windowStart, windowEnd);
+        Assert.Equal(
+            ["2026-08-28/LATE", "2026-08-29/EARLY", "2026-08-29/LATE"],
+            shifts.Items.Select(x => x.DimensionValue));
+        Assert.Equal([30m, 14m, 2m], shifts.Items.Select(x => x.TotalOutputQuantity));
 
         var workCenters = await Query(handler, ProductionStatisticsDimension.WorkCenter, windowStart, windowEnd);
-        Assert.Equal(2, workCenters.TotalCount);
-        Assert.Equal(["WC-A", "WC-B"], workCenters.Items.Select(x => x.WorkCenterId));
-        Assert.Equal([10m, 4m], workCenters.Items.Select(x => x.TotalOutputQuantity));
+        Assert.Equal(4, workCenters.TotalCount);
+        Assert.Equal(["WC-A", "WC-B", "WC-C", "WC-Z"], workCenters.Items.Select(x => x.WorkCenterId));
+        Assert.Equal([10m, 4m, 2m, 30m], workCenters.Items.Select(x => x.TotalOutputQuantity));
 
         var skus = await Query(handler, ProductionStatisticsDimension.Sku, windowStart, windowEnd);
-        Assert.Equal(["SKU-A", "SKU-B"], skus.Items.Select(x => x.SkuId));
-        Assert.Equal([10m, 4m], skus.Items.Select(x => x.TotalOutputQuantity));
+        Assert.Equal(["SKU-A", "SKU-B", "SKU-C", "SKU-D"], skus.Items.Select(x => x.SkuId));
+        Assert.Equal([10m, 4m, 30m, 2m], skus.Items.Select(x => x.TotalOutputQuantity));
 
         var filtered = await handler.Handle(new QueryProductionStatisticsQuery(
             "org-001",
@@ -63,18 +114,32 @@ public sealed class MesProductionStatisticsPostgresTests
             SkuId: "SKU-A"), CancellationToken.None);
         Assert.Equal("WC-A", Assert.Single(filtered.Items).WorkCenterId);
 
+        var firstPage = await handler.Handle(new QueryProductionStatisticsQuery(
+            "org-001",
+            "env-dev",
+            ProductionStatisticsDimension.WorkCenter,
+            windowStart,
+            windowEnd,
+            Take: 2), CancellationToken.None);
         var secondPage = await handler.Handle(new QueryProductionStatisticsQuery(
             "org-001",
             "env-dev",
             ProductionStatisticsDimension.WorkCenter,
             windowStart,
             windowEnd,
-            Skip: 1,
-            Take: 1), CancellationToken.None);
-        Assert.Equal(2, secondPage.TotalCount);
-        Assert.Equal(1, secondPage.Skip);
-        Assert.Equal(1, secondPage.Take);
-        Assert.Equal("WC-B", Assert.Single(secondPage.Items).WorkCenterId);
+            Skip: 2,
+            Take: 2), CancellationToken.None);
+        Assert.Equal(4, firstPage.TotalCount);
+        Assert.Equal(4, secondPage.TotalCount);
+        Assert.Equal(2, firstPage.Items.Count);
+        Assert.Equal(2, secondPage.Items.Count);
+        Assert.Equal(0, firstPage.Skip);
+        Assert.Equal(2, secondPage.Skip);
+        Assert.Equal(2, firstPage.Take);
+        Assert.Equal(2, secondPage.Take);
+        Assert.Equal(
+            workCenters.Items.Select(x => x.WorkCenterId),
+            firstPage.Items.Concat(secondPage.Items).Select(x => x.WorkCenterId));
     }
 
     [MesRealPostgresFact]
@@ -111,7 +176,7 @@ public sealed class MesProductionStatisticsPostgresTests
         db.ProductionReports.Add(ProductionReport.Reverse(
             original,
             "PR-NIGHT-REV",
-            DateTimeOffset.Parse("2026-08-30T08:30:00Z"),
+            DateTimeOffset.Parse("2026-08-30T16:30:00Z"),
             "incorrect report",
             "operator-001"));
         await db.SaveChangesAsync();
@@ -131,11 +196,19 @@ public sealed class MesProductionStatisticsPostgresTests
         Assert.Equal(ProductionStatisticsResolutionStatus.Degraded, bucket.ResolutionStatus);
         Assert.Contains(ProductionStatisticsDegradedReason.NonPositiveTotalOutput, bucket.DegradedReasons);
 
+        var shiftBucket = Assert.Single((await Query(
+            handler,
+            ProductionStatisticsDimension.Shift,
+            originalAtUtc.AddMinutes(-30),
+            originalAtUtc.AddMinutes(30))).Items);
+        Assert.Equal("2026-08-29/NIGHT", shiftBucket.DimensionValue);
+        Assert.Equal(0m, shiftBucket.TotalOutputQuantity);
+
         var reversalWindow = await Query(
             handler,
             ProductionStatisticsDimension.Day,
-            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
-            DateTimeOffset.Parse("2026-08-30T09:00:00Z"));
+            DateTimeOffset.Parse("2026-08-30T16:00:00Z"),
+            DateTimeOffset.Parse("2026-08-30T17:00:00Z"));
         Assert.Empty(reversalWindow.Items);
     }
 
@@ -278,4 +351,31 @@ public sealed class MesProductionStatisticsPostgresTests
         db.ProductionReports.Add(report);
         return report;
     }
+}
+
+public sealed class QueryProductionStatisticsQueryValidatorTests
+{
+    [Fact]
+    public void Rejects_non_increasing_windows_and_take_above_limit()
+    {
+        var validator = new QueryProductionStatisticsQueryValidator();
+        var windowStart = DateTimeOffset.Parse("2026-08-29T00:00:00Z");
+
+        validator.TestValidate(Query(windowStart, windowStart))
+            .ShouldHaveValidationErrorFor(x => x.WindowEndUtc);
+        validator.TestValidate(Query(windowStart, windowStart.AddTicks(-1)))
+            .ShouldHaveValidationErrorFor(x => x.WindowEndUtc);
+        validator.TestValidate(Query(windowStart, windowStart.AddHours(1)) with { Take = 501 })
+            .ShouldHaveValidationErrorFor(x => x.Take);
+    }
+
+    private static QueryProductionStatisticsQuery Query(
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd) =>
+        new(
+            "org-001",
+            "env-dev",
+            ProductionStatisticsDimension.Day,
+            windowStart,
+            windowEnd);
 }
