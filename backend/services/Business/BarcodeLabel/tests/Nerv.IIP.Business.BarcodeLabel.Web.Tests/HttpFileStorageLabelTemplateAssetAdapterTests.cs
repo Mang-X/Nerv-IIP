@@ -385,6 +385,28 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
             TimeSpan.FromSeconds(5));
     }
 
+    [Fact]
+    public async Task GetVerifiedAsync_body_read_timeout_is_rejected_without_retrying()
+    {
+        var bytes = Encoding.UTF8.GetBytes(TemplateJson);
+        var fileStorage = new RecordingFileStorageClient(CreateMetadata(bytes));
+        var stream = new WaitForReadCancellationStream();
+        var download = new RecordingHttpMessageHandler(_ =>
+            Response(HttpStatusCode.OK, new StreamContent(stream)));
+        using var adapter = CreateAdapter(fileStorage, download, TimeSpan.FromMilliseconds(100));
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => TestTimeout.RunAsync(
+            "FileStorage adapter response body timeout",
+            async testCancellationToken => await adapter
+                .GetVerifiedAsync(CreateReference(), CancellationToken.None)
+                .WaitAsync(testCancellationToken),
+            TimeSpan.FromSeconds(5)).AsTask());
+
+        Assert.Equal("FileStorage template download timed out.", exception.Message);
+        Assert.Equal(1, fileStorage.GrantCalls);
+        Assert.Equal(1, download.Calls);
+    }
+
     [Theory]
     [MemberData(nameof(DownloadStreamFailures))]
     public async Task GetVerifiedAsync_body_read_failure_does_not_leak_partial_content_or_transport_diagnostics(
@@ -422,7 +444,12 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            adapter.GetVerifiedAsync(CreateReference(), cancellation.Token));
+            TestTimeout.RunAsync(
+                "FileStorage adapter caller cancellation",
+                async testCancellationToken => await adapter
+                    .GetVerifiedAsync(CreateReference(), cancellation.Token)
+                    .WaitAsync(testCancellationToken),
+                TimeSpan.FromSeconds(5)).AsTask());
 
         Assert.Equal(1, download.Calls);
     }
@@ -773,6 +800,17 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
             return Position < Length
                 ? base.ReadAsync(buffer, cancellationToken)
                 : ValueTask.FromException<int>(createFailure());
+        }
+    }
+
+    private sealed class WaitForReadCancellationStream : MemoryStream
+    {
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
+            throw new InvalidOperationException("unreachable");
         }
     }
 }
