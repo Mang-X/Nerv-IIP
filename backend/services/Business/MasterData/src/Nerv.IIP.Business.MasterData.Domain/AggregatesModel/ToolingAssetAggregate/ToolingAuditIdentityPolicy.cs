@@ -1,5 +1,6 @@
 namespace Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
+using System.Data.Common;
 using System.Text.Json;
 
 public static class ToolingAuditIdentityPolicy
@@ -16,6 +17,27 @@ public static class ToolingAuditIdentityPolicy
         "connection-string",
         "connectionstring",
     ];
+    private static readonly HashSet<string> ConnectionEndpointKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "host",
+        "server",
+        "data source",
+        "address",
+        "addr",
+        "network address",
+    };
+    private static readonly HashSet<string> ConnectionContextKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "database",
+        "initial catalog",
+        "username",
+        "user id",
+        "uid",
+        "port",
+        "integrated security",
+        "trusted_connection",
+        "ssl mode",
+    };
 
     public static bool IsValidActor(
         string? value,
@@ -61,9 +83,27 @@ public static class ToolingAuditIdentityPolicy
         IReadOnlyCollection<string>? forbiddenCredentials) =>
         SensitiveMarkers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase)) ||
         ContainsCompactJwt(value) ||
+        ContainsConnectionString(value) ||
         (forbiddenCredentials?.Any(credential =>
             !string.IsNullOrEmpty(credential) &&
             value.Contains(credential, StringComparison.Ordinal)) == true);
+
+    private static bool ContainsConnectionString(string value)
+    {
+        if (!value.Contains(';') || !value.Contains('=')) return false;
+
+        try
+        {
+            var builder = new DbConnectionStringBuilder { ConnectionString = value };
+            var keys = builder.Keys.Cast<string>().ToArray();
+            return keys.Any(ConnectionEndpointKeys.Contains) &&
+                keys.Any(ConnectionContextKeys.Contains);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     private static bool ContainsCompactJwt(string value)
     {

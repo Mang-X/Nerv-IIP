@@ -157,6 +157,7 @@ public sealed class ToolingAuditHttpTests
     [InlineData("Bearer SENTINEL-TOKEN")]
     [InlineData("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl")]
     [InlineData("tooling-audit-test-token")]
+    [InlineData("Host=db;Username=svc;Database=prod")]
     public async Task Sensitive_status_reason_fails_before_business_change_and_audit_append(string reason)
     {
         await using var factory = new ToolingAuditHttpTestFactory();
