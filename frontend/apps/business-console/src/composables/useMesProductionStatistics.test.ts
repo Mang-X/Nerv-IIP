@@ -92,7 +92,7 @@ describe('MES production statistics composable', () => {
       },
     })
     expect(report.items.value[0]).toMatchObject({
-      dimensionValue: 'SHIFT-DAY',
+      dimensionValueLabel: 'SHIFT-DAY',
       totalOutputQuantity: 120,
     })
     expect(report.total.value).toBe(21)
@@ -114,6 +114,32 @@ describe('MES production statistics composable', () => {
 
     expect(report.filters.organizationId).toBe('org-late')
     expect(report.filters.environmentId).toBe('env-late')
+  })
+
+  it('surfaces an unsupported producer identifier as the shared report error', () => {
+    state.data = {
+      success: true,
+      data: {
+        items: [
+          {
+            dimension: 'workCenter',
+            dimensionValue: 'work-center-internal-42',
+            workCenterId: 'work-center-internal-42',
+            totalOutputQuantity: 120,
+          },
+        ],
+        totalCount: 1,
+      },
+    }
+
+    const report = useMesProductionStatistics({
+      windowStartUtc: '2026-08-01T00:00:00.000Z',
+      windowEndUtc: '2026-08-08T00:00:00.000Z',
+    })
+
+    expect(report.items.value).toEqual([])
+    expect(report.error.value).toEqual(new Error('工作中心分组缺少受支持的业务编码。'))
+    expect(report.state.value).toBe('error')
   })
 
   it('reads every server page for export without silently returning a partial file', async () => {

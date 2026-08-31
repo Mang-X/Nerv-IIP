@@ -58,14 +58,6 @@ function csvCell(value: string | number | null | undefined) {
 
 export function createProductionStatisticsCsv(rows: ProductionStatisticsPresentationRow[]): string {
   const body = rows.map((row) => {
-    if (
-      (row.dimension === 'workCenter' || row.dimension === 'sku') &&
-      row.dimensionValueLabel === '—'
-    ) {
-      throw new Error(
-        `${PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension]}分组缺少可导出的业务标识`,
-      )
-    }
     return [
       PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension],
       row.dimensionValueLabel,

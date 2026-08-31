@@ -1,5 +1,4 @@
 import type {
-  BusinessConsoleMesProductionStatisticsBucket,
   BusinessConsoleMesProductionStatisticsDimension,
   BusinessConsoleMesProductionStatisticsRequest,
   BusinessConsoleMesProductionStatisticsResponse,
@@ -17,6 +16,10 @@ import {
   withBusinessContextEnabled,
 } from '@/composables/businessContextBinding'
 import { businessReadState } from './businessReadState'
+import {
+  presentProductionStatisticsRow,
+  type ProductionStatisticsPresentationRow,
+} from '@/features/mes-production-report/productionStatisticsPresentation'
 
 export interface MesProductionStatisticsFilters {
   organizationId: string
@@ -71,8 +74,8 @@ function hasQueryContext(filters: MesProductionStatisticsFilters) {
 export async function loadAllMesProductionStatistics(
   request: Omit<BusinessConsoleMesProductionStatisticsRequest, 'skip' | 'take'>,
   signal?: AbortSignal,
-): Promise<BusinessConsoleMesProductionStatisticsBucket[]> {
-  const rows: BusinessConsoleMesProductionStatisticsBucket[] = []
+): Promise<ProductionStatisticsPresentationRow[]> {
+  const rows: ProductionStatisticsPresentationRow[] = []
   const take = 500
   let totalCount = 0
 
@@ -87,7 +90,7 @@ export async function loadAllMesProductionStatistics(
     if (response.items.length === 0 && rows.length < response.totalCount) {
       throw new Error('生产统计导出在读取全部数据前意外结束。')
     }
-    rows.push(...response.items)
+    rows.push(...response.items.map(presentProductionStatisticsRow))
     totalCount = response.totalCount
   } while (rows.length < totalCount)
 
@@ -125,14 +128,29 @@ export function useMesProductionStatistics(
     const envelope = statisticsQuery.data.value as ProductionStatisticsEnvelope | undefined
     return envelope?.success ? (envelope.data ?? undefined) : undefined
   })
+  const presentation = computed(() => {
+    try {
+      return {
+        items: response.value?.items.map(presentProductionStatisticsRow) ?? [],
+        error: undefined,
+      }
+    } catch (error) {
+      return { items: [], error }
+    }
+  })
+  const error = computed(() => statisticsQuery.error.value ?? presentation.value.error)
+  const state = businessReadState(
+    { data: statisticsQuery.data, error, isLoading: statisticsQuery.isLoading },
+    () => enabled.value,
+  )
 
   return {
     filters,
-    items: computed(() => response.value?.items ?? []),
+    items: computed(() => presentation.value.items),
     total: computed(() => response.value?.totalCount ?? 0),
-    error: statisticsQuery.error,
+    error,
     pending: statisticsQuery.isLoading,
-    state: businessReadState(statisticsQuery, () => enabled.value),
+    state,
     refresh: () =>
       enabled.value
         ? refetchWithBusinessContext(filters, statisticsQuery)

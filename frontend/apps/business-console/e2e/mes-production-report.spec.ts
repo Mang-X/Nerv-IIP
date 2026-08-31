@@ -144,9 +144,27 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
   expect(contents.startsWith('\ufeff聚合维度,维度值,业务日')).toBe(true)
   expect(contents).toContain('工作中心,WC-CNC-01,')
   expect(contents).toContain('工作中心,WC-CNC-22,')
+  await expect(page.getByText('已导出 22 行生产统计', { exact: true })).toBeHidden()
+
+  await page.getByRole('combobox', { name: '统计维度' }).click()
+  await page.getByRole('option', { name: '按物料' }).click()
+  await expect(page.getByText('2 个物料聚合', { exact: true })).toBeVisible()
+  await expect(page.getByText('SKU-HOUSING-01', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('SKU-HOUSING-02', { exact: true }).first()).toBeVisible()
+
+  const skuDownloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出 CSV' }).click()
+  const skuDownload = await skuDownloadPromise
+  const skuCsv = await skuDownload.createReadStream()
+  const skuChunks: Buffer[] = []
+  for await (const chunk of skuCsv) skuChunks.push(Buffer.from(chunk))
+  const skuContents = Buffer.concat(skuChunks).toString('utf8')
+  expect(skuContents).toContain('物料,SKU-HOUSING-01,')
+  expect(skuContents).toContain('物料,SKU-HOUSING-02,')
+  await expect(page.getByText('已导出 2 行生产统计', { exact: true })).toBeVisible()
 
   await page.screenshot({
-    path: testInfo.outputPath('issue-2857-production-daily-page-2.png'),
+    path: testInfo.outputPath('issue-2857-production-daily-sku.png'),
     fullPage: true,
   })
 
@@ -159,6 +177,14 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
   expect(
     statisticsRequests.some(
       (url) => url.searchParams.get('skip') === '0' && url.searchParams.get('take') === '500',
+    ),
+  ).toBe(true)
+  expect(
+    statisticsRequests.some(
+      (url) =>
+        url.searchParams.get('dimension') === 'sku' &&
+        url.searchParams.get('skip') === '0' &&
+        url.searchParams.get('take') === '500',
     ),
   ).toBe(true)
 })
@@ -186,6 +212,27 @@ function productionRows(url: URL) {
         degradedReasons: [],
       }
     })
+  }
+
+  if (url.searchParams.get('dimension') === 'sku') {
+    return ['SKU-HOUSING-01', 'SKU-HOUSING-02'].map((skuId, index) => ({
+      dimension: 'sku',
+      dimensionValue: skuId,
+      businessDate: null,
+      shiftCode: null,
+      workCenterId: null,
+      skuId,
+      goodQuantity: 92 + index,
+      scrapQuantity: 3,
+      reworkQuantity: 5,
+      totalOutputQuantity: 100 + index,
+      goodRate: (92 + index) / (100 + index),
+      scrapRate: 3 / (100 + index),
+      reworkRate: 5 / (100 + index),
+      productionReportCount: 8,
+      resolutionStatus: 'resolved',
+      degradedReasons: [],
+    }))
   }
 
   const windowStart = new Date(url.searchParams.get('windowStartUtc')!)
