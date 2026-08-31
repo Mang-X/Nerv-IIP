@@ -3155,8 +3155,14 @@
       "method": "GET",
       "route": "/api/business/v1/mes/production-statistics",
       "operationId": "queryBusinessMesProductionStatistics",
-      "classification": "deferred",
-      "followUp": "生产日报父能力 #1952 的后续 Gateway 契约子票交付 BusinessGateway facade 与 generated client；#2855 只建立 MES 权威聚合读契约。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMesProductionStatistics"
+      ],
+      "note": "exposed：BusinessGateway 只执行 business.mes.reporting.read 授权、组织/环境连续性与契约代理；时间窗、维度、过滤、分页、数量、比率和降级事实由 MES producer 原样提供。"
     },
     {
       "service": "Mes",

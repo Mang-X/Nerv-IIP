@@ -8,9 +8,9 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessBarcodeLabelLifecycleClientTests
 {
     [Theory]
-    [InlineData("dispatch", 0, "printer-01", null, "/api/business/v1/barcodes/print-batches/batch%20%2F%201/dispatch", "printBatchId", "organizationId", "environmentId", "printerId")]
-    [InlineData("reprint", 7, "printer-02", null, "/api/business/v1/barcodes/print-batches/batch%20%2F%201/items/7/reprint", "printBatchId", "sequenceNo", "organizationId", "environmentId", "printerId")]
-    [InlineData("void", 7, null, "标签损坏", "/api/business/v1/barcodes/print-batches/batch%20%2F%201/items/7/void", "printBatchId", "sequenceNo", "organizationId", "environmentId", "reason")]
+    [InlineData("dispatch", 0, "printer-01", null, "/api/business/v1/barcodes/print-batches/batch%20%2F%201/dispatch", "printBatchId", "printerId")]
+    [InlineData("reprint", 7, "printer-02", null, "/api/business/v1/barcodes/print-batches/batch%20%2F%201/items/7/reprint", "printBatchId", "sequenceNo", "printerId")]
+    [InlineData("void", 7, null, "标签损坏", "/api/business/v1/barcodes/print-batches/batch%20%2F%201/items/7/void", "printBatchId", "sequenceNo", "reason")]
     public async Task Lifecycle_client_posts_the_current_downstream_path_and_exact_body(
         string action,
         int sequenceNo,
@@ -45,13 +45,12 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         Assert.NotNull(captured);
         Assert.Equal(HttpMethod.Post, captured!.Method);
         Assert.Equal(expectedPath, captured.RequestUri!.AbsolutePath);
+        Assert.Equal("?organizationId=org-001&environmentId=env-dev", captured.RequestUri.Query);
         Assert.Equal("Bearer", captured.Headers.Authorization!.Scheme);
         Assert.Equal("internal-token", captured.Headers.Authorization.Parameter);
         using var body = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync());
         Assert.Equal(expectedBodyProperties.Order(), body.RootElement.EnumerateObject().Select(property => property.Name).Order());
         Assert.Equal("batch / 1", body.RootElement.GetProperty("printBatchId").GetString());
-        Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
-        Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
         if (sequenceNo > 0)
         {
             Assert.Equal(sequenceNo, body.RootElement.GetProperty("sequenceNo").GetInt32());

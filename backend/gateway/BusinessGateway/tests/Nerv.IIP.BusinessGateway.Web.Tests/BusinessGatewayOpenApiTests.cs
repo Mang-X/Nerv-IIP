@@ -1101,6 +1101,61 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete", "post", "scopeId");
         AssertOperationId(paths, "/api/business-console/v1/mes/wip", "get", "getBusinessConsoleMesWipSummary");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "get", "listBusinessConsoleMesProductionReports");
+        AssertOperationId(paths, "/api/business-console/v1/mes/production-statistics", "get", "queryBusinessConsoleMesProductionStatistics");
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/production-statistics", "get", "502");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/production-statistics",
+            "get",
+            "organizationId",
+            "environmentId",
+            "dimension",
+            "windowStartUtc",
+            "windowEndUtc",
+            "businessDate",
+            "shiftCode",
+            "workCenterId",
+            "skuId",
+            "skip",
+            "take");
+        AssertQueryParameterEnum(
+            document,
+            paths,
+            "/api/business-console/v1/mes/production-statistics",
+            "dimension",
+            "day",
+            "shift",
+            "workCenter",
+            "sku");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionStatisticsResponse",
+            "organizationId",
+            "environmentId",
+            "dimension",
+            "windowStartUtc",
+            "windowEndUtc",
+            "items",
+            "totalCount",
+            "skip",
+            "take");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionStatisticsBucket",
+            "dimension",
+            "goodQuantity",
+            "scrapQuantity",
+            "reworkQuantity",
+            "totalOutputQuantity",
+            "productionReportCount",
+            "resolutionStatus",
+            "degradedReasons");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleMesProductionStatisticsBucket",
+            "resolutionStatus",
+            "resolved",
+            "degraded");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}", "get", "getBusinessConsoleMesProductionReport");
         AssertNullableDecimalSchemaProperties(
             document,
@@ -2066,6 +2121,31 @@ public sealed class BusinessGatewayOpenApiTests
             $"{path} status query parameter must be an OpenAPI enum, not a free-form string.");
         Assert.Contains(values.EnumerateArray(), value => value.GetString() == "ready");
         Assert.Contains(values.EnumerateArray(), value => value.GetString() == "posted");
+    }
+
+    private static void AssertQueryParameterEnum(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string parameterName,
+        params string[] expectedValues)
+    {
+        var schema = FindQueryParameter(paths, path, "get", parameterName).GetProperty("schema");
+        if (schema.TryGetProperty("allOf", out var allOf))
+        {
+            schema = allOf[0];
+        }
+
+        if (schema.TryGetProperty("$ref", out var reference))
+        {
+            schema = document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(reference.GetString()!.Split('/').Last());
+        }
+
+        var values = schema.GetProperty("enum").EnumerateArray().Select(value => value.GetString()).ToArray();
+        Assert.Equal(expectedValues, values);
     }
 
     private static JsonElement FindSchemaBySuffix(JsonDocument document, string schemaNameSuffix)

@@ -1,5 +1,34 @@
+using FastEndpoints;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
+public sealed record BusinessConsoleDispatchBarcodePrintBatchRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrinterId);
+
+public sealed record BusinessConsoleReprintBarcodeLabelRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: RouteParam] int SequenceNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrinterId);
+
+public sealed record BusinessConsoleVoidBarcodeLabelRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: RouteParam] int SequenceNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
+
+public sealed record BusinessConsoleBarcodePrintLifecycleResponse(string PrintBatchId);
+
+public sealed record BusinessConsoleReprintBarcodeLabelResponse(
+    string PrintBatchId,
+    string Status,
+    string? PrintJobId,
+    string? FailureReason);
 
 public interface IBusinessBarcodeLabelClient
 {
@@ -140,11 +169,11 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/dispatch",
+            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/dispatch?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
             new DownstreamDispatchBarcodePrintBatchRequest(
                 request.PrintBatchId,
-                request.OrganizationId,
-                request.EnvironmentId,
                 request.PrinterId),
             cancellationToken);
 
@@ -155,12 +184,12 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleReprintBarcodeLabelResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/reprint",
+            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/reprint?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
             new DownstreamReprintBarcodeLabelRequest(
                 request.PrintBatchId,
                 request.SequenceNo,
-                request.OrganizationId,
-                request.EnvironmentId,
                 request.PrinterId),
             cancellationToken);
 
@@ -171,12 +200,12 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/void",
+            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/void?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
             new DownstreamVoidBarcodeLabelRequest(
                 request.PrintBatchId,
                 request.SequenceNo,
-                request.OrganizationId,
-                request.EnvironmentId,
                 request.Reason),
             cancellationToken);
 
@@ -241,21 +270,15 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
 
     private sealed record DownstreamDispatchBarcodePrintBatchRequest(
         string PrintBatchId,
-        string OrganizationId,
-        string EnvironmentId,
         string PrinterId);
 
     private sealed record DownstreamReprintBarcodeLabelRequest(
         string PrintBatchId,
         int SequenceNo,
-        string OrganizationId,
-        string EnvironmentId,
         string PrinterId);
 
     private sealed record DownstreamVoidBarcodeLabelRequest(
         string PrintBatchId,
         int SequenceNo,
-        string OrganizationId,
-        string EnvironmentId,
         string Reason);
 }

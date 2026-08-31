@@ -97,13 +97,27 @@ public sealed record CreateLabelPrintBatchRequest(
 
 public sealed record CreateLabelPrintBatchResponse(LabelPrintBatchId PrintBatchId);
 
-public sealed record DispatchLabelPrintBatchRequest(LabelPrintBatchId PrintBatchId, string PrinterId);
+public sealed record DispatchLabelPrintBatchRequest(
+    LabelPrintBatchId PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrinterId);
 
-public sealed record ReprintLabelRequest(LabelPrintBatchId PrintBatchId, int SequenceNo, string PrinterId);
+public sealed record ReprintLabelRequest(
+    LabelPrintBatchId PrintBatchId,
+    int SequenceNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrinterId);
 
 public sealed record ReprintLabelResponse(LabelPrintBatchId PrintBatchId, string Status, string? PrintJobId, string? FailureReason);
 
-public sealed record VoidLabelRequest(LabelPrintBatchId PrintBatchId, int SequenceNo, string Reason);
+public sealed record VoidLabelRequest(
+    LabelPrintBatchId PrintBatchId,
+    int SequenceNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
 
 public sealed record LabelPrintLifecycleResponse(LabelPrintBatchId PrintBatchId);
 
@@ -284,7 +298,11 @@ public sealed class DispatchLabelPrintBatchEndpoint(ISender sender)
 
     public override async Task HandleAsync(DispatchLabelPrintBatchRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new DispatchLabelPrintBatchCommand(req.PrintBatchId, req.PrinterId), ct);
+        var id = await sender.Send(new DispatchLabelPrintBatchCommand(
+            req.PrintBatchId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.PrinterId), ct);
         await Send.OkAsync(new LabelPrintLifecycleResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -296,7 +314,12 @@ public sealed class ReprintLabelEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReprintLabelRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ReprintLabelCommand(req.PrintBatchId, req.SequenceNo, req.PrinterId), ct);
+        var result = await sender.Send(new ReprintLabelCommand(
+            req.PrintBatchId,
+            req.SequenceNo,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.PrinterId), ct);
         await Send.OkAsync(new ReprintLabelResponse(req.PrintBatchId, result.Status, result.PrintJobId, result.FailureReason).AsResponseData(), cancellation: ct);
     }
 }
@@ -308,7 +331,12 @@ public sealed class VoidLabelEndpoint(ISender sender)
 
     public override async Task HandleAsync(VoidLabelRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new VoidLabelCommand(req.PrintBatchId, req.SequenceNo, req.Reason), ct);
+        var id = await sender.Send(new VoidLabelCommand(
+            req.PrintBatchId,
+            req.SequenceNo,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Reason), ct);
         await Send.OkAsync(new LabelPrintLifecycleResponse(id).AsResponseData(), cancellation: ct);
     }
 }

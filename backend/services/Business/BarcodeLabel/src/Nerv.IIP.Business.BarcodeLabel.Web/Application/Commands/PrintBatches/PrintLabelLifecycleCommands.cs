@@ -4,17 +4,33 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
-public sealed record DispatchLabelPrintBatchCommand(LabelPrintBatchId PrintBatchId, string PrinterId) : ICommand<LabelPrintBatchId>;
+public sealed record DispatchLabelPrintBatchCommand(
+    LabelPrintBatchId PrintBatchId,
+    string OrganizationId,
+    string EnvironmentId,
+    string PrinterId) : ICommand<LabelPrintBatchId>;
 
-public sealed record ReprintLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string PrinterId) : ICommand<LabelPrinterDispatchResult>;
+public sealed record ReprintLabelCommand(
+    LabelPrintBatchId PrintBatchId,
+    int SequenceNo,
+    string OrganizationId,
+    string EnvironmentId,
+    string PrinterId) : ICommand<LabelPrinterDispatchResult>;
 
-public sealed record VoidLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string Reason) : ICommand<LabelPrintBatchId>;
+public sealed record VoidLabelCommand(
+    LabelPrintBatchId PrintBatchId,
+    int SequenceNo,
+    string OrganizationId,
+    string EnvironmentId,
+    string Reason) : ICommand<LabelPrintBatchId>;
 
 public sealed class DispatchLabelPrintBatchCommandValidator : AbstractValidator<DispatchLabelPrintBatchCommand>
 {
     public DispatchLabelPrintBatchCommandValidator()
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
         RuleFor(x => x.PrinterId).NotEmpty().MaximumLength(100);
     }
 }
@@ -25,6 +41,8 @@ public sealed class ReprintLabelCommandValidator : AbstractValidator<ReprintLabe
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.SequenceNo).GreaterThan(0);
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
         RuleFor(x => x.PrinterId).NotEmpty().MaximumLength(100);
     }
 }
@@ -35,6 +53,8 @@ public sealed class VoidLabelCommandValidator : AbstractValidator<VoidLabelComma
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.SequenceNo).GreaterThan(0);
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
@@ -44,7 +64,12 @@ public sealed class DispatchLabelPrintBatchCommandHandler(ApplicationDbContext d
 {
     public async Task<LabelPrintBatchId> Handle(DispatchLabelPrintBatchCommand request, CancellationToken cancellationToken)
     {
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            dbContext,
+            request.PrintBatchId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
         var result = await LabelPrintLifecycle.DispatchAsync(printer, request.PrinterId, batch.Items.Select(x => x.LabelValue).ToArray(), cancellationToken);
         LabelPrintLifecycle.ApplyResult(batch, request.PrinterId, result);
         return batch.Id;
@@ -56,7 +81,12 @@ public sealed class ReprintLabelCommandHandler(ApplicationDbContext dbContext, I
 {
     public async Task<LabelPrinterDispatchResult> Handle(ReprintLabelCommand request, CancellationToken cancellationToken)
     {
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            dbContext,
+            request.PrintBatchId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
         var item = batch.Items.SingleOrDefault(x => x.SequenceNo == request.SequenceNo)
             ?? throw new KnownException($"未找到打印项，SequenceNo = {request.SequenceNo}");
         var result = await LabelPrintLifecycle.DispatchAsync(printer, request.PrinterId, [item.LabelValue], cancellationToken);
@@ -74,7 +104,12 @@ public sealed class VoidLabelCommandHandler(ApplicationDbContext dbContext)
 {
     public async Task<LabelPrintBatchId> Handle(VoidLabelCommand request, CancellationToken cancellationToken)
     {
-        var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
+        var batch = await LabelPrintLifecycle.LoadBatchAsync(
+            dbContext,
+            request.PrintBatchId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
         batch.VoidItem(request.SequenceNo, request.Reason);
         return batch.Id;
     }
@@ -85,11 +120,17 @@ internal static class LabelPrintLifecycle
     public static async Task<LabelPrintBatch> LoadBatchAsync(
         ApplicationDbContext dbContext,
         LabelPrintBatchId printBatchId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         return await dbContext.LabelPrintBatches
             .Include(x => x.Items)
-            .SingleOrDefaultAsync(x => x.Id == printBatchId, cancellationToken)
+            .SingleOrDefaultAsync(
+                x => x.Id == printBatchId &&
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId,
+                cancellationToken)
             ?? throw new KnownException($"未找到打印批次，PrintBatchId = {printBatchId}");
     }
 
@@ -105,7 +146,7 @@ internal static class LabelPrintLifecycle
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            return LabelPrinterDispatchResult.Failed($"Printer adapter failed: {exception.Message}");
+            return LabelPrinterDispatchResult.Failed("打印机处理失败，请检查设备状态后重试。");
         }
     }
 
