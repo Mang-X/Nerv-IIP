@@ -360,18 +360,28 @@ try {
         [pscustomobject]@{ Kind = 'dotnet'; Elapsed = 1001; Required = 1200 }
     )) {
         $deniedSummary = New-FullChainMemberAdmissionSummary
-        $laneCleanupReached = $false
-        try {
-            $deniedAdmission = Invoke-NervFullChainMemberAdmission -MemberId "denied-$($deniedCase.Kind)" -EntrypointKind $deniedCase.Kind -GlobalDeadlineSeconds 2200 -ElapsedSeconds $deniedCase.Elapsed -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $deniedSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
+        $laneState = [pscustomobject]@{
+            admission = $null
+            cleanupCalls = 0
+            finalSummaryWrites = 0
+            persistedOutcome = 'not-run'
+            persistedCleanup = 'not-run'
         }
-        finally {
-            $laneCleanupReached = $true
+        Invoke-NervFullChainLaneScope -Action {
+            $laneState.admission = Invoke-NervFullChainMemberAdmission -MemberId "denied-$($deniedCase.Kind)" -EntrypointKind $deniedCase.Kind -GlobalDeadlineSeconds 2200 -ElapsedSeconds $deniedCase.Elapsed -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $deniedSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
+        } -FinalizeAction {
+            $laneState.cleanupCalls++
+            $laneState.persistedOutcome = [string]$deniedSummary.outcome
+            $laneState.persistedCleanup = [string]$deniedSummary.cleanup
+            $laneState.finalSummaryWrites++
         }
+        $deniedAdmission = $laneState.admission
         Assert-Contract (-not $deniedAdmission.Allowed -and [string]::Equals([string]$deniedAdmission.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal)) "Insufficient remaining time must deny the $($deniedCase.Kind) member with a stable reason."
         Assert-Contract ($deniedAdmission.RemainingSeconds -eq ($deniedCase.Required - 1) -and $deniedAdmission.RequiredSeconds -eq $deniedCase.Required) "The $($deniedCase.Kind) denial must use its governed entrypoint budget."
         Assert-Contract ([string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must invoke its target entrypoint zero times."
         Assert-Contract ([string]::Equals([string]$deniedSummary.outcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals([string]$deniedSummary.cleanup, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$deniedSummary.diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must emit failure summary evidence without requiring member cleanup."
-        Assert-Contract ($laneCleanupReached) "A denied $($deniedCase.Kind) member must leave the lane cleanup path reachable."
+        Assert-Contract ($laneState.cleanupCalls -eq 1) "A denied $($deniedCase.Kind) member must execute production lane cleanup exactly once."
+        Assert-Contract ($laneState.finalSummaryWrites -eq 1 -and [string]::Equals($laneState.persistedOutcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals($laneState.persistedCleanup, 'passed', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must persist its final failure and cleanup summary exactly once."
     }
 
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot

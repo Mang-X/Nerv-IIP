@@ -211,6 +211,7 @@ function Wait-NervFullChainComposeProbe {
 }
 
 Write-NervFullChainSummarySnapshot
+$laneAction = {
 try {
     $runningBefore = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $repoRoot -Name 'full-chain-infrastructure-before'
     $initialServices = @($runningBefore.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -364,7 +365,8 @@ foreach ($member in $selectedMembers) {
 catch {
     if ($null -eq $firstFailure) { $firstFailure = $_ }
 }
-finally {
+}
+$laneFinalizeAction = {
     $cleanupFailures = [Collections.Generic.List[string]]::new()
     if ($ownedServices.Count -gt 0) {
         try {
@@ -393,10 +395,11 @@ finally {
         @($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -eq 0
     ) { 'passed' } else { 'failed' }
     Write-NervFullChainSummarySnapshot
-}
 
-try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
-catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
-Write-NervFullChainSummarySnapshot
-if ($null -ne $firstFailure) { throw $firstFailure }
-Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."
+    try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
+    catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
+    Write-NervFullChainSummarySnapshot
+    if ($null -ne $firstFailure) { throw $firstFailure }
+    Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."
+}
+Invoke-NervFullChainLaneScope -Action $laneAction -FinalizeAction $laneFinalizeAction
