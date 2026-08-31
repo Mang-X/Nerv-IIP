@@ -993,6 +993,32 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal("SKU-FG-1000", task.SkuCode);
     }
 
+    /// <summary>
+    /// #2780：触发点与读面必须由**同一个**工作中心事实驱动。首件档限定 WC-MIX、工单发布投影是
+    /// WC-MIX、报工事件带的却是 WC-OTHER 时，若触发点采信报工事件就会 <c>plan is null</c> 静默 return，
+    /// 而读面拿投影的 WC-MIX 命中档、回 <c>not-opened</c>——门禁据此放行，任务却永不开出，
+    /// 于是该工序**每一次**报工都被放行、门禁永久失效且无任何信号。
+    /// 两侧同源之后这条路径不存在：任务照常开出，下一次报工读到 pending 被拒。
+    /// 这也与域内既有不变量一致（工单已发布时报工的工作中心必须等于发布事实的工作中心）。
+    /// </summary>
+    [Fact]
+    public async Task Mes_first_article_trigger_matches_the_plan_by_the_release_work_center_not_the_report_payload()
+    {
+        await using var dbContext = CreateDbContext(nameof(Mes_first_article_trigger_matches_the_plan_by_the_release_work_center_not_the_report_payload));
+        var plan = ActivePlan("PLAN-FA-1000", "first-article", "SKU-FG-1000", "WC-MIX");
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.PeriodicInspectionOperations.Add(ReleasedOperation("WO-001", "OP-10", "SKU-FG-1000", "WC-MIX"));
+        await dbContext.SaveChangesAsync();
+        var handler = CreateMesFirstArticleHandler(dbContext);
+
+        await handler.HandleAsync(
+            MesProductionReportRecorded("RPT-001", "WO-001", "OP-10", "WC-OTHER", 1m),
+            CancellationToken.None);
+
+        var task = await dbContext.InspectionTasks.SingleAsync();
+        Assert.Equal(plan.Id, task.InspectionPlanId);
+    }
+
     [Fact]
     public async Task Mes_first_article_report_ignores_a_plan_configured_for_another_work_center()
     {

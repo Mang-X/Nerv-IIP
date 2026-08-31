@@ -69,15 +69,16 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
     }
 
     [Fact]
-    public async Task Operation_whose_release_facts_never_arrived_reports_not_opened()
+    public async Task Operation_whose_release_facts_never_arrived_reports_not_synchronized()
     {
         await using var factory = CreateFactory();
         using var client = CreateClient(factory);
 
         var confirmation = await GetConfirmationAsync(client, "WO-001", "OP-10");
 
-        // Quality 不知道该工序的物料/工作中心时不得回报「无需首件」，否则门禁会放行漏开的首件。
-        Assert.Equal("not-opened", confirmation.Status);
+        // Quality 不知道该工序的物料/工作中心时不得回报「无需首件」，否则门禁会放行漏开的首件；
+        // 也不得回报 not-opened——那一支表示「下一次报工就是首件那一件」、门禁会放行（#2780）。
+        Assert.Equal("not-synchronized", confirmation.Status);
     }
 
     [Fact]
@@ -136,8 +137,10 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
         using var client = CreateClient(factory);
         await SeedAsync(factory, dbContext => dbContext.InspectionTasks.Add(FirstArticleTask("WO-001", "OP-10")));
 
-        Assert.Equal("not-opened", (await GetConfirmationAsync(client, "WO-001", "OP-20")).Status);
-        Assert.Equal("not-opened", (await GetConfirmationAsync(client, "WO-002", "OP-10")).Status);
+        // 夹具只落了检验任务、没有工序发布事实，所以别的工单/工序读到的是 not-synchronized：
+        // 关键在于都读不到那张任务，而不是读到哪一个「无任务」取值。
+        Assert.Equal("not-synchronized", (await GetConfirmationAsync(client, "WO-001", "OP-20")).Status);
+        Assert.Equal("not-synchronized", (await GetConfirmationAsync(client, "WO-002", "OP-10")).Status);
     }
 
     [Fact]

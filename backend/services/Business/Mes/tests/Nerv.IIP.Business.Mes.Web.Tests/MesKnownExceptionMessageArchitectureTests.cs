@@ -34,6 +34,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "UnconfiguredMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", 1, "稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "HttpMesProductEngineeringRoutingSnapshotProvider", "SendOptionalAsync", 3, "稳定错误码与 ProductEngineering provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "MesRoutingSnapshotMissingException", ".ctor", 1, "稳定错误码 ROUTING_SNAPSHOT_MISSING"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureBatchReportAllowedAsync", 5, "稳定错误码 FIRST_ARTICLE_SOURCE_UNAVAILABLE 与 Quality 来源失败透传"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureDecisionAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesQualityInspectionPlanClient.cs", "MesQualityInspectionPlanClient", "HasActiveOperationPlanAsync", 4, "稳定错误码 QUALITY_PLAN_SOURCE_UNAVAILABLE 与 Quality provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AcceptShiftHandoverCommandHandler", "Handle", 2, "其中 1 处为中文静态消息，另 1 处为 dynamic exception.Message 透传，非本层静态目标"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AssignDispatchTaskCommandHandler", "Handle", 3, "已有中文静态消息，非本层英文候选"),
@@ -78,9 +81,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(64, discovered.Count);
-        Assert.Equal(150, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(146, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(67, discovered.Count);
+        Assert.Equal(161, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(157, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);

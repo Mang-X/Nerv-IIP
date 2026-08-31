@@ -17,6 +17,7 @@ using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Primitives;
 using Npgsql;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -157,6 +158,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         var report = await new RecordProductionReportCommandHandler(
                 db,
                 TestProductionReportOeeDimensionSnapshotProvider.Instance,
+                TestMesFirstArticleGate.Allowing,
                 assertionScope.ServiceProvider.GetRequiredService<MesCodingService>())
             .Handle(
                 new RecordProductionReportCommand(
@@ -549,6 +551,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             var report = await new RecordProductionReportCommandHandler(
                     db,
                     TestProductionReportOeeDimensionSnapshotProvider.Instance,
+                    TestMesFirstArticleGate.Allowing,
                     executionScope.ServiceProvider.GetRequiredService<MesCodingService>())
                 .Handle(
                     new RecordProductionReportCommand(

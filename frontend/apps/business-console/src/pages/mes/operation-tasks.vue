@@ -64,6 +64,7 @@ import {
   CheckCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
+  FileCheckIcon,
   FileTextIcon,
   PauseIcon,
   PlayIcon,
@@ -326,6 +327,13 @@ function openRoute(path: string, task: Row) {
       workCenterId: task.workCenterId ?? undefined,
     },
   })
+}
+// 只带 view，不带任何单据上下文：`quality/inspections` 的 query watch 一旦看到
+// workOrderId / operationTaskId / sourceDocumentId 就会**自动弹开「创建检验记录」抽屉**
+// （inspections.vue 的 `if (source) recordSheetOpen.value = true`）。本入口是去**看**首件结论的，
+// 把人丢进新建表单是走错门。真机走查抓到过一次，别再加回去。
+function openFirstArticleRecords() {
+  void router.push({ path: '/quality/inspections', query: { view: 'first-article-records' } })
 }
 function canOpenReport(task: Row) {
   return Boolean(task.workOrderId && task.operationTaskId)
@@ -761,6 +769,11 @@ function formatError(error: unknown) {
             >
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
+            </NvDropdownMenuItem>
+            <!-- 首件未判合格时服务端会拒绝批量报工（#2780），入口留在报工旁边，被拦下的人一步可达。 -->
+            <NvDropdownMenuItem @click="openFirstArticleRecords()">
+              <FileCheckIcon aria-hidden="true" />
+              首件检验记录
             </NvDropdownMenuItem>
             <NvDropdownMenuItem
               :disabled="!row.workOrderId"
