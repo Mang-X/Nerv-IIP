@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Nerv.IIP.Contracts.Maintenance;
 
 namespace Nerv.IIP.Contracts.IntegrationEvents.Tests;
@@ -6,6 +7,9 @@ namespace Nerv.IIP.Contracts.IntegrationEvents.Tests;
 public sealed class MaintenanceAssetUnavailableContractTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string FixedV2Json = """
+        {"eventId":"evt-v2-001","eventType":"maintenance.AssetUnavailable","eventVersion":2,"occurredAtUtc":"2026-08-31T01:02:03+00:00","sourceService":"business-maintenance","correlationId":"corr-v2-001","causationId":"cause-v2-001","organizationId":"org-001","environmentId":"env-dev","actor":"system:maintenance","idempotencyKey":"asset-unavailable:WO-001:2026-08-31T01:02:03.0000000\u002B00:00","payload":{"deviceAssetId":"DEVICE-001","reasonCode":"planned-maintenance","fromUtc":"2026-08-31T01:02:03+00:00"}}
+        """;
 
     [Fact]
     public void Asset_unavailable_v2_round_trip_preserves_scope_reason_code_and_canonical_topic()
@@ -23,6 +27,16 @@ public sealed class MaintenanceAssetUnavailableContractTests
         Assert.Equal(
             "nerv-iip.production.business-maintenance.maintenance.asset-unavailable.v2",
             topic);
+    }
+
+    [Fact]
+    public void Asset_unavailable_v2_json_matches_the_fixed_wire_contract()
+    {
+        var json = JsonSerializer.Serialize(CreateV2Event(), JsonOptions);
+
+        Assert.Equal(FixedV2Json, json);
+        Assert.Contains("\"reasonCode\":\"planned-maintenance\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"reason\":", json, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -55,6 +69,71 @@ public sealed class MaintenanceAssetUnavailableContractTests
     }
 
     [Theory]
+    [InlineData("eventType", "maintenance.AssetRestored")]
+    [InlineData("sourceService", "maintenance")]
+    public void Asset_unavailable_v2_rejects_another_event_type_or_source_on_read(
+        string propertyName,
+        string value)
+    {
+        var json = MutateFixedV2Json(root => root[propertyName] = value);
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("eventId")]
+    [InlineData("correlationId")]
+    [InlineData("causationId")]
+    [InlineData("organizationId")]
+    [InlineData("environmentId")]
+    [InlineData("actor")]
+    [InlineData("idempotencyKey")]
+    public void Asset_unavailable_v2_rejects_missing_required_envelope_strings_on_read(string propertyName)
+    {
+        var json = MutateFixedV2Json(root => root.Remove(propertyName));
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("eventId")]
+    [InlineData("correlationId")]
+    [InlineData("causationId")]
+    [InlineData("organizationId")]
+    [InlineData("environmentId")]
+    [InlineData("actor")]
+    [InlineData("idempotencyKey")]
+    public void Asset_unavailable_v2_rejects_blank_required_envelope_strings_on_write(string propertyName)
+    {
+        var integrationEvent = propertyName switch
+        {
+            "eventId" => CreateV2Event() with { EventId = " " },
+            "correlationId" => CreateV2Event() with { CorrelationId = " " },
+            "causationId" => CreateV2Event() with { CausationId = " " },
+            "organizationId" => CreateV2Event() with { OrganizationId = " " },
+            "environmentId" => CreateV2Event() with { EnvironmentId = " " },
+            "actor" => CreateV2Event() with { Actor = " " },
+            "idempotencyKey" => CreateV2Event() with { IdempotencyKey = " " },
+            _ => throw new ArgumentOutOfRangeException(nameof(propertyName)),
+        };
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(integrationEvent, JsonOptions));
+    }
+
+    [Fact]
+    public void Asset_unavailable_v2_rejects_default_occurred_at_on_read_and_write()
+    {
+        var json = MutateFixedV2Json(root => root.Remove("occurredAtUtc"));
+        var invalid = CreateV2Event() with { OccurredAtUtc = default };
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid, JsonOptions));
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
@@ -68,15 +147,64 @@ public sealed class MaintenanceAssetUnavailableContractTests
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid, JsonOptions));
     }
 
-    [Fact]
-    public void Asset_unavailable_v2_rejects_missing_reason_code_on_read()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Asset_unavailable_v2_rejects_missing_or_blank_reason_code_on_read(string? reasonCode)
     {
-        const string json = """
-            {"eventId":"evt-v2-001","eventType":"maintenance.AssetUnavailable","eventVersion":2,"occurredAtUtc":"2026-08-31T01:02:03Z","sourceService":"business-maintenance","correlationId":"corr-v2-001","causationId":"cause-v2-001","organizationId":"org-001","environmentId":"env-dev","actor":"system:maintenance","idempotencyKey":"idem-v2-001","payload":{"deviceAssetId":"DEVICE-001","fromUtc":"2026-08-31T01:02:03Z"}}
-            """;
+        var json = MutateFixedV2Json(root => root["payload"]!["reasonCode"] = reasonCode);
 
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Asset_unavailable_v2_rejects_null_payload_on_read_and_write()
+    {
+        var json = MutateFixedV2Json(root => root["payload"] = null);
+        var invalid = CreateV2Event() with { Payload = null! };
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Asset_unavailable_v2_rejects_missing_or_blank_device_asset_id_on_read(string? deviceAssetId)
+    {
+        var json = MutateFixedV2Json(root => root["payload"]!["deviceAssetId"] = deviceAssetId);
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+    }
+
+    [Fact]
+    public void Asset_unavailable_v2_rejects_blank_device_asset_id_on_write()
+    {
+        var invalid = CreateV2Event() with
+        {
+            Payload = CreateV2Event().Payload with { DeviceAssetId = " " },
+        };
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid, JsonOptions));
+    }
+
+    [Fact]
+    public void Asset_unavailable_v2_rejects_default_from_utc_on_read_and_write()
+    {
+        var json = MutateFixedV2Json(root => root["payload"]!.AsObject().Remove("fromUtc"));
+        var invalid = CreateV2Event() with
+        {
+            Payload = CreateV2Event().Payload with { FromUtc = default },
+        };
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid, JsonOptions));
     }
 
     [Fact]
@@ -184,4 +312,11 @@ public sealed class MaintenanceAssetUnavailableContractTests
                 "DEVICE-001",
                 "planned-maintenance",
                 DateTimeOffset.Parse("2026-08-31T01:02:03Z")));
+
+    private static string MutateFixedV2Json(Action<JsonObject> mutation)
+    {
+        var root = JsonNode.Parse(FixedV2Json)!.AsObject();
+        mutation(root);
+        return root.ToJsonString(JsonOptions);
+    }
 }

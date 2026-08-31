@@ -139,16 +139,34 @@ internal static class AssetUnavailableV2WireContract
 {
     public static void Validate(AssetUnavailableV2IntegrationEvent integrationEvent)
     {
+        Require(integrationEvent.EventId, "eventId");
         if (integrationEvent.EventVersion != MaintenanceIntegrationEventVersions.V2)
             throw new JsonException("AssetUnavailable V2 envelope requires eventVersion 2.");
         if (integrationEvent.EventType != MaintenanceIntegrationEventTypes.AssetUnavailable)
             throw new JsonException("AssetUnavailable V2 envelope requires the maintenance.AssetUnavailable event type.");
+        if (integrationEvent.OccurredAtUtc == default)
+            throw new JsonException("AssetUnavailable V2 envelope requires occurredAtUtc.");
         if (integrationEvent.SourceService != MaintenanceIntegrationEventSources.BusinessMaintenance)
             throw new JsonException("AssetUnavailable V2 envelope requires the business-maintenance source service.");
+        Require(integrationEvent.CorrelationId, "correlationId");
+        Require(integrationEvent.CausationId, "causationId");
+        Require(integrationEvent.OrganizationId, "organizationId");
+        Require(integrationEvent.EnvironmentId, "environmentId");
+        Require(integrationEvent.Actor, "actor");
+        Require(integrationEvent.IdempotencyKey, "idempotencyKey");
         if (integrationEvent.Payload is null)
             throw new JsonException("AssetUnavailable V2 payload is required.");
+        Require(integrationEvent.Payload.DeviceAssetId, "payload.deviceAssetId");
         if (string.IsNullOrWhiteSpace(integrationEvent.Payload.ReasonCode))
             throw new JsonException("AssetUnavailable V2 payload requires reasonCode.");
+        if (integrationEvent.Payload.FromUtc == default)
+            throw new JsonException("AssetUnavailable V2 payload requires fromUtc.");
+    }
+
+    private static void Require(string? value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new JsonException($"AssetUnavailable V2 envelope requires {fieldName}.");
     }
 }
 
