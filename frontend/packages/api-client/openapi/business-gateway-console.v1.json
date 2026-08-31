@@ -45709,6 +45709,21 @@
           },
           "hasActiveQualityHold": {
             "type": "boolean"
+          },
+          "workOrderType": {
+            "type": "string"
+          },
+          "sourceWorkOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceNcrId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceNcrCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -45892,6 +45907,21 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary"
             }
+          },
+          "workOrderType": {
+            "type": "string"
+          },
+          "sourceWorkOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceNcrId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceNcrCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -46049,6 +46079,21 @@
             "type": "number",
             "description": "工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。",
             "format": "decimal",
+            "nullable": true
+          },
+          "workOrderType": {
+            "type": "string"
+          },
+          "sourceWorkOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceNcrId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceNcrCode": {
+            "type": "string",
             "nullable": true
           }
         }

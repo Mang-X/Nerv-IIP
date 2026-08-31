@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
@@ -114,6 +115,22 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 CancellationToken.None);
         Assert.Equal(operationTasks.Select(x => x.OperationTaskIdValue), queried.Items.Select(x => x.OperationTaskId));
         Assert.Equal(["start"], queried.Items.First().AllowedActions);
+        Assert.All(queried.Items, AssertReworkAuthority);
+
+        var listedWorkOrder = Assert.Single((await new ListMesWorkOrdersQueryHandler(db).Handle(
+            new ListMesWorkOrdersQuery(
+                "org-001",
+                "env-dev",
+                null,
+                WorkOrderId: workOrder.WorkOrderIdValue),
+            CancellationToken.None)).Items);
+        AssertReworkAuthority(listedWorkOrder);
+
+        var detailedWorkOrder = await new GetMesWorkOrderDetailQueryHandler(db).Handle(
+            new GetMesWorkOrderDetailQuery("org-001", "env-dev", workOrder.WorkOrderIdValue),
+            CancellationToken.None);
+        AssertReworkAuthority(detailedWorkOrder);
+        Assert.All(detailedWorkOrder.OperationTasks, AssertReworkAuthority);
 
         var firstTaskId = operationTasks[0].OperationTaskIdValue;
         var actionHandler = new ChangeOperationTaskStateCommandHandler(db);
@@ -130,6 +147,13 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             new ChangeOperationTaskStateCommand("org-001", "env-dev", firstTaskId, "resume", startedAtUtc.AddMinutes(2), "rework:resume"),
             CancellationToken.None);
         await db.SaveChangesAsync();
+        var reportableTask = Assert.Single((await new ListReportableOperationTasksQueryHandler(db).Handle(
+            new ListReportableOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                WorkOrderId: workOrder.WorkOrderIdValue),
+            CancellationToken.None)).Items);
+        AssertReworkAuthority(reportableTask);
         var report = await new RecordProductionReportCommandHandler(
                 db,
                 TestProductionReportOeeDimensionSnapshotProvider.Instance,
@@ -212,6 +236,36 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         var invalidSource = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
         Assert.Equal(PostgresErrorCodes.CheckViolation, invalidSource.SqlState);
         Assert.Equal("ck_work_orders_rework_source", invalidSource.ConstraintName);
+    }
+
+    private static void AssertReworkAuthority(MesWorkOrderExecutionFact item) => AssertReworkAuthority(
+        item.WorkOrderType,
+        item.SourceWorkOrderId,
+        item.SourceNcrId,
+        item.SourceNcrCode);
+
+    private static void AssertReworkAuthority(MesWorkOrderDetailResponse item) => AssertReworkAuthority(
+        item.WorkOrderType,
+        item.SourceWorkOrderId,
+        item.SourceNcrId,
+        item.SourceNcrCode);
+
+    private static void AssertReworkAuthority(MesOperationTaskRow item) => AssertReworkAuthority(
+        item.WorkOrderType,
+        item.SourceWorkOrderId,
+        item.SourceNcrId,
+        item.SourceNcrCode);
+
+    private static void AssertReworkAuthority(
+        string workOrderType,
+        string? sourceWorkOrderId,
+        string? sourceNcrId,
+        string? sourceNcrCode)
+    {
+        Assert.Equal(WorkOrder.ReworkType, workOrderType);
+        Assert.Equal("WO-SOURCE-001", sourceWorkOrderId);
+        Assert.Equal("ncr-001", sourceNcrId);
+        Assert.Equal("NCR-2026-0001", sourceNcrCode);
     }
 
     [MesRealPostgresFact]

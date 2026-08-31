@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { describeRequestError } from '@/api/request-timeout'
 import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleMesWorkOrderItem,
@@ -36,13 +35,14 @@ import ProductionReportMaterialLots from '@/components/mes/ProductionReportMater
 import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
 import { useProductionReportScrapReason } from '@/composables/mes/useProductionReportScrapReason'
+import { useMesReportSubmission } from '@/composables/mes/useMesReportSubmission'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
+import { reworkSourceLabel, withReworkLabel } from './components/operationPresentation'
 
 definePage({
   meta: {
@@ -60,6 +60,21 @@ const routeWorkOrderId = computed(() => {
   const value = route.query.workOrderId
   return typeof value === 'string' ? value.trim() : ''
 })
+
+const {
+  recordReport,
+  confirmReport,
+  reportScopeMessage,
+  reportScopePending,
+  reportScopeReady,
+  reportContext,
+  contextGeneration,
+  reportableTasks,
+  reportableTasksPending,
+  reportableTasksError,
+  reportableTasksReady,
+  refreshReportableTasks,
+} = useMesProductionReports(routeWorkOrderId)
 
 const {
   filters: workOrderFilters,
@@ -119,10 +134,11 @@ const {
   exactOperationTaskError,
   exactOperationTaskScopeReady,
   exactOperationTaskScopeMessage,
+  reportableTasks,
+  reportableTasksPending,
+  reportableTasksError,
+  reportableTasksReady,
 })
-
-const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
-  useMesProductionReports()
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
@@ -217,44 +233,36 @@ const quantityValid = computed(
     goodQuantity.value + scrapQuantity.value + reworkQuantity.value > 0,
 )
 
+const { currentIntent, result, submitting, deleteCurrentIntent, submit } = useMesReportSubmission({
+  pair,
+  selectedTask,
+  context: reportContext,
+  contextGeneration,
+  flowContext: ctx,
+  scanGuarded,
+  reportScopeReady,
+  quantityValid,
+  invalidMaterialLots,
+  invalidScrapReasonCode,
+  goodQuantity,
+  scrapQuantity,
+  reworkQuantity,
+  scrapReasonCode,
+  consumedMaterialLots,
+  completesOperation,
+  recordReport,
+  confirmReport,
+  recoverLifecycleAction: (error) => lifecycleRecovery.handle(error),
+})
+
 // 录数量面板：选中工序后打开
 const sheetOpen = computed({
-  get: () => selectedTask.value !== null && result.value === null,
+  get: () => pair.value !== null && result.value === null,
   set: (open) => {
     if (!open) closeSheet()
   },
 })
 
-// --- 结果反馈 ---
-type ResultState = { status: 'success' | 'error'; title: string; description?: string }
-interface ReportIntent {
-  attempt: symbol
-  workOrderId: string
-  operationTaskId: string
-  intentKey: string
-  payload: {
-    goodQuantity: number
-    scrapQuantity: number
-    reworkQuantity: number
-    consumedMaterialLots: Array<{
-      materialId: string
-      materialLotId: string
-      consumedQuantity: number
-      materialIssueRequestNo: string
-    }>
-    scrapReasonCode: string | undefined
-    completesOperation: boolean
-  }
-  status: 'pending' | 'success' | 'error'
-  result: ResultState | null
-}
-const intents = reactive(new Map<string, ReportIntent>())
-const pairKey = computed(() =>
-  pair.value ? `${pair.value.workOrderId}\u0000${pair.value.operationTaskId}` : '',
-)
-const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
-const result = computed(() => currentIntent.value?.result ?? null)
-const submitting = computed(() => currentIntent.value?.status === 'pending')
 const canCompleteSelectedTask = computed(
   () =>
     selectedTask.value !== null &&
@@ -286,12 +294,6 @@ watch(
   },
   { immediate: true },
 )
-watch(
-  () => currentIntent.value?.status,
-  (status) => {
-    ctx.recorded = status === 'success'
-  },
-)
 watch(canCompleteSelectedTask, (canComplete) => {
   if (!canComplete) completesOperation.value = false
 })
@@ -308,12 +310,23 @@ const taskStatusLabel = operationTaskStatusLabel
 function taskTitle(task: Task) {
   const seq = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
   const wo = task.workOrderId ?? '无工单'
-  return seq ? `${wo} · ${seq}` : wo
+  return withReworkLabel(seq ? `${wo} · ${seq}` : wo, task)
 }
 function taskSubtitle(task: Task) {
   const parts = [taskStatusLabel(task.status)]
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
+  const source = reworkSourceLabel(task)
+  if (source) parts.push(source)
   return parts.join(' · ')
+}
+
+function reportWorkOrderTitle(workOrder: WorkOrder) {
+  return withReworkLabel(workOrderTitle(workOrder), workOrder)
+}
+
+function reportWorkOrderSubtitle(workOrder: WorkOrder) {
+  const source = reworkSourceLabel(workOrder)
+  return [workOrderSubtitle(workOrder), source].filter(Boolean).join(' · ')
 }
 
 const workScopeKindLabels: Record<string, string> = {
@@ -370,7 +383,7 @@ function backToWorkOrders() {
 }
 
 function resetReportIntent() {
-  if (pairKey.value) intents.delete(pairKey.value)
+  deleteCurrentIntent()
   goodQuantity.value = 0
   scrapQuantity.value = 0
   reworkQuantity.value = 0
@@ -385,98 +398,16 @@ function resetReportIntent() {
 const lifecycleRecovery = useLifecycleActionRecovery({
   reset: resetReportIntent,
   refresh: () =>
-    Promise.all([refreshWorkOrders(), refreshWorkOrderDetail(), refreshExactOperationTask()]),
+    Promise.all([
+      refreshWorkOrders(),
+      refreshWorkOrderDetail(),
+      refreshExactOperationTask(),
+      refreshReportableTasks(),
+    ]),
 })
 
-async function submit() {
-  if (scanGuarded.value) return
-  if (!reportScopeReady.value) return
-  const identity = pair.value
-  const task = selectedTask.value
-  const workOrderId = identity?.workOrderId
-  const operationTaskId = identity?.operationTaskId
-  if (
-    !workOrderId ||
-    ctx.workOrderId !== workOrderId ||
-    !operationTaskId ||
-    ctx.operationTaskId !== operationTaskId ||
-    !task ||
-    task.workOrderId !== workOrderId
-  ) {
-    return
-  }
-  const key = `${workOrderId}\u0000${operationTaskId}`
-  let intent = intents.get(key)
-  if (intent?.status === 'pending' || intent?.status === 'success') return
-  if (!intent) {
-    if (!quantityValid.value || invalidMaterialLots.value || invalidScrapReasonCode.value) return
-    intent = {
-      attempt: Symbol('mes-report-attempt'),
-      workOrderId,
-      operationTaskId,
-      intentKey: makeIdempotencyKey(),
-      payload: {
-        goodQuantity: goodQuantity.value,
-        scrapQuantity: scrapQuantity.value,
-        reworkQuantity: reworkQuantity.value,
-        scrapReasonCode: scrapQuantity.value > 0 ? scrapReasonCode.value.trim() : undefined,
-        consumedMaterialLots: consumedMaterialLots.value,
-        completesOperation: completesOperation.value,
-      },
-      status: 'pending',
-      result: null,
-    }
-    intents.set(key, intent)
-    intent = intents.get(key)!
-  } else {
-    intent.attempt = Symbol('mes-report-retry')
-    intent.status = 'pending'
-    intent.result = null
-  }
-  ctx.quantityEntered = true
-  if (!intent) return
-  const attempt = intent.attempt
-  try {
-    const receiptEnvelope = await recordReport({
-      workOrderId,
-      operationTaskId,
-      ...intent.payload,
-      idempotencyKey: intent.intentKey,
-    })
-    if (intent.attempt !== attempt) return
-    if (!receiptEnvelope?.success) {
-      throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
-    }
-    const receipt = receiptEnvelope.data
-    const reportNo = receipt?.reportNo?.trim()
-    const productionReportId = receipt?.productionReportId?.trim()
-    if (!reportNo || !productionReportId) {
-      throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
-    }
-    const description = [`${workOrderId} · ${operationTaskId}`]
-    description.push(`报工单号 ${reportNo}`)
-    description.push(`回执 ID ${productionReportId}`)
-    if (intent.payload.completesOperation) description.push('本工序已标记完工')
-    intent.status = 'success'
-    intent.result = {
-      status: 'success',
-      title: '报工成功',
-      description: description.join('；'),
-    }
-  } catch (e) {
-    if (intent.attempt !== attempt) return
-    if (await lifecycleRecovery.handle(e)) return
-    intent.status = 'error'
-    intent.result = {
-      status: 'error',
-      title: '报工失败',
-      description: describeRequestError(e, '请检查网络后重试。').message,
-    }
-  }
-}
-
 function continueReport() {
-  if (pairKey.value) intents.delete(pairKey.value)
+  deleteCurrentIntent()
   backToWorkOrders()
 }
 
@@ -708,8 +639,8 @@ async function onScanAccepted(value: MesScanAccepted) {
           <NvListRow
             v-for="wo in workOrders"
             :key="wo.workOrderId"
-            :title="workOrderTitle(wo)"
-            :subtitle="workOrderSubtitle(wo)"
+            :title="reportWorkOrderTitle(wo)"
+            :subtitle="reportWorkOrderSubtitle(wo)"
             @select="chooseWorkOrder(wo)"
           />
         </div>
@@ -723,7 +654,7 @@ async function onScanAccepted(value: MesScanAccepted) {
           <div class="min-w-0">
             <p class="text-sm text-muted-foreground">当前工单</p>
             <p class="truncate text-base font-medium text-foreground">
-              {{ selectedWorkOrder ? workOrderTitle(selectedWorkOrder) : '' }}
+              {{ selectedWorkOrder ? reportWorkOrderTitle(selectedWorkOrder) : '' }}
             </p>
           </div>
           <button
@@ -796,6 +727,13 @@ async function onScanAccepted(value: MesScanAccepted) {
       <div v-if="selectedTask" class="space-y-4 pb-2">
         <p class="text-sm text-muted-foreground">
           当前状态：{{ taskStatusLabel(selectedTask.status) }}
+        </p>
+        <p
+          v-if="reworkSourceLabel(selectedTask)"
+          data-testid="report-rework-source"
+          class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground"
+        >
+          {{ reworkSourceLabel(selectedTask) }}
         </p>
 
         <MesScanPrevalidation
