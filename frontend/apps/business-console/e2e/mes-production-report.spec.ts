@@ -142,9 +142,8 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
   for await (const chunk of csv) chunks.push(Buffer.from(chunk))
   const contents = Buffer.concat(chunks).toString('utf8')
   expect(contents.startsWith('\ufeff聚合维度,维度值,业务日')).toBe(true)
-  expect(contents).toContain('工作中心,,')
-  expect(contents).not.toContain('WC-CNC-01')
-  expect(contents).not.toContain('WC-CNC-22')
+  expect(contents).toContain('工作中心,WC-CNC-01,')
+  expect(contents).toContain('工作中心,WC-CNC-22,')
 
   await page.screenshot({
     path: testInfo.outputPath('issue-2857-production-daily-page-2.png'),

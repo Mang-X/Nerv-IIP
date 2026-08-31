@@ -16,6 +16,7 @@ import {
   PRODUCTION_STATISTICS_DIMENSION_LABELS,
 } from '@/features/mes-production-report/productionStatisticsCsv'
 import { defaultProductionStatisticsWindow } from '@/features/mes-production-report/productionStatisticsWindow'
+import { presentProductionStatisticsRow } from '@/features/mes-production-report/productionStatisticsPresentation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -68,6 +69,7 @@ const countLabel = computed(() =>
     ? `${report.total.value} 个${PRODUCTION_STATISTICS_DIMENSION_LABELS[report.filters.dimension]}聚合`
     : undefined,
 )
+const presentedRows = computed(() => report.items.value.map(presentProductionStatisticsRow))
 
 watch(
   () =>
@@ -116,7 +118,7 @@ async function exportCsv() {
   exporting.value = true
   const filename = productionStatisticsCsvFilename({ ...report.filters })
   try {
-    const rows = await report.loadAll()
+    const rows = (await report.loadAll()).map(presentProductionStatisticsRow)
     const blob = new Blob([createProductionStatisticsCsv(rows)], {
       type: 'text/csv;charset=utf-8',
     })
@@ -175,7 +177,7 @@ async function exportCsv() {
     />
 
     <MesProductionStatisticsTable
-      :rows="report.items.value"
+      :rows="presentedRows"
       :total="report.total.value"
       :page="page"
       :page-size="pageSize"

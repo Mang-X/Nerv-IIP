@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesProductionStatisticsBucket } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { ProductionStatisticsPresentationRow } from '@/features/mes-production-report/productionStatisticsPresentation'
 import { NvBadge, NvDataTable } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { inlineErrorMessage } from '@/utils/notify'
@@ -10,7 +10,7 @@ import {
 } from '@/features/mes-production-report/productionStatisticsCsv'
 
 const props = defineProps<{
-  rows: BusinessConsoleMesProductionStatisticsBucket[]
+  rows: ProductionStatisticsPresentationRow[]
   total: number
   page: number
   pageSize: string
@@ -23,12 +23,12 @@ const emit = defineEmits<{
   retry: []
 }>()
 
-const columns: NvDataTableColumn<BusinessConsoleMesProductionStatisticsBucket>[] = [
-  { key: 'dimensionValue', header: '统计对象', cellClass: 'font-medium' },
+const columns: NvDataTableColumn<ProductionStatisticsPresentationRow>[] = [
+  { key: 'dimensionValueLabel', header: '统计对象', cellClass: 'font-medium' },
   { key: 'businessDate', header: '业务日' },
   { key: 'shiftCode', header: '班次' },
-  { key: 'workCenterId', header: '工作中心' },
-  { key: 'skuId', header: '物料' },
+  { key: 'workCenterLabel', header: '工作中心' },
+  { key: 'skuLabel', header: '物料' },
   { key: 'totalOutputQuantity', header: '总产出' },
   { key: 'goodQuantity', header: '合格量 / 率' },
   { key: 'scrapQuantity', header: '报废量 / 率' },
@@ -54,7 +54,7 @@ function rate(value: number | null | undefined) {
 function quantityRate(quantityValue: number, rateValue: number | null | undefined) {
   return `${quantity(quantityValue)} / ${rate(rateValue)}`
 }
-function degradedReasons(row: BusinessConsoleMesProductionStatisticsBucket) {
+function degradedReasons(row: ProductionStatisticsPresentationRow) {
   return row.degradedReasons.map(describeProductionStatisticsDegradation).join('；')
 }
 </script>
@@ -69,7 +69,7 @@ function degradedReasons(row: BusinessConsoleMesProductionStatisticsBucket) {
     :rows="rows"
     :row-key="
       (row) =>
-        `${row.dimension}-${row.dimensionValue}-${row.businessDate}-${row.shiftCode}-${row.workCenterId}-${row.skuId}`
+        `${row.dimension}-${row.dimensionValueLabel}-${row.businessDate}-${row.shiftCode}-${row.workCenterLabel}-${row.skuLabel}`
     "
     :loading="pending"
     :error="error"
@@ -81,9 +81,9 @@ function degradedReasons(row: BusinessConsoleMesProductionStatisticsBucket) {
     @update:page-size="emit('update:page-size', String($event))"
     @retry="emit('retry')"
   >
-    <template #cell-dimensionValue="{ row }">
+    <template #cell-dimensionValueLabel="{ row }">
       <div class="grid gap-0.5">
-        <span>{{ value(row.dimensionValue) }}</span>
+        <span>{{ row.dimensionValueLabel }}</span>
         <span class="text-xs font-normal text-muted-foreground">
           {{ PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension] }}
         </span>
@@ -91,8 +91,8 @@ function degradedReasons(row: BusinessConsoleMesProductionStatisticsBucket) {
     </template>
     <template #cell-businessDate="{ row }">{{ value(row.businessDate) }}</template>
     <template #cell-shiftCode="{ row }">{{ value(row.shiftCode) }}</template>
-    <template #cell-workCenterId="{ row }">{{ value(row.workCenterId) }}</template>
-    <template #cell-skuId="{ row }">{{ value(row.skuId) }}</template>
+    <template #cell-workCenterLabel="{ row }">{{ row.workCenterLabel }}</template>
+    <template #cell-skuLabel="{ row }">{{ row.skuLabel }}</template>
     <template #cell-totalOutputQuantity="{ row }">{{ quantity(row.totalOutputQuantity) }}</template>
     <template #cell-goodQuantity="{ row }">{{
       quantityRate(row.goodQuantity, row.goodRate)
