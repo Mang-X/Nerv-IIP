@@ -62,7 +62,7 @@ export function createProductionStatisticsCsv(
   const body = rows.map((row) =>
     [
       PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension],
-      row.dimensionValue,
+      row.dimension === 'workCenter' || row.dimension === 'sku' ? null : row.dimensionValue,
       row.businessDate,
       row.shiftCode,
       row.totalOutputQuantity,
