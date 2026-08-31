@@ -2270,6 +2270,7 @@ public sealed record MesTraceabilityNodeType
     /// 两边各写一份字面量则 MES 改名后门面静默失配、权限泄漏复发（#2686）。词表漂移门禁扫本文件。
     /// </summary>
     public static readonly MesTraceabilityNodeType InspectionResult = new(MesTraceabilityNodeTypes.InspectionResult);
+    public static readonly MesTraceabilityNodeType NonconformanceReport = new("NonconformanceReport");
     public static readonly MesTraceabilityNodeType ProducedLot = new("ProducedLot");
     public static readonly MesTraceabilityNodeType Serial = new("Serial");
     public static readonly MesTraceabilityNodeType Material = new("Material");
@@ -2305,7 +2306,7 @@ public sealed record MesTraceabilityReportContext(
     string? DeviceAssetId,
     string OperationTaskId);
 
-public static class MesTraceabilityProductionReportQueries
+public static class MesTraceabilityQueries
 {
     public static IQueryable<ProductionReport> ActiveProductionReports(this ApplicationDbContext dbContext)
     {
@@ -2395,6 +2396,184 @@ public static class MesTraceabilityProductionReportQueries
             }
         }
     }
+
+    public static async Task<bool> AppendReworkFactsAsync(
+        this ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> workOrderIds,
+        IReadOnlyCollection<string> batchOrSerials,
+        List<MesTraceabilityNode> nodes,
+        List<MesTraceabilityEdge> edges,
+        bool useBatchReadFaceEdgeDirection,
+        CancellationToken cancellationToken)
+    {
+        var scopedWorkOrderIds = workOrderIds.Distinct(StringComparer.Ordinal).ToArray();
+        var scopedBatchOrSerials = batchOrSerials.Distinct(StringComparer.Ordinal).ToArray();
+        var reworkWorkOrders = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderType == WorkOrder.ReworkType &&
+                (scopedWorkOrderIds.Contains(x.WorkOrderIdValue) ||
+                    (x.SourceWorkOrderId != null && scopedWorkOrderIds.Contains(x.SourceWorkOrderId)) ||
+                    (x.SourceLotNo != null && scopedBatchOrSerials.Contains(x.SourceLotNo)) ||
+                    (x.SourceSerialNo != null && scopedBatchOrSerials.Contains(x.SourceSerialNo))))
+            .Select(x => new
+            {
+                x.WorkOrderIdValue,
+                x.Status,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode,
+                x.SourceLotNo,
+                x.SourceSerialNo,
+            })
+            .ToArrayAsync(cancellationToken);
+        if (reworkWorkOrders.Length == 0)
+        {
+            return false;
+        }
+
+        var reworkWorkOrderIds = reworkWorkOrders.Select(x => x.WorkOrderIdValue).ToArray();
+        var operations = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                reworkWorkOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new { x.WorkOrderId, x.OperationTaskIdValue, x.Status })
+            .ToArrayAsync(cancellationToken);
+        var reports = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.ReversedReportNo == null &&
+                reworkWorkOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new
+            {
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.ReportNo,
+                x.ProducedLotNo,
+                x.SerialNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                IsReversed = dbContext.ProductionReports.Any(reversal =>
+                    reversal.OrganizationId == x.OrganizationId &&
+                    reversal.EnvironmentId == x.EnvironmentId &&
+                    reversal.ReversedReportNo == x.ReportNo),
+            })
+            .ToArrayAsync(cancellationToken);
+
+        await dbContext.AppendProductionReportFactsAsync(
+            organizationId,
+            environmentId,
+            [.. reports.Select(x => new MesTraceabilityReportContext(
+                x.ReportNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                x.OperationTaskId))],
+            nodes,
+            edges,
+            cancellationToken);
+
+        var emittedNodes = nodes
+            .Select(x => (x.NodeId, x.NodeType))
+            .ToHashSet();
+        var emittedEdges = edges
+            .Select(x => (x.FromNodeId, x.ToNodeId, x.RelationType))
+            .ToHashSet();
+        void AddNode(string nodeId, MesTraceabilityNodeType nodeType, string displayName, string status)
+        {
+            if (emittedNodes.Add((nodeId, nodeType)))
+            {
+                nodes.Add(new MesTraceabilityNode(nodeId, nodeType, displayName, status));
+            }
+        }
+
+        void AddEdge(string fromNodeId, string toNodeId, string relationType)
+        {
+            if (emittedEdges.Add((fromNodeId, toNodeId, relationType)))
+            {
+                edges.Add(new MesTraceabilityEdge(fromNodeId, toNodeId, relationType));
+            }
+        }
+
+        foreach (var reworkWorkOrder in reworkWorkOrders)
+        {
+            AddNode(reworkWorkOrder.SourceWorkOrderId!, MesTraceabilityNodeType.WorkOrder, reworkWorkOrder.SourceWorkOrderId!, "Source");
+            AddNode(reworkWorkOrder.SourceNcrId!, MesTraceabilityNodeType.NonconformanceReport, reworkWorkOrder.SourceNcrCode!, "ReworkRequested");
+            AddNode(reworkWorkOrder.WorkOrderIdValue, MesTraceabilityNodeType.WorkOrder, reworkWorkOrder.WorkOrderIdValue, reworkWorkOrder.Status);
+            AddEdge(reworkWorkOrder.SourceWorkOrderId!, reworkWorkOrder.SourceNcrId!, "raised-ncr");
+            AddEdge(reworkWorkOrder.SourceNcrId!, reworkWorkOrder.WorkOrderIdValue, "created-rework-work-order");
+
+            if (reworkWorkOrder.SourceLotNo is not null)
+            {
+                var sourceLotNodeId = SourceOccurrenceNodeId(
+                    reworkWorkOrder.SourceNcrId!,
+                    "lot",
+                    reworkWorkOrder.SourceLotNo);
+                AddNode(sourceLotNodeId, MesTraceabilityNodeType.ProducedLot, reworkWorkOrder.SourceLotNo, "Source");
+                AddEdge(sourceLotNodeId, reworkWorkOrder.SourceNcrId!, "identified-in-ncr");
+            }
+
+            if (reworkWorkOrder.SourceSerialNo is not null)
+            {
+                var sourceSerialNodeId = SourceOccurrenceNodeId(
+                    reworkWorkOrder.SourceNcrId!,
+                    "serial",
+                    reworkWorkOrder.SourceSerialNo);
+                AddNode(sourceSerialNodeId, MesTraceabilityNodeType.Serial, reworkWorkOrder.SourceSerialNo, "Source");
+                AddEdge(sourceSerialNodeId, reworkWorkOrder.SourceNcrId!, "identified-in-ncr");
+            }
+        }
+
+        foreach (var operation in operations)
+        {
+            AddNode(operation.OperationTaskIdValue, MesTraceabilityNodeType.OperationTask, operation.OperationTaskIdValue, operation.Status.ToString());
+            if (!useBatchReadFaceEdgeDirection)
+            {
+                AddEdge(operation.WorkOrderId, operation.OperationTaskIdValue, "has-operation");
+            }
+        }
+
+        foreach (var report in reports)
+        {
+            var reworkWorkOrder = reworkWorkOrders.Single(x =>
+                string.Equals(x.WorkOrderIdValue, report.WorkOrderId, StringComparison.Ordinal));
+            if (useBatchReadFaceEdgeDirection)
+            {
+                AddEdge(report.ReportNo, report.OperationTaskId, "reported-operation");
+                AddEdge(report.OperationTaskId, reworkWorkOrder.WorkOrderIdValue, "belongs-to-work-order");
+            }
+            else
+            {
+                AddEdge(report.OperationTaskId, report.ReportNo, "has-report");
+            }
+
+            if (!report.IsReversed && report.ProducedLotNo is not null)
+            {
+                AddNode(report.ProducedLotNo, MesTraceabilityNodeType.ProducedLot, report.ProducedLotNo, "Produced");
+                AddEdge(report.ReportNo, report.ProducedLotNo, "produced-lot");
+            }
+
+            if (!report.IsReversed && report.SerialNo is not null)
+            {
+                AddNode(report.SerialNo, MesTraceabilityNodeType.Serial, report.SerialNo, "Produced");
+                AddEdge(report.ReportNo, report.SerialNo, "produced-serial");
+            }
+        }
+
+        return true;
+    }
+
+    private static string SourceOccurrenceNodeId(string sourceNcrId, string kind, string sourceValue) =>
+        $"{sourceNcrId}:source-{kind}:{sourceValue}";
 }
 
 public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext dbContext)
@@ -2538,7 +2717,19 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             }
         }
 
-        return new MesTraceabilityResponse(nodes, edges);
+        await dbContext.AppendReworkFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [request.WorkOrderId],
+            [],
+            nodes,
+            edges,
+            useBatchReadFaceEdgeDirection: false,
+            cancellationToken);
+
+        return new MesTraceabilityResponse(
+            nodes.DistinctBy(x => new { x.NodeId, x.NodeType }).ToArray(),
+            edges.DistinctBy(x => new { x.FromNodeId, x.ToNodeId, x.RelationType }).ToArray());
     }
 }
 
@@ -2592,13 +2783,6 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
 
-        if (consumptions.Length == 0 && producedReports.Length == 0)
-        {
-            return new MesTraceabilityResponse(
-                [new MesTraceabilityNode(request.BatchOrSerial, MesTraceabilityNodeType.BatchOrSerial, request.BatchOrSerial, "Unknown")],
-                []);
-        }
-
         // 消耗侧的报工行来自耗料表，本身不带执行上下文；回到报工事实取人员 / 设备 / 时间，
         // 让「投入批次 → 谁在哪台设备上用掉的」与产出侧同样可查。重复的报工由装配函数按身份去重。
         var consumingReportNos = consumptions
@@ -2616,10 +2800,11 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
                 .Select(x => new MesTraceabilityReportContext(x.ReportNo, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId))
                 .ToArrayAsync(cancellationToken);
 
-        var nodes = new List<MesTraceabilityNode>
+        var nodes = new List<MesTraceabilityNode>();
+        if (consumptions.Length > 0 || producedReports.Length > 0)
         {
-            new MesTraceabilityNode(request.BatchOrSerial, producedReports.Length > 0 ? MesTraceabilityNodeType.ProducedLotOrSerial : MesTraceabilityNodeType.MaterialLot, request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"),
-        };
+            nodes.Add(new MesTraceabilityNode(request.BatchOrSerial, producedReports.Length > 0 ? MesTraceabilityNodeType.ProducedLotOrSerial : MesTraceabilityNodeType.MaterialLot, request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"));
+        }
         var edges = new List<MesTraceabilityEdge>();
 
         await dbContext.AppendProductionReportFactsAsync(
@@ -2656,6 +2841,26 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
                 nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeType.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
+        }
+
+        var hasReworkFacts = await dbContext.AppendReworkFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [
+                .. producedReports.Select(x => x.WorkOrderId),
+                .. consumptions.Select(x => x.WorkOrderId),
+            ],
+            [request.BatchOrSerial],
+            nodes,
+            edges,
+            useBatchReadFaceEdgeDirection: true,
+            cancellationToken);
+
+        if (consumptions.Length == 0 && producedReports.Length == 0 && !hasReworkFacts)
+        {
+            return new MesTraceabilityResponse(
+                [new MesTraceabilityNode(request.BatchOrSerial, MesTraceabilityNodeType.BatchOrSerial, request.BatchOrSerial, "Unknown")],
+                []);
         }
 
         return new MesTraceabilityResponse(
@@ -2758,6 +2963,16 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
                 edges.Add(new MesTraceabilityEdge(report.ReportNo, report.SerialNo, "produced-serial"));
             }
         }
+
+        await dbContext.AppendReworkFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [.. consumptions.Select(x => x.WorkOrderId)],
+            [request.MaterialLotId],
+            nodes,
+            edges,
+            useBatchReadFaceEdgeDirection: true,
+            cancellationToken);
 
         return new MesTraceabilityResponse(
             nodes.DistinctBy(x => new { x.NodeId, x.NodeType }).ToArray(),
