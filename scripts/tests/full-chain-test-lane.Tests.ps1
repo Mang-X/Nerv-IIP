@@ -34,6 +34,10 @@ function Assert-FullChainDeadlineAdmissionCases {
         [pscustomobject]@{ Name = 'exact-boundary'; Deadline = 7200; Elapsed = 5400; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $true },
         [pscustomobject]@{ Name = 'elapsed-consumes-boundary'; Deadline = 7200; Elapsed = 5401; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
         [pscustomobject]@{ Name = 'cleanup-and-guard-reserves-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
+        [pscustomobject]@{ Name = 'larger-cleanup-reserve-exact-boundary'; Deadline = 1600; Elapsed = 0; Entrypoint = 1000; Cleanup = 500; Guard = 100; Allowed = $true },
+        [pscustomobject]@{ Name = 'larger-cleanup-reserve-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1000; Cleanup = 500; Guard = 100; Allowed = $false },
+        [pscustomobject]@{ Name = 'larger-guard-reserve-exact-boundary'; Deadline = 1600; Elapsed = 0; Entrypoint = 1000; Cleanup = 100; Guard = 500; Allowed = $true },
+        [pscustomobject]@{ Name = 'larger-guard-reserve-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1000; Cleanup = 100; Guard = 500; Allowed = $false },
         [pscustomobject]@{ Name = 'fullstack-cap-denied'; Deadline = 1700; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
         [pscustomobject]@{ Name = 'script-cap-allowed'; Deadline = 1700; Elapsed = 0; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $true },
         [pscustomobject]@{ Name = 'early-finish-transfers-budget'; Deadline = 2000; Elapsed = 500; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $true },
@@ -209,6 +213,20 @@ try {
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
                 [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Cleanup)) }
+            }
+        },
+        [pscustomobject]@{
+            Name = 'cleanup-reserve-replaced-by-guard'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Guard + $Guard)) }
+            }
+        },
+        [pscustomobject]@{
+            Name = 'guard-reserve-replaced-by-cleanup'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Cleanup + $Cleanup)) }
             }
         },
         [pscustomobject]@{
