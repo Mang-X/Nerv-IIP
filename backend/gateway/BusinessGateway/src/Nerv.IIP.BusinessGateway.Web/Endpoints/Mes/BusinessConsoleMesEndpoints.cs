@@ -1666,6 +1666,45 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/production-statistics")]
+[BusinessGatewayOperationId("queryBusinessConsoleMesProductionStatistics")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+public sealed class QueryBusinessConsoleMesProductionStatisticsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionStatisticsRequest, BusinessConsoleMesProductionStatisticsResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesProductionStatisticsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesProductionStatisticsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesProductionStatisticsResponse> ForwardAsync(
+        BusinessConsoleMesProductionStatisticsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.QueryProductionStatisticsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsRequestValidator
+    : Validator<BusinessConsoleMesProductionStatisticsRequest>
+{
+    public BusinessConsoleMesProductionStatisticsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+        RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.SkuId).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/production-reports/{reportNo}")]
 [BusinessGatewayOperationId("getBusinessConsoleMesProductionReport")]
 public sealed class GetBusinessConsoleMesProductionReportEndpoint(
