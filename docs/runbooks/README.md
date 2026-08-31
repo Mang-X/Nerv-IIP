@@ -7,6 +7,7 @@
 | 操作 | 当前 Runbook | 主要权威生产者 |
 | --- | --- | --- |
 | 本地开发、Aspire、worktree、真实依赖与排障 | [`local-development.md`](local-development.md) | `nerv.ps1 help`、`nerv.ps1 ports`、AppHost、配置与脚本 |
+| API/OpenAPI 导出、client 生成与 drift 排障 | [`api-codegen.md`](api-codegen.md) | `scripts/export-gateway-openapi.ps1`、`scripts/verify-openapi-client-drift.ps1`、`frontend/package.json` |
 | 脚本执行、验证、兼容性与治理排障 | [`script-automation.md`](script-automation.md) | `nerv.ps1 help`、目标脚本 `Get-Help`、`scripts/check-script-governance.ps1`、共享脚本 library/tests |
 | 测试 evidence、determinism、真实依赖与 PDA smoke | [`testing/README.md`](testing/README.md) | `scripts/tests/**`、test/lane manifests、runner/verifier、Vitest/Playwright/Android producer |
 | 数据库发布、迁移、备份、恢复与 seed | [`database-release.md`](database-release.md) | `scripts/install/migrate-*.ps1`、migration manifest、EF migrations、ADR 0009 |
