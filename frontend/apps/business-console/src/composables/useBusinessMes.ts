@@ -2432,17 +2432,18 @@ export function useMesDispatchTasks() {
   }
 }
 
-export function useMesWipSummary() {
+export function useMesWipSummary(shouldLoad: () => boolean = () => true) {
   const filters = defaultFilters()
 
-  const wipQuery = useQuery(() =>
-    withBusinessContextEnabled(
+  const wipQuery = useQuery(() => {
+    const options = withBusinessContextEnabled(
       getBusinessConsoleMesWipSummaryQueryOptions({
         query: toListQuery(filters),
       }),
       filters,
-    ),
-  )
+    )
+    return { ...options, enabled: options.enabled && shouldLoad() }
+  })
 
   return {
     filters,
