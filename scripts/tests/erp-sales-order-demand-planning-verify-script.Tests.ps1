@@ -224,6 +224,20 @@ foreach ($identityRoute in @(
 }
 Assert-Contract ($content.Contains('identityUri=', [StringComparison]::Ordinal)) 'Readiness diagnostics must retain the exact identity route that failed.'
 
+# The readiness contract is also exercised from the production verifier entry
+# point. Each negative control must use a real managed process/HTTP listener and
+# retain its own failure plus zero-process/zero-port cleanup readback; helper
+# shape tests alone cannot prove ownership or bind diagnostics.
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Invoke-Man517ReadinessNegativeProbes'))) 'MAN-517 must expose a production-entry readiness negative-probe matrix.'
+foreach ($negativeScenarioId in @('wrong-service-port', 'bind-address-in-use', 'wrong-port', 'pid-reuse', 'response-identity-forged')) {
+    Assert-Contract ($content.Contains($negativeScenarioId, [StringComparison]::Ordinal)) "MAN-517 production readiness evidence must retain the '$negativeScenarioId' counterexample."
+}
+Assert-Contract ($content.Contains('readiness-negative-evidence.json', [StringComparison]::Ordinal)) 'MAN-517 readiness negative probes must write retained evidence independently of positive FullChain evidence.'
+Assert-Contract ($content.Contains('remainingPorts', [StringComparison]::Ordinal)) 'Each readiness negative probe must verify exact port cleanup.'
+Assert-Contract ($content.Contains('remainingProcesses', [StringComparison]::Ordinal)) 'Each readiness negative probe must verify exact process cleanup.'
+Assert-Contract ($content.Contains("Start-ManagedBackgroundProcess -Command 'pwsh'", [StringComparison]::Ordinal)) 'Forged identity response must come from a real managed HTTP responder, not an injected function mock.'
+Assert-Contract ($content.Contains('TcpListener', [StringComparison]::Ordinal)) 'Bind and wrong-port readiness negatives must use real TCP listeners.'
+
 # The response-shape guard is deliberately exercised with the shared /health
 # envelope and each service's existing read-only envelope. A generic 200/true
 # response must never be accepted as one of the three service identities.
