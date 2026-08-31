@@ -51,7 +51,7 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                 x => x.Id == request.LabelTemplateId
                     && x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
-                    && x.Status == "active",
+                    && x.Status == LabelTemplate.ActiveStatus,
                 cancellationToken)
             ?? throw new KnownException($"未找到当前组织和环境内可用的标签模板，模板 ID = {request.LabelTemplateId}。");
 
