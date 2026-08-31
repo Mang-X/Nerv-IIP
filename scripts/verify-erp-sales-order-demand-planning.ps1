@@ -102,14 +102,21 @@ function Start-Man517OwnedProcess {
         [Parameter(Mandatory)] [string]$Name
     )
 
-    $Ownership.Reservation.Stop()
-    $Ownership.Reservation = $null
-    $managedProcess = Start-ManagedBackgroundProcess -Command $Command -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
-    $Ownership.ManagedProcess = $managedProcess
-    $Ownership.ProcessId = $managedProcess.ProcessId
-    $Ownership.ProcessStartTime = $managedProcess.Process.StartTime
-    $Ownership.State = 'OwnedByProcess'
-    return $managedProcess
+    try {
+        $Ownership.Reservation.Stop()
+        $Ownership.Reservation = $null
+        $managedProcess = Start-ManagedBackgroundProcess -Command $Command -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
+        $Ownership.ManagedProcess = $managedProcess
+        $Ownership.ProcessId = $managedProcess.ProcessId
+        $Ownership.ProcessStartTime = $managedProcess.Process.StartTime
+        $Ownership.State = 'OwnedByProcess'
+        return $managedProcess
+    }
+    catch {
+        throw [InvalidOperationException]::new(
+            "MAN-517 readiness failed: service=$($Ownership.ServiceName) process=$Name port=$($Ownership.Port) reason=managed process could not start exitCode=not-started bindCause=$($_.Exception.Message)",
+            $_.Exception)
+    }
 }
 
 function Get-Man517ListenerProcessIds {
@@ -146,14 +153,14 @@ function Read-Man517ListenerAuthority {
 
     $listenerProcessIds = @(Get-Man517ListenerProcessIds -Ownership $Ownership)
     if ($listenerProcessIds.Count -ne 1) {
-        throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' expected one loopback listener, found $($listenerProcessIds.Count)."
+        throw "MAN-517 service identity mismatch: service=$($Ownership.ServiceName) port=$($Ownership.Port) expected one loopback listener, found $($listenerProcessIds.Count)."
     }
     if ($listenerProcessIds[0] -ne $Ownership.ProcessId) {
-        throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' is owned by listener PID $($listenerProcessIds[0]), expected managed owner PID $($Ownership.ProcessId)."
+        throw "MAN-517 service identity mismatch: service=$($Ownership.ServiceName) port=$($Ownership.Port) listenerPid=$($listenerProcessIds[0]) expected managedProcessId=$($Ownership.ProcessId)."
     }
     $listenerProcess = Get-Process -Id $listenerProcessIds[0] -ErrorAction Stop
     if ($listenerProcess.StartTime -ne $Ownership.ProcessStartTime) {
-        throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' is owned by listener PID $($listenerProcessIds[0]) with process start time $($listenerProcess.StartTime.ToUniversalTime().ToString('O')), expected managed owner start time $($Ownership.ProcessStartTime.ToUniversalTime().ToString('O'))."
+        throw "MAN-517 service identity mismatch: service=$($Ownership.ServiceName) port=$($Ownership.Port) listenerPid=$($listenerProcessIds[0]) listenerStartTime=$($listenerProcess.StartTime.ToUniversalTime().ToString('O')) expectedOwnerStartTime=$($Ownership.ProcessStartTime.ToUniversalTime().ToString('O'))."
     }
     return [pscustomobject]@{
         ServiceName = $Ownership.ServiceName
@@ -164,6 +171,70 @@ function Read-Man517ListenerAuthority {
         ListenerProcessStartTime = $listenerProcess.StartTime
         ObservedAtUtc = [DateTimeOffset]::UtcNow
     }
+}
+
+function Get-Man517ProcessFailureCause {
+    param([Parameter(Mandatory)] [object]$ManagedProcess)
+
+    $observations = [System.Collections.Generic.List[string]]::new()
+    foreach ($logPath in @($ManagedProcess.StderrPath, $ManagedProcess.StdoutPath)) {
+        if ([string]::IsNullOrWhiteSpace([string]$logPath) -or -not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+            continue
+        }
+        try {
+            $lines = @(Get-Content -LiteralPath $logPath -Tail 80 -ErrorAction Stop)
+            $causeLines = @($lines |
+                Where-Object {
+                    $_ -match '(?i)AddressInUseException|SocketException|address already in use|failed to bind|unable to bind|listen.*already'
+                } |
+                Select-Object -Last 4)
+            if ($causeLines.Count -eq 0) {
+                $causeLines = @($lines |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                    Select-Object -Last 1)
+            }
+            if ($causeLines.Count -gt 0) {
+                $safeCause = @($causeLines | ForEach-Object { Protect-Man517DiagnosticText -Text ([string]$_) }) -join ' | '
+                $observations.Add("$([IO.Path]::GetFileName($logPath))=$safeCause")
+            }
+        }
+        catch {
+            $observations.Add("$([IO.Path]::GetFileName($logPath))=unavailable")
+        }
+    }
+    if ($observations.Count -eq 0) {
+        return 'unavailable'
+    }
+    return ($observations -join ' | ')
+}
+
+function New-Man517ReadinessFailure {
+    param(
+        [Parameter(Mandatory)] [string]$ServiceName,
+        [Parameter(Mandatory)] [object]$Ownership,
+        [Parameter(Mandatory)] [object]$ManagedProcess,
+        [Parameter(Mandatory)] [string]$Reason,
+        [AllowNull()] [System.Exception]$InnerException
+    )
+
+    $processId = if ($null -ne $Ownership.ProcessId) { [int]$Ownership.ProcessId } else { [int]$ManagedProcess.ProcessId }
+    $exitCode = 'running'
+    $failureCause = 'not-observed'
+    try {
+        if ($ManagedProcess.Process.HasExited) {
+            $exitCode = [string]$ManagedProcess.Process.ExitCode
+            $failureCause = Get-Man517ProcessFailureCause -ManagedProcess $ManagedProcess
+        }
+    }
+    catch {
+        $exitCode = 'unavailable'
+        $failureCause = "unavailable: $($_.Exception.Message)"
+    }
+    $message = "MAN-517 readiness failed: service=$ServiceName process=$processId port=$($Ownership.Port) reason=$Reason exitCode=$exitCode bindCause=$failureCause logs=$($ManagedProcess.LogDirectory)"
+    if ($null -eq $InnerException) {
+        return [InvalidOperationException]::new($message)
+    }
+    return [InvalidOperationException]::new($message, $InnerException)
 }
 
 function Stop-Man517PortOwner {
@@ -246,19 +317,161 @@ function New-AcceptanceDatabase {
     } while ($true)
 }
 
+function Test-Man517ServiceIdentityResponse {
+    param(
+        [Parameter(Mandatory)] [string]$ServiceName,
+        [AllowNull()] [object]$Response
+    )
+
+    if ($null -eq $Response) {
+        return $false
+    }
+    $successProperty = $Response.PSObject.Properties['success']
+    if ($null -eq $successProperty -or $successProperty.Value -isnot [bool] -or -not $successProperty.Value) {
+        return $false
+    }
+    $dataProperty = $Response.PSObject.Properties['data']
+    if ($null -eq $dataProperty -or $null -eq $dataProperty.Value) {
+        return $false
+    }
+
+    switch ($ServiceName.ToLowerInvariant()) {
+        'masterdata' {
+            $resources = $dataProperty.Value.PSObject.Properties['resources']
+            $total = $dataProperty.Value.PSObject.Properties['total']
+            return $null -ne $resources -and $null -ne $total
+        }
+        'demand-planning' {
+            return $dataProperty.Value -is [System.Collections.IEnumerable] -and
+                $dataProperty.Value -isnot [string] -and
+                $dataProperty.Value -isnot [hashtable]
+        }
+        'erp' {
+            $items = $dataProperty.Value.PSObject.Properties['items']
+            $total = $dataProperty.Value.PSObject.Properties['total']
+            return $null -ne $items -and $null -ne $total
+        }
+        default {
+            throw "MAN-517 service identity mismatch: unsupported service '$ServiceName'."
+        }
+    }
+}
+
 function Wait-Healthy {
-    param([string]$Uri, [object]$ManagedProcess)
-    $deadline = (Get-Date).AddSeconds(90)
+    param(
+        [Parameter(Mandatory)] [string]$ServiceName,
+        [Parameter(Mandatory)] [string]$Uri,
+        [Parameter(Mandatory)] [string]$IdentityUri,
+        [Parameter(Mandatory)] [hashtable]$Headers,
+        [Parameter(Mandatory)] [object]$ManagedProcess,
+        [Parameter(Mandatory)] [object]$Ownership,
+        [ValidateRange(1, 300)] [int]$TimeoutSeconds = 90
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastFailure = $null
     do {
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
         if ($ManagedProcess.Process.HasExited) {
-            throw "Managed service exited before becoming healthy. Logs: $($ManagedProcess.LogDirectory)"
+            throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason 'managed process exited before readiness probes' -InnerException $null)
         }
+
         try {
-            if ([string]::Equals([string]((Invoke-RestMethod -Method Get -Uri $Uri)), [string]('Healthy'), [StringComparison]::OrdinalIgnoreCase)) { return }
+            Read-Man517ListenerAuthority -Ownership $Ownership | Out-Null
         }
-        catch { Start-Sleep -Milliseconds 500 }
+        catch {
+            # A process can be alive while Kestrel is still binding its handed-off
+            # listener. Treat exactly that zero-listener observation as transient;
+            # a different PID, multiple listeners, or a start-time mismatch is a
+            # deterministic service-identity failure and must fail closed.
+            if ($_.Exception.Message.Contains('found 0', [StringComparison]::Ordinal) -and
+                -not $ManagedProcess.Process.HasExited) {
+                $lastFailure = $_.Exception
+                if ((Get-Date) -ge $deadline) { break }
+                Start-Sleep -Milliseconds 500
+                continue
+            }
+            throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason $_.Exception.Message -InnerException $_.Exception)
+        }
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
+
+        $healthReady = $false
+        try {
+            $remainingSeconds = [int][Math]::Max(1, [Math]::Ceiling(((Get-Date) - $deadline).TotalSeconds * -1))
+            $healthResponse = Invoke-RestMethod -Method Get -Uri $Uri -TimeoutSec ([int][Math]::Min(5, $remainingSeconds))
+            $healthReady = [string]::Equals([string]$healthResponse, [string]('Healthy'), [StringComparison]::OrdinalIgnoreCase)
+            if (-not $healthReady) {
+                throw "health response was not Healthy"
+            }
+        }
+        catch {
+            $lastFailure = $_.Exception
+        }
+
+        if ($healthReady) {
+            if ($ManagedProcess.Process.HasExited) {
+                throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason 'managed process exited after health response and before identity probe' -InnerException $null)
+            }
+
+            try {
+                Read-Man517ListenerAuthority -Ownership $Ownership | Out-Null
+            }
+            catch {
+                throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason $_.Exception.Message -InnerException $_.Exception)
+            }
+
+            $identityResponse = $null
+            $identityFailure = $null
+            try {
+                $identityResponse = Invoke-Man517JsonRequest -Method Get -Uri $IdentityUri -Headers $Headers -Stage "${ServiceName}-service-identity" -Deadline $deadline
+            }
+            catch {
+                $identityFailure = $_.Exception
+            }
+            if ($null -ne $identityFailure) {
+                if ($identityFailure.Message.Contains('httpStatus=404', [StringComparison]::Ordinal) -or
+                    $identityFailure.Message.Contains('classification=protocol', [StringComparison]::Ordinal)) {
+                    throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason "service identity mismatch: identityUri=$IdentityUri response=$($identityFailure.Message)" -InnerException $identityFailure)
+                }
+                $lastFailure = $identityFailure
+            }
+            elseif (-not (Test-Man517ServiceIdentityResponse -ServiceName $ServiceName -Response $identityResponse)) {
+                throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason "service identity mismatch: identityUri=$IdentityUri response shape is not the expected $ServiceName contract" -InnerException $null)
+            }
+            else {
+                if ($ManagedProcess.Process.HasExited) {
+                    throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason 'managed process exited after identity response' -InnerException $null)
+                }
+                try {
+                    $authorityAfterIdentity = Read-Man517ListenerAuthority -Ownership $Ownership
+                    return [pscustomobject]@{
+                        ServiceName = $ServiceName
+                        IdentityUri = $IdentityUri
+                        ListenerAuthority = $authorityAfterIdentity
+                    }
+                }
+                catch {
+                    throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason $_.Exception.Message -InnerException $_.Exception)
+                }
+            }
+        }
+
+        if ($ManagedProcess.Process.HasExited) {
+            $reason = if ($null -eq $lastFailure) { 'managed process exited before identity was verified' } else { "managed process exited before identity was verified: $($lastFailure.Message)" }
+            throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason $reason -InnerException $lastFailure)
+        }
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
+        Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
-    throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
+
+    $reason = if ($null -eq $lastFailure) { "service identity not verified: identityUri=$IdentityUri" } else { "service identity not verified: identityUri=$IdentityUri lastFailure=$($lastFailure.Message)" }
+    throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason $reason -InnerException $lastFailure)
 }
 
 function Get-Man517ExceptionSummary {
@@ -667,7 +880,7 @@ function Export-Man517FailureDiagnostics {
         capturedAtUtc = [DateTimeOffset]::UtcNow
         database = $databaseName
         capVersion = $capVersion
-        failure = $FailureRecord.Exception.Message
+        failure = Get-Man517ExceptionSummary -Exception $FailureRecord.Exception
     } | ConvertTo-Json -Depth 8)
 
     foreach ($entry in @{
@@ -792,6 +1005,7 @@ $acceptanceFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
 $cleanupErrorCodes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $listenerAuthorityReadback = [System.Collections.Generic.List[object]]::new()
+$readinessIdentityReadback = [System.Collections.Generic.List[object]]::new()
 # 清理证据按「这次运行拥有的东西」逐项记账：托管进程按 pid+启动时间确认身份，
 # 数据库按精确名字，容器只算本脚本启动的那几个。
 $fullChainProbeCounters = $null
@@ -855,18 +1069,28 @@ try {
         Cap__FallbackWindowLookbackSeconds = '30'
         InternalService__BearerToken = $internalToken
     }
+    $headers = @{
+        Authorization = "Bearer $internalToken"
+        'X-Correlation-Id' = 'corr-man517-cross-process'
+        'X-Causation-Id' = 'acceptance-script'
+        'X-Authenticated-Actor' = 'user:planner-demo'
+    }
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $masterDataUrl }) -ScriptBlock {
         $script:masterDataProcess = Start-Man517OwnedProcess -Ownership $masterDataOwnership -Command 'dotnet' -Arguments @($masterDataDll) -WorkingDirectory $masterDataProjectDirectory -Name 'man517-masterdata'
     }
-    Wait-Healthy -Uri "$masterDataUrl/health" -ManagedProcess $masterDataProcess
-    $listenerAuthorityReadback.Add((Read-Man517ListenerAuthority -Ownership $masterDataOwnership))
+    $masterDataIdentityUri = "$masterDataUrl/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=work-center&skip=0&take=1"
+    $masterDataReadiness = Wait-Healthy -ServiceName 'masterdata' -Uri "$masterDataUrl/health" -IdentityUri $masterDataIdentityUri -Headers $headers -ManagedProcess $masterDataProcess -Ownership $masterDataOwnership
+    $listenerAuthorityReadback.Add($masterDataReadiness.ListenerAuthority)
+    $readinessIdentityReadback.Add(@{ service = $masterDataReadiness.ServiceName; identityUri = $masterDataReadiness.IdentityUri; verified = $true; processId = $masterDataReadiness.ListenerAuthority.OwnerProcessId; port = $masterDataReadiness.ListenerAuthority.Port })
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $demandPlanningUrl }) -ScriptBlock {
         $script:demandPlanningProcess = Start-Man517OwnedProcess -Ownership $demandPlanningOwnership -Command 'dotnet' -Arguments @($demandPlanningDll) -WorkingDirectory $demandPlanningProjectDirectory -Name 'man517-demand-planning'
     }
-    Wait-Healthy -Uri "$demandPlanningUrl/health" -ManagedProcess $demandPlanningProcess
-    $listenerAuthorityReadback.Add((Read-Man517ListenerAuthority -Ownership $demandPlanningOwnership))
+    $demandPlanningIdentityUri = "$demandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev"
+    $demandPlanningReadiness = Wait-Healthy -ServiceName 'demand-planning' -Uri "$demandPlanningUrl/health" -IdentityUri $demandPlanningIdentityUri -Headers $headers -ManagedProcess $demandPlanningProcess -Ownership $demandPlanningOwnership
+    $listenerAuthorityReadback.Add($demandPlanningReadiness.ListenerAuthority)
+    $readinessIdentityReadback.Add(@{ service = $demandPlanningReadiness.ServiceName; identityUri = $demandPlanningReadiness.IdentityUri; verified = $true; processId = $demandPlanningReadiness.ListenerAuthority.OwnerProcessId; port = $demandPlanningReadiness.ListenerAuthority.Port })
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
         ASPNETCORE_URLS = $erpUrl
@@ -877,15 +1101,11 @@ try {
     }) -ScriptBlock {
         $script:erpProcess = Start-Man517OwnedProcess -Ownership $erpOwnership -Command 'dotnet' -Arguments @($erpDll) -WorkingDirectory $erpProjectDirectory -Name 'man517-erp'
     }
-    Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
-    $listenerAuthorityReadback.Add((Read-Man517ListenerAuthority -Ownership $erpOwnership))
+    $erpIdentityUri = "$erpUrl/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=SO-DEMO-001&skip=0&take=1"
+    $erpReadiness = Wait-Healthy -ServiceName 'erp' -Uri "$erpUrl/health" -IdentityUri $erpIdentityUri -Headers $headers -ManagedProcess $erpProcess -Ownership $erpOwnership
+    $listenerAuthorityReadback.Add($erpReadiness.ListenerAuthority)
+    $readinessIdentityReadback.Add(@{ service = $erpReadiness.ServiceName; identityUri = $erpReadiness.IdentityUri; verified = $true; processId = $erpReadiness.ListenerAuthority.OwnerProcessId; port = $erpReadiness.ListenerAuthority.Port })
 
-    $headers = @{
-        Authorization = "Bearer $internalToken"
-        'X-Correlation-Id' = 'corr-man517-cross-process'
-        'X-Causation-Id' = 'acceptance-script'
-        'X-Authenticated-Actor' = 'user:planner-demo'
-    }
     $erpSalesOrder = Wait-ErpSalesOrderReady -ErpUrl $erpUrl -Headers $headers
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
     $sourceStateCommittedBeforeMutation = $true
@@ -972,6 +1192,7 @@ try {
         listenerAuthority = @($listenerAuthorityReadback | ForEach-Object {
             @{ service = $_.ServiceName; port = $_.Port; ownerProcessId = $_.OwnerProcessId; ownerProcessStartTimeUtc = $_.OwnerProcessStartTime.ToUniversalTime().ToString('O'); listenerProcessId = $_.ListenerProcessId; listenerProcessStartTimeUtc = $_.ListenerProcessStartTime.ToUniversalTime().ToString('O'); observedAtUtc = $_.ObservedAtUtc.ToString('O') }
         })
+        readinessIdentity = @($readinessIdentityReadback)
         fullChainProbeCounters = $fullChainProbeCounters
         checkpoints = @{ erpSalesOrder = $erpSalesOrder; released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8

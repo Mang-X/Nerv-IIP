@@ -194,6 +194,131 @@ Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = '
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'))) 'Verify script must define one fail-closed JSON request path.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'invoke-man517jsonrequest'))) 'PowerShell function contract lookup must follow case-insensitive command-name semantics.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady'))) 'Verify script must poll the ERP sales-order query after health before mutation.'
+
+# --- NERV-1874 / MAN-517 readiness identity contract ----------------------------------------
+# Generic /health is shared by every business process. Readiness therefore has
+# to prove the managed process still owns its reserved port and that the
+# response came from the service-specific read-only route before business flow.
+$readinessFunctionAst = Get-FunctionDefinitionAst -Name 'Wait-Healthy'
+$readinessFunctionText = Get-FunctionContractText -Name 'Wait-Healthy'
+Assert-Contract ($null -ne $readinessFunctionAst) 'MAN-517 readiness must have one shared readiness function.'
+foreach ($parameterName in @('ServiceName', 'IdentityUri', 'Headers', 'Ownership', 'ManagedProcess')) {
+    Assert-Contract ($null -ne (Get-ParameterAst -Function $readinessFunctionAst -Name $parameterName)) "MAN-517 readiness must bind its expected $parameterName explicitly."
+}
+Assert-Contract ($readinessFunctionText.Contains('Read-Man517ListenerAuthority', [StringComparison]::Ordinal)) 'Readiness must re-check the exact managed listener authority before accepting health.'
+Assert-Contract ($readinessFunctionText.Contains('Test-Man517ServiceIdentityResponse', [StringComparison]::Ordinal)) 'Readiness must validate a service-specific response shape instead of accepting generic /health.'
+Assert-Contract ($readinessFunctionText.Contains('service identity mismatch', [StringComparison]::Ordinal)) 'Readiness failures must identify a wrong service on the invocation port.'
+$readinessFailureText = Get-FunctionContractText -Name 'New-Man517ReadinessFailure'
+Assert-Contract ($readinessFailureText.Contains('Get-Man517ProcessFailureCause', [StringComparison]::Ordinal)) 'Early process exit diagnostics must retain the bind/root failure cause.'
+Assert-Contract ($readinessFailureText.Contains('exitCode=', [StringComparison]::Ordinal)) 'Early process exit diagnostics must retain the managed process exit code.'
+foreach ($readinessCall in (Get-CommandCallAsts -Name 'Wait-Healthy')) {
+    foreach ($parameterName in @('ServiceName', 'IdentityUri', 'Headers', 'Ownership', 'ManagedProcess')) {
+        Assert-Contract (Test-CommandHasParameter -Call $readinessCall -Name $parameterName) "Every MAN-517 readiness call must bind -$parameterName so service identity cannot be inferred from /health."
+    }
+}
+foreach ($identityRoute in @(
+        '/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=work-center',
+        '/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev',
+        '/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev')) {
+    Assert-Contract ($content.Contains($identityRoute, [StringComparison]::Ordinal)) "MAN-517 readiness must use the existing service-specific read-only route '$identityRoute'."
+}
+Assert-Contract ($content.Contains('identityUri=', [StringComparison]::Ordinal)) 'Readiness diagnostics must retain the exact identity route that failed.'
+
+# The response-shape guard is deliberately exercised with the shared /health
+# envelope and each service's existing read-only envelope. A generic 200/true
+# response must never be accepted as one of the three service identities.
+$identityFunctionText = Get-FunctionContractText -Name 'Test-Man517ServiceIdentityResponse'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($identityFunctionText)) 'The service identity response validator must be present for behavioral contract coverage.'
+Invoke-Expression $identityFunctionText
+$genericHealthEnvelope = [pscustomobject]@{ success = $true; data = [pscustomobject]@{} }
+foreach ($serviceName in @('masterdata', 'demand-planning', 'erp')) {
+    Assert-Contract (-not (Test-Man517ServiceIdentityResponse -ServiceName $serviceName -Response $genericHealthEnvelope)) "Generic /health response must not identify '$serviceName'."
+}
+Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceName 'masterdata' -Response ([pscustomobject]@{
+    success = $true; data = [pscustomobject]@{ resources = @(); total = 0 }
+})) 'MasterData identity must accept the existing resources-list response shape.'
+Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceName 'demand-planning' -Response ([pscustomobject]@{
+    success = $true; data = @([pscustomobject]@{ sourceReference = 'SO-DEMO-001' })
+})) 'DemandPlanning identity must accept the existing demand-list response shape.'
+Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceName 'erp' -Response ([pscustomobject]@{
+    success = $true; data = [pscustomobject]@{ items = @(); total = 0 }
+})) 'ERP identity must accept the existing sales-order-list response shape.'
+
+# Exercise the exact readiness function with an equivalent wrong-service
+# response and an already-exited managed process. The injected responders are
+# limited to this source-contract test; the production FullChain run below
+# remains the real-process/real-HTTP evidence owner.
+$failureCauseFunctionText = Get-FunctionContractText -Name 'Get-Man517ProcessFailureCause'
+Invoke-Expression $failureCauseFunctionText
+Invoke-Expression $readinessFailureText
+Invoke-Expression $readinessFunctionText
+function Protect-Man517DiagnosticText([string]$Text) { return $Text }
+function Read-Man517ListenerAuthority([object]$Ownership) {
+    return [pscustomobject]@{
+        ServiceName = $Ownership.ServiceName
+        Port = $Ownership.Port
+        OwnerProcessId = $Ownership.ProcessId
+        OwnerProcessStartTime = $Ownership.ProcessStartTime
+        ListenerProcessId = $Ownership.ProcessId
+        ListenerProcessStartTime = $Ownership.ProcessStartTime
+        ObservedAtUtc = [DateTimeOffset]::UtcNow
+    }
+}
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+function Invoke-RestMethod {
+    param([string]$Method, [string]$Uri, [int]$TimeoutSec)
+    $script:readinessHealthCallCount++
+    return 'Healthy'
+}
+function Invoke-Man517JsonRequest {
+    param([hashtable]$Headers, [string]$Uri, [string]$Stage, [datetime]$Deadline, [string]$Method)
+    $script:readinessIdentityCallCount++
+    return [pscustomobject]@{ success = $true; data = [pscustomobject]@{} }
+}
+$readinessOwnership = [pscustomobject]@{
+    ServiceName = 'demand-planning'
+    Port = 54321
+    ProcessId = 7
+    ProcessStartTime = [datetime]::Now
+}
+$readinessProcess = [pscustomobject]@{
+    ProcessId = 7
+    LogDirectory = 'test-logs'
+    StderrPath = ''
+    StdoutPath = ''
+    Process = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
+}
+$wrongServiceFailure = $null
+try {
+    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -TimeoutSeconds 2 | Out-Null
+}
+catch { $wrongServiceFailure = $_.Exception }
+Assert-Contract ($null -ne $wrongServiceFailure -and $wrongServiceFailure.Message.Contains('service identity mismatch', [StringComparison]::Ordinal)) 'A wrong service returning generic Healthy must fail closed as an identity mismatch.'
+Assert-Contract ($script:readinessHealthCallCount -eq 1 -and $script:readinessIdentityCallCount -eq 1) 'The wrong-service counterexample must reach the identity route once and must not proceed to business requests.'
+
+$readinessProcess.Process.HasExited = $true
+$readinessProcess.Process.ExitCode = 73
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+$earlyExitFailure = $null
+try {
+    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -TimeoutSeconds 2 | Out-Null
+}
+catch { $earlyExitFailure = $_.Exception }
+Assert-Contract ($null -ne $earlyExitFailure -and $earlyExitFailure.Message.Contains('exitCode=73', [StringComparison]::Ordinal)) 'An exited target process must fail closed with its exact exit code.'
+Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'An exited target process must not issue health, identity, or business requests.'
+$failureLogPath = Join-Path ([IO.Path]::GetTempPath()) "man517-bind-cause-$([Guid]::NewGuid().ToString('N')).log"
+try {
+    [IO.File]::WriteAllText($failureLogPath, "System.IO.IOException: Failed to bind to address`n ---> Microsoft.AspNetCore.Connections.AddressInUseException: Address already in use`n ---> System.Net.Sockets.SocketException (48): Address already in use")
+    $readinessProcess.StderrPath = $failureLogPath
+    $bindCause = Get-Man517ProcessFailureCause -ManagedProcess $readinessProcess
+    Assert-Contract ($bindCause.Contains('AddressInUseException', [StringComparison]::Ordinal) -and $bindCause.Contains('SocketException', [StringComparison]::Ordinal)) 'Early bind diagnostics must retain both the AddressInUseException and innermost SocketException evidence.'
+}
+finally {
+    if (Test-Path -LiteralPath $failureLogPath) { Remove-Item -LiteralPath $failureLogPath -Force }
+}
+
 foreach ($functionName in @('Invoke-JsonPost', 'Wait-Demand', 'Assert-DemandStable', 'Wait-ErpSalesOrderReady')) {
     $functionText = Get-FunctionContractText -Name $functionName
     Assert-Contract ($functionText.Contains('Invoke-Man517JsonRequest', [StringComparison]::Ordinal)) "$functionName must use the shared fail-closed JSON request path."
@@ -378,6 +503,8 @@ Assert-Contract ($content.Contains('disposable database still present', [StringC
 Assert-Contract ($content.Contains('script-owned compose services still running', [StringComparison]::Ordinal)) 'Cleanup must verify only the compose services this run started are gone.'
 Assert-Contract ($content.Contains('cleanup-evidence.json', [StringComparison]::Ordinal)) 'Cleanup accounting must be written as reusable evidence.'
 Assert-Contract ($content.Contains('sales-order-demand-planning-evidence.json', [StringComparison]::Ordinal)) 'Verify script must write reusable acceptance evidence.'
+Assert-Contract ($content.Contains('$readinessIdentityReadback', [StringComparison]::Ordinal)) 'Acceptance evidence must retain the verified service-specific identity route for every managed process.'
+Assert-Contract ($content.Contains('readinessIdentity =', [StringComparison]::Ordinal)) 'Acceptance evidence must publish readiness identity separately from generic health and port ownership.'
 foreach ($parameterName in @('CanonicalResultPath', 'TrackIdentifier', 'Repository', 'RunId', 'RunAttempt', 'TestedSha', 'ManifestDigest', 'ScenarioId')) {
     $parameterMatches = @($scriptAst.ParamBlock.Parameters | Where-Object { [string]::Equals($_.Name.VariablePath.UserPath, $parameterName, [StringComparison]::OrdinalIgnoreCase) })
     Assert-Contract ($parameterMatches.Count -eq 1) "Verify script must accept caller-supplied canonical result parameter '$parameterName'."
