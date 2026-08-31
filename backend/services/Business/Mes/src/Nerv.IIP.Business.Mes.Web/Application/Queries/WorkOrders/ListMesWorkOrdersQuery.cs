@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
@@ -10,7 +11,7 @@ public sealed record ListMesWorkOrdersQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -75,11 +76,12 @@ public sealed class ListMesWorkOrdersQueryHandler(
 {
     public async Task<ListMesWorkOrdersResponse> Handle(ListMesWorkOrdersQuery request, CancellationToken cancellationToken)
     {
-        var skip = Math.Max(0, request.Skip);
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var workOrdersQuery = dbContext.WorkOrders
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
@@ -102,9 +104,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
             workOrdersQuery = workOrdersQuery.Where(x => statuses.Contains(x.Status.ToLower()));
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             workOrdersQuery = workOrdersQuery.Where(x =>
                 x.WorkOrderIdValue.ToLower().Contains(keyword) ||
                 x.SkuId.ToLower().Contains(keyword) ||
@@ -131,8 +132,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
         if (hasTaskFilters)
         {
             workOrdersQuery = workOrdersQuery.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkOrderId == x.WorkOrderIdValue &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (!hasWorkCenterScope || workCenterIds.Contains(task.WorkCenterId)) &&
@@ -147,8 +148,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
         var workOrders = await workOrdersQuery
             .OrderBy(x => x.DueUtc)
             .ThenBy(x => x.WorkOrderIdValue)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 x.WorkOrderIdValue,
@@ -173,8 +174,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
         var tasks = await dbContext.OperationTasks
             .AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
                 workOrderIds.Contains(x.WorkOrderId) &&
                 (!hasTaskFilters ||
                     ((workCenterId == null || x.WorkCenterId == workCenterId) &&
@@ -196,8 +197,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
         var heldWorkOrderIds = await dbContext.QualityHoldContexts
             .AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
                 x.Active &&
                 workOrderIds.Contains(x.WorkOrderId))
             .Select(x => x.WorkOrderId)
