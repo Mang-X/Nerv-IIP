@@ -7,7 +7,7 @@ import {
 
 const bucket: BusinessConsoleMesProductionStatisticsBucket = {
   dimension: 'workCenter',
-  dimensionValue: '精加工中心,"A"',
+  dimensionValue: '58d80fc0-77d9-4213-8fe6-09cd0f595776',
   businessDate: '2026-08-30',
   shiftCode: 'SHIFT-DAY',
   workCenterId: '58d80fc0-77d9-4213-8fe6-09cd0f595776',
@@ -32,7 +32,7 @@ describe('production statistics CSV', () => {
     expect(csv).toContain(
       '聚合维度,维度值,业务日,班次,总产出,合格量,合格率,报废量,报废率,返修量,返修率,报工数,数据状态,降级原因',
     )
-    expect(csv).toContain('"精加工中心,""A"""')
+    expect(csv).toContain('工作中心,,2026-08-30,SHIFT-DAY')
     expect(csv).toContain(',100,96.5,0.965,2,0.02,1.5,0.015,7,数据不完整,历史站点时区缺失')
     expect(csv).not.toContain('organizationId')
     expect(csv).not.toContain('environmentId')
@@ -40,6 +40,24 @@ describe('production statistics CSV', () => {
     expect(csv).not.toContain(bucket.skuId!)
     expect(csv).not.toContain('workCenterId')
     expect(csv).not.toContain('skuId')
+  })
+
+  it('does not export producer dimension values that are work center or SKU identifiers', () => {
+    const skuId = 'bc044c0c-eb35-41fe-b69d-a56646172418'
+    const csv = createProductionStatisticsCsv([
+      bucket,
+      {
+        ...bucket,
+        dimension: 'sku',
+        dimensionValue: skuId,
+        workCenterId: null,
+      },
+    ])
+
+    expect(csv).toContain('工作中心,,2026-08-30,SHIFT-DAY')
+    expect(csv).toContain('物料,,2026-08-30,SHIFT-DAY')
+    expect(csv).not.toContain(bucket.dimensionValue!)
+    expect(csv).not.toContain(skuId)
   })
 
   it('builds a filename from the selected UTC window and dimension', () => {
