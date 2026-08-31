@@ -13,6 +13,11 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// </summary>
 public sealed class HttpMesFirstArticleGateTests
 {
+    /// <summary>
+    /// 放行侧逐值钉桩。<c>not-opened</c> 那一条同时是**验收标准第 3 条**（存量在制工序按既定策略处理）
+    /// 的承担用例：门禁上线前就在制、已经报过工、Quality 侧还没有首件任务的工序，正是读到这个取值——
+    /// 把它改成拒就是上一版复现的死锁，改动后本条即红。
+    /// </summary>
     [Theory]
     [InlineData("not-required", null)]
     [InlineData("decided", "passed")]
@@ -38,6 +43,7 @@ public sealed class HttpMesFirstArticleGateTests
     // Quality 还不掌握该工序事实：它靠工单发布事实到达恢复、不靠报工恢复，拒掉它不会锁死任何东西。
     [InlineData("not-synchronized", null, "工单发布事实尚未同步")]
     [InlineData("decided", "rejected", "首件判定不合格")]
+    // 拒绝文案要点名入口，否则被拦下的人在报工抽屉里无从知道去哪儿看结论。
     // 让步放行是对已产出那批件的处置结论，不解锁后续批量生产（#2780 决策 1）。
     [InlineData("decided", "conditional-release", "让步放行")]
     public async Task Unconfirmed_first_article_is_a_business_rejection(
@@ -52,6 +58,8 @@ public sealed class HttpMesFirstArticleGateTests
 
         Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("FIRST_ARTICLE_SOURCE_UNAVAILABLE", exception.Message, StringComparison.Ordinal);
+        // 服务端消息原样上屏，超过 60 字会被 serverErrorMessage 截断成「…」，业务指引就断在半截。
+        Assert.True(exception.Message.Length <= 60, exception.Message);
     }
 
     [Theory]

@@ -83,14 +83,16 @@ test('#2780 工序执行行操作能就地打开首件检验记录页签', async
   await expect(entry).toBeVisible()
   await entry.click()
 
-  // 落点必须真的切到首件检验记录页签并渲染记录，而不是停在方案页签。
   await expect(page).toHaveURL(/\/quality\/inspections\?.*view=first-article-records/)
-  await expect(page.getByRole('heading', { name: '首件检验记录' })).toBeVisible({ timeout: 30_000 })
+
+  // 先等落点稳定下来（渲染出记录），再断言抽屉不存在——否则 `toHaveCount(0)` 会在抽屉尚未挂载时
+  // 提前为真，承担点就落到了后面的标题可见性上，与叙述不符。
   await expect(page.getByText('IR-FA-2026-0031')).toBeVisible({ timeout: 30_000 })
   // 落点不得自动弹开「创建检验记录」抽屉：本入口是去看结论的。
   // 首轮走查就栽在这里——入口带了 workOrderId，被 inspections.vue 的 query watch
   // 当成建单上下文，人一点进来就被丢进新建表单。
   await expect(page.getByRole('dialog', { name: '创建检验记录' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '首件检验记录' })).toBeVisible()
 })
 
 async function routeConsoleApi(route: Route) {

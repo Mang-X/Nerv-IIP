@@ -6,14 +6,14 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
-using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 /// <summary>
-/// #2780 首件门禁在**服务端报工提交路径**上的落点。
-/// 「这一次是不是首件那一件」由 Quality 的首件进度回答，MES 不用本地报工历史推断，
-/// 因此每次报工都要带着该工单该工序去问，且问到的结论每次现取（复检结论不缓存）。
+/// #2780 首件门禁在**服务端报工提交路径**上的落点：报工是否被门禁拦住、拦住时是否什么都不落库。
+/// **取值判据本身不在这里**——「Quality 回哪个取值时放行」由
+/// <see cref="HttpMesFirstArticleGateTests"/> 按 wire 字符串逐值承担（含验收标准第 3 条要的
+/// <c>not-opened</c> 放行）。这里的桩只表达「放行 / 拒绝」两态，不复制一份判据。
 /// </summary>
 public sealed class MesFirstArticleReportGateTests
 {
@@ -38,31 +38,6 @@ public sealed class MesFirstArticleReportGateTests
             gate.Calls);
     }
 
-    /// <summary>
-    /// 拍板决策 2：首件那一件不该被自己拦住。它不靠「该工序此前没报过工」识别——那个本地判据与
-    /// Quality 的建单条件不等价——而是 Quality 明说任务尚未开出（<c>not-opened</c>），
-    /// 而开单的唯一触发点正是本次报工的事件。
-    /// </summary>
-    [Fact]
-    public async Task Operation_whose_first_article_task_is_not_opened_yet_still_reports_even_after_earlier_reports()
-    {
-        var (services, gate) = CreateServices(nameof(Operation_whose_first_article_task_is_not_opened_yet_still_reports_even_after_earlier_reports));
-        await using var _ = services;
-        using var scope = services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        SeedOperation(dbContext, "org-001", "env-dev", "WO-A", "OP-10", 10);
-        await dbContext.SaveChangesAsync();
-        var handler = CreateHandler(dbContext, gate);
-        // 门禁上线前就在制、已经报过工的工序：Quality 侧没有任何首件任务，且命中生效首件档。
-        await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-legacy");
-
-        await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-after-gate");
-
-        // 这一次放行才让 ProductionReportRecorded 落到 outbox，Quality 据此开出首件任务；
-        // 拦掉它就再没有任何路径能开出该工序的首件任务（全仓唯一建单触发点就是报工事件）。
-        Assert.Equal(2, await dbContext.ProductionReports.CountAsync(x => x.OperationTaskId == "OP-10"));
-    }
-
     [Fact]
     public async Task Rejected_first_article_blocks_the_report_and_persists_nothing()
     {
@@ -74,12 +49,12 @@ public sealed class MesFirstArticleReportGateTests
         await dbContext.SaveChangesAsync();
         var handler = CreateHandler(dbContext, gate);
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-first");
-        gate.Rejection = "本工序首件判定不合格，不能继续报工。请返工后重新首件检验。";
+        gate.Rejection = "本工序首件判定不合格，请返工后重新首件检验；记录见工序行操作。";
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-second"));
 
-        Assert.Equal("本工序首件判定不合格，不能继续报工。请返工后重新首件检验。", exception.Message);
+        Assert.Equal("本工序首件判定不合格，请返工后重新首件检验；记录见工序行操作。", exception.Message);
         Assert.Equal(1, await dbContext.ProductionReports.CountAsync(x => x.OperationTaskId == "OP-10"));
     }
 
@@ -95,7 +70,7 @@ public sealed class MesFirstArticleReportGateTests
         await dbContext.SaveChangesAsync();
         var handler = CreateHandler(dbContext, gate);
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-first");
-        gate.Rejection = "本工序首件尚未判定，暂不能继续报工。请等待质量完成首件确认。";
+        gate.Rejection = "本工序首件尚未判定，暂不能继续报工。可在工序行操作打开首件检验记录。";
         await Assert.ThrowsAsync<KnownException>(() =>
             ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-second"));
 
@@ -103,19 +78,6 @@ public sealed class MesFirstArticleReportGateTests
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-third");
 
         Assert.Equal(2, await dbContext.ProductionReports.CountAsync(x => x.OperationTaskId == "OP-10"));
-    }
-
-    /// <summary>
-    /// 波 1 的读面把「任务未开出」与「Quality 还不掌握该工序」拆成两个取值（#2780），
-    /// 判据是**该状态靠什么恢复**：前者只能靠一次报工恢复，后者只能靠工单发布事实到达恢复。
-    /// 合成一个取值时门禁无论放行还是拒绝都必然错一种，这里把「不可合并」钉住。
-    /// </summary>
-    [Fact]
-    public void First_article_progress_separates_states_by_how_they_recover()
-    {
-        Assert.NotEqual(
-            QualityFirstArticleConfirmationStatuses.NotOpened,
-            QualityFirstArticleConfirmationStatuses.NotSynchronized);
     }
 
     /// <summary>

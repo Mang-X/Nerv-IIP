@@ -120,7 +120,7 @@ public sealed class HttpMesFirstArticleGate(
                 EnsureDecisionAllows(confirmation.Result);
                 return;
             case QualityFirstArticleConfirmationStatuses.Pending:
-                throw new KnownException("本工序首件尚未判定，暂不能继续报工。请等待质量完成首件确认。");
+                throw new KnownException("本工序首件尚未判定，暂不能继续报工。可在工序行操作打开首件检验记录。");
             case QualityFirstArticleConfirmationStatuses.NotSynchronized:
                 throw new KnownException("本工序的工单发布事实尚未同步到质量，暂不能报工。请稍后重试。");
             default:
@@ -128,6 +128,8 @@ public sealed class HttpMesFirstArticleGate(
         }
     }
 
+    // 拒绝文案点名入口位置：前端把服务端消息原样上屏（超过 60 字会被截断，下面各条都在阈值内），
+    // 而报工抽屉里拿不到跳转，操作员需要知道去哪儿看结论。
     private static void EnsureDecisionAllows(string? result)
     {
         switch (result)
@@ -135,7 +137,7 @@ public sealed class HttpMesFirstArticleGate(
             case QualityInspectionDispositionStatuses.Passed:
                 return;
             case QualityInspectionDispositionStatuses.Rejected:
-                throw new KnownException("本工序首件判定不合格，不能继续报工。请返工后重新首件检验。");
+                throw new KnownException("本工序首件判定不合格，请返工后重新首件检验；记录见工序行操作。");
             case QualityInspectionDispositionStatuses.ConditionalRelease:
                 throw new KnownException("本工序首件为让步放行，不解锁批量报工。请纠正后重新首件检验。");
             default:

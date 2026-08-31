@@ -297,7 +297,7 @@ describe('operation-tasks 首件检验记录入口', () => {
   })
 
   // 服务端在首件未判合格时拒绝批量报工（#2780），被拦下的人要能就地走到首件检验记录。
-  it('opens the first-article records view carrying the blocked operation context', async () => {
+  it('opens the first-article records view without carrying any document context', async () => {
     const wrapper = mountPage()
     await flushPromises()
 

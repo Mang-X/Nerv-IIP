@@ -304,19 +304,26 @@ public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateF
             return;
         }
 
-        // 首件检验档按「SKU + 工序工作中心」配置，而报工事件不带 SKU；
-        // 工单发布事实（mes.WorkOrderReleased）在 Quality 内已按工单工序落成档案，SKU 从那里取。
-        // 报工先于发布到达时该 SKU 尚未落库，此处放过，由该工序后续报工重新触发。
-        var skuCode = await dbContext.PeriodicInspectionOperations
+        // 首件检验档按「SKU + 工序工作中心」配置，而报工事件不带 SKU；工单发布事实
+        // （mes.WorkOrderReleased）在 Quality 内已按工单工序落成档案，SKU 与工作中心都从那里取。
+        // 报工先于发布到达时该行尚未落库，此处放过——读面对同一情形回 not-synchronized，门禁照拒。
+        //
+        // 工作中心**不取 payload.WorkCenterId**（#2780）：读面 ResolveMissingTaskStatusAsync 拿
+        // 这一行的 WorkCenterId 去 MatchPlanAsync，触发点若改用报工事件里的那一个，两侧就会对同一道
+        // 工序给出不同答案——读面命中档回 not-opened（门禁放行），触发点 plan is null 静默 return，
+        // 任务永不开出，于是该工序**每一次**报工都被放行、门禁永久失效。两侧必须由同一个事实驱动。
+        // 这也正是域内既有的不变量：PeriodicInspectionOperation.RecordProductionReport 在工单已发布时
+        // 就要求报工的工作中心等于发布事实的工作中心，不等即判为无效业务事实。
+        var operation = await dbContext.PeriodicInspectionOperations
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.WorkOrderId == payload.WorkOrderId
                 && x.OperationId == payload.OperationTaskId)
-            .Select(x => x.SkuCode)
+            .Select(x => new { x.SkuCode, x.WorkCenterId })
             .SingleOrDefaultAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(skuCode))
+        if (operation is null || string.IsNullOrWhiteSpace(operation.SkuCode))
         {
             return;
         }
@@ -329,12 +336,12 @@ public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateF
             sourceService: FirstArticleInspection.SourceService,
             sourceDocumentId: FirstArticleInspection.SourceDocumentId(payload.WorkOrderId, payload.OperationTaskId),
             sourceDocumentLineId: payload.OperationTaskId,
-            skuCode: skuCode,
+            skuCode: operation.SkuCode,
             quantity: FirstArticleInspection.SampleQuantity,
             uomCode: payload.UomCode,
             batchNo: null,
             serialNo: null,
-            workCenterId: payload.WorkCenterId,
+            workCenterId: operation.WorkCenterId,
             sourceDocumentType: null,
             occurredAtUtc: integrationEvent.OccurredAtUtc,
             triggerIdempotencyKey: FirstArticleInspection.TriggerIdempotencyKey(
