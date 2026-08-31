@@ -587,6 +587,7 @@ function Invoke-Man517ReadinessNegativeProbes {
             exitCode = 'running'
             healthResponseObserved = $false
             identityResponseObserved = $false
+            identityObservation = $null
             businessRequestsIssued = 0
             failure = $null
             failureRoot = $null
@@ -623,6 +624,7 @@ function Invoke-Man517ReadinessNegativeProbes {
                     $observedFailure = $_.Exception
                     $probe.healthResponseObserved = $true
                     $probe.identityResponseObserved = $true
+                    $probe.identityObservation = 'HTTP 404 from the actual MasterData process on the DemandPlanning identity route'
                 }
             }
             elseif ([string]::Equals($scenarioId, 'bind-address-in-use', [StringComparison]::Ordinal)) {
@@ -654,6 +656,7 @@ function Invoke-Man517ReadinessNegativeProbes {
                 $probe.observedProcessExited = $processExited
                 if ($processExited) {
                     $probe.exitCode = [string]$managedProcess.Process.ExitCode
+                    $probe.identityObservation = 'not reached: managed process exited before health and identity probes'
                     try {
                         Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -TimeoutSeconds 3 | Out-Null
                         $observedFailure = [InvalidOperationException]::new('MAN-517 bind-address-in-use probe unexpectedly reached readiness.')
@@ -663,6 +666,7 @@ function Invoke-Man517ReadinessNegativeProbes {
                     }
                 }
                 else {
+                    $probe.identityObservation = 'not reached: bind-failure process remained alive beyond the bounded exit observation'
                     $observedFailure = [InvalidOperationException]::new("MAN-517 bind-address-in-use process did not exit within the bounded process-exit observation window: port=$($owner.Port) pid=$($owner.ProcessId)")
                 }
             }
@@ -704,6 +708,7 @@ function Invoke-Man517ReadinessNegativeProbes {
                 }
                 catch {
                     $observedFailure = $_.Exception
+                    $probe.identityObservation = 'not reached on expected port: listener count=0; actual service was verified on a different port'
                 }
             }
             elseif ([string]::Equals($scenarioId, 'pid-reuse', [StringComparison]::Ordinal)) {
@@ -739,6 +744,7 @@ function Invoke-Man517ReadinessNegativeProbes {
                 }
                 catch {
                     $observedFailure = $_.Exception
+                    $probe.identityObservation = 'not reached: same PID was paired with a stale start time and rejected before HTTP'
                 }
                 $probe.pidReuseGuard = 'same PID with mismatched start time rejected'
             }
@@ -804,6 +810,7 @@ finally {
                     $observedFailure = $_.Exception
                     $probe.healthResponseObserved = $true
                     $probe.identityResponseObserved = $true
+                    $probe.identityObservation = 'HTTP 200 /health=Healthy; identity body={"success":true,"data":{}} rejected by service-specific shape'
                 }
             }
         }
