@@ -28,8 +28,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await SeedSourceAsync(provider, "org-001", "env-dev");
-        var integrationEvent = CreateEvent(
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
+        var integrationEvent = NcrReworkRequestedPostgresFixtures.CreateEvent(
             requestedAtUtc: DateTimeOffset.Parse("2026-08-29T08:00:00Z").AddTicks(9));
 
         ReworkWorkOrderCreatedDomainEvent createdDomainEvent;
@@ -187,7 +187,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName,
                 IntegrationEventDeadLetterStatus.Pending,
                 CancellationToken.None));
-        var numbering = await db.CodeIdempotencyKeys.SingleAsync(x => x.IdempotencyKey == CreateEvent().IdempotencyKey);
+        var numbering = await db.CodeIdempotencyKeys.SingleAsync(x =>
+            x.IdempotencyKey == NcrReworkRequestedPostgresFixtures.CreateEvent().IdempotencyKey);
         Assert.Equal(workOrder.WorkOrderIdValue, numbering.Code);
         var receipt = new ReworkWorkOrderCreatedIntegrationEventConverter().Convert(createdDomainEvent);
         Assert.Equal("corr-001", receipt.CorrelationId);
@@ -275,9 +276,9 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await using (var missingProvider = await CreateMigratedProviderAsync(
             new StaticMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult.Missing("product-engineering:mbom:missing"))))
         {
-            await SeedSourceAsync(missingProvider, "org-001", "env-dev");
+            await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(missingProvider, "org-001", "env-dev");
             var exception = await Assert.ThrowsAsync<KnownException>(() =>
-                HandleAsync(missingProvider, CreateEvent()));
+                HandleAsync(missingProvider, NcrReworkRequestedPostgresFixtures.CreateEvent()));
             Assert.Equal(MaterialReadinessGuards.MissingRequirementSnapshotReason, exception.Message);
 
             await using var missingAssertionScope = missingProvider.CreateAsyncScope();
@@ -303,9 +304,9 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                     "PV-001:MAT-REWORK",
                     [])]));
         await using var provider = await CreateMigratedProviderAsync(materialSnapshotProvider);
-        await SeedSourceAsync(provider, "org-001", "env-dev");
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
 
-        await HandleAsync(provider, CreateEvent());
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
 
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -334,8 +335,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await SeedSourceAsync(provider, "org-001", "env-dev");
-        await SeedSourceAsync(
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(
             provider,
             "org-001",
             "env-dev",
@@ -343,8 +344,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             defectNo: "DEF-002",
             operationTaskPrefix: "OP-SOURCE-002");
 
-        await HandleAsync(provider, CreateEvent());
-        await HandleAsync(provider, CreateEvent(
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-rework-002",
             ncrId: "ncr-002",
             ncrCode: "NCR-2026-0002",
@@ -371,11 +372,13 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await SeedSourceAsync(provider, "org-001", "env-dev");
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
         var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
-        await HandleAsync(provider, CreateEvent(requestedAtUtc: requestedAtUtc.AddTicks(9)));
+        await HandleAsync(
+            provider,
+            NcrReworkRequestedPostgresFixtures.CreateEvent(requestedAtUtc: requestedAtUtc.AddTicks(9)));
 
-        await HandleAsync(provider, CreateEvent(
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-conflict",
             requestedAtUtc: requestedAtUtc.AddTicks(11)));
 
@@ -395,17 +398,23 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await HandleAsync(provider, CreateEvent(eventId: "evt-missing-defect"));
-        await SeedSourceAsync(provider, "org-001", "env-dev");
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(eventId: "evt-missing-defect"));
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
         await SeedDefectAsync(provider, "org-001", "env-dev", "DEF-OP-MISMATCH", "OP-OTHER");
-        await HandleAsync(provider, CreateEvent(eventId: "evt-sku-mismatch", skuCode: "SKU-WRONG", idempotencyKey: "quality:rework:sku-wrong"));
-        await HandleAsync(provider, CreateEvent(eventId: "evt-quantity-mismatch", quantity: 2m, idempotencyKey: "quality:rework:quantity-wrong"));
-        await HandleAsync(provider, CreateEvent(
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
+            eventId: "evt-sku-mismatch",
+            skuCode: "SKU-WRONG",
+            idempotencyKey: "quality:rework:sku-wrong"));
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
+            eventId: "evt-quantity-mismatch",
+            quantity: 2m,
+            idempotencyKey: "quality:rework:quantity-wrong"));
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-operation-mismatch",
             sourceDefectNo: "DEF-OP-MISMATCH",
             idempotencyKey: "quality:rework:operation-wrong"));
         await SeedSourceWithoutRoutingAsync(provider, "org-route-missing", "env-dev");
-        await HandleAsync(provider, CreateEvent(
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-route-missing",
             organizationId: "org-route-missing",
             environmentId: "env-dev",
@@ -436,7 +445,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await SeedSourceAsync(provider, "org-001", "env-dev");
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
         var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -450,9 +459,13 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 releaseFirst));
         var secondHandler = CreateHandler(secondScope.ServiceProvider);
 
-        var firstTask = firstHandler.HandleAsync(CreateEvent(), CancellationToken.None);
+        var firstTask = firstHandler.HandleAsync(
+            NcrReworkRequestedPostgresFixtures.CreateEvent(),
+            CancellationToken.None);
         await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        var secondTask = secondHandler.HandleAsync(CreateEvent(eventId: "evt-concurrent-002"), CancellationToken.None);
+        var secondTask = secondHandler.HandleAsync(
+            NcrReworkRequestedPostgresFixtures.CreateEvent(eventId: "evt-concurrent-002"),
+            CancellationToken.None);
         await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
             MesPostgresLaneDatabase.ConnectionString,
             expectedWaiters: 1,
@@ -463,7 +476,9 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Single(await db.WorkOrders.Where(x => x.SourceNcrId == "ncr-001").ToArrayAsync());
-        Assert.Single(await db.CodeIdempotencyKeys.Where(x => x.IdempotencyKey == CreateEvent().IdempotencyKey).ToArrayAsync());
+        Assert.Single(await db.CodeIdempotencyKeys
+            .Where(x => x.IdempotencyKey == NcrReworkRequestedPostgresFixtures.CreateEvent().IdempotencyKey)
+            .ToArrayAsync());
     }
 
     [MesRealPostgresFact]
@@ -471,11 +486,15 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await SeedSourceAsync(provider, "org-001", "env-dev");
-        await SeedSourceAsync(provider, "org-002", "env-test", workOrderLevelDefect: true);
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(
+            provider,
+            "org-002",
+            "env-test",
+            workOrderLevelDefect: true);
 
-        await HandleAsync(provider, CreateEvent());
-        await HandleAsync(provider, CreateEvent(
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-other-scope",
             organizationId: "org-002",
             environmentId: "env-test",
@@ -500,8 +519,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = await CreateMigratedProviderAsync();
-        await SeedSourceAsync(provider, "org-001", "env-dev");
-        await HandleAsync(provider, CreateEvent());
+        await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
+        await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
 
         string reworkWorkOrderId;
         string reworkOperationTaskId;
@@ -804,96 +823,6 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         return provider;
     }
 
-    private static async Task SeedSourceAsync(
-        IServiceProvider provider,
-        string organizationId,
-        string environmentId,
-        string sourceWorkOrderId = "WO-SOURCE-001",
-        string defectNo = "DEF-001",
-        string operationTaskPrefix = "OP-SOURCE",
-        bool workOrderLevelDefect = false)
-    {
-        await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var sourceWorkOrder = WorkOrder.Create(
-            organizationId,
-            environmentId,
-            sourceWorkOrderId,
-            "SKU-001",
-            "PV-001",
-            10m,
-            100,
-            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
-            "PCS");
-        var sourceOperations = new[]
-        {
-            OperationTask.Queue(
-                organizationId,
-                environmentId,
-                sourceWorkOrderId,
-                $"{operationTaskPrefix}-10",
-                10,
-                "WC-010",
-                ["WC-010-B"],
-                DateTimeOffset.Parse("2026-08-29T08:00:00Z"),
-                TimeSpan.FromMinutes(10),
-                "SKU-001",
-                "PCS",
-                10m,
-                false,
-                "OP-CODE-010"),
-            OperationTask.Create(
-                organizationId,
-                environmentId,
-                sourceWorkOrderId,
-                $"{operationTaskPrefix}-20",
-                OperationTaskLifecycleStatus.Completed,
-                20,
-                "WC-020",
-                ["WC-020-B", "WC-020-C"],
-                DateTimeOffset.Parse("2026-08-29T08:10:00Z"),
-                TimeSpan.FromMinutes(20),
-                DateTimeOffset.Parse("2026-08-29T07:00:00Z"),
-                DateTimeOffset.Parse("2026-08-29T07:20:00Z"),
-                "SKU-001",
-                "PCS",
-                10m,
-                true,
-                "OP-CODE-020"),
-            OperationTask.Create(
-                organizationId,
-                environmentId,
-                sourceWorkOrderId,
-                $"{operationTaskPrefix}-30",
-                OperationTaskLifecycleStatus.InProgress,
-                30,
-                "WC-030",
-                [],
-                DateTimeOffset.Parse("2026-08-29T08:30:00Z"),
-                TimeSpan.FromMinutes(30),
-                DateTimeOffset.Parse("2026-08-29T07:20:00Z"),
-                null,
-                "SKU-001",
-                "PCS",
-                10m,
-                false,
-                "OP-CODE-030"),
-        };
-        sourceWorkOrder.MarkReleased(sourceOperations);
-        db.WorkOrders.Add(sourceWorkOrder);
-        db.OperationTasks.AddRange(sourceOperations);
-        db.DefectRecords.Add(DefectRecord.Create(
-            organizationId,
-            environmentId,
-            defectNo,
-            sourceWorkOrderId,
-            workOrderLevelDefect ? null : $"{operationTaskPrefix}-20",
-            "surface-defect",
-            3m,
-            DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
-        await db.SaveChangesAsync();
-    }
-
     private static async Task SeedSourceWithoutRoutingAsync(
         IServiceProvider provider,
         string organizationId,
@@ -962,38 +891,6 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             provider.GetRequiredService<IMesMaterialRequirementSnapshotProvider>(),
             coordinator ?? provider.GetRequiredService<IMesReworkWorkOrderScopeCoordinator>());
     }
-
-    private static NcrReworkRequestedIntegrationEvent CreateEvent(
-        string eventId = "evt-rework-001",
-        string organizationId = "org-001",
-        string environmentId = "env-dev",
-        string ncrId = "ncr-001",
-        string ncrCode = "NCR-2026-0001",
-        string skuCode = "SKU-001",
-        decimal quantity = 3m,
-        string sourceDefectNo = "DEF-001",
-        string idempotencyKey = "quality:rework:org-001:env-dev:ncr-001",
-        DateTimeOffset? requestedAtUtc = null) => new(
-            eventId,
-            QualityIntegrationEventTypes.NcrReworkRequested,
-            QualityIntegrationEventVersions.V1,
-            DateTimeOffset.Parse("2026-08-29T08:00:00Z"),
-            QualityIntegrationEventSources.BusinessQuality,
-            "corr-001",
-            "cause-001",
-            organizationId,
-            environmentId,
-            "user:quality-manager",
-            idempotencyKey,
-            new NcrReworkRequestedPayload(
-                ncrId,
-                ncrCode,
-                sourceDefectNo,
-                skuCode,
-                quantity,
-                "LOT-001",
-                "SN-001",
-                requestedAtUtc ?? DateTimeOffset.Parse("2026-08-29T08:00:00Z")));
 
     private sealed class BlockingReworkScopeCoordinator(
         IMesReworkWorkOrderScopeCoordinator inner,
