@@ -23,6 +23,29 @@ function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Assert-FullChainDeadlineAdmissionCases {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Admission,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    $cases = @(
+        [pscustomobject]@{ Name = 'ample-budget'; Deadline = 7200; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $true },
+        [pscustomobject]@{ Name = 'exact-boundary'; Deadline = 7200; Elapsed = 5400; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $true },
+        [pscustomobject]@{ Name = 'elapsed-consumes-boundary'; Deadline = 7200; Elapsed = 5401; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
+        [pscustomobject]@{ Name = 'cleanup-and-guard-reserves-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
+        [pscustomobject]@{ Name = 'fullstack-cap-denied'; Deadline = 1700; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
+        [pscustomobject]@{ Name = 'script-cap-allowed'; Deadline = 1700; Elapsed = 0; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $true },
+        [pscustomobject]@{ Name = 'early-finish-transfers-budget'; Deadline = 2000; Elapsed = 500; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $true },
+        [pscustomobject]@{ Name = 'late-finish-denies-budget'; Deadline = 2000; Elapsed = 501; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $false }
+    )
+
+    foreach ($case in $cases) {
+        $result = & $Admission $case.Deadline $case.Elapsed $case.Entrypoint $case.Cleanup $case.Guard
+        Assert-Contract ([bool]$result.Allowed -eq [bool]$case.Allowed) "$Context failed deadline admission case '$($case.Name)'."
+    }
+}
+
 function Assert-FullChainV1WorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -146,6 +169,77 @@ function New-FullChainTrx {
 
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+
+    $canonicalDeadlineAdmission = {
+        param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+        Test-NervFullChainDeadlineAdmission `
+            -GlobalDeadlineSeconds $Deadline `
+            -ElapsedSeconds $Elapsed `
+            -EntrypointTimeoutSeconds $Entrypoint `
+            -CleanupReserveSeconds $Cleanup `
+            -GuardReserveSeconds $Guard
+    }
+    Assert-FullChainDeadlineAdmissionCases -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
+
+    $exactBoundary = & $canonicalDeadlineAdmission 7200 5400 1200 300 300
+    Assert-Contract (
+        $exactBoundary.Allowed -and
+        [string]::Equals([string]$exactBoundary.Reason, 'Allowed', [StringComparison]::Ordinal) -and
+        $exactBoundary.RemainingSeconds -eq 1800 -and
+        $exactBoundary.RequiredSeconds -eq 1800
+    ) 'Exact remaining budget must admit the member and report the checked remaining and required seconds.'
+    $insufficientBudget = & $canonicalDeadlineAdmission 7200 5401 1200 300 300
+    Assert-Contract (
+        -not $insufficientBudget.Allowed -and
+        [string]::Equals([string]$insufficientBudget.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal) -and
+        $insufficientBudget.RemainingSeconds -eq 1799 -and
+        $insufficientBudget.RequiredSeconds -eq 1800
+    ) 'One second below the complete entrypoint, cleanup, and guard budget must be denied with diagnostic values.'
+
+    $deadlineAdmissionMutations = @(
+        [pscustomobject]@{
+            Name = 'cleanup-reserve-deleted'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Guard)) }
+            }
+        },
+        [pscustomobject]@{
+            Name = 'guard-reserve-deleted'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Cleanup)) }
+            }
+        },
+        [pscustomobject]@{
+            Name = 'strict-boundary'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -gt ($Entrypoint + $Cleanup + $Guard)) }
+            }
+        },
+        [pscustomobject]@{
+            Name = 'elapsed-ignored'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = ($Deadline -ge ($Entrypoint + $Cleanup + $Guard)) }
+            }
+        },
+        [pscustomobject]@{
+            Name = 'wrong-entrypoint-budget'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge (900 + $Cleanup + $Guard)) }
+            }
+        }
+    )
+    foreach ($mutation in $deadlineAdmissionMutations) {
+        $mutationFailure = $null
+        try { Assert-FullChainDeadlineAdmissionCases -Admission $mutation.Admission -Context "Mutation '$($mutation.Name)'" }
+        catch { $mutationFailure = $_ }
+        Assert-Contract ($null -ne $mutationFailure) "Deadline admission mutation '$($mutation.Name)' must be rejected by the behavioral contract."
+    }
+
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
     $expectedIds = @(
         'maintenance-runtime-hours',
