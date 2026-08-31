@@ -121,6 +121,11 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    foreach ($sensitiveValue in $SensitiveValues) {
+        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
+            $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
+        }
+    }
     $redacted = [regex]::Replace(
         $redacted,
         '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
@@ -144,12 +149,6 @@ function Protect-ScriptAutomationText {
 
     foreach ($pattern in $patterns) {
         $redacted = [regex]::Replace($redacted, $pattern, '$1<redacted>')
-    }
-
-    foreach ($sensitiveValue in $SensitiveValues) {
-        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
-            $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
-        }
     }
 
     return $redacted
@@ -825,10 +824,12 @@ function Invoke-DotNet {
 
         [string] $Name = 'dotnet',
 
-        [int[]] $SensitiveArgumentIndexes = @()
+        [int[]] $SensitiveArgumentIndexes = @(),
+
+        [string[]] $SensitiveValues = @()
     )
 
-    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes
+    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes -SensitiveValues $SensitiveValues
 }
 
 function Invoke-NativeCommandOutput {
@@ -845,6 +846,8 @@ function Invoke-NativeCommandOutput {
         [string] $Name,
 
         [string] $LogDirectory,
+
+        [switch] $PersistOutput,
 
         [switch] $AllowPartialOutput,
 
@@ -930,9 +933,15 @@ function Invoke-NativeCommandOutput {
         Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
         $stdout = $drain.Stdout
         $stderr = $drain.Stderr
-        if ($drain.TimedOut) {
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
+        if ($PersistOutput -or $drain.TimedOut) {
+            $resolvedOutputLogDirectory = if ([string]::IsNullOrWhiteSpace([string]$drain.LogDirectory)) {
+                New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
+            }
+            else {
+                [string]$drain.LogDirectory
+            }
+            Write-ScriptAutomationProcessLog -Path (Join-Path $resolvedOutputLogDirectory 'stdout.log') -Content $stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
+            Write-ScriptAutomationProcessLog -Path (Join-Path $resolvedOutputLogDirectory 'stderr.log') -Content $stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
         }
 
         if ($exitCode -ne 0) {
@@ -944,8 +953,12 @@ function Invoke-NativeCommandOutput {
                 -ExitCode $exitCode `
                 -Stdout $stdout `
                 -Stderr $stderr
-            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput")
+            $logSuffix = if ($PersistOutput) { " Logs: $resolvedOutputLogDirectory" } else { '' }
+            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput$logSuffix")
             $failure.Data['ExitCode'] = [int] $exitCode
+            if ($PersistOutput) {
+                $failure.Data['LogDirectory'] = $resolvedOutputLogDirectory
+            }
             throw $failure
         }
         if (@($drain.DrainErrors).Count -gt 0) {
@@ -974,6 +987,9 @@ function Invoke-NativeCommandOutput {
             ExitCode = $exitCode
             Stdout = $stdout
             Stderr = $stderr
+            LogDirectory = if ($PersistOutput) { $resolvedOutputLogDirectory } else { $null }
+            StdoutPath = if ($PersistOutput) { Join-Path $resolvedOutputLogDirectory 'stdout.log' } else { $null }
+            StderrPath = if ($PersistOutput) { Join-Path $resolvedOutputLogDirectory 'stderr.log' } else { $null }
             PartialOutput = [bool] $drain.TimedOut
             UnfinishedStreams = @($drain.UnfinishedStreams)
         }

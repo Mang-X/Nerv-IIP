@@ -17,10 +17,10 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 public sealed record PagedMaintenanceListResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
 
 public sealed record ListMaintenanceWorkOrdersQuery(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     string? Status = null,
     string? DeviceAssetId = null,
@@ -29,6 +29,12 @@ public sealed record ListMaintenanceWorkOrdersQuery(
     string? AssignedTeamIds = null,
     string? WorkOrderId = null,
     string[]? DeviceAssetReferences = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
+
+public sealed class ListMaintenanceWorkOrdersQueryValidator : AbstractValidator<ListMaintenanceWorkOrdersQuery>
+{
+    public ListMaintenanceWorkOrdersQueryValidator() =>
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+}
 
 public sealed record MaintenanceWorkOrderListItem(
     MaintenanceWorkOrderId WorkOrderId,
@@ -53,8 +59,8 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
 {
     public async Task<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>> Handle(ListMaintenanceWorkOrdersQuery request, CancellationToken cancellationToken)
     {
-        var skip = NormalizeSkip(request.Skip);
-        var take = NormalizeTake(request.Take);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
         var deviceAssetReferences = NormalizeExactReferences(request.DeviceAssetReferences);
         var assignedTechnicianUserIds = SplitCsv(request.AssignedTechnicianUserIds);
@@ -65,16 +71,16 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
             if (!Enum.TryParse<MaintenanceWorkOrderStatus>(request.Status.Trim(), true, out var parsedStatus)
                 || !Enum.IsDefined(parsedStatus))
             {
-                return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>([], skip, take, 0);
+                return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>([], page.Skip, page.Take, 0);
             }
             status = parsedStatus;
         }
-        var keyword = request.Keyword?.Trim().ToLowerInvariant();
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var hasWorkOrderId = Guid.TryParse(request.WorkOrderId, out var workOrderGuid);
         var workOrderId = hasWorkOrderId ? new MaintenanceWorkOrderId(workOrderGuid) : null;
         var query = dbContext.MaintenanceWorkOrders
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => deviceAssetReferences.Count == 0 || deviceAssetReferences.Contains(x.DeviceAssetId))
@@ -109,10 +115,10 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.SourceReferenceId,
                 x.AssignedTeamId,
                 x.Version))
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
-        return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>(items, skip, take, total);
+        return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>(items, page.Skip, page.Take, total);
     }
 
     internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
@@ -327,7 +333,13 @@ public static class MaintenanceWorkOrderEligibility
     };
 }
 
-public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
+public sealed record ListMaintenancePlansQuery(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = OffsetPage.DefaultTake, string? DeviceAssetId = null) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
+
+public sealed class ListMaintenancePlansQueryValidator : AbstractValidator<ListMaintenancePlansQuery>
+{
+    public ListMaintenancePlansQueryValidator() =>
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+}
 
 public sealed record MaintenancePlanListItem(
     MaintenancePlanId PlanId,
@@ -345,15 +357,15 @@ public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbCont
 {
     public async Task<PagedMaintenanceListResponse<MaintenancePlanListItem>> Handle(ListMaintenancePlansQuery request, CancellationToken cancellationToken)
     {
-        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
-        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var deviceAssetId = string.IsNullOrWhiteSpace(request.DeviceAssetId) ? null : request.DeviceAssetId;
         // The list stays a fast DB projection: remaining runtime hours (which needs a telemetry read per
         // plan over the plan's own [StartsOn, now] window) is derived on the client from the runtime-hours
         // read facade, so the list query never fans out to IndustrialTelemetry.
         var query = dbContext.MaintenancePlans
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => deviceAssetId == null || x.DeviceAssetId == deviceAssetId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -368,10 +380,10 @@ public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbCont
                 x.RuntimeHourInterval,
                 x.NextDueRuntimeHours,
                 x.LastGeneratedRuntimeHours))
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
-        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items, skip, take, total);
+        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items, page.Skip, page.Take, total);
     }
 }
 
@@ -581,11 +593,17 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
 }
 
 public sealed record ListDowntimeReasonsQuery(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null) : IQuery<PagedMaintenanceListResponse<DowntimeReasonListItem>>;
+
+public sealed class ListDowntimeReasonsQueryValidator : AbstractValidator<ListDowntimeReasonsQuery>
+{
+    public ListDowntimeReasonsQueryValidator() =>
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+}
 
 public sealed record DowntimeReasonListItem(DowntimeReasonId DowntimeReasonId, string OrganizationId, string EnvironmentId, string ReasonCode, string Description, string ReasonCategory, string LossCategory);
 
@@ -594,12 +612,12 @@ public sealed class ListDowntimeReasonsQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<PagedMaintenanceListResponse<DowntimeReasonListItem>> Handle(ListDowntimeReasonsQuery request, CancellationToken cancellationToken)
     {
-        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
-        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
-        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword.Trim().ToLowerInvariant();
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.DowntimeReasons
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => keyword == null
                 || x.ReasonCode.ToLower().Contains(keyword)
                 || x.Description.ToLower().Contains(keyword)
@@ -609,10 +627,10 @@ public sealed class ListDowntimeReasonsQueryHandler(ApplicationDbContext dbConte
         var items = await query
             .OrderBy(x => x.ReasonCode)
             .Select(x => new DowntimeReasonListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.ReasonCode, x.Description, x.ReasonCategory, x.LossCategory))
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
-        return new PagedMaintenanceListResponse<DowntimeReasonListItem>(items, skip, take, total);
+        return new PagedMaintenanceListResponse<DowntimeReasonListItem>(items, page.Skip, page.Take, total);
     }
 }
 

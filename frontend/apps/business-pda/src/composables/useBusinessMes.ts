@@ -1,4 +1,5 @@
 import {
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
@@ -835,7 +836,8 @@ export interface OperationActionOptions {
   context: OperationActionContext
 }
 
-export type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+export type OperationAction = 'claim' | 'start' | 'pause' | 'resume' | 'complete'
+type OperationLifecycleAction = Exclude<OperationAction, 'claim'>
 
 export interface OperationActionContext {
   readonly principalId: string
@@ -1009,6 +1011,10 @@ export function useMesOperationTasks() {
     ...completeBusinessConsoleMesOperationTaskMutationOptions(),
     onSuccess: invalidate,
   })
+  const claimMutation = useMutation({
+    ...claimBusinessConsoleMesOperationTaskMutationOptions(),
+    onSuccess: invalidate,
+  })
 
   function currentOperationActionContext(
     action: OperationAction,
@@ -1121,7 +1127,7 @@ export function useMesOperationTasks() {
   }
 
   async function performAction(
-    action: OperationAction,
+    action: OperationLifecycleAction,
     mutation: typeof startMutation,
     workOrderId: string,
     operationTaskId: string,
@@ -1192,6 +1198,57 @@ export function useMesOperationTasks() {
     )
   }
 
+  async function claimTask(
+    workOrderId: string,
+    operationTaskId: string,
+    options: OperationActionOptions,
+  ) {
+    const context = requireFrozenOperationActionContext(
+      options.context,
+      'claim',
+      workOrderId,
+      operationTaskId,
+    )
+    assertOperationActionContextCurrent(context)
+    if (context.scopeKind !== 'work-center') {
+      throw new Error('请选择工作中心作业范围后领取任务。')
+    }
+    const scope = {
+      principalId: context.principalId,
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      operationType: 'mes.operation-task.claim',
+      payloadFingerprint: `${context.workOrderId}:${context.operationTaskId}:${context.scopeKind}:${context.scopeId}`,
+    }
+    const pendingIntent = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
+    const envelope = await completePendingBusinessIntent(scope, () =>
+      claimMutation.mutateAsync({
+        path: { operationTaskId: context.operationTaskId },
+        query: {
+          organizationId: context.organizationId,
+          environmentId: context.environmentId,
+          scopeKind: context.scopeKind,
+          scopeId: context.scopeId,
+        },
+        body: { idempotencyKey: pendingIntent.idempotencyKey },
+      }),
+    )
+    if (envelope?.success !== true) {
+      throw new Error(envelope?.message?.trim() || '领取任务失败，请刷新后重试。')
+    }
+    assertOperationActionContextCurrent(context)
+    const authoritative = await readExactOperationTask(
+      { organizationId: context.organizationId, environmentId: context.environmentId },
+      context.operationTaskId,
+      { kind: context.scopeKind, id: context.scopeId },
+      context.workOrderId,
+    )
+    if (authoritative?.assignedUserId !== context.principalId) {
+      throw new Error('领取结果尚未核实，请刷新任务列表。')
+    }
+    return authoritative
+  }
+
   return {
     filters,
     operationTasks: taskPager.items,
@@ -1231,12 +1288,14 @@ export function useMesOperationTasks() {
       performAction('resume', resumeMutation, workOrderId, operationTaskId, options),
     completeTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
       performAction('complete', completeMutation, workOrderId, operationTaskId, options),
+    claimTask,
     actionPending: computed(
       () =>
         startMutation.isLoading.value ||
         pauseMutation.isLoading.value ||
         resumeMutation.isLoading.value ||
-        completeMutation.isLoading.value,
+        completeMutation.isLoading.value ||
+        claimMutation.isLoading.value,
     ),
   }
 }

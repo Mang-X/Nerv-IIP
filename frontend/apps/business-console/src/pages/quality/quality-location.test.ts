@@ -57,6 +57,23 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
+const authState = vi.hoisted(() => ({
+  permissionCodes: [
+    'business.quality.ncr.read',
+    'business.quality.ncr.manage',
+    'business.mes.work-orders.read',
+  ],
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      principalId: 'qa-user-001',
+      loginName: 'qa-user',
+      permissionCodes: authState.permissionCodes,
+    },
+  }),
+}))
 
 const notifySpies = vi.hoisted(() => ({
   error: vi.fn(),
@@ -129,6 +146,8 @@ const qualityState = vi.hoisted(() => ({
       id: 'NCR-001',
       code: 'NCR-001',
       status: 'open',
+      reworkWorkOrderCreationStatus: 'created',
+      reworkWorkOrderId: 'RW-001',
     },
   ],
 }))
@@ -293,6 +312,20 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         closeNcrError: shallowRef(),
         closeNcrPending: shallowRef(false),
         filters,
+        ncrActionGate: (
+          _ncrId: string,
+          status: string | undefined,
+          dispositionType: string | undefined,
+          action: 'submit-disposition' | 'close',
+        ) => {
+          const normalizedStatus = status?.toLowerCase()
+          const executable =
+            (action === 'submit-disposition' && normalizedStatus === 'open') ||
+            (action === 'close' &&
+              normalizedStatus === 'disposition-in-progress' &&
+              Boolean(dispositionType))
+          return { executable }
+        },
         ncrs: computed(() => qualityState.ncrs),
         ncrsError: shallowRef(),
         ncrsPending: shallowRef(false),
@@ -420,6 +453,11 @@ describe('quality route location behavior', () => {
     qualityState.inspectionContextInitiallyEmpty = false
     qualityState.ncrInitialContext = { organizationId: 'org-001', environmentId: 'env-dev' }
     qualityState.ncrFilters = undefined
+    authState.permissionCodes = [
+      'business.quality.ncr.read',
+      'business.quality.ncr.manage',
+      'business.mes.work-orders.read',
+    ]
     qualityState.recordError = undefined
     qualityState.inspectionPlans = [
       {
@@ -482,6 +520,36 @@ describe('quality route location behavior', () => {
 
     expect(qualityState.ncrFilters!.keyword).toBeUndefined()
     expect(qualityState.ncrFilters!.status).toBe('open')
+  })
+
+  it('keeps NCR read access separate from manage actions and MES work-order navigation', async () => {
+    authState.permissionCodes = ['business.quality.ncr.read']
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '查看详情')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前账号只有 NCR 查看权限')
+    expect(wrapper.find('#ncr-disposition-files').exists()).toBe(false)
+    expect(wrapper.find('#ncr-close-reason').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('查看返工工单')
+  })
+
+  it('shows the system-created rework work order link only with MES read permission', async () => {
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '打开处置')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('查看返工工单 RW-001')
   })
 
   it.each(['organizationId', 'environmentId'] as const)(

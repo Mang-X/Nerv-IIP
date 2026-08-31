@@ -173,10 +173,10 @@ public sealed record StartMaintenanceRepairRequest(
     DateTimeOffset RepairStartedAtUtc);
 
 public sealed record ListMaintenanceWorkOrdersRequest(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     string? Status = null,
     string? DeviceAssetId = null,
@@ -220,7 +220,7 @@ public sealed record QueryInternalMaintenanceWorkOrdersRequest(
     string OrganizationId,
     string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     string? Status = null,
     string? DeviceAssetId = null,
@@ -254,8 +254,9 @@ public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
 
     public QueryInternalMaintenanceWorkOrdersRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
         RuleFor(x => x.Status).MaximumLength(40);
@@ -371,7 +372,7 @@ public sealed record UpdateMaintenancePlanRequest(
 
 public sealed record UpdateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
-public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null);
+public sealed record ListMaintenancePlansRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = OffsetPage.DefaultTake, string? DeviceAssetId = null);
 
 public sealed record GenerateDueMaintenanceWorkOrdersRequest(
     string OrganizationId,
@@ -466,10 +467,10 @@ public sealed record UpdateDowntimeReasonRequest(
 public sealed record DeleteDowntimeReasonRequest(string OrganizationId, string EnvironmentId, string ReasonCode);
 
 public sealed record ListDowntimeReasonsRequest(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null);
 
 public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)

@@ -34,6 +34,7 @@ const props = defineProps<{
   openingSopFileId: string | null
   sopFileError: string
   operationResultUnknown?: boolean
+  canClaim?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -45,6 +46,7 @@ const emit = defineEmits<{
   cancelComplete: []
   refreshSops: []
   openSop: [sop: BusinessConsoleCurrentSopDocumentItem]
+  claim: []
 }>()
 
 const availableActions = computed(() => actionsForOperationTask(props.selected))
@@ -224,6 +226,19 @@ const blockReasonDisplays = computed(() =>
 
       <div v-else class="space-y-2">
         <NvMobileButton
+          v-if="canClaim"
+          type="button"
+          data-testid="action-claim"
+          :disabled="actionPending || !operationScopeReady"
+          variant="primary"
+          size="lg"
+          block
+          class="min-h-touch"
+          @click="emit('claim')"
+        >
+          领取任务
+        </NvMobileButton>
+        <NvMobileButton
           v-for="action in availableActions"
           :key="action"
           type="button"
@@ -239,7 +254,7 @@ const blockReasonDisplays = computed(() =>
           {{ OPERATION_ACTION_LABELS[action] }}
         </NvMobileButton>
         <p
-          v-if="availableActions.length === 0"
+          v-if="availableActions.length === 0 && !canClaim"
           class="rounded-lg border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground"
         >
           当前状态无可执行动作

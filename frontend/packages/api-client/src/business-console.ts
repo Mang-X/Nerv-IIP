@@ -9,6 +9,7 @@ export {
   assignBusinessConsoleMesDispatchTaskMutationOptions,
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
   closeBusinessConsoleQualityNcrMutationOptions,
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,

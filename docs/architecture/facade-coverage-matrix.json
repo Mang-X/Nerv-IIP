@@ -2998,6 +2998,20 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim",
+      "operationId": "claimBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "claimBusinessConsoleMesOperationTask"
+      ],
+      "note": "exposed：BusinessGateway 将领取主体绑定为当前认证用户，只允许在已授权的 work-center 范围内领取 Queued 且未指派任务，并以 MasterData 在岗人员目录核验当前工作中心归属。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/complete",
       "operationId": "completeBusinessMesOperationTask",
       "classification": "exposed",
@@ -3120,6 +3134,14 @@
         "listBusinessConsoleMesProductionReports"
       ],
       "note": "exposed：BusinessGateway 通过 listBusinessConsoleMesProductionReports 保留 operationActualLaborHours 与 operationActualMachineHours；对应工序尚无冻结实绩时显式返回 null，不省略字段。"
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-statistics",
+      "operationId": "queryBusinessMesProductionStatistics",
+      "classification": "deferred",
+      "followUp": "生产日报父能力 #1952 的后续 Gateway 契约子票交付 BusinessGateway facade 与 generated client；#2855 只建立 MES 权威聚合读契约。"
     },
     {
       "service": "Mes",
