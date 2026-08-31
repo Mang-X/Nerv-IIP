@@ -269,7 +269,8 @@ function mountReports(permissionCodes: string[]) {
       plugins: [pinia],
       stubs: {
         // NvUI 组件按其底层组件名 stub。#787 已把 pro/ 重命名为 pc/ 且组件文件 XxxPro.vue → NvXxx.vue,
-        // 故 __name 现在就是 Nv* 名;Tooltip 的 Root/Trigger/Provider 仍是 reka 名(TooltipRoot 等)。
+        // 故 __name 就是 Nv* 名;Tooltip 三件套原本只有 reka 名，#2879 给 barrel 补了 name 之后
+        // 同样按 Nv 名解析，故这里的键全部写 Nv 名。
         BusinessLayout: { template: '<main><slot /></main>' },
         WorkOrderQuickView: true,
         PageHeader: { template: '<header><slot name="actions" /></header>' },
