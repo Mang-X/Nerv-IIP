@@ -26,7 +26,7 @@ public sealed class PrintLabelLifecycleCommandTests
 
         var handler = new ReprintLabelCommandHandler(dbContext, new PrintedPrinter());
         var result = await handler.Handle(
-            new ReprintLabelCommand(batch.Id, 2, "org-001", "env-dev", "printer-01"),
+            new ReprintLabelCommand(batch.Id, 2, "printer-01"),
             CancellationToken.None);
 
         Assert.Equal("printed", result.Status);

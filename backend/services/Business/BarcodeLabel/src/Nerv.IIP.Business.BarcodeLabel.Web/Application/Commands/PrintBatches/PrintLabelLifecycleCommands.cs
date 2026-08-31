@@ -6,33 +6,36 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
 public sealed record DispatchLabelPrintBatchCommand(
     LabelPrintBatchId PrintBatchId,
-    string OrganizationId,
-    string EnvironmentId,
-    string PrinterId) : ICommand<LabelPrintBatchId>;
+    string PrinterId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null) : ICommand<LabelPrintBatchId>;
 
 public sealed record ReprintLabelCommand(
     LabelPrintBatchId PrintBatchId,
     int SequenceNo,
-    string OrganizationId,
-    string EnvironmentId,
-    string PrinterId) : ICommand<LabelPrinterDispatchResult>;
+    string PrinterId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null) : ICommand<LabelPrinterDispatchResult>;
 
 public sealed record VoidLabelCommand(
     LabelPrintBatchId PrintBatchId,
     int SequenceNo,
-    string OrganizationId,
-    string EnvironmentId,
-    string Reason) : ICommand<LabelPrintBatchId>;
+    string Reason,
+    string? OrganizationId = null,
+    string? EnvironmentId = null) : ICommand<LabelPrintBatchId>;
 
 public sealed class DispatchLabelPrintBatchCommandValidator : AbstractValidator<DispatchLabelPrintBatchCommand>
 {
     public DispatchLabelPrintBatchCommandValidator()
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
-        RuleFor(x => x.OrganizationId).NotEmpty();
-        RuleFor(x => x.EnvironmentId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().When(HasScopedRequest);
+        RuleFor(x => x.EnvironmentId).NotEmpty().When(HasScopedRequest);
         RuleFor(x => x.PrinterId).NotEmpty().MaximumLength(100);
     }
+
+    private static bool HasScopedRequest(DispatchLabelPrintBatchCommand command) =>
+        command.OrganizationId is not null || command.EnvironmentId is not null;
 }
 
 public sealed class ReprintLabelCommandValidator : AbstractValidator<ReprintLabelCommand>
@@ -41,10 +44,13 @@ public sealed class ReprintLabelCommandValidator : AbstractValidator<ReprintLabe
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.SequenceNo).GreaterThan(0);
-        RuleFor(x => x.OrganizationId).NotEmpty();
-        RuleFor(x => x.EnvironmentId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().When(HasScopedRequest);
+        RuleFor(x => x.EnvironmentId).NotEmpty().When(HasScopedRequest);
         RuleFor(x => x.PrinterId).NotEmpty().MaximumLength(100);
     }
+
+    private static bool HasScopedRequest(ReprintLabelCommand command) =>
+        command.OrganizationId is not null || command.EnvironmentId is not null;
 }
 
 public sealed class VoidLabelCommandValidator : AbstractValidator<VoidLabelCommand>
@@ -53,10 +59,13 @@ public sealed class VoidLabelCommandValidator : AbstractValidator<VoidLabelComma
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.SequenceNo).GreaterThan(0);
-        RuleFor(x => x.OrganizationId).NotEmpty();
-        RuleFor(x => x.EnvironmentId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().When(HasScopedRequest);
+        RuleFor(x => x.EnvironmentId).NotEmpty().When(HasScopedRequest);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
+
+    private static bool HasScopedRequest(VoidLabelCommand command) =>
+        command.OrganizationId is not null || command.EnvironmentId is not null;
 }
 
 public sealed class DispatchLabelPrintBatchCommandHandler(ApplicationDbContext dbContext, ILabelPrinter printer)
@@ -120,17 +129,21 @@ internal static class LabelPrintLifecycle
     public static async Task<LabelPrintBatch> LoadBatchAsync(
         ApplicationDbContext dbContext,
         LabelPrintBatchId printBatchId,
-        string organizationId,
-        string environmentId,
+        string? organizationId,
+        string? environmentId,
         CancellationToken cancellationToken)
     {
-        return await dbContext.LabelPrintBatches
+        var query = dbContext.LabelPrintBatches
             .Include(x => x.Items)
-            .SingleOrDefaultAsync(
-                x => x.Id == printBatchId &&
-                    x.OrganizationId == organizationId &&
-                    x.EnvironmentId == environmentId,
-                cancellationToken)
+            .Where(x => x.Id == printBatchId);
+        if (organizationId is not null || environmentId is not null)
+        {
+            query = query.Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId);
+        }
+
+        return await query.SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到打印批次，PrintBatchId = {printBatchId}");
     }
 

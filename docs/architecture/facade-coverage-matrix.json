@@ -230,6 +230,30 @@
       "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/dispatch",
       "operationId": "dispatchBusinessBarcodePrintBatch",
+      "classification": "internal",
+      "rationale": "Legacy v1 lifecycle compatibility endpoint retained for existing internal callers; BusinessGateway uses the fail-closed scoped internal endpoint delivered by #2067."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+      "operationId": "reprintBusinessBarcodeLabel",
+      "classification": "internal",
+      "rationale": "Legacy v1 lifecycle compatibility endpoint retained for existing internal callers; BusinessGateway uses the fail-closed scoped internal endpoint delivered by #2067."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
+      "operationId": "voidBusinessBarcodeLabel",
+      "classification": "internal",
+      "rationale": "Legacy v1 lifecycle compatibility endpoint retained for existing internal callers; BusinessGateway uses the fail-closed scoped internal endpoint delivered by #2067."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
+      "operationId": "dispatchScopedBusinessBarcodePrintBatch",
       "classification": "exposed",
       "gateways": [
         "business"
@@ -241,8 +265,8 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
-      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
-      "operationId": "reprintBusinessBarcodeLabel",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+      "operationId": "reprintScopedBusinessBarcodeLabel",
       "classification": "exposed",
       "gateways": [
         "business"
@@ -254,8 +278,8 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
-      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
-      "operationId": "voidBusinessBarcodeLabel",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
+      "operationId": "voidScopedBusinessBarcodeLabel",
       "classification": "exposed",
       "gateways": [
         "business"

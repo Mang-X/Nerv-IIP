@@ -24,6 +24,31 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed class BarcodeLabelLifecycleHttpTests
 {
     [Theory]
+    [InlineData("dispatch", "{\"printBatchId\":\"{0}\",\"printerId\":\"printer-01\"}", false)]
+    [InlineData("items/1/reprint", "{\"printBatchId\":\"{0}\",\"sequenceNo\":1,\"printerId\":\"printer-01\"}", true)]
+    [InlineData("items/1/void", "{\"printBatchId\":\"{0}\",\"sequenceNo\":1,\"reason\":\"damaged\"}", false)]
+    public async Task Existing_v1_lifecycle_requests_remain_compatible_without_scope_query(
+        string action,
+        string bodyTemplate,
+        bool printedBatch)
+    {
+        await using var factory = CreateFactory(new PrintedPrinter());
+        var printBatchId = await SeedBatchAsync(factory, "org-owner", "env-owner", printedBatch);
+        using var client = CreateAuthenticatedClient(factory);
+        using var body = JsonContent.Create(
+            JsonDocument.Parse(bodyTemplate.Replace("{0}", printBatchId, StringComparison.Ordinal)).RootElement);
+
+        using var response = await client.PostAsync(
+            $"/api/business/v1/barcodes/print-batches/{printBatchId}/{action}",
+            body);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(responseBody);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean(), responseBody);
+    }
+
+    [Theory]
     [InlineData("dispatch", "{\"printBatchId\":\"{0}\",\"printerId\":\"printer-01\"}")]
     [InlineData("items/1/reprint", "{\"printBatchId\":\"{0}\",\"sequenceNo\":1,\"printerId\":\"printer-01\"}")]
     [InlineData("items/1/void", "{\"printBatchId\":\"{0}\",\"sequenceNo\":1,\"reason\":\"damaged\"}")]
@@ -38,7 +63,7 @@ public sealed class BarcodeLabelLifecycleHttpTests
             JsonDocument.Parse(bodyTemplate.Replace("{0}", printBatchId, StringComparison.Ordinal)).RootElement);
 
         using var response = await client.PostAsync(
-            $"/api/business/v1/barcodes/print-batches/{printBatchId}/{action}" +
+            $"/api/business/internal/v1/barcodes/print-batches/{printBatchId}/{action}" +
             "?organizationId=org-caller&environmentId=env-caller",
             body);
 
@@ -56,7 +81,7 @@ public sealed class BarcodeLabelLifecycleHttpTests
         using var client = CreateAuthenticatedClient(factory);
 
         using var response = await client.PostAsJsonAsync(
-            $"/api/business/v1/barcodes/print-batches/{printBatchId}/items/1/reprint" +
+            $"/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/1/reprint" +
             "?organizationId=org-001&environmentId=env-dev",
             new { printBatchId, sequenceNo = 1, printerId = "printer-01" });
 
@@ -75,7 +100,8 @@ public sealed class BarcodeLabelLifecycleHttpTests
     private static async Task<string> SeedBatchAsync(
         WebApplicationFactory<Program> factory,
         string organizationId,
-        string environmentId)
+        string environmentId,
+        bool printed = false)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -99,6 +125,11 @@ public sealed class BarcodeLabelLifecycleHttpTests
             "idem-print",
             "{}",
             1);
+        if (printed)
+        {
+            batch.RecordSentToPrinter("printer-01", "initial-print-job");
+            batch.RecordPrinted();
+        }
         dbContext.LabelPrintBatches.Add(batch);
         await dbContext.SaveChangesAsync();
         return batch.Id.ToString();
