@@ -775,10 +775,77 @@ test('报工：POST confirmed 但公开 GET 回读错实体时不得显示成功
   await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
 })
 
+test('报工：workshop 写范围只消费服务端权威 reportable 集合', async ({ page }) => {
+  const reportableQueries: Array<Record<string, string>> = []
+  await page.route('**/api/business-console/v1/me/work-context*', async (route) => {
+    const url = new URL(route.request().url())
+    const scopeKind = url.searchParams.get('scopeKind') ?? ''
+    const scopeId = url.searchParams.get('scopeId') ?? ''
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          principal: { id: 'user-001', principalType: 'User' },
+          authorizedScopes: [{ kind: 'workshop', id: 'WS-1', displayName: '一车间' }],
+          selectedScope:
+            scopeKind === 'workshop' && scopeId === 'WS-1'
+              ? { kind: 'workshop', id: 'WS-1', displayName: '一车间' }
+              : null,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/business-console/v1/mes/reportable-operation-tasks*', async (route) => {
+    const url = new URL(route.request().url())
+    reportableQueries.push(Object.fromEntries(url.searchParams.entries()))
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'OP-1',
+              workOrderId: 'WO-1',
+              status: 'InProgress',
+              allowedActions: ['report'],
+              operationSequence: 10,
+              workCenterId: 'WC-A',
+              qualityStatus: 'Pending',
+            },
+          ],
+          total: 1,
+        },
+      }),
+    })
+  })
+
+  await page.goto('/mes/report?workOrderId=WO-1')
+  await expect(page.getByText('WO-1 · 工序 10')).toBeVisible()
+  await expect(page.getByText('WO-1 · 工序 20')).toHaveCount(0)
+  expect(reportableQueries).toContainEqual(
+    expect.objectContaining({
+      scopeKind: 'workshop',
+      scopeId: 'WS-1',
+      workOrderId: 'WO-1',
+    }),
+  )
+
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-2')
+  await expect(page.getByTestId('report-route-issue')).toContainText('服务端未开放 report 动作')
+  await expect(page.getByTestId('submit-report')).toHaveCount(0)
+})
+
 test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({
   page,
 }) => {
   let operationTaskDiscoveryCalls = 0
+  let reportableAuthorityCalls = 0
   let resolveFirstDetailStarted!: () => void
   let resolveFirstDetailRelease!: () => void
   const firstDetailStarted = new Promise<void>((resolve) => {
@@ -822,6 +889,17 @@ test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forwa
   await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
     operationTaskDiscoveryCalls += 1
     return routeBusinessConsoleApi(route)
+  })
+  await page.route('**/api/business-console/v1/mes/reportable-operation-tasks**', async (route) => {
+    reportableAuthorityCalls += 1
+    const workOrderId = new URL(route.request().url()).searchParams.get('workOrderId')
+    const suffix = workOrderId === 'WO-RW-A' ? 'A' : workOrderId === 'WO-RW-B' ? 'B' : null
+    const items = suffix ? reworkDetail(suffix).data.operationTasks : []
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { items, total: items.length } }),
+    })
   })
   await page.route('**/api/business-console/v1/mes/work-orders/WO-RW-A**', async (route) => {
     workOrderADetailCalls += 1
@@ -868,6 +946,7 @@ test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forwa
     resolveFirstDetailRelease()
     await expect(page.getByText(/WO-RW-A/)).toHaveCount(0)
     expect(operationTaskDiscoveryCalls).toBe(0)
+    expect(reportableAuthorityCalls).toBeGreaterThan(0)
 
     await page.goBack()
     await expect(

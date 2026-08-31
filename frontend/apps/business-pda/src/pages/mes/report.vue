@@ -69,9 +69,14 @@ const {
   reportScopeMessage,
   reportScopePending,
   reportScopeReady,
-  reportScope,
   reportContext,
-} = useMesProductionReports()
+  contextGeneration,
+  reportableTasks,
+  reportableTasksPending,
+  reportableTasksError,
+  reportableTasksReady,
+  refreshReportableTasks,
+} = useMesProductionReports(routeWorkOrderId)
 
 const {
   filters: workOrderFilters,
@@ -131,7 +136,10 @@ const {
   exactOperationTaskError,
   exactOperationTaskScopeReady,
   exactOperationTaskScopeMessage,
-  reportingWriteScope: reportScope,
+  reportableTasks,
+  reportableTasksPending,
+  reportableTasksError,
+  reportableTasksReady,
 })
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
@@ -269,6 +277,7 @@ function reportContextKey(context: MesReportExecutionContext | undefined) {
     context.environmentId,
     context.scopeKind,
     context.scopeId,
+    String(context.generation),
   ].join('\u0000')
 }
 const pairKey = computed(() => {
@@ -280,6 +289,17 @@ const pairKey = computed(() => {
 const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
 const result = computed(() => currentIntent.value?.result ?? null)
 const submitting = computed(() => currentIntent.value?.status === 'pending')
+watch(
+  contextGeneration,
+  (generation) => {
+    for (const [key, intent] of intents) {
+      if (intent.context.generation === generation) continue
+      intent.attempt = Symbol('mes-report-context-invalidated')
+      intents.delete(key)
+    }
+  },
+  { flush: 'sync' },
+)
 const canCompleteSelectedTask = computed(
   () =>
     selectedTask.value !== null &&
@@ -421,7 +441,12 @@ function resetReportIntent() {
 const lifecycleRecovery = useLifecycleActionRecovery({
   reset: resetReportIntent,
   refresh: () =>
-    Promise.all([refreshWorkOrders(), refreshWorkOrderDetail(), refreshExactOperationTask()]),
+    Promise.all([
+      refreshWorkOrders(),
+      refreshWorkOrderDetail(),
+      refreshExactOperationTask(),
+      refreshReportableTasks(),
+    ]),
 })
 
 async function submit() {

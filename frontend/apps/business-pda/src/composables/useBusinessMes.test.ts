@@ -1339,6 +1339,56 @@ describe('pda useBusinessMes composables', () => {
     expect(productionReportFetch).not.toHaveBeenCalled()
   })
 
+  it('rejects a pending public GET after principal A→B→A changes its generation', async () => {
+    const pendingGet = deferred<{
+      data: {
+        success: boolean
+        data: { report: Record<string, string> }
+      }
+    }>()
+    productionReportFetch.mockReturnValueOnce(pendingGet.promise)
+    const { confirmReport, reportContext } = useMesProductionReports()
+    const frozenContext = { ...reportContext.value! }
+    const confirmation = confirmReport({
+      reportNo: 'RPT-A',
+      productionReportId: 'report-a',
+      workOrderId: 'wo-1',
+      operationTaskId: 'ot-1',
+      context: frozenContext,
+    })
+    await nextTick()
+
+    reactiveAuthState.principal = {
+      principalId: 'user-002',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+    reactiveAuthState.principal = {
+      principalId: 'user-001',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+    expect(reportContext.value).toMatchObject({ principalId: 'user-001' })
+    expect(reportContext.value!.generation).toBeGreaterThan(frozenContext.generation)
+
+    pendingGet.resolve({
+      data: {
+        success: true,
+        data: {
+          report: {
+            reportNo: 'RPT-A',
+            productionReportId: 'report-a',
+            workOrderId: 'wo-1',
+            operationTaskId: 'ot-1',
+          },
+        },
+      },
+    })
+    await expect(confirmation).rejects.toThrow('回读上下文无效')
+  })
+
   it('does not send a production report when no reporting scope is selected', async () => {
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',

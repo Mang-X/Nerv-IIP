@@ -54,6 +54,10 @@ const tasksPendingRef = ref(false)
 const reportScopeMessageRef = ref('')
 const reportScopePendingRef = ref(false)
 const reportScopeReadyRef = ref(true)
+const contextGenerationRef = ref(1)
+const reportableTasksPendingRef = ref(false)
+const reportableTasksErrorRef = ref<unknown>(null)
+const reportableTasksReadyRef = ref(true)
 const reportScopeRef = ref({ kind: 'organization', id: 'org-001' })
 const reportContextRef = ref({
   principalId: 'principal-1',
@@ -61,6 +65,7 @@ const reportContextRef = ref({
   environmentId: 'env-dev',
   scopeKind: 'organization',
   scopeId: 'org-001',
+  generation: 1,
 })
 let operationTaskDiscoveryCalls = 0
 
@@ -108,6 +113,7 @@ const defaultOperationTasks = [
   },
 ]
 const operationTasksRef = ref<Array<Record<string, unknown>>>(defaultOperationTasks)
+const reportableTasksOverrideRef = ref<Array<Record<string, unknown>> | null>(null)
 const workOrderDetailRef = ref<Record<string, unknown> | null>({
   ...defaultWorkOrders[0],
   operationTasks: defaultOperationTasks.filter(
@@ -253,6 +259,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     reportScopeReady: reportScopeReadyRef,
     reportScope: reportScopeRef,
     reportContext: reportContextRef,
+    contextGeneration: contextGenerationRef,
+    reportableTasks: computed(() => reportableTasksOverrideRef.value ?? operationTasksRef.value),
+    reportableTasksPending: reportableTasksPendingRef,
+    reportableTasksError: reportableTasksErrorRef,
+    reportableTasksReady: reportableTasksReadyRef,
+    refreshReportableTasks: vi.fn(async () => undefined),
   }),
   useMesProductionMaterialLots: () => ({
     materialsReadPermission: materialsReadPermissionRef,
@@ -320,6 +332,10 @@ describe('PDA MES production reporting page', () => {
     reportScopeMessageRef.value = ''
     reportScopePendingRef.value = false
     reportScopeReadyRef.value = true
+    contextGenerationRef.value = 1
+    reportableTasksPendingRef.value = false
+    reportableTasksErrorRef.value = null
+    reportableTasksReadyRef.value = true
     reportScopeRef.value = { kind: 'organization', id: 'org-001' }
     reportContextRef.value = {
       principalId: 'principal-1',
@@ -327,9 +343,11 @@ describe('PDA MES production reporting page', () => {
       environmentId: 'env-dev',
       scopeKind: 'organization',
       scopeId: 'org-001',
+      generation: 1,
     }
     workOrdersRef.value = defaultWorkOrders
     operationTasksRef.value = defaultOperationTasks
+    reportableTasksOverrideRef.value = null
     workOrderDetailRef.value = {
       ...defaultWorkOrders[0],
       operationTasks: defaultOperationTasks.filter(
@@ -679,6 +697,9 @@ describe('PDA MES production reporting page', () => {
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
 
     workOrderDetailPendingRef.value = true
+    reportableTasksPendingRef.value = true
+    reportableTasksReadyRef.value = false
+    reportableTasksOverrideRef.value = []
     route.query = {
       workOrderId: 'WO-2026-0002',
       operationTaskId: 'OP-3',
@@ -703,6 +724,9 @@ describe('PDA MES production reporting page', () => {
       operationTasks: [defaultOperationTasks[2]],
     }
     workOrderDetailPendingRef.value = false
+    reportableTasksPendingRef.value = false
+    reportableTasksReadyRef.value = true
+    reportableTasksOverrideRef.value = [defaultOperationTasks[2]]
     await flushPromises()
     expect(document.body.textContent).toContain('WO-2026-0002 · 工序 10')
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
@@ -852,6 +876,7 @@ describe('PDA MES production reporting page', () => {
       ...targetWorkOrder,
       operationTasks: [...operationTasksRef.value, targetTask],
     }
+    reportableTasksOverrideRef.value = [targetTask]
     route.query = {
       workOrderId: targetWorkOrder.workOrderId,
       operationTaskId: targetTask.operationTaskId,
@@ -888,6 +913,7 @@ describe('PDA MES production reporting page', () => {
       operationSequence: 501,
       workCenterId: 'WC-MANY',
     }
+    reportableTasksOverrideRef.value = [exactTaskRef.value]
     route.query = { workOrderId, operationTaskId }
 
     const wrapper = mount(ReportPage, { attachTo: document.body })
@@ -991,6 +1017,59 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).not.toContain('报工成功')
     wrapper.unmount()
   })
+
+  it.each([
+    ['principal', { principalId: 'principal-2' }],
+    ['organization', { organizationId: 'org-002' }],
+    ['environment', { environmentId: 'env-prod' }],
+    ['reporting scope', { scopeKind: 'work-center', scopeId: 'WC-B' }],
+  ])(
+    'GET pending 时 %s A→B→A 会永久失效旧 generation/attempt',
+    async (_dimension, changedContext) => {
+      const pendingConfirmation = deferred<{
+        reportNo: string
+        productionReportId: string
+        workOrderId: string
+        operationTaskId: string
+      }>()
+      confirmReport.mockReturnValueOnce(pendingConfirmation.promise)
+      route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+      const wrapper = mount(ReportPage, { attachTo: document.body })
+      await flushPromises()
+      const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+      input.value = '1'
+      input.dispatchEvent(new Event('input'))
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+      await flushPromises()
+      const oldIdempotencyKey = recordReport.mock.calls[0][0].idempotencyKey
+
+      const contextA = { ...reportContextRef.value }
+      contextGenerationRef.value = 2
+      reportContextRef.value = { ...contextA, ...changedContext, generation: 2 }
+      await flushPromises()
+      contextGenerationRef.value = 3
+      reportContextRef.value = { ...contextA, generation: 3 }
+      await flushPromises()
+
+      pendingConfirmation.resolve({
+        reportNo: 'RPT-DEFAULT',
+        productionReportId: '019f-report-default',
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+      })
+      await flushPromises()
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('报工成功')
+
+      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+      await flushPromises()
+      expect(recordReport).toHaveBeenCalledTimes(2)
+      expect(recordReport.mock.calls[1][0].idempotencyKey).not.toBe(oldIdempotencyKey)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+      wrapper.unmount()
+    },
+  )
 
   it.each([
     ['data null', null],
@@ -1259,6 +1338,7 @@ describe('PDA MES production reporting page', () => {
       scopeKind: 'work-center',
       scopeId: 'WC-A',
     }
+    reportableTasksOverrideRef.value = [defaultOperationTasks[0]]
     route.query = { workOrderId: 'WO-2026-0001' }
     const wrapper = mount(ReportPage, { attachTo: document.body })
     await flushPromises()
@@ -1266,6 +1346,84 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).toContain('工序 10')
     expect(wrapper.text()).not.toContain('工序 20')
     expect(wrapper.findAll('[data-row]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('workshop scope only exposes tasks returned by the server reportable authority set', async () => {
+    reportScopeRef.value = { kind: 'workshop', id: 'WS-1' }
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeKind: 'workshop',
+      scopeId: 'WS-1',
+    }
+    reportableTasksOverrideRef.value = [defaultOperationTasks[0]]
+    route.query = { workOrderId: 'WO-2026-0001' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('工序 10')
+    expect(wrapper.text()).not.toContain('工序 20')
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
+
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-2' }
+    await flushPromises()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
+      '服务端未开放 report 动作',
+    )
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('scope authority pending/error/empty are fail-closed and distinguishable', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    reportableTasksPendingRef.value = true
+    reportableTasksReadyRef.value = false
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
+
+    reportableTasksPendingRef.value = false
+    reportableTasksErrorRef.value = new Error('authority unavailable')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('权威范围读取失败')
+
+    reportableTasksErrorRef.value = null
+    reportableTasksReadyRef.value = true
+    reportableTasksOverrideRef.value = []
+    await flushPromises()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
+      '服务端未开放 report 动作',
+    )
+    wrapper.unmount()
+  })
+
+  it('scope switch keeps a late old authority set disabled until the new set is ready', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
+
+    contextGenerationRef.value = 2
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeKind: 'work-center',
+      scopeId: 'WC-B',
+      generation: 2,
+    }
+    reportableTasksPendingRef.value = true
+    reportableTasksReadyRef.value = false
+    reportableTasksOverrideRef.value = [defaultOperationTasks[0]]
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
+
+    reportableTasksOverrideRef.value = [defaultOperationTasks[1]]
+    reportableTasksPendingRef.value = false
+    reportableTasksReadyRef.value = true
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-2' }
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
     wrapper.unmount()
   })
 

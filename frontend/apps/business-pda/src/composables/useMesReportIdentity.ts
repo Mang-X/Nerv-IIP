@@ -10,8 +10,6 @@ import {
   hasSameMesWorkOrderAuthority,
 } from '@/composables/mes/mesWorkOrderAuthority'
 
-type WorkScope = { kind: string; id: string }
-
 type WorkOrder = BusinessConsoleMesWorkOrderItem
 type Task = BusinessConsoleMesOperationTaskRow
 
@@ -24,27 +22,26 @@ interface UseMesReportIdentityOptions {
   exactOperationTaskError: Readonly<Ref<unknown>>
   exactOperationTaskScopeReady: Readonly<Ref<boolean>>
   exactOperationTaskScopeMessage: Readonly<Ref<string>>
-  reportingWriteScope: Readonly<Ref<WorkScope | undefined>>
+  reportableTasks: Readonly<Ref<Task[] | null | undefined>>
+  reportableTasksPending: Readonly<Ref<boolean>>
+  reportableTasksError: Readonly<Ref<unknown>>
+  reportableTasksReady: Readonly<Ref<boolean>>
 }
 
 function queryId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function isInsideScope(task: Task, scope: WorkScope | undefined) {
-  if (!scope) return false
-  if (scope.kind === 'work-center') return task.workCenterId === scope.id
-  if (scope.kind === 'team') return task.teamId === scope.id
-  if (scope.kind === 'self') return task.assignedUserId === scope.id
-  return scope.kind === 'organization'
+function taskKey(task: Task) {
+  return `${task.workOrderId ?? ''}\u0000${task.operationTaskId ?? ''}`
 }
 
-function canReport(task: Task, parent: WorkOrder | null, scope: WorkScope | undefined) {
+function canReport(task: Task, parent: WorkOrder | null, reportableTaskKeys: Set<string>) {
   return (
     hasCompleteReworkAuthority(task) &&
     parent !== null &&
     hasSameMesWorkOrderAuthority(parent, task) &&
-    isInsideScope(task, scope) &&
+    reportableTaskKeys.has(taskKey(task)) &&
     task.allowedActions?.some((action) => action.trim().toLowerCase() === 'report') === true
   )
 }
@@ -55,6 +52,9 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
 
   const requestedWorkOrderId = computed(() => queryId(route.query.workOrderId))
   const requestedOperationTaskId = computed(() => queryId(route.query.operationTaskId))
+  const reportableTaskKeys = computed(
+    () => new Set((options.reportableTasks.value ?? []).map(taskKey)),
+  )
 
   const selectedWorkOrder = computed<WorkOrder | null>(() => {
     const workOrderId = requestedWorkOrderId.value
@@ -92,9 +92,11 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
   })
 
   const visibleOperationTasks = computed(() =>
-    workOrderOperationTasks.value.filter((task) =>
-      canReport(task, selectedWorkOrder.value, options.reportingWriteScope.value),
-    ),
+    options.reportableTasksReady.value
+      ? workOrderOperationTasks.value.filter((task) =>
+          canReport(task, selectedWorkOrder.value, reportableTaskKeys.value),
+        )
+      : [],
   )
 
   const selectedTask = computed<Task | null>(() => {
@@ -105,6 +107,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       (task) => task.operationTaskId === operationTaskId,
     )
     if (detailTask) return detailTask
+    const authorityTask = options.reportableTasks.value?.find(
+      (task) => task.workOrderId === workOrderId && task.operationTaskId === operationTaskId,
+    )
+    if (authorityTask) return authorityTask
     const exactTask = options.exactOperationTask.value
     return exactTask?.workOrderId === workOrderId && exactTask.operationTaskId === operationTaskId
       ? exactTask
@@ -119,7 +125,8 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       !workOrderId ||
       !operationTaskId ||
       task?.workOrderId !== workOrderId ||
-      !canReport(task, selectedWorkOrder.value, options.reportingWriteScope.value)
+      !options.reportableTasksReady.value ||
+      !canReport(task, selectedWorkOrder.value, reportableTaskKeys.value)
     ) {
       return null
     }
@@ -148,15 +155,20 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       return `未找到工单 ${workOrderId}，已阻止报工。`
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && selectedTask.value) {
+      if (!options.reportableTasksReady.value) {
+        if (options.reportableTasksError.value) {
+          return '可报工任务权威范围读取失败，已阻止报工，请重试。'
+        }
+        if (options.reportableTasksPending.value) return null
+        return '可报工任务权威范围尚未就绪，已阻止报工。'
+      }
       if (!hasCompleteReworkAuthority(selectedTask.value)) {
         return `工序任务 ${operationTaskId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
       }
       if (!hasSameMesWorkOrderAuthority(selectedWorkOrder.value, selectedTask.value)) {
         return `工序任务 ${operationTaskId} 的返工来源与工单不一致，已阻止报工，请刷新后重试。`
       }
-      if (
-        !canReport(selectedTask.value, selectedWorkOrder.value, options.reportingWriteScope.value)
-      ) {
+      if (!canReport(selectedTask.value, selectedWorkOrder.value, reportableTaskKeys.value)) {
         return `工序任务 ${operationTaskId} 当前不可报工，服务端未开放 report 动作。`
       }
     }

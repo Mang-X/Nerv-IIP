@@ -318,6 +318,7 @@ const countExecutions = [
 export const authorizedWorkScopes = [
   { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
   { kind: 'work-center', id: 'WC-B', displayName: '精加工二线' },
+  { kind: 'workshop', id: 'WS-A', displayName: '机加工车间' },
 ]
 
 /**
