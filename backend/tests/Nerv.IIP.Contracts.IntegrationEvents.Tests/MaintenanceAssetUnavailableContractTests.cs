@@ -164,18 +164,28 @@ public sealed class MaintenanceAssetUnavailableContractTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public void Asset_unavailable_v2_allows_explicit_empty_causation_on_read_and_write(string? causationId)
+    public void Asset_unavailable_v2_normalizes_wire_null_or_empty_causation_to_non_null_empty_clr_and_wire(
+        string? causationId)
     {
-        var integrationEvent = CreateV2Event() with { CausationId = causationId! };
-        var json = JsonSerializer.Serialize(integrationEvent, JsonOptions);
-        var roundTripped = JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions);
+        var json = MutateFixedV2Json(root => root["causationId"] = causationId);
+        var integrationEvent = JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions);
 
-        Assert.NotNull(roundTripped);
-        Assert.Equal(causationId, roundTripped.CausationId);
+        Assert.NotNull(integrationEvent);
+        Assert.NotNull(integrationEvent.CausationId);
+        Assert.Empty(integrationEvent.CausationId);
+        Assert.Equal(0, integrationEvent.CausationId.Length);
         Assert.Contains(
-            causationId is null ? "\"causationId\":null" : "\"causationId\":\"\"",
-            json,
+            "\"causationId\":\"\"",
+            JsonSerializer.Serialize(integrationEvent, JsonOptions),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Asset_unavailable_v2_rejects_a_manually_constructed_null_clr_causation_on_write()
+    {
+        var invalid = CreateV2Event() with { CausationId = null! };
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid, JsonOptions));
     }
 
     [Fact]

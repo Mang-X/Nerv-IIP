@@ -149,8 +149,9 @@ internal static class AssetUnavailableV2WireContract
         if (integrationEvent.SourceService != MaintenanceIntegrationEventSources.BusinessMaintenance)
             throw new JsonException("AssetUnavailable V2 envelope requires the business-maintenance source service.");
         Require(integrationEvent.CorrelationId, "correlationId");
-        if (integrationEvent.CausationId is { Length: > 0 }
-            && string.IsNullOrWhiteSpace(integrationEvent.CausationId))
+        if (integrationEvent.CausationId is null)
+            throw new JsonException("AssetUnavailable V2 CLR envelope requires a non-null causationId.");
+        if (integrationEvent.CausationId.Length > 0 && string.IsNullOrWhiteSpace(integrationEvent.CausationId))
             throw new JsonException("AssetUnavailable V2 envelope causationId cannot contain only whitespace.");
         Require(integrationEvent.OrganizationId, "organizationId");
         Require(integrationEvent.EnvironmentId, "environmentId");
@@ -189,7 +190,7 @@ public sealed class AssetUnavailableV2IntegrationEventJsonConverter
             dto.OccurredAtUtc,
             dto.SourceService,
             dto.CorrelationId,
-            dto.CausationId!,
+            dto.CausationId ?? string.Empty,
             dto.OrganizationId,
             dto.EnvironmentId,
             dto.Actor,
