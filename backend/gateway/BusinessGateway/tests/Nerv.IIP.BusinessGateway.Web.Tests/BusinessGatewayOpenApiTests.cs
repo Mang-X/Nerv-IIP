@@ -776,7 +776,8 @@ public sealed class BusinessGatewayOpenApiTests
             "200",
             "400",
             "401",
-            "403");
+            "403",
+            "502");
         AssertResponseStatuses(
             paths,
             "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
@@ -793,7 +794,8 @@ public sealed class BusinessGatewayOpenApiTests
             "200",
             "400",
             "401",
-            "403");
+            "403",
+            "502");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");
         AssertOperationId(paths, "/api/business-console/v1/barcode/resolve", "post", "resolveBusinessConsoleBarcode");

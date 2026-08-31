@@ -186,8 +186,11 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
         Assert.Equal(0, barcode.LifecycleCallCount);
     }
 
-    [Fact]
-    public async Task Reprint_does_not_expose_sensitive_downstream_exception_text()
+    [Theory]
+    [InlineData("dispatch")]
+    [InlineData("reprint")]
+    [InlineData("void")]
+    public async Task Lifecycle_route_does_not_expose_sensitive_downstream_exception_text(string operation)
     {
         const string sensitive = "tcp://printer.internal:9100?token=secret-value";
         var barcode = new RecordingBarcodeLabelClient
@@ -201,9 +204,10 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/barcode/print-batches/batch-001/items/7/reprint?organizationId=org-001&environmentId=env-dev",
-            new { printBatchId = "batch-001", sequenceNo = 7, printerId = "printer-01" });
+        var response = await SendLifecycleAsync(
+            client,
+            operation,
+            "organizationId=org-001&environmentId=env-dev");
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);

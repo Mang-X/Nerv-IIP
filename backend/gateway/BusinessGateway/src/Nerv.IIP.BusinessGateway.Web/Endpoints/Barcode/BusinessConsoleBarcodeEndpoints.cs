@@ -172,6 +172,7 @@ public sealed class GetBusinessConsoleBarcodePrintBatchEndpoint(
 [Tags("Business Console Barcode")]
 [HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch")]
 [BusinessGatewayOperationId("dispatchBusinessConsoleBarcodePrintBatch")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
 public sealed class DispatchBusinessConsoleBarcodePrintBatchEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessBarcodeLabelClient barcode,
@@ -241,6 +242,7 @@ public sealed class ReprintBusinessConsoleBarcodeLabelEndpoint(
 [Tags("Business Console Barcode")]
 [HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void")]
 [BusinessGatewayOperationId("voidBusinessConsoleBarcodeLabel")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
 public sealed class VoidBusinessConsoleBarcodeLabelEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessBarcodeLabelClient barcode,

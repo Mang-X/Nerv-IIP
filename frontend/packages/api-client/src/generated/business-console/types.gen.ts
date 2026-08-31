@@ -21817,6 +21817,7 @@ export type DispatchBusinessConsoleBarcodePrintBatchErrors = {
      * Forbidden
      */
     403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
 };
 
 export type DispatchBusinessConsoleBarcodePrintBatchError = DispatchBusinessConsoleBarcodePrintBatchErrors[keyof DispatchBusinessConsoleBarcodePrintBatchErrors];
@@ -21896,6 +21897,7 @@ export type VoidBusinessConsoleBarcodeLabelErrors = {
      * Forbidden
      */
     403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
 };
 
 export type VoidBusinessConsoleBarcodeLabelError = VoidBusinessConsoleBarcodeLabelErrors[keyof VoidBusinessConsoleBarcodeLabelErrors];

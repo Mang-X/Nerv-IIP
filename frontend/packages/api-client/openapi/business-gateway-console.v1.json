@@ -30448,6 +30448,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -30634,6 +30644,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [

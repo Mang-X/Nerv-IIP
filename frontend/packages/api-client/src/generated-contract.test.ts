@@ -256,8 +256,10 @@ import {
   type BusinessConsoleReprintBarcodeLabelBody,
   type BusinessConsoleVoidBarcodeLabelBody,
   type DispatchBusinessConsoleBarcodePrintBatchData,
+  type DispatchBusinessConsoleBarcodePrintBatchErrors,
   type ReprintBusinessConsoleBarcodeLabelData,
   type VoidBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelErrors,
 } from './business-console'
 
 describe('generated API client contract', () => {
@@ -409,6 +411,8 @@ describe('generated API client contract', () => {
       printBatchId: string
       sequenceNo: number
     }>()
+    expectTypeOf<DispatchBusinessConsoleBarcodePrintBatchErrors[502]>().not.toBeNever()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelErrors[502]>().not.toBeNever()
   })
 
   it('requires optimistic versions for public quality assignment and claim mutations', () => {
