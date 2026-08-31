@@ -16,24 +16,31 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
     private readonly IConfiguration? configuration;
     private readonly TimeProvider timeProvider;
-
-    public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IConfiguration configuration)
-        : this(dbContext, new ServerProxyUploadProvider(), configuration: configuration)
-    {
-    }
+    private readonly IUploadCommitStorage commitStorage;
+    private readonly UploadSessionGateRegistry gateRegistry;
+    private readonly UploadCommitExecutionLeaseManager executionLeaseManager;
+    private readonly ILogger<PostgreSqlFileStorageService> logger;
 
     public PostgreSqlFileStorageService(
         ApplicationDbContext dbContext,
         IFileStorageUploadProvider uploadProvider,
-        ILocalTusFileStoreAccessor? tusStoreAccessor = null,
-        IConfiguration? configuration = null,
-        TimeProvider? timeProvider = null)
+        ILocalTusFileStoreAccessor tusStoreAccessor,
+        IConfiguration configuration,
+        TimeProvider timeProvider,
+        IUploadCommitStorage commitStorage,
+        UploadSessionGateRegistry gateRegistry,
+        ILogger<PostgreSqlFileStorageService> logger,
+        UploadCommitExecutionLeaseManager executionLeaseManager)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
         this.tusStoreAccessor = tusStoreAccessor;
         this.configuration = configuration;
-        this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.timeProvider = timeProvider;
+        this.commitStorage = commitStorage;
+        this.gateRegistry = gateRegistry;
+        this.executionLeaseManager = executionLeaseManager;
+        this.logger = logger;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -167,29 +174,28 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         CompleteUploadSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(
-            x => x.UploadSessionId == uploadSessionId,
-            cancellationToken);
+        await using var executionGate = await gateRegistry.EnterCommitExecutionAsync(uploadSessionId, cancellationToken);
+        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(x => x.UploadSessionId == uploadSessionId, cancellationToken);
         if (session is null)
         {
-            return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
-        }
-
-        if (session.Completed)
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
-        }
-
-        if (session.ExpiresAtUtc <= timeProvider.GetUtcNow())
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
+            return FileStorageResult<FileMetadataResponse>.NotFound($"未找到上传会话 '{uploadSessionId}'。");
         }
 
         if (!string.Equals(session.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(session.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+            return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话上下文不匹配。");
+        }
+
+        if (session.Completed)
+        {
+            var completedFile = await dbContext.StoredFiles.SingleOrDefaultAsync(x => x.FileId == session.FileId, cancellationToken);
+            return completedFile is null
+                ? FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "已完成上传的元数据暂不可用。")
+                : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(completedFile));
         }
 
         var completionChecksum = FileStoragePurposePolicies.ValidateCompletionChecksum(
@@ -202,32 +208,233 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileMetadataResponse>.BadRequest(completionChecksum.Message!);
         }
 
-        var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
-            session.Provider,
-            session.UploadSessionId,
-            session.ExpectedSizeBytes,
-            session.Checksum,
-            request,
-            tusStoreAccessor,
-            cancellationToken);
-        if (tusValidation is not null)
+        if (string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
         {
-            return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
-        }
+            await using var patchGate = await gateRegistry.EnterPatchCommitAsync(uploadSessionId, cancellationToken);
+            await dbContext.Entry(session).ReloadAsync(cancellationToken);
+            if (session.Completed)
+            {
+                var completedFile = await dbContext.StoredFiles.SingleOrDefaultAsync(
+                    x => x.FileId == session.FileId,
+                    cancellationToken);
+                return completedFile is null
+                    ? FileStorageResult<FileMetadataResponse>.Failure(
+                        StatusCodes.Status503ServiceUnavailable,
+                        "已完成上传的元数据暂不可用。")
+                    : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(completedFile));
+            }
 
-        if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
-                session.FileName,
-                session.ContentType,
+            if (!string.Equals(session.State, UploadSessionState.Open, StringComparison.Ordinal))
+            {
+                return FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status409Conflict,
+                    "上传完成操作正在进行中，请稍后重试。");
+            }
+
+            var now = timeProvider.GetUtcNow();
+            if (session.ExpiresAtUtc <= now)
+            {
+                return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话已过期。");
+            }
+
+            var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
                 session.Provider,
                 session.UploadSessionId,
+                session.ExpectedSizeBytes,
+                session.Checksum,
+                request,
                 tusStoreAccessor,
-                cancellationToken))
-        {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Uploaded content does not match the declared file type.");
+                cancellationToken);
+            if (tusValidation is not null)
+            {
+                return FileStorageResult<FileMetadataResponse>.Failure(
+                    tusValidation.StatusCode,
+                    tusValidation.Message);
+            }
+
+            if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
+                    session.FileName,
+                    session.ContentType,
+                    session.Provider,
+                    session.UploadSessionId,
+                    tusStoreAccessor,
+                    cancellationToken))
+            {
+                return FileStorageResult<FileMetadataResponse>.BadRequest("上传内容与声明的文件类型不匹配。");
+            }
+
+            session.BeginCommit(
+                NewId("cmt"),
+                NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum),
+                now);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken); // 在执行任何存储 I/O 前持久提交 Tx1。
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                dbContext.ChangeTracker.Clear();
+                session = await dbContext.UploadSessions.SingleOrDefaultAsync(
+                    x => x.UploadSessionId == uploadSessionId,
+                    cancellationToken);
+                if (session is null
+                    || !string.Equals(session.State, UploadSessionState.Committing, StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(session.CommitId))
+                {
+                    return FileStorageResult<FileMetadataResponse>.Failure(
+                        StatusCodes.Status409Conflict,
+                        "上传完成操作的所有权已被并发变更，请稍后重试。");
+                }
+            }
         }
 
-        var now = timeProvider.GetUtcNow();
-        session.MarkCompleted(now);
+        if (!string.Equals(session.State, UploadSessionState.Committing, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(session.CommitId))
+        {
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                StatusCodes.Status409Conflict,
+                "上传会话无法进入 committing 状态。");
+        }
+
+        var existingFile = await dbContext.StoredFiles.SingleOrDefaultAsync(
+            x => x.FileId == session.FileId,
+            cancellationToken);
+        if (existingFile is not null)
+        {
+            var existingChecksum = NormalizeCanonicalChecksum(existingFile.Checksum);
+            if (!string.Equals(existingFile.ObjectKey, session.ObjectKey, StringComparison.Ordinal)
+                || existingFile.SizeBytes != session.ExpectedSizeBytes
+                || (session.CommitChecksum is not null
+                    && !string.Equals(session.CommitChecksum, existingChecksum, StringComparison.Ordinal)))
+            {
+                session.RecordTerminalRecoveryFailure(
+                    "existing-file-intent-mismatch",
+                    timeProvider.GetUtcNow());
+                if (!await TrySaveCommitTransitionAsync(cancellationToken))
+                {
+                    return CommitOwnershipChanged();
+                }
+                return FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "既有文件事实与提交意图不匹配，自动恢复已停止。");
+            }
+
+            session.MarkCompleted(existingFile.CompletedAtUtc);
+            if (!await TrySaveCommitTransitionAsync(cancellationToken))
+            {
+                return CommitOwnershipChanged();
+            }
+            return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(existingFile));
+        }
+
+        var executionOwnerId = NewId("wrk");
+        if (!await executionLeaseManager.TryClaimAsync(session.UploadSessionId, executionOwnerId, cancellationToken))
+        {
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                StatusCodes.Status409Conflict,
+                "另一工作进程正在恢复上传完成操作，请稍后重试。");
+        }
+        await dbContext.Entry(session).ReloadAsync(cancellationToken);
+
+        var storageActionPreviouslyStarted = session.StorageActionStartedAtUtc is not null;
+        if (!storageActionPreviouslyStarted)
+        {
+            session.MarkStorageActionStarted(timeProvider.GetUtcNow());
+            if (!await TrySaveCommitTransitionAsync(cancellationToken))
+            {
+                return CommitOwnershipChanged();
+            }
+        }
+
+        UploadCommitStorageResult storageResult;
+        try
+        {
+            storageResult = await executionLeaseManager.ExecuteWithRenewalAsync(
+                session.UploadSessionId,
+                executionOwnerId,
+                ToCommitIntent(session),
+                commitStorage,
+                cancellationToken);
+        }
+        catch (UploadCommitExecutionLostException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                StatusCodes.Status409Conflict,
+                "上传提交执行所有权已变更，请稍后重试。");
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                exception,
+                "FileStorage 存储提交 seam 失败；UploadSessionId={UploadSessionId}，ErrorCode={ErrorCode}。",
+                session.UploadSessionId,
+                "commit-storage-unavailable");
+            storageResult = UploadCommitStorageResult.RetryableUnavailable();
+        }
+
+        if (!await executionLeaseManager.StillOwnsAsync(
+                session.UploadSessionId,
+                executionOwnerId,
+                cancellationToken))
+        {
+            dbContext.ChangeTracker.Clear();
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                StatusCodes.Status409Conflict,
+                "上传提交执行所有权已变更，请稍后重试。");
+        }
+
+        if (!storageResult.IsVerified
+            && storageResult.FailureDisposition == UploadCommitFailureDisposition.ProvenNoFinalActionStarted
+            && !storageActionPreviouslyStarted)
+        {
+            session.ReopenAfterStorageProvedNotStarted();
+            if (!await TrySaveCommitTransitionAsync(cancellationToken))
+            {
+                return CommitOwnershipChanged();
+            }
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                storageResult.StatusCode is >= 400 and <= 599
+                    ? storageResult.StatusCode
+                    : StatusCodes.Status503ServiceUnavailable,
+                string.IsNullOrWhiteSpace(storageResult.Message)
+                    ? "最终存储操作尚未开始，上传会话已重新打开，可重试。"
+                    : storageResult.Message);
+        }
+
+        if (!storageResult.IsVerified
+            || storageResult.SizeBytes != session.ExpectedSizeBytes
+            || NormalizeCanonicalChecksum(storageResult.CanonicalChecksum) is not { } canonicalChecksum
+            || (session.CommitChecksum is not null
+                && !string.Equals(session.CommitChecksum, canonicalChecksum, StringComparison.Ordinal)))
+        {
+            var errorCode = string.IsNullOrWhiteSpace(storageResult.ErrorCode)
+                ? "invalid-final-evidence"
+                : storageResult.ErrorCode;
+            if (storageResult.IsVerified)
+            {
+                session.RecordTerminalRecoveryFailure(errorCode, timeProvider.GetUtcNow());
+            }
+            else
+            {
+                session.RecordRecoveryFailure(errorCode, NextRecoveryAtUtc(session.RecoveryAttemptCount, timeProvider.GetUtcNow()));
+            }
+            if (!await TrySaveCommitTransitionAsync(cancellationToken))
+            {
+                return CommitOwnershipChanged();
+            }
+            return FileStorageResult<FileMetadataResponse>.Failure(
+                storageResult.StatusCode is >= 400 and <= 599
+                    ? storageResult.StatusCode
+                    : StatusCodes.Status503ServiceUnavailable,
+                string.IsNullOrWhiteSpace(storageResult.Message)
+                    ? storageResult.IsVerified
+                        ? "最终存储证据与提交意图不匹配，自动恢复已停止。"
+                        : "最终存储证据无效，请稍后重试。"
+                    : storageResult.Message);
+        }
+
+        var completedAtUtc = timeProvider.GetUtcNow();
         var file = StoredFileRecord.Create(
             session.FileId,
             session.OrganizationId,
@@ -238,15 +445,19 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             session.FilePurpose,
             session.FileName,
             session.ContentType,
-            session.ExpectedSizeBytes,
-            session.Checksum,
+            storageResult.SizeBytes,
+            canonicalChecksum,
             session.ObjectKey,
             FileStorageFileStatus.Available,
             session.CreatedAtUtc,
-            now);
+            completedAtUtc);
 
         dbContext.StoredFiles.Add(file);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        session.MarkCompleted(completedAtUtc);
+        if (!await TrySaveCommitTransitionAsync(cancellationToken)) // Tx2 原子提交元数据与 completed 状态。
+        {
+            return CommitOwnershipChanged();
+        }
 
         return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
     }
@@ -460,7 +671,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return dbContext.UploadSessions.AnyAsync(x =>
             x.UploadSessionId == uploadSessionId
             && x.Provider == TusUploadProvider.Name
-            && !x.Completed
+            && x.State == UploadSessionState.Open
+            && !x.LegacyCompleted
             && x.ExpiresAtUtc > now,
             cancellationToken);
     }
@@ -472,7 +684,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return await dbContext.UploadSessions
             .Where(x => x.UploadSessionId == uploadSessionId
                 && x.Provider == TusUploadProvider.Name
-                && !x.Completed)
+                && x.State == UploadSessionState.Open
+                && !x.LegacyCompleted)
             .Select(x => new LocalTusUploadSession(
                 x.UploadSessionId,
                 x.ExpectedSizeBytes,
@@ -508,6 +721,60 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return $"{organizationId}/{fileId}";
     }
 
+    private static UploadCommitIntent ToCommitIntent(UploadSessionRecord session) =>
+        new(
+            session.CommitId!,
+            session.UploadSessionId,
+            session.FileId,
+            session.OrganizationId,
+            session.EnvironmentId,
+            session.FilePurpose,
+            session.ObjectKey,
+            session.ExpectedSizeBytes,
+            session.CommitChecksum);
+
+    private static string? NormalizeCanonicalChecksum(string? checksum)
+    {
+        const string prefix = "sha256:";
+        if (checksum is null
+            || !checksum.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || checksum.Length != prefix.Length + 64
+            || checksum[prefix.Length..].Any(character => character is not (
+                >= '0' and <= '9'
+                or >= 'a' and <= 'f'
+                or >= 'A' and <= 'F')))
+        {
+            return null;
+        }
+
+        return $"{prefix}{checksum[prefix.Length..].ToLowerInvariant()}";
+    }
+
+    private static DateTimeOffset NextRecoveryAtUtc(int priorAttemptCount, DateTimeOffset now)
+    {
+        var seconds = Math.Min(300, 1 << Math.Min(priorAttemptCount, 8));
+        return now.AddSeconds(seconds);
+    }
+
+    private async Task<bool> TrySaveCommitTransitionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
+    private static FileStorageResult<FileMetadataResponse> CommitOwnershipChanged() =>
+        FileStorageResult<FileMetadataResponse>.Failure(
+            StatusCodes.Status409Conflict,
+            "上传提交执行所有权已变更，请稍后重试。");
+
     private async Task<long> CalculateUsedBytesAsync(
         string organizationId,
         string environmentId,
@@ -527,7 +794,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
         var now = timeProvider.GetUtcNow();
         var reservedBytes = dbContext.UploadSessions
-            .Where(session => !session.Completed
+            .Where(session => !session.LegacyCompleted
+                && session.State != UploadSessionState.Completed
                 && session.ExpiresAtUtc > now
                 && session.OrganizationId == organizationId
                 && session.EnvironmentId == environmentId);

@@ -236,6 +236,19 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
+      "operationId": "dispatchScopedBusinessBarcodePrintBatch",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "dispatchBusinessConsoleBarcodePrintBatch"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
       "operationId": "reprintBusinessBarcodeLabel",
       "classification": "internal",
@@ -244,10 +257,36 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+      "operationId": "reprintScopedBusinessBarcodeLabel",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reprintBusinessConsoleBarcodeLabel"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
       "operationId": "voidBusinessBarcodeLabel",
       "classification": "internal",
       "rationale": "Void is a label lifecycle command for trusted operational clients; existing facade read surfaces expose the resulting state."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
+      "operationId": "voidScopedBusinessBarcodeLabel",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "voidBusinessConsoleBarcodeLabel"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -2998,6 +3037,20 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim",
+      "operationId": "claimBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "claimBusinessConsoleMesOperationTask"
+      ],
+      "note": "exposed：BusinessGateway 将领取主体绑定为当前认证用户，只允许在已授权的 work-center 范围内领取 Queued 且未指派任务，并以 MasterData 在岗人员目录核验当前工作中心归属。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/complete",
       "operationId": "completeBusinessMesOperationTask",
       "classification": "exposed",
@@ -3120,6 +3173,20 @@
         "listBusinessConsoleMesProductionReports"
       ],
       "note": "exposed：BusinessGateway 通过 listBusinessConsoleMesProductionReports 保留 operationActualLaborHours 与 operationActualMachineHours；对应工序尚无冻结实绩时显式返回 null，不省略字段。"
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-statistics",
+      "operationId": "queryBusinessMesProductionStatistics",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMesProductionStatistics"
+      ],
+      "note": "exposed：BusinessGateway 只执行 business.mes.reporting.read 授权、组织/环境连续性与契约代理；时间窗、维度、过滤、分页、数量、比率和降级事实由 MES producer 原样提供。"
     },
     {
       "service": "Mes",
@@ -4223,6 +4290,14 @@
       "gatewayOperationIds": [
         "openBusinessConsoleQualityNcrFromInspection"
       ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/first-article-confirmation",
+      "operationId": "getBusinessQualityFirstArticleConfirmation",
+      "classification": "internal",
+      "rationale": "Service-to-service first-article confirmation read contract consumed by the MES report gate (#2779, wave 2 of #1949); the Business Console reads first-article tasks and records through the existing inspection-task/record facades."
     },
     {
       "service": "Quality",

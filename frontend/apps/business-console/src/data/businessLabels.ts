@@ -158,6 +158,7 @@ export const TRACE_NODE_TYPE_LABELS: Readonly<Record<string, string>> = {
   operator: '报工人',
   'device-asset': '生产设备',
   'inspection-result': '不良记录',
+  'nonconformance-report': '不合格品报告',
   'produced-lot': '产出批次',
   serial: '产出序列号',
   'produced-lot-or-serial': '产出批次/序列号',

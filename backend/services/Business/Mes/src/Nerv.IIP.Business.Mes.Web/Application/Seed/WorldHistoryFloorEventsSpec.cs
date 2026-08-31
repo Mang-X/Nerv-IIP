@@ -85,14 +85,14 @@ public static class WorldHistoryFloorEventsSpec
         "WC-RA-02", "WC-CT-01", "WC-TS-01", "WC-PK-01",
     ];
 
-    /// <summary>停机原因与时长分布（分钟，闭区间）：换型最频繁、故障最长、保养按计划。</summary>
+    /// <summary>停机原因目录码与时长分布（分钟，闭区间）：换型最频繁、故障最长、保养按计划。</summary>
     public static readonly IReadOnlyList<WorldHistoryDowntimeReason> DowntimeReasons =
     [
-        new("换型调整", 20, 60),
-        new("设备故障", 60, 360),
-        new("缺料待工", 15, 120),
-        new("计划保养", 120, 240),
-        new("质量停机", 30, 150),
+        new("DT-SETUP", 20, 60),
+        new("DT-MECH", 60, 360),
+        new("DT-MATERIAL", 15, 120),
+        new("DT-PM", 120, 240),
+        new("DT-QUALITY", 30, 150),
     ];
 
     private static readonly IReadOnlyList<int> DowntimeReasonWeights = [35, 25, 20, 12, 8];

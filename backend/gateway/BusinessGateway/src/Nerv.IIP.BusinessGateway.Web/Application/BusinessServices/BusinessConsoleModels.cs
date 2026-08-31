@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
@@ -4410,6 +4411,89 @@ public sealed record BusinessConsoleMesListWithoutStatusRequest(
     int Skip = 0,
     int Take = 100);
 
+[JsonConverter(typeof(BusinessConsoleMesProductionStatisticsDimensionJsonConverter))]
+public enum BusinessConsoleMesProductionStatisticsDimension
+{
+    Day,
+    Shift,
+    WorkCenter,
+    Sku,
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsDimensionJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesProductionStatisticsDimension>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+[JsonConverter(typeof(BusinessConsoleMesProductionStatisticsResolutionStatusJsonConverter))]
+public enum BusinessConsoleMesProductionStatisticsResolutionStatus
+{
+    Resolved,
+    Degraded,
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsResolutionStatusJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesProductionStatisticsResolutionStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+[JsonConverter(typeof(BusinessConsoleMesProductionStatisticsDegradedReasonJsonConverter))]
+public enum BusinessConsoleMesProductionStatisticsDegradedReason
+{
+    HistoricalDimensionLegacyUnresolved,
+    HistoricalTimezoneMissing,
+    HistoricalTimezoneInvalid,
+    HistoricalShiftDefinitionMissing,
+    HistoricalShiftDefinitionInvalid,
+    HistoricalReportOutsideShiftWindow,
+    HistoricalLocalTimeInvalid,
+    HistoricalLocalTimeAmbiguous,
+    HistoricalDimensionSnapshotDegraded,
+    WorkCenterMissing,
+    NonPositiveTotalOutput,
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsDegradedReasonJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesProductionStatisticsDegradedReason>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+public sealed record BusinessConsoleMesProductionStatisticsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    BusinessConsoleMesProductionStatisticsDimension Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    DateOnly? BusinessDate = null,
+    string? ShiftCode = null,
+    string? WorkCenterId = null,
+    string? SkuId = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleMesProductionStatisticsResponse(
+    [property: JsonRequired, Required] string OrganizationId,
+    [property: JsonRequired, Required] string EnvironmentId,
+    [property: JsonRequired, Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
+    [property: JsonRequired, Required] DateTimeOffset WindowStartUtc,
+    [property: JsonRequired, Required] DateTimeOffset WindowEndUtc,
+    [property: JsonRequired, Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsBucket> Items,
+    [property: JsonRequired, Required] int TotalCount,
+    [property: JsonRequired, Required] int Skip,
+    [property: JsonRequired, Required] int Take);
+
+public sealed record BusinessConsoleMesProductionStatisticsBucket(
+    [property: JsonRequired, Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
+    string? DimensionValue,
+    DateOnly? BusinessDate,
+    string? ShiftCode,
+    string? WorkCenterId,
+    string? SkuId,
+    [property: JsonRequired, Required] decimal GoodQuantity,
+    [property: JsonRequired, Required] decimal ScrapQuantity,
+    [property: JsonRequired, Required] decimal ReworkQuantity,
+    [property: JsonRequired, Required] decimal TotalOutputQuantity,
+    decimal? GoodRate,
+    decimal? ScrapRate,
+    decimal? ReworkRate,
+    [property: JsonRequired, Required] int ProductionReportCount,
+    [property: JsonRequired, Required] BusinessConsoleMesProductionStatisticsResolutionStatus ResolutionStatus,
+    [property: JsonRequired, Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsDegradedReason> DegradedReasons);
+
 public sealed record BusinessConsoleMesProductionPlanListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -4438,7 +4522,11 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskItem> OperationTasks,
     string? WorkOrderNo = null,
     string? SkuCode = null,
-    bool HasActiveQualityHold = false);
+    bool HasActiveQualityHold = false,
+    string WorkOrderType = "standard",
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -4634,7 +4722,11 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks,
     BusinessConsoleMesSourcePlanReference? SourcePlanReference = null,
-    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? QualityHolds = null);
+    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? QualityHolds = null,
+    string WorkOrderType = "standard",
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
     string SourceService,
@@ -4916,6 +5008,25 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
+public sealed record BusinessConsoleMesClaimOperationTaskRequest(
+    [property: RouteParam] string OperationTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string ScopeKind,
+    [property: QueryParam] string ScopeId,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesClaimDispatchTaskForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
+
 public sealed record BusinessConsoleMesOperationTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,
     int Total);
@@ -4950,7 +5061,11 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     [property: Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? ActualLaborHours = null,
     [property: Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
-    decimal? ActualMachineHours = null);
+    decimal? ActualMachineHours = null,
+    string WorkOrderType = "standard",
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,

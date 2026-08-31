@@ -468,8 +468,6 @@ async function submitDefect() {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -481,9 +479,12 @@ async function submitDefect() {
       :rows="qualityItems"
       row-key="qualityItemId"
       :loading="qualityItemsPending"
+      :error="qualityItemsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的不良，登记后可在这里跟进处置与关闭。"
+      @retry="refreshQualityItems"
     >
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink

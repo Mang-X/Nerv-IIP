@@ -351,7 +351,7 @@ describe('work-order list — quality hold lock icon', () => {
           NvSelectTrigger: { template: '<button><slot /></button>' },
           NvSelectContent: { template: '<div><slot /></div>' },
           NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
-          SelectValue: { template: '<span />' },
+          NvSelectValue: { template: '<span />' },
           NvInput: { template: '<input />' },
           RouterLink: { props: ['to'], template: '<a><slot /></a>' },
         },

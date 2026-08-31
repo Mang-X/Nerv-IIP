@@ -205,7 +205,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -361,7 +361,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -456,6 +456,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var reportResult = await new RecordProductionReportCommandHandler(
             mesDb,
             SnapshotProvider.Instance,
+            AcceptanceMesFirstArticleGate.Allowing,
             mesCodingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -753,7 +754,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -1185,7 +1186,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         decimal quantity,
         DateTimeOffset reportedAtUtc)
     {
-        await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance).Handle(
+        await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",

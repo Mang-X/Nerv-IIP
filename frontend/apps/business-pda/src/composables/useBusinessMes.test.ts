@@ -3,14 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
-  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
-  getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
@@ -66,6 +65,7 @@ const receiptState = vi.hoisted(() => ({
   confirm: vi.fn(),
 }))
 const lineSideInventoryFetch = vi.hoisted(() => vi.fn())
+const productionReportFetch = vi.hoisted(() => vi.fn())
 
 const authState = vi.hoisted(() => ({
   principal: undefined as
@@ -120,6 +120,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesMaterialIssueRequests: vi.fn(),
   listBusinessConsoleMesOperationTasks: vi.fn(),
   listBusinessConsoleMesReportableOperationTasks: vi.fn(),
+  getBusinessConsoleMesProductionReport: (...args: unknown[]) => productionReportFetch(...args),
   listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesOperationTasks',
   ),
@@ -161,6 +162,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   ),
   completeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
     'completeBusinessConsoleMesOperationTask',
+  ),
+  claimBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'claimBusinessConsoleMesOperationTask',
   ),
   recordBusinessConsoleMesProductionReportMutationOptions: mockMutationOptions(
     'recordBusinessConsoleMesProductionReport',
@@ -295,6 +299,7 @@ describe('pda useBusinessMes composables', () => {
     lineSideInventoryFetch.mockReset().mockResolvedValue({
       data: { success: true, data: { items: [], totalCount: 0, page: 1, pageSize: 200 } },
     })
+    productionReportFetch.mockReset()
     coladaState.queryDataById.clear()
     coladaState.queryDataRefById.clear()
     coladaState.queryErrorRefById.clear()
@@ -357,7 +362,7 @@ describe('pda useBusinessMes composables', () => {
         data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
       },
     )
-    authState.principal = {
+    reactiveAuthState.principal = {
       principalId: 'user-001',
       organizationId: 'org-001',
       environmentId: 'env-dev',
@@ -409,6 +414,7 @@ describe('pda useBusinessMes composables', () => {
                     operationTaskId: query.keyword,
                     workOrderId: query.workOrderId ?? 'wo-1',
                     status: 'InProgress',
+                    allowedActions: ['report'],
                   },
                 ],
                 total: 1,
@@ -1236,6 +1242,153 @@ describe('pda useBusinessMes composables', () => {
     )
   })
 
+  it('confirms a production report only when public GET returns the same report and pair', async () => {
+    productionReportFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          report: {
+            productionReportId: 'report-id-1',
+            reportNo: 'RPT-1',
+            workOrderId: 'wo-1',
+            operationTaskId: 'ot-1',
+          },
+        },
+      },
+    })
+    const { confirmReport, reportContext } = useMesProductionReports()
+    const context = reportContext.value!
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-1',
+        productionReportId: 'report-id-1',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+        context,
+      }),
+    ).resolves.toMatchObject({ reportNo: 'RPT-1', workOrderId: 'wo-1', operationTaskId: 'ot-1' })
+    expect(productionReportFetch).toHaveBeenCalledWith({
+      path: { reportNo: 'RPT-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      throwOnError: true,
+    })
+  })
+
+  it('rejects a production report public GET that returns another operation pair', async () => {
+    productionReportFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          report: {
+            productionReportId: 'report-id-1',
+            reportNo: 'RPT-1',
+            workOrderId: 'wo-other',
+            operationTaskId: 'ot-other',
+          },
+        },
+      },
+    })
+    const { confirmReport, reportContext } = useMesProductionReports()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-1',
+        productionReportId: 'report-id-1',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+        context: reportContext.value!,
+      }),
+    ).rejects.toThrow('尚未回读到同一工单与工序')
+  })
+
+  it('rejects a production report when public GET is not yet visible', async () => {
+    productionReportFetch.mockRejectedValueOnce({ status: 404 })
+    const { confirmReport, reportContext } = useMesProductionReports()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-NOT-VISIBLE',
+        productionReportId: 'report-id-pending',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+        context: reportContext.value!,
+      }),
+    ).rejects.toThrow('尚未回读到同一工单与工序')
+  })
+
+  it('rejects an old receipt when principal changes before public GET confirmation', async () => {
+    const { confirmReport, reportContext } = useMesProductionReports()
+    const frozenContext = { ...reportContext.value! }
+    reactiveAuthState.principal = {
+      principalId: 'user-002',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+
+    await expect(
+      confirmReport({
+        reportNo: 'RPT-A',
+        productionReportId: 'report-a',
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-1',
+        context: frozenContext,
+      }),
+    ).rejects.toThrow('回读上下文无效')
+    expect(productionReportFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects a pending public GET after principal A→B→A changes its generation', async () => {
+    const pendingGet = deferred<{
+      data: {
+        success: boolean
+        data: { report: Record<string, string> }
+      }
+    }>()
+    productionReportFetch.mockReturnValueOnce(pendingGet.promise)
+    const { confirmReport, reportContext } = useMesProductionReports()
+    const frozenContext = { ...reportContext.value! }
+    const confirmation = confirmReport({
+      reportNo: 'RPT-A',
+      productionReportId: 'report-a',
+      workOrderId: 'wo-1',
+      operationTaskId: 'ot-1',
+      context: frozenContext,
+    })
+    await nextTick()
+
+    reactiveAuthState.principal = {
+      principalId: 'user-002',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+    reactiveAuthState.principal = {
+      principalId: 'user-001',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+    expect(reportContext.value).toMatchObject({ principalId: 'user-001' })
+    expect(reportContext.value!.generation).toBeGreaterThan(frozenContext.generation)
+
+    pendingGet.resolve({
+      data: {
+        success: true,
+        data: {
+          report: {
+            reportNo: 'RPT-A',
+            productionReportId: 'report-a',
+            workOrderId: 'wo-1',
+            operationTaskId: 'ot-1',
+          },
+        },
+      },
+    })
+    await expect(confirmation).rejects.toThrow('回读上下文无效')
+  })
+
   it('does not send a production report when no reporting scope is selected', async () => {
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
@@ -1256,6 +1409,39 @@ describe('pda useBusinessMes composables', () => {
       }),
       // 响应成功但授权清单为空 = 「一个授权范围都没有」，与「还没选」是两回事（#1297）。
     ).rejects.toThrow(MES_WORK_SCOPE_UNAVAILABLE_MESSAGE)
+    expect(mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('does not send a production report when the authoritative task omits report action', async () => {
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'ot-done',
+              workOrderId: 'wo-1',
+              status: 'Completed',
+              allowedActions: [],
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const { recordReport } = useMesProductionReports()
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+
+    await expect(
+      recordReport({
+        workOrderId: 'wo-1',
+        operationTaskId: 'ot-done',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'report-done',
+      }),
+    ).rejects.toThrow('服务端未开放 report 动作')
     expect(mutateAsync).not.toHaveBeenCalled()
   })
 
@@ -1318,6 +1504,75 @@ describe('pda useBusinessMes composables', () => {
         }),
       }),
     )
+  })
+
+  it('claims an unassigned queued task with the authenticated work-center scope and a stable key', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'ot-claim',
+              workOrderId: 'wo-claim',
+              status: 'Queued',
+              assignedUserId: 'user-001',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('claimBusinessConsoleMesOperationTask')!
+    mutateAsync.mockResolvedValue({ success: true, data: { status: 'Accepted' } })
+    const context = mes.captureOperationActionContext('claim', 'wo-claim', 'ot-claim')
+
+    const claimed = await mes.claimTask('wo-claim', 'ot-claim', {
+      idempotencyKey: 'operation-claim-1',
+      context,
+    })
+
+    expect(claimBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()
+    expect(mutateAsync).toHaveBeenCalledWith({
+      path: { operationTaskId: 'ot-claim' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+      body: { idempotencyKey: 'operation-claim-1' },
+    })
+    expect(claimed?.assignedUserId).toBe('user-001')
+  })
+
+  it('reuses the pending claim key after an unknown result even when the retry supplies a new key', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { operationTaskId: 'ot-claim', workOrderId: 'wo-claim', assignedUserId: 'user-001' },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('claimBusinessConsoleMesOperationTask')!
+    mutateAsync
+      .mockRejectedValueOnce(new TypeError('response lost after commit'))
+      .mockResolvedValueOnce({ success: true, data: { status: 'Accepted' } })
+    const context = mes.captureOperationActionContext('claim', 'wo-claim', 'ot-claim')
+
+    await expect(
+      mes.claimTask('wo-claim', 'ot-claim', { idempotencyKey: 'claim-key-1', context }),
+    ).rejects.toThrow('response lost after commit')
+    await mes.claimTask('wo-claim', 'ot-claim', { idempotencyKey: 'claim-key-2', context })
+
+    expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('claim-key-1')
+    expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('claim-key-1')
   })
 
   it('fails closed before task readback and mutation when no operation scope is selected', async () => {

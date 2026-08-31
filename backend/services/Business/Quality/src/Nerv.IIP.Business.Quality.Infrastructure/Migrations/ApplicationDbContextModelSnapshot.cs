@@ -617,10 +617,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document or operation public id.");
+                        .HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
 
                     b.Property<string>("SourceQualityStatus")
                         .HasMaxLength(50)
@@ -843,10 +843,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document public id.");
+                        .HasComment("Source document public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
 
                     b.Property<string>("SourceDocumentLineId")
                         .HasMaxLength(250)
@@ -866,7 +866,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("source_type")
-                        .HasComment("Task source type: receiving, operation or final.");
+                        .HasComment("Task source type: receiving, operation, final or first-article.");
 
                     b.Property<DateTimeOffset?>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -1350,10 +1350,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("External source document id such as inspection plan, report or return id.");
+                        .HasComment("External source document id such as inspection plan, report or return id; NCRs opened from a first-article inspection carry that record's composite '{workOrderId}:{operationTaskId}' source identity.");
 
                     b.Property<Guid?>("SourceInspectionRecordId")
                         .HasColumnType("uuid")

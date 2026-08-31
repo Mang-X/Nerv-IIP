@@ -698,6 +698,104 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch",
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
+                 })
+        {
+            AssertRequiredStringQueryParameter(paths, path, "post", "organizationId");
+            AssertRequiredStringQueryParameter(paths, path, "post", "environmentId");
+        }
+        AssertRequiredPathParameter(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch",
+            "post",
+            "printBatchId",
+            "string");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
+                 })
+        {
+            AssertRequiredPathParameter(paths, path, "post", "printBatchId", "string");
+            AssertRequiredPathParameter(paths, path, "post", "sequenceNo", "integer", "int32");
+        }
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleDispatchBarcodePrintBatchBody",
+            "printBatchId",
+            "printerId");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleDispatchBarcodePrintBatchBody",
+            "organizationId",
+            "environmentId");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleReprintBarcodeLabelBody",
+            "printBatchId",
+            "sequenceNo",
+            "printerId");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleReprintBarcodeLabelBody",
+            "organizationId",
+            "environmentId");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleVoidBarcodeLabelBody",
+            "printBatchId",
+            "sequenceNo",
+            "reason");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleVoidBarcodeLabelBody",
+            "organizationId",
+            "environmentId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleBarcodePrintLifecycleResponse",
+            "printBatchId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleReprintBarcodeLabelResponse",
+            "printBatchId",
+            "status",
+            "printJobId",
+            "failureReason");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch",
+            "post",
+            "200",
+            "400",
+            "401",
+            "403",
+            "502");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+            "post",
+            "200",
+            "400",
+            "401",
+            "403",
+            "502");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
+            "post",
+            "200",
+            "400",
+            "401",
+            "403",
+            "502");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");
         AssertOperationId(paths, "/api/business-console/v1/barcode/resolve", "post", "resolveBusinessConsoleBarcode");
@@ -1089,6 +1187,61 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete", "post", "scopeId");
         AssertOperationId(paths, "/api/business-console/v1/mes/wip", "get", "getBusinessConsoleMesWipSummary");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "get", "listBusinessConsoleMesProductionReports");
+        AssertOperationId(paths, "/api/business-console/v1/mes/production-statistics", "get", "queryBusinessConsoleMesProductionStatistics");
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/production-statistics", "get", "502");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/production-statistics",
+            "get",
+            "organizationId",
+            "environmentId",
+            "dimension",
+            "windowStartUtc",
+            "windowEndUtc",
+            "businessDate",
+            "shiftCode",
+            "workCenterId",
+            "skuId",
+            "skip",
+            "take");
+        AssertQueryParameterEnum(
+            document,
+            paths,
+            "/api/business-console/v1/mes/production-statistics",
+            "dimension",
+            "day",
+            "shift",
+            "workCenter",
+            "sku");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionStatisticsResponse",
+            "organizationId",
+            "environmentId",
+            "dimension",
+            "windowStartUtc",
+            "windowEndUtc",
+            "items",
+            "totalCount",
+            "skip",
+            "take");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionStatisticsBucket",
+            "dimension",
+            "goodQuantity",
+            "scrapQuantity",
+            "reworkQuantity",
+            "totalOutputQuantity",
+            "productionReportCount",
+            "resolutionStatus",
+            "degradedReasons");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleMesProductionStatisticsBucket",
+            "resolutionStatus",
+            "resolved",
+            "degraded");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}", "get", "getBusinessConsoleMesProductionReport");
         AssertNullableDecimalSchemaProperties(
             document,
@@ -1550,6 +1703,30 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal("string", parameter.GetProperty("schema").GetProperty("type").GetString());
     }
 
+    private static void AssertRequiredPathParameter(
+        JsonElement paths,
+        string path,
+        string method,
+        string name,
+        string type,
+        string? format = null)
+    {
+        var parameter = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(candidate =>
+                candidate.GetProperty("in").GetString() == "path" &&
+                candidate.GetProperty("name").GetString() == name);
+
+        Assert.True(parameter.GetProperty("required").GetBoolean());
+        Assert.Equal(type, parameter.GetProperty("schema").GetProperty("type").GetString());
+        if (format is not null)
+        {
+            Assert.Equal(format, parameter.GetProperty("schema").GetProperty("format").GetString());
+        }
+    }
+
     private static void AssertOptionalIntegerQueryParameter(JsonElement paths, string path, string method, string name)
     {
         var parameter = FindQueryParameter(paths, path, method, name);
@@ -1908,7 +2085,25 @@ public sealed class BusinessGatewayOpenApiTests
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesWorkOrderItem",
-            "hasActiveQualityHold");
+            "hasActiveQualityHold",
+            "workOrderType",
+            "sourceWorkOrderId",
+            "sourceNcrId",
+            "sourceNcrCode");
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesWorkOrderDetailResponse",
+            "workOrderType",
+            "sourceWorkOrderId",
+            "sourceNcrId",
+            "sourceNcrCode");
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesOperationTaskRow",
+            "workOrderType",
+            "sourceWorkOrderId",
+            "sourceNcrId",
+            "sourceNcrCode");
     }
 
     private static void AssertMesDisplayProperties(JsonDocument document, string schemaNameSuffix, params string[] propertyNames)
@@ -2036,6 +2231,31 @@ public sealed class BusinessGatewayOpenApiTests
             $"{path} status query parameter must be an OpenAPI enum, not a free-form string.");
         Assert.Contains(values.EnumerateArray(), value => value.GetString() == "ready");
         Assert.Contains(values.EnumerateArray(), value => value.GetString() == "posted");
+    }
+
+    private static void AssertQueryParameterEnum(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string parameterName,
+        params string[] expectedValues)
+    {
+        var schema = FindQueryParameter(paths, path, "get", parameterName).GetProperty("schema");
+        if (schema.TryGetProperty("allOf", out var allOf))
+        {
+            schema = allOf[0];
+        }
+
+        if (schema.TryGetProperty("$ref", out var reference))
+        {
+            schema = document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(reference.GetString()!.Split('/').Last());
+        }
+
+        var values = schema.GetProperty("enum").EnumerateArray().Select(value => value.GetString()).ToArray();
+        Assert.Equal(expectedValues, values);
     }
 
     private static JsonElement FindSchemaBySuffix(JsonDocument document, string schemaNameSuffix)
