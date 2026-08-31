@@ -450,8 +450,6 @@ async function dismissCandidate(candidateId?: string) {
       </template>
     </NvPageHeader>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <!-- 跨页互链定位:点击「查看冲销单/冲销自」时若对方在别页,按其单号筛选定位;给出可清除的说明 -->
     <div
       v-if="filters.keyword"
@@ -477,9 +475,12 @@ async function dismissCandidate(candidateId?: string) {
       :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
+      :error="productionReportsError"
+      :error-message="errorMessage"
       empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
       :searchable="false"
       :column-settings="false"
+      @retry="refreshProductionReports"
     >
       <template #cell-reportNo="{ row }">
         <div

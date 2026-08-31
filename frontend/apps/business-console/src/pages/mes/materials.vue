@@ -200,8 +200,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -213,9 +211,12 @@ function formatError(error: unknown) {
       :rows="materialIssueRequests"
       row-key="requestId"
       :loading="materialIssueRequestsPending"
+      :error="materialIssueRequestsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无领料申请。齐套检查通过后，从工单详情发起领料即会在此跟踪收料进度。"
+      @retry="refreshMaterialIssueRequests"
     >
       <template #cell-receivedQuantity="{ row }">
         <div class="flex flex-col gap-1">

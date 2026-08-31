@@ -366,8 +366,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -381,9 +379,12 @@ function formatError(error: unknown) {
       row-key="productionPlanId"
       :client-sort="false"
       :loading="productionPlansPending"
+      :error="productionPlansError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       :empty-message="emptyMessage"
+      @retry="refreshProductionPlans"
     >
       <template #cell-sourceSystem="{ row }">
         <div class="flex flex-col gap-0.5">
