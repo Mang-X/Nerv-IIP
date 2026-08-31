@@ -110,20 +110,6 @@ function Invoke-NervFullChainMemberAdmission {
     return $admission
 }
 
-function Invoke-NervFullChainLaneScope {
-    param(
-        [Parameter(Mandatory)] [scriptblock] $Action,
-        [Parameter(Mandatory)] [scriptblock] $FinalizeAction
-    )
-
-    try {
-        & $Action
-    }
-    finally {
-        & $FinalizeAction
-    }
-}
-
 function Get-NervFullChainTrxResult {
     param(
         [Parameter(Mandatory)] [string] $ResultsDirectory,

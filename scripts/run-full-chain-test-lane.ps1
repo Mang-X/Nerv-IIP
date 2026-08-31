@@ -3,12 +3,15 @@
 #   SideEffects:
 #     - Starts scenario-owned PostgreSQL, Redis, Aspire and business service processes through governed entrypoints
 #     - Creates and removes scenario-owned disposable PostgreSQL databases and Docker resources
+#     - Temporarily overrides and restores process environment used by FullChain entrypoints
 #   Writes:
 #     - FullChain TRX files and a machine-readable dependency summary under artifacts/**
+#     - Resumable snapshots and exactly one terminal snapshot through the configured leaf summary writer
 #     - One caller-selected sales-order-demand canonical result when provenance is supplied
 #     - Best-effort memory-dimension evidence inside that same dependency summary
 #     - Existing governed scenario diagnostics under artifacts/acceptance/** and artifacts/fullstack/**
 #   Cleanup:
+#     - Stops PostgreSQL and Redis services started by this runner
 #     - Delegates exact process, database and container cleanup to each governed scenario entrypoint
 #     - Fails the lane when an entrypoint or its cleanup fails
 #   Requires:
@@ -30,7 +33,14 @@ param(
     [int] $RunAttempt,
     [string] $TestedSha,
     [string] $ManifestDigest,
-    [string] $ScenarioId
+    [string] $ScenarioId,
+    [scriptblock] $SummaryFileWriter = {
+        param([string] $Path, [string] $Payload, [string] $Phase)
+
+        $directory = Split-Path -Parent $Path
+        if (-not [string]::IsNullOrWhiteSpace($directory)) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
+        [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+    }
 )
 
 Set-StrictMode -Version Latest
@@ -166,6 +176,8 @@ $savedDotnetBuildServer = [Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_
 [Environment]::SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')
 
 function Write-NervFullChainSummarySnapshot {
+    param([ValidateSet('resumable', 'terminal')] [string] $Phase = 'resumable')
+
     $summary.members = @($memberSummaries)
     $summary.expected = 0
     $summary.discovered = 0
@@ -179,9 +191,7 @@ function Write-NervFullChainSummarySnapshot {
         $summary.failed += [int]$memberSummary.failed
         $summary.skipped += [int]$memberSummary.skipped
     }
-    $summaryDirectory = Split-Path -Parent $SummaryPath
-    if (-not [string]::IsNullOrWhiteSpace($summaryDirectory)) { [IO.Directory]::CreateDirectory($summaryDirectory) | Out-Null }
-    [IO.File]::WriteAllText($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), [Text.UTF8Encoding]::new($false))
+    $SummaryFileWriter.Invoke($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), $Phase) | Out-Null
 }
 
 function Wait-NervFullChainComposeProbe {
@@ -211,7 +221,6 @@ function Wait-NervFullChainComposeProbe {
 }
 
 Write-NervFullChainSummarySnapshot
-$laneAction = {
 try {
     $runningBefore = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $repoRoot -Name 'full-chain-infrastructure-before'
     $initialServices = @($runningBefore.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -365,8 +374,7 @@ foreach ($member in $selectedMembers) {
 catch {
     if ($null -eq $firstFailure) { $firstFailure = $_ }
 }
-}
-$laneFinalizeAction = {
+finally {
     $cleanupFailures = [Collections.Generic.List[string]]::new()
     if ($ownedServices.Count -gt 0) {
         try {
@@ -394,12 +402,9 @@ $laneFinalizeAction = {
         [string]::Equals($infrastructureCleanup, 'passed', [StringComparison]::Ordinal) -and
         @($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -eq 0
     ) { 'passed' } else { 'failed' }
-    Write-NervFullChainSummarySnapshot
-
     try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
     catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
-    Write-NervFullChainSummarySnapshot
-    if ($null -ne $firstFailure) { throw $firstFailure }
-    Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."
+    Write-NervFullChainSummarySnapshot -Phase 'terminal'
 }
-Invoke-NervFullChainLaneScope -Action $laneAction -FinalizeAction $laneFinalizeAction
+if ($null -ne $firstFailure) { throw $firstFailure }
+Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."

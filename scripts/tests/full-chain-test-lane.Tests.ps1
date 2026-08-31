@@ -2,8 +2,9 @@
 #   Category: check
 #   SideEffects:
 #     - Validates FullChain lane manifest, TRX and summary contracts with temporary fixtures
+#     - Executes the production FullChain runner against temporary leaf command shims
 #   Writes:
-#     - Temporary TRX fixtures under the operating-system temp directory
+#     - Temporary TRX, runner, workflow, command-shim and summary fixtures under the operating-system temp directory
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -76,6 +77,116 @@ function New-FullChainMemberAdmissionSummary {
             remainingSeconds = 0
             requiredSeconds = 0
         }
+    }
+}
+
+function Write-FullChainRunnerWorkflowFixture {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [int] $RunStepTimeoutMinutes
+    )
+
+    $workflow = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
+    $pattern = '(?m)(^\s+- name: Run governed FullChain scenarios\r?\n\s+timeout-minutes: )120$'
+    $updated = [regex]::Replace($workflow, $pattern, "`${1}$RunStepTimeoutMinutes")
+    if ([string]::Equals($workflow, $updated, [StringComparison]::Ordinal)) { throw 'FullChain workflow fixture did not replace the governed runner timeout.' }
+    [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))
+    return $Path
+}
+
+function New-FullChainRunnerFakeCommands {
+    param(
+        [Parameter(Mandatory)] [string] $Directory,
+        [Parameter(Mandatory)] [string[]] $DiscoveredIdentities
+    )
+
+    [IO.Directory]::CreateDirectory($Directory) | Out-Null
+    if ($IsWindows) {
+        $docker = @'
+@echo off
+>>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo docker %*
+echo %* | findstr /C:" exec -T postgres psql " >nul
+if not errorlevel 1 (
+  if "%NERV_FULLCHAIN_FAKE_FAILURE%"=="postgres-version" (
+    >&2 echo NERV_FULLCHAIN_ORIGINAL_FAILURE
+    exit /b 42
+  )
+  echo 18.6
+)
+echo %* | findstr /C:" redis-cli --raw PING" >nul
+if not errorlevel 1 echo PONG
+echo %* | findstr /C:" redis-cli --raw INFO server" >nul
+if not errorlevel 1 echo redis_version:8.10.1
+exit /b 0
+'@
+        $identityOutput = (@('  echo The following Tests are available:') + @($DiscoveredIdentities | ForEach-Object { "  echo     $_" })) -join "`r`n"
+        $dotnet = @"
+@echo off
+>>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo dotnet %*
+echo %* | findstr /C:" --filter " >nul
+if not errorlevel 1 >>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo ENTRYPOINT dotnet %*
+echo %* | findstr /C:" --list-tests " >nul
+if not errorlevel 1 (
+$identityOutput
+)
+exit /b 0
+"@
+        $pwsh = @'
+@echo off
+>>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo ENTRYPOINT pwsh %*
+exit /b 43
+'@
+        [IO.File]::WriteAllText((Join-Path $Directory 'docker.cmd'), $docker, [Text.ASCIIEncoding]::new())
+        [IO.File]::WriteAllText((Join-Path $Directory 'dotnet.cmd'), $dotnet, [Text.ASCIIEncoding]::new())
+        [IO.File]::WriteAllText((Join-Path $Directory 'pwsh.cmd'), $pwsh, [Text.ASCIIEncoding]::new())
+        return
+    }
+
+    $docker = @'
+#!/bin/sh
+printf 'docker %s\n' "$*" >> "$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
+case " $* " in
+  *" exec -T postgres psql "*)
+    if [ "$NERV_FULLCHAIN_FAKE_FAILURE" = "postgres-version" ]; then
+      printf '%s\n' 'NERV_FULLCHAIN_ORIGINAL_FAILURE' >&2
+      exit 42
+    fi
+    printf '%s\n' '18.6'
+    ;;
+  *" redis-cli --raw PING "*) printf '%s\n' 'PONG' ;;
+  *" redis-cli --raw INFO server "*) printf '%s\n' 'redis_version:8.10.1' ;;
+esac
+exit 0
+'@
+    $identityOutput = ((@("    printf '%s\n' 'The following Tests are available:'") + @($DiscoveredIdentities | ForEach-Object { "    printf '%s\n' '    $_'" })) -join "`n")
+    $dotnet = @"
+#!/bin/sh
+printf 'dotnet %s\n' "`$*" >> "`$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
+case " `$* " in
+  *" --filter "*) printf 'ENTRYPOINT dotnet %s\n' "`$*" >> "`$NERV_FULLCHAIN_FAKE_COMMAND_LOG" ;;
+  *" --list-tests "*)
+$identityOutput
+    ;;
+esac
+exit 0
+"@
+    $pwsh = @'
+#!/bin/sh
+printf 'ENTRYPOINT pwsh %s\n' "$*" >> "$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
+exit 43
+'@
+    foreach ($command in @(
+        @{ Name = 'docker'; Content = $docker },
+        @{ Name = 'dotnet'; Content = $dotnet },
+        @{ Name = 'pwsh'; Content = $pwsh }
+    )) {
+        $path = Join-Path $Directory $command.Name
+        [IO.File]::WriteAllText($path, $command.Content, [Text.UTF8Encoding]::new($false))
+        [IO.File]::SetUnixFileMode(
+            $path,
+            [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute -bor
+                [IO.UnixFileMode]::GroupRead -bor [IO.UnixFileMode]::GroupExecute -bor
+                [IO.UnixFileMode]::OtherRead -bor [IO.UnixFileMode]::OtherExecute)
     }
 }
 
@@ -354,35 +465,6 @@ try {
     $firstAdmission = Invoke-NervFullChainMemberAdmission -MemberId 'first' -EntrypointKind 'fullstack' -GlobalDeadlineSeconds 2200 -ElapsedSeconds 0 -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $firstSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
     $secondAdmission = Invoke-NervFullChainMemberAdmission -MemberId 'second' -EntrypointKind 'script' -GlobalDeadlineSeconds 2200 -ElapsedSeconds 600 -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $secondSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
     Assert-Contract ($firstAdmission.Allowed -and $secondAdmission.Allowed -and [string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) 'An early first-member completion must release its unused time to a later member admission.'
-    foreach ($deniedCase in @(
-        [pscustomobject]@{ Kind = 'fullstack'; Elapsed = 401; Required = 1800 },
-        [pscustomobject]@{ Kind = 'script'; Elapsed = 701; Required = 1500 },
-        [pscustomobject]@{ Kind = 'dotnet'; Elapsed = 1001; Required = 1200 }
-    )) {
-        $deniedSummary = New-FullChainMemberAdmissionSummary
-        $laneState = [pscustomobject]@{
-            admission = $null
-            cleanupCalls = 0
-            finalSummaryWrites = 0
-            persistedOutcome = 'not-run'
-            persistedCleanup = 'not-run'
-        }
-        Invoke-NervFullChainLaneScope -Action {
-            $laneState.admission = Invoke-NervFullChainMemberAdmission -MemberId "denied-$($deniedCase.Kind)" -EntrypointKind $deniedCase.Kind -GlobalDeadlineSeconds 2200 -ElapsedSeconds $deniedCase.Elapsed -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $deniedSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
-        } -FinalizeAction {
-            $laneState.cleanupCalls++
-            $laneState.persistedOutcome = [string]$deniedSummary.outcome
-            $laneState.persistedCleanup = [string]$deniedSummary.cleanup
-            $laneState.finalSummaryWrites++
-        }
-        $deniedAdmission = $laneState.admission
-        Assert-Contract (-not $deniedAdmission.Allowed -and [string]::Equals([string]$deniedAdmission.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal)) "Insufficient remaining time must deny the $($deniedCase.Kind) member with a stable reason."
-        Assert-Contract ($deniedAdmission.RemainingSeconds -eq ($deniedCase.Required - 1) -and $deniedAdmission.RequiredSeconds -eq $deniedCase.Required) "The $($deniedCase.Kind) denial must use its governed entrypoint budget."
-        Assert-Contract ([string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must invoke its target entrypoint zero times."
-        Assert-Contract ([string]::Equals([string]$deniedSummary.outcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals([string]$deniedSummary.cleanup, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$deniedSummary.diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must emit failure summary evidence without requiring member cleanup."
-        Assert-Contract ($laneState.cleanupCalls -eq 1) "A denied $($deniedCase.Kind) member must execute production lane cleanup exactly once."
-        Assert-Contract ($laneState.finalSummaryWrites -eq 1 -and [string]::Equals($laneState.persistedOutcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals($laneState.persistedCleanup, 'passed', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must persist its final failure and cleanup summary exactly once."
-    }
 
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
     $scenarioMatrix = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $manifestPath -RepositoryRoot $repoRoot
@@ -403,6 +485,126 @@ try {
 
     $runnerPath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
     Assert-Contract (Test-Path -LiteralPath $runnerPath -PathType Leaf) 'The governed FullChain runner must exist.'
+    $runnerWorkflowPath = Write-FullChainRunnerWorkflowFixture -Path (Join-Path $fixtureRoot 'runner-denied-workflow.yml') -RunStepTimeoutMinutes 1
+    $fakeCommandDirectory = Join-Path $fixtureRoot 'runner-fake-bin'
+    $fakeCommandLog = Join-Path $fixtureRoot 'runner-fake-commands.log'
+    $allIdentities = @($manifest.members.expectedTestIdentities | ForEach-Object { [string]$_ })
+    New-FullChainRunnerFakeCommands -Directory $fakeCommandDirectory -DiscoveredIdentities $allIdentities
+    $savedPath = [Environment]::GetEnvironmentVariable('PATH')
+    $savedPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
+    $savedRedis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
+    $savedFakeCommandLog = [Environment]::GetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG')
+    $savedFakeFailure = [Environment]::GetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE')
+    $savedComposeProject = [Environment]::GetEnvironmentVariable('COMPOSE_PROJECT_NAME')
+    $realPwsh = [string](@(Get-Command pwsh -CommandType Application)[0].Source)
+    try {
+        [Environment]::SetEnvironmentVariable('PATH', "$fakeCommandDirectory$([IO.Path]::PathSeparator)$savedPath")
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', 'Host=fake-postgres;Database=postgres')
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', 'fake-redis:6379')
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $fakeCommandLog)
+        [Environment]::SetEnvironmentVariable('COMPOSE_PROJECT_NAME', $null)
+
+        foreach ($deniedCase in @(
+            [pscustomobject]@{ Kind = 'fullstack'; MemberId = 'maintenance-runtime-hours' },
+            [pscustomobject]@{ Kind = 'script'; MemberId = 'erp-wms-delivery-completion' },
+            [pscustomobject]@{ Kind = 'dotnet'; MemberId = 'erp-return-closure' }
+        )) {
+            [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
+            [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $null)
+            $caseRoot = Join-Path $fixtureRoot "runner-denied-$($deniedCase.Kind)"
+            $caseSummaryPath = Join-Path $caseRoot 'summary.json'
+            $writeState = [pscustomobject]@{ terminal = 0; resumable = 0 }
+            $summaryWriter = {
+                param([string] $Path, [string] $Payload, [string] $Phase)
+
+                $writeState.$Phase++
+                [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+                [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+            }.GetNewClosure()
+            $runnerFailure = $null
+            try {
+                & $runnerPath `
+                    -MemberId $deniedCase.MemberId `
+                    -WorkflowPath $runnerWorkflowPath `
+                    -ResultsDirectory (Join-Path $caseRoot 'results') `
+                    -SummaryPath $caseSummaryPath `
+                    -SummaryFileWriter $summaryWriter 6>$null | Out-Null
+            }
+            catch { $runnerFailure = $_ }
+
+            Assert-Contract ($null -ne $runnerFailure -and ([string]$runnerFailure.Exception.Message).Contains('deadline admission denied', [StringComparison]::Ordinal)) "Production $($deniedCase.Kind) denied fixture must preserve the admission failure."
+            $commands = @([IO.File]::ReadAllLines($fakeCommandLog))
+            Assert-Contract (@($commands | Where-Object { $_ -match '^docker .* up -d ' }).Count -eq 1) "Production $($deniedCase.Kind) denied fixture must enter runner-owned infrastructure state."
+            Assert-Contract (@($commands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) "Production $($deniedCase.Kind) denied fixture must clean runner-owned infrastructure exactly once."
+            Assert-Contract (@($commands | Where-Object { $_.StartsWith('ENTRYPOINT ', [StringComparison]::Ordinal) }).Count -eq 0) "Production $($deniedCase.Kind) denied fixture must invoke its member entrypoint zero times."
+            Assert-Contract ($writeState.terminal -eq 1) "Production $($deniedCase.Kind) denied fixture must persist exactly one terminal summary."
+            $caseSummary = Get-Content -LiteralPath $caseSummaryPath -Raw | ConvertFrom-Json -Depth 20
+            Assert-Contract ([string]::Equals([string]$caseSummary.members[0].outcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals([string]$caseSummary.members[0].diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal) -and [string]::Equals([string]$caseSummary.cleanup, 'passed', [StringComparison]::Ordinal)) "Production $($deniedCase.Kind) denied fixture must persist its final denied outcome and cleanup."
+        }
+
+        [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', 'postgres-version')
+        $failureRoot = Join-Path $fixtureRoot 'runner-original-failure'
+        $failureSummaryPath = Join-Path $failureRoot 'summary.json'
+        $failureWriteState = [pscustomobject]@{ terminal = 0; resumable = 0 }
+        $failureSummaryWriter = {
+            param([string] $Path, [string] $Payload, [string] $Phase)
+
+            $failureWriteState.$Phase++
+            [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+            [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+        }.GetNewClosure()
+        $originalFailure = $null
+        try {
+            & $runnerPath `
+                -MemberId 'maintenance-runtime-hours' `
+                -WorkflowPath $runnerWorkflowPath `
+                -ResultsDirectory (Join-Path $failureRoot 'results') `
+                -SummaryPath $failureSummaryPath `
+                -SummaryFileWriter $failureSummaryWriter 6>$null | Out-Null
+        }
+        catch { $originalFailure = $_ }
+        Assert-Contract ($null -ne $originalFailure -and ([string]$originalFailure.Exception.Message).Contains('NERV_FULLCHAIN_ORIGINAL_FAILURE', [StringComparison]::Ordinal)) 'Production infrastructure failure fixture must preserve the original failure marker.'
+        $failureCommands = @([IO.File]::ReadAllLines($fakeCommandLog))
+        Assert-Contract (@($failureCommands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) 'Production infrastructure failure fixture must clean runner-owned infrastructure exactly once.'
+        Assert-Contract ($failureWriteState.terminal -eq 1) 'Production infrastructure failure fixture must persist exactly one terminal summary.'
+        $failureSummary = Get-Content -LiteralPath $failureSummaryPath -Raw | ConvertFrom-Json -Depth 20
+        Assert-Contract ([string]::Equals([string]$failureSummary.cleanup, 'failed', [StringComparison]::Ordinal)) 'Production infrastructure failure fixture must persist its final cleanup state.'
+
+        [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $null)
+        $childRoot = Join-Path $fixtureRoot 'runner-child-process'
+        $childSummaryPath = Join-Path $childRoot 'summary.json'
+        $childFailure = $null
+        try {
+            Invoke-NativeCommandOutput `
+                -Command $realPwsh `
+                -Arguments @(
+                    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerPath,
+                    '-MemberId', 'maintenance-runtime-hours',
+                    '-WorkflowPath', $runnerWorkflowPath,
+                    '-ResultsDirectory', (Join-Path $childRoot 'results'),
+                    '-SummaryPath', $childSummaryPath
+                ) `
+                -WorkingDirectory $repoRoot `
+                -TimeoutSeconds 60 `
+                -Name 'full-chain-production-composition-child' | Out-Null
+        }
+        catch { $childFailure = $_ }
+        Assert-Contract ($null -ne $childFailure -and ([string]$childFailure.Exception.Message).Contains('deadline admission denied', [StringComparison]::Ordinal)) "The real FullChain child-process entrypoint must preserve the denied failure; observed '$($childFailure.Exception.Message)'."
+        $childCommands = @([IO.File]::ReadAllLines($fakeCommandLog))
+        Assert-Contract (@($childCommands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) 'The real FullChain child-process entrypoint must execute production cleanup exactly once.'
+        $childSummary = Get-Content -LiteralPath $childSummaryPath -Raw | ConvertFrom-Json -Depth 20
+        Assert-Contract ([string]::Equals([string]$childSummary.members[0].diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal) -and [string]::Equals([string]$childSummary.cleanup, 'passed', [StringComparison]::Ordinal)) 'The real FullChain child-process entrypoint must persist its terminal denied summary.'
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('PATH', $savedPath)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $savedPostgres)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $savedRedis)
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $savedFakeCommandLog)
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $savedFakeFailure)
+        [Environment]::SetEnvironmentVariable('COMPOSE_PROJECT_NAME', $savedComposeProject)
+    }
     $runnerContent = [IO.File]::ReadAllText($runnerPath)
     foreach ($requiredFragment in @(
         'Import-NervFullChainTestLaneManifest',
