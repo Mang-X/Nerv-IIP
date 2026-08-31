@@ -1929,14 +1929,14 @@ function Get-Man517ComposeRunningServicesObservation {
     }
 }
 
-function Wait-Man517OwnedComposeServicesStopped {
+function Invoke-Man517OwnedComposeServicesStoppedObservation {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$OwnedServices,
         [Parameter(Mandatory)] [string]$ComposeFile,
-        [Parameter(Mandatory)] [ValidateRange(1000, 60000)] [int]$DeadlineMilliseconds
+        [Parameter(Mandatory)] [ValidateRange(1000, 60000)] [int]$DeadlineMilliseconds,
+        [Parameter(Mandatory)] [System.Func[string, int, long]]$Runtime
     )
 
-    $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $owned = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($service in $OwnedServices) { [void]$owned.Add($service) }
 
@@ -1949,7 +1949,7 @@ function Wait-Man517OwnedComposeServicesStopped {
     $lastLogStatus = 'unavailable'
     $lastLogUnavailableReason = 'no Compose status query completed'
     while ($true) {
-        $elapsedMilliseconds = [long]$clock.ElapsedMilliseconds
+        $elapsedMilliseconds = $Runtime.Invoke('elapsed', 0)
         if ($elapsedMilliseconds -ge $DeadlineMilliseconds) {
             return [pscustomobject]@{
                 status = 'timed-out'
@@ -1967,7 +1967,6 @@ function Wait-Man517OwnedComposeServicesStopped {
         }
 
         $remainingDeadlineMilliseconds = $DeadlineMilliseconds - [int]$elapsedMilliseconds
-        $isTailObservation = $remainingDeadlineMilliseconds -le 250
         $attempts++
         try {
             $observation = Get-Man517ComposeRunningServicesObservation `
@@ -1976,7 +1975,7 @@ function Wait-Man517OwnedComposeServicesStopped {
                 -RemainingDeadlineMilliseconds $remainingDeadlineMilliseconds
         }
         catch {
-            $elapsedMilliseconds = [long]$clock.ElapsedMilliseconds
+            $elapsedMilliseconds = $Runtime.Invoke('elapsed', 0)
             $failureQuery = $_.Exception.Data['Query']
             $failureLogPath = $_.Exception.Data['LogPath']
             $safeFailure = Protect-ScriptAutomationText -Text $_.Exception.Message
@@ -2003,7 +2002,7 @@ function Wait-Man517OwnedComposeServicesStopped {
         }
         $remainingNames = [string[]]@($remaining)
         [Array]::Sort($remainingNames, [StringComparer]::Ordinal)
-        $elapsedMilliseconds = [long]$clock.ElapsedMilliseconds
+        $elapsedMilliseconds = $Runtime.Invoke('elapsed', 0)
         $lastObservation = Protect-ScriptAutomationText -Text "observedAtUtc=$($observation.observedAtUtc); running=[$(@($observation.runningServices) -join ',')]; ownedRemaining=[$($remainingNames -join ',')]; query=$($observation.query); logStatus=$($observation.logStatus); log=$($observation.logPath); logUnavailableReason=$($observation.logUnavailableReason)"
         $lastRemainingNames = $remainingNames
         $lastQuery = $observation.query
@@ -2028,30 +2027,46 @@ function Wait-Man517OwnedComposeServicesStopped {
         }
         if ($elapsedMilliseconds -lt $DeadlineMilliseconds) {
             $remainingAfterObservation = $DeadlineMilliseconds - [int]$elapsedMilliseconds
-            $cadenceMilliseconds = if ($isTailObservation) {
-                $remainingAfterObservation
-            }
-            else {
-                [Math]::Min(250, [Math]::Max(0, $remainingAfterObservation - 250))
-            }
+            $cadenceMilliseconds = [Math]::Min(250, [Math]::Max(0, $remainingAfterObservation - 250))
             if ($cadenceMilliseconds -gt 0) {
-                [System.Threading.Tasks.Task]::Delay($cadenceMilliseconds).GetAwaiter().GetResult()
+                [void]$Runtime.Invoke('delay', $cadenceMilliseconds)
             }
         }
     }
 }
 
+function Wait-Man517OwnedComposeServicesStopped {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$OwnedServices,
+        [Parameter(Mandatory)] [string]$ComposeFile,
+        [Parameter(Mandatory)] [ValidateRange(1000, 60000)] [int]$DeadlineMilliseconds
+    )
+
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    [System.Func[string, int, long]]$runtime = {
+        param([string]$Operation, [int]$Milliseconds)
+        if ([string]::Equals($Operation, 'delay', [StringComparison]::Ordinal)) {
+            [System.Threading.Tasks.Task]::Delay($Milliseconds).GetAwaiter().GetResult()
+        }
+        return [long]$clock.ElapsedMilliseconds
+    }
+    return Invoke-Man517OwnedComposeServicesStoppedObservation `
+        -OwnedServices $OwnedServices `
+        -ComposeFile $ComposeFile `
+        -DeadlineMilliseconds $DeadlineMilliseconds `
+        -Runtime $runtime
+}
+
 function New-Man517ComposeCleanupEvidence {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$OwnedServices,
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$RemainingServices,
         [Parameter(Mandatory)] [object]$Observation
     )
 
     return [ordered]@{
         owned = $OwnedServices
-        remaining = $RemainingServices.Count
-        remainingNames = $RemainingServices
+        remaining = @($Observation.remainingNames).Count
+        remainingNames = $Observation.remainingNames
         status = $Observation.status
         deadlineMilliseconds = $Observation.deadlineMilliseconds
         attempts = $Observation.attempts
@@ -2581,7 +2596,6 @@ finally {
             }
             composeServices = New-Man517ComposeCleanupEvidence `
                 -OwnedServices $servicesToStop `
-                -RemainingServices $remainingOwnedServices `
                 -Observation $composeCleanupObservation
             cleanupFailures = @($cleanupFailures | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $cleanupEvidencePath -Encoding utf8
