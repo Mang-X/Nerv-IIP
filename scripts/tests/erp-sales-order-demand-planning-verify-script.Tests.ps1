@@ -642,11 +642,190 @@ Assert-Contract ($content.Contains('Get-Man517RemainingProcessNames -Descriptors
 Assert-Contract ((Get-FunctionContractText -Name 'Get-Man517RemainingProcessNames').Contains('StartTime', [StringComparison]::Ordinal)) 'Process cleanup verification must confirm identity by start time, because PIDs are reused.'
 Assert-Contract ($content.Contains("SELECT count(*) FROM pg_database WHERE datname = '`$databaseName';", [StringComparison]::Ordinal)) 'Cleanup must verify the exact disposable database is gone, and only that one.'
 Assert-Contract ($content.Contains('disposable database still present', [StringComparison]::Ordinal)) 'A surviving disposable database must be reported as a cleanup failure.'
-Assert-Contract ($content.Contains('script-owned compose services still running', [StringComparison]::Ordinal)) 'Cleanup must verify only the compose services this run started are gone.'
+Assert-Contract ($content.Contains('script-owned compose cleanup did not converge before deadline', [StringComparison]::Ordinal)) 'Cleanup must fail when its owned Compose services do not converge before the deadline.'
 Assert-Contract ($content.Contains('cleanup-evidence.json', [StringComparison]::Ordinal)) 'Cleanup accounting must be written as reusable evidence.'
 Assert-Contract ($content.Contains('sales-order-demand-planning-evidence.json', [StringComparison]::Ordinal)) 'Verify script must write reusable acceptance evidence.'
 Assert-Contract ($content.Contains('$readinessIdentityReadback', [StringComparison]::Ordinal)) 'Acceptance evidence must retain the verified service-specific identity route for every managed process.'
 Assert-Contract ($content.Contains('readinessIdentity =', [StringComparison]::Ordinal)) 'Acceptance evidence must publish readiness identity separately from generic health and port ownership.'
+
+# #2957 Regression：Compose stop 返回后的第一次状态读取仍可能短暂看到 owned service。
+# 直接执行生产 observer，并以可控时钟证明收敛、尾窗、永久残留、readback 失败与 ownership。
+$composeWaitFunctionText = Get-FunctionContractText -Name 'Wait-Man517OwnedComposeServicesStopped'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeWaitFunctionText)) 'Verify script must define bounded observation for owned Compose services.'
+Invoke-Expression $composeWaitFunctionText
+
+$script:composeObservedBudgets = [System.Collections.Generic.List[int]]::new()
+$script:composeCadenceCalls = 0
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $null
+$script:composeFixtureClock = $null
+$script:composeQueryDurationMilliseconds = 0
+function Protect-ScriptAutomationText { param([AllowNull()][string]$Text) return $Text }
+function Wait-Man517ComposeObservationCadence {
+    param([object]$Clock, [int]$Milliseconds)
+    Assert-Contract ([object]::ReferenceEquals($Clock, $script:composeFixtureClock)) 'Compose cadence must advance the observer clock.'
+    $Clock.ElapsedMilliseconds = [long]$Clock.ElapsedMilliseconds + $Milliseconds
+    $script:composeCadenceCalls++
+}
+function Get-Man517ComposeRunningServicesObservation {
+    param([string]$ComposeFile, [int]$Attempt, [int]$RemainingDeadlineMilliseconds)
+    $script:composeObservedBudgets.Add($RemainingDeadlineMilliseconds)
+    $script:composeFixtureClock.ElapsedMilliseconds = [long]$script:composeFixtureClock.ElapsedMilliseconds + $script:composeQueryDurationMilliseconds
+    if ([string]::Equals($script:composeObservationMode, 'readback-failure', [StringComparison]::Ordinal)) {
+        $failure = [InvalidOperationException]::new("fixture canonical readback unavailable at attempt $Attempt")
+        $failure.Data['Query'] = 'fixture compose ps'
+        $failure.Data['LogPath'] = "fixture://readback/attempt-$Attempt"
+        throw $failure
+    }
+    if ([string]::Equals($script:composeObservationMode, 'persistent', [StringComparison]::Ordinal)) {
+        return [pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = "fixture://persistent/attempt-$Attempt" }
+    }
+    return $script:composeObservationQueue.Dequeue()
+}
+
+$transientSequence = [System.Collections.Generic.Queue[object]]::new()
+$transientSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://transient/attempt-1' })
+$transientSequence.Enqueue([pscustomobject]@{ runningServices = @(); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://transient/attempt-2' })
+$oldSingleSample = $transientSequence.Peek()
+Assert-Contract (@($oldSingleSample.runningServices).Count -eq 1) 'The regression fixture must make the old single-sample implementation fail on its first observation.'
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $transientSequence
+$script:composeFixtureClock = [pscustomobject]@{ ElapsedMilliseconds = [long]0 }
+$script:composeQueryDurationMilliseconds = 40
+$script:composeObservedBudgets.Clear()
+$script:composeCadenceCalls = 0
+$transientResult = Wait-Man517OwnedComposeServicesStopped -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 3000 -Clock $script:composeFixtureClock
+Assert-Contract $transientResult.converged 'The production observer must converge across postgres -> empty.'
+Assert-Contract ($transientResult.attempts -eq 2 -and @($transientResult.remainingNames).Count -eq 0) 'Transient convergence must consume both observations and report remaining=0.'
+Assert-Contract ($script:composeCadenceCalls -eq 1) 'Transient convergence must pace its two observations.'
+
+$script:composeObservationMode = 'persistent'
+$script:composeFixtureClock = [pscustomobject]@{ ElapsedMilliseconds = [long]0 }
+$script:composeQueryDurationMilliseconds = 10
+$script:composeObservedBudgets.Clear()
+$script:composeCadenceCalls = 0
+$persistentResult = Wait-Man517OwnedComposeServicesStopped -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 2500 -Clock $script:composeFixtureClock
+Assert-Contract (-not $persistentResult.converged -and [string]::Equals($persistentResult.status, 'timed-out', [StringComparison]::Ordinal)) 'A permanent owned residual must fail closed at the deadline.'
+Assert-Contract ($persistentResult.attempts -gt 1 -and $persistentResult.elapsedMilliseconds -eq $persistentResult.deadlineMilliseconds) 'Permanent residual must use repeated observation and stop at the controlled deadline.'
+Assert-Contract (@($persistentResult.remainingNames).Count -eq 1 -and [string]::Equals([string]$persistentResult.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) 'Permanent residual evidence must retain the owned service name.'
+foreach ($diagnosticField in @('lastObservation', 'query', 'logPath')) {
+    Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$persistentResult.$diagnosticField)) "Permanent residual evidence must retain $diagnosticField."
+}
+
+# 第一次查询 600ms、cadence 250ms，第二次查询 600ms 后在 1450ms 读到 empty。
+$tailWindowSequence = [System.Collections.Generic.Queue[object]]::new()
+$tailWindowSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://tail/attempt-1' })
+$tailWindowSequence.Enqueue([pscustomobject]@{ runningServices = @(); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://tail/attempt-2' })
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $tailWindowSequence
+$script:composeFixtureClock = [pscustomobject]@{ ElapsedMilliseconds = [long]0 }
+$script:composeQueryDurationMilliseconds = 600
+$script:composeObservedBudgets.Clear()
+$script:composeCadenceCalls = 0
+$tailWindowResult = Wait-Man517OwnedComposeServicesStopped -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 1500 -Clock $script:composeFixtureClock
+Assert-Contract ($tailWindowResult.converged -and $tailWindowResult.attempts -eq 2 -and $tailWindowResult.elapsedMilliseconds -eq 1450) 'A service that stops in the deadline tail window must still converge on a fresh observation.'
+Assert-Contract ($script:composeObservedBudgets.Count -eq 2 -and $script:composeObservedBudgets[0] -eq 1500 -and $script:composeObservedBudgets[1] -eq 650) 'Each query must receive the exact remaining millisecond budget without rounding up.'
+Assert-Contract ($tailWindowSequence.Count -eq 0) 'Tail-window convergence must consume the empty second observation instead of reusing stale state.'
+
+$foreignSequence = [System.Collections.Generic.Queue[object]]::new()
+$foreignSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://foreign/attempt-1' })
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $foreignSequence
+$script:composeFixtureClock = [pscustomobject]@{ ElapsedMilliseconds = [long]0 }
+$script:composeQueryDurationMilliseconds = 0
+$script:composeObservedBudgets.Clear()
+$foreignServiceResult = Wait-Man517OwnedComposeServicesStopped -OwnedServices @('redis') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 3000 -Clock $script:composeFixtureClock
+Assert-Contract ($foreignServiceResult.converged -and @($foreignServiceResult.remainingNames).Count -eq 0) 'A running service not owned by this invocation must not enter the cleanup verdict.'
+
+$readbackFailure = $null
+try {
+    $script:composeObservationMode = 'readback-failure'
+    $script:composeFixtureClock = [pscustomobject]@{ ElapsedMilliseconds = [long]0 }
+    $script:composeQueryDurationMilliseconds = 25
+    $script:composeObservedBudgets.Clear()
+    Wait-Man517OwnedComposeServicesStopped -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 3000 -Clock $script:composeFixtureClock | Out-Null
+}
+catch { $readbackFailure = $_.Exception }
+Assert-Contract ($null -ne $readbackFailure) 'A failed Compose readback must fail closed instead of becoming remaining=0.'
+foreach ($diagnosticField in @('deadlineMilliseconds', 'attempts', 'elapsedMilliseconds', 'lastObservation', 'fixture canonical readback unavailable')) {
+    Assert-Contract ($readbackFailure.Message.Contains($diagnosticField, [StringComparison]::Ordinal)) "Readback failure must retain $diagnosticField."
+}
+Assert-Contract ([string]::Equals([string]$readbackFailure.Data['Query'], 'fixture compose ps', [StringComparison]::Ordinal)) 'Readback failure must retain the actual query.'
+Assert-Contract ([string]::Equals([string]$readbackFailure.Data['LogPath'], 'fixture://readback/attempt-1', [StringComparison]::Ordinal)) 'Readback failure must retain the actual log location.'
+Assert-Contract (@($readbackFailure.Data['RemainingNames']).Count -eq 1) 'Readback failure must retain owned services as remaining rather than claiming zero.'
+
+# 直接执行生产 cadence，避免永久残留路径退化成忙循环。
+$composeCadenceFunctionText = Get-FunctionContractText -Name 'Wait-Man517ComposeObservationCadence'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeCadenceFunctionText)) 'Verify script must define the production Compose observation cadence.'
+Invoke-Expression $composeCadenceFunctionText
+$productionCadenceStopwatch = [Diagnostics.Stopwatch]::StartNew()
+foreach ($cadenceAttempt in 1..3) {
+    Wait-Man517ComposeObservationCadence -Clock $productionCadenceStopwatch -Milliseconds 50
+}
+$productionCadenceStopwatch.Stop()
+Assert-Contract ($productionCadenceStopwatch.ElapsedMilliseconds -ge 120) 'Production cadence must actually pace repeated observations.'
+
+# 查询 adapter 只消费 canonical 一次性命令 seam；不拥有第二套 process wait/exit/stream/cleanup。
+$composeObservationFunctionAst = Get-FunctionDefinitionAst -Name 'Get-Man517ComposeRunningServicesObservation'
+$composeObservationFunctionText = Get-FunctionContractText -Name 'Get-Man517ComposeRunningServicesObservation'
+Assert-Contract ($null -ne $composeObservationFunctionAst) 'Verify script must define the Compose state-query adapter.'
+$canonicalObservationCalls = Get-CommandCallAsts -Name 'Invoke-NativeCommandOutput' -Scope $composeObservationFunctionAst
+Assert-Contract ($canonicalObservationCalls.Count -eq 1) 'Compose readback must use exactly one canonical native-command call.'
+Assert-Contract (Test-CommandHasParameter -Call $canonicalObservationCalls[0] -Name 'PersistOutput') 'Compose readback must persist canonical stdout/stderr diagnostics.'
+Assert-Contract ([string]::Equals((Get-CommandParameterValueText -Call $canonicalObservationCalls[0] -Name 'TimeoutMilliseconds'), '$RemainingDeadlineMilliseconds', [StringComparison]::Ordinal)) 'Compose readback must pass the exact remaining millisecond budget to the canonical seam.'
+foreach ($forbiddenCommand in @('Start-ManagedBackgroundProcess', 'Start-Process', 'Stop-Process', 'Get-Content')) {
+    Assert-Contract ((Get-CommandCallAsts -Name $forbiddenCommand -Scope $composeObservationFunctionAst).Count -eq 0) "Compose readback must not recreate local process lifecycle command '$forbiddenCommand'."
+}
+$composeStopCalls = @(Get-CommandCallAsts -Name 'Invoke-DockerCompose' | Where-Object { $_.Extent.Text.Contains("'stop'", [StringComparison]::Ordinal) })
+Assert-Contract ($composeStopCalls.Count -eq 1) 'MAN-517 must issue exactly one owned Compose stop request.'
+
+Invoke-Expression $composeObservationFunctionText
+$script:capturedComposeQueryTimeoutMilliseconds = $null
+$script:composeCanonicalFailure = $null
+function Invoke-NativeCommandOutput {
+    param(
+        [string]$Command,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [string]$Name,
+        [string]$LogDirectory,
+        [switch]$PersistOutput,
+        [int]$TimeoutMilliseconds
+    )
+    $script:capturedComposeQueryTimeoutMilliseconds = $TimeoutMilliseconds
+    Assert-Contract (Test-Path -LiteralPath $LogDirectory -PathType Container) 'Compose adapter must create its explicit canonical log directory before invocation.'
+    if ($null -ne $script:composeCanonicalFailure) { throw $script:composeCanonicalFailure }
+    return [pscustomobject]@{ Stdout = "postgres`n"; LogDirectory = $LogDirectory }
+}
+$adapterFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-man517-compose-adapter-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $root = $adapterFixtureRoot
+    $adapterResult = Get-Man517ComposeRunningServicesObservation -ComposeFile 'fixture-compose.yml' -Attempt 1 -RemainingDeadlineMilliseconds 1950
+    Assert-Contract ($script:capturedComposeQueryTimeoutMilliseconds -eq 1950) 'The production adapter must preserve the exact 1950ms remaining budget.'
+    Assert-Contract (@($adapterResult.runningServices).Count -eq 1 -and [string]::Equals([string]$adapterResult.runningServices[0], 'postgres', [StringComparison]::Ordinal)) 'The production adapter must consume canonical stdout.'
+
+    foreach ($failureCase in @(
+        @{ Name = 'nonzero'; Exception = [InvalidOperationException]::new("Command 'docker' exited with 17. Output: fixture-nonzero") },
+        @{ Name = 'signal'; Exception = [InvalidOperationException]::new("Command 'docker' exited with 137. Terminated by signal SIGKILL (9): fixture-signal") },
+        @{ Name = 'timeout'; Exception = [TimeoutException]::new("Command 'docker' timed out after 125 milliseconds while reading output. Logs: fixture-timeout") },
+        @{ Name = 'unavailable'; Exception = [InvalidOperationException]::new("Failed to start command 'docker'. fixture-unavailable") }
+    )) {
+        $script:composeCanonicalFailure = $failureCase.Exception
+        $adapterFailure = $null
+        try {
+            Get-Man517ComposeRunningServicesObservation -ComposeFile 'fixture-compose.yml' -Attempt 2 -RemainingDeadlineMilliseconds 125 | Out-Null
+        }
+        catch { $adapterFailure = $_.Exception }
+        Assert-Contract ($null -ne $adapterFailure) "Canonical $($failureCase.Name) readback failure must fail closed."
+        Assert-Contract ($adapterFailure.Message.Contains($failureCase.Exception.Message, [StringComparison]::Ordinal)) "Canonical $($failureCase.Name) diagnostics must be preserved by the adapter."
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$adapterFailure.Data['Query']) -and -not [string]::IsNullOrWhiteSpace([string]$adapterFailure.Data['LogPath'])) "Canonical $($failureCase.Name) failure must retain query and log location."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $adapterFixtureRoot) { Remove-Item -LiteralPath $adapterFixtureRoot -Recurse -Force }
+}
+$script:composeCanonicalFailure = $null
+
 foreach ($parameterName in @('CanonicalResultPath', 'TrackIdentifier', 'Repository', 'RunId', 'RunAttempt', 'TestedSha', 'ManifestDigest', 'ScenarioId')) {
     $parameterMatches = @($scriptAst.ParamBlock.Parameters | Where-Object { [string]::Equals($_.Name.VariablePath.UserPath, $parameterName, [StringComparison]::OrdinalIgnoreCase) })
     Assert-Contract ($parameterMatches.Count -eq 1) "Verify script must accept caller-supplied canonical result parameter '$parameterName'."
