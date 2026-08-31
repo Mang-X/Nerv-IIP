@@ -272,6 +272,80 @@ function Invoke-TimeoutTreeScenario {
     }
 }
 
+function Invoke-DelayedDrainScenario {
+    $identityPath = Join-Path $ScenarioRoot 'delayed-drain-child.json'
+    $childScriptPath = Join-Path $ScenarioRoot 'delayed-drain-child.ps1'
+    $parentScriptPath = Join-Path $ScenarioRoot 'delayed-drain-parent.ps1'
+    $childIdentity = $null
+
+    [IO.File]::WriteAllText(
+        $childScriptPath,
+        @"
+param([string] `$IdentityPath)
+`$process = Get-Process -Id `$PID -ErrorAction Stop
+`$identity = [ordered]@{ pid = `$PID; processStartTimeUtc = `$process.StartTime.ToUniversalTime().ToString('O') }
+[IO.File]::WriteAllText(`$IdentityPath, (`$identity | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new(`$false))
+Start-Sleep -Milliseconds 750
+[Console]::Out.Write('late-stdout')
+[Console]::Error.Write('late-stderr')
+"@,
+        [Text.UTF8Encoding]::new($false)
+    )
+    [IO.File]::WriteAllText(
+        $parentScriptPath,
+        @"
+param([string] `$ChildScriptPath, [string] `$IdentityPath)
+`$startInfo = [Diagnostics.ProcessStartInfo]::new()
+`$startInfo.FileName = (Get-Process -Id `$PID -ErrorAction Stop).Path
+`$startInfo.UseShellExecute = `$false
+`$startInfo.RedirectStandardOutput = `$false
+`$startInfo.RedirectStandardError = `$false
+foreach (`$argument in @('-NoProfile', '-NonInteractive', '-File', `$ChildScriptPath, `$IdentityPath)) {
+    [void] `$startInfo.ArgumentList.Add(`$argument)
+}
+`$child = [Diagnostics.Process]::Start(`$startInfo)
+`$child.Dispose()
+`$deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+while (-not [IO.File]::Exists(`$IdentityPath) -and [DateTimeOffset]::UtcNow -lt `$deadline) {
+    Start-Sleep -Milliseconds 25
+}
+if (-not [IO.File]::Exists(`$IdentityPath)) { throw 'The delayed drain child did not publish its identity.' }
+"@,
+        [Text.UTF8Encoding]::new($false)
+    )
+
+    try {
+        $result = Invoke-NativeCommandOutput `
+            -Command (Get-Process -Id $PID).Path `
+            -Arguments @('-NoProfile', '-NonInteractive', '-File', $parentScriptPath, $childScriptPath, $identityPath) `
+            -WorkingDirectory $ScenarioRoot `
+            -TimeoutMilliseconds 20000 `
+            -Name 'native-output-delayed-drain' `
+            -LogDirectory (Join-Path $ScenarioRoot 'delayed-drain-logs')
+
+        Assert-Probe ([string]::Equals([string]$result.Stdout, 'late-stdout', [StringComparison]::Ordinal)) 'The command must wait for stdout completion after the root process exits.'
+        Assert-Probe ([string]::Equals([string]$result.Stderr, 'late-stderr', [StringComparison]::Ordinal)) 'The command must wait for stderr completion after the root process exits.'
+        Assert-Probe (-not $result.PartialOutput) 'Streams that complete inside the drain bound must not be marked partial.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $identityPath -PathType Leaf) {
+            $childIdentity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
+            $remaining = Get-Process -Id ([int]$childIdentity.pid) -ErrorAction SilentlyContinue
+            if ($null -ne $remaining) {
+                $expectedStartTimeUtc = [DateTimeOffset]::Parse(
+                    [string]$childIdentity.processStartTimeUtc,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    [Globalization.DateTimeStyles]::RoundtripKind).UtcDateTime
+                if ($remaining.StartTime.ToUniversalTime() -eq $expectedStartTimeUtc) {
+                    $remaining.Kill()
+                    [void] $remaining.WaitForExit(5000)
+                }
+                $remaining.Dispose()
+            }
+        }
+    }
+}
+
 function Invoke-NonzeroScenario {
     $ordinary = Get-ProbeFailure {
         Invoke-NativeCommandOutput `
@@ -325,7 +399,7 @@ function Invoke-FinallyCleanupScenario {
     $ownedProcessId = $null
     $readSetupFailure = {
         param([IO.StreamReader] $Reader, [string] $StreamName)
-        $deadline = [DateTimeOffset]::UtcNow.AddSeconds(3)
+        $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
         while (-not [IO.File]::Exists($pidPath) -and [DateTimeOffset]::UtcNow -lt $deadline) {
             Start-Sleep -Milliseconds 25
         }
@@ -344,7 +418,7 @@ function Invoke-FinallyCleanupScenario {
                 -Environment @{ NERV_PID_PATH = $pidPath } `
                 -StreamReadTaskAction $readSetupFailure
         }
-        Assert-Probe ($failure.Exception.Message.Contains('injected stream setup failure', [StringComparison]::Ordinal)) 'The original stream setup failure must remain visible.'
+        Assert-Probe ($failure.Exception.Message.Contains('injected stream setup failure', [StringComparison]::Ordinal)) "The original stream setup failure must remain visible; observed '$($failure.Exception.Message)'."
         $ownedProcessId = [int][IO.File]::ReadAllText($pidPath)
         Assert-Probe (Wait-ProbeProcessExit -ProcessId $ownedProcessId) "Finally cleanup left owned PID $ownedProcessId alive."
     }
@@ -366,6 +440,7 @@ try {
         'normal' { Invoke-NormalScenario }
         'timeout' { Invoke-TimeoutScenario }
         'timeout-tree' { Invoke-TimeoutTreeScenario }
+        'delayed-drain' { Invoke-DelayedDrainScenario }
         'nonzero' { Invoke-NonzeroScenario }
         'signal' { Invoke-SignalScenario }
         'drain-failure' { Invoke-DrainFailureScenario }
@@ -386,7 +461,7 @@ try {
     $probePath = Join-Path $temporaryRoot 'native-output-contract-probe.ps1'
     [IO.File]::WriteAllText($probePath, $probeScript, [Text.UTF8Encoding]::new($false))
 
-    foreach ($scenario in @('normal', 'timeout', 'timeout-tree', 'nonzero', 'signal', 'drain-failure', 'finally-cleanup')) {
+    foreach ($scenario in @('normal', 'timeout', 'timeout-tree', 'delayed-drain', 'nonzero', 'signal', 'drain-failure', 'finally-cleanup')) {
         $result = Invoke-ContractProbe `
             -ProbePath $probePath `
             -ProbeLibraryPath $libraryPath `
@@ -467,6 +542,36 @@ try {
         $drain = [pscustomobject]@{
             Stdout = ''
             Stderr = ''
+            TimedOut = $false
+            UnfinishedStreams = @()
+            DrainErrors = @()
+            LogDirectory = $LogDirectory
+        }
+        Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
+        $stdout = $drain.Stdout
+'@
+            ExpectedOccurrences = 1
+        },
+        [pscustomobject]@{
+            Name = 'ignore-redirected-stream-completion'
+            Scenario = 'delayed-drain'
+            Anchor = @'
+        $drain = Complete-ScriptAutomationRedirectedStreamDrain `
+            -Process $process `
+            -StdoutTask $stdoutTask `
+            -StderrTask $stderrTask `
+            -Name $Name `
+            -LogDirectory $LogDirectory `
+            -StdoutCapture $stdoutCapture `
+            -StderrCapture $stderrCapture `
+            -SensitiveValues $SensitiveValues
+        Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
+        $stdout = $drain.Stdout
+'@
+            Replacement = @'
+        $drain = [pscustomobject]@{
+            Stdout = [string] $stdoutCapture.Snapshot()
+            Stderr = [string] $stderrCapture.Snapshot()
             TimedOut = $false
             UnfinishedStreams = @()
             DrainErrors = @()
