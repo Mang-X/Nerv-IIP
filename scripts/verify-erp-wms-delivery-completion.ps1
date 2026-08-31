@@ -222,6 +222,19 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function ConvertFrom-Man527RedisStreamGroupOutput {
+    param([string]$Output)
+
+    $lines = @($Output -split '\r?\n')
+    $groups = [System.Collections.Generic.List[string]]::new()
+    for ($index = 0; $index + 1 -lt $lines.Count; $index++) {
+        if ([string]::Equals([string]$lines[$index], 'name', [StringComparison]::Ordinal)) {
+            $groups.Add([string]$lines[$index + 1])
+        }
+    }
+    return $groups.ToArray()
+}
+
 function Get-Man527RedisStreamGroupNames {
     param([string]$ComposeFile, [string]$StreamName)
 
@@ -235,15 +248,7 @@ function Get-Man527RedisStreamGroupNames {
     if ($output.StartsWith('ERR ', [StringComparison]::Ordinal)) {
         throw "Redis XINFO GROUPS failed for topic '$StreamName': $output"
     }
-
-    $lines = @($result.Stdout -split '\r?\n')
-    $groups = [System.Collections.Generic.List[string]]::new()
-    for ($index = 0; $index + 1 -lt $lines.Count; $index++) {
-        if ([string]::Equals([string]$lines[$index], 'name', [StringComparison]::Ordinal)) {
-            $groups.Add([string]$lines[$index + 1])
-        }
-    }
-    return $groups.ToArray()
+    return @(ConvertFrom-Man527RedisStreamGroupOutput -Output $result.Stdout)
 }
 
 function Wait-Man527ErpCapConsumerReady {
@@ -252,11 +257,12 @@ function Wait-Man527ErpCapConsumerReady {
         [object]$ManagedProcess,
         [string]$Topic,
         [string]$Consumer,
+        [string]$GroupBase,
         [string]$CapVersion,
         [ValidateRange(0, 60)][int]$TimeoutSeconds = 60
     )
 
-    $expectedGroup = "$Consumer.$CapVersion"
+    $expectedGroup = "$GroupBase.$CapVersion"
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     $firstRegistrationBoundary = $null
     do {
@@ -271,6 +277,7 @@ function Wait-Man527ErpCapConsumerReady {
                 return [pscustomobject][ordered]@{
                     topic = $Topic
                     group = $expectedGroup
+                    groupBase = $GroupBase
                     consumer = $Consumer
                     capVersion = $CapVersion
                 }
@@ -291,6 +298,46 @@ function Wait-Man527ErpCapConsumerReady {
     } while ($true)
 
     throw "MAN-527 ERP CAP consumer did not become ready before business actions: topic='$Topic'; group='$expectedGroup'; consumer='$Consumer'; run identity='$CapVersion'; first registration boundary='$firstRegistrationBoundary'; logs='$($ManagedProcess.LogDirectory)'."
+}
+
+function Invoke-Man527FirstBusinessActionAfterConsumerReady {
+    param(
+        [string]$ComposeFile,
+        [object]$ManagedProcess,
+        [string]$Topic,
+        [string]$Consumer,
+        [string]$GroupBase,
+        [string]$CapVersion,
+        [ValidateRange(0, 60)][int]$TimeoutSeconds = 60,
+        [string]$WmsUrl,
+        [hashtable]$Headers,
+        [string]$SiteCode,
+        [string]$PoolCode,
+        [string]$DisplayName,
+        [string]$AssignerPrincipalId,
+        [string]$OperatorPrincipalId
+    )
+
+    $readiness = Wait-Man527ErpCapConsumerReady `
+        -ComposeFile $ComposeFile `
+        -ManagedProcess $ManagedProcess `
+        -Topic $Topic `
+        -Consumer $Consumer `
+        -GroupBase $GroupBase `
+        -CapVersion $CapVersion `
+        -TimeoutSeconds $TimeoutSeconds
+    $businessResult = New-WmsWorkPoolFixture `
+        -WmsUrl $WmsUrl `
+        -Headers $Headers `
+        -SiteCode $SiteCode `
+        -PoolCode $PoolCode `
+        -DisplayName $DisplayName `
+        -AssignerPrincipalId $AssignerPrincipalId `
+        -OperatorPrincipalId $OperatorPrincipalId
+    return [pscustomobject][ordered]@{
+        readiness = $readiness
+        businessResult = $businessResult
+    }
 }
 
 function Wait-WmsOutboundOrderEvent {
@@ -534,7 +581,8 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
 }
 $capVersion = "man527-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $erpCompletionTopic = 'WmsIntegrationEvent'
-$erpCompletionConsumer = 'business-erp.wms-outbound-completed-ar-accrual'
+$erpCompletionConsumer = 'WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable'
+$erpCompletionGroupBase = 'business-erp.wms-outbound-completed-ar-accrual'
 $internalToken = "man527-$([Guid]::NewGuid().ToString('N'))"
 $deliveryOrderNo = "DO-MAN527-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
 $wmsActorPrincipalId = "man527-operator-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
@@ -585,7 +633,6 @@ $cleanupEvidence = [ordered]@{
     errors = @()
 }
 $verifierContract = $null
-$erpConsumerReadiness = $null
 
 try {
     $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $PSCommandPath
@@ -643,13 +690,6 @@ try {
     }
     [void]$managedProcessIds.Add([int]$erpProcess.Process.Id)
     Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
-    $erpConsumerReadiness = Wait-Man527ErpCapConsumerReady `
-        -ComposeFile $composeFile `
-        -ManagedProcess $erpProcess `
-        -Topic $erpCompletionTopic `
-        -Consumer $erpCompletionConsumer `
-        -CapVersion $capVersion
-    Write-Diagnostic "MAN-527 ERP CAP consumer ready: topic='$($erpConsumerReadiness.topic)'; group='$($erpConsumerReadiness.group)'; consumer='$($erpConsumerReadiness.consumer)'; run identity='$($erpConsumerReadiness.capVersion)'."
 
     $headers = @{
         Authorization = "Bearer $internalToken"
@@ -657,7 +697,13 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:man527-acceptance'
     }
-    $workPoolFixture = New-WmsWorkPoolFixture `
+    $businessAdmission = Invoke-Man527FirstBusinessActionAfterConsumerReady `
+        -ComposeFile $composeFile `
+        -ManagedProcess $erpProcess `
+        -Topic $erpCompletionTopic `
+        -Consumer $erpCompletionConsumer `
+        -GroupBase $erpCompletionGroupBase `
+        -CapVersion $capVersion `
         -WmsUrl $wmsUrl `
         -Headers $headers `
         -SiteCode $wmsSiteCode `
@@ -665,6 +711,9 @@ try {
         -DisplayName '拣货与发运' `
         -AssignerPrincipalId $wmsSupervisorPrincipalId `
         -OperatorPrincipalId $wmsActorPrincipalId
+    $erpConsumerReadiness = $businessAdmission.readiness
+    $workPoolFixture = $businessAdmission.businessResult
+    Write-Diagnostic "MAN-527 ERP CAP consumer ready: topic='$($erpConsumerReadiness.topic)'; group='$($erpConsumerReadiness.group)'; consumer='$($erpConsumerReadiness.consumer)'; run identity='$($erpConsumerReadiness.capVersion)'."
     Wait-ErpSalesOrder -ErpUrl $erpUrl -Headers $headers | Out-Null
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/delivery-orders" -Headers $headers -Body @{
         organizationId = 'org-001'
