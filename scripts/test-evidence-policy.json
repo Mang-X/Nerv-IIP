@@ -1157,9 +1157,10 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Four_dimensions_filters_and_second_page_use_scoped_production_totals_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Reversal_offsets_the_original_business_bucket_and_non_positive_totals_have_no_rates",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Legacy_reports_keep_quantities_in_an_explicitly_degraded_dimension_bucket"
+        "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Legacy_reports_keep_quantities_in_an_explicitly_degraded_dimension_bucket",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_traceability_is_consistent_from_all_read_faces_and_keeps_audit_links_after_output_reversal_on_postgres"
       ],
-      "expectedRuntimeTestCount": 41
+      "expectedRuntimeTestCount": 42
     },
     {
       "id": "mes-cap-postgres",

@@ -401,11 +401,11 @@ try {
     Assert-MethodScopedFilter -Member $qualityMember
     # MES：base 的既有证明加上替代料快照 1 条、OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，
     # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）、报工 OEE 维度快照迁移 1 条
-    # 和 NCR 返工工单 7 条来源、物料、幂等、并发与范围隔离证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
-    # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，共有 52 条真实 PostgreSQL 证明；
+    # 和 NCR 返工工单 8 条来源、物料、幂等、并发、范围隔离与追溯证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
+    # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，共有 53 条真实 PostgreSQL 证明；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 52) 'The MES member must freeze exactly its fifty-two governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 53) 'The MES member must freeze exactly its fifty-three governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
