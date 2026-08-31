@@ -29,8 +29,8 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             ["serial"] = Define("serial", "inventory", BusinessGatewayPermissions.InventoryLedgerRead, "site"),
             ["defect-code"] = Define("defect-code", "quality", BusinessGatewayPermissions.QualityInspectionRecordsRead),
             ["scrap-reason"] = Define("scrap-reason", "quality", BusinessGatewayPermissions.QualityInspectionRecordsRead),
-            ["downtime-reason"] = Define("downtime-reason", "maintenance", BusinessGatewayPermissions.MaintenanceWorkOrdersRead),
-            ["maintenance-reason"] = Define("maintenance-reason", "maintenance", BusinessGatewayPermissions.MaintenanceWorkOrdersRead),
+            ["downtime-reason"] = Define("downtime-reason", "maintenance", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
+            ["maintenance-reason"] = Define("maintenance-reason", "maintenance", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
         };
 
     public static BusinessConsoleSearchableDirectoryDefinition Require(string directoryType)

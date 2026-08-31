@@ -80,7 +80,7 @@ const ROUTE: Stop[] = [
   { id: '09-04', chapter: '9-设备', title: '历史趋势', path: '/equipment/telemetry/history' },
   { id: '09-05', chapter: '9-设备', title: '设备报警', path: '/equipment/alarms' },
   { id: '09-06', chapter: '9-设备', title: '报警规则', path: '/equipment/telemetry/alarm-rules' },
-  { id: '09-07', chapter: '9-设备', title: 'OEE 与可用性', path: '/equipment/telemetry/oee' },
+  { id: '09-07', chapter: '9-设备', title: 'OEE 趋势与横比', path: '/equipment/telemetry/oee' },
   {
     id: '09-08',
     chapter: '9-设备',

@@ -2166,7 +2166,8 @@ public sealed record BusinessConsoleNcrDispositionRequest(
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds,
-    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null);
+    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMrbReview(
     string ReviewerId,
@@ -4290,6 +4291,8 @@ public sealed record BusinessConsoleMesDowntimeEventListRequest(
     string? DeviceAssetId = null,
     string? WorkOrderId = null,
     string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null,
     int Skip = 0,
     int Take = 100);
 
@@ -4912,6 +4915,25 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? ShiftId,
     string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
+
+public sealed record BusinessConsoleMesClaimOperationTaskRequest(
+    [property: RouteParam] string OperationTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string ScopeKind,
+    [property: QueryParam] string ScopeId,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesClaimDispatchTaskForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesOperationTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,

@@ -84,6 +84,7 @@
 | O2 | `emp010` 的 Queued 任务，前序/质量/设备/物料均放行 | 从 PDA 开始任务 | 服务端支持 Queued → InProgress；若 PDA 仍只匹配 `Ready`，场景保持阻塞并关联 #1160/#1174。 |
 | O3 | `emp012` 的 Queued 后序任务且更小 sequence 未 Completed | 通过公开 Gateway 尝试开始 | 返回可读“前序工序尚未完成”，不泄露 raw task ID；目标状态不变。 |
 | O4 | `emp012` 的 Queued 任务且存在真实物料 shortage | 通过公开 Gateway 尝试开始 | 返回“物料齐套未满足”及 shortage 原因；不得用空需求或缺快照伪装 shortage。 |
+| O5 | 当前工作中心内 Queued 且未指派任务 | 在 PDA 领取任务 | Gateway 将领取人绑定为认证主体并核验其为该工作中心在岗人员；MES 保存领取人和领取时间，已被领取的任务不得被覆盖。 |
 
 ## 5. PDA 仓储：`emp049`
 

@@ -161,6 +161,7 @@ import {
 import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
@@ -618,6 +619,7 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
     expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(claimBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesReportableOperationTasksQueryOptions).toBeTypeOf('function')
     expect(businessConsoleClient.listBusinessConsoleMesReportableOperationTasks).toBeTypeOf(
       'function',

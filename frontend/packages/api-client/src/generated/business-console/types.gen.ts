@@ -2563,10 +2563,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrDispositionRequest = {
-    dispositionType?: string;
+    dispositionType: string;
     dispositionApprovalChainId?: string | null;
     attachmentFileIds?: Array<string> | null;
     mrbReviews?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview> | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview = {
@@ -4391,6 +4392,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest = {
     workerId?: string;
     sharePercent?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesClaimOperationTaskRequest = {
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -12318,6 +12323,9 @@ export type SubmitBusinessConsoleQualityNcrDispositionErrors = {
      */
     403: unknown;
     409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
 };
 
 export type SubmitBusinessConsoleQualityNcrDispositionError = SubmitBusinessConsoleQualityNcrDispositionErrors[keyof SubmitBusinessConsoleQualityNcrDispositionErrors];
@@ -15558,6 +15566,46 @@ export type AssignBusinessConsoleMesDispatchTaskResponses = {
 
 export type AssignBusinessConsoleMesDispatchTaskResponse = AssignBusinessConsoleMesDispatchTaskResponses[keyof AssignBusinessConsoleMesDispatchTaskResponses];
 
+export type ClaimBusinessConsoleMesOperationTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesClaimOperationTaskRequest;
+    path: {
+        operationTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind: string;
+        scopeId: string;
+    };
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/claim';
+};
+
+export type ClaimBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ClaimBusinessConsoleMesOperationTaskError = ClaimBusinessConsoleMesOperationTaskErrors[keyof ClaimBusinessConsoleMesOperationTaskErrors];
+
+export type ClaimBusinessConsoleMesOperationTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ClaimBusinessConsoleMesOperationTaskResponse = ClaimBusinessConsoleMesOperationTaskResponses[keyof ClaimBusinessConsoleMesOperationTaskResponses];
+
 export type ListBusinessConsoleMesOperationTasksData = {
     body?: never;
     path?: never;
@@ -16350,6 +16398,8 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         deviceAssetId?: string | null;
         workOrderId?: string | null;
         reasonCode?: string | null;
+        windowStartUtc?: string | null;
+        windowEndUtc?: string | null;
         skip?: number;
         take?: number;
     };

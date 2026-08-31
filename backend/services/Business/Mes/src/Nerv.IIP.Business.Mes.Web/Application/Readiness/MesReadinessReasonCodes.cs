@@ -16,6 +16,7 @@ public static class MesReadinessReasonCodes
     public const string NoEligibleSubstitute = EquipmentRuntimeReasonCodes.NoEligibleSubstitute;
 
     private const string SourceUnavailable = "equipment.sourceUnavailable";
+    private const string PlannedMaintenanceDowntimeReasonCode = "DT-PM";
 
     public static EquipmentReadinessClassification ClassifyEquipmentReason(string reason)
     {
@@ -101,6 +102,7 @@ public static class MesReadinessReasonCodes
     private static bool IsMaintenanceReason(string reason) =>
         reason.Equals(MaintenanceWindow, StringComparison.OrdinalIgnoreCase) ||
         reason.Equals(InspectionRequired, StringComparison.OrdinalIgnoreCase) ||
+        reason.Equals(PlannedMaintenanceDowntimeReasonCode, StringComparison.OrdinalIgnoreCase) ||
         reason.Contains("maintenance", StringComparison.OrdinalIgnoreCase) ||
         reason.Contains("保养", StringComparison.OrdinalIgnoreCase) ||
         reason.Contains("维修", StringComparison.OrdinalIgnoreCase);

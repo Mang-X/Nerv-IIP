@@ -15,6 +15,92 @@ using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.ReworkWorkOrderCreatedIntegrationEvent", ConsumerName)]
+public sealed class ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost(
+    ApplicationDbContext dbContext,
+    ITransactionUnitOfWork unitOfWork,
+    IWorkOrderCostMutationLock mutationLock,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<ReworkWorkOrderCreatedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-erp.rework-work-order-cost-origin";
+
+    private readonly IntegrationEventConsumerGuard<ReworkWorkOrderCreatedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MesIntegrationEventTypes.ReworkWorkOrderCreated,
+            MesIntegrationEventVersions.V1));
+
+    public Task HandleAsync(
+        ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+        => consumerGuard.HandleAsync(integrationEvent, HandleValidAsync, cancellationToken);
+
+    private Task HandleValidAsync(
+        ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                integrationEvent.SourceService,
+                MesIntegrationEventSources.BusinessMes,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.CompletedTask;
+        }
+
+        return CostingIntegrationEventUnitOfWork.ExecuteAsync(
+            dbContext,
+            unitOfWork,
+            async () =>
+            {
+                await mutationLock.AcquireAsync(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    integrationEvent.Payload.ReworkWorkOrderId,
+                    cancellationToken);
+                if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(
+                        dbContext,
+                        ConsumerName,
+                        integrationEvent,
+                        cancellationToken))
+                {
+                    return;
+                }
+
+                var cost = await dbContext.WorkOrderCosts
+                    .Include(x => x.Details)
+                    .SingleOrDefaultAsync(
+                        x => x.OrganizationId == integrationEvent.OrganizationId
+                            && x.EnvironmentId == integrationEvent.EnvironmentId
+                            && x.WorkOrderId == integrationEvent.Payload.ReworkWorkOrderId,
+                        cancellationToken);
+                if (cost is null)
+                {
+                    cost = WorkOrderCost.Open(
+                        integrationEvent.OrganizationId,
+                        integrationEvent.EnvironmentId,
+                        integrationEvent.Payload.ReworkWorkOrderId,
+                        integrationEvent.Payload.SkuCode);
+                    dbContext.WorkOrderCosts.Add(cost);
+                }
+
+                cost.AttributeRework(
+                    integrationEvent.Payload.SourceNcrId,
+                    integrationEvent.Payload.SourceNcrCode,
+                    integrationEvent.Payload.SourceWorkOrderId,
+                    integrationEvent.Payload.SkuCode);
+            },
+            cancellationToken);
+    }
+
+    [CapSubscribe(nameof(ReworkWorkOrderCreatedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(
+        ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
+}
+
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.ProductionReportRecordedIntegrationEvent", ConsumerName)]
 public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
     ApplicationDbContext dbContext,
