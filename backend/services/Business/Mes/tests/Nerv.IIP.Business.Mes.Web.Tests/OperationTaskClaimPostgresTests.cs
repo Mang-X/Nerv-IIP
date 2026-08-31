@@ -10,7 +10,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
-using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -60,18 +60,6 @@ public sealed class OperationTaskClaimPostgresTests
         Assert.Equal(winner.IdempotencyKey, receipt.IdempotencyKey);
         Assert.Equal("operation-task-claim", receipt.RuleKey);
         Assert.Equal(winner.OperationTaskId, receipt.Code);
-
-        persistedTask.Start(ClaimedAtUtc.AddMinutes(1));
-        await dbContext.SaveChangesAsync();
-        var reportable = await new ListReportableOperationTasksQueryHandler(dbContext).Handle(
-            new ListReportableOperationTasksQuery(
-                "org-001",
-                "env-dev",
-                Status: nameof(OperationTaskLifecycleStatus.InProgress),
-                AssignedUserIds: winner.AssignedUserId),
-            CancellationToken.None);
-        Assert.Equal(1, reportable.Total);
-        Assert.Equal(winner.OperationTaskId, Assert.Single(reportable.Items).OperationTaskId);
     }
 
     private static async Task<ClaimOutcome[]> SendConcurrentlyAsync(
@@ -203,7 +191,11 @@ public sealed class OperationTaskClaimPostgresTests
                     bothSavesArrived.TrySetResult(true);
                 }
 
-                await bothSavesArrived.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+                await TestTimeout.RunAsync(
+                    $"MES operation-task claim SaveChanges race gate; observed arrivals={arrival}",
+                    async token => await bothSavesArrived.Task.WaitAsync(token),
+                    TimeSpan.FromSeconds(15),
+                    cancellationToken);
             }
 
             return result;

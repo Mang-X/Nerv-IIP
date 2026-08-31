@@ -401,13 +401,14 @@ try {
     Assert-MethodScopedFilter -Member $qualityMember
     # MES：base 的既有证明加上替代料快照 1 条、OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，
     # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）、报工 OEE 维度快照迁移 1 条
-    # 和 NCR 返工工单 7 条来源、物料、幂等、并发与范围隔离证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明；
-    # 自领并发证明替换原独立协作参与者读面身份，在同一条真实 PostgreSQL 用例中保留 participant/reportable-scope
-    # 并补齐唯一 owner/receipt/业务冲突，共有 51 条真实 PostgreSQL 证明；
+    # 和 NCR 返工工单 7 条来源、物料、幂等、并发与范围隔离证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
+    # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，共有 52 条真实 PostgreSQL 证明；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 51) 'The MES member must freeze exactly its fifty-one governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 52) 'The MES member must freeze exactly its fifty-two governed PostgreSQL identities.'
+    $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
+    Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesClaimIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the concurrent operation-task claim PostgreSQL identity exactly once.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
@@ -427,6 +428,7 @@ try {
     foreach ($mesSource in @(
             'MesCapSaveBoundaryPostgresTests.cs',
             'MesCapSubscriptionTests.cs',
+            'MesCollaborationPostgresTests.cs',
             'OperationTaskClaimPostgresTests.cs',
             'MesDowntimeReadFacePostgresTests.cs',
             'MesMaterialSubstituteSnapshotPostgresTests.cs',
@@ -673,9 +675,8 @@ try {
     }
 
     # 闭合契约：政策里每一条 requiredLane: postgres 的身份，都必须落在 manifest 的成员身份（active 或
-    # deferred）或显式的规模种子豁免里。唯一的 policy-only 身份是仍会被 fast shard 发现并 skip 的旧协作
-    # 读面用例；它的 lane 席位已由同时保留 participant/reportable-scope 不变量的自领并发证明原位替换。
-    # 穷举从政策的类型集来，不从审核点名来——否则第三个"漏网"类可以无声出现（#1510 的教训）。
+    # deferred）或显式的规模种子豁免里。穷举从政策的类型集来，不从审核点名来——否则第三个"漏网"类
+    # 可以无声出现（#1510 的教训）。
     $policyDocument = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json -Depth 20
     $manifestDocument = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $manifestIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -689,23 +690,10 @@ try {
         Assert-Contract (-not $manifestIdentities.Contains([string]$exemption.identity)) "Identity '$($exemption.identity)' cannot be both a lane member identity and an exemption."
         $exemptIdentities.Add([string]$exemption.identity) | Out-Null
     }
-    $mesCollaborationPolicyOnlyIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
-    $policyOnlyRuntimeSkipIdentities = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@($mesCollaborationPolicyOnlyIdentity),
-        [StringComparer]::Ordinal)
-    $policyOnlyIdentityOccurrences = @(
-        $policyDocument.rules.testIdentities |
-            Where-Object { [string]::Equals([string]$_, $mesCollaborationPolicyOnlyIdentity, [StringComparison]::Ordinal) }
-    )
-    Assert-Contract ($policyOnlyIdentityOccurrences.Count -eq 1) 'The replaced MES collaboration identity must remain in evidence policy exactly once for its backend-shard runtime skip.'
-    Assert-Contract (-not $manifestIdentities.Contains($mesCollaborationPolicyOnlyIdentity)) 'The replaced MES collaboration identity must not consume a second MES PostgreSQL lane slot.'
-    Assert-Contract (-not $exemptIdentities.Contains($mesCollaborationPolicyOnlyIdentity)) 'The replaced MES collaboration identity must not be disguised as a scale-seed exemption.'
-    Assert-Contract ($manifestIdentities.Contains($mesClaimIdentity)) 'The concurrent operation-task claim identity must occupy the replaced MES PostgreSQL lane slot.'
     $uncoveredIdentities = @(
         foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
             foreach ($policyIdentity in @($policyRule.testIdentities)) {
-                if (-not $policyOnlyRuntimeSkipIdentities.Contains([string]$policyIdentity) -and
-                    -not $manifestIdentities.Contains([string]$policyIdentity) -and
+                if (-not $manifestIdentities.Contains([string]$policyIdentity) -and
                     -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
             }
         }
@@ -719,8 +707,7 @@ try {
     $mutatedUncovered = @(
         foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
             foreach ($policyIdentity in @($policyRule.testIdentities)) {
-                if (-not $policyOnlyRuntimeSkipIdentities.Contains([string]$policyIdentity) -and
-                    -not $mutatedIdentities.Contains([string]$policyIdentity) -and
+                if (-not $mutatedIdentities.Contains([string]$policyIdentity) -and
                     -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
             }
         }
