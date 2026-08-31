@@ -2079,6 +2079,31 @@ function New-Man517ComposeCleanupEvidence {
     }
 }
 
+function Register-Man517OwnedComposeCleanupOutcome {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$OwnedServices,
+        [Parameter(Mandatory)] [object]$Observation,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]]$CleanupFailures,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.HashSet[string]]$CleanupErrorCodes
+    )
+
+    if (-not $Observation.converged) {
+        if ([string]::Equals([string]$Observation.status, 'readback-failed', [StringComparison]::Ordinal)) {
+            $CleanupFailures.Add("infrastructure cleanup verification: $($Observation.failureMessage)")
+            [void]$CleanupErrorCodes.Add('cleanup-verification-failed')
+        }
+        else {
+            $remainingNames = [string[]]@($Observation.remainingNames)
+            $CleanupFailures.Add("script-owned compose cleanup did not converge before deadline: remaining=$($remainingNames.Count); remainingNames=$($remainingNames -join ', '); attempts=$($Observation.attempts); elapsedMilliseconds=$($Observation.elapsedMilliseconds); lastObservation=$($Observation.lastObservation); query=$($Observation.query); log=$($Observation.logPath)")
+            [void]$CleanupErrorCodes.Add('owned-resource-cleanup-failed')
+        }
+    }
+
+    return New-Man517ComposeCleanupEvidence `
+        -OwnedServices $OwnedServices `
+        -Observation $Observation
+}
+
 function Export-Man517FailureDiagnostics {
     param([object]$FailureRecord)
     $diagnosticsRoot = Join-Path $root 'artifacts/acceptance/man517/diagnostics'
@@ -2480,6 +2505,11 @@ finally {
         logStatus = 'unavailable'
         logUnavailableReason = 'no Compose cleanup observation was required'
     }
+    $composeCleanupEvidence = Register-Man517OwnedComposeCleanupOutcome `
+        -OwnedServices @() `
+        -Observation $composeCleanupObservation `
+        -CleanupFailures $cleanupFailures `
+        -CleanupErrorCodes $cleanupErrorCodes
     if ($demandPlanningOwnership) {
         try { Stop-Man517PortOwner -Ownership $demandPlanningOwnership -Reason 'MAN-517 verification cleanup' }
         catch { $cleanupFailures.Add("demand-planning process: $($_.Exception.Message)"); [void]$cleanupErrorCodes.Add('managed-process-cleanup-failed') }
@@ -2548,11 +2578,6 @@ finally {
                 -OwnedServices $servicesToStop `
                 -ComposeFile $composeFile `
                 -DeadlineMilliseconds 15000
-            $remainingOwnedServices = [string[]]@($composeCleanupObservation.remainingNames)
-            if (-not $composeCleanupObservation.converged) {
-                $cleanupFailures.Add("script-owned compose cleanup did not converge before deadline: remaining=$($remainingOwnedServices.Count); remainingNames=$($remainingOwnedServices -join ', '); attempts=$($composeCleanupObservation.attempts); elapsedMilliseconds=$($composeCleanupObservation.elapsedMilliseconds); lastObservation=$($composeCleanupObservation.lastObservation); query=$($composeCleanupObservation.query); log=$($composeCleanupObservation.logPath)")
-                [void]$cleanupErrorCodes.Add('owned-resource-cleanup-failed')
-            }
         }
         catch {
             $remainingOwnedServices = [string[]]@($_.Exception.Data['RemainingNames'])
@@ -2569,10 +2594,15 @@ finally {
                 logPath = $_.Exception.Data['LogPath']
                 logStatus = $_.Exception.Data['LogStatus']
                 logUnavailableReason = $_.Exception.Data['LogUnavailableReason']
+                failureMessage = $_.Exception.Message
             }
-            $cleanupFailures.Add("infrastructure cleanup verification: $($_.Exception.Message)")
-            [void]$cleanupErrorCodes.Add('cleanup-verification-failed')
         }
+        $remainingOwnedServices = [string[]]@($composeCleanupObservation.remainingNames)
+        $composeCleanupEvidence = Register-Man517OwnedComposeCleanupOutcome `
+            -OwnedServices $servicesToStop `
+            -Observation $composeCleanupObservation `
+            -CleanupFailures $cleanupFailures `
+            -CleanupErrorCodes $cleanupErrorCodes
     }
     try {
         $injectedCleanupEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
@@ -2594,9 +2624,7 @@ finally {
                 name = $databaseName
                 remaining = $remainingDatabases
             }
-            composeServices = New-Man517ComposeCleanupEvidence `
-                -OwnedServices $servicesToStop `
-                -Observation $composeCleanupObservation
+            composeServices = $composeCleanupEvidence
             cleanupFailures = @($cleanupFailures | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $cleanupEvidencePath -Encoding utf8
     }

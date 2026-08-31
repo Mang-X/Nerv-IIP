@@ -2,14 +2,14 @@
 #   Category: check
 #   SideEffects:
 #     - Parses the ERP sales-order to DemandPlanning cross-process verification script
-#     - Runs isolated child processes for the real-entry permanent-residual and frozen-elapsed contracts
+#     - Runs isolated child processes for the real-entry permanent-residual and three mutation contracts
 #     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
-#     - A temporary real-entry harness, cleanup evidence, and watchdog logs under the system temp directory
+#     - Temporary real-entry and mutation harnesses, cleanup evidence, and watchdog logs under the system temp directory
 #     - artifacts/script-logs/man703-fixture-governance/**
 #     - A temporary canonical-result failure fixture under .superpowers/sdd/**
 #   Cleanup:
-#     - Removes the temporary real-entry harness, evidence, and watchdog logs
+#     - Removes the temporary real-entry and mutation harnesses, evidence, and watchdog logs
 #     - Removes the temporary canonical-result failure fixture
 #   Requires:
 #     - PowerShell 7
@@ -773,9 +773,11 @@ Assert-Contract (@($readbackFailure.Data['RemainingNames']).Count -eq 1) 'Readba
 
 # cleanup-evidence.json 的失败态必须从生产投影写出 deadline、attempts、elapsed 与最后观察诊断。
 $composeCleanupEvidenceFunctionText = Get-FunctionContractText -Name 'New-Man517ComposeCleanupEvidence'
+$composeCleanupOutcomeFunctionText = Get-FunctionContractText -Name 'Register-Man517OwnedComposeCleanupOutcome'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeCleanupEvidenceFunctionText)) 'Verify script must define the production Compose cleanup evidence projection.'
-Assert-Contract ($content.Contains('composeServices = New-Man517ComposeCleanupEvidence', [StringComparison]::Ordinal)) 'cleanup-evidence.json must consume the tested Compose failure-state projection.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeCleanupOutcomeFunctionText)) 'Verify script must define the production Compose cleanup outcome consumer.'
 Invoke-Expression $composeCleanupEvidenceFunctionText
+Invoke-Expression $composeCleanupOutcomeFunctionText
 $readbackObservation = [pscustomobject]@{
     status = 'readback-failed'
     deadlineMilliseconds = $readbackFailure.Data['DeadlineMilliseconds']
@@ -787,21 +789,32 @@ $readbackObservation = [pscustomobject]@{
     logPath = $readbackFailure.Data['LogPath']
     logStatus = $readbackFailure.Data['LogStatus']
     logUnavailableReason = $readbackFailure.Data['LogUnavailableReason']
+    failureMessage = $readbackFailure.Message
 }
 $cleanupEvidenceFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-man517-cleanup-evidence-$([Guid]::NewGuid().ToString('N'))"
 try {
     [System.IO.Directory]::CreateDirectory($cleanupEvidenceFixtureRoot) | Out-Null
     foreach ($failureEvidenceCase in @(
-        @{ Name = 'persistent'; Observation = $persistentResult },
-        @{ Name = 'readback'; Observation = $readbackObservation }
+        @{ Name = 'persistent'; Observation = $persistentResult; ErrorCode = 'owned-resource-cleanup-failed' },
+        @{ Name = 'readback'; Observation = $readbackObservation; ErrorCode = 'cleanup-verification-failed' }
     )) {
         $cleanupEvidencePath = Join-Path $cleanupEvidenceFixtureRoot "$($failureEvidenceCase.Name)-cleanup-evidence.json"
-        @{
-            composeServices = New-Man517ComposeCleanupEvidence `
-                -OwnedServices @('postgres') `
-                -Observation $failureEvidenceCase.Observation
+        $failureCleanupFailures = [System.Collections.Generic.List[string]]::new()
+        $failureCleanupErrorCodes = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $failureComposeEvidence = Register-Man517OwnedComposeCleanupOutcome `
+            -OwnedServices @('postgres') `
+            -Observation $failureEvidenceCase.Observation `
+            -CleanupFailures $failureCleanupFailures `
+            -CleanupErrorCodes $failureCleanupErrorCodes
+        [ordered]@{
+            composeServices = $failureComposeEvidence
+            cleanupFailures = @($failureCleanupFailures)
+            cleanupErrorCodes = @($failureCleanupErrorCodes)
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $cleanupEvidencePath -Encoding utf8
-        $writtenComposeEvidence = (Get-Content -LiteralPath $cleanupEvidencePath -Raw | ConvertFrom-Json).composeServices
+        $writtenCleanupDocument = Get-Content -LiteralPath $cleanupEvidencePath -Raw | ConvertFrom-Json
+        $writtenComposeEvidence = $writtenCleanupDocument.composeServices
+        Assert-Contract (@($writtenCleanupDocument.cleanupFailures).Count -eq 1 -and -not [string]::IsNullOrWhiteSpace([string]$writtenCleanupDocument.cleanupFailures[0])) "$($failureEvidenceCase.Name) cleanup must register one failure."
+        Assert-Contract (@($writtenCleanupDocument.cleanupErrorCodes).Count -eq 1 -and [string]::Equals([string]$writtenCleanupDocument.cleanupErrorCodes[0], [string]$failureEvidenceCase.ErrorCode, [StringComparison]::Ordinal)) "$($failureEvidenceCase.Name) cleanup must retain its failure code."
         Assert-Contract ([string]::Equals([string]$writtenComposeEvidence.status, [string]$failureEvidenceCase.Observation.status, [StringComparison]::Ordinal)) "$($failureEvidenceCase.Name) cleanup evidence must retain status."
         Assert-Contract ([int]$writtenComposeEvidence.deadlineMilliseconds -eq [int]$failureEvidenceCase.Observation.deadlineMilliseconds) "$($failureEvidenceCase.Name) cleanup evidence must retain deadlineMilliseconds."
         Assert-Contract ([int]$writtenComposeEvidence.attempts -eq [int]$failureEvidenceCase.Observation.attempts -and [int]$writtenComposeEvidence.attempts -gt 0) "$($failureEvidenceCase.Name) cleanup evidence must retain attempts."
@@ -938,7 +951,10 @@ Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4', [String
 # 真实入口的永久 residual 行为必须在未注入 runtime 的隔离进程里有界结束。
 # 父进程 watchdog 只识别「入口不终止」；业务 timed-out 与 evidence 都由子进程生产。
 function New-Man517PermanentResidualHarnessContent {
-    param([Parameter(Mandatory)] [string]$WaitFunctionText)
+    param(
+        [Parameter(Mandatory)] [string]$WaitFunctionText,
+        [Parameter(Mandatory)] [string]$OutcomeFunctionText
+    )
 
     $fixtureAndAssertions = @'
 function Protect-ScriptAutomationText {
@@ -962,10 +978,18 @@ $observation = Wait-Man517OwnedComposeServicesStopped `
     -OwnedServices @('postgres') `
     -ComposeFile 'fixture-compose.yml' `
     -DeadlineMilliseconds 1000
-$composeEvidence = New-Man517ComposeCleanupEvidence `
+$cleanupFailures = [System.Collections.Generic.List[string]]::new()
+$cleanupErrorCodes = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$composeEvidence = Register-Man517OwnedComposeCleanupOutcome `
     -OwnedServices @('postgres') `
-    -Observation $observation
-$document = [ordered]@{ composeServices = $composeEvidence }
+    -Observation $observation `
+    -CleanupFailures $cleanupFailures `
+    -CleanupErrorCodes $cleanupErrorCodes
+$document = [ordered]@{
+    composeServices = $composeEvidence
+    cleanupFailures = @($cleanupFailures)
+    cleanupErrorCodes = @($cleanupErrorCodes)
+}
 [IO.Directory]::CreateDirectory((Split-Path -Parent $EvidencePath)) | Out-Null
 [IO.File]::WriteAllText(
     $EvidencePath,
@@ -985,6 +1009,17 @@ if (@($observation.remainingNames).Count -ne 1 -or
     -not [string]::Equals([string]$observation.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) {
     throw 'Permanent owned residual must retain postgres as remaining.'
 }
+if ($cleanupFailures.Count -ne 1 -or
+    -not $cleanupErrorCodes.Contains('owned-resource-cleanup-failed')) {
+    throw 'Permanent owned residual must register an owned-resource cleanup failure.'
+}
+if (-not [string]::Equals([string]$composeEvidence.status, [string]$observation.status, [StringComparison]::Ordinal) -or
+    [int]$composeEvidence.attempts -ne [int]$observation.attempts -or
+    [int]$composeEvidence.remaining -ne 1 -or
+    @($composeEvidence.remainingNames).Count -ne 1 -or
+    -not [string]::Equals([string]$composeEvidence.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) {
+    throw 'Production cleanup evidence must consume the same permanent-residual observation.'
+}
 '@
 
     return @(
@@ -993,6 +1028,7 @@ if (@($observation.remainingNames).Count -ne 1 -or
         $composeObservationCoreFunctionText
         $WaitFunctionText
         $composeCleanupEvidenceFunctionText
+        $OutcomeFunctionText
         $fixtureAndAssertions
     ) -join [Environment]::NewLine
 }
@@ -1002,11 +1038,17 @@ $entryHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-entry.ps1'
 $entryEvidencePath = Join-Path $entryFixtureRoot 'cleanup-evidence.json'
 $entryMutationHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-frozen-elapsed.ps1'
 $entryMutationEvidencePath = Join-Path $entryFixtureRoot 'mutation-cleanup-evidence.json'
+$entrySkippedFailureHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-skipped-failure.ps1'
+$entrySkippedFailureEvidencePath = Join-Path $entryFixtureRoot 'skipped-failure-cleanup-evidence.json'
+$entryForgedEvidenceHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-forged-evidence.ps1'
+$entryForgedEvidencePath = Join-Path $entryFixtureRoot 'forged-cleanup-evidence.json'
 $entryLogDirectory = Join-Path $entryFixtureRoot 'logs'
 $entryWatchdogMilliseconds = 30000
 try {
     [IO.Directory]::CreateDirectory($entryFixtureRoot) | Out-Null
-    $entryHarnessContent = New-Man517PermanentResidualHarnessContent -WaitFunctionText $composeWaitFunctionText
+    $entryHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $composeWaitFunctionText `
+        -OutcomeFunctionText $composeCleanupOutcomeFunctionText
     [IO.File]::WriteAllText($entryHarnessPath, $entryHarnessContent, [Text.UTF8Encoding]::new($false))
 
     Invoke-NativeCommandOutput `
@@ -1018,7 +1060,10 @@ try {
         -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
 
     Assert-Contract (Test-Path -LiteralPath $entryEvidencePath -PathType Leaf) 'The real entry must publish cleanup evidence before the child process exits.'
-    $entryEvidence = (Get-Content -LiteralPath $entryEvidencePath -Raw | ConvertFrom-Json).composeServices
+    $entryDocument = Get-Content -LiteralPath $entryEvidencePath -Raw | ConvertFrom-Json
+    $entryEvidence = $entryDocument.composeServices
+    Assert-Contract (@($entryDocument.cleanupFailures).Count -eq 1 -and -not [string]::IsNullOrWhiteSpace([string]$entryDocument.cleanupFailures[0])) 'The real production consumer must register permanent residual as a cleanup failure.'
+    Assert-Contract (@($entryDocument.cleanupErrorCodes).Count -eq 1 -and [string]::Equals([string]$entryDocument.cleanupErrorCodes[0], 'owned-resource-cleanup-failed', [StringComparison]::Ordinal)) 'The real production consumer must retain the owned-resource cleanup failure code.'
     Assert-Contract ([string]::Equals([string]$entryEvidence.status, 'timed-out', [StringComparison]::Ordinal)) 'The real entry evidence must retain timed-out status.'
     Assert-Contract ([int]$entryEvidence.attempts -gt 1) 'The real entry evidence must retain repeated attempts.'
     Assert-Contract ([long]$entryEvidence.elapsedMilliseconds -ge [long]$entryEvidence.deadlineMilliseconds) 'The real entry evidence must retain internal deadline exhaustion.'
@@ -1028,12 +1073,70 @@ try {
     }
     Assert-Contract ([Linq.Enumerable]::Contains([string[]]@($entryEvidence.PSObject.Properties.Name), 'logUnavailableReason', [StringComparer]::Ordinal)) 'The real entry evidence must retain logUnavailableReason, including an available null value.'
 
+    $failureCondition = 'if (-not $Observation.converged) {'
+    $skippedFailureCondition = 'if ($false) {'
+    $skippedFailureOutcomeFunctionText = $composeCleanupOutcomeFunctionText.Replace($failureCondition, $skippedFailureCondition)
+    Assert-Contract (-not [string]::Equals($skippedFailureOutcomeFunctionText, $composeCleanupOutcomeFunctionText, [StringComparison]::Ordinal)) 'The skipped-failure mutation must alter the production cleanup consumer.'
+    Assert-Contract (-not $skippedFailureOutcomeFunctionText.Contains($failureCondition, [StringComparison]::Ordinal)) 'The skipped-failure mutation must replace the production non-convergence condition exactly once.'
+    $entrySkippedFailureHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $composeWaitFunctionText `
+        -OutcomeFunctionText $skippedFailureOutcomeFunctionText
+    [IO.File]::WriteAllText($entrySkippedFailureHarnessPath, $entrySkippedFailureHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    $skippedFailureMutationRejected = $false
+    try {
+        Invoke-NativeCommandOutput `
+            -Command ([Environment]::ProcessPath) `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $entrySkippedFailureHarnessPath, '-EvidencePath', $entrySkippedFailureEvidencePath) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-production-consumer-skipped-failure-mutation' `
+            -LogDirectory (Join-Path $entryLogDirectory 'skipped-failure') `
+            -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+    }
+    catch {
+        $skippedFailureMutationRejected = $_.Exception -isnot [TimeoutException] -and $_.Exception.Message.Contains('exited with 1', [StringComparison]::Ordinal)
+        $global:LASTEXITCODE = 0
+    }
+    Assert-Contract $skippedFailureMutationRejected 'A production consumer that skips permanent-residual failure registration must fail the direct contract.'
+    $skippedFailureDocument = Get-Content -LiteralPath $entrySkippedFailureEvidencePath -Raw | ConvertFrom-Json
+    Assert-Contract (@($skippedFailureDocument.cleanupFailures).Count -eq 0 -and @($skippedFailureDocument.cleanupErrorCodes).Count -eq 0) 'The skipped-failure mutation must actually remove production cleanup failure accounting.'
+
+    $evidenceObservationArgument = '-Observation $Observation'
+    $forgedEvidenceObservationArgument = "-Observation ([pscustomobject]@{ remainingNames = [string[]]@(); status = 'converged'; deadlineMilliseconds = `$Observation.deadlineMilliseconds; attempts = 1; elapsedMilliseconds = 0; lastObservation = 'forged-success'; query = 'forged-success'; logPath = `$null; logStatus = 'available'; logUnavailableReason = `$null })"
+    $forgedEvidenceOutcomeFunctionText = $composeCleanupOutcomeFunctionText.Replace($evidenceObservationArgument, $forgedEvidenceObservationArgument)
+    Assert-Contract (-not [string]::Equals($forgedEvidenceOutcomeFunctionText, $composeCleanupOutcomeFunctionText, [StringComparison]::Ordinal)) 'The forged-evidence mutation must alter the production cleanup consumer.'
+    Assert-Contract (-not $forgedEvidenceOutcomeFunctionText.Contains($evidenceObservationArgument, [StringComparison]::Ordinal)) 'The forged-evidence mutation must replace the production evidence observation exactly once.'
+    $entryForgedEvidenceHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $composeWaitFunctionText `
+        -OutcomeFunctionText $forgedEvidenceOutcomeFunctionText
+    [IO.File]::WriteAllText($entryForgedEvidenceHarnessPath, $entryForgedEvidenceHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    $forgedEvidenceMutationRejected = $false
+    try {
+        Invoke-NativeCommandOutput `
+            -Command ([Environment]::ProcessPath) `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $entryForgedEvidenceHarnessPath, '-EvidencePath', $entryForgedEvidencePath) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-production-consumer-forged-evidence-mutation' `
+            -LogDirectory (Join-Path $entryLogDirectory 'forged-evidence') `
+            -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+    }
+    catch {
+        $forgedEvidenceMutationRejected = $_.Exception -isnot [TimeoutException] -and $_.Exception.Message.Contains('exited with 1', [StringComparison]::Ordinal)
+        $global:LASTEXITCODE = 0
+    }
+    Assert-Contract $forgedEvidenceMutationRejected 'A production consumer that writes forged successful cleanup evidence must fail the direct contract.'
+    $forgedEvidenceDocument = Get-Content -LiteralPath $entryForgedEvidencePath -Raw | ConvertFrom-Json
+    Assert-Contract ([string]::Equals([string]$forgedEvidenceDocument.composeServices.status, 'converged', [StringComparison]::Ordinal) -and [int]$forgedEvidenceDocument.composeServices.remaining -eq 0) 'The forged-evidence mutation must actually replace the permanent-residual evidence with false success.'
+
     $elapsedReturn = 'return [long]$clock.ElapsedMilliseconds'
     $frozenElapsedReturn = 'return [long]0'
     $mutatedWaitFunctionText = $composeWaitFunctionText.Replace($elapsedReturn, $frozenElapsedReturn)
     Assert-Contract (-not [string]::Equals($mutatedWaitFunctionText, $composeWaitFunctionText, [StringComparison]::Ordinal)) 'The frozen-elapsed mutation must alter the production entry runtime.'
     Assert-Contract (-not $mutatedWaitFunctionText.Contains($elapsedReturn, [StringComparison]::Ordinal)) 'The frozen-elapsed mutation must replace the production elapsed return exactly once.'
-    $entryMutationHarnessContent = New-Man517PermanentResidualHarnessContent -WaitFunctionText $mutatedWaitFunctionText
+    $entryMutationHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $mutatedWaitFunctionText `
+        -OutcomeFunctionText $composeCleanupOutcomeFunctionText
     [IO.File]::WriteAllText($entryMutationHarnessPath, $entryMutationHarnessContent, [Text.UTF8Encoding]::new($false))
 
     $frozenElapsedTimedOutAtWatchdog = $false
