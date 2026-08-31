@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
@@ -12,6 +13,42 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed class PrintLabelLifecycleCommandTests
 {
+    [Fact]
+    public async Task Relational_database_rejects_a_partially_missing_replay_snapshot()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await dbContext.Database.EnsureCreatedAsync();
+        var rule = BarcodeRule.Create(
+            "org-001", "env-dev", "FG", "code128", "FG", 40, "none", ["wms.inbound"], "active");
+        var batch = LabelPrintBatch.Create(
+            "org-001",
+            "env-dev",
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            new LabelPrintBatchSnapshot(
+                "file-template-001",
+                $"sha256:{new string('a', 64)}",
+                """{"version":1,"variables":[]}""",
+                "code128",
+                ZplV1LabelCompiler.ContractVersion),
+            "wms.inbound",
+            "ASN-001",
+            "idem-replay-snapshot",
+            "{}",
+            1);
+        dbContext.Add(batch);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.Entry(batch).Property(x => x.TemplateFileIdSnapshot).CurrentValue = null;
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+    }
+
     [Fact]
     public async Task Reprint_only_changes_the_requested_item_and_does_not_repeat_batch_completion()
     {
@@ -37,7 +74,7 @@ public sealed class PrintLabelLifecycleCommandTests
     private static LabelPrintBatch CreateBatch(int quantity)
     {
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG", "code128", "FG", 13, "none", ["wms.inbound"], "active");
-        return LabelPrintBatch.Create("org-001", "env-dev", rule, new LabelTemplateId(Guid.CreateVersion7()), "wms.inbound", "ASN-001", "idem-print", "{}", quantity);
+        return LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, new LabelTemplateId(Guid.CreateVersion7()), "wms.inbound", "ASN-001", "idem-print", "{}", quantity);
     }
 
     private static ApplicationDbContext CreateDbContext()

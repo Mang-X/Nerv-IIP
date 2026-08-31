@@ -11,6 +11,13 @@ public partial record LabelPrintBatchId : IGuidStronglyTypedId;
 
 public partial record LabelPrintItemId : IGuidStronglyTypedId;
 
+public sealed record LabelPrintBatchSnapshot(
+    string TemplateFileId,
+    string TemplateAssetSha256,
+    string VariableSchemaJson,
+    string BarcodeType,
+    string RendererContractVersion);
+
 public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 {
     private const string Pending = "pending";
@@ -27,6 +34,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string environmentId,
         BarcodeRule rule,
         LabelTemplateId labelTemplateId,
+        LabelPrintBatchSnapshot? snapshot,
         string sourceDocumentType,
         string sourceDocumentId,
         string idempotencyKey,
@@ -38,6 +46,19 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         EnvironmentId = BarcodeLabelText.Required(environmentId, nameof(environmentId));
         BarcodeRuleId = rule.Id;
         LabelTemplateId = labelTemplateId;
+        if (snapshot is not null)
+        {
+            TemplateFileIdSnapshot = BarcodeLabelText.Required(snapshot.TemplateFileId, nameof(snapshot.TemplateFileId));
+            TemplateAssetSha256 = BarcodeLabelText.Required(snapshot.TemplateAssetSha256, nameof(snapshot.TemplateAssetSha256));
+            VariableSchemaJsonSnapshot = BarcodeLabelText.Required(snapshot.VariableSchemaJson, nameof(snapshot.VariableSchemaJson));
+            BarcodeTypeSnapshot = BarcodeLabelText.Required(snapshot.BarcodeType, nameof(snapshot.BarcodeType));
+            RendererContractVersion = BarcodeLabelText.Required(snapshot.RendererContractVersion, nameof(snapshot.RendererContractVersion));
+            if (!string.Equals(BarcodeTypeSnapshot, rule.BarcodeType, StringComparison.Ordinal))
+            {
+                throw new ArgumentException("Barcode type snapshot must match the selected barcode rule.", nameof(snapshot));
+            }
+        }
+
         SourceDocumentType = BarcodeLabelText.Required(sourceDocumentType, nameof(sourceDocumentType)).ToLowerInvariant();
         SourceDocumentId = BarcodeLabelText.Required(sourceDocumentId, nameof(sourceDocumentId));
         IdempotencyKey = BarcodeLabelText.Required(idempotencyKey, nameof(idempotencyKey));
@@ -68,6 +89,11 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public BarcodeRuleId BarcodeRuleId { get; private set; } = null!;
     public LabelTemplateId LabelTemplateId { get; private set; } = null!;
+    public string? TemplateFileIdSnapshot { get; private set; }
+    public string? TemplateAssetSha256 { get; private set; }
+    public string? VariableSchemaJsonSnapshot { get; private set; }
+    public string? BarcodeTypeSnapshot { get; private set; }
+    public string? RendererContractVersion { get; private set; }
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string IdempotencyKey { get; private set; } = string.Empty;
@@ -87,13 +113,29 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string environmentId,
         BarcodeRule rule,
         LabelTemplateId labelTemplateId,
+        LabelPrintBatchSnapshot snapshot,
         string sourceDocumentType,
         string sourceDocumentId,
         string idempotencyKey,
         string labelValuesJson,
         int requestedQuantity)
     {
-        return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, snapshot, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity);
+    }
+
+    public static LabelPrintBatch CreateLegacyWithoutReplaySnapshot(
+        string organizationId,
+        string environmentId,
+        BarcodeRule rule,
+        LabelTemplateId labelTemplateId,
+        string sourceDocumentType,
+        string sourceDocumentId,
+        string idempotencyKey,
+        string labelValuesJson,
+        int requestedQuantity)
+    {
+        return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, null, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity);
     }
 
     public bool HasSameIdempotencyPayload(LabelPrintBatch other)
@@ -102,6 +144,11 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             && EnvironmentId == other.EnvironmentId
             && BarcodeRuleId == other.BarcodeRuleId
             && LabelTemplateId == other.LabelTemplateId
+            && TemplateFileIdSnapshot == other.TemplateFileIdSnapshot
+            && TemplateAssetSha256 == other.TemplateAssetSha256
+            && VariableSchemaJsonSnapshot == other.VariableSchemaJsonSnapshot
+            && BarcodeTypeSnapshot == other.BarcodeTypeSnapshot
+            && RendererContractVersion == other.RendererContractVersion
             && SourceDocumentType == other.SourceDocumentType
             && SourceDocumentId == other.SourceDocumentId
             && IdempotencyKey == other.IdempotencyKey

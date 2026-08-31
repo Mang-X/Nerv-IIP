@@ -257,7 +257,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         BarcodeRule rule,
         SeedCounters counters)
     {
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             organizationId,
             environmentId,
             rule,
