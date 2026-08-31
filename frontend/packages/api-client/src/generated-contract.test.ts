@@ -245,6 +245,22 @@ import {
   type BusinessConsoleTransitionMaintenanceWorkOrderRequest,
   type TransitionBusinessConsoleMaintenanceWorkOrderData,
 } from './business-console'
+import {
+  dispatchBusinessConsoleBarcodePrintBatch,
+  dispatchBusinessConsoleBarcodePrintBatchMutationOptions,
+  reprintBusinessConsoleBarcodeLabel,
+  reprintBusinessConsoleBarcodeLabelMutationOptions,
+  voidBusinessConsoleBarcodeLabel,
+  voidBusinessConsoleBarcodeLabelMutationOptions,
+  type BusinessConsoleDispatchBarcodePrintBatchBody,
+  type BusinessConsoleReprintBarcodeLabelBody,
+  type BusinessConsoleVoidBarcodeLabelBody,
+  type DispatchBusinessConsoleBarcodePrintBatchData,
+  type DispatchBusinessConsoleBarcodePrintBatchErrors,
+  type ReprintBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelErrors,
+} from './business-console'
 
 describe('generated API client contract', () => {
   it('requires archive reasons for ProductCategory and Skill requests', () => {
@@ -369,6 +385,34 @@ describe('generated API client contract', () => {
     >()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderActionResponse>().not.toBeNever()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>().not.toBeNever()
+  })
+
+  it('exports the barcode lifecycle API through the stable business-console barrel', () => {
+    expect(dispatchBusinessConsoleBarcodePrintBatch).toBeTypeOf('function')
+    expect(dispatchBusinessConsoleBarcodePrintBatchMutationOptions).toBeTypeOf('function')
+    expect(reprintBusinessConsoleBarcodeLabel).toBeTypeOf('function')
+    expect(reprintBusinessConsoleBarcodeLabelMutationOptions).toBeTypeOf('function')
+    expect(voidBusinessConsoleBarcodeLabel).toBeTypeOf('function')
+    expect(voidBusinessConsoleBarcodeLabelMutationOptions).toBeTypeOf('function')
+    expectTypeOf<
+      DispatchBusinessConsoleBarcodePrintBatchData['body']
+    >().toEqualTypeOf<BusinessConsoleDispatchBarcodePrintBatchBody>()
+    expectTypeOf<
+      ReprintBusinessConsoleBarcodeLabelData['body']
+    >().toEqualTypeOf<BusinessConsoleReprintBarcodeLabelBody>()
+    expectTypeOf<
+      VoidBusinessConsoleBarcodeLabelData['body']
+    >().toEqualTypeOf<BusinessConsoleVoidBarcodeLabelBody>()
+    expectTypeOf<ReprintBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<DispatchBusinessConsoleBarcodePrintBatchErrors[502]>().not.toBeNever()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelErrors[502]>().not.toBeNever()
   })
 
   it('requires optimistic versions for public quality assignment and claim mutations', () => {

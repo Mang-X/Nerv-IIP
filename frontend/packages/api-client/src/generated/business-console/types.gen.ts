@@ -7953,6 +7953,54 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintLifecycleResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintLifecycleResponse = {
+    printBatchId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchRequest = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody = {
+    printBatchId: string;
+    printerId: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReprintBarcodeLabelResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelResponse = {
+    printBatchId?: string;
+    status?: string;
+    printJobId?: string | null;
+    failureReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelRequest = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody = {
+    printBatchId: string;
+    sequenceNo: number;
+    printerId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelRequest = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody = {
+    printBatchId: string;
+    sequenceNo: number;
+    reason: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordBarcodeScanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordBarcodeScanResponse | null;
 };
@@ -21743,6 +21791,125 @@ export type GetBusinessConsoleBarcodePrintBatchResponses = {
 };
 
 export type GetBusinessConsoleBarcodePrintBatchResponse = GetBusinessConsoleBarcodePrintBatchResponses[keyof GetBusinessConsoleBarcodePrintBatchResponses];
+
+export type DispatchBusinessConsoleBarcodePrintBatchData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody;
+    path: {
+        printBatchId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch';
+};
+
+export type DispatchBusinessConsoleBarcodePrintBatchErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type DispatchBusinessConsoleBarcodePrintBatchError = DispatchBusinessConsoleBarcodePrintBatchErrors[keyof DispatchBusinessConsoleBarcodePrintBatchErrors];
+
+export type DispatchBusinessConsoleBarcodePrintBatchResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse;
+};
+
+export type DispatchBusinessConsoleBarcodePrintBatchResponse = DispatchBusinessConsoleBarcodePrintBatchResponses[keyof DispatchBusinessConsoleBarcodePrintBatchResponses];
+
+export type ReprintBusinessConsoleBarcodeLabelData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody;
+    path: {
+        printBatchId: string;
+        sequenceNo: number;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint';
+};
+
+export type ReprintBusinessConsoleBarcodeLabelErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReprintBusinessConsoleBarcodeLabelError = ReprintBusinessConsoleBarcodeLabelErrors[keyof ReprintBusinessConsoleBarcodeLabelErrors];
+
+export type ReprintBusinessConsoleBarcodeLabelResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReprintBarcodeLabelResponse;
+};
+
+export type ReprintBusinessConsoleBarcodeLabelResponse = ReprintBusinessConsoleBarcodeLabelResponses[keyof ReprintBusinessConsoleBarcodeLabelResponses];
+
+export type VoidBusinessConsoleBarcodeLabelData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody;
+    path: {
+        printBatchId: string;
+        sequenceNo: number;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void';
+};
+
+export type VoidBusinessConsoleBarcodeLabelErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type VoidBusinessConsoleBarcodeLabelError = VoidBusinessConsoleBarcodeLabelErrors[keyof VoidBusinessConsoleBarcodeLabelErrors];
+
+export type VoidBusinessConsoleBarcodeLabelResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse;
+};
+
+export type VoidBusinessConsoleBarcodeLabelResponse = VoidBusinessConsoleBarcodeLabelResponses[keyof VoidBusinessConsoleBarcodeLabelResponses];
 
 export type ListBusinessConsoleBarcodeScansData = {
     body?: never;

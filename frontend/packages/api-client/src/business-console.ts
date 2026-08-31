@@ -2831,3 +2831,28 @@ export type {
 
 export type BusinessConsoleMesProductionStatisticsRequest =
   import('./generated/business-console').QueryBusinessConsoleMesProductionStatisticsData['query']
+
+// #2975: scoped barcode-label lifecycle commands exposed through BusinessGateway.
+export {
+  dispatchBusinessConsoleBarcodePrintBatch,
+  dispatchBusinessConsoleBarcodePrintBatchMutationOptions,
+  reprintBusinessConsoleBarcodeLabel,
+  reprintBusinessConsoleBarcodeLabelMutationOptions,
+  voidBusinessConsoleBarcodeLabel,
+  voidBusinessConsoleBarcodeLabelMutationOptions,
+} from './generated/business-console'
+
+export type {
+  DispatchBusinessConsoleBarcodePrintBatchData,
+  DispatchBusinessConsoleBarcodePrintBatchErrors,
+  DispatchBusinessConsoleBarcodePrintBatchResponse,
+  ReprintBusinessConsoleBarcodeLabelData,
+  ReprintBusinessConsoleBarcodeLabelErrors,
+  ReprintBusinessConsoleBarcodeLabelResponse,
+  VoidBusinessConsoleBarcodeLabelData,
+  VoidBusinessConsoleBarcodeLabelErrors,
+  VoidBusinessConsoleBarcodeLabelResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody as BusinessConsoleDispatchBarcodePrintBatchBody,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody as BusinessConsoleReprintBarcodeLabelBody,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody as BusinessConsoleVoidBarcodeLabelBody,
+} from './generated/business-console'
