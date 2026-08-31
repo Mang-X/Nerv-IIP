@@ -694,7 +694,7 @@ watch(
       </template>
     </NvDataTable>
 
-    <!-- 新建维护工单：设备/优先级/开单人/报警/技师/预估工时（6 字段）→ 侧滑 Sheet（A1 §1）。 -->
+    <!-- 新建维护工单：设备/优先级/开单人/报警/技师/预估工时/设备占用原因（7 字段）→ 侧滑 Sheet（A1 §1）。 -->
     <NvSheet v-model:open="createOpen">
       <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
         <NvSheetHeader>
