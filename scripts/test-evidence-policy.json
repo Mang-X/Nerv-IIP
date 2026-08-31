@@ -1160,7 +1160,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Legacy_reports_keep_quantities_in_an_explicitly_degraded_dimension_bucket",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_traceability_is_consistent_from_all_read_faces_and_keeps_audit_links_after_output_reversal_on_postgres"
       ],
-      "expectedRuntimeTestCount": 41
+      "expectedRuntimeTestCount": 42
     },
     {
       "id": "mes-cap-postgres",
