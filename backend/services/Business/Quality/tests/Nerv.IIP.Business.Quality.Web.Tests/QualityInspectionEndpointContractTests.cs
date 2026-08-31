@@ -1030,11 +1030,14 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "scrap",
                 "approval-chain-pending",
                 [],
@@ -1070,11 +1073,14 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "scrap",
                 "approval-chain-approved",
                 [],
@@ -1112,11 +1118,14 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "scrap",
                 "approval-chain-other-document",
                 [],
@@ -1152,11 +1161,14 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
-            new NoopCapaAutomationService());
+            new NoopCapaAutomationService(),
+            dbContext);
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 "sort-and-screen",
                 null,
                 ["file-screening-result-001"],

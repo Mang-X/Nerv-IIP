@@ -9,6 +9,7 @@ using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.BarcodeRules;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.BarcodeRules;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
@@ -59,7 +60,7 @@ public sealed record ListBarcodeRulesRequest(
     string? Status,
     string? Keyword,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListBarcodeRulesResponse(IReadOnlyCollection<BarcodeRuleSummary> Rules, int Total);
 
@@ -79,7 +80,7 @@ public sealed record ListLabelTemplatesRequest(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListLabelTemplatesResponse(IReadOnlyCollection<LabelTemplateSummary> Templates, int Total);
 
@@ -113,7 +114,7 @@ public sealed record ListLabelPrintBatchesRequest(
     string? SourceDocumentId,
     string? Status,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListLabelPrintBatchesResponse(IReadOnlyCollection<LabelPrintBatchSummary> PrintBatches, int Total);
 
@@ -150,7 +151,7 @@ public sealed record ListScansRequest(
     string? SourceWorkflow,
     string? SourceDocumentId,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListScansResponse(IReadOnlyCollection<ScanRecordSummary> Scans, int Total);
 

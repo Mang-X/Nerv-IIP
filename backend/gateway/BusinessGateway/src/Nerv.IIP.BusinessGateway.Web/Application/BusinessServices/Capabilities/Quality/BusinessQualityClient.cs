@@ -785,7 +785,53 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             request with { ReasonCode = reasonCode },
             cancellationToken);
 
-    public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
+    public async Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
+        string internalBearerToken,
+        string ncrId,
+        BusinessConsoleNcrDispositionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendNcrDispositionAsync(
+            internalBearerToken,
+            ncrId,
+            request,
+            cancellationToken);
+        if (!string.Equals(request.DispositionType, "rework", StringComparison.OrdinalIgnoreCase))
+        {
+            return response;
+        }
+
+        if (!response.Accepted)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return AcceptedReworkResponse(ncrId, request);
+    }
+
+    private static BusinessConsoleAcceptedResponse AcceptedReworkResponse(
+        string ncrId,
+        BusinessConsoleNcrDispositionRequest request)
+    {
+        var readbackPath = $"/api/business-console/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}?" + Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId));
+        return new BusinessConsoleAcceptedResponse(
+            Accepted: true,
+            DownstreamService: "quality",
+            DownstreamDocumentType: "ncr",
+            DownstreamDocumentId: ncrId,
+            OperationReceipt: BusinessConsoleOperationReceipts.Accepted(
+                operationType: "quality.ncr.rework",
+                authority: "quality",
+                resourceType: "ncr",
+                resourceId: ncrId,
+                readbackPath,
+                request.IdempotencyKey!));
+    }
+
+    private Task<BusinessConsoleAcceptedResponse> SendNcrDispositionAsync(
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrDispositionRequest request,
@@ -796,10 +842,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             $"/api/business/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}/disposition",
             new DownstreamSubmitNcrDispositionRequest(
                 ncrId,
+                request.OrganizationId,
+                request.EnvironmentId,
                 request.DispositionType,
                 request.DispositionApprovalChainId,
                 request.AttachmentFileIds,
-                request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray()),
+                request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray(),
+                request.IdempotencyKey),
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
@@ -1148,10 +1197,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,
+        string OrganizationId,
+        string EnvironmentId,
         string DispositionType,
         string? DispositionApprovalChainId,
         IReadOnlyCollection<string>? AttachmentFileIds,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyCollection<DownstreamMrbReview>? MrbReviews);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyCollection<DownstreamMrbReview>? MrbReviews,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? IdempotencyKey);
 
     private sealed record DownstreamMrbReview(
         string ReviewerId,

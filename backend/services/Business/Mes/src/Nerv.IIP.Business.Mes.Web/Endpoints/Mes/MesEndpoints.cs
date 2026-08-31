@@ -148,6 +148,19 @@ public sealed record ListProductionReportsRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null);
 
+public sealed record QueryProductionStatisticsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    ProductionStatisticsDimension Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    DateOnly? BusinessDate = null,
+    string? ShiftCode = null,
+    string? WorkCenterId = null,
+    string? SkuId = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record GetProductionReportRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -373,6 +386,19 @@ public sealed record AssignDispatchTaskRequest(
     string? TeamName = null,
     IReadOnlyCollection<DispatchParticipantInput>? Participants = null);
 
+public sealed record ClaimDispatchTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string OperationTaskId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    DateTimeOffset? ClaimedAtUtc,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
+
 public sealed record OperationTaskActionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -434,7 +460,9 @@ public sealed record ListDowntimeEventsRequest(
     string? Keyword = null,
     string? ShiftId = null,
     string? Status = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -1138,6 +1166,30 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
     }
 }
 
+public sealed class ClaimDispatchTaskEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ClaimDispatchTaskRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ClaimDispatchTaskEndpoint>());
+
+    public override async Task HandleAsync(ClaimDispatchTaskRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ClaimDispatchTaskCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OperationTaskId,
+            req.AssignedUserId,
+            req.AssignedUserName,
+            req.DeviceAssetId,
+            req.ShiftId,
+            req.ClaimedAtUtc ?? timeProvider.GetUtcNow(),
+            MesAuthenticatedActor.Resolve(HttpContext),
+            req.IdempotencyKey,
+            req.TeamId,
+            req.TeamName), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ListOperationTasksEndpoint(ISender sender)
     : MesEndpoint<ListOperationTasksRequest, MesOperationTaskListResponse>
 {
@@ -1355,6 +1407,30 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class QueryProductionStatisticsEndpoint(ISender sender)
+    : MesEndpoint<QueryProductionStatisticsRequest, ProductionStatisticsResponse>
+{
+    public override void Configure() =>
+        ConfigureMesContract(MesEndpointContracts.Get<QueryProductionStatisticsEndpoint>());
+
+    public override async Task HandleAsync(QueryProductionStatisticsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new QueryProductionStatisticsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Dimension,
+            req.WindowStartUtc,
+            req.WindowEndUtc,
+            req.BusinessDate,
+            req.ShiftCode,
+            req.WorkCenterId,
+            req.SkuId,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetProductionReportEndpoint(ISender sender)
     : MesEndpoint<GetProductionReportRequest, GetProductionReportResponse>
 {
@@ -1564,7 +1640,9 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Keyword,
             req.ShiftId,
             req.Status,
-            req.ReasonCode), ct);
+            req.ReasonCode,
+            req.WindowStartUtc,
+            req.WindowEndUtc), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1779,6 +1857,7 @@ public static class MesEndpointContracts
         new(typeof(ListDispatchTasksEndpoint), "GET", "/api/business/v1/mes/dispatch-tasks", MesPermissionCodes.DispatchRead, "listBusinessMesDispatchTasks"),
         new(typeof(AssignDispatchTaskEndpoint), "POST", "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign", MesPermissionCodes.DispatchManage, "assignBusinessMesDispatchTask"),
         new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
+        new(typeof(ClaimDispatchTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim", MesPermissionCodes.OperationsManage, "claimBusinessMesOperationTask"),
         new(typeof(ListReportableOperationTasksEndpoint), "GET", "/api/business/v1/mes/reportable-operation-tasks", MesPermissionCodes.ReportingRead, "listBusinessMesReportableOperationTasks"),
         new(typeof(StartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/start", MesPermissionCodes.OperationsManage, "startBusinessMesOperationTask"),
         new(typeof(AuthorizeAndStartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start", MesPermissionCodes.OperationsManage, "authorizeAndStartBusinessMesOperationTask"),
@@ -1788,6 +1867,7 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(QueryProductionStatisticsEndpoint), "GET", "/api/business/v1/mes/production-statistics", MesPermissionCodes.ReportingRead, "queryBusinessMesProductionStatistics"),
         new(typeof(GetProductionReportEndpoint), "GET", "/api/business/v1/mes/production-reports/{reportNo}", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReport"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),

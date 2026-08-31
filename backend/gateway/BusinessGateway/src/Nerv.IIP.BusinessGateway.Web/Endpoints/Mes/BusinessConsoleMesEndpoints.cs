@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
@@ -1210,6 +1211,106 @@ public sealed class BusinessConsoleMesAssignDispatchTaskRequestValidator
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/claim")]
+[BusinessGatewayOperationId("claimBusinessConsoleMesOperationTask")]
+public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesClaimOperationTaskRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesClaimOperationTaskRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesClaimOperationTaskRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesClaimOperationTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await ListBusinessConsoleMesOperationTasksEndpoint.ResolveRequestAsync(
+            workScopeResolver,
+            AuthorizationResult,
+            new BusinessConsoleMesOperationTaskListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                Status: "Queued",
+                Skip: 0,
+                Take: 2,
+                ScopeKind: request.ScopeKind,
+                ScopeId: request.ScopeId,
+                OperationTaskId: request.OperationTaskId),
+            BusinessGatewayPermissions.MesOperationsManage,
+            cancellationToken);
+        var tasks = await mes.ListOperationTasksAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+        var task = tasks.Items.SingleOrDefault(x =>
+            string.Equals(x.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal));
+        if (task is null)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "operation-task-outside-work-center");
+        }
+
+        var principalId = RequireAuthorizedPrincipalId();
+        var directory = await masterData.ListWorkersAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleWorkerDirectoryRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                UserId: principalId,
+                WorkCenterCode: task.WorkCenterId,
+                EmploymentStatus: "active",
+                PageIndex: 1,
+                PageSize: 2),
+            cancellationToken);
+        var worker = directory.Items.SingleOrDefault();
+        if (worker is null || !worker.Active)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "worker-not-on-duty-at-work-center");
+        }
+
+        var team = worker.Teams.FirstOrDefault(x => x.IsLeader) ?? worker.Teams.FirstOrDefault();
+        return await mes.ClaimDispatchTaskAsync(
+            tokenProvider.BearerToken,
+            request.OperationTaskId,
+            new BusinessConsoleMesClaimDispatchTaskForwardRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                principalId,
+                worker.DisplayName,
+                task.DeviceAssetId,
+                task.ShiftId,
+                request.IdempotencyKey,
+                team?.TeamCode,
+                team?.TeamName),
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesClaimOperationTaskRequestValidator
+    : Validator<BusinessConsoleMesClaimOperationTaskRequest>
+{
+    public BusinessConsoleMesClaimOperationTaskRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).Equal("work-center");
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/operation-tasks")]
 [BusinessGatewayOperationId("listBusinessConsoleMesOperationTasks")]
 public sealed class ListBusinessConsoleMesOperationTasksEndpoint(
@@ -2094,7 +2195,8 @@ internal static class MesDowntimeReasonNameEnricher
                 .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
                 .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
         }
-        catch (BusinessServiceProxyException exception) when (IsUnavailableReasonDirectory(exception.StatusCode))
+        catch (BusinessServiceProxyException exception) when (
+            BusinessConsoleReadEnrichmentFailurePolicy.CanDegrade(exception.StatusCode))
         {
             return [];
         }
@@ -2108,9 +2210,6 @@ internal static class MesDowntimeReasonNameEnricher
         }
     }
 
-    private static bool IsUnavailableReasonDirectory(System.Net.HttpStatusCode statusCode) =>
-        statusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.RequestTimeout
-        || (int)statusCode >= 500;
 }
 
 [Tags("Business Console MES")]

@@ -200,7 +200,7 @@ function formatError(error: unknown) {
               }"
             >
               <GaugeIcon aria-hidden="true" />
-              OEE 与可用性
+              OEE 趋势与横比
             </RouterLink>
           </NvDropdownMenuItem>
           <NvDropdownMenuItem as-child>

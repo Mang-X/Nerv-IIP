@@ -215,7 +215,7 @@ function formatDateTime(value?: string | null) {
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/telemetry/oee"
-            ><GaugeIcon aria-hidden="true" />OEE 与可用性</RouterLink
+            ><GaugeIcon aria-hidden="true" />OEE 趋势与横比</RouterLink
           >
         </NvButton>
         <NvButton
@@ -379,7 +379,7 @@ function formatDateTime(value?: string | null) {
                 }"
               >
                 <GaugeIcon aria-hidden="true" />
-                OEE 与可用性
+                OEE 趋势与横比
               </RouterLink>
             </NvDropdownMenuItem>
             <NvDropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
