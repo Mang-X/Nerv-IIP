@@ -144,12 +144,14 @@ internal static class AssetUnavailableV2WireContract
             throw new JsonException("AssetUnavailable V2 envelope requires eventVersion 2.");
         if (integrationEvent.EventType != MaintenanceIntegrationEventTypes.AssetUnavailable)
             throw new JsonException("AssetUnavailable V2 envelope requires the maintenance.AssetUnavailable event type.");
-        if (integrationEvent.OccurredAtUtc == default)
-            throw new JsonException("AssetUnavailable V2 envelope requires occurredAtUtc.");
+        if (integrationEvent.OccurredAtUtc == default || integrationEvent.OccurredAtUtc.Offset != TimeSpan.Zero)
+            throw new JsonException("AssetUnavailable V2 envelope requires a UTC occurredAtUtc.");
         if (integrationEvent.SourceService != MaintenanceIntegrationEventSources.BusinessMaintenance)
             throw new JsonException("AssetUnavailable V2 envelope requires the business-maintenance source service.");
         Require(integrationEvent.CorrelationId, "correlationId");
-        Require(integrationEvent.CausationId, "causationId");
+        if (integrationEvent.CausationId is { Length: > 0 }
+            && string.IsNullOrWhiteSpace(integrationEvent.CausationId))
+            throw new JsonException("AssetUnavailable V2 envelope causationId cannot contain only whitespace.");
         Require(integrationEvent.OrganizationId, "organizationId");
         Require(integrationEvent.EnvironmentId, "environmentId");
         Require(integrationEvent.Actor, "actor");
@@ -159,8 +161,8 @@ internal static class AssetUnavailableV2WireContract
         Require(integrationEvent.Payload.DeviceAssetId, "payload.deviceAssetId");
         if (string.IsNullOrWhiteSpace(integrationEvent.Payload.ReasonCode))
             throw new JsonException("AssetUnavailable V2 payload requires reasonCode.");
-        if (integrationEvent.Payload.FromUtc == default)
-            throw new JsonException("AssetUnavailable V2 payload requires fromUtc.");
+        if (integrationEvent.Payload.FromUtc == default || integrationEvent.Payload.FromUtc.Offset != TimeSpan.Zero)
+            throw new JsonException("AssetUnavailable V2 payload requires a UTC fromUtc.");
     }
 
     private static void Require(string? value, string fieldName)
@@ -187,7 +189,7 @@ public sealed class AssetUnavailableV2IntegrationEventJsonConverter
             dto.OccurredAtUtc,
             dto.SourceService,
             dto.CorrelationId,
-            dto.CausationId,
+            dto.CausationId!,
             dto.OrganizationId,
             dto.EnvironmentId,
             dto.Actor,
@@ -228,7 +230,7 @@ public sealed class AssetUnavailableV2IntegrationEventJsonConverter
         DateTimeOffset OccurredAtUtc,
         string SourceService,
         string CorrelationId,
-        string CausationId,
+        [property: JsonRequired] string? CausationId,
         string OrganizationId,
         string EnvironmentId,
         string Actor,
