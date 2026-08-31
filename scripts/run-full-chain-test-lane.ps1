@@ -19,6 +19,7 @@
 param(
     [string[]] $MemberId = @(),
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'full-chain-test-lane.json'),
+    [string] $ScenarioMatrixPath = (Join-Path $PSScriptRoot 'acceptance-scenario-matrix.json'),
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
     [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../artifacts/test-evidence-raw/full-chain'),
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json'),
@@ -39,9 +40,13 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/CiWorkflowBudgets.ps1')
 . (Join-Path $PSScriptRoot 'lib/RuntimeMemoryEvidence.ps1')
 . (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrixRuntime.ps1')
+. (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrix.ps1')
+
+$laneStopwatch = [Diagnostics.Stopwatch]::StartNew()
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $repoRoot
+[void](Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $ScenarioMatrixPath -V1ManifestPath $ManifestPath -RepositoryRoot $repoRoot)
 if ($MemberId.Count -eq 0) { $MemberId = @($manifest.members.id | ForEach-Object { [string]$_ }) }
 $selectedIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $selectedMembers = @(
@@ -96,17 +101,6 @@ $scriptEntrypointTimeoutSeconds = 900
 $dotnetEntrypointTimeoutSeconds = 600
 $cleanupTimeoutSeconds = 300
 $timeoutGuardSeconds = 300
-$maximumGovernedRuntimeSeconds = $infrastructureTimeoutSeconds + $readinessTimeoutSeconds + $restoreTimeoutSeconds + $discoveryTimeoutSeconds + $cleanupTimeoutSeconds + $timeoutGuardSeconds
-foreach ($member in $selectedMembers) {
-    $entrypointKind = [string]$member.entrypoint.kind
-    if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $fullstackEntrypointTimeoutSeconds }
-    elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $scriptEntrypointTimeoutSeconds }
-    elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $dotnetEntrypointTimeoutSeconds }
-    else { throw "Unsupported FullChain entrypoint kind '$entrypointKind'." }
-}
-if ($maximumGovernedRuntimeSeconds -ge $runStepTimeoutSeconds) {
-    throw "FullChain internal timeout budget $maximumGovernedRuntimeSeconds seconds must remain below the $runStepTimeoutSeconds-second workflow step."
-}
 
 $adminPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 $redis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
@@ -143,6 +137,12 @@ foreach ($member in $selectedMembers) {
         diagnosticEvidence = 'not-run'
         cleanup = 'not-run'
         outcome = 'not-run'
+        deadlineAdmission = [ordered]@{
+            reason = 'not-evaluated'
+            elapsedSeconds = 0
+            remainingSeconds = 0
+            requiredSeconds = 0
+        }
         # #1664 / #1877：内存维度证据。快照刻意贴着 entrypoint 前后取，取在 lane 首尾会把冷启动
         # 峰值平均掉，正好看不见 137 发生的那一刻。
         memory = [ordered]@{
@@ -244,11 +244,36 @@ try {
 
 foreach ($member in $selectedMembers) {
     $memberResultsDirectory = Join-Path $ResultsDirectory ([string]$member.id)
-    [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
     $resultFile = "full-chain-$($member.id).trx"
     $memberSummary = $memberSummaryById[[string]$member.id]
     Write-NervFullChainSummarySnapshot
     $memberFailure = $null
+    $entrypointKind = [string]$member.entrypoint.kind
+    $entrypointTimeoutSeconds = if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) { $fullstackEntrypointTimeoutSeconds }
+        elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) { $scriptEntrypointTimeoutSeconds }
+        elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) { $dotnetEntrypointTimeoutSeconds }
+        else { throw "Unsupported FullChain entrypoint kind '$entrypointKind'." }
+    $elapsedSeconds = [int64][Math]::Ceiling($laneStopwatch.Elapsed.TotalSeconds)
+    $admission = Invoke-NervFullChainAdmittedAction `
+        -GlobalDeadlineSeconds $runStepTimeoutSeconds `
+        -ElapsedSeconds $elapsedSeconds `
+        -EntrypointTimeoutSeconds $entrypointTimeoutSeconds `
+        -CleanupReserveSeconds $cleanupTimeoutSeconds `
+        -GuardReserveSeconds $timeoutGuardSeconds `
+        -Action { [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null }
+    $memberSummary.deadlineAdmission.reason = [string]$admission.Reason
+    $memberSummary.deadlineAdmission.elapsedSeconds = $elapsedSeconds
+    $memberSummary.deadlineAdmission.remainingSeconds = $admission.RemainingSeconds
+    $memberSummary.deadlineAdmission.requiredSeconds = $admission.RequiredSeconds
+    if (-not $admission.Allowed) {
+        $memberSummary.outcome = 'failed'
+        $memberSummary.cleanup = 'passed'
+        $memberSummary.diagnosticEvidence = 'deadline-admission-denied'
+        $memberFailure = [InvalidOperationException]::new("FullChain member '$($member.id)' deadline admission denied: reason=$($admission.Reason) elapsed=$elapsedSeconds remaining=$($admission.RemainingSeconds) required=$($admission.RequiredSeconds).")
+        if ($null -eq $firstFailure) { $firstFailure = $memberFailure }
+        Write-NervFullChainSummarySnapshot
+        continue
+    }
     try {
         if (-not [string]::Equals([string]$summary.readiness.postgres, 'passed', [StringComparison]::Ordinal) -or
             ([bool]$member.dependencies.redis -and -not [string]::Equals([string]$summary.readiness.redis, 'passed', [StringComparison]::Ordinal))) { throw "FullChain member '$($member.id)' dependency readiness is incomplete." }

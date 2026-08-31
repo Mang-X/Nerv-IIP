@@ -162,27 +162,22 @@ try {
         -V1ManifestPath $v1ManifestPath `
         -RepositoryRoot $repoRoot
 
-    $expectedIds = @(
-        'sales-order-demand',
-        'wms-delivery-erp',
-        'mes-produced-lot-inventory',
-        'telemetry-runtime-maintenance',
-        'erp-return-closure',
-        'equipment-unavailable-scheduling-mes'
-    )
-    Assert-Contract ([string]::Equals((@($manifest.scenarios.id) -join '|'), ($expectedIds -join '|'), [StringComparison]::Ordinal)) 'The manifest must freeze the six approved scenario ids in stable order.'
-    Assert-Contract (@($manifest.scenarios | Select-Object -First 5 | Where-Object {
-        -not [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -or
-        -not [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
-    }).Count -eq 0) 'The first five scenarios must be active/core.'
-    $blocked = $manifest.scenarios[5]
-    Assert-Contract (
-        [string]::Equals([string]$blocked.status, 'blocked', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$blocked.tier, 'extended', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$blocked.ownerIssue, '#1240', [StringComparison]::Ordinal) -and
-        -not [string]::IsNullOrWhiteSpace([string]$blocked.blockedReason) -and
-        @($blocked.testProjects.frozenTestIdentities).Count -gt 0
-    ) 'The future equipment-unavailable scenario must remain blocked/extended with #1240 ownership, a reason, and a canonical identity.'
+    $expandedMatrix = Copy-ManifestObject
+    $expandedScenario = ($expandedMatrix.scenarios[0] | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50)
+    $expandedScenario.id = 'additional-governed-scenario'
+    $expandedScenario.v1Alias = 'additional-governed-member'
+    $expandedScenario.testProjects[0].frozenTestIdentities = @('Nerv.IIP.Business.FullChain.Tests.AdditionalGovernedTests.Additional_governed_scenario')
+    $expandedMatrix.scenarios += $expandedScenario
+    $expandedV1 = Get-Content -LiteralPath $v1ManifestPath -Raw | ConvertFrom-Json -Depth 30
+    $expandedMember = ($expandedV1.members | Where-Object { [string]::Equals([string]$_.id, 'sales-order-demand-planning', [StringComparison]::Ordinal) } | ConvertTo-Json -Depth 30 | ConvertFrom-Json -Depth 30)
+    $expandedMember.id = 'additional-governed-member'
+    $expandedMember.filter = 'FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.AdditionalGovernedTests.Additional_governed_scenario'
+    $expandedMember.expectedTestIdentities = @('Nerv.IIP.Business.FullChain.Tests.AdditionalGovernedTests.Additional_governed_scenario')
+    $expandedV1.members += $expandedMember
+    $expandedMatrixPath = Write-ManifestFixture -Name 'expanded-authority-set' -Manifest $expandedMatrix
+    $expandedV1Path = Write-ManifestFixture -Name 'expanded-authority-set-v1' -Manifest $expandedV1
+    $expanded = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $expandedMatrixPath -V1ManifestPath $expandedV1Path -RepositoryRoot $repoRoot
+    Assert-Contract (@($expanded.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) }).Count -eq 6) 'The matrix and FullChain manifest must admit a sixth active/core identity without a hard-coded member count.'
 
     $missingImpactRoot = Copy-ManifestObject
     $missingImpactRoot.scenarios[0].impact.paths[0] = 'backend/services/Business/DoesNotExist/**'
@@ -225,8 +220,8 @@ try {
     Assert-ManifestRejected -Name 'non-canonical-blocked-identity' -Manifest $nonCanonicalBlockedIdentity -ExpectedMessage 'frozen identity must be a canonical FullyQualifiedName'
 
     $missingScenario = Copy-ManifestObject
-    $missingScenario.scenarios = @($missingScenario.scenarios | Select-Object -First 5)
-    Assert-ManifestRejected -Name 'missing-scenario' -Manifest $missingScenario -ExpectedMessage 'exactly 6 scenarios'
+    $missingScenario.scenarios = @($missingScenario.scenarios | Select-Object -Skip 1)
+    Assert-ManifestRejected -Name 'missing-active-scenario' -Manifest $missingScenario -ExpectedMessage 'must exactly match'
 
     $duplicateId = Copy-ManifestObject
     $duplicateId.scenarios[1].id = [string]$duplicateId.scenarios[0].id

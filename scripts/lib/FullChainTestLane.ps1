@@ -43,7 +43,7 @@ function Import-NervFullChainTestLaneManifest {
         }
         if (-not [bool]$member.dependencies.postgres) { throw "FullChain lane member '$id' must require PostgreSQL." }
     }
-    if ($members.Count -ne 5) { throw "FullChain lane manifest must contain exactly 5 active/core members; observed $($members.Count)." }
+    if ($members.Count -eq 0) { throw 'FullChain lane manifest must contain at least one active/core member.' }
     return [pscustomobject]@{ schemaVersion = 1; members = $members }
 }
 
@@ -68,6 +68,28 @@ function Test-NervFullChainDeadlineAdmission {
         RemainingSeconds = $remainingSeconds
         RequiredSeconds = $requiredSeconds
     }
+}
+
+function Invoke-NervFullChainAdmittedAction {
+    param(
+        [Parameter(Mandatory)] [int64] $GlobalDeadlineSeconds,
+        [Parameter(Mandatory)] [int64] $ElapsedSeconds,
+        [Parameter(Mandatory)] [int64] $EntrypointTimeoutSeconds,
+        [Parameter(Mandatory)] [int64] $CleanupReserveSeconds,
+        [Parameter(Mandatory)] [int64] $GuardReserveSeconds,
+        [Parameter(Mandatory)] [scriptblock] $Action
+    )
+
+    $admission = Test-NervFullChainDeadlineAdmission `
+        -GlobalDeadlineSeconds $GlobalDeadlineSeconds `
+        -ElapsedSeconds $ElapsedSeconds `
+        -EntrypointTimeoutSeconds $EntrypointTimeoutSeconds `
+        -CleanupReserveSeconds $CleanupReserveSeconds `
+        -GuardReserveSeconds $GuardReserveSeconds
+    if (-not $admission.Allowed) { return $admission }
+
+    & $Action | Out-Null
+    return $admission
 }
 
 function Get-NervFullChainTrxResult {

@@ -15,8 +15,10 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 . (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1')
+. (Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrix.ps1')
 
 $manifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
+$scenarioMatrixPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-full-chain-lane-$([Guid]::NewGuid().ToString('N'))"
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
@@ -110,7 +112,7 @@ function Assert-FullChainV1WorkflowContract {
     Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed five-scenario workflow step sequence.'
     Assert-Contract (@($v1Steps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every physical v1 workflow step must retain a positive timeout.'
     $v1StepBudget = (@($v1Steps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ($v1StepBudget -eq 220 -and [int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the complete 220-minute explicit budget inside its 225-minute job budget.'
+    Assert-Contract ($v1StepBudget -lt [int]$v1Job.'timeout-minutes') 'The physical v1 worker explicit step budget must remain strictly below its job budget.'
     $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
     $v1Run = [string]$runSteps[0].run
@@ -332,15 +334,22 @@ try {
         ) "Deadline admission mutation '$($mutation.Name)' must fail the '$($mutation.ExpectedField)' semantic assertion, but failed with '$($mutationFailure.Exception.Message)'."
     }
 
+    $invokedMembers = [Collections.Generic.List[string]]::new()
+    $firstAdmission = Invoke-NervFullChainAdmittedAction -GlobalDeadlineSeconds 2200 -ElapsedSeconds 0 -EntrypointTimeoutSeconds 1200 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -Action { $invokedMembers.Add('first') | Out-Null }
+    $secondAdmission = Invoke-NervFullChainAdmittedAction -GlobalDeadlineSeconds 2200 -ElapsedSeconds 600 -EntrypointTimeoutSeconds 900 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -Action { $invokedMembers.Add('second') | Out-Null }
+    Assert-Contract ($firstAdmission.Allowed -and $secondAdmission.Allowed -and [string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) 'An early first-member completion must release its unused time to a later member admission.'
+    $deniedAdmission = Invoke-NervFullChainAdmittedAction -GlobalDeadlineSeconds 2200 -ElapsedSeconds 701 -EntrypointTimeoutSeconds 900 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -Action { $invokedMembers.Add('denied') | Out-Null }
+    Assert-Contract (-not $deniedAdmission.Allowed -and [string]::Equals([string]$deniedAdmission.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal)) 'Insufficient remaining time must fail member admission with a stable reason.'
+    Assert-Contract ([string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) 'A denied member admission must invoke no member action.'
+
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
-    $expectedIds = @(
-        'maintenance-runtime-hours',
-        'mes-inventory-produced-lot',
-        'erp-wms-delivery-completion',
-        'sales-order-demand-planning',
-        'erp-return-closure'
-    )
-    Assert-Contract ([string]::Equals((@($manifest.members.id) -join '|'), ($expectedIds -join '|'), [StringComparison]::Ordinal)) 'FullChain manifest must freeze exactly the five approved scenarios in execution order.'
+    $scenarioMatrix = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $manifestPath -RepositoryRoot $repoRoot
+    [string[]]$manifestIds = @($manifest.members.id | ForEach-Object { [string]$_ })
+    [string[]]$matrixAliases = @($scenarioMatrix.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) } | ForEach-Object { [string]$_.v1Alias })
+    [Array]::Sort($manifestIds, [StringComparer]::Ordinal)
+    [Array]::Sort($matrixAliases, [StringComparer]::Ordinal)
+    Assert-Contract ([string]::Equals(($manifestIds -join '|'), ($matrixAliases -join '|'), [StringComparison]::Ordinal)) 'FullChain manifest member identities must equal the acceptance matrix active/core alias set.'
+    $expectedIds = @($manifest.members.id | ForEach-Object { [string]$_ })
     Assert-Contract (@($manifest.members | Where-Object {
         -not [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
@@ -386,7 +395,13 @@ try {
     Assert-Contract ($runnerContent.Contains("'--no-restore', '--list-tests'", [StringComparison]::Ordinal)) 'FullChain discovery must not restore again after the explicit restore phase.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', '1')", [StringComparison]::Ordinal)) 'FullChain runner must disable MSBuild node reuse on hosted runners.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')", [StringComparison]::Ordinal)) 'FullChain runner must disable the persistent dotnet build server.'
-    Assert-Contract ($runnerContent.Contains('$maximumGovernedRuntimeSeconds -ge $runStepTimeoutSeconds', [StringComparison]::Ordinal)) 'FullChain runner must fail closed when its internal timeout sum no longer fits the workflow step.'
+    Assert-Contract ($runnerContent.Contains('[Diagnostics.Stopwatch]::StartNew()', [StringComparison]::Ordinal)) 'FullChain runner must measure its global deadline with a monotonic stopwatch.'
+    Assert-Contract ($runnerContent.Contains('Invoke-NervFullChainAdmittedAction', [StringComparison]::Ordinal)) 'Every FullChain member must pass deadline admission before its action.'
+    Assert-Contract (-not $runnerContent.Contains('$maximumGovernedRuntimeSeconds', [StringComparison]::Ordinal)) 'FullChain runner must not reject the lane from a sum-of-maximums precheck.'
+    $admissionIndex = $runnerContent.IndexOf('$admission = Invoke-NervFullChainAdmittedAction', [StringComparison]::Ordinal)
+    $memberSideEffectIndex = $runnerContent.IndexOf('[IO.Directory]::CreateDirectory($memberResultsDirectory)', [StringComparison]::Ordinal)
+    $entrypointIndex = $runnerContent.IndexOf("Invoke-PwshScript -ScriptPath (Join-Path `$repoRoot 'nerv.ps1')", [StringComparison]::Ordinal)
+    Assert-Contract ($admissionIndex -ge 0 -and $admissionIndex -lt $memberSideEffectIndex -and $memberSideEffectIndex -lt $entrypointIndex) 'Deadline admission must precede every member-owned side effect and entrypoint invocation.'
     Assert-Contract ($runnerContent.Contains('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal)) 'FullChain runner must write resumable summary snapshots before final completion.'
     Assert-Contract ($runnerContent.IndexOf('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal) -lt $runnerContent.IndexOf('try {', [StringComparison]::Ordinal)) 'FullChain runner must create the dependency summary before starting governed work.'
 
@@ -428,6 +443,16 @@ try {
                 Name = 'v1-relative-canonical-result-path'
                 Original = '-CanonicalResultPath $v1CanonicalResultPath'
                 Replacement = '-CanonicalResultPath artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json'
+            },
+            @{
+                Name = 'v1-zero-step-timeout'
+                Original = "      - name: Resolve v1 canonical artifact identity`n        timeout-minutes: 1"
+                Replacement = "      - name: Resolve v1 canonical artifact identity`n        timeout-minutes: 0"
+            },
+            @{
+                Name = 'v1-step-budget-exhausts-job'
+                Original = "      - name: Checkout`n        timeout-minutes: 3"
+                Replacement = "      - name: Checkout`n        timeout-minutes: 8"
             }
         )) {
         $mutatedV1Workflow = $workflowContent.Replace([string]$v1Mutation.Original, [string]$v1Mutation.Replacement)
@@ -439,32 +464,47 @@ try {
         Assert-Contract ($null -ne $v1MutationFailure) "FullChain v1 mutation '$($v1Mutation.Name)' must be rejected."
     }
 
-    $workflowTimeoutNeedle = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 120"
-    $shortenedWorkflowTimeout = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 90"
-    Assert-Contract ($workflowContent.Contains($workflowTimeoutNeedle, [StringComparison]::Ordinal)) 'The FullChain workflow timeout mutation must target exactly one governed run step.'
-    $shortenedWorkflowPath = Join-Path $fixtureRoot 'ci-shortened-full-chain-timeout.yml'
-    [IO.File]::WriteAllText(
-        $shortenedWorkflowPath,
-        $workflowContent.Replace($workflowTimeoutNeedle, $shortenedWorkflowTimeout, [StringComparison]::Ordinal),
-        [Text.UTF8Encoding]::new($false)
-    )
-    $timeoutProbeOutput = & pwsh -NoLogo -NoProfile -NonInteractive -File $runnerPath -WorkflowPath $shortenedWorkflowPath 2>&1 | Out-String
-    $timeoutProbeExitCode = $LASTEXITCODE
-    $global:LASTEXITCODE = 0
-    Assert-Contract ($timeoutProbeExitCode -ne 0) 'A workflow step timeout shorter than the runner internal budget must fail before governed work starts.'
-    Assert-Contract (
-        $timeoutProbeOutput.Contains('FullChain internal timeout budget 6960 seconds', [StringComparison]::Ordinal) -and
-        $timeoutProbeOutput.Contains('5400-second workflow step', [StringComparison]::Ordinal)
-    ) "The runner must derive its timeout guard from the actual FullChain workflow step instead of a copied constant. Probe output: $timeoutProbeOutput"
-
     $manifestObject = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $manifestObject.members = @($manifestObject.members | Select-Object -First 4)
     $missingMemberPath = Join-Path $fixtureRoot 'missing-member.json'
     [IO.File]::WriteAllText($missingMemberPath, (($manifestObject | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
     $missingRejected = $false
-    try { Import-NervFullChainTestLaneManifest -ManifestPath $missingMemberPath -RepositoryRoot $repoRoot | Out-Null }
-    catch { $missingRejected = $_.Exception.Message.Contains('exactly 5 active/core members', [StringComparison]::Ordinal) }
-    Assert-Contract $missingRejected 'Removing a FullChain scenario must fail the manifest contract.'
+    try { Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $missingMemberPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $missingRejected = $_.Exception.Message.Contains('must exactly match', [StringComparison]::Ordinal) }
+    Assert-Contract $missingRejected 'Removing a FullChain member while retaining its active/core matrix identity must fail closure.'
+
+    $duplicateManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
+    $duplicateManifest.members += $duplicateManifest.members[0]
+    $duplicateMemberPath = Join-Path $fixtureRoot 'duplicate-member.json'
+    [IO.File]::WriteAllText($duplicateMemberPath, (($duplicateManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $duplicateRejected = $false
+    try { Import-NervFullChainTestLaneManifest -ManifestPath $duplicateMemberPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $duplicateRejected = $_.Exception.Message.Contains('must be unique and canonical', [StringComparison]::Ordinal) }
+    Assert-Contract $duplicateRejected 'A duplicate FullChain member identity must fail closed.'
+
+    $extraManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
+    $extraMember = ($extraManifest.members[-1] | ConvertTo-Json -Depth 20 | ConvertFrom-Json -Depth 20)
+    $extraMember.id = 'unexpected-extra-member'
+    $extraMember.filter = 'FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.UnexpectedTests.Unexpected'
+    $extraMember.expectedTestIdentities = @('Nerv.IIP.Business.FullChain.Tests.UnexpectedTests.Unexpected')
+    $extraManifest.members += $extraMember
+    $extraMemberPath = Join-Path $fixtureRoot 'extra-member.json'
+    [IO.File]::WriteAllText($extraMemberPath, (($extraManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $extraRejected = $false
+    try { Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $extraMemberPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $extraRejected = $_.Exception.Message.Contains('must exactly match', [StringComparison]::Ordinal) }
+    Assert-Contract $extraRejected 'An extra FullChain member without an active/core matrix identity must fail closure.'
+
+    $mismatchedMatrix = Get-Content -LiteralPath $scenarioMatrixPath -Raw | ConvertFrom-Json -Depth 50
+    $firstAlias = [string]$mismatchedMatrix.scenarios[0].v1Alias
+    $mismatchedMatrix.scenarios[0].v1Alias = [string]$mismatchedMatrix.scenarios[1].v1Alias
+    $mismatchedMatrix.scenarios[1].v1Alias = $firstAlias
+    $mismatchedMatrixPath = Join-Path $fixtureRoot 'mismatched-matrix.json'
+    [IO.File]::WriteAllText($mismatchedMatrixPath, (($mismatchedMatrix | ConvertTo-Json -Depth 50) + "`n"), [Text.UTF8Encoding]::new($false))
+    $mismatchRejected = $false
+    try { Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $mismatchedMatrixPath -V1ManifestPath $manifestPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $mismatchRejected = $_.Exception.Message.Contains('must equal v1', [StringComparison]::Ordinal) }
+    Assert-Contract $mismatchRejected 'A matrix alias mapped to the wrong FullChain member contract must fail closure.'
 
     $identity = [string]$manifest.members[0].expectedTestIdentities[0]
     $trxPath = Join-Path $fixtureRoot 'full-chain.trx'
